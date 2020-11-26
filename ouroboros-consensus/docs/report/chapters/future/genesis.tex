@@ -1,6 +1,159 @@
 \chapter{Ouroboros Genesis}
 \label{genesis}
 
+\section{Introduction}
+
+\subsection{Chain length versus chain density}
+
+The purpose of chain selection to resolve temporary forks that arise from the
+normal operation of the protocol (such as when there are multiple leaders in a
+single slot), and---importantly---to distinguish honest chains from chains
+forged by malicious nodes. It is not a priori clear why choosing longer chains
+over shorter chains would help distinguish malicious chains from honest chains:
+why would an honest chain be longer?
+
+By assumption, the malicious nodes in the system together have less stake than
+the honest nodes; security of the system as a whole critically depends on the
+presence of this honest majority. Since the leadership schedule is determined
+based on stake, this means that we expect the \emph{proportion} of slots filled
+by malicious nodes to be smaller than the proportion of slots filled by honest
+nodes. Similarly, we would expect a chain forged by a malicious node to be
+\emph{less dense} than an honest chain, forged by the honest nodes in the
+system: the malicious node has less stake, and so must necessarily leave many
+slots empty (assuming they can't cooperate with honest nodes).
+
+When all nodes in the system are up to date, they will all share the shame
+chain, except for blocks near the tips of those chains. Moreover, blocks whose
+slot number is ahead of the wall clock are considered invalid. This means that
+the only way for one chain to be longer than another is by having more filled
+slot between the tip of the shared prefix and ``now'': in other words, they
+must be \emph{denser}.
+%
+\begin{center}
+\begin{tikzpicture}
+\draw (0,0) -- (5,0) coordinate(branch) node{$\bullet$} node[pos=0.5,below]{$\underbrace{\hspace{5cm}}_\text{shared prefix}$};
+\draw (branch) -- ++(1,  0.9) -- ++(2,0);
+\draw (branch) -- ++(1,  0.3) -- ++(2,0);
+\draw (branch) -- ++(1, -0.3) -- ++(2,0);
+\draw (branch) -- ++(1, -0.9) -- ++(2,0);
+\draw [ultra thick] (8,-1.5) -- (8,1.5) node[above]{now};
+\end{tikzpicture}
+\end{center}
+%
+Conversely, the density on the fragment of a chain is only meaningful if that
+fragment is long enough. Since the leadership election is a probabilistic
+process, we only expect fragments to contain more slots signed by honest nodes
+\emph{on average}, and we can only draw conclusions from density on long enough
+fragments.
+
+\subsection{Speculative mode}
+
+Chain selection so far has been running in what we might call a ``speculative``
+mode: when we see a new chain, we compare it to our current chain, and if we
+prefer it (if is longer), we adopt it. This is speculative in the sense that
+if we later see a second chain, we can change our mind about adopting the
+first and adopt the second if that second chain is preferred over the first.
+
+The Praos chain selection rule (choose the longest chain) was explicitly
+designed for a context in which all nodes in the network are present from the
+very beginning and are always online. The Praos security analysis
+\cite{cryptoeprint:2017:573} essentially shows that when the honest nodes in the
+system are all following this protocol, they will end up with a common prefix,
+differing only in the most recent $k$ blocks. This means that nodes never need
+to roll back past the tip of that common prefix; indeed, they \emph{should} not
+roll back past that point, as this might mean they might adopt a chain forged by
+a malicious node which is trying to trick them into believing some kind of
+alternative history. This is the reason for the ``no rollback more than $k$
+blocks'' rule in the Praos chain selection rule, as well as the justification
+for the fact that much of the consensus layer is designed around the assumption
+that there exists a maximum rollback distance.
+
+In reality of course new nodes join the system all the time. This is problematic
+for at least two reasons. First, within the consensus layer we don't see a
+candidate chain's \emph{true} length; the length of a candidate we see depends
+on how much of that candidate's chain we have downloaded\footnote{Nodes do
+report their ``true length'', but since we have no way of verifying this
+information until we have seen the entire chain, we can make no use of this
+information for the purpose of chain selection.}. Of course, defining chain
+selection in terms of chain length, where our \emph{perceived} chain length
+depends on what we decide to download, is rather circular indeed.
+
+But actually the problem is more fundamental than that. Recall that chain
+selection is running in speculative mode: we consider chains as we see them,
+possibly changing our mind later by adopting a different chain. If a new node
+sees a chain constructed by a malicious node and adopts it, \emph{it might be
+stuck}: it is not difficult for an attacker to construct a chain that is longer
+than $k$ blocks long, and so once a node adopts such a chain, it will not be
+able to switch to the honest chain anymore, as this would involve a roll back
+of more than $k$ blocks.
+
+\subsection{Genesis rule}
+
+Any node with non-zero stake can easily construct chains of arbitrary length,
+but such chains will necessarily be sparse. Indeed, as we argued above,
+chains constructed by malicious nodes cannot be denser (on a sufficiently
+long fragment) than the honest chain.
+
+The \emph{Genesis chain selection rule}, designed to cope with new nodes joining
+the network, therefore compares chains on density whenever possible, defaulting
+to comparing chain length only if the aren't enough blocks to do a meaningful
+density comparison. The size of this ``density window'' is a parameter to the
+rule known as $s$, although we can set $s = \frac{1}{4}(k / f)$.
+
+\begin{definition}[Genesis rule]
+\label{genesis:rule}
+A candidate chain is preferred over our current chain if
+
+\begin{itemize}
+\item The intersection between the candidate chain and our chain is \textbf{at
+least $s$ slots} back from the tip of our chain, and the candidate chain is
+\textbf{denser} in a window of $s$ slots at the intersection, or
+
+\item The intersection between the candidate chain and our chain is \textbf{less
+than $s$ slots} back from the tip of our chain, and the candidate chain is
+strictly \textbf{longer} than our chain.
+\end{itemize}
+
+\end{definition}
+
+\subsection{Conservative mode}
+
+The rule as defined in \cref{genesis:rule} is problematic for consensus:
+\emph{it no longer imposes a maximum rollback}. We depend on this maximum
+rollback in many ways (todo: reference), and we will want to \emph{continue}
+to be depend on it. We solve it by switching from the default
+speculative chain selection mode to a \emph{conservative} chain selection mode.
+We will see the details of how this mode works later in this chapter, but
+the intuition is rather than considering and possibly adopting chains as we
+encounter them, we instead wait, collecting information, until we have enough
+information that we can decide which block to adopt next, \emph{knowing we will
+never have to change about mind}: we will never need to roll back that block.
+
+The security analysis of the genesis chain selection rule includes a theorem
+\cite[Theorem 2]{cryptoeprint:2018:378} that says that it is still true that
+when nodes are up to date they will never need to roll back more than $k$
+blocks. We can use this theorem to justify switching from the conservative
+mode back to the speculative mode. Since blocks ahead of the wall clock are
+considered invalid, we can use the current slot number (according to the
+wallclock) to estimate if we are within $k$ blocks from the longest chain
+in the network. This remains an estimate because we might not know the
+density of that chain. At one extreme, we might assume that the density is
+1, and so only switch to speculative mode when we are within $k$ \emph{blocks}
+from the wall clock. At the other extreme, we might assume that the density is
+precisely the theoretical ideal $f$, at the cost of switching to speculative
+mode too early and being unable to roll back when we really should. Probably
+the actual switch-over point should lie somewhere between these two extremes.
+
+The switch over point does not change the chain selection rule itself: even when
+we are in speculative mode, we will still apply the genesis rule as defined in
+\cref{genesis:rule}, comparing density or length depending on the intersection
+point; we will merely use Theorem 2 of the genesis security analysis to justify
+imposing the standard maximum rollback of $k$ blocks.
+
+
+\pagebreak
+\debugsep{OLD}
+
 \section{The Genesis Chain Selection Rule}
 
 \subsection{Introduction}
