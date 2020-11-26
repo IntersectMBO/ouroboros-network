@@ -1,8 +1,9 @@
-{-# LANGUAGE CPP               #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Diffusion
   ( DiffusionTracers (..)
@@ -16,12 +17,13 @@ module Ouroboros.Network.Diffusion
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
+  , DiffusionInitializationTracer(..)
   )
   where
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
 import           Data.Void (Void)
@@ -31,10 +33,12 @@ import           Network.Mux (MuxTrace (..), WithMuxBearer (..))
 import           Network.Socket (AddrInfo, SockAddr)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Snocket ( LocalAddress
+import           Ouroboros.Network.Snocket ( FileDescriptor
+                                           , LocalAddress
                                            , LocalSnocket
                                            , LocalSocket (..)
                                            , SocketSnocket
+                                           , localSocketFileDescriptor
                                            )
 import qualified Ouroboros.Network.Snocket as Snocket
 
@@ -65,6 +69,21 @@ import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Tracers
 
+data DiffusionInitializationTracer
+  = RunServer !SockAddr
+  | RunLocalServer !LocalAddress
+  | UsingSystemdSocket !FilePath
+  | CreateSystemdSocketForSnocketPath !FilePath
+  | CreatedLocalSocket !FilePath
+  | ConfiguringLocalSocket !FilePath !FileDescriptor
+  | ListeningLocalSocket !FilePath !FileDescriptor
+  | CreatingServerSocket !SockAddr
+  | ConfiguringServerSocket !SockAddr
+  | UnsupportedLocalSystemdSocket !SockAddr
+  | UnsupportedReadySocketCase
+  | DiffusionErrored SomeException
+    deriving Show
+
 data DiffusionTracers = DiffusionTracers {
       dtIpSubscriptionTracer   :: Tracer IO (WithIPList (SubscriptionTrace SockAddr))
       -- ^ IP subscription tracer
@@ -83,6 +102,8 @@ data DiffusionTracers = DiffusionTracers {
     , dtErrorPolicyTracer      :: Tracer IO (WithAddr SockAddr     ErrorPolicyTrace)
     , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
     , dtAcceptPolicyTracer     :: Tracer IO AcceptConnectionsPolicyTrace
+      -- ^ Trace rate limiting of accepted connections
+    , dtDiffusionInitializationTracer :: Tracer IO DiffusionInitializationTracer
     }
 
 
@@ -159,7 +180,7 @@ runDataDiffusion tracers
                                     , daDiffusionMode
                                     }
                  applications@DiffusionApplications { daErrorPolicies } =
-    withIOManager $ \iocp -> do
+  traceException . withIOManager $ \iocp -> do
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
@@ -208,6 +229,10 @@ runDataDiffusion tracers
                             ] ++ dnsSubThreads
 
   where
+    traceException :: IO a -> IO a
+    traceException f = catch f $ \(e :: SomeException) -> do
+      traceWith dtDiffusionInitializationTracer (DiffusionErrored e) 
+      throwIO e
     DiffusionTracers { dtIpSubscriptionTracer
                      , dtDnsSubscriptionTracer
                      , dtDnsResolverTracer
@@ -218,6 +243,7 @@ runDataDiffusion tracers
                      , dtErrorPolicyTracer
                      , dtLocalErrorPolicyTracer
                      , dtAcceptPolicyTracer
+                     , dtDiffusionInitializationTracer
                      } = tracers
 
     --
@@ -305,19 +331,25 @@ runDataDiffusion tracers
           case daLocalAddress of
 #if defined(mingw32_HOST_OS)
                -- Windows uses named pipes so can't take advantage of existing sockets
-               Left _ -> throwIO UnsupportedReadySocket
+               Left _ -> do
+                   traceWith dtDiffusionInitializationTracer UnsupportedReadySocketCase
+                   throwIO UnsupportedReadySocket
 #else
                Left sd -> do
                    a <- Socket.getSocketName sd
                    case a of
-                        (Socket.SockAddrUnix path) ->
+                        (Socket.SockAddrUnix path) -> do
+                          traceWith dtDiffusionInitializationTracer $ UsingSystemdSocket path
                           return (LocalSocket sd, Snocket.localSnocket iocp path)
-                        _unsupportedAddr ->
+                        unsupportedAddr -> do
+                          traceWith dtDiffusionInitializationTracer $ UnsupportedLocalSystemdSocket unsupportedAddr
                           throwIO UnsupportedLocalSocketType
 #endif
                Right addr -> do
                    let sn = Snocket.localSnocket iocp addr
+                   traceWith dtDiffusionInitializationTracer $ CreateSystemdSocketForSnocketPath addr
                    sd <- Snocket.open sn (Snocket.addrFamily sn $ Snocket.localAddressFromPath addr)
+                   traceWith dtDiffusionInitializationTracer $ CreatedLocalSocket addr
                    return (sd, sn)
 
         -- We close the socket here, even if it was provided for us.
@@ -327,10 +359,20 @@ runDataDiffusion tracers
         localServerBody :: (LocalSocket, LocalSnocket) -> IO ()
         localServerBody (sd, sn) = do
           case daLocalAddress of
-               Left _ -> pure () -- If a socket was provided it should be ready to accept
+               -- If a socket was provided it should be ready to accept
+               Left _ -> pure ()
                Right path -> do
+                 traceWith dtDiffusionInitializationTracer . ConfiguringLocalSocket path
+                    =<< localSocketFileDescriptor sd
+
                  Snocket.bind sn sd $ Snocket.localAddressFromPath path
+
+                 traceWith dtDiffusionInitializationTracer . ListeningLocalSocket path
+                    =<< localSocketFileDescriptor sd
+
                  Snocket.listen sn sd
+
+          traceWith dtDiffusionInitializationTracer . RunLocalServer =<< Snocket.getLocalAddr sn sd
 
           void $ NodeToClient.withServer
             sn
@@ -350,16 +392,23 @@ runDataDiffusion tracers
         (
           case address of
                Left sd -> return sd
-               Right a -> Snocket.open sn (Snocket.addrFamily sn a)
+               Right addr -> do
+                 traceWith dtDiffusionInitializationTracer $ CreatingServerSocket addr
+                 Snocket.open sn (Snocket.addrFamily sn addr)
         )
         (Snocket.close sn) -- We close the socket here, even if it was provided for us.
         (\sd -> do
 
-          case address of
-               Left _ -> pure () -- If a socket was provided it should be ready to accept
+          addr <- case address of
+               -- If a socket was provided it should be ready to accept
+               Left _ -> Snocket.getLocalAddr sn sd
                Right addr -> do
+                 traceWith dtDiffusionInitializationTracer $ ConfiguringServerSocket addr
                  Snocket.bind sn sd addr
                  Snocket.listen sn sd
+                 return addr
+
+          traceWith dtDiffusionInitializationTracer $ RunServer addr
 
           void $ NodeToNode.withServer
             sn
