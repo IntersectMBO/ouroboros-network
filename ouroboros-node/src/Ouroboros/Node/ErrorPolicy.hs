@@ -1,12 +1,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy) where
+module Ouroboros.Node.ErrorPolicy (consensusErrorPolicy) where
 
 import           Data.Time.Clock (DiffTime)
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 
-import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Util.ResourceRegistry
+                     (RegistryClosedException, ResourceRegistryThreadException,
+                     TempRegistryException)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure)
@@ -16,16 +19,14 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB.API (VolatileDBError)
 import qualified Ouroboros.Consensus.Storage.VolatileDB.API as VolatileDB
 
-import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+import           Ouroboros.Network.ErrorPolicy
+
+import           Ouroboros.Node.DbLock
+import           Ouroboros.Node.DbMarker (DbMarkerError)
+import           Ouroboros.Node.MiniProtocol.BlockFetch.Server
                      (BlockFetchServerException)
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+import           Ouroboros.Node.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException)
-import           Ouroboros.Consensus.Node.DbLock
-import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
-import           Ouroboros.Consensus.Util.ResourceRegistry
-                     (RegistryClosedException, ResourceRegistryThreadException,
-                     TempRegistryException)
 
 consensusErrorPolicy :: ErrorPolicies
 consensusErrorPolicy = ErrorPolicies {

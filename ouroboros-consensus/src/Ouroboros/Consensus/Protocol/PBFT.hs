@@ -58,13 +58,13 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Crypto.DSIGN.Class
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.ProtocolInfo
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Ouroboros.Consensus.Node.Recovery
+module Ouroboros.Node.Recovery
   ( createMarkerOnCleanShutdown
   , hasCleanShutdownMarker
   , createCleanShutdownMarker
@@ -8,13 +8,14 @@ module Ouroboros.Consensus.Node.Recovery
 
 import           Control.Monad (unless, when)
 
-import           Ouroboros.Consensus.Node.Exit (ExitReason (..), toExitReason)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, doesFileExist,
                      removeFile, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      FsPath, OpenMode (..), mkFsPath)
+
+import           Ouroboros.Node.Exit (ExitReason (..), toExitReason)
 
 -- | The path to the /clean shutdown marker file/.
 cleanShutdownMarkerFile :: FsPath

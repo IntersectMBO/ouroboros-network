@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Special file we store in the DB dir to avoid unintended deletions
-module Ouroboros.Consensus.Node.DbMarker (
+module Ouroboros.Node.DbMarker (
     DbMarkerError(..)
   , checkDbMarker
     -- * For the benefit of testing only

@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Ouroboros.Consensus.Node.ProtocolInfo (
+module Ouroboros.Consensus.ProtocolInfo (
     NumCoreNodes(..)
   , enumCoreNodes
   , ProtocolInfo(..)

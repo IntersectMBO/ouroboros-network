@@ -73,7 +73,6 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
                        Ouroboros.Consensus.HardFork.Combinator.Mempool
                        Ouroboros.Consensus.HardFork.Combinator.Node
-                       Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage
                        Ouroboros.Consensus.HardFork.Combinator.PartialConfig
                        Ouroboros.Consensus.HardFork.Combinator.Protocol
                        Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
@@ -88,6 +87,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.State.Instances
                        Ouroboros.Consensus.HardFork.Combinator.State.Lift
                        Ouroboros.Consensus.HardFork.Combinator.State.Types
+                       Ouroboros.Consensus.HardFork.Combinator.StorageInit
                        Ouroboros.Consensus.HardFork.Combinator.Translation
                        Ouroboros.Consensus.HardFork.Combinator.Unary
                        Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
@@ -117,26 +117,6 @@ library
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Mempool.TxSeq
-                       Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
-                       Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                       Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-                       Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
-                       Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
-                       Ouroboros.Consensus.Node
-                       Ouroboros.Consensus.Node.DbLock
-                       Ouroboros.Consensus.Node.DbMarker
-                       Ouroboros.Consensus.Node.ErrorPolicy
-                       Ouroboros.Consensus.Node.Exit
-                       Ouroboros.Consensus.Node.InitStorage
-                       Ouroboros.Consensus.Node.Kernel
-                       Ouroboros.Consensus.Node.NetworkProtocolVersion
-                       Ouroboros.Consensus.Node.NodeToClient
-                       Ouroboros.Consensus.Node.NodeToNode
-                       Ouroboros.Consensus.Node.ProtocolInfo
-                       Ouroboros.Consensus.Node.Recovery
-                       Ouroboros.Consensus.Node.Run
-                       Ouroboros.Consensus.Node.Serialisation
-                       Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
@@ -147,6 +127,7 @@ library
                        Ouroboros.Consensus.Protocol.PBFT.Crypto
                        Ouroboros.Consensus.Protocol.PBFT.State
                        Ouroboros.Consensus.Protocol.Signed
+                       Ouroboros.Consensus.ProtocolInfo
                        Ouroboros.Consensus.Ticked
                        Ouroboros.Consensus.TypeFamilyWrappers
                        Ouroboros.Consensus.Util
@@ -213,6 +194,7 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
+                       Ouroboros.Consensus.Storage.Init
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk

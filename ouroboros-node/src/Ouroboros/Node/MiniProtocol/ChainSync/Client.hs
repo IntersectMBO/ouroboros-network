@@ -21,7 +21,7 @@
 -- an unexplained thunk in 'KnownIntersectionState' and thus a space leak. See
 -- #1356.
 
-module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
+module Ouroboros.Node.MiniProtocol.ChainSync.Client (
     Consensus
   , chainSyncClient
   , bracketChainSyncClient
@@ -54,11 +54,6 @@ import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Chain.AnchoredFragment as AF
 import           Ouroboros.Chain.Tip (Tip, getTipBlockNo, getTipPoint)
 
-import           Network.TypedProtocol.Pipelined
-import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
-import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
-import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
@@ -68,7 +63,6 @@ import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
@@ -80,6 +74,13 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+
+import           Network.TypedProtocol.Pipelined
+import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
+import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
+import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+
+import           Ouroboros.Node.NetworkProtocolVersion
 
 type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
    client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult

@@ -47,6 +47,8 @@ import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (enforceSize)
 
+import           Ouroboros.Chain.Util (Some (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract (hardForkSummary)
@@ -57,7 +59,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
-import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.Counting (getExactly)

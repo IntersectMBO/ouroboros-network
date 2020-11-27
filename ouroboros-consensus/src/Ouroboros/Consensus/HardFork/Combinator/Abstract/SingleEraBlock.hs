@@ -36,7 +36,7 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.InitStorage
+import           Ouroboros.Consensus.Storage.Init
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SOP
@@ -61,7 +61,7 @@ class ( LedgerSupportsProtocol blk
       , ReconstructNestedCtxt Header blk
       , CommonProtocolParams blk
       , ConfigSupportsNode blk
-      , NodeInitStorage blk
+      , StorageInit blk
         -- Instances required to support testing
       , Eq   (GenTx blk)
       , Eq   (ApplyTxErr blk)

@@ -1,29 +1,38 @@
 index-state: 2020-10-01T00:00:00Z
 
-packages: ./ouroboros-chain
-          ./typed-protocols
-          ./typed-protocols-examples
-          ./ouroboros-network-testing
-          ./network-mux
-          ./ouroboros-network-framework
-          ./ouroboros-network
-          ./ouroboros-network-testing
-          ./ouroboros-consensus
-          ./ouroboros-consensus-byron
-          ./ouroboros-consensus-byron-test
-          ./ouroboros-consensus-byronspec
-          ./ouroboros-consensus-cardano
-          ./ouroboros-consensus-cardano-test
-          ./ouroboros-consensus-mock
-          ./ouroboros-consensus-mock-test
-          ./ouroboros-consensus-shelley
-          ./ouroboros-consensus-shelley-test
-          ./ouroboros-consensus-test
-          ./io-sim
-          ./io-sim-classes
-          ./ntp-client
-          ./Win32-network
-          ./cardano-client
+packages:
+  -- Common
+  ./io-sim
+  ./io-sim-classes
+  ./ntp-client
+  ./ouroboros-chain
+  ./Win32-network
+
+  -- Network
+  ./network-mux
+  ./ouroboros-network
+  ./ouroboros-network-framework
+  ./ouroboros-network-testing
+  ./ouroboros-network-testing
+  ./typed-protocols
+  ./typed-protocols-examples
+
+  -- Consensus
+  ./ouroboros-consensus
+  ./ouroboros-consensus-byron
+  ./ouroboros-consensus-byron-test
+  ./ouroboros-consensus-byronspec
+  ./ouroboros-consensus-cardano
+  ./ouroboros-consensus-cardano-test
+  ./ouroboros-consensus-mock
+  ./ouroboros-consensus-mock-test
+  ./ouroboros-consensus-shelley
+  ./ouroboros-consensus-shelley-test
+  ./ouroboros-consensus-test
+
+  -- Combination of network and consensus
+  ./cardano-client
+  ./ouroboros-node
 
 constraints:
   ip < 1.5,
@@ -89,6 +98,9 @@ package ouroboros-consensus-cardano
 
 package ouroboros-consensus-cardano-test
   tests: True
+
+package ouroboros-consensus-node
+  flags: +asserts
 
 
 package cardano-binary

@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+module Ouroboros.Node.MiniProtocol.ChainSync.Server
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
   , Tip
@@ -18,7 +18,9 @@ import           Ouroboros.Chain.ChainUpdate (ChainUpdate (..))
 import           Ouroboros.Chain.Serialised (Serialised)
 import           Ouroboros.Chain.Tip (Tip (..))
 
-import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,
                      WithPoint (..), getSerialisedBlockWithPoint,
@@ -26,10 +28,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           Ouroboros.Network.Protocol.ChainSync.Server
+
+import           Ouroboros.Node.NetworkProtocolVersion
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
 --

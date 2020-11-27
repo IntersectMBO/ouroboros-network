@@ -7,8 +7,8 @@
 --
 -- Intended for qualified import.
 --
-module Ouroboros.Consensus.Node
-  ( DiffusionTracers (..)
+module Ouroboros.Node (
+    DiffusionTracers (..)
   , DiffusionArguments (..)
   , run
     -- * Exposed by 'run'
@@ -45,15 +45,6 @@ import           System.Random (newStdGen, randomIO, randomRIO)
 
 import           Ouroboros.Chain.Magic
 
-import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
-import           Ouroboros.Network.Diffusion
-import           Ouroboros.Network.NodeToClient (LocalConnectionId,
-                     NodeToClientVersionData (..))
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
-                     NodeToNodeVersionData (..), RemoteConnectionId,
-                     combineVersions, defaultMiniProtocolParameters)
-import           Ouroboros.Network.Protocol.Limits (shortWait)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime hiding (getSystemStart)
 import           Ouroboros.Consensus.Config
@@ -79,18 +70,27 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..), mkBlocksPerFile)
 
-import           Ouroboros.Consensus.Node.DbLock
-import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Node.ErrorPolicy
-import           Ouroboros.Consensus.Node.InitStorage
-import           Ouroboros.Consensus.Node.Kernel
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import qualified Ouroboros.Consensus.Node.NodeToClient as NTC
-import qualified Ouroboros.Consensus.Node.NodeToNode as NTN
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Node.Recovery
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Tracers
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
+import           Ouroboros.Network.Diffusion
+import           Ouroboros.Network.NodeToClient (LocalConnectionId,
+                     NodeToClientVersionData (..))
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
+                     NodeToNodeVersionData (..), RemoteConnectionId,
+                     combineVersions, defaultMiniProtocolParameters)
+import           Ouroboros.Network.Protocol.Limits (shortWait)
+
+import           Ouroboros.Node.DbLock
+import           Ouroboros.Node.DbMarker
+import           Ouroboros.Node.ErrorPolicy
+import           Ouroboros.Node.InitStorage
+import           Ouroboros.Node.Kernel
+import           Ouroboros.Node.NetworkProtocolVersion
+import qualified Ouroboros.Node.NodeToClient as NTC
+import qualified Ouroboros.Node.NodeToNode as NTN
+import           Ouroboros.Node.ProtocolInfo
+import           Ouroboros.Node.Recovery
+import           Ouroboros.Node.Run
+import           Ouroboros.Node.Tracers
 
 -- | Arguments required by 'runNode'
 data RunNodeArgs blk = RunNodeArgs {

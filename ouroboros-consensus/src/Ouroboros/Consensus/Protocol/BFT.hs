@@ -39,10 +39,10 @@ import           NoThunks.Class (NoThunks (..))
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.ProtocolInfo
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 

@@ -87,9 +87,10 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Chain.Serialised (Serialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+-- CONTINUE Problem! The latter can be moved to -consensus, I think, the former
+-- will require more work
+-- import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+-- import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.SOP
 

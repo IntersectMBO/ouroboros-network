@@ -29,9 +29,6 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapSelectView(..)
   , WrapValidateView(..)
   , WrapValidationErr(..)
-    -- * Versioning
-  , WrapNodeToNodeVersion(..)
-  , WrapNodeToClientVersion(..)
     -- * Type family instances
   , Ticked(..)
   ) where
@@ -44,7 +41,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
@@ -77,13 +73,6 @@ newtype WrapLedgerView      blk = WrapLedgerView      { unwrapLedgerView      ::
 newtype WrapSelectView      blk = WrapSelectView      { unwrapSelectView      :: SelectView      (BlockProtocol blk) }
 newtype WrapValidateView    blk = WrapValidateView    { unwrapValidateView    :: ValidateView    (BlockProtocol blk) }
 newtype WrapValidationErr   blk = WrapValidationErr   { unwrapValidationErr   :: ValidationErr   (BlockProtocol blk) }
-
-{-------------------------------------------------------------------------------
-  Versioning
--------------------------------------------------------------------------------}
-
-newtype WrapNodeToNodeVersion   blk = WrapNodeToNodeVersion   { unwrapNodeToNodeVersion   :: BlockNodeToNodeVersion   blk }
-newtype WrapNodeToClientVersion blk = WrapNodeToClientVersion { unwrapNodeToClientVersion :: BlockNodeToClientVersion blk }
 
 {-------------------------------------------------------------------------------
   Instances
@@ -132,16 +121,6 @@ deriving instance Show (ValidationErr  (BlockProtocol blk)) => Show (WrapValidat
 deriving instance NoThunks (ChainSelConfig (BlockProtocol blk)) => NoThunks (WrapChainSelConfig blk)
 deriving instance NoThunks (ChainDepState  (BlockProtocol blk)) => NoThunks (WrapChainDepState  blk)
 deriving instance NoThunks (ValidationErr  (BlockProtocol blk)) => NoThunks (WrapValidationErr  blk)
-
-{-------------------------------------------------------------------------------
-  Versioning
--------------------------------------------------------------------------------}
-
-deriving instance Show (BlockNodeToNodeVersion   blk) => Show (WrapNodeToNodeVersion   blk)
-deriving instance Show (BlockNodeToClientVersion blk) => Show (WrapNodeToClientVersion blk)
-
-deriving instance Eq (BlockNodeToNodeVersion   blk) => Eq (WrapNodeToNodeVersion   blk)
-deriving instance Eq (BlockNodeToClientVersion blk) => Eq (WrapNodeToClientVersion blk)
 
 {-------------------------------------------------------------------------------
   Serialise instances

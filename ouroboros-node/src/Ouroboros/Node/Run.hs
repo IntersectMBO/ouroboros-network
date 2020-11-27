@@ -3,7 +3,7 @@
 -- | Infrastructure required to run a node
 --
 -- The definitions in this module are independent from any specific protocol.
-module Ouroboros.Consensus.Node.Run (
+module Ouroboros.Node.Run (
     -- * SerialiseDisk
     SerialiseDiskConstraints
   , ImmutableDbSerialiseConstraints
@@ -27,9 +27,6 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.InitStorage
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy)
 
 import           Ouroboros.Consensus.Storage.ChainDB
@@ -37,6 +34,10 @@ import           Ouroboros.Consensus.Storage.ChainDB
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
                      VolatileDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
+
+import           Ouroboros.Node.InitStorage
+import           Ouroboros.Node.NetworkProtocolVersion
+import           Ouroboros.Node.Serialisation
 
 {-------------------------------------------------------------------------------
   RunNode proper

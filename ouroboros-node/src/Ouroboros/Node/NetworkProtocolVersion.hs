@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-module Ouroboros.Consensus.Node.NetworkProtocolVersion
+module Ouroboros.Node.NetworkProtocolVersion
   ( HasNetworkProtocolVersion(..)
   , SupportedNetworkProtocolVersion(..)
     -- * Re-exports

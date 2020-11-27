@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Consensus.Node.Exit
+module Ouroboros.Node.Exit
   ( -- * ExitFailure
     ExitFailure
   , exitReasontoExitFailure
@@ -23,7 +23,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDBError)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
-import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
+import           Ouroboros.Node.DbMarker (DbMarkerError)
 
 {-------------------------------------------------------------------------------
   ExitFailure

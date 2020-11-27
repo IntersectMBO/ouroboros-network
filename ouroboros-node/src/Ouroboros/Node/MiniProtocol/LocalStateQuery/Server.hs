@@ -1,17 +1,17 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
+module Ouroboros.Node.MiniProtocol.LocalStateQuery.Server
   ( localStateQueryServer
   ) where
-
-import           Ouroboros.Network.Protocol.LocalStateQuery.Server
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (AcquireFailure (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util.IOLike
+
+import           Ouroboros.Network.Protocol.LocalStateQuery.Server
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+                     (AcquireFailure (..))
 
 localStateQueryServer ::
      forall m blk. (IOLike m, QueryLedger blk)

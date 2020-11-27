@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Ouroboros.Consensus.Node.Kernel (
+module Ouroboros.Node.Kernel (
     -- * Node kernel
     NodeKernel (..)
   , MaxTxCapacityOverride (..)
@@ -38,15 +38,6 @@ import           Ouroboros.Chain.AnchoredFragment (AnchoredFragment (..))
 import qualified Ouroboros.Chain.AnchoredFragment as AF
 import           Ouroboros.Chain.MaxSlotNo
 
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
-import           Ouroboros.Network.TxSubmission.Inbound
-                     (TxSubmissionMempoolWriter)
-import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
-import           Ouroboros.Network.TxSubmission.Mempool.Reader
-                     (TxSubmissionMempoolReader)
-import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
-
 import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
 import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -58,8 +49,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
@@ -72,6 +61,18 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+
+import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.TxSubmission.Inbound
+                     (TxSubmissionMempoolWriter)
+import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                     (TxSubmissionMempoolReader)
+import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
+
+import           Ouroboros.Node.Run
+import           Ouroboros.Node.Tracers
 
 {-------------------------------------------------------------------------------
   Relay node

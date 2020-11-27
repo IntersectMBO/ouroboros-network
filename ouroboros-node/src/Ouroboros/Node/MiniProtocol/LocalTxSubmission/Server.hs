@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
+module Ouroboros.Node.MiniProtocol.LocalTxSubmission.Server
   ( localTxSubmissionServer
     -- * Trace events
   , TraceLocalTxSubmissionServerEvent (..)
@@ -11,12 +11,12 @@ module Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 
 import           Control.Tracer
 
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
-
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util.IOLike
+
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 
 -- | Local transaction submission server, for adding txs to the 'Mempool'

@@ -5,7 +5,7 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Ouroboros.Consensus.Node.Tracers
+module Ouroboros.Node.Tracers
   ( -- * All tracers of a node bundled together
     Tracers' (..)
   , Tracers
@@ -19,6 +19,13 @@ module Ouroboros.Consensus.Node.Tracers
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 import           Data.Text (Text)
 
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Mempool.API
+
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
@@ -27,20 +34,13 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Mempool.API
-
-import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+import           Ouroboros.Node.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+import           Ouroboros.Node.MiniProtocol.ChainSync.Client
                      (InvalidBlockReason, TraceChainSyncClientEvent)
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+import           Ouroboros.Node.MiniProtocol.ChainSync.Server
                      (TraceChainSyncServerEvent)
-import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
+import           Ouroboros.Node.MiniProtocol.LocalTxSubmission.Server
                      (TraceLocalTxSubmissionServerEvent (..))
 
 {-------------------------------------------------------------------------------

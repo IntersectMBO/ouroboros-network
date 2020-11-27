@@ -2,7 +2,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Consensus.Node.DbLock (
+module Ouroboros.Node.DbLock (
     DbLocked (..)
   , withLockDB
     -- * Defaults
@@ -15,9 +15,10 @@ module Ouroboros.Consensus.Node.DbLock (
 import           Control.Monad.Class.MonadTimer
 import qualified Data.Time.Clock as Time
 
-import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.FileLock
 import           Ouroboros.Consensus.Util.IOLike
+
+import           Ouroboros.Consensus.Storage.FS.API.Types
 
 -- | We use an empty file ('dbLockFsPath') as a lock of the database so that
 -- the database cannot be opened by more than one process. We wait up to

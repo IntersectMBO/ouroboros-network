@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Node.InitStorage (
-    NodeInitStorage (..)
+module Ouroboros.Consensus.Storage.Init (
+    StorageInit (..)
   ) where
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -8,13 +8,13 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 
--- | Functionality needed to initialise the storage layer of the node.
-class NodeInitStorage blk where
+-- | Functionality needed to initialise the storage layer.
+class StorageInit blk where
   -- | The 'ChunkInfo' to use for the ImmutableDB, i.e., how many slots to put
   -- together in a single chunk file.
   --
   -- For example, for Byron, one would use the epoch size.
-  nodeImmutableDbChunkInfo :: StorageConfig blk -> ChunkInfo
+  immutableDbChunkInfo :: StorageConfig blk -> ChunkInfo
 
   -- | Check the integrity of a block, i.e., that it has not been corrupted by
   -- a bitflip.
@@ -25,7 +25,7 @@ class NodeInitStorage blk where
   -- This does not check the validity of the contents of the block, e.g.,
   -- whether the transactions are valid w.r.t. the ledger, or whether it's
   -- sent by a malicious node.
-  nodeCheckIntegrity :: StorageConfig blk -> blk -> Bool
+  checkIntegrity :: StorageConfig blk -> blk -> Bool
 
   -- | This function is called when starting up the node, right after the
   -- ChainDB was opened, and before we connect to other nodes and start block
@@ -38,5 +38,5 @@ class NodeInitStorage blk where
   -- useful for the definition of combinators (which may need to turn a
   -- 'InitChainDB' for one type of block into an 'InitChainDB' for a closely
   -- related type of block).
-  nodeInitChainDB :: IOLike m => StorageConfig blk -> InitChainDB m blk -> m ()
-  nodeInitChainDB _ _ = return ()
+  initChainDB :: IOLike m => StorageConfig blk -> InitChainDB m blk -> m ()
+  initChainDB _ _ = return ()

@@ -16,7 +16,7 @@
 -- encoder from the decoder, because the reasons don't apply: we always need
 -- both directions and we don't have access to the bytestrings that could be
 -- used for the annotations (we use CBOR-in-CBOR in those cases).
-module Ouroboros.Consensus.Node.Serialisation (
+module Ouroboros.Node.Serialisation (
     SerialiseNodeToNode (..)
   , SerialiseNodeToClient (..)
   , SerialiseResult (..)
@@ -38,8 +38,9 @@ import           Ouroboros.Chain.Util (Some (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
+
+import           Ouroboros.Node.NetworkProtocolVersion
 
 {-------------------------------------------------------------------------------
   NodeToNode
