@@ -89,11 +89,10 @@ executable db-converter
                      , cardano-ledger
                      , cardano-slotting
                      , directory
+                     , filepath
                      , mtl
                      , optparse-applicative
                      , optparse-generic
-                     , path < 0.7
-                     , path-io
                      , resourcet
                      , streaming
                      , text
