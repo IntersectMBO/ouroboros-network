@@ -418,11 +418,15 @@ localAddressFromPath = LocalAddress
 -- | Socket file descriptor.
 --
 newtype FileDescriptor = FileDescriptor { getFileDescriptor :: Int }
-  deriving (Eq, Generic)
+  deriving Generic
   deriving Show via Quiet FileDescriptor
 
+-- | We use 'unsafeFdSocket' but 'FileDescriptor' constructor is not exposed.
+-- This forbids any usage of 'FileDescriptor' (at least in a straightforward
+-- way) using any low level functions which operate on file descriptors.
+--
 socketFileDescriptor :: Socket -> IO FileDescriptor
-socketFileDescriptor = fmap (FileDescriptor . fromIntegral) . Socket.socketToFd
+socketFileDescriptor = fmap (FileDescriptor . fromIntegral) . Socket.unsafeFdSocket
 
 localSocketFileDescriptor :: LocalSocket -> IO FileDescriptor
 #if defined(mingw32_HOST_OS)
