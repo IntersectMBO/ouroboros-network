@@ -52,6 +52,7 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * new 'KeepAlive' codec
+    -- * Enable full duplex connections.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
