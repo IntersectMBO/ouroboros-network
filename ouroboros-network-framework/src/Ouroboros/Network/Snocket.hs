@@ -41,7 +41,6 @@ import           Network.Socket ( Family (AF_UNIX) )
 import           Network.Socket ( Socket
                                 , SockAddr (..)
                                 )
-import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
 import           Data.Bits
 import           Foreign.Ptr (IntPtr (..), ptrToIntPtr)
@@ -51,6 +50,7 @@ import qualified System.Win32.Async      as Win32.Async
 
 import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
+import qualified Network.Socket as Socket
 
 import           Network.Mux.Types (MuxBearer)
 import           Network.Mux.Trace (MuxTrace)
