@@ -1005,6 +1005,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- see #1882, tests that can't cope with timeouts.
                   (pure $ NTN.ChainSyncTimeout
                      { canAwaitTimeout  = waitForever
+                     , intersectTimeout = waitForever
                      , mustReplyTimeout = waitForever
                      })
                   (NTN.mkHandlers nodeKernelArgs nodeKernel)
