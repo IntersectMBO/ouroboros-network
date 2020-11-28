@@ -574,6 +574,7 @@ stdChainSyncTimeout = do
     mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
     return NTN.ChainSyncTimeout
       { canAwaitTimeout  = shortWait
+      , intersectTimeout = shortWait
       , mustReplyTimeout
       }
   where
