@@ -41,7 +41,6 @@ import           Network.Socket ( Family (AF_UNIX) )
 import           Network.Socket ( Socket
                                 , SockAddr (..)
                                 )
-import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
 import           Data.Bits
 import           Foreign.Ptr (IntPtr (..), ptrToIntPtr)
@@ -51,12 +50,14 @@ import qualified System.Win32.Async      as Win32.Async
 
 import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
+import qualified Network.Socket as Socket
 
 import           Network.Mux.Types (MuxBearer)
 import           Network.Mux.Trace (MuxTrace)
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.IOManager
+import qualified Ouroboros.Network.Linger as Linger
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting
@@ -189,6 +190,7 @@ data Snocket m fd addr = Snocket {
   , accept        :: fd -> Accept m fd addr
 
   , close         :: fd -> m ()
+  , reset         :: fd -> m ()
 
   , toBearer      ::  DiffTime -> Tracer m MuxTrace -> fd -> MuxBearer m
   }
@@ -254,6 +256,7 @@ socketSnocket ioManager = Snocket {
     , listen   = \s -> Socket.listen s 8
     , accept   = berkeleyAccept ioManager
     , close    = Socket.close
+    , reset    = Linger.reset
     , toBearer = Mx.socketAsMuxBearer
     }
   where
@@ -346,6 +349,7 @@ localSnocket ioManager path = Snocket {
           return (sock, localAddress, acceptNext)
 
     , close    = Win32.closeHandle . getLocalHandle
+    , reset    = Win32.closeHandle . getLocalHandle
 
     , toBearer = \_sduTimeout tr -> namedPipeAsBearer tr . getLocalHandle
     }
@@ -386,6 +390,7 @@ localSnocket ioManager _ =
       , open          = openSocket
       , openToConnect = \_addr -> openSocket LocalFamily
       , close         = Socket.close . getLocalHandle
+      , reset         = Linger.reset . getLocalHandle
       , toBearer      = \df tr (LocalSocket sd) -> Mx.socketAsMuxBearer df tr sd
       }
   where

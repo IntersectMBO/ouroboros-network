@@ -263,6 +263,7 @@ mkSnocket (AllocateError e) _localAddr _remoteAddr = Snocket {
   , listen = \_ -> pure ()
   , accept = \_ -> error "not supported"
   , close = \_ -> pure ()
+  , reset = \_ -> pure ()
   , toBearer = \_ _ -> error "not supported"
   }
 mkSnocket (ConnectError e) localAddr remoteAddr = Snocket {
@@ -276,6 +277,7 @@ mkSnocket (ConnectError e) localAddr remoteAddr = Snocket {
   , bind = \_ _ -> pure ()
   , listen = \_ -> pure ()
   , close = \_ -> pure ()
+  , reset = \_ -> pure ()
   , toBearer = \_ _ -> error "not supported"
   }
 mkSnocket WorkingSnocket localAddr remoteAddr = Snocket {
@@ -289,6 +291,7 @@ mkSnocket WorkingSnocket localAddr remoteAddr = Snocket {
   , listen = \_ -> pure ()
   , accept = \_ -> error "not supported"
   , close = \_ -> pure ()
+  , reset = \_ -> pure ()
   , toBearer = \_ _ -> error "not supported"
   }
 
