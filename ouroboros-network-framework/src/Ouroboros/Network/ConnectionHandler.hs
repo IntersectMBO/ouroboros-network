@@ -47,15 +47,12 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (void)
-import           Data.Foldable (traverse_)
 import           Data.Typeable (Typeable)
 
 import           Network.Mux hiding (miniProtocolNum)
 
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.ConnectionManager.Types
@@ -191,11 +188,18 @@ makeConnectionHandler
     -> MiniProtocolBundle muxMode
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
                           (OuroborosBundle muxMode peerAddr ByteString m a b)
+    -> (versionNumber -> versionData -> DataFlow)
+    -> (ConnectionId peerAddr -> Handle muxMode peerAddr ByteString m a b -> m ())
+    -- ^ This method allows to pass control over responders to the server (for
+    -- outbound connections), see
+    -- 'Ouroboros.Network.ConnectionManager.Server.ControlChannel.newOutboundConnection'.
     -> (ThreadId m, RethrowPolicy)
     -> MuxConnectionHandler muxMode peerAddr versionNumber versionData ByteString m a b
 makeConnectionHandler muxTracer singMuxMode
                       miniProtocolBundle
                       handshakeArguments
+                      dataFlowTypeFn
+                      announceOutboundConnection
                       (mainThreadId, rethrowPolicy) =
     ConnectionHandler $
       case singMuxMode of
@@ -257,16 +261,9 @@ makeConnectionHandler muxTracer singMuxMode
               -- This is, in a sense, a no man land: the server will not act, as
               -- it's only reacting to inbound connections, and it also does not
               -- belong to initiator (peer-2-peer governor).
-              case (singMuxMode, muxApp) of
-                (SInitiatorResponderMode,
-                 Bundle (WithHot hotPtcls)
-                        (WithWarm warmPtcls)
-                        (WithEstablished establishedPtcls)) -> do
-                  -- TODO: #2221 restart responders
-                  traverse_ (runResponder mux) hotPtcls
-                  traverse_ (runResponder mux) warmPtcls
-                  traverse_ (runResponder mux) establishedPtcls
-
+              case (singMuxMode, dataFlowTypeFn versionNumber agreedOptions) of
+                (SInitiatorResponderMode, Duplex) ->
+                  announceOutboundConnection connectionId handle
                 _ -> pure ()
 
               runMux (WithMuxBearer connectionId `contramap` muxTracer)
@@ -353,22 +350,6 @@ makeConnectionHandler muxTracer singMuxMode
             ShutdownNode -> throwTo mainThreadId (ExceptionInHandler remoteAddress e)
                          >> throwIO e
             ShutdownPeer -> throwIO e)
-
-
-    runResponder :: Mux InitiatorResponderMode m
-                 -> MiniProtocol InitiatorResponderMode ByteString m a b -> m ()
-    runResponder mux MiniProtocol {
-                        miniProtocolNum,
-                        miniProtocolRun
-                      } =
-        case miniProtocolRun of
-          InitiatorAndResponderProtocol _ responder ->
-            void $
-              runMiniProtocol
-                mux miniProtocolNum
-                ResponderDirection
-                StartOnDemand
-                (runMuxPeer responder . fromChannel)
 
 
 --

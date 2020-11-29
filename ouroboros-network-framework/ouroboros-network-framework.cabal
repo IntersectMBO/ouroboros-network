@@ -44,6 +44,8 @@ library
                        Ouroboros.Network.ConnectionHandler
                        Ouroboros.Network.ConnectionManager.Types
                        Ouroboros.Network.ConnectionManager.Core
+                       Ouroboros.Network.ConnectionManager.Server
+                       Ouroboros.Network.ConnectionManager.Server.ControlChannel
                        Ouroboros.Network.RethrowPolicy
                        Ouroboros.Network.HasIPAddress
                        Ouroboros.Network.Server.ConnectionTable
@@ -72,6 +74,7 @@ library
                      , hashable
                      , mtl
                      , nothunks
+                     , random
                      , stm
                      , text
                      , time
