@@ -116,6 +116,7 @@ test-suite test
                        Network.TypedProtocol.ReqResp.Codec.CBOR
                        Test.Network.TypedProtocol.PingPong.Codec
                        Test.Network.TypedProtocol.ReqResp.Codec
+                       Test.Ouroboros.Network.ConnectionManager.Server
                        Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.Socket
@@ -138,6 +139,7 @@ test-suite test
                      , tasty
                      , tasty-quickcheck
 
+                     , cardano-prelude
                      , contra-tracer
 
                      , io-sim
