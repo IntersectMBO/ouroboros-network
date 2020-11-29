@@ -14,7 +14,7 @@
 -- `ShowProxy (ReqResp req resp)` is an orphaned instance
 {-# OPTIONS_GHC -Wno-orphans               #-}
 
-module Test.Ouroboros.Network.ConnectionManager.Server
+module Test.Ouroboros.Network.Server2
   ( tests
   ) where
 
@@ -77,9 +77,9 @@ import           Ouroboros.Network.Util.ShowProxy
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.ConnectionManager.Server"
+  testGroup "Ouroboros.Network.Server2"
   [ testProperty "unidirectional_IO" (withMaxSuccess 10 prop_unidirectional_IO)
-  , testProperty "bidirectional_IO"  (withMaxSuccess 10 prop_bidirectional_IO)
+  , testProperty "bidirectional_IO"  prop_bidirectional_IO
   ]
 
 instance ShowProxy (ReqResp req resp) where
@@ -212,6 +212,8 @@ withInitiatorOnlyConnectionManager
     => String
     -- ^ identifier (for logging)
     -> Snocket m socket peerAddr
+    -> Bool
+    -- ^ use compat mode
     -> ClientAndServerData req resp acc
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
@@ -221,7 +223,7 @@ withInitiatorOnlyConnectionManager
        -> m a)
     -> m a
 withInitiatorOnlyConnectionManager
-    name snocket
+    name snocket compatMode
     ClientAndServerData {
         hotInitiatorRequests,
         warmInitiatorRequests,
@@ -239,7 +241,7 @@ withInitiatorOnlyConnectionManager
     withConnectionManager
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
-          cmTracer    = (name,) `contramap` debugTracer,
+          cmTracer    = (name,) `contramap` connectionManagerTracer,
          -- MuxTracer
           cmMuxTracer = muxTracer,
           cmIPv4Address = Nothing,
@@ -254,7 +256,7 @@ withInitiatorOnlyConnectionManager
               acceptedConnectionsDelay     = 0
             },
           cmWaitTimeTimeout = waitTimeTimeout,
-          cmInactivityTimeout = inactivityTimeout
+          cmProtocolIdleTimeout = protocolIdleTimeout
         }
       (makeConnectionHandler
         muxTracer
@@ -272,6 +274,7 @@ withInitiatorOnlyConnectionManager
                 establishedRequestsVar),
             haAcceptVersion = acceptableVersion
           }
+        (\_ -> compatMode)
         (mainThreadId, muxErrorRethrowPolicy <> ioErrorRethrowPolicy))
       (\_ -> HandshakeFailure)
       NotInResponderMode
@@ -360,11 +363,39 @@ withInitiatorOnlyConnectionManager
             pure $ 
               reqRespClientPeer (reqRespClientMap reqs)))
 
+
+--
+-- Constants
+--
+
+respondersIdleTimeout :: DiffTime
+respondersIdleTimeout = 0.1
+
+protocolIdleTimeout :: DiffTime
+protocolIdleTimeout = 0.1
+
 waitTimeTimeout :: DiffTime
 waitTimeTimeout = 0.1
 
-inactivityTimeout :: DiffTime
-inactivityTimeout = 0.1
+
+-- 
+-- Rethrow policy
+--
+
+debugMuxErrorRethrowPolicy :: RethrowPolicy
+debugMuxErrorRethrowPolicy =
+    mkRethrowPolicy $
+      \_ MuxError { errorType } ->
+        case errorType of
+          MuxIOException _ -> ShutdownPeer
+          MuxBearerClosed  -> ShutdownPeer
+          _                -> ShutdownNode
+
+debugIOErrorRethrowPolicy :: RethrowPolicy
+debugIOErrorRethrowPolicy =
+    mkRethrowPolicy $
+      \_ (_ :: IOError) -> ShutdownNode
+
 
 -- | Runs an example server which runs a single 'ReqResp' protocol for any hot
 -- \/ warm \/ established peers and also gives access to bidirectional
@@ -392,6 +423,8 @@ withBidirectionalConnectionManager
     -> Snocket m socket peerAddr
     -> socket
     -- ^ listening socket
+    -> Bool
+    -- ^ compat mode
     -> Maybe peerAddr
     -> ClientAndServerData req resp acc
     -- ^ series of request possible to do with the bidirectional connection
@@ -402,7 +435,7 @@ withBidirectionalConnectionManager
        -> peerAddr
        -> m a)
     -> m a
-withBidirectionalConnectionManager name snocket socket localAddress
+withBidirectionalConnectionManager name snocket socket compatMode localAddress
                                    ClientAndServerData {
                                        responderAccumulatorFn,
                                        hotResponderAccumulator,
@@ -431,22 +464,22 @@ withBidirectionalConnectionManager name snocket socket localAddress
     withConnectionManager
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
-          cmTracer       = ((name,) `contramap` debugTracer),
+          cmTracer       = ((name,) `contramap` connectionManagerTracer),
           -- MuxTracer
           cmMuxTracer    = muxTracer,
           cmIPv4Address  = localAddress,
           cmIPv6Address  = Nothing,
           cmAddressType  = \_ -> Just IPv4Address,
           cmSnocket      = snocket,
+          cmProtocolIdleTimeout = protocolIdleTimeout,
+          cmWaitTimeTimeout = waitTimeTimeout,
           connectionDataFlow = const Duplex,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0
-            },
-          cmWaitTimeTimeout = waitTimeTimeout,
-          cmInactivityTimeout = inactivityTimeout
+            }
         }
         (makeConnectionHandler
           muxTracer
@@ -467,7 +500,9 @@ withBidirectionalConnectionManager name snocket socket localAddress
                               establishedAccumulatorVar),
               haAcceptVersion = acceptableVersion
             }
-          (mainThreadId, muxErrorRethrowPolicy <> ioErrorRethrowPolicy))
+          (\_ -> compatMode)
+          (mainThreadId,   debugMuxErrorRethrowPolicy
+                        <> debugIOErrorRethrowPolicy))
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovControlChannel)
       $ \connectionManager -> do
@@ -478,10 +513,10 @@ withBidirectionalConnectionManager name snocket socket localAddress
                     serverHasInitiator = SingHasInitiator,
                     serverSockets = socket :| [],
                     serverSnocket = snocket,
-                    serverTracer = (name,) `contramap` debugTracer, -- ServerTrace
+                    serverTracer = (name,) `contramap` nullTracer, -- ServerTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
-                    serverProtocolIdleTimeout = 0.5,
+                    serverRespondersIdleTimeout = respondersIdleTimeout,
                     serverControlChannel = inbgovControlChannel,
                     serverObservableStateVar = observableStateVar
                   }
@@ -646,7 +681,11 @@ runInitiatorProtocols
     -> Mux.Mux muxMode m
     -> MuxBundle muxMode ByteString m a b
     -> m (Bundle [a])
-runInitiatorProtocols singMuxMode mux (Bundle (WithHot hotPtcls) (WithWarm warmPtcls) (WithEstablished establishedPtcls)) = do
+runInitiatorProtocols
+    singMuxMode mux
+    (Bundle (WithHot hotPtcls)
+            (WithWarm warmPtcls)
+            (WithEstablished establishedPtcls)) = do
       -- start all protocols
       hotSTMs <- traverse runInitiator hotPtcls
       warmSTMs <- traverse runInitiator warmPtcls
@@ -707,25 +746,32 @@ unidirectionalExperiment
        )
     => Snocket m socket peerAddr
     -> socket
+    -> Bool -- ^ compat mode
     -> ClientAndServerData req resp acc
     -> m Property
-unidirectionalExperiment snocket socket clientAndServerData = do
+unidirectionalExperiment snocket socket compatMode clientAndServerData = do
     withInitiatorOnlyConnectionManager
-      "client" snocket clientAndServerData
+      "client" snocket compatMode clientAndServerData
       $ \connectionManager ->
         withBidirectionalConnectionManager
-          "server" snocket socket Nothing clientAndServerData
+          "server" snocket socket compatMode Nothing clientAndServerData
           $ \_ serverAddr -> do
             -- client → server: connect
             ( resp0 :: Bundle [[resp]]) <-
               fold <$>
                 replicateM
                   (numberOfRounds clientAndServerData)
-                  (do connHandle <- includeOutboundConnection connectionManager serverAddr
+                  (do connHandle
+                        <- requestOutboundConnection
+                             connectionManager serverAddr
                       case connHandle of
-                        Connected _ _ (Handle mux muxBundle _) -> do
-                          res <- runInitiatorProtocols SingInitiatorMode mux muxBundle
-                          _ <- unregisterOutboundConnection connectionManager serverAddr
+                        Connected _ _ (Handle mux muxBundle _ _) -> do
+                          res <-
+                            runInitiatorProtocols
+                              SingInitiatorMode mux muxBundle
+                          _ <-
+                            unregisterOutboundConnection
+                              connectionManager serverAddr
                           return res
                         Disconnected _ err ->
                           throwIO (userError $ "unidirectionalExperiment: " ++ show err)
@@ -738,10 +784,11 @@ unidirectionalExperiment snocket socket clientAndServerData = do
 
 prop_unidirectional_IO
   :: ClientAndServerData Int Int Int
+  -> Bool
+  -- ^ compat mode
   -> Property
-prop_unidirectional_IO clientAndServerData =
+prop_unidirectional_IO clientAndServerData compatMode =
     ioProperty $ do
-      -- threadDelay (0.100)
       withIOManager $ \iomgr ->
         bracket
           (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
@@ -754,6 +801,7 @@ prop_unidirectional_IO clientAndServerData =
               unidirectionalExperiment
                 (socketSnocket iomgr)
                 socket
+                compatMode
                 clientAndServerData
 
 
@@ -785,15 +833,15 @@ bidirectionalExperiment
     snocket socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
       lock <- newTMVarIO ()
-      -- connect lock: only one side can run 'includeOutboundConnection' in
-      -- turn.  Otherwise when both sides call 'includeOutboundConnection' they
+      -- connect lock: only one side can run 'requestOutboundConnection' in
+      -- turn.  Otherwise when both sides call 'requestOutboundConnection' they
       -- both will run 'connect' and one of the calls will fail.  Using a lock
       -- forces to block until negotiation is done, which is not ideal.
       withBidirectionalConnectionManager
-        "node-0" snocket socket0 (Just localAddr0) clientAndServerData0
+        "node-0" snocket socket0 False (Just localAddr0) clientAndServerData0
         (\connectionManager0 _serverAddr0 ->
           withBidirectionalConnectionManager
-            "node-1" snocket socket1 (Just localAddr1) clientAndServerData1
+            "node-1" snocket socket1 False (Just localAddr1) clientAndServerData1
             (\connectionManager1 _serverAddr1 -> do
               -- runInitiatorProtcols returns a list of results per each
               -- protocol in each bucket (warm \/ hot \/ established); but
@@ -808,20 +856,25 @@ bidirectionalExperiment
                             (numberOfRounds clientAndServerData0)
                             (do connHandle <-
                                   withLock lock $
-                                    includeOutboundConnection connectionManager0 localAddr1
+                                    requestOutboundConnection connectionManager0 localAddr1
                                 case connHandle of
-                                  Connected _ _ (Handle mux muxBundle _) -> do
-                                    res <- runInitiatorProtocols SingInitiatorResponderMode mux muxBundle
-                                    res' <- unregisterOutboundConnection
-                                           connectionManager0 localAddr1
+                                  Connected _ _ (Handle mux muxBundle _ _) -> do
+                                    res <-
+                                      runInitiatorProtocols
+                                        SingInitiatorResponderMode
+                                        mux muxBundle
+                                    res' <-
+                                      unregisterOutboundConnection
+                                        connectionManager0 localAddr1
                                     case res' of
                                       UnsupportedState inState ->
                                         throwIO
                                           (userError
-                                            $ "bidirectionalExperiment: unregigisterOutboundConnection "
-                                            ++ show inState)
+                                            . concat
+                                            $ [ "bidirectionalExperiment: unregigisterOutboundConnection "
+                                              , show inState
+                                              ])
                                       OperationSuccess _ -> return ()
-                                    threadDelay (waitTimeTimeout + 1)
                                     return res
                                   Disconnected _ err ->
                                     throwIO (userError $ "bidirectionalExperiment: " ++ show err)
@@ -831,21 +884,25 @@ bidirectionalExperiment
                              (numberOfRounds clientAndServerData1)
                              (do connHandle <-
                                    withLock lock $
-                                     includeOutboundConnection connectionManager1 localAddr0
+                                     requestOutboundConnection connectionManager1 localAddr0
                                  case connHandle of
-                                   Connected _ _ (Handle mux muxBundle _) -> do
+                                   Connected _ _ (Handle mux muxBundle _ _) -> do
                                      res <-
-                                       runInitiatorProtocols SingInitiatorResponderMode mux muxBundle
-                                     res' <- unregisterOutboundConnection
-                                            connectionManager1 localAddr0
+                                       runInitiatorProtocols
+                                         SingInitiatorResponderMode
+                                         mux muxBundle
+                                     res' <-
+                                       unregisterOutboundConnection
+                                         connectionManager1 localAddr0
                                      case res' of
                                        UnsupportedState inState ->
                                          throwIO
                                            (userError
-                                             $ "bidirectionalExperiment: unregigisterInboundConnection "
-                                             ++ show inState)
+                                             . concat
+                                             $ [ "bidirectionalExperiment: unregigisterInboundConnection "
+                                               , show inState
+                                               ])
                                        OperationSuccess _ -> return ()
-                                     threadDelay (waitTimeTimeout + 1)
                                      return res
                                    Disconnected _ err ->
                                      throwIO (userError $ "bidirectionalExperiment: " ++ show err)
@@ -883,35 +940,28 @@ prop_bidirectional_IO data0 data1 =
             Socket.setSocketOption socket0 Socket.ReusePort 1
             Socket.setSocketOption socket1 Socket.ReusePort 1
 #endif
-            addr0 : _ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6010")
-            addr1 : _ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6011")
+            -- TODO: use ephemeral ports
+            let hints = Socket.defaultHints { Socket.addrFlags = [Socket.AI_ADDRCONFIG, Socket.AI_PASSIVE] }
+            addr0 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "6000")
+            addr1 : _ <- Socket.getAddrInfo (Just hints) (Just "172.16.0.1") (Just "6001")
             Socket.bind socket0 (Socket.addrAddress addr0)
             Socket.bind socket1 (Socket.addrAddress addr1)
             Socket.listen socket0 10
             Socket.listen socket1 10
             localAddr0 <- Socket.getSocketName socket0
             localAddr1 <- Socket.getSocketName socket1
-            -- we need to make a dance with addresses; when a connection is
-            -- accepted the remote `Socket.SockAddr` will be `127.0.0.1:port`
-            -- rather than `0.0.0.0:port`.  If we pass `0.0.0.0:port` the
-            -- then the connection would not be found by the connection manager
-            -- and creating a socket would fail as we would try to create
-            -- a connection with the same quadruple as an existing connection.
-            let localAddr0' = case localAddr0 of
-                  Socket.SockAddrInet port _ ->
-                    Socket.SockAddrInet port (Socket.tupleToHostAddress (127,0,0,1))
-                  _ -> error "unexpected address"
-
-                localAddr1' = case localAddr1 of
-                  Socket.SockAddrInet port _ ->
-                    Socket.SockAddrInet port (Socket.tupleToHostAddress (127,0,0,1))
-                  _ -> error "unexpected address"
+            print (Socket.addrAddress addr0, Socket.addrAddress addr1)
+            print (localAddr0, localAddr1)
+            print (socket0, socket1)
 
             bidirectionalExperiment
               (socketSnocket iomgr)
-              socket0     socket1
-              localAddr0' localAddr1'
-              data0       data1
+              socket0
+              socket1
+              (Socket.addrAddress addr0)
+              (Socket.addrAddress addr1)
+              data0
+              data1
 
 
 --
@@ -941,6 +991,9 @@ withLock :: ( MonadSTM   m
          => StrictTMVar m ()
          -> m a
          -> m a
+withLock _ m = m
+{-
 withLock v m = do
     atomically $ takeTMVar v
     m `finally` atomically (putTMVar v ())
+-}
