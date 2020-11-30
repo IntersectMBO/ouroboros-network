@@ -2,17 +2,19 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
     LedgerSupportsPeerSelection (..)
   , PoolStake
   , StakePoolRelay (..)
-  , stakePoolRelayDomainAddress
+  , stakePoolRelayAddress
     -- * Re-exports for convenience
+  , RelayAddress (..)
   , DomainAddress (..)
-  , Domain
+  , IP (..)
   , PortNumber
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)
 
-import           Ouroboros.Network.PeerSelection.RootPeersDNS (Domain,
-                     DomainAddress (..), PortNumber)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (DomainAddress (..), IP (..), PortNumber,
+                     RelayAddress (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 
@@ -22,15 +24,15 @@ type PoolStake = Rational
 -- | A relay registered for a stake pool
 data StakePoolRelay =
     -- | One of the current relays
-    CurrentRelay DomainAddress
+    CurrentRelay RelayAddress
 
     -- | One of the future relays
-  | FutureRelay  DomainAddress
+  | FutureRelay  RelayAddress
   deriving (Show, Eq)
 
-stakePoolRelayDomainAddress :: StakePoolRelay -> DomainAddress
-stakePoolRelayDomainAddress (CurrentRelay da) = da
-stakePoolRelayDomainAddress (FutureRelay  da) = da
+stakePoolRelayAddress :: StakePoolRelay -> RelayAddress
+stakePoolRelayAddress (CurrentRelay ra) = ra
+stakePoolRelayAddress (FutureRelay  ra) = ra
 
 class LedgerSupportsPeerSelection blk where
   -- | Return peers registered in the ledger ordered by descending 'PoolStake'.

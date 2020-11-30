@@ -13,6 +13,8 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     -- * DNS based provider for local root peers
     localRootPeersProvider,
     DomainAddress (..),
+    RelayAddress (..),
+    IP.IP (..),
     TraceLocalRootPeers(..),
 
     -- * DNS based provider for public root peers
@@ -23,7 +25,6 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     DNS.ResolvConf,
     DNS.Domain,
     DNS.TTL,
-    IPv4,
 
     -- * Socket type re-exports
     Socket.PortNumber,
@@ -58,6 +59,12 @@ import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Types
 
+-- | A relay can have either an IP address and a port number or
+-- a domain with a port number.
+-- TODO: move to a Ledger Peer file.
+data RelayAddress = RelayAddressDomain DomainAddress
+                  | RelayAddressAddr IP.IP Socket.PortNumber
+                  deriving (Show, Eq, Ord)
 
 -- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
 -- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
