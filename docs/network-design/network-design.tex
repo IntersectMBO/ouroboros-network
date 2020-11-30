@@ -746,7 +746,7 @@ ordered in the same order as the blocks appear in the chain. We take
 advantage of this, in particular in the implementation of in-memory
 fragments\footnote{The in-memory chain fragment data structure is used
   throughout the network and consensus layers. It is briefly covered in
-  \cref{chain-fragments}. The
+  \cref{anchored-fragments}. The
   implementation represents the sequence of headers using a
   \href{http://www.staff.city.ac.uk/~ross/papers/FingerTree.html}{{finger
   tree}} data structure that is instantiated for block headers such as
@@ -5034,12 +5034,12 @@ handle various deployment scenarios as well as internal usage - we plan
 to use it not only in a decentralised setting but also to subscribe
 clients (wallets, explorers) over a local bearer to a node.
 
-\subparagraph{Chain Fragments}
-\label{chain-fragments}
+\subparagraph{Anchored Fragments}
+\label{anchored-fragments}
 
 This is a small part of the Ouroboros-Network package which implements
-efficient chain data structure: `ChainFragment` and `AnchoredChain`.
-They are hidden at the bottom of the stack since they are useful in
+an efficient chain data structure: `AnchoredFragment`.
+It is hidden at the bottom of the stack since it is useful in the
 `BlockFetch` component and in various \emph{Ouroboros-Network} tests.
 
 The implementation represents the sequence of headers using a

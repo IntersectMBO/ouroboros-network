@@ -51,7 +51,6 @@ library
                        Ouroboros.Network.BlockFetch.Decision
                        Ouroboros.Network.BlockFetch.DeltaQ
                        Ouroboros.Network.BlockFetch.State
-                       Ouroboros.Network.ChainFragment
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Diffusion
                        Ouroboros.Network.KeepAlive
@@ -248,7 +247,6 @@ test-suite test
 
                        Test.AnchoredFragment
                        Test.Chain
-                       Test.ChainFragment
                        Test.Ouroboros.Network.Utils
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive

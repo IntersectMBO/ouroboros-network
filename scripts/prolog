@@ -47,7 +47,6 @@ This site contains Haskell documentation of
            to be aware of:/
 
               * __[Block](ouroboros-network/Ouroboros-Network-Block.html)__
-              * __[ChainFramgent](ouroboros-network/Ouroboros-Network-ChainFragment.html)__
               * __[AnchoredFragment](ouroboros-network/Ouroboros-Network-AnchoredFragment.html)__
 
          * /Network applications:/

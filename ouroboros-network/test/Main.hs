@@ -5,7 +5,6 @@ import           Test.Tasty
 import qualified Test.AnchoredFragment (tests)
 import qualified Test.ChainGenerators (tests)
 import qualified Test.Chain (tests)
-import qualified Test.ChainFragment (tests)
 import qualified Test.ChainProducerState (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.PeerState (tests)
@@ -36,7 +35,6 @@ tests =
     -- data structures
   [ Test.ChainGenerators.tests
   , Test.Chain.tests
-  , Test.ChainFragment.tests
   , Test.AnchoredFragment.tests
   , Test.ChainProducerState.tests
 

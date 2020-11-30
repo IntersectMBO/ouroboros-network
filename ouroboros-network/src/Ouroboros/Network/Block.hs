@@ -477,7 +477,7 @@ decodePoint decodeHash = do
   Finger Tree Measure
 -------------------------------------------------------------------------------}
 
--- | The measure used for 'Ouroboros.Network.ChainFragment.ChainFragment'.
+-- | The measure used for 'Ouroboros.Network.AnchoredFragment.AnchoredFragment'.
 data BlockMeasure = BlockMeasure {
        bmMinSlot :: !SlotNo,
        bmMaxSlot :: !SlotNo,
