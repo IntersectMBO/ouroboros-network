@@ -41,6 +41,19 @@ data TraceBlockchainTimeEvent =
     -- current time and the upper bound should rapidly decrease with consecutive
     -- 'TraceCurrentSlotUnknown' messages during syncing.
   | TraceCurrentSlotUnknown UTCTime PastHorizonException
+
+    -- | The system clock moved back an acceptable time span, e.g., because of
+    -- an NTP sync.
+    --
+    -- The system clock moved back such that the new current slot would be
+    -- smaller than the previous one. If this is within the configured limit, we
+    -- trace this warning but *do not change the current slot*. The current slot
+    -- never decreases, but the current slot may stay the same longer than
+    -- expected.
+    --
+    -- When the system clock moved back more than the configured limit, we shut
+    -- down with a fatal exception.
+  | TraceSystemClockMovedBack UTCTime UTCTime
   deriving (Show)
 
 {-------------------------------------------------------------------------------

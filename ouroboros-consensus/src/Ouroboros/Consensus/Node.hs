@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
@@ -99,6 +100,7 @@ import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -272,11 +274,17 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           , hfbtSystemTime     = systemTime
           , hfbtTracer         =
               contramap
-                (\(t, ex) ->
-                    TraceCurrentSlotUnknown
-                      (fromRelativeTime systemStart t)
-                      ex)
+                (\case
+                   UnknownCurrentSlot t ex ->
+                     TraceCurrentSlotUnknown
+                       (fromRelativeTime systemStart t)
+                       ex
+                   SystemClockMovedBackABit oldT newT ->
+                     TraceSystemClockMovedBack
+                       (fromRelativeTime systemStart oldT)
+                       (fromRelativeTime systemStart newT))
                 (blockchainTimeTracer rnTraceConsensus)
+          , hfbtMaxClockRewind = secondsToNominalDiffTime 20
           }
 
       nodeKernelArgs <-

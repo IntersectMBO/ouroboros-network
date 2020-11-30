@@ -1,13 +1,13 @@
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
-    BackoffDelay (..),
-    HardForkBlockchainTimeArgs (..),
-    hardForkBlockchainTime,
+    BackoffDelay (..)
+  , HardForkBlockchainTimeArgs (..)
+  , hardForkBlockchainTime
+  , HardForkBlockchainTimeEvent (..)
   ) where
 
 import           Control.Monad
@@ -47,6 +47,18 @@ import           Ouroboros.Consensus.Util.Time
 -- incur computational overhead.)
 newtype BackoffDelay = BackoffDelay NominalDiffTime
 
+-- | Events traced by 'hardForkBlockchainTime'
+data HardForkBlockchainTimeEvent =
+    -- | The current slot is unknown
+    UnknownCurrentSlot RelativeTime HF.PastHorizonException
+
+    -- | The system clock moved back a bit, but less than 'hfbtMaxClockRewind',
+    -- e.g., because of an NTP sync. This is acceptable.
+    --
+    -- We include the old and the new time.
+  | SystemClockMovedBackABit RelativeTime RelativeTime
+  deriving (Show)
+
 data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
   { hfbtBackoffDelay   :: m BackoffDelay
     -- ^ See 'BackoffDelay'
@@ -54,8 +66,18 @@ data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
   , hfbtLedgerConfig   :: LedgerConfig blk
   , hfbtRegistry       :: ResourceRegistry m
   , hfbtSystemTime     :: SystemTime m
-  , hfbtTracer         :: Tracer m (RelativeTime, HF.PastHorizonException)
-    -- ^ Tracer used when current slot is unknown
+  , hfbtTracer         :: Tracer m HardForkBlockchainTimeEvent
+  , hfbtMaxClockRewind :: NominalDiffTime
+    -- ^ Maximum time the clock can be rewound without throwing a fatal
+    -- 'SystemClockMovedBack' exception.
+    --
+    -- When the slot length is short, e.g., Praos' 1s compared to PBFT's 20s,
+    -- the chances of an NTP sync causing the clock to go back to the previous
+    -- slot increase.
+    --
+    -- We allow the system clock to rewind up to 'hfbtMaxClockRewind', tracing a
+    -- 'SystemClockMovedBackABit' message in such cases. Note that the current
+    -- slot *never decreases*, we just wait a bit longer in the same slot.
   }
 
 -- | 'BlockchainTime' instance with support for the hard fork history
@@ -70,10 +92,10 @@ hardForkBlockchainTime args = do
     run <- HF.runWithCachedSummary (summarize <$> getLedgerState)
     systemTimeWait
 
-    (firstSlot, firstDelay) <- getCurrentSlot' tracer time run backoffDelay
+    (firstSlot, now, firstDelay) <- getCurrentSlot' tracer time run backoffDelay
     slotVar <- newTVarIO firstSlot
     void $ forkLinkedThread registry "hardForkBlockchainTime" $
-             loop run slotVar firstSlot firstDelay
+             loop run slotVar firstSlot now firstDelay
 
     return $ BlockchainTime {
         getCurrentSlot = readTVar slotVar
@@ -86,6 +108,7 @@ hardForkBlockchainTime args = do
       , hfbtRegistry       = registry
       , hfbtSystemTime     = time@SystemTime{..}
       , hfbtTracer         = tracer
+      , hfbtMaxClockRewind = maxClockRewind
       } = args
 
     summarize :: LedgerState blk -> HF.Summary (HardForkIndices blk)
@@ -94,57 +117,69 @@ hardForkBlockchainTime args = do
     loop :: HF.RunWithCachedSummary xs m
          -> StrictTVar m CurrentSlot
          -> CurrentSlot     -- Previous slot
+         -> RelativeTime    -- Current time
          -> NominalDiffTime -- Time to wait until next slot
          -> m Void
     loop run slotVar = go
       where
-        go :: CurrentSlot -> NominalDiffTime -> m Void
-        go prevSlot delay = do
+        go :: CurrentSlot -> RelativeTime -> NominalDiffTime -> m Void
+        go prevSlot prevTime delay = do
            threadDelay (nominalDelay delay)
-           (newSlot, newDelay) <- getCurrentSlot' tracer time run backoffDelay
-           checkValidClockChange (prevSlot, newSlot)
-           atomically $ writeTVar slotVar newSlot
-           go newSlot newDelay
+           (newSlot, newTime, newDelay) <- getCurrentSlot' tracer time run backoffDelay
+           newSlot' <- checkValidClockChange (prevSlot, prevTime) (newSlot, newTime)
+           atomically $ writeTVar slotVar newSlot'
+           go newSlot' newTime newDelay
 
-    checkValidClockChange :: (CurrentSlot, CurrentSlot) -> m ()
-    checkValidClockChange = \case
-        (CurrentSlotUnknown, CurrentSlot _) ->
-          -- Unknown-to-known typically happens when syncing catches up far
-          -- enough that we can now know what the current slot is.
-          return ()
-        (CurrentSlot _, CurrentSlotUnknown) ->
-          -- Known-to-unknown can happen when the ledger is no longer being
-          -- updated and time marches on past the end of the safe zone.
-          return ()
-        (CurrentSlotUnknown, CurrentSlotUnknown) ->
-          return ()
-        (CurrentSlot m, CurrentSlot n)
-          -- Normally we expect @n == m + 1@, but if the system is under heavy
-          -- load, we might miss a slot. We could have @n == m@ only if the
-          -- user's system clock was adjusted (say by an NTP process).
-          | m <  n    -> return ()
-          | m == n    -> return ()
-          | otherwise -> throwIO $ SystemClockMovedBack m n
+    checkValidClockChange ::
+         (CurrentSlot, RelativeTime)
+      -> (CurrentSlot, RelativeTime)
+      -> m CurrentSlot
+    checkValidClockChange (prevSlot, prevTime) (newSlot, newTime) =
+        case (prevSlot, newSlot) of
+          (CurrentSlotUnknown, CurrentSlot _)
+            -- Unknown-to-known typically happens when syncing catches up far
+            -- enough that we can now know what the current slot is.
+            -> return newSlot
+          (CurrentSlot _, CurrentSlotUnknown)
+            -- Known-to-unknown can happen when the ledger is no longer being
+            -- updated and time marches on past the end of the safe zone.
+            -> return newSlot
+          (CurrentSlotUnknown, CurrentSlotUnknown)
+            -> return newSlot
+          (CurrentSlot m, CurrentSlot n)
+            -- Normally we expect @n == m + 1@, but if the system is under heavy
+            -- load, we might miss a slot.
+            | m <  n
+            -> return newSlot
+            -- We could have @n == m@ or @n < m@ only if the user's system clock
+            -- was adjusted (say by an NTP process). We only allow a limited
+            -- rewinding of the clock, but never rewind the slot number
+            | m >= n
+            , prevTime `diffRelTime` newTime <= maxClockRewind
+            -> do traceWith tracer $ SystemClockMovedBackABit prevTime newTime
+                  return prevSlot
+            | otherwise
+            -> throwIO $ SystemClockMovedBack m n
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
--- | Get current slot, and delay until next slot
+-- | Get current slot, current time, and the delay until the next slot.
 getCurrentSlot' :: forall m xs. IOLike m
-                => Tracer m (RelativeTime, HF.PastHorizonException)
+                => Tracer m HardForkBlockchainTimeEvent
                 -> SystemTime m
                 -> HF.RunWithCachedSummary xs m
                 -> m BackoffDelay
-                -> m (CurrentSlot, NominalDiffTime)
+                -> m (CurrentSlot, RelativeTime, NominalDiffTime)
 getCurrentSlot' tracer SystemTime{..} run getBackoffDelay = do
     now   <- systemTimeCurrent
     mSlot <- atomically $ HF.cachedRunQuery run $ HF.wallclockToSlot now
     case mSlot of
       Left ex -> do
         -- give up for now and backoff; see 'BackoffDelay'
-        traceWith tracer (now, ex)
+        traceWith tracer $ UnknownCurrentSlot now ex
         BackoffDelay delay <- getBackoffDelay
-        return (CurrentSlotUnknown, delay)
+        return (CurrentSlotUnknown, now, delay)
       Right (slot, _inSlot, timeLeft) -> do
-        return (CurrentSlot slot, timeLeft)
+        return (CurrentSlot slot, now, timeLeft)

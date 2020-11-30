@@ -95,10 +95,11 @@ getWallClockSlot SystemTime{..} slotLen =
 -- due to the clock change, should not be considered immutable anymore.
 waitUntilNextSlot :: IOLike m
                   => SystemTime m
+                  -> NominalDiffTime -- ^ Max clock rewind
                   -> SlotLength
                   -> SlotNo    -- ^ Current slot number
                   -> m SlotNo
-waitUntilNextSlot time@SystemTime{..} slotLen oldCurrent = do
+waitUntilNextSlot time@SystemTime{..} maxClockRewind slotLen oldCurrent = do
     now <- systemTimeCurrent
 
     let delay = delayUntilNextSlot slotLen now
@@ -123,6 +124,6 @@ waitUntilNextSlot time@SystemTime{..} slotLen oldCurrent = do
     if | newCurrent > oldCurrent ->
            return newCurrent
        | newCurrent == oldCurrent ->
-           waitUntilNextSlot time slotLen oldCurrent
+           waitUntilNextSlot time maxClockRewind slotLen oldCurrent
        | otherwise ->
            throwIO $ SystemClockMovedBack oldCurrent newCurrent
