@@ -27,7 +27,7 @@ When all nodes in the system are up to date, they will all share the same
 chain, except for blocks near the tips of those chains. Moreover, blocks with a
 slot number ahead of the wall clock are considered invalid. This means that
 the only way for one chain to be longer than another is by having more filled
-slot between the tip of the shared prefix and ``now'': in other words, they
+slots between the tip of the shared prefix and ``now'': in other words, they
 must be \emph{denser}.
 %
 \begin{center}
@@ -41,7 +41,7 @@ must be \emph{denser}.
 \end{tikzpicture}
 \end{center}
 %
-Conversely, the density on the fragment of a chain is only meaningful if that
+Conversely, the density of the fragment of a chain is only meaningful if that
 fragment is long enough. Since the leadership election is a probabilistic
 process, we only expect fragments to contain more slots signed by honest nodes
 \emph{on average}, and we can only draw conclusions from density on long enough
@@ -49,11 +49,12 @@ fragments.
 
 \subsection{Speculative mode}
 
-Chain selection so far has been running in what we might call a ``speculative``
+Chain selection so far has been running in what we might call a ``speculative''
 mode: when we see a new chain, we compare it to our current chain, and if we
-prefer it (if is longer), we adopt it. This is speculative in the sense that
-if we later see a second chain, we can change our mind about adopting the
-first and adopt the second if that second chain is preferred over the first.
+prefer it (if is longer), we adopt it (\cref{speculative-chain-selection}). This
+is speculative in the sense that if we later see a second chain, we can change
+our mind about adopting the first and adopt the second if that second chain is
+preferred over the first.
 
 The Praos chain selection rule (choose the longest chain) was explicitly
 designed for a context in which all nodes in the network are present from the
@@ -85,8 +86,122 @@ possibly changing our mind later by adopting a different chain. If a new node
 sees a chain constructed by a malicious node and adopts it, \emph{it might be
 stuck}: it is not difficult for an attacker to construct a chain that is longer
 than $k$ blocks long, and so once a node adopts such a chain, it will not be
-able to switch to the honest chain anymore, as this would involve a roll back
+able to switch to the honest chain anymore, as this would involve a rollback
 of more than $k$ blocks.
+
+\begin{figure}[p]
+\hrule
+
+\begin{tabular}{ll@{$\quad\Rightarrow\quad$}l}
+
+(a)
+&
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
+\draw (tip) + (-3,0) -- (tip);
+\end{tikzpicture}
+\\[1em]
+
+(b)
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{candidate$_1$};
+\end{tikzpicture}
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{ours};
+\end{tikzpicture}
+\\[1em]
+
+(c)
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{ours};
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
+\end{tikzpicture}
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{ours};
+\end{tikzpicture}
+\\[1em]
+
+(d)
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{ours};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
+\end{tikzpicture}
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
+\end{tikzpicture}
+\\[1em]
+
+(e)
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
+\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$} node[below]{candidate$_4$};
+\end{tikzpicture}
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
+\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$};
+\end{tikzpicture}
+\\[1em]
+
+(f)
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
+\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$};
+\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{candidate$_5$};
+\end{tikzpicture}
+&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$};
+\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{ours};
+\end{tikzpicture}
+\\
+\end{tabular}
+
+\hrule
+\caption{\label{speculative-chain-selection}Speculative chain selection}
+\end{figure}
 
 \subsection{Genesis rule}
 
@@ -138,7 +253,8 @@ the intuition is that rather than considering and possibly adopting chains as we
 encounter them, we instead wait, collecting information, until we have enough
 information to allow us to decide which block to adopt next, \emph{knowing we
 will never have to change our mind}: we will never need to roll back that
-block.
+block. \Cref{conservative-chain-selection} illustrates what this might look
+like.
 
 The security analysis of the genesis chain selection rule includes a theorem
 \cite[Theorem 2]{cryptoeprint:2018:378} that says that it is still true that
@@ -162,48 +278,176 @@ we are in speculative mode, we will still apply the genesis rule as defined in
 point; we will merely use Theorem 2 of the genesis security analysis to justify
 imposing the standard maximum rollback of $k$ blocks.
 
+\begin{figure}[p]
+\hrule
 
-\pagebreak
-\debugsep{OLD}
+\begin{tabular}{ll@{$\quad\Rightarrow\quad$}l}
+a &&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
+\draw [dashed] (tip) -- ++(0, 0.2) -- ++(3.75, 0) -- ++(0, -0.4) -- ++(-3.75, 0) -- cycle;
+\draw (tip) + (-3,0) -- (tip);
+\end{tikzpicture}
+\\
 
-\section{The Genesis Chain Selection Rule}
+b &&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
+\draw [dashed] (tip) -- ++(0, 1.75) -- ++(3.75, 0) -- ++(0, -2) -- ++(-3.75, 0) -- cycle;
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{candidate$_1$};
+\end{tikzpicture}
+\\
 
-\subsection{Introduction}
+c &&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
+\draw [dashed] (tip) -- ++(0, 1.75) -- ++(3.75, 0) -- ++(0, -3) -- ++(-3.75, 0) -- cycle;
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{candidate$_1$};
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
+\end{tikzpicture}
+\\
 
-The genesis rule is an improved chain selection rule, designed to help new nodes
-safely join the network even in the presence of potential long range attacks
-\cite{cryptoeprint:2018:378}. From the point of view of the consensus layer,
-however, the \emph{why} is less relevant than the \emph{what} and the
-\emph{how}. Let's start with the \emph{what}. The genesis chain selection
-rule defined as follows.
+d &&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
+\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above left]{candidate$_1$};
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
+\end{tikzpicture}
+\\
 
-\begin{definition}[Genesis chain selection rule]
-\label{genesis:originalrule}
-A candidate chain is preferred over our current chain if
+e &&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
+\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above left]{candidate$_1$};
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$} node[below]{candidate$_4$};
+\end{tikzpicture}
+\\
 
+f &&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$}  node[below left]{ours};
+\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
+\draw (tip) + (-3,0) -- (tip);
+\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above left]{candidate$_1$};
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$}  node[above]{candidate$_4$};
+\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{candidate$_5$};
+\end{tikzpicture}
+\\
+
+g &&
+\begin{tikzpicture}[xscale=0.85]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
+\draw (tip) + (-3,0) -- (tip);
+\draw [dotted] (tip) -- ++(1.0,  1.0) coordinate (ab);
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{ours};
+\draw [dotted] (ab) -- ++(0.5,  0.5) -- ++(2.0, 0);
+\draw [dotted] (ab) -- ++(0.5, -0.5) -- ++(1.5, 0);
+\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{candidate$_5$};
+\end{tikzpicture}
+\\
+
+\end{tabular}
+
+\hrule
+\caption{\label{conservative-chain-selection}Conservative chain selection}
+\end{figure}
+
+\section{Applying the genesis rule in conservative mode}
+
+In this section we will show the rules that we will use to implement the
+genesis chain selection rule whilst in conservative mode. Throughout we will
+rely critically on the following assumption:
+
+\newcommand{\RequiredPeers}{\ensuremath{N_\mathit{rs}}}
+
+\begin{assumption}[Representative sample]
+There exists some threshold $\RequiredPeers$ such that if we see the chains of
+at least $\RequiredPeers$ peers, we have seen a representative sample of
+\emph{all} relevant chains available in the network at that time; there are no
+other chains in the network that we do not know about but \emph{should} know
+about.
+\end{assumption}
+
+This implies that an attacker cannot \emph{eclipse} us; this is something
+outside the scope of the consensus layer, and must be guaranteed by the network
+layer (probably by a probabilistic way of choosing peers).
+
+We will set the size of our ``look-ahead window'' to be precisely $s$; that is,
+we will set the size of the look-ahead window used for conservative chain
+selection to be exactly equal to the genesis window (we will see shortly why
+this is a suitable choice). There are now two possibilities: either all chains
+in our window share a common prefix, or they don't and they fork at the start of
+the window. We will consider these two cases separately.
+
+\subsection{Fork: discard}
+\label{genesis:discard}
+
+Suppose that $\RequiredPeers = 4$, and our window looks like this:
+%
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
+\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
+\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
+\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.75)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0);
+\end{tikzpicture}
+\end{center}
+%
+where $A \ldots D$ are (filled) slots on different forks, at least  $s$ slots
+away from the intersection point. The thick red line is marking the densest
+chain section within the window. Consider what the normal genesis rule would do:
+%
 \begin{itemize}
-\item The intersection between the candidate chain and our chain is \textbf{no
-more than $k$} blocks back, and the candidate chain is strictly \textbf{longer}
-than our chain.
-
-\item If the intersection \emph{is} \textbf{more than $k$} blocks back, and the
-candidate chain is \textbf{denser} (contains more blocks) than our chain in
-a region of $s$ slots starting at the intersection.
+\item
+Suppose we saw candidate $A$ first, and later discovered $C$ or $D$: since the
+intersection between these chains is at least $s$ slots ago, we would compare
+the density within a window of $s$ slots from the intersection point, and then
+pick the  denser chain. Since that denser chain is $A$, would stick with $A$.
+\item
+Conversely, if our current chain was $C$ or $D$, and we would discover $A$,
+again the distance from our tip to the intersection point is at least $s$
+slots, and so we would switch to $A$, because $A$ is denser at the intersection
+point.
 \end{itemize}
-\end{definition}
+%
+Either way, we would end up choosing $A$. The window of $s$ slots that is relevant
+to distinguish between $A$ and $C$ or $D$ is \emph{precisely} the window we are
+currently looking at; this means that we can \emph{discard} candidates $C$
+and $D$ at this point; we will never be interested in them.
 
-Condition (B) of this definition is what sets the genesis rule apart from the
-Praos chain selection rule.\footnote{The \lstinline!TPraos! chain selection rule
-of the Shelley ledger may additionally prefer candidate chains of equal length
-under certain circumstances, see \cref{todo}.} The intuition is that an attacker
-will have less stake than the majority (if this is not true, the chain is no
-longer secure), and therefore if they try to construct an alternative history,
-they can only produce a chain that is less dense than the real chain.
-
-It is important that we compare density only \emph{at the intersection point}.
-An example will make this obvious. Suppose the chain is growing normally,
-then a malicious node with some stake intentionally skips their slot, after
-which the chain continues to grow again:
+We cannot choose between $A$ and $B$ yet, because for that we would need to see
+the window anchored at the \emph{later} intersection point between those two
+chains. It is important that we compare density only \emph{at the intersection
+point}. In case that isn't obvious, in the rest of this section we will consider
+an example that will hopefully clarify it. Suppose the chain is growing
+normally, then a malicious node with some stake intentionally skips their slot,
+after which the chain continues to grow again:
 %
 \begin{center}
 \begin{tikzpicture}
@@ -219,7 +463,7 @@ which the chain continues to grow again:
 \end{tikzpicture}
 \end{center}
 %
-It is now trivial for an attacker to create an alternative chain that
+It is now trivial for the attacker to create an alternative chain that
 \emph{does} have a block in that slot; if other nodes switch to the denser chain
 the moment they see a window of $s$ slots that is denser, they would adopt the
 attacker's chain; after all, it has one more block in the window than the real
@@ -320,6 +564,174 @@ $s$ slots, anchored at the second fork:
   -- cycle;
 \end{tikzpicture}
 \end{center}
+
+\subsection{Common prefix: adopt}
+\label{genesis:adopt}
+
+If there is no fork point at the start of the window, then by definition
+all candidates must share some common prefix:
+%
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
+\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
+\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
+\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
+\draw (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) node[right]{D};
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\node [left] at (tip) {tip};
+\draw [red, very thick] (tip) -- ++(1.0,  0.0);
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.5)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
+
+\end{tikzpicture}
+\end{center}
+%
+Since by assumption the candidates in our window are a representative sample
+of all chains in the network, this means that \emph{all} chains share this
+common prefix, and so we can for \emph{sure} adopt those blocks into our
+own chain, moving up our window:
+%
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
+\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
+\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
+\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
+\draw (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) node[right]{D};
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\node [above left] at (branch) {tip};
+\draw [dashed]
+     (branch)
+  -- ++(0, 1.5)
+  -- ++(2, 0)
+  -- ++(0, -3)
+  -- ++(-2, 0)  node[pos=0.25, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
+\end{tikzpicture}
+\end{center}
+
+\subsection{General case}
+
+Notice that we only adopt blocks when they appear on \emph{all} relevant
+chains in the system (\cref{genesis:adopt}). This means that we will never have
+to roll such blocks back: everything we adopt we are certain about and will
+never change our mind about.
+
+This allows us to generalize the pictures from the previous two sections
+slightly. Rather than having the window anchored at genesis, it is
+anchored at the tip of a chain of blocks that we are sure about; so for the
+fork/discard case (\cref{genesis:discard}), the generalization looks like
+%
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$} node[above left]{tip};
+\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
+\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
+\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
+\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.75)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
+  -- cycle;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0);
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_\text{immutable}$};
+\end{tikzpicture}
+\end{center}
+%
+Similarly, for the common prefix/adopt case (\cref{genesis:adopt}), it looks like
+%
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
+\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
+\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
+\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
+\draw (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) node[right]{D};
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\node [above left] at (tip) {tip};
+\draw [red, very thick] (tip) -- ++(1.0,  0.0);
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.5)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_\text{immutable}$};
+
+\end{tikzpicture}
+\end{center}
+
+\subsection{Insufficient peers}
+
+\subsection{Insufficient slots}
+
+\section{Switching between modes}
+
+means we might switch to a shorter chain?
+
+
+
+\pagebreak
+\debugsep{OLD}
+
+\section{The Genesis Chain Selection Rule}
+
+\subsection{Introduction}
+
+The genesis rule is an improved chain selection rule, designed to help new nodes
+safely join the network even in the presence of potential long range attacks
+\cite{cryptoeprint:2018:378}. From the point of view of the consensus layer,
+however, the \emph{why} is less relevant than the \emph{what} and the
+\emph{how}. Let's start with the \emph{what}. The genesis chain selection
+rule defined as follows.
+
+\begin{definition}[Genesis chain selection rule]
+\label{genesis:originalrule}
+A candidate chain is preferred over our current chain if
+
+\begin{itemize}
+\item The intersection between the candidate chain and our chain is \textbf{no
+more than $k$} blocks back, and the candidate chain is strictly \textbf{longer}
+than our chain.
+
+\item If the intersection \emph{is} \textbf{more than $k$} blocks back, and the
+candidate chain is \textbf{denser} (contains more blocks) than our chain in
+a region of $s$ slots starting at the intersection.
+\end{itemize}
+\end{definition}
+
+Condition (B) of this definition is what sets the genesis rule apart from the
+Praos chain selection rule.\footnote{The \lstinline!TPraos! chain selection rule
+of the Shelley ledger may additionally prefer candidate chains of equal length
+under certain circumstances, see \cref{todo}.} The intuition is that an attacker
+will have less stake than the majority (if this is not true, the chain is no
+longer secure), and therefore if they try to construct an alternative history,
+they can only produce a chain that is less dense than the real chain.
+
 
 \subsection{Alternative Formulation}
 
@@ -455,411 +867,11 @@ candidate$_5$ directly yet, however, since it in turn might not be preferred
 over some other yet longer chain. But perhaps it is safe to adopt the
 prefix candidate$_2$.
 
-\begin{figure}[p]
-\hrule
 
-\begin{tabular}{ll@{$\quad\Rightarrow\quad$}l}
-
-(a)
-&
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
-\draw (tip) + (-3,0) -- (tip);
-\end{tikzpicture}
-\\[1em]
-
-(b)
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{candidate$_1$};
-\end{tikzpicture}
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{ours};
-\end{tikzpicture}
-\\[1em]
-
-(c)
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{ours};
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
-\end{tikzpicture}
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{ours};
-\end{tikzpicture}
-\\[1em]
-
-(d)
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{ours};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
-\end{tikzpicture}
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
-\end{tikzpicture}
-\\[1em]
-
-(e)
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
-\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$} node[below]{candidate$_4$};
-\end{tikzpicture}
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
-\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$};
-\end{tikzpicture}
-\\[1em]
-
-(f)
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{ours};
-\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$};
-\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{candidate$_5$};
-\end{tikzpicture}
-&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$};
-\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$};
-\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{ours};
-\end{tikzpicture}
-\\
-\end{tabular}
-
-\hrule
-\caption{\label{normal-chain-evolution}Chain evolution, ``normal'' case}
-\end{figure}
-
-\begin{figure}[p]
-\hrule
-
-\begin{tabular}{ll@{$\quad\Rightarrow\quad$}l}
-a &&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
-\draw [dashed] (tip) -- ++(0, 0.2) -- ++(3.75, 0) -- ++(0, -0.4) -- ++(-3.75, 0) -- cycle;
-\draw (tip) + (-3,0) -- (tip);
-\end{tikzpicture}
-\\
-
-b &&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
-\draw [dashed] (tip) -- ++(0, 1.75) -- ++(3.75, 0) -- ++(0, -2) -- ++(-3.75, 0) -- cycle;
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{candidate$_1$};
-\end{tikzpicture}
-\\
-
-c &&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
-\draw [dashed] (tip) -- ++(0, 1.75) -- ++(3.75, 0) -- ++(0, -3) -- ++(-3.75, 0) -- cycle;
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above]{candidate$_1$};
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
-\end{tikzpicture}
-\\
-
-d &&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
-\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above left]{candidate$_1$};
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
-\end{tikzpicture}
-\\
-
-e &&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{ours};
-\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above left]{candidate$_1$};
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
-\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$} node[below]{candidate$_4$};
-\end{tikzpicture}
-\\
-
-f &&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$}  node[below left]{ours};
-\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
-\draw (tip) + (-3,0) -- (tip);
-\draw (tip) -- ++(1.0,  1.0) node{$\bullet$} coordinate (ab) node[above left]{candidate$_1$};
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{candidate$_2$};
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[above]{candidate$_3$};
-\draw (ab) -- ++(0.5, -0.5) -- ++(1.5, 0) node{$\bullet$}  node[above]{candidate$_4$};
-\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{candidate$_5$};
-\end{tikzpicture}
-\\
-
-g &&
-\begin{tikzpicture}[xscale=0.85]
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw [dashed] (tip) -- ++(0, 2.1) -- ++(3.75, 0) -- ++(0, -3.2) -- ++(-3.75, 0) -- cycle;
-\draw (tip) + (-3,0) -- (tip);
-\draw [dotted] (tip) -- ++(1.0,  1.0) coordinate (ab);
-\draw (tip) -- ++(1.5, -0.5) coordinate (cd) node{$\bullet$} node[below]{ours};
-\draw [dotted] (ab) -- ++(0.5,  0.5) -- ++(2.0, 0);
-\draw [dotted] (ab) -- ++(0.5, -0.5) -- ++(1.5, 0);
-\draw (cd) -- ++(0.5,  0.5) -- ++(2.0, 0) node{$\bullet$} node[below]{candidate$_5$};
-\end{tikzpicture}
-\\
-
-\end{tabular}
-
-\hrule
-\caption{\label{delayed-chain-evolution}Chain evolution, ``delay'' case}
-\end{figure}
 
 \subsection{Delaying the genesis chain selection rule}
 
-We will now make this intuition precise and apply it to the genesis chain
-selection rule. We will rely critically on the following assumption:
 
-\newcommand{\RequiredPeers}{\ensuremath{n_\mathit{rs}}}
-
-\begin{assumption}[Representative sample]
-There exists some threshold $\RequiredPeers$ such that if we see the chains of
-at least $\RequiredPeers$ peers, we have seen a representative sample of
-\emph{all} relevant chains available in the network at that time; there are no
-other chains in the network that we do not know about but \emph{should} know
-about.
-\end{assumption}
-
-This implies that an attacker cannot \emph{eclipse} us; this is something
-outside the scope of the consensus layer, and must be guaranteed by the network
-layer (probably by a probabilistic way of choosing peers).
-
-Recall that the genesis chain selection rule is designed to help new nodes
-connect to the network safely. Indeed, the paper proves \cite[Theorem
-2]{cryptoeprint:2018:378} that when a node is up to date, the regular Praos
-chain selection rule suffices. We will therefore consider two modes: a
-``normal'' mode, to be used when the node is up to date, and the normal
-chain selection procedure we have described elsewhere in this document suffices
-(\cref{consensus:overview:chainsel,chainsel}), and a ``genesis'' mode in which
-we delay chain selection. We will consider how and when we switch between modes
-in \cref{genesis:switching-between-modes}; for now, we will assume that we
-\emph{are} in genesis mode.
-
-There are two possibilities: either all chains in our window share a common
-prefix, or they don't and they fork at the start of the window. We will consider
-these two cases separately.
-
-\subsection{Fork: discard}
-\label{genesis:discard}
-
-Suppose that $\RequiredPeers = 4$, and our window looks like this:
-%
-\begin{center}
-\begin{tikzpicture}
-\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
-\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
-\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
-\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
-\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
-\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
-\draw [dashed]
-     (tip)
-  -- ++(0, 1.75)
-  -- ++(3, 0)
-  -- ++(0, -3)
-  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
-  -- cycle;
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0);
-\end{tikzpicture}
-\end{center}
-%
-The thick red line is marking the densest chain section within the window.
-Consider what the normal genesis rule would do:
-%
-\begin{itemize}
-\item
-Suppose we saw candidate $A$ first, and later discovered $C$ or $D$: since the
-intersection between these chains is more than $k$ blocks ago (by assumption),
-we would compare the density within a window of $s$ slots from the intersection
-point, and then pick the  denser chain. Since that denser chain is $A$, would
-stick with $A$.
-\item
-Conversely, if our current chain was $C$ or $D$, and we would discover $A$,
-again the distance from our tip to the intersection point is more than $k$
-blocks, and so we would switch to $A$, because $A$ is denser at the intersection
-point.
-\end{itemize}
-%
-Either way, we would end up choosing $A$. The window of $s$ slots that is relevant
-to distinguish between $A$ and $C$ or $D$ is \emph{precisely} the window we are
-currently looking at; this means that we can \emph{discard} candidates $C$
-and $D$ at this point; we will never be interested in them. We cannot choose
-between $A$ and $B$ yet, because for that we would need to see the window
-anchored at the \emph{later} intersection point between those two chains.
-
-\subsection{Common prefix: adopt}
-\label{genesis:adopt}
-
-If there is no fork point at the start of the window, then by definition
-all candidates must share some common prefix:
-%
-\begin{center}
-\begin{tikzpicture}
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
-\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
-\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
-\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
-\draw (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) node[right]{D};
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\node [left] at (tip) {tip};
-\draw [red, very thick] (tip) -- ++(1.0,  0.0);
-\draw [dashed]
-     (tip)
-  -- ++(0, 1.5)
-  -- ++(3, 0)
-  -- ++(0, -3)
-  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
-  -- cycle;
-
-\end{tikzpicture}
-\end{center}
-%
-Since by assumption the candidates in our window are a representative sample
-of all chains in the network, this means that \emph{all} chains share this
-common prefix, and so we can for \emph{sure} adopt those blocks into our
-own chain, moving up our window:
-%
-\begin{center}
-\begin{tikzpicture}
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
-\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
-\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
-\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
-\draw (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) node[right]{D};
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\node [above left] at (branch) {tip};
-\draw [dashed]
-     (branch)
-  -- ++(0, 1.5)
-  -- ++(2, 0)
-  -- ++(0, -3)
-  -- ++(-2, 0)  node[pos=0.25, below]{$\underbrace{\hspace{3cm}}_s$}
-  -- cycle;
-\end{tikzpicture}
-\end{center}
-
-\subsection{General case}
-
-Notice that we only adopt blocks when they appear on \emph{all} relevant
-chains in the system (\cref{genesis:adopt}). This means that we will never have
-to roll such blocks back: everything we adopt we are certain about and will
-never change our mind about.
-
-This allows us to generalize the pictures from the previous two sections
-slightly. Rather than having the window anchored at genesis, it is
-anchored at the tip of a chain of blocks that we are sure about; so for the
-fork/discard case (\cref{genesis:discard}), the generalization looks like
-%
-\begin{center}
-\begin{tikzpicture}
-\path (0, 0) coordinate (tip) node{$\bullet$} node[above left]{tip};
-\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
-\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
-\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
-\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
-\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
-\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
-\draw [dashed]
-     (tip)
-  -- ++(0, 1.75)
-  -- ++(3, 0)
-  -- ++(0, -3)
-  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
-  -- cycle;
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0);
-\draw (tip) + (-3,0) node{$\bullet$} -- (tip) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_\text{immutable}$};
-\end{tikzpicture}
-\end{center}
-%
-Similarly, for the common prefix/adopt case (\cref{genesis:adopt}), it looks like
-%
-\begin{center}
-\begin{tikzpicture}
-\path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
-\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
-\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
-\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
-\draw (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) node[right]{D};
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-\node [above left] at (tip) {tip};
-\draw [red, very thick] (tip) -- ++(1.0,  0.0);
-\draw [dashed]
-     (tip)
-  -- ++(0, 1.5)
-  -- ++(3, 0)
-  -- ++(0, -3)
-  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
-  -- cycle;
-\draw (tip) + (-3,0) node{$\bullet$} -- (tip) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_\text{immutable}$};
-
-\end{tikzpicture}
-\end{center}
 
 
 
