@@ -684,12 +684,12 @@ getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
   -> (LedgerState blk -> Bool)
-  -> STM m (Maybe [(PoolStake, NonEmpty DomainAddress)])
+  -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
 getPeersFromCurrentLedger kernel p = do
     immutableLedger <-
       ledgerState <$> ChainDB.getImmutableLedger (getChainDB kernel)
     return $ do
       guard (p immutableLedger)
       return
-        $ map (second (fmap stakePoolRelayDomainAddress))
+        $ map (second (fmap stakePoolRelayAddress))
         $ getPeers immutableLedger
