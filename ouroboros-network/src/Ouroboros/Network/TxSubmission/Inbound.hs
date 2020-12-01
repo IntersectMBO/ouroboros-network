@@ -268,7 +268,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         mpSnapshot <- atomically mempoolGetSnapshot
         continueWithStateM
           (serverIdle n)
-          (acknowledgeTxIdsInMempool st' txidsSeq txidsMap mpSnapshot)
+          (acknowledgeTxIds st' txidsSeq txidsMap mpSnapshot)
 
       CollectTxs txids txs -> do
         -- To start with we have to verify that the txs they have sent us do
@@ -297,7 +297,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             -- combined with the fact that we request txs out of order means
             -- our bufferedTxs has to track all the txids we asked for, even
             -- though not all have replies.
-            btxsReq = bufferedTxs st <> txIdsRequestedWithTxsReceived
+            bufferedTxs1 = bufferedTxs st <> txIdsRequestedWithTxsReceived
 
             -- We have to update the unacknowledgedTxIds here eagerly and not
             -- delay it to serverReqTxs, otherwise we could end up blocking in
@@ -307,26 +307,26 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             -- Check if having received more txs we can now confirm any (in
             -- strict order in the unacknowledgedTxIds sequence).
             (acknowledgedTxIds, unacknowledgedTxIds') =
-              Seq.spanl (`Map.member` btxsReq) (unacknowledgedTxIds st)
+              Seq.spanl (`Map.member` bufferedTxs1) (unacknowledgedTxIds st)
 
             -- If so we can submit the acknowledged txs to our local mempool
-            txsReady = foldr (\txid r -> maybe r (:r) (btxsReq Map.! txid))
+            txsReady = foldr (\txid r -> maybe r (:r) (bufferedTxs1 Map.! txid))
                              [] acknowledgedTxIds
 
             -- And remove acknowledged txs from our buffer
-            btxsAcked = foldl' (flip Map.delete)
-                                   btxsReq acknowledgedTxIds
+            bufferedTxs2 = foldl' (flip Map.delete)
+                                   bufferedTxs1 acknowledgedTxIds
 
         _writtenTxids <- mempoolAddTxs txsReady
 
         -- If we are acknowleding transactions that are still in unacknowledgedTxIds'
         -- we need to re-add them so that we also can acknowledge them again later.
         -- This will happen incase of duplicate txids within the same window.
-        let live =  filter (`elem` unacknowledgedTxIds') $ toList acknowledgedTxIds
-            btxsReAdded = forceElemsToWHNF $ btxsAcked <> (Map.fromList (zip  live (repeat Nothing)))
+        let live = filter (`elem` unacknowledgedTxIds') $ toList acknowledgedTxIds
+            bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <> (Map.fromList (zip live (repeat Nothing)))
 
         continueWithStateM (serverIdle n) st {
-          bufferedTxs         = btxsReAdded,
+          bufferedTxs         = bufferedTxs3,
           unacknowledgedTxIds = unacknowledgedTxIds',
           numTxsToAcknowledge = numTxsToAcknowledge st
                               + fromIntegral (Seq.length acknowledgedTxIds)
@@ -339,13 +339,13 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
     -- need to bother requesting from the client since they're already in the
     -- mempool.
     --
-    acknowledgeTxIdsInMempool :: ServerState txid tx
+    acknowledgeTxIds :: ServerState txid tx
                               -> StrictSeq txid
                               -> Map txid TxSizeInBytes
                               -> MempoolSnapshot txid tx idx
                               -> ServerState txid tx
-    acknowledgeTxIdsInMempool st txidsSeq _ _ | Seq.null txidsSeq  = st
-    acknowledgeTxIdsInMempool st txidsSeq txidsMap MempoolSnapshot{mempoolHasTx} =
+    acknowledgeTxIds st txidsSeq _ _ | Seq.null txidsSeq  = st
+    acknowledgeTxIds st txidsSeq txidsMap MempoolSnapshot{mempoolHasTx} =
         -- Return the next 'ServerState'
         st {
           availableTxids      = availableTxids',
@@ -361,9 +361,9 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
                 (\txid _ -> mempoolHasTx txid)
                 txidsMap
 
-        (_ignoredTxidsU, availableTxidsU) =
-              Map.partitionWithKey
-                (\txid _ -> elem txid (unacknowledgedTxIds st))
+        availableTxidsU =
+              Map.filterWithKey
+                (\txid _ -> not $ elem txid (unacknowledgedTxIds st))
                 txidsMap
 
         -- Divide the new txids in two: those that are already in the

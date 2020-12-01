@@ -174,6 +174,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
 
           MempoolSnapshot{mempoolLookupTx} <- atomically mempoolGetSnapshot
 
+          -- The window size is expected to be small (currently 10) so the find is acceptable.
           let txidxs  = [ find (\(t,_) -> t == txid) unackedSeq | txid <- txids ]
               txidxs' = map snd $ catMaybes txidxs
 
