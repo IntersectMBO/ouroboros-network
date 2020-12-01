@@ -36,9 +36,12 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
                      WithVersion (..))
 
+import           Test.Cardano.Ledger.Allegra ()
+import           Test.Cardano.Ledger.Mary ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
+import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators
                      (genPParams)
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()

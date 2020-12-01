@@ -1,4 +1,4 @@
-index-state: 2020-10-01T00:00:00Z
+index-state: 2020-11-15T00:00:00Z
 
 packages: ./typed-protocols
           ./typed-protocols-examples
@@ -131,8 +131,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: 58e146c14e1349553d0ed75dd5245bbe65f0533e
-  --sha256: 166rm0sxldnf0g2g9jp4k0rgd01wcbm0g54fcw3bxilzr1dvwqfi
+  tag: 742e8525b96bf4b66fb61a00c8298d75d7931d5e
+  --sha256: 1132r58bjgdcf7yz3n77nlrkanqcmpn5b5km4nw151yar2dgifsv
   subdir:
     cardano-prelude
     cardano-prelude-test
@@ -140,8 +140,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 6226a0feb1d74f50a430242a1b4608fd48e10aad
-  --sha256: 034q2anpbc7bgp5draykz6lkzznxk31wy4nbgr4jv4f7778yls6b
+  tag: 2574600da11065937c1f07e4b234ecb451016a2e
+  --sha256: 0nq8bpzsr3fd2i59a6s6qb6slpymjh47zv57wlifjfvhh0xlgmpx
   subdir:
     binary
     binary/test
@@ -152,8 +152,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 9ebcfedb3f93852fbeabfc8ce492ddb4d996b3b5
-  --sha256: 03n1m2030liv55b2jjjc7ga8w3fkbcxr6xpgsxa0gb9lhx41r4m5
+  tag: 9cd2b6cebfd19e73974a149ca25186aa8eaa036d
+  --sha256: 0sy9yqgr6izfw2a7bvpcj65035a1ijhidgsy55j2xfr02h29yjgh
   subdir:
     byron/chain/executable-spec
     byron/crypto

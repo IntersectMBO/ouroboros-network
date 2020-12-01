@@ -27,7 +27,6 @@ import           Test.Util.Serialisation.Roundtrip
 
 import           Test.Consensus.Shelley.Generators ()
 import           Test.Consensus.Shelley.MockCrypto
-import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 tests :: TestTree
 tests = testGroup "Shelley"
