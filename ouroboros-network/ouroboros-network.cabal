@@ -65,6 +65,7 @@ library
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.EstablishedPeers
+                       Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.PeerStateActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
@@ -251,6 +252,7 @@ test-suite test
 
                        Test.AnchoredFragment
                        Test.Chain
+                       Test.LedgerPeers
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.MockNode

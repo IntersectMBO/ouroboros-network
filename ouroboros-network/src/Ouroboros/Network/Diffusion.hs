@@ -13,6 +13,7 @@ module Ouroboros.Network.Diffusion
   , DiffusionArguments (..)
   , AcceptedConnectionsLimit (..)
   , DiffusionApplications (..)
+  , LedgerPeersConsensusInterface (..)
   , OuroborosApplication (..)
   , runDataDiffusion
     -- * re-exports
@@ -84,6 +85,8 @@ import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types ( TracePeerSelection (..)
                                                                 , DebugPeerSelection (..)
                                                                 )
+import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsensusInterface (..)
+                                                             , TraceLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerStateActions ( PeerSelectionActionsTrace (..)
                                                                   , PeerStateActionsArguments (..)
                                                                   , PeerConnectionHandle
@@ -199,6 +202,9 @@ data DiffusionTracers = DiffusionTracers {
       -- | Diffusion initialisation tracer
     , dtDiffusionInitializationTracer
         :: Tracer IO DiffusionInitializationTracer
+
+      -- | Ledger Peers tracer
+    , dtLedgerPeersTracer      :: Tracer IO TraceLedgerPeers
     }
 
 
@@ -277,6 +283,9 @@ data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
 
     -- | node-to-client rethrow policy
     , daLocalRethrowPolicy :: RethrowPolicy
+
+    ,  daLedgerPeersCtx :: LedgerPeersConsensusInterface m
+      -- ^ Interface used to get peers from the current ledger.
     }
 
 -- TODO: add a tracer for these misconfigurations

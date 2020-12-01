@@ -21,6 +21,7 @@ module Ouroboros.Consensus.NodeKernel (
   , getMempoolReader
   , getMempoolWriter
   , getPeersFromCurrentLedger
+  , getPeersFromCurrentLedgerAfterSlot
   ) where
 
 import           Control.Monad
@@ -693,3 +694,22 @@ getPeersFromCurrentLedger kernel p = do
       return
         $ map (second (fmap stakePoolRelayAddress))
         $ getPeers immutableLedger
+
+-- | Like 'getPeersFromCurrentLedger' but with a \"after slot number X\" condition.
+getPeersFromCurrentLedgerAfterSlot ::
+     forall blk localPeer m remotePeer.
+     ( IOLike m
+     , LedgerSupportsPeerSelection blk
+     , UpdateLedger blk
+     )
+  => NodeKernel m remotePeer localPeer blk
+  -> SlotNo
+  -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
+getPeersFromCurrentLedgerAfterSlot kernel slotNo =
+    getPeersFromCurrentLedger kernel afterSlotNo
+  where
+    afterSlotNo :: LedgerState blk -> Bool
+    afterSlotNo st =
+      case ledgerTipSlot st of
+        Origin        -> False
+        NotOrigin tip -> tip > slotNo

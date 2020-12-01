@@ -1,6 +1,6 @@
 module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
     LedgerSupportsPeerSelection (..)
-  , PoolStake
+  , PoolStake (..)
   , StakePoolRelay (..)
   , stakePoolRelayAddress
     -- * Re-exports for convenience
@@ -12,14 +12,11 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
 
 import           Data.List.NonEmpty (NonEmpty)
 
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DomainAddress (..), IP (..), PortNumber,
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (DomainAddress (..), IP (..), PoolStake (..), PortNumber,
                      RelayAddress (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-
--- | The relative stake of the stakepool. A value in the [0, 1] range.
-type PoolStake = Rational
 
 -- | A relay registered for a stake pool
 data StakePoolRelay =
