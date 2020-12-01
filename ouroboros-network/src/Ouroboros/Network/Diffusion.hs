@@ -15,6 +15,7 @@ module Ouroboros.Network.Diffusion
   , IPSubscriptionTarget (..)
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
+  , LedgerPeersConsensusInterface (..)
   )
   where
 
@@ -49,6 +50,8 @@ import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
                                               , RemoteAddress
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
+import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsensusInterface (..)
+                                                             , TraceLedgerPeers)
 import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , NetworkMutableState
                                           , newNetworkMutableState
@@ -79,6 +82,7 @@ data DiffusionTracers = DiffusionTracers {
     , dtLocalErrorPolicyTracer :: Tracer IO (WithAddr LocalAddress ErrorPolicyTrace)
     , dtAcceptPolicyTracer     :: Tracer IO AcceptConnectionsPolicyTrace
       -- ^ Trace rate limiting of accepted connections
+    , dtLedgerPeersTracer      :: Tracer IO TraceLedgerPeers
     }
 
 
@@ -129,6 +133,9 @@ data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m = Dif
 
     , daErrorPolicies :: ErrorPolicies
       -- ^ error policies
+
+    ,  daLedgerPeersCtx :: LedgerPeersConsensusInterface m
+      -- ^ Interface used to get peers from the current ledger.
     }
 
 data DiffusionFailure = UnsupportedLocalSocketType

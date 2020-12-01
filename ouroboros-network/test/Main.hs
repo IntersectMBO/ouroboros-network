@@ -7,6 +7,7 @@ import qualified Test.ChainGenerators (tests)
 import qualified Test.Chain (tests)
 import qualified Test.ChainFragment (tests)
 import qualified Test.ChainProducerState (tests)
+import qualified Test.LedgerPeers (tests)
 import qualified Test.Pipe (tests)
 import qualified Test.PeerState (tests)
 import qualified Test.Version (tests)
@@ -60,6 +61,7 @@ tests =
   , Test.Ouroboros.Network.TxSubmission.tests
   , Ouroboros.Network.NodeToNode.Version.Test.tests
   , Ouroboros.Network.NodeToClient.Version.Test.tests
+  , Test.LedgerPeers.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests

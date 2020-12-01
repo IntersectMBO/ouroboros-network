@@ -44,7 +44,7 @@ instance LedgerSupportsPeerSelection (ShelleyBlock era) where
         -> [(SL.KeyHash 'SL.StakePool (EraCrypto era), PoolStake)]
       orderByStake =
             sortOn (Down . snd)
-          . map (second SL.individualPoolStake)
+          . map (second (PoolStake . SL.individualPoolStake))
           . Map.toList
           . SL.unPoolDistr
 
