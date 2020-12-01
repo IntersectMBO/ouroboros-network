@@ -31,8 +31,9 @@ simpleBlockchainTime :: forall m. IOLike m
                      => ResourceRegistry m
                      -> SystemTime m
                      -> SlotLength
+                     -> NominalDiffTime -- ^ Max clock rewind
                      -> m (BlockchainTime m)
-simpleBlockchainTime registry time slotLen = do
+simpleBlockchainTime registry time slotLen maxClockRewind = do
     systemTimeWait time
 
     -- Fork thread that continuously updates the current slot
@@ -55,7 +56,7 @@ simpleBlockchainTime registry time slotLen = do
       where
         go :: SlotNo -> m Void
         go current = do
-          next <- waitUntilNextSlot time slotLen current
+          next <- waitUntilNextSlot time slotLen maxClockRewind current
           atomically $ writeTVar slotVar next
           go next
 
@@ -87,19 +88,22 @@ getWallClockSlot SystemTime{..} slotLen =
 
 -- | Wait until the next slot
 --
--- Takes the current slot number to guard against system clock changes. Any
--- clock changes that would result in the slot number to /decrease/ will result
--- in a fatal 'SystemClockMovedBackException'. When this exception is thrown,
--- the node will shut down, and should be restarted with (full?) validation
--- enabled: it is conceivable that blocks got moved to the immutable DB that,
--- due to the clock change, should not be considered immutable anymore.
+-- Takes the current slot number to guard against system clock changes. If the
+-- clock changes back further than the max clock rewind parameter, a fatal
+-- 'SystemClockMovedBack' exception will be thrown. When this exception is
+-- thrown, the node will shut down, and should be restarted with (full?)
+-- validation enabled: it is conceivable that blocks got moved to the immutable
+-- DB that, due to the clock change, should not be considered immutable anymore.
+--
+-- If the clock changed back less than the max clock rewind parameter, we stay
+-- in the same slot for longer and don't throw an exception.
 waitUntilNextSlot :: IOLike m
                   => SystemTime m
-                  -> NominalDiffTime -- ^ Max clock rewind
                   -> SlotLength
-                  -> SlotNo    -- ^ Current slot number
+                  -> NominalDiffTime  -- ^ Max clock rewind
+                  -> SlotNo           -- ^ Current slot number
                   -> m SlotNo
-waitUntilNextSlot time@SystemTime{..} maxClockRewind slotLen oldCurrent = do
+waitUntilNextSlot time@SystemTime{..} slotLen maxClockRewind oldCurrent = do
     now <- systemTimeCurrent
 
     let delay = delayUntilNextSlot slotLen now
@@ -115,15 +119,21 @@ waitUntilNextSlot time@SystemTime{..} maxClockRewind slotLen oldCurrent = do
     --   client running on the system), it's possible that we are still in the
     --   /old/ current slot. If this happens, we just wait again; nothing bad
     --   has happened, we just stay in one slot for longer.
-    -- o If the system clock is adjusted back more than that, we might be in
-    --   a slot number /before/ the old current slot. In that case, we throw
-    --   an exception (see discussion above).
+    -- o If the system clock is adjusted back more than that, we might be in a
+    --   slot number /before/ the old current slot. In that case, if the
+    --   adjustment is <= the max rewind parameter, we allow it, but stay in the
+    --   same slot. Just like the previous case, we will stay in one slot for
+    --   longer.
+    -- o If the system clock is adjusted back more than the max rewind
+    --   parameter, we throw an exception (see discussion above).
 
-    (newCurrent, _timeInNewCurrent) <- getWallClockSlot time slotLen
+    afterDelay <- systemTimeCurrent
+    let (newCurrent, _timeInNewCurrent) = slotFromUTCTime slotLen afterDelay
 
     if | newCurrent > oldCurrent ->
            return newCurrent
-       | newCurrent == oldCurrent ->
-           waitUntilNextSlot time maxClockRewind slotLen oldCurrent
+       | newCurrent <= oldCurrent,
+         now `diffRelTime` afterDelay <= maxClockRewind ->
+           waitUntilNextSlot time slotLen maxClockRewind oldCurrent
        | otherwise ->
            throwIO $ SystemClockMovedBack oldCurrent newCurrent
