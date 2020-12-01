@@ -64,6 +64,7 @@ library
                        Ouroboros.Network.Point
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.KnownPeers
+                       Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Protocol.ChainSync.Client
@@ -248,6 +249,7 @@ test-suite test
 
                        Test.AnchoredFragment
                        Test.Chain
+                       Test.LedgerPeers
                        Test.Ouroboros.Network.Utils
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
