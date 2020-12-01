@@ -17,7 +17,8 @@ import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.Bifunctor (first)
 import           Data.Either (isRight)
-import           Data.List (find, foldl', isSuffixOf, nub, partition, sort)
+import           Data.List (find, foldl', intersect, isSuffixOf, nub, partition,
+                     sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
@@ -43,6 +44,7 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Mempool.ImplPure
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
@@ -63,6 +65,9 @@ tests = testGroup "Mempool"
       , testProperty "splitAfterTxSize"                    prop_TxSeq_splitAfterTxSize
       , testProperty "splitAfterTxSizeSpec"                prop_TxSeq_splitAfterTxSizeSpec
       ]
+  , testGroup "MempoolPure"
+      [testProperty "removed transactions are removed"     prop_Mempool_pureRemoveTxsId_removed
+      ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
   , testProperty "addTxs txs == mapM (addTxs . pure) txs"  prop_Mempool_addTxs_one_vs_multiple
@@ -76,6 +81,71 @@ tests = testGroup "Mempool"
   , testProperty "idx consistency"                         prop_Mempool_idx_consistency
   , testProperty "removeTxs"                               prop_Mempool_removeTxs
   ]
+
+{-------------------------------------------------------------------------------
+  Mempool Pure Properties
+-------------------------------------------------------------------------------}
+-- | Test that removed transactions are not in the
+--   result transactionsIds of the returned internal state.
+prop_Mempool_pureRemoveTxsId_removed
+  :: TestSetupWithTxsAndSubTxs
+  -> Property
+prop_Mempool_pureRemoveTxsId_removed TestSetupWithTxsAndSubTxs {..} =
+    withInternalState (testSetup setupWithTxs) $
+    \ mpArgs internalSt ledgerState ->
+      let testTxs               = map fst (txs setupWithTxs)
+          testTxsTickets        = map (\tx -> TxTicket tx (TicketNo 0) 0) testTxs
+          testTxsIds            = map txId testTxs
+          testTxsAll            = testTxsTickets ++ toList (isTxs internalSt)
+          testTxsIdsAll         = testTxsIds ++ Set.toList (isTxIds internalSt)
+          internalSt'           = internalSt {isTxs = fromList testTxsAll,
+                                                 isTxIds = Set.fromList testTxsIdsAll}
+          txIdsToRemove         = map (txId . fst) subTxs
+          -- The function to test: pureRemoveTxs
+          (internalStRes, _)    = pureRemoveTxs txIdsToRemove mpArgs internalSt' ledgerState
+          txIdsRemaining        = Set.toList (isTxIds internalStRes)
+      in property $ null $ intersect txIdsRemaining txIdsToRemove
+
+data TestSetupWithTxsAndSubTxs = TestSetupWithTxsAndSubTxs
+  { setupWithTxs :: TestSetupWithTxs
+  , subTxs       :: [(TestTx, Bool)]
+    -- ^ The 'Bool' indicates whether the transaction is valid
+  } deriving (Show)
+
+instance Arbitrary TestSetupWithTxsAndSubTxs where
+  arbitrary = do
+    testSetup <- arbitrary
+    subs <- sublistOf (txs testSetup)
+    return $ TestSetupWithTxsAndSubTxs testSetup subs
+
+  shrink TestSetupWithTxsAndSubTxs { setupWithTxs, subTxs } =
+      [ TestSetupWithTxsAndSubTxs { setupWithTxs = setupWithTxs', subTxs }
+      | setupWithTxs' <- shrink setupWithTxs]
+
+withInternalState
+  :: TestSetup
+  -> (MempoolArgs TestBlock -> InternalState TestBlock -> LedgerState TestBlock -> Property)
+  -> Property
+withInternalState testSetup@TestSetup {..} func =
+  let cfg               = testLedgerConfig
+      capacityOverride  = testMempoolCapOverride
+      args              = MempoolArgs cfg txSize capacityOverride
+      ledgerState       = testLedgerState
+      (slot, st')       = tickLedgerState cfg (ForgeInUnknownSlot ledgerState)
+      internalState     = initInternalState capacityOverride zeroTicketNo slot st'
+  in  counterexample (ppTestSetup testSetup)
+      $ classify
+          (isOverride testMempoolCapOverride)
+          "MempoolCapacityBytesOverride"
+      $ classify
+          (not (isOverride testMempoolCapOverride))
+          "NoMempoolCapacityBytesOverride"
+      $ classify (null testInitialTxs)       "empty Mempool"
+      $ classify (not (null testInitialTxs)) "non-empty Mempool"
+      $ func args internalState ledgerState
+  where
+    isOverride (MempoolCapacityBytesOverride _) = True
+    isOverride NoMempoolCapacityBytesOverride   = False
 
 {-------------------------------------------------------------------------------
   Mempool Implementation Properties
@@ -337,7 +407,7 @@ ppTestSetup TestSetup { testInitialTxs
                       , testMempoolCapOverride
                       } = unlines $
     ["Initial contents of the Mempool:"]  <>
-    (map ppTestTxWithHash testInitialTxs) <>
+    map ppTestTxWithHash testInitialTxs <>
     ["Mempool capacity override:"]        <>
     [show testMempoolCapOverride]
 
@@ -763,7 +833,7 @@ withTestMempool setup@TestSetup {..} prop =
     addTxsToLedger :: forall m. IOLike m
                    => StrictTVar m (LedgerState TestBlock)
                    -> [TestTx]
-                   -> STM m [(Either TestTxError ())]
+                   -> STM m [Either TestTxError ()]
     addTxsToLedger varCurrentLedgerState txs =
       mapM (addTxToLedger varCurrentLedgerState) txs
 

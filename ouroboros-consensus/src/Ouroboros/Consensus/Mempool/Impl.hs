@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mempool.Impl (
   , TicketNo
     -- * For testing purposes
   , openMempoolWithoutSyncThread
+  , MempoolEnv(..)
   ) where
 
 import           Control.Exception (assert)
