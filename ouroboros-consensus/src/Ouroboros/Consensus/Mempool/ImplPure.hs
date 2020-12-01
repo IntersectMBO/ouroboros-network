@@ -27,13 +27,18 @@ module Ouroboros.Consensus.Mempool.ImplPure (
   , implSnapshotGetTx
   , implSnapshotGetTxsForSize
   , implSnapshotFromIS
+  , TryAddTxs(..)
+  , pureTryAddTxs
   , pureSyncWithLedger
   , pureRemoveTxs
   , isMempoolSize
+    -- * For testing purposes
+  , runTryAddTxs
   ) where
 
 import           Control.Exception (assert)
 import           Control.Monad.Except
+import           Control.Monad.State.Strict (State, get, put, runState)
 import           Data.Maybe (isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -183,6 +188,119 @@ computeMempoolCapacity st = \case
 {-------------------------------------------------------------------------------
   Mempool Implementation
 -------------------------------------------------------------------------------}
+
+-- | Data type representating the control flow of adding a transaction.
+--
+-- Context:
+--
+-- The Mempool's 'InternalState' is stored in a @TVar@, which means it has to be
+-- updated atomically. However, when adding a bunch of transactions, validating
+-- all of them might not be cheap, so in case of a 'retry' we might have to
+-- revalidate /many/ of them. This duplicated work is bad for the throughput and
+-- the latency.
+--
+-- To mitigate this, we try to keep our STM transactions as short as possible.
+-- Each time we have validated a transaction and found it to be valid, we update
+-- the state in the @TVar@ accordingly. This means we will need an STM
+-- transaction per (blockchain) transaction.
+--
+-- By representing this control flow by a data type we can decouple the actual
+-- logic from how it is executed, allowing for a concurrent, STM-based
+-- interpreter as well as a single-threaded, pure interpreter for testing
+-- purposes.
+data TryAddTxs blk =
+    -- | The transaction was valid.
+    WriteValidTx
+      (InternalState blk)
+      -- ^ The resulting state that can be written to the @TVar@.
+      (GenTx blk)
+      -- ^ The valid transaction
+      (InternalState blk -> TryAddTxs blk)
+      -- ^ How to continue with the remaining transactions
+
+    -- | The transaction was invalid
+  | RejectInvalidTx
+      (GenTx blk)
+      -- ^ The invalid transaction
+      (ApplyTxErr blk)
+      -- ^ Why the transaction was invalid
+      (InternalState blk -> TryAddTxs blk)
+      -- ^ How to continue with the remaining transactions
+
+    -- | No space left in the Mempool for these transactions
+  | NoSpaceLeft [GenTx blk]
+
+    -- | No more transactions to add
+  | Done
+
+-- | Return the control flow to add a list of transactions against the given
+-- 'InternalState'.
+--
+-- See 'runTryAddTxs' for an example of a pure interpreter of this control flow.
+pureTryAddTxs ::
+     (LedgerSupportsMempool blk, HasTxId (GenTx blk))
+  => MempoolArgs blk
+  -> [GenTx blk]
+  -> InternalState blk
+  -> TryAddTxs blk
+pureTryAddTxs _      [] _  = Done
+pureTryAddTxs mpArgs toAdd@(firstTx:toAdd') is
+    | let firstTxSize = mpArgsTxSize mpArgs firstTx
+          curSize = msNumBytes $ isMempoolSize is
+    , curSize + firstTxSize > getMempoolCapacityBytes (isCapacity is)
+    = NoSpaceLeft toAdd
+
+    | otherwise
+    , let vr = extendVRNew cfg firstTx txSize $ validationResultFromIS is
+    = case vrInvalid vr of
+        [(_, err)] ->
+          RejectInvalidTx
+            firstTx
+            err
+            (pureTryAddTxs mpArgs toAdd')
+        -- We only extended the ValidationResult with a single transaction
+        -- ('firstTx'). So if it's not in 'vrInvalid', it will be in
+        -- 'vrNewValid'.
+        _otherwise ->
+          WriteValidTx
+            (internalStateFromVR vr)
+            firstTx
+            (pureTryAddTxs mpArgs toAdd')
+  where
+    MempoolArgs
+      { mpArgsLedgerCfg = cfg
+      , mpArgsTxSize    = txSize
+      } = mpArgs
+
+-- | Run the 'TryAddTxs' flow in a pure way, returning the result as well as the
+-- final 'InternalState'.
+runTryAddTxs ::
+     forall blk. (LedgerSupportsMempool blk, HasTxId (GenTx blk))
+  => MempoolArgs blk
+  -> InternalState blk
+  -> [GenTx blk]
+  -> ( ([(GenTx blk, MempoolAddTxResult blk)], [GenTx blk])
+     , InternalState blk
+     )
+runTryAddTxs mpArgs = \is txs ->
+    runState (go (pureTryAddTxs mpArgs txs is)) is
+  where
+    go :: TryAddTxs blk
+       -> State (InternalState blk)
+                ([(GenTx blk, MempoolAddTxResult blk)], [GenTx blk])
+    go = \case
+        WriteValidTx is' tx k -> do
+          put is'
+          (res, remaining) <- go (k is')
+          return ((tx, MempoolTxAdded):res, remaining)
+        RejectInvalidTx tx err k -> do
+          is <- get
+          (res, remaining) <- go (k is)
+          return ((tx, MempoolTxRejected err):res, remaining)
+        NoSpaceLeft remaining ->
+          return ([], remaining)
+        Done ->
+          return ([], [])
 
 pureRemoveTxs
   :: ( LedgerSupportsMempool blk

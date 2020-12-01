@@ -1,12 +1,7 @@
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
@@ -19,9 +14,7 @@ module Ouroboros.Consensus.Mempool.Impl (
   , MempoolEnv(..)
   ) where
 
-import           Control.Exception (assert)
 import           Control.Monad.Except
-import           Data.Maybe (isJust, isNothing, listToMaybe)
 import           Data.Typeable
 
 import           Control.Tracer
@@ -207,8 +200,8 @@ atomicallyDoWithState mpEnv func =
 -- POSTCONDITON:
 -- > (processed, toProcess) <- implTryAddTxs mpEnv txs
 -- > map fst processed ++ toProcess == txs
-implTryAddTxs
-  :: forall m blk. (IOLike m, LedgerSupportsMempool blk, HasTxId (GenTx blk))
+implTryAddTxs ::
+     forall m blk. (IOLike m, LedgerSupportsMempool blk, HasTxId (GenTx blk))
   => MempoolEnv m blk
   -> [GenTx blk]
   -> m ( [(GenTx blk, MempoolAddTxResult blk)]
@@ -218,66 +211,48 @@ implTryAddTxs
          -- Transactions that have not yet been added because the capacity
          -- of the Mempool has been reached. A suffix of the input list.
        )
-implTryAddTxs mpEnv = go []
+implTryAddTxs mpEnv txs = go [] (pureTryAddTxs mpArgs txs)
   where
-    MempoolEnv
-      { mpEnvStateVar
-      , mpEnvArgs = mpArgs
-      , mpEnvTracer
-      } = mpEnv
+    MempoolEnv { mpEnvStateVar, mpEnvArgs = mpArgs, mpEnvTracer } = mpEnv
 
-    done acc toAdd = return (reverse acc, toAdd)
-
-    go acc []                     = done acc []
-    go acc toAdd@(firstTx:toAdd') =
-        -- Note: we execute the continuation returned by 'atomically'
-        join $ atomically $ readTVar mpEnvStateVar >>= tryAdd
-      where
-        tryAdd is
-          -- No space in the Mempool.
-          | let firstTxSize = mpArgsTxSize mpArgs firstTx
-                curSize = msNumBytes $ isMempoolSize is
-          , curSize + firstTxSize > getMempoolCapacityBytes (isCapacity is)
-          = return $ done acc toAdd
-
-          | otherwise
-          = do
-              let vr  = extendVRNew (mpArgsLedgerCfg mpArgs) firstTx (mpArgsTxSize mpArgs) $
-                          validationResultFromIS is
-                  is' = internalStateFromVR vr
-              unless (null (vrNewValid vr)) $
-                -- Each time we have found a valid transaction, we update the
-                -- Mempool. This keeps our STM transactions short, avoiding
-                -- repeated work.
-                --
-                -- Note that even if the transaction were invalid, we could
-                -- still write the state, because in that case we would have
-                -- that @is == is'@, but there's no reason to do that
-                -- additional write.
-                writeTVar mpEnvStateVar is'
-
-              -- We only extended the ValidationResult with a single
-              -- transaction ('firstTx'). So if it's not in 'vrInvalid', it
-              -- must be in 'vrNewValid'.
-              return $ case listToMaybe (vrInvalid vr) of
-                -- The transaction was valid
-                Nothing ->
-                  assert (isJust (vrNewValid vr)) $ do
-                    traceWith mpEnvTracer $ TraceMempoolAddedTx
-                      firstTx
-                      (isMempoolSize is)
-                      (isMempoolSize is')
-                    go ((firstTx, MempoolTxAdded):acc) toAdd'
-                Just (_, err) ->
-                  assert (isNothing (vrNewValid vr))  $
-                  assert (length (vrInvalid vr) == 1) $ do
-                    traceWith mpEnvTracer $ TraceMempoolRejectedTx
-                      firstTx
-                      err
-                      (isMempoolSize is)
-                    go
-                      ((firstTx, MempoolTxRejected err):acc)
-                      toAdd'
+    -- Note: we execute the continuation returned by 'atomically'
+    go :: [(GenTx blk, MempoolAddTxResult blk)]
+          -- ^ Accumulator, stored in reverse order
+       -> (InternalState blk -> TryAddTxs blk)
+       -> m ( [(GenTx blk, MempoolAddTxResult blk)]
+            , [GenTx blk]
+            )
+    go acc k = join $ atomically $ do
+      -- Before executing each step of the 'TryAddTxs' flow, we grab the latest
+      -- 'InternalState' from the @TVar@
+      is <- readTVar mpEnvStateVar
+      case k is of
+        Done -> do
+          return $ return (reverse acc, [])
+        NoSpaceLeft remaining -> do
+          return $ return (reverse acc, remaining)
+        WriteValidTx is' tx k' -> do
+          -- Each time we have found a valid transaction, we update the Mempool.
+          -- This keeps our STM transactions short, avoiding repeated work.
+          writeTVar mpEnvStateVar is'
+          -- Return a continuation that traces and interprets the next step of
+          -- the 'TryAddTxs' flow.
+          return $ do
+            traceWith mpEnvTracer $
+              TraceMempoolAddedTx
+                tx
+                (isMempoolSize is)
+                (isMempoolSize is')
+            go ((tx, MempoolTxAdded):acc) k'
+        RejectInvalidTx tx err k' ->
+          -- Invalid transactions do not affect the state, so no need to update.
+          return $ do
+            traceWith mpEnvTracer $
+              TraceMempoolRejectedTx
+                tx
+                err
+                (isMempoolSize is)
+            go ((tx, MempoolTxRejected err):acc) k'
 
 implRemoveTxs
   :: ( IOLike m
