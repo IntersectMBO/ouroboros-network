@@ -1,3 +1,5 @@
+\newcommand{\RequiredPeers}{\ensuremath{N_\mathit{rs}}}
+
 \chapter{Ouroboros Genesis}
 \label{genesis}
 
@@ -17,7 +19,7 @@ being elected a leader in a given slot is proportional to their stake. By
 assumption, the malicious nodes in the system together have less stake than the
 honest nodes; security of the system as a whole critically depends on the
 presence of this honest majority. This means that when a malicious node extends
-the chain they must necessarily produce a chain with fewer filled slots: the
+the chain they can only produce a chain with relatively few filled slots: the
 honest chain will be \emph{denser}. At least, this will be true near the
 intersection point: as we get further away from that intersection point, the
 malicious node can attempt to influence the leadership schedule for future slots
@@ -61,14 +63,14 @@ designed for a context in which all nodes in the network are present from the
 very beginning and are always online. The Praos security analysis
 \cite{cryptoeprint:2017:573} essentially shows that when the honest nodes in the
 system are all following this protocol, they will end up with a common prefix,
-differing only in the most recent $k$ blocks. This means that nodes never need
-to roll back past the tip of that common prefix; indeed, they \emph{should} not
-roll back past that point, as this might mean they might adopt a chain forged by
-a malicious node which is trying to trick them into believing some kind of
-alternative history. This is the reason for the ``no rollback more than $k$
-blocks'' rule in the Praos chain selection rule, as well as the justification
-for the fact that much of the consensus layer is designed around the assumption
-that there exists a maximum rollback distance.
+with disagreement possible only about the most recent $k$ blocks. This means that
+nodes never need to roll back past the tip of that common prefix; indeed, they
+\emph{should} not roll back past that point, as this might mean they might adopt
+a chain forged by a malicious node which is trying to trick them into believing
+some kind of alternative history. This is the reason for the ``no rollback more
+than $k$ blocks'' rule in the Praos chain selection rule, as well as the
+justification for the fact that much of the consensus layer is designed around
+the assumption that there exists a maximum rollback distance.
 
 In reality of course new nodes join the system all the time. This is problematic
 for at least two reasons. First, within the consensus layer we don't see a
@@ -214,16 +216,15 @@ The \emph{Genesis chain selection rule}, designed to cope with new nodes joining
 the network, therefore compares chains on density whenever possible, defaulting
 to comparing chain length only if there aren't enough blocks to do a meaningful
 density comparison. The size of this ``density window'' is a parameter to the
-rule known as $s$, although we can give it a default in terms of $k$
-\cite{cryptoeprint:2018:378}:
+rule known as $s$, although the genesis paper \cite{cryptoeprint:2018:378}
+suggests a default in terms of $k$:
 
 \begin{definition}[Default genesis window size]
 The default genesis window size $s = \frac{1}{4}(k / f)$.
 \end{definition}
 
 The genesis rule we will use in this chapter differs slightly from the one from
-the original paper \cite{cryptoeprint:2018:378}; we will discuss this briefly in
-\cite{genesis:todo}.
+the original paper; we will discuss this in \cref{genesis:alternative}.
 
 \begin{definition}[Genesis rule]
 \label{genesis:rule}
@@ -245,26 +246,27 @@ strictly \textbf{longer} than our chain.
 
 The rule as defined in \cref{genesis:rule} is problematic for consensus:
 \emph{it no longer imposes a maximum rollback}. We depend on this maximum
-rollback in many ways (todo: reference), and we will want to \emph{continue}
-to depend on it. We solve this by switching from the default
-speculative chain selection mode to a \emph{conservative} chain selection mode.
-We will see the details of how this mode works later in this chapter, but
-the intuition is that rather than considering and possibly adopting chains as we
-encounter them, we instead wait, collecting information, until we have enough
-information to allow us to decide which block to adopt next, \emph{knowing we
-will never have to change our mind}: we will never need to roll back that
-block. \Cref{conservative-chain-selection} illustrates what this might look
-like.
+rollback in many ways
+(\cref{storage:components,chainsyncclient:validation,chainsyncclient:forecasting}
+and others), and we will want to \emph{continue} to depend on it. We solve this
+by switching from the default speculative chain selection mode to a
+\emph{conservative} chain selection mode. We will see the details of how this
+mode works later in this chapter, but the intuition is that rather than
+considering and possibly adopting chains as we encounter them, we instead wait,
+collecting information, until we have enough information to allow us to decide
+which block to adopt next, \emph{knowing we will never have to change our mind}:
+we will never need to roll back that block. \Cref{conservative-chain-selection}
+illustrates what this might look like.
 
 The security analysis of the genesis chain selection rule includes a theorem
 \cite[Theorem 2]{cryptoeprint:2018:378} that says that it is still true that
-when nodes are up to date they will never need to roll back more than $k$
+\emph{when nodes are up to date} they will never need to roll back more than $k$
 blocks. We can use this theorem to justify switching from the conservative
 mode back to the speculative mode. Since blocks ahead of the wall clock are
 considered invalid, we can use the current slot number (according to the
 wallclock) to estimate if we are within $k$ blocks from the longest chain
-in the network. This remains an estimate because we might not know the
-density of that chain. At one extreme, we might assume that the density is
+in the network. We cannot do better than an estimate because we might not know
+the density of that chain. At one extreme, we might assume that the density is
 1, and so only switch to speculative mode when we are within $k$ slots from the
 wall clock (despite the unit of $k$ normally being \emph{blocks}, not slots). At
 the other extreme, we might assume that the density is precisely the theoretical
@@ -370,8 +372,6 @@ In this section we will show the rules that we will use to implement the
 genesis chain selection rule whilst in conservative mode. Throughout we will
 rely critically on the following assumption:
 
-\newcommand{\RequiredPeers}{\ensuremath{N_\mathit{rs}}}
-
 \begin{assumption}[Representative sample]
 There exists some threshold $\RequiredPeers$ such that if we see the chains of
 at least $\RequiredPeers$ peers, we have seen a representative sample of
@@ -426,14 +426,15 @@ chain section within the window. Consider what the normal genesis rule would do:
 \begin{itemize}
 \item
 Suppose we saw candidate $A$ first, and later discovered $C$ or $D$: since the
-intersection between these chains is at least $s$ slots ago, we would compare
-the density within a window of $s$ slots from the intersection point, and then
-pick the  denser chain. Since that denser chain is $A$, would stick with $A$.
+intersection with these chains is at least $s$ slots back from the tip of
+$A$, we would compare the density within a window of $s$ slots from the
+intersection point, and then pick the  denser chain. Since that denser chain is
+$A$, we would stick with $A$.
 \item
-Conversely, if our current chain was $C$ or $D$, and we would discover $A$,
-again the distance from our tip to the intersection point is at least $s$
-slots, and so we would switch to $A$, because $A$ is denser at the intersection
-point.
+Conversely, if our current chain was $C$ or $D$, and we would discover $A$, we
+would once again compare the density at the intersection point (because  the
+distance from the tip of $C$ or $D$ to the intersection point is also at least
+$s$ slots), find that $A$ is denser, and so switch to $A$.
 \end{itemize}
 %
 Either way, we would end up choosing $A$. The window of $s$ slots that is relevant
@@ -687,29 +688,261 @@ Similarly, for the common prefix/adopt case (\cref{genesis:adopt}), it looks lik
 
 \subsection{Insufficient peers}
 
+When we haven't yet connected to at least $\RequiredPeers$ peers, neither of
+our two rules can be applied. Consider again the rule that deals with forks:
+%
+\begin{center}
+\begin{tikzpicture}[yscale=0.75]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd);
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node[right]{$A$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
+\draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
+\path (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) coordinate (D);
+
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.75)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
+\draw [dotted] (D) -- ++(-2.5,0) -- ++(-0.25,0.25);
+
+\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0) ;
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip);
+\end{tikzpicture}
+\end{center}
+%
+Since we don't know the density of the missing chain $D$, it's not sound to
+conclude that $A$ is the densest. Similarly, in the rule for a common prefix,
+%
+\begin{center}
+\begin{tikzpicture}[yscale=0.75]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
+\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
+\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
+\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
+\path (branch) -- ++(1.0, -0.9) -- ++ (1.5, 0) coordinate(D);
+
+\draw [dotted] (D) -- ++(-2.5,0) -- ++(-0.25,0.25);
+\node [below left] at (tip) {tip};
+\draw [red, very thick] (tip) -- ++(1.0,  0.0);
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.25)
+  -- ++(3, 0)
+  -- ++(0, -2.5)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip);
+
+\end{tikzpicture}
+\end{center}
+%
+we don't know if the missing chain $D$ \emph{also} starts with the same block,
+and so we don't know if the common prefix rule can be applied.
+
 \subsection{Insufficient slots}
 
-\section{Switching between modes}
+We can make more progress in the situation where we \emph{do} have all the peers
+we need, but their chains might not fill the look-ahead window. The rule for
+common prefix is the simpler case:
+%
+\begin{center}
+\begin{tikzpicture}[yscale=0.75]
+\path (0, 0) coordinate (tip) node{$\bullet$};
+\draw (tip) -- ++(1.0,  0.0) coordinate (branch) node{$\bullet$};
+\draw (branch) -- ++(1.0,  0.9) -- ++ (1.5, 0) node[right]{A};
+\draw (branch) -- ++(1.0,  0.3) -- ++ (1.5, 0) node[right]{B};
+\draw (branch) -- ++(1.0, -0.3) -- ++ (1.5, 0) node[right]{C};
+\draw (branch) -- ++(1.0, -0.9) coordinate(D) node{$\bullet$} node[below]{D};
+\draw [dashed] (D) -- ++ (1.5, 0);
 
-means we might switch to a shorter chain?
+\node [below left] at (tip) {tip};
+\draw [red, very thick] (tip) -- ++(1.0,  0.0);
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.25)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip);
 
-
+\end{tikzpicture}
+\end{center}
+%
+Even though we have not yet seen enough of chain $D$ to fill the window, it does
+not matter; by assumption, if we see at least $\RequiredPeers$ chains, we have
+seen all relevant chains in the network, and if all of those chains start with
+the same block, we can definitely adopt that block. From a practical
+perspective, this is an important special case: under normal circumstances, we
+expect all peers in the network to report the exact same chain, at least for all
+but the last few of the millions of blocks on their chains. This means that we
+can adopt blocks almost as soon as we see them during syncing.
 
 \pagebreak
-\debugsep{OLD}
 
-\section{The Genesis Chain Selection Rule}
+The situation is a bit more subtle in the case of a fork:
+%
+\begin{center}
+\begin{tikzpicture}[yscale=0.75]
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
+\draw (tip) -- ++(1.5, -0.5) coordinate (cd);
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) node[right]{$A$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
+\draw (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
+\draw (cd) -- ++(0.5, -0.5) coordinate(D) node{$\bullet$} node[below]{$D$};
+\draw [dashed] (D) -- ++ (1.5, 0);
 
-\subsection{Introduction}
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.75)
+  -- ++(3, 0)
+  -- ++(0, -3.5)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
 
-The genesis rule is an improved chain selection rule, designed to help new nodes
-safely join the network even in the presence of potential long range attacks
-\cite{cryptoeprint:2018:378}. From the point of view of the consensus layer,
-however, the \emph{why} is less relevant than the \emph{what} and the
-\emph{how}. Let's start with the \emph{what}. The genesis chain selection
-rule defined as follows.
+\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0) ;
+\draw (tip) + (-3,0) node{$\bullet$} -- (tip);
+\end{tikzpicture}
+\end{center}
+%
+We might only be seeing a prefix of $D$'s chain, or it might be that $D$'s chain
+simply isn't longer. Fortunately, $D$ will report its tip as part of the chain
+sync protocol.\footnote{In principle, making use of this information is not
+critical: we could assume the node always has more headers and simply wait,
+timing out if they don't give us more headers. We don't currently have such a
+timeout---we time out only if a node tells us they have more header but then
+fail to provide them to us---and even if we did, it would mean introducing
+avoidable delays into chain selection: if we happen to connect to an upstream
+peer that is not up to date, we would be dependent on a timeout before we can
+rule this peer out.} We can use this information to distinguish between these
+cases:
+%
+\begin{itemize}
+\item If $D$ reports that its tip is \textbf{within} our $s$ window, then the
+chain simply isn't any longer, and we can disconnect from this node, as it
+itself is not up to date (it is more than $s$ slots away from the wallclock).
+\item If the node reports that its tip is \textbf{outside} the $s$ window, we
+must wait until we have seen enough of $D$'s chain to fill the window before we
+can say something conclusive about $D$'s density. Note that if $D$ reports a tip
+outside the window but then doesn't send us any more headers, we will eventually
+time-out and disconnect from $D$, protecting us from a DoS attack.
+\item There is one exception to the previous case: if we have not yet seen all
+of $D$'s chain, but the part that we \emph{did} see (and validated) already
+contains more blocks than another chain (say $A$), we can safely conclude
+that $D$ must be denser than $A$ (provided we \emph{have} seen enough of $A$
+to fill the window).
+\end{itemize}
 
-\begin{definition}[Genesis chain selection rule]
+Since not every slot on the chain contains a block, it is not entirely trivial
+to detect whether we have seen enough of a chain to fill the window; we must
+wait until we have seen the first block outside of the window:
+%
+\begin{center}
+\begin{tikzpicture}[yscale=0.75]
+\draw (0,0) -- (2,0) node{$\bullet$} coordinate (tip);
+\draw [dotted] (tip) -- ++(1,1) -- ++ (0.5,0) node[right]{$\ldots$};
+\draw [dotted] (tip) -- ++(1,0.5) -- ++ (0.5,0) node[right]{$\ldots$};
+\draw (tip) -- ++(1,-0.25) node {$\bullet$} coordinate (a);
+\draw (a) -- ++(0.5,  0) node {$\bullet$} coordinate (b);
+\draw (b) -- ++(1.0,  0) node {$\bullet$} coordinate (c);
+\draw (c) -- ++(0.25, 0) node {$\bullet$} coordinate (d);
+\draw (d) -- ++(1,    0) node {$\bullet$} coordinate (e);
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.5)
+  -- ++(3, 0)
+  -- ++(0, -2.25)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_s$}
+  -- cycle;
+\end{tikzpicture}
+\end{center}
+
+\section{Partial validation}
+
+Everything we have discussed so far was in terms of headers. In particular,
+we \emph{discard} chains based on header validity only. This is justified,
+because the argument that the honest chain must be denser depends on checking
+the \emph{leadership schedule} only: as long as we verify headers, thereby
+verifying that those headers were produced by nodes that were indeed selected
+leader in those slots, we have verified that leadership schedule; whether or
+not the rest of the block is valid is not relevant.
+
+Of course, if we skip header validation altogether, then it would be all too
+trivial for an attacker to present us with a very dense chain, causing us to
+disconnect from the honest chain. This means that if  the genesis chain
+selection rule is implemented along the lines sketched in this chapter, header
+validation during chain sync is critical.
+
+We only \emph{adopt} blocks (or rather, present them to the chain database) when
+\emph{all} chains share those blocks. Before we adopt these blocks into our own
+chain (indeed, before we adopt \emph{any} block) we validate them; if such a
+block, shared by all chains we are aware off, turns out to be invalid, something
+went horribly wrong. Perhaps we got eclipsed by an attacker after all, and they
+are presenting us with an invalid block as some form of DoS attack. It is
+unclear what to do in this situation; we might not have much choice other than
+to wipe the entire chain database and start afresh with an empty chain.
+
+\section{Switching between modes}
+\label{genesis:switching-modes}
+
+Let's consider the obvious case first. When a new node joins the network,
+local chain still empty, they check their clock, notice that they are more
+than $k$ blocks away from the currently longest chain (see introduction for
+how we might estimate this), and so use conservative chain selection mode,
+adding blocks to their chain only once they are sure about them. Once they
+get near the tip of the chain, they switch to speculative mode.
+
+In a sense this is how the genesis paper envisions the genesis rule to be used:
+new nodes can join the chain at a later stage, \emph{and then stay up to date}.
+In reality, however, it is entirely possible for a node that is currently up
+to date to fall behind again; the reason might be as simple as a user closing
+down their computer for a few days. It is therefore important that we can go
+\emph{back} from speculative mode into conservative mode.
+
+In the discussion of the rules above, we assumed that our look-ahead window
+was anchored at the tip of a chain of blocks we were sure about. To bring us
+back to this situation when we switch out of speculative mode, we should
+anchor the look-ahead window at the tip of our immutable database (i.e.,
+$k$ blocks back from our current tip), and then proceed as above.
+
+When we anchor the look-ahead window at our immutable tip, \emph{this does not
+have to affect our current chain}. We anchor the window at the immutable tip,
+then start going forward, offering blocks to the chain database as we make
+progress. In most cases, most (if not all) blocks that we decide we can be sure
+about will be shared by our current chain, so nothing changes. If \emph{all}
+blocks are shared, at some point our chain will simply start to grow again. If
+only a prefix is shared, at some point the new chain that we are constructing
+will be preferred over our own (using normal chain selection) and we will switch
+to it at that point. At most this would involve a roll-back of $k$, because
+that's where we anchored our look-ahead window initially, so that is the
+earliest point at which an alternative chain could fork off.
+
+
+
+
+
+
+
+
+\section{Miscellaneous other remarks}
+
+\subsection{The original genesis rule}
+\label{genesis:original}
+
+The genesis rule as defined in \cref{genesis:rule} is a minor variation on
+the rule as presented in the paper \cite{cryptoeprint:2018:378}, although
+the two rules are equivalent in terms of the security of the system
+[Badertscher, personal communication]. The original rule is shown in
+\cref{genesis:maxvalid-bg}, and paraphrased below:
+
+\begin{definition}[Genesis chain selection rule, original version]
 \label{genesis:originalrule}
 A candidate chain is preferred over our current chain if
 
@@ -724,27 +957,53 @@ a region of $s$ slots starting at the intersection.
 \end{itemize}
 \end{definition}
 
-Condition (B) of this definition is what sets the genesis rule apart from the
-Praos chain selection rule.\footnote{The \lstinline!TPraos! chain selection rule
-of the Shelley ledger may additionally prefer candidate chains of equal length
-under certain circumstances, see \cref{todo}.} The intuition is that an attacker
-will have less stake than the majority (if this is not true, the chain is no
-longer secure), and therefore if they try to construct an alternative history,
-they can only produce a chain that is less dense than the real chain.
+This version of the rule is less suitable for our purposes, for two reasons.
+First, consider once more the rule for forks during conservative chain
+selection:
+%
+\begin{center}
+\begin{tikzpicture}
+\path (0, 0) coordinate (tip) node{$\bullet$} node[below left]{tip};
+\draw (tip) -- ++(1.0,  1.0) coordinate (ab) node{$\bullet$} node[above left]{$ab$};
+\draw [dotted] (tip) -- ++(1.5, -0.5) coordinate (cd);
+\draw (ab) -- ++(0.5,  0.5) -- ++(2.0, 0) coordinate(A) node[right]{$A$};
+\draw (ab) -- ++(0.5, -0.5) -- ++(2.0, 0) node[right]{$B$};
+\draw [dotted] (cd) -- ++(0.5,  0.5) -- ++(1.5, 0) node[right]{$C$};
+\draw [dotted] (cd) -- ++(0.5, -0.5) -- ++(1.5, 0) node[right]{$D$};
+\draw [dashed]
+     (tip)
+  -- ++(0, 1.75)
+  -- ++(3, 0)
+  -- ++(0, -3)
+  -- ++(-3, 0) node[pos=0.5, below]{$\underbrace{\hspace{3cm}}_{\text{$s$ slots}}$}
+  -- cycle;
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\subsection{Alternative Formulation}
+\draw [red, very thick] (tip) -- (ab) -- ++(0.5,  0.5) -- ++(1.5, 0);
+\end{tikzpicture}
+\end{center}
+%
+We know that the distance from $A \ldots D$ to the anchor of the window is at
+least $s$ slots. However, in order to be able to apply the \emph{original}
+genesis rule as stated, that is not sufficient. We would need to know if the
+distance to that intersection point is at least $k$ blocks in order to know
+if we should be comparing density or chain length. This means we would need to
+make our look-ahead window significantly larger, so that we don't just wait
+until we have seen at least $s$ slots, but also wait until we know for sure
+if the tips of various chains we are considering at at least $k$ blocks away
+from the intersection point.
 
-As phrased in \cref{genesis:originalrule}, the genesis chain selection rule has
-a weird quirk. Consider the following situation, where we have two chains $C_1$
-and $C_2$; $C_1$ is denser than $C_2$ at the intersection with $C_2$, but $C_2$
+The second reason that this rule is less suitable for us is that it has an odd
+corner case. Consider the following situation, where we have two chains $A$
+and $B$; $A$ is denser than $B$ at the intersection with $B$, but $B$
 is longer:
-
+%
 \begin{center}
 \begin{tikzpicture}
 \path (0, 0) coordinate (tip) node{$\bullet$};
-\draw (tip) -- ++(1.0,  0.5) -- ++(2.5, 0) coordinate(C1) node[right]{$C_1$};
-\draw (tip) -- ++(1.0, -0.5) -- ++(3.5, 0) coordinate(C2) node[right]{$C_2$};
+\draw (tip) -- ++(1.0,  0.5) -- ++(2.5, 0) coordinate(C1) node[right]{$A$};
+\draw (tip) -- ++(1.0, -0.5) -- ++(3.5, 0) coordinate(C2) node[right]{$B$};
 \draw [red, very thick] (tip) -- ++(1.0,  0.5) -- ++(2.0, 0);
 \draw [dashed]
      (tip)
@@ -758,50 +1017,23 @@ is longer:
 \draw (tip) + (-3,0) node{$\bullet$} -- (tip);
 \end{tikzpicture}
 \end{center}
+%
+If our current chain is $A$, then the intersection point with $B$ is \emph{less}
+than $k$ blocks back, so the rule says we should prefer $B$, because it is the
+longer chain. But if our current chain is $B$, then the intersection point with
+$A$ is \emph{more} than $k$ blocks back, and so the rule says we should prefer
+$A$, because it is denser!
 
-If our current chain is $C_1$, then the intersection point with $C_2$ is less
-than $k$ blocks back, so condition (A) of the rule applies and we prefer $C_2$,
-because $C_2$ is longer. But if our current chain is $C_2$, then the
-intersection point with $C_1$ is \emph{more} than $k$ blocks back, and so
-condition (B) of the rule applies, and we prefer $A$, because it is denser!
+The rule as formulated in the paper (reproduced here
+in \cref{genesis:maxvalid-bg}) does not suffer from this ``flip-flop''
+behaviour, but only because it considers chains strictly in order. If the list
+of chains $\mathcal{N} = \{ A, B \}$, we end up choosing $B$, and if that list
+is $\mathcal{N} = \{ B, A \}$, we end up choosing $A$.
 
-The rule as formulated in the paper (reproduced here in
-\cref{genesis:maxvalid-bg}) does not suffer from this ``flip-flop'' behaviour,
-but only because it considers chains strictly in order. If the list of chains
-$\mathcal{N} = \{ C_1, C_2 \}$, we end up choosing $C_2$, and if that list is
-$\mathcal{N} = \{ C_2, C_1 \}$, we end up choosing $C_1$.
-
-The following alternative formulation of the genesis rule [Badertscher, personal
-communication] avoids this problem. As we shall see (todo\todo{TODO}:
-reference), it also suits our needs better:
-
-\pagebreak
-
-\begin{definition}[Alternative genesis rule]
-\label{genesis:originalrule}
-A candidate chain is preferred over our current chain if
-
-\begin{itemize}
-\item The intersection between the candidate chain and our chain is
-\textbf{at least $s$ slots} back, and the candidate chain is denser in a window
-of $s$ slots at the intersection, or
-
-\item The intersection between the candidate chain and our chain is \textbf{less
-than $s$ slots back and no more than $k$ blocks back}\footnote{This is
-extremely unlikely to happen in $s$ slots.}, and the candidate chain is strictly
-\textbf{longer} than our chain.
-\end{itemize}
-
-\end{definition}
-
-Whichever variant we use however, it is clear that this rule breaks a bunch of
-fundamental assumptions within the consensus layer; in particular, taken at face
-value, it implies we might have to roll back more than $k$ blocks
-(\cref{consensus:overview:k}), we might switch to a shorter chain
-(\cref{never-shrink}). Less fundamentally, but nonetheless importantly, it also
-doesn't fit vey well with our look-at-the-tip-only approach
-(\cref{consensus:overview:chainsel}). We will therefore treat the genesis
-chain selection rule as a special case.
+Perhaps this is not a problem in speculative mode; we just pick \emph{an} order,
+choosing either $A$ or $B$, and eventually settle on $A$ once it becomes long
+enough. However, it is problematic in conservative mode where we want
+definitive answers.
 
 \begin{figure}
 \hrule
@@ -838,6 +1070,71 @@ return (*$C_\mathit{max}$*)
 \hrule
 \caption{\label{genesis:maxvalid-bg}Algorithm \texttt{maxvalid-bg}}
 \end{figure}
+
+
+
+\subsection{Switching to shorter chain}
+
+When we introduced chain selection in \cref{consensus:overview:chainsel}, we
+stated an invariant that we never switch to a shorter chain
+(\cref{never-shrink}). The most important rationale for this invariant is that
+if we \emph{did} switch to a shorter chain, and then continue to support a
+maximum rollback of $k$ blocks, we would effectively end up having to
+support infinite rollback.
+
+When we support genesis, we must relax this invariant slightly. The genesis
+rule means that we \emph{might} switch to a shorter chain, if it is denser
+than our current chain at the intersection point. This isn't a problem per se,
+provided that when it happens our maximum rollback temporarily shrinks, until
+we have seen a sufficient amount of blocks on the new chain.
+
+As discussed in \cref{genesis:original}, the genesis rule as stated in the
+paper is slightly different from the one we use here. Moreover, the paper
+also shows \cite[Theorem 2]{cryptoeprint:2018:378} that we only need to
+look at density when we are not up to date, and can simply look at length
+otherwise. It is therefore tempting to think that we could use that theorem
+to avoid switching to a shorter chain. However, recall that we also need to do
+chain selection when we switch back from speculative mode to conservative mode,
+which happens precisely when we are \emph{not} up to date
+(\cref{genesis:switching-modes}).\footnote{Alternatively, we could roll back to
+the tip of our immutable database when we switch to conservative mode, but if we
+did, we would \emph{definitely}  be switching to a shorter chain, of course.}
+
+These problems may well have solutions: perhaps the combination of
+%
+\begin{enumerate}
+\item a setup in which we use the longest chain rule in speculative mode (or,
+equivalently, the genesis rule as it was phrased in the paper, along with
+Theorem 2 of the paper),
+\item our (alternative) genesis rule in conservative mode, along with
+\item an argument (proof sketch) that when we do switch from speculative
+back to conservative mode, it is sound to switch to the (potentially) new chain
+only once it's longer than our own
+\end{enumerate}
+%
+would still be sound, and allow us to avoid switching to a shorter chain.
+This would seem considerably more adhoc than what we have proposed
+in this chapter, however.
+
+
+
+\pagebreak
+\debugsep{OLD}
+
+\section{The Genesis Chain Selection Rule}
+
+
+\subsection{Alternative Formulation}
+
+Whichever variant we use however, it is clear that this rule breaks a bunch of
+fundamental assumptions within the consensus layer; in particular, taken at face
+value, it implies we might have to roll back more than $k$ blocks
+(\cref{consensus:overview:k}), we might switch to a shorter chain
+(\cref{never-shrink}). Less fundamentally, but nonetheless importantly, it also
+doesn't fit vey well with our look-at-the-tip-only approach
+(\cref{consensus:overview:chainsel}). We will therefore treat the genesis
+chain selection rule as a special case.
+
 
 \section{Towards an Alternative}
 

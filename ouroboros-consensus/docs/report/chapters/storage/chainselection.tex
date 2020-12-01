@@ -209,17 +209,8 @@ C \chainlt C'  \iff  \length{C} < \length{C'}
 \end{equation*}
 
 In general of course the exact rule depends on the choice of consensus protocol.
-\Cref{never-shrink} (\cref{consensus:overview:chainsel}) however means that we
-\emph{do} have that
-%
-\begin{equation}
-\label{eq:never-shrink}
-\ifthen{\length{C'} < \length{C}}{C \chainnotlt C'}
-\end{equation}
-%
-independent of the particular choice of consensus protocol (in general, however,
-we cannot say anything about chains of equal length). \Cref{prefer-extension}
-(\cref{consensus:overview:chainsel}) can now be rephrased as
+\Cref{prefer-extension} (\cref{consensus:overview:chainsel}) can now be
+rephrased as
 %
 \begin{equation}
 \label{eq:prefer-extension}

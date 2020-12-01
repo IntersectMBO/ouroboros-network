@@ -1,6 +1,18 @@
 \chapter{Chain sync client}
 \label{chainsyncclient}
 
+\section{Header validation}
+\label{chainsyncclient:validation}
+
+Discuss the fact that we validate headers (maybe a forward reference to the genesis chapter, where this becomes critical).
+
+Discuss that this means we need efficient access to the $k$ most recent ledger states (we refer to this section for that).
+
+\section{Forecasting requirements}
+\label{chainsyncclient:forecasting}
+
+Discuss that forecasting must have sufficient range to validate a chain longer than our own chain, so that we can meaningfully apply chain selection.
+
 \section{Trimming}
 \label{chainsyncclient:trimming}
 
