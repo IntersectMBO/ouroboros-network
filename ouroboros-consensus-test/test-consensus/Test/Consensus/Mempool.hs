@@ -107,7 +107,7 @@ prop_Mempool_pureRemoveTxsId_contra TestSetupRemove {..} =
     \ mpArgs internalSt ledgerState ->
       let (internalStRes, _)    = pureRemoveTxs (map txId subTxs) mpArgs internalSt ledgerState
           txIdsRemaining        = Set.toList (isTxIds internalStRes)
-      in property $ txIdsRemaining == map txId (testInitialTxs setup) \\ map txId subTxs
+      in sort txIdsRemaining === sort (map txId (testInitialTxs setup) \\ map txId subTxs)
 
 data TestSetupRemove = TestSetupRemove
   { setup  :: TestSetup
@@ -133,9 +133,7 @@ withInternalState testSetup@TestSetup {..} func =
   let args              = MempoolArgs testLedgerConfig txSize testMempoolCapOverride
       (slot, st')       = tickLedgerState testLedgerConfig (ForgeInUnknownSlot testLedgerState)
       internalSt        = initInternalState testMempoolCapOverride zeroTicketNo slot st'
-      testTxs           = map (\tx -> TxTicket tx (TicketNo 0) 0) testInitialTxs
-      internalSt'       = internalSt {isTxs = fromList testTxs,
-                                      isTxIds = Set.fromList (map txId testInitialTxs)}
+      (_,internalSt')   = runTryAddTxs args internalSt testInitialTxs
   in  counterexample (ppTestSetup testSetup)
       $ classify
           (isOverride testMempoolCapOverride)
