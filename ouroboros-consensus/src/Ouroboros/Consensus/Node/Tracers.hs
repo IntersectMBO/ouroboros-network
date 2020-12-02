@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Node.Tracers
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 import           Data.Text (Text)
+import           Data.Time (UTCTime)
 
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
@@ -59,7 +60,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceLabelCreds (TraceForgeEvent blk))
-  , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
+  , blockchainTimeTracer          :: f (TraceBlockchainTimeEvent UTCTime)
   , forgeStateInfoTracer          :: f (TraceLabelCreds (ForgeStateInfo blk))
   , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
   }

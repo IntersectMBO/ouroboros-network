@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.Time
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
@@ -85,7 +86,7 @@ prop_delayNextSlot TestDelayIO{..} =
         tdioStart  <- pickSystemStart
         let time = defaultSystemTime tdioStart nullTracer
         atStart    <- fst <$> getWallClockSlot  time tdioSlotLen
-        nextSlot   <-         waitUntilNextSlot time tdioSlotLen atStart
+        nextSlot   <-         waitUntilNextSlot time tdioSlotLen maxClockRewind atStart
         afterDelay <- fst <$> getWallClockSlot  time tdioSlotLen
         assertEqual "atStart + 1" (atStart + 1) afterDelay
         assertEqual "nextSlot"    nextSlot      afterDelay
@@ -96,6 +97,11 @@ prop_delayNextSlot TestDelayIO{..} =
         pick :: UTCTime -> SystemStart
         pick = SystemStart . Time.addUTCTime (negate tdioStart')
 
+    -- Will only be needed when the system clock rolls back during the execution
+    -- of this test, which is rather unlikely.
+    maxClockRewind :: NominalDiffTime
+    maxClockRewind = secondsToNominalDiffTime 20
+
 {-------------------------------------------------------------------------------
   Test delay using mock time
 -------------------------------------------------------------------------------}
@@ -103,7 +109,8 @@ prop_delayNextSlot TestDelayIO{..} =
 -- | Schedule defines the system time as offsets (in seconds) from the start
 --
 -- We limit the resolution of the offsets to 0.1 seconds to make the tests
--- easier to interpret and shrink (slot length is set to 1 seconds).
+-- easier to interpret and shrink (slot length is set to 1 seconds). We allow
+-- the clock to go back at most 2 seconds.
 newtype Schedule = Schedule { getSchedule :: [Fixed E1] }
   deriving stock (Show)
   deriving NoThunks via AllowThunk Schedule
@@ -140,39 +147,52 @@ scheduleCountSkips (Schedule (t:ts)) = go t ts
 --
 -- Returns the set of slot numbers that 'BlockchainTime' should report or,
 -- if time moved backwards, the @(before, after)@ slot pair where @after@ is
--- (strictly) less than @before@.
+-- more than the @maxClockRewind@ less than @before@.
 --
--- NOTE: Assumes the slot length is 1 for these sets.
+-- NOTE: Assumes the slot length is 1 and max clock rewind is 2 for these sets.
 model :: Int -> Schedule -> Either (SlotNo, SlotNo) [SlotNo]
-model = \need (Schedule s) -> runExcept $ go need s (SlotNo 0)
+model = \need (Schedule ss) ->
+    -- Establish the invariant that the 'Schedule' is never empty
+    let ss' = case ss of
+          [] -> [0.0]
+          _  -> ss
+    in runExcept $
+      (SlotNo 0 :) <$> go (need - 1) (Schedule ss') (0.0, SlotNo 0)
   where
-    go :: Int        -- How many slots do we still need to collect?
-       -> [Fixed E1] -- Remaining schedule
-       -> SlotNo     -- Current slot
-       -> Except (SlotNo, SlotNo) [SlotNo]
+    -- | This let's us treat the schedule as an infinite stream of offsets.
+    --
+    -- INVARIANT: 'Schedule' is never empty
+    --
+    -- When there is no offset after the current one in the schedule, create
+    -- one, exactly one slot length after the current one.
+    advanceSchedule :: Schedule -> (Fixed E1, Schedule)
+    advanceSchedule (Schedule ss) =
+        case ss of
+          []    -> error "invariant broken: empty schedule"
+          [s]   -> (s,   Schedule [s + 1.0])
+          s:ss' -> (s,   Schedule ss')
 
-    -- No more slots required
-    go 0 _ _ =
-        return []
-
-    -- If we don't override the delays, everything just works as expected
-    go need [] now =
-        return [SlotNo (unSlotNo now + n) | n <- take need [0 ..]]
-
-    go need (s:ss) now
-      -- Time didn't actually move according to the schedule, 'BlockchainTime'
-      -- should wait until it does.
-      | now' == now = go need ss now
-
-      -- If time did move forward, 'BlockchainTime' should report the next slot
-      -- (which might not be the successor of the previous)
-      | now' >  now = (now :) <$> go (need - 1) ss now'
-
-      -- If time went backwards, we should see an exception
-      | otherwise   = throwError (now, now')
+    go ::
+         Int
+      -> Schedule
+      -> (Fixed E1, SlotNo)
+      -> Except (SlotNo, SlotNo) [SlotNo]
+    go n ss (prevOffset, prevSlot)
+        | n <= 0
+        = return []
+        | nextSlot == prevSlot
+        = go n ss' (offset, nextSlot)
+        | nextSlot >  prevSlot
+        = (nextSlot :) <$> go (n - 1) ss' (offset, nextSlot)
+        -- If time moved back, but less than 2s, we don't throw an exception
+        | prevOffset - offset < 2
+        = go n ss' (prevOffset, prevSlot)
+        -- If time moved back too much, we should see an exception
+        | otherwise
+        = throwError (prevSlot, nextSlot)
       where
-        now' :: SlotNo
-        now' = offsetToSlot s
+        (offset, ss') = advanceSchedule ss
+        nextSlot      = offsetToSlot offset
 
 instance Arbitrary Schedule where
   arbitrary =
@@ -186,6 +206,9 @@ instance Arbitrary Schedule where
           now' <- frequency [
               -- If time goes back too often, most runs end in an exception
               (100, (\delta -> now + fixedFromDeci delta) <$> choose (0, 30))
+
+              -- Go back a bit without exceeding the max clock rewind
+            , (10, (\delta -> max 0 (now - fixedFromDeci delta)) <$> choose (0, 2))
 
               -- Occassionally just pick an entirely random time
             , (1, fixedFromDeci <$> choose (0, 100))
@@ -230,7 +253,11 @@ prop_delayClockShift schedule =
 
     testResult :: Either Failure [SlotNo]
     testResult = overrideDelay dawnOfTime schedule $
-        testOverrideDelay (SystemStart dawnOfTime) (slotLengthFromSec 1) numSlots
+        testOverrideDelay
+          (SystemStart dawnOfTime)
+          (slotLengthFromSec 1)
+          (secondsToNominalDiffTime 2)
+          numSlots
 
     checkException :: SlotNo -> SlotNo -> SomeException -> Property
     checkException before after e
@@ -252,20 +279,26 @@ prop_delayNoClockShift =
     withMaxSuccess 1 $ ioProperty $ do
       now   <- getCurrentTime
       slots <- originalDelay $
-                 testOverrideDelay (SystemStart now) (slotLengthFromMillisec 100) 5
+                 testOverrideDelay
+                   (SystemStart now)
+                   (slotLengthFromMillisec 100)
+                   (secondsToNominalDiffTime 20)
+                   5
       assertEqual "slots" slots [SlotNo n | n <- [0..4]]
 
 testOverrideDelay :: forall m. (IOLike m, MonadTime m, MonadDelay (OverrideDelay m))
                   => SystemStart
                   -> SlotLength
+                  -> NominalDiffTime
                   -> Int  -- ^ Number of slots to collect
                   -> OverrideDelay m [SlotNo]
-testOverrideDelay systemStart slotLength numSlots = do
+testOverrideDelay systemStart slotLength maxClockRewind numSlots = do
     result <- withRegistry $ \registry -> do
       time <- simpleBlockchainTime
                 registry
                 (defaultSystemTime systemStart nullTracer)
                 slotLength
+                maxClockRewind
       slotsVar <- uncheckedNewTVarM []
       cancelCollection <-
         onKnownSlotChange registry time "testOverrideDelay" $ \slotNo ->

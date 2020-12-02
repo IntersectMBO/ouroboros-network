@@ -97,6 +97,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
+import           Ouroboros.Consensus.Util.Time
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
@@ -957,12 +958,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , hfbtSystemTime     = OracularClock.finiteSystemTime clock
         , hfbtTracer         =
             contramap
-              (\(t, e) ->
-                 TraceCurrentSlotUnknown
-                   -- We don't really have a SystemStart in the tests
-                   (fromRelativeTime (SystemStart dawnOfTime) t)
-                   e)
+              -- We don't really have a SystemStart in the tests
+              (fmap (fromRelativeTime (SystemStart dawnOfTime)))
               (blockchainTimeTracer tracers)
+        , hfbtMaxClockRewind = secondsToNominalDiffTime 0
         }
 
       let kaRng = case seed of
