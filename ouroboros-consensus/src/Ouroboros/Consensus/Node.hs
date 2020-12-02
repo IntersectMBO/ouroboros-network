@@ -273,16 +273,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           , hfbtRegistry       = registry
           , hfbtSystemTime     = systemTime
           , hfbtTracer         =
-              contramap
-                (\case
-                   UnknownCurrentSlot t ex ->
-                     TraceCurrentSlotUnknown
-                       (fromRelativeTime systemStart t)
-                       ex
-                   SystemClockMovedBackABit oldT newT ->
-                     TraceSystemClockMovedBack
-                       (fromRelativeTime systemStart oldT)
-                       (fromRelativeTime systemStart newT))
+              contramap (fmap (fromRelativeTime systemStart))
                 (blockchainTimeTracer rnTraceConsensus)
           , hfbtMaxClockRewind = secondsToNominalDiffTime 20
           }

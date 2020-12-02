@@ -4,7 +4,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Default (
 
 import           Control.Monad
 import           Control.Tracer
-import           Data.Time (diffUTCTime)
+import           Data.Time (UTCTime, diffUTCTime)
 
 import           Control.Monad.Class.MonadTime (MonadTime (..))
 
@@ -15,7 +15,7 @@ import           Ouroboros.Consensus.Util.Time
 
 defaultSystemTime :: (MonadTime m, MonadDelay m)
                   => SystemStart
-                  -> Tracer m TraceBlockchainTimeEvent
+                  -> Tracer m (TraceBlockchainTimeEvent UTCTime)
                   -> SystemTime m
 defaultSystemTime start tracer = SystemTime {
       systemTimeCurrent = toRelativeTime start <$> getCurrentTime
@@ -25,7 +25,7 @@ defaultSystemTime start tracer = SystemTime {
 -- | Wait until system start if necessary
 waitForSystemStart :: (MonadTime m, MonadDelay m)
                    => SystemStart
-                   -> Tracer m TraceBlockchainTimeEvent
+                   -> Tracer m (TraceBlockchainTimeEvent UTCTime)
                    -> m ()
 waitForSystemStart start tracer = do
     now <- getCurrentTime

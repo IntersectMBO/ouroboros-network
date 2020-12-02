@@ -958,17 +958,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , hfbtSystemTime     = OracularClock.finiteSystemTime clock
         , hfbtTracer         =
             contramap
-            -- We don't really have a SystemStart in the tests
-            (let systemStart = SystemStart dawnOfTime
-             in \case
-               UnknownCurrentSlot t ex ->
-                 TraceCurrentSlotUnknown
-                   (fromRelativeTime systemStart t)
-                   ex
-               SystemClockMovedBackABit oldT newT ->
-                 TraceSystemClockMovedBack
-                   (fromRelativeTime systemStart oldT)
-                   (fromRelativeTime systemStart newT))
+              -- We don't really have a SystemStart in the tests
+              (fmap (fromRelativeTime (SystemStart dawnOfTime)))
               (blockchainTimeTracer tracers)
         , hfbtMaxClockRewind = secondsToNominalDiffTime 0
         }

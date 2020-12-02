@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor   #-}
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Support for defining 'BlockchainTime' instances
@@ -9,7 +10,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Util (
   ) where
 
 import           Control.Exception (Exception)
-import           Data.Time (NominalDiffTime, UTCTime)
+import           Data.Time (NominalDiffTime)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
@@ -21,7 +22,10 @@ import           Ouroboros.Consensus.HardFork.History (PastHorizonException)
 -------------------------------------------------------------------------------}
 
 -- | Time related tracing
-data TraceBlockchainTimeEvent =
+--
+-- The @t@ parameter can be instantiated by the time, e.g., @UTCTime@ or
+-- @RelativeTime@.
+data TraceBlockchainTimeEvent t =
     -- | The start time of the blockchain time is in the future
     --
     -- We have to block (for 'NominalDiffTime') until that time comes.
@@ -40,7 +44,7 @@ data TraceBlockchainTimeEvent =
     -- bounds between which we /can/ do conversions. The distance between the
     -- current time and the upper bound should rapidly decrease with consecutive
     -- 'TraceCurrentSlotUnknown' messages during syncing.
-  | TraceCurrentSlotUnknown UTCTime PastHorizonException
+  | TraceCurrentSlotUnknown t PastHorizonException
 
     -- | The system clock moved back an acceptable time span, e.g., because of
     -- an NTP sync.
@@ -53,8 +57,8 @@ data TraceBlockchainTimeEvent =
     --
     -- When the system clock moved back more than the configured limit, we shut
     -- down with a fatal exception.
-  | TraceSystemClockMovedBack UTCTime UTCTime
-  deriving (Show)
+  | TraceSystemClockMovedBack t t
+  deriving (Show, Functor)
 
 {-------------------------------------------------------------------------------
   Exceptions

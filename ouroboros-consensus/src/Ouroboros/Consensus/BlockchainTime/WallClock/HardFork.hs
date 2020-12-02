@@ -7,7 +7,6 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
     BackoffDelay (..)
   , HardForkBlockchainTimeArgs (..)
   , hardForkBlockchainTime
-  , HardForkBlockchainTimeEvent (..)
   ) where
 
 import           Control.Monad
@@ -47,18 +46,6 @@ import           Ouroboros.Consensus.Util.Time
 -- incur computational overhead.)
 newtype BackoffDelay = BackoffDelay NominalDiffTime
 
--- | Events traced by 'hardForkBlockchainTime'
-data HardForkBlockchainTimeEvent =
-    -- | The current slot is unknown
-    UnknownCurrentSlot RelativeTime HF.PastHorizonException
-
-    -- | The system clock moved back a bit, but less than 'hfbtMaxClockRewind',
-    -- e.g., because of an NTP sync. This is acceptable.
-    --
-    -- We include the old and the new time.
-  | SystemClockMovedBackABit RelativeTime RelativeTime
-  deriving (Show)
-
 data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
   { hfbtBackoffDelay   :: m BackoffDelay
     -- ^ See 'BackoffDelay'
@@ -66,7 +53,7 @@ data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
   , hfbtLedgerConfig   :: LedgerConfig blk
   , hfbtRegistry       :: ResourceRegistry m
   , hfbtSystemTime     :: SystemTime m
-  , hfbtTracer         :: Tracer m HardForkBlockchainTimeEvent
+  , hfbtTracer         :: Tracer m (TraceBlockchainTimeEvent RelativeTime)
   , hfbtMaxClockRewind :: NominalDiffTime
     -- ^ Maximum time the clock can be rewound without throwing a fatal
     -- 'SystemClockMovedBack' exception.
@@ -76,7 +63,7 @@ data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
     -- slot increase.
     --
     -- We allow the system clock to rewind up to 'hfbtMaxClockRewind', tracing a
-    -- 'SystemClockMovedBackABit' message in such cases. Note that the current
+    -- 'TraceSystemClockMovedBack' message in such cases. Note that the current
     -- slot *never decreases*, we just wait a bit longer in the same slot.
   }
 
@@ -156,7 +143,7 @@ hardForkBlockchainTime args = do
             -- rewinding of the clock, but never rewind the slot number
             | m >= n
             , prevTime `diffRelTime` newTime <= maxClockRewind
-            -> do traceWith tracer $ SystemClockMovedBackABit prevTime newTime
+            -> do traceWith tracer $ TraceSystemClockMovedBack prevTime newTime
                   return prevSlot
             | otherwise
             -> throwIO $ SystemClockMovedBack m n
@@ -167,7 +154,7 @@ hardForkBlockchainTime args = do
 
 -- | Get current slot, current time, and the delay until the next slot.
 getCurrentSlot' :: forall m xs. IOLike m
-                => Tracer m HardForkBlockchainTimeEvent
+                => Tracer m (TraceBlockchainTimeEvent RelativeTime)
                 -> SystemTime m
                 -> HF.RunWithCachedSummary xs m
                 -> m BackoffDelay
@@ -178,7 +165,7 @@ getCurrentSlot' tracer SystemTime{..} run getBackoffDelay = do
     case mSlot of
       Left ex -> do
         -- give up for now and backoff; see 'BackoffDelay'
-        traceWith tracer $ UnknownCurrentSlot now ex
+        traceWith tracer $ TraceCurrentSlotUnknown now ex
         BackoffDelay delay <- getBackoffDelay
         return (CurrentSlotUnknown, now, delay)
       Right (slot, _inSlot, timeLeft) -> do
