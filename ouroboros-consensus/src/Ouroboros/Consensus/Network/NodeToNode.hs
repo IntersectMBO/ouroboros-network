@@ -102,9 +102,9 @@ data Handlers m peer blk = Handlers {
       hChainSyncClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> StrictTVar m (AnchoredFragment (Header blk))
-        -> peer
         -> (peer -> SlotNo -> DiffTime -> STM m ())
+        -> peer
+        -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
@@ -457,7 +457,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} chainPe
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version controlMessageSTM varCandidate them chainPeerMetric
+                  $ hChainSyncClient version controlMessageSTM chainPeerMetric them varCandidate
               return ((), trailing)
 
     aChainSyncServer

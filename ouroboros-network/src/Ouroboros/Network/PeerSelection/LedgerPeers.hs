@@ -16,25 +16,30 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
     addPeerMetric,
     initPeerMetric,
     PeerMetric,
+    simpleResolve,
+    pickWorstPeer,
+    upstreamyness,
 
     Socket.PortNumber
     ) where
 
-
+import           Control.Monad (foldM)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.IP as IP
-import           Data.List (foldl', nub)
+import           Data.List (foldl', intercalate, nub)
+import qualified Data.List as List
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Maybe (isNothing, fromJust)
+import           Data.Maybe (isNothing, fromJust, catMaybes)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import           Data.Ratio
 import           Data.Word
+import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Network.Socket (SockAddr)
 import           System.Random
@@ -53,7 +58,7 @@ data LedgerPeersConsensusInterface m a = LedgerPeersConsensusInterface {
 
 data TraceLedgerPeers =
       PickedPeer !RelayAddress !AckPoolStake ! PoolStake
-    | PickedPeers !Word16 ![RelayAddress]
+    | PickedPeers !Int ![RelayAddress]
     | FetchingNewLedgerState !SlotNo !Int
     | LedgerPeersXXX !String
 
@@ -128,7 +133,7 @@ pickPeers :: forall m. Monad m
           -> Map Rational (PoolStake, NonEmpty RelayAddress)
           -> Word16
           -> m (StdGen, [RelayAddress])
-pickPeers inRng _ pools _ | Map.null pools = return (inRng, []) 
+pickPeers inRng _ pools _ | Map.null pools = return (inRng, [])
 pickPeers inRng tracer pools cnt = go inRng cnt []
   where
     go :: StdGen -> Word16 -> [RelayAddress] -> m (StdGen, [RelayAddress])
@@ -147,38 +152,123 @@ pickPeers inRng tracer pools cnt = go inRng cnt []
                  go rng'' (n - 1) (relay : picked)
 
 
-pickWorstPeer :: forall m.
+pickWorstPeerSTM :: forall m.
        MonadSTM m
     => PeerMetric m SockAddr
     -> SlotNo
-    -> STM m (Map SlotNo (DiffTime, SockAddr))
-pickWorstPeer pmVar minSlotNo = do
+    -> Int
+    -> STM m [(SockAddr, Int)]
+pickWorstPeerSTM pmVar minSlotNo peersNo = do
     pm <- readTVar pmVar
-
     -- First remove all samples older than minSlotNo
     let pm' = Map.map minFn pm
-
-    return (Map.foldlWithKey' foldByPeer Map.empty pm')
+        -- pruned = pickWorstPeer pm' peersNo
+        pruned = upstreamyness pm' peersNo
+        prunedAddrs = map fst pruned
+        pm'' = Map.filterWithKey (\p _ -> List.all (p /=) prunedAddrs) pm'
+    writeTVar pmVar pm''
+    return pruned
   where
     minFn :: Map SlotNo DiffTime -> Map SlotNo DiffTime
     minFn pms = Map.filterWithKey (\k _ -> k >= minSlotNo) pms
 
-    foldByPeer :: Map SlotNo (DiffTime, SockAddr)
-               -> SockAddr
-               -> Map SlotNo DiffTime
-               -> Map SlotNo (DiffTime, SockAddr)
+upstreamyness
+    :: forall a no ts.
+       ( Ord a
+       , Ord no
+       , Ord ts
+       )
+    => Map a (Map no ts)
+    -> Int
+    -> [(a, Int)]
+upstreamyness pm peersNo =
+    let (pmZero, pmNotZero) = Map.partition Map.null pm
+        zeroAs = zip (Map.keys pmZero) (repeat 0) in
+    if Map.size pmNotZero <= peersNo
+       then zeroAs
+       else
+           let slotMap = Map.foldlWithKey' foldByPeer Map.empty pmNotZero
+               cntMap = Map.foldl' countMin (Map.map (const 0) pmNotZero) slotMap
+               sortedPeers = List.sortBy (\(_, a) (_,b) -> compare a b) $ Map.toList cntMap
+               poorPeers = take (Map.size pmNotZero - peersNo) sortedPeers in
+           zeroAs ++ poorPeers
+  where
+    countMin :: Map a Int
+             -> [(ts, a)]
+             -> Map a Int
+    countMin mm samples =
+        let minPeer = snd $ List.minimumBy (\(a,_) (b,_) -> compare a b) samples in
+        Map.alter fn minPeer mm
+      where
+        fn :: Maybe Int -> Maybe Int
+        fn Nothing = Just 1
+        fn (Just cnt) = Just $ cnt + 1
+
+    foldByPeer :: Map no [(ts, a)]
+               ->  a
+               -> Map no ts
+               -> Map no [(ts, a)]
     foldByPeer bestSlotM peer peerMetric = Map.foldlWithKey' foldBySlot bestSlotM peerMetric
       where
-        foldBySlot :: Map SlotNo (DiffTime, SockAddr)
+        foldBySlot :: Map no [(ts, a)]
+                   -> no
+                   -> ts
+                   -> Map no [(ts, a)]
+        foldBySlot bestSlotM' slotNo dTime =
+            case Map.lookup slotNo bestSlotM' of
+                 Nothing -> Map.insert slotNo [(dTime, peer)] bestSlotM'
+                 Just ov -> Map.insert slotNo ((dTime, peer) : ov) bestSlotM'
+
+
+
+
+
+pickWorstPeer
+    :: Map SockAddr (Map SlotNo DiffTime)
+    -> Int
+    -> [SockAddr]
+pickWorstPeer pm peersNo =
+    let (pmZero, pmNotZero) = Map.partition Map.null pm in
+    if Map.size pmNotZero <= peersNo
+       then Map.keys pmZero
+       else
+           let peers = Map.keys pmNotZero
+               slotMap = Map.foldlWithKey' foldByPeer Map.empty pmNotZero
+               peerUtility = map (\p -> Map.foldlWithKey' withOutPeer (p, 0) slotMap)  peers
+               peerUtilitySorted = List.sortBy (\a b -> compare b a) $ peerUtility
+               peersToKill = take (Map.size pmNotZero - peersNo) $ map fst peerUtilitySorted in
+           (peersToKill ++ Map.keys pmZero)
+
+  where
+    withOutPeer :: (SockAddr, DiffTime)
+                -> SlotNo
+                -> [(DiffTime, SockAddr)]
+                -> (SockAddr, DiffTime)
+    withOutPeer (peer,res) _ samples =
+        let samples' = filter (\(_, p) -> peer /= p) samples in
+        if null samples'
+           then
+               let mt = fst $ head samples in
+               (peer, mt + res)
+           else
+               let mt = fst $ List.minimumBy (\(a,_) (b,_) -> compare a b) samples' in
+               (peer, mt + res)
+
+
+    foldByPeer :: Map SlotNo [(DiffTime, SockAddr)]
+               -> SockAddr
+               -> Map SlotNo DiffTime
+               -> Map SlotNo [(DiffTime, SockAddr)]
+    foldByPeer bestSlotM peer peerMetric = Map.foldlWithKey' foldBySlot bestSlotM peerMetric
+      where
+        foldBySlot :: Map SlotNo [(DiffTime, SockAddr)]
                    -> SlotNo
                    -> DiffTime
-                   -> Map SlotNo (DiffTime, SockAddr)
+                   -> Map SlotNo [(DiffTime, SockAddr)]
         foldBySlot bestSlotM' slotNo dTime =
-            case Map.lookup slotNo bestSlotM of
-                 Nothing -> Map.insert slotNo (dTime, peer) bestSlotM'
-                 Just (oldTime, _) -> if dTime < oldTime
-                                    then Map.insert slotNo (dTime, peer) bestSlotM'
-                                    else bestSlotM'
+            case Map.lookup slotNo bestSlotM' of
+                 Nothing -> Map.insert slotNo [(dTime, peer)] bestSlotM'
+                 Just ov -> Map.insert slotNo ((dTime, peer) : ov) bestSlotM'
 
 
 
@@ -193,12 +283,17 @@ runLedgerPeers :: forall m.
                -> PeerMetric m SockAddr
                -> (IPSubscriptionTarget -> m ())
                -> (DnsSubscriptionTarget -> m ())
+               -> (RelayAddress -> m (Maybe SockAddr))
                -> m ()
-runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} peerMetric runIP runDns =
-    go inRng Nothing Map.empty
+runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} peerMetric runIP runDns doResolve =
+    go inRng (2*desirvedActivePeers + 4) Nothing Map.empty Map.empty
   where
+    desirvedActivePeers :: Int
+    desirvedActivePeers = 12
 
-    go rng oldTs_m peerMap = do
+    go :: StdGen -> Int -> Maybe Time -> Map Rational (PoolStake, NonEmpty RelayAddress)
+       -> Map SockAddr (Async m ()) -> m ()
+    go rng pickNo oldTs_m peerMap activePeers = do
         let peerListLifeTime = if Map.null peerMap then 30
                                                    else 200 -- XXX moar
             useLedgerAfter = 4492800 + 2*21600 -- XXX two epochs after shelley hard fork
@@ -210,27 +305,63 @@ runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} peerMetric runIP r
                    let pl = ackPoolStake plx
                    !now' <- getMonotonicTime
                    traceWith tracer $ FetchingNewLedgerState tip $ Map.size pl
+                   traceWith tracer $ LedgerPeersXXX $ concatMap dumpPoolInfo $ take 32 $ filter (\(_, l) -> NonEmpty.length l == 1) plx
                    return (pl, Just now')
                else return (peerMap, oldTs_m)
 
-        (rng', !pickedPeers) <- pickPeers rng tracer peerMap' 8
-        traceWith tracer $ PickedPeers 8 pickedPeers
-        let (ipTarget, dnsTargets) = foldl' peersToSubTarget
+        (rng', !pickedPeers) <- pickPeers rng tracer peerMap' $ fromIntegral pickNo
+        traceWith tracer $ PickedPeers pickNo pickedPeers
+        {-let (ipTarget, dnsTargets) = foldl' peersToSubTarget
                                                  (IPSubscriptionTarget [] 0 , []) $ nub pickedPeers
         ipAid <- async $ runIP ipTarget
 
-        dnsAids <- sequence [async $ runDns peer | peer <- dnsTargets]
+        dnsAids <- sequence [async $ runDns peer | peer <- dnsTargets]-}
+
+        newAddrs <- catMaybes <$> (mapM doResolve pickedPeers)
+        activePeers' <- foldM startSub activePeers newAddrs
 
         -- XXX let it run for 3 minutes, then repeat with a new set of random peers.
-        ttlAid <- async (threadDelay 180)
+        ttlAid <- async (threadDelay $ 1 * 3600)
 
         wait ttlAid
         currentSlot <- getCurrentSlotNo
-        pm <- atomically $ pickWorstPeer peerMetric (currentSlot - 1000)
-        traceWith tracer $ LedgerPeersXXX $ dumpMinPeers pm
 
-        _ <- waitAnyCancel (ttlAid : ipAid : dnsAids)
-        go rng' ts_m peerMap'
+        worstPeersWithCnt <- atomically $ pickWorstPeerSTM peerMetric (currentSlot - 1 * 3600) $ fromIntegral desirvedActivePeers
+        let worstPeers = map fst worstPeersWithCnt
+        traceWith tracer $ LedgerPeersXXX $ printf "worst peers %s" (show worstPeersWithCnt)
+
+        cpm <- atomically $ readTVar peerMetric
+        traceWith tracer $ LedgerPeersXXX $ dumpPeers cpm
+
+        let inactivePeers = Map.keys $ Map.filterWithKey (\k _ -> Map.notMember k cpm) activePeers'
+            killPeers = nub $ worstPeers ++ inactivePeers
+        traceWith tracer $ LedgerPeersXXX $ printf "going to kill %s" (show killPeers)
+
+
+       -- traceWith tracer $ LedgerPeersXXX $ printf "peerUtility length %d" (length peerUtility)
+       -- traceWith tracer $ LedgerPeersXXX $ show peerUtility
+        --traceWith tracer $ LedgerPeersXXX $ dumpMinPeers pm
+
+        activePeers'' <- foldM killPeer activePeers' killPeers
+
+        let pickNo' = max 4 (desirvedActivePeers - Map.size activePeers'' + 4)
+
+        -- _ <- waitAnyCancel (ipAid : dnsAids)
+        go rng' pickNo' ts_m peerMap' activePeers''
+
+    killPeer activePeers addr =
+        case Map.lookup addr activePeers of
+             Nothing  -> return activePeers -- XXX error ?
+             Just aid -> do
+                 cancel aid
+                 return $ Map.delete addr activePeers
+
+    startSub activePeers addr =
+        case Map.lookup addr activePeers of
+             Nothing -> do
+               aid <- async $ runIP $ IPSubscriptionTarget [addr] 1
+               return $ Map.insert addr aid activePeers
+             Just _  -> return activePeers
 
     peersToSubTarget :: (IPSubscriptionTarget, [DnsSubscriptionTarget])
           -> RelayAddress
@@ -265,3 +396,38 @@ runLedgerPeers inRng tracer LedgerPeersConsensusInterface{..} peerMetric runIP r
         let l = Map.toList m in
         concatMap (\(k, (dTime, peer)) -> printf "XXY%d,%s,%s"
             (unSlotNo k) (show dTime) (show peer)) l
+
+    dumpPeers :: Map SockAddr (Map SlotNo DiffTime) -> String
+    dumpPeers m =
+        let l = Map.toList m
+            slots = nub $ concatMap (Map.keys . snd) l
+            header = printf "XXZ:peer,%s" (intercalate "," $ map show slots) in
+        header ++ concatMap (dumpSlotMap slots) l
+
+    dumpSlot :: Map SlotNo DiffTime -> SlotNo -> String
+    dumpSlot m slot =
+        case Map.lookup slot m of
+             Nothing -> ""
+             Just t -> printf "%f" (realToFrac t :: Double)
+
+    dumpSlotMap :: [SlotNo] -> (SockAddr, Map SlotNo DiffTime) -> String
+    dumpSlotMap slots (peer, m) =
+        let slotStr = intercalate "," $ map (dumpSlot m) slots in
+        printf "XXZ:%s,%s" (show peer) slotStr
+
+    dumpPoolInfo :: (PoolStake, NonEmpty RelayAddress) -> String
+    dumpPoolInfo (stake, relays) = printf "XXQ: %02.2f,%s\n"
+        (100 * fromRational stake :: Double)
+        (show relays)
+
+
+
+simpleResolve :: RelayAddress -> IO (Maybe SockAddr)
+simpleResolve (RelayAddressDomain domain) = do
+    rs <- DNS.makeResolvSeed DNS.defaultResolvConf
+    res_e <- DNS.withResolver rs $ \resolver -> DNS.lookupA resolver (daDomain domain)
+    case res_e of
+         Left  _     -> return Nothing
+         Right []    -> return Nothing
+         Right (a:_) -> return $ Just $ Socket.SockAddrInet  (daPortNumber domain) (IP.toHostAddress a)
+simpleResolve (RelayAddressAddr ip port) = return $ Just $ IP.toSockAddr (ip, port)

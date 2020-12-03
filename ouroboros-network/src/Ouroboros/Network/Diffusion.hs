@@ -77,6 +77,7 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsen
                                                              , TraceLedgerPeers
                                                              , addPeerMetric
                                                              , initPeerMetric
+                                                             , simpleResolve
                                                              , PeerMetric)
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
@@ -242,10 +243,11 @@ runDataDiffusion tracers
                         Async.withAsync (runLedgerPeers ledgerPeersRng dtLedgerPeersTracer
                                                         daLedgerPeersCtx
                                                         peerMetric
-                                                      {- Not yet (runIpSubscriptionWorker snocket networkState lias)
-                                                      (runDnsSubscriptionWorker snocket networkState lias)) -}
-                                                      (\_ -> forever $ threadDelay 3600)
-                                                      (\_ -> forever $ threadDelay 3600))
+                                                      (runIpSubscriptionWorker snocket networkState lias)
+                                                      (runDnsSubscriptionWorker snocket networkState lias)
+                                                      simpleResolve)
+                                                      -- (\_ -> forever $ threadDelay 3600)
+                                                      -- (\_ -> forever $ threadDelay 3600))
                                         $ \ledgerPeerThread -> do
                           void $ Async.waitAnyCancel $
                               [ cleanNetworkStateThread

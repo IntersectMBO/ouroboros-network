@@ -9,6 +9,7 @@
 module Test.Consensus.MiniProtocol.ChainSync.Client ( tests ) where
 
 import           Control.Monad.State.Strict
+import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import           Data.Bifunctor (first)
 import           Data.List (intercalate, unfoldr)
@@ -244,7 +245,10 @@ data ChainSyncOutcome = ChainSyncOutcome {
 -- Note that updates that are scheduled before the time at which we start
 -- syncing help generate different chains to start syncing from.
 runChainSync
-    :: forall m. IOLike m
+    :: forall m.
+       ( IOLike m
+       , MonadTime m
+       )
     => SecurityParam
     -> ClientUpdates
     -> ServerUpdates
@@ -285,7 +289,9 @@ runChainSync securityParam (ClientUpdates clientUpdates)
               WithFingerprint (const Nothing) (Fingerprint 0)
           }
 
-        client :: StrictTVar m (AnchoredFragment (Header TestBlock))
+        client :: Show peer
+               => peer
+               -> StrictTVar m (AnchoredFragment (Header TestBlock))
                -> Consensus ChainSyncClientPipelined
                     TestBlock
                     m
@@ -296,6 +302,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                    chainDbView
                    maxBound
                    (return Continue)
+                   (\_ _ _ -> return ())
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
@@ -354,7 +361,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                Map.insert serverId varCandidate
              (result, _) <-
                runPipelinedPeer protocolTracer codecChainSyncId clientChannel $
-                 chainSyncClientPeerPipelined $ client varCandidate
+                 chainSyncClientPeerPipelined $ client serverId varCandidate
              atomically $ writeTVar varClientResult (Just (Right result))
              return ()
         `catch` \(ex :: ChainSyncClientException) -> do

@@ -438,9 +438,9 @@ chainSyncClient
     -> ChainDbView m blk
     -> NodeToNodeVersion
     -> ControlMessageSTM m
-    -> StrictTVar m (AnchoredFragment (Header blk))
-    -> peer
     -> (peer -> SlotNo -> DiffTime -> STM m ())
+    -> peer
+    -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg
                 ChainDbView
@@ -451,9 +451,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 }
                 _version
                 controlMessageSTM
-                varCandidate
+                addSlotMetric
                 peer
-                addSlotMetric = ChainSyncClientPipelined $
+                varCandidate = ChainSyncClientPipelined $
     continueWithState () $ initialise
   where
     -- | Start ChainSync by looking for an intersection between our current
