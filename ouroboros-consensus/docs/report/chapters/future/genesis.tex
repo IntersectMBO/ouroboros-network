@@ -87,7 +87,7 @@ selection is running in speculative mode: we consider chains as we see them,
 possibly changing our mind later by adopting a different chain. If a new node
 sees a chain constructed by a malicious node and adopts it, \emph{it might be
 stuck}: it is not difficult for an attacker to construct a chain that is longer
-than $k$ blocks long, and so once a node adopts such a chain, it will not be
+than $k$ blocks long (though sparse when compared to an honest chain), and so once a node adopts such a chain, it will not be
 able to switch to the honest chain anymore, as this would involve a rollback
 of more than $k$ blocks.
 
