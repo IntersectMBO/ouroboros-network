@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTSyntax                 #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -24,6 +25,7 @@ module Control.Monad.IOSim.Internal (
   runIOSim,
   runSimTraceST,
   traceM,
+  traceSTM,
   STM,
   STMSim,
   SimSTM,
@@ -97,6 +99,9 @@ runIOSim (IOSim k) = k Return
 traceM :: Typeable a => a -> IOSim s ()
 traceM x = IOSim $ \k -> Output (toDyn x) (k ())
 
+traceSTM :: Typeable a => a -> STMSim s ()
+traceSTM x = STM $ \k -> OutputStm (toDyn x) (k ())
+
 data SimA s a where
   Return       :: a -> SimA s a
 
@@ -145,6 +150,9 @@ data StmA s a where
   WriteTVar    :: TVar s a ->  a -> StmA s b  -> StmA s b
   Retry        :: StmA s b
   OrElse       :: StmA s a -> StmA s a -> (a -> StmA s b) -> StmA s b
+
+  SayStm       :: String -> StmA s b -> StmA s b
+  OutputStm    :: Dynamic -> StmA s b -> StmA s b
 
 -- Exported type
 type STMSim = STM
@@ -313,6 +321,9 @@ instance MonadFork (IOSim s) where
   forkIO task        = IOSim $ \k -> Fork task k
   forkIOWithUnmask f = forkIO (f unblock)
   throwTo tid e      = IOSim $ \k -> ThrowTo (toException e) tid (k ())
+
+instance MonadSay (STMSim s) where
+  say msg = STM $ \k -> SayStm msg (k ())
 
 instance MonadSTMTx (STM s) where
   type TVar_      (STM s) = TVar s
@@ -866,8 +877,7 @@ schedule thread@Thread{
                                          , nextTid  = succ nextTid }
       return (Trace time tid tlbl (EventThreadForked tid') trace)
 
-    Atomically a k -> do
-      res <- execAtomically nextVid (runSTM a)
+    Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
         StmTxCommitted x written nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
@@ -897,13 +907,13 @@ schedule thread@Thread{
           -- schedule this thread to immediately raise the exception
           let thread' = thread { threadControl = ThreadControl (Throw e) ctl }
           trace <- schedule thread' simstate
-          return (Trace time tid tlbl EventTxAborted trace)
+          return $ Trace time tid tlbl EventTxAborted trace
 
         StmTxBlocked read -> do
           mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
           vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) read
           trace <- deschedule Blocked thread simstate
-          return (Trace time tid tlbl (EventTxBlocked vids) trace)
+          return $ Trace time tid tlbl (EventTxBlocked vids) trace
 
     GetThreadId k -> do
       let thread' = thread { threadControl = ThreadControl (k tid) ctl }
@@ -1278,12 +1288,16 @@ data StmStack s b a where
                    -> StmStack s b c
                    -> StmStack s a c
 
-execAtomically :: forall s a.
-                  TVarId
+execAtomically :: forall s a c.
+                  Time
+               -> ThreadId
+               -> Maybe ThreadLabel
+               -> TVarId
                -> StmA s a
-               -> ST s (StmTxResult s a)
-execAtomically =
-    go AtomicallyFrame Map.empty Map.empty []
+               -> (StmTxResult s a -> ST s (Trace c))
+               -> ST s (Trace c)
+execAtomically time tid tlbl nextVid0 action0 k0 =
+    go AtomicallyFrame Map.empty Map.empty [] nextVid0 action0
   where
     go :: forall b.
           StmStack s b a
@@ -1292,7 +1306,7 @@ execAtomically =
        -> [SomeTVar s]             -- vars written in order (no dups)
        -> TVarId                   -- var fresh name supply
        -> StmA s b
-       -> ST s (StmTxResult s a)
+       -> ST s (Trace c)
     go ctl !read !written writtenSeq !nextVid action = assert localInvariant $
                                                        case action of
       ReturnStm x -> case ctl of
@@ -1307,7 +1321,7 @@ execAtomically =
                     ) written
 
           -- Return the vars written, so readers can be unblocked
-          return (StmTxCommitted x (reverse writtenSeq) nextVid)
+          k0 $ StmTxCommitted x (reverse writtenSeq) nextVid
 
         OrElseLeftFrame _b k writtenOuter writtenOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
@@ -1340,14 +1354,14 @@ execAtomically =
       ThrowStm e -> do
         -- Revert all the TVar writes
         traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
-        return (StmTxAborted (toException e))
+        k0 $ StmTxAborted (toException e)
 
       Retry -> case ctl of
         AtomicallyFrame -> do
           -- Revert all the TVar writes
           traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Return vars read, so the thread can block on them
-          return (StmTxBlocked (Map.elems read))
+          k0 $ StmTxBlocked (Map.elems read)
 
         OrElseLeftFrame b k writtenOuter writtenOuterSeq ctl' -> do
           -- Revert all the TVar writes within this orElse
@@ -1394,6 +1408,15 @@ execAtomically =
             execWriteTVar v x
             let written' = Map.insert (tvarId v) (SomeTVar v) written
             go ctl read written' (SomeTVar v : writtenSeq) nextVid k
+
+      SayStm msg k -> do
+        trace <- go ctl read written writtenSeq nextVid k
+        return $ Trace time tid tlbl (EventSay msg) trace
+
+      OutputStm x k -> do
+        trace <- go ctl read written writtenSeq nextVid k
+        return $ Trace time tid tlbl (EventLog x) trace
+
       where
         localInvariant =
             Map.keysSet written

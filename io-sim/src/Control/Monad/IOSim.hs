@@ -14,6 +14,7 @@ module Control.Monad.IOSim (
   runSimTraceST,
   liftST,
   traceM,
+  traceSTM,
   -- * Simulation time
   setCurrentTime,
   unshareClock,
