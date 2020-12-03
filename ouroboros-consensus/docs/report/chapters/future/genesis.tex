@@ -65,7 +65,7 @@ very beginning or somehow had one of the current chains when it joined and are a
 system are all following this protocol, they will end up with a common prefix,
 with disagreement possible only about the most recent $k$ blocks. This means that
 nodes never need to roll back past the tip of that common prefix; indeed, they
-\emph{should} not roll back past that point, as this might mean they might adopt
+\emph{should} not roll back past that point, as this means they might adopt
 a chain forged by a malicious node which is trying to trick them into believing
 some kind of alternative history. This is the reason for the ``no rollback more
 than $k$ blocks'' rule in the Praos chain selection rule, as well as the
