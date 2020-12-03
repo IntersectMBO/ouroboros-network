@@ -865,7 +865,7 @@ to fill the window).
 
 Since not every slot on the chain contains a block, it is not entirely trivial
 to detect whether we have seen enough of a chain to fill the window; we must
-wait until we have seen the first block outside of the window:
+wait until we have seen the first block in or after the last slot of the window:
 %
 \begin{center}
 \begin{tikzpicture}[yscale=0.75]
