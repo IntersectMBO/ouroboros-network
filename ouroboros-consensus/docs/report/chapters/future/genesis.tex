@@ -388,6 +388,12 @@ This implies that an attacker cannot \emph{eclipse} us; this is something
 outside the scope of the consensus layer, and must be guaranteed by the network
 layer (probably by a probabilistic way of choosing peers).
 
+\todo{TODO} TODO: This mention of ``look-ahead window'' surprised me; it sounds
+like it should have been mentioned above. If so, I didn't recognize it.
+Basically, I don't know why we'd consider anything other than the genesis
+window -- that's the only concept mentioned above that I would have guessed
+you're referring to by ``look-ahead window''. -NSF
+
 We will set the size of our ``look-ahead window'' to be precisely $s$; that is,
 we will set the size of the look-ahead window used for conservative chain
 selection to be exactly equal to the genesis window (we will see shortly why
