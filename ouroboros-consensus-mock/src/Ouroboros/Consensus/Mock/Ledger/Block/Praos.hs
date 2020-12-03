@@ -22,8 +22,10 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
+import           Control.Monad.Except (throwError)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
@@ -33,6 +35,7 @@ import           Cardano.Crypto.Util
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HardFork.History.Util (addSlots)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
@@ -91,7 +94,7 @@ _simplePraosHeader = simpleHeader
 instance (SimpleCrypto c, Typeable c')
       => MockProtocolSpecific c (SimplePraosExt c c') where
   -- | See 'LedgerSupportsProtocol' instance for why we need the 'AddrDist'
-  type MockLedgerConfig c (SimplePraosExt c c') = AddrDist
+  type MockLedgerConfig c (SimplePraosExt c c') = (Maybe Word64, AddrDist)
 
 {-------------------------------------------------------------------------------
   Evidence that SimpleBlock can support Praos
@@ -121,9 +124,25 @@ instance ( SimpleCrypto c
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
   protocolLedgerView   cfg _  = pretendTicked $ stakeDist cfg
-  ledgerViewForecastAt cfg st = constantForecastOf
-                                 (pretendTicked $ stakeDist cfg)
-                                 (getTipSlot st)
+  ledgerViewForecastAt cfg st = Forecast at $ \for ->
+      case mbMaxFor of
+        Nothing     -> pure res
+        Just maxFor ->
+            if for < maxFor then pure res else
+            throwError $ OutsideForecastRange {
+                outsideForecastAt     = at
+              , outsideForecastMaxFor = maxFor
+              , outsideForecastFor    = for
+              }
+    where
+      res = pretendTicked $ stakeDist cfg
+      at  = getTipSlot st
+
+      swindow = fst $ simpleMockLedgerConfig cfg
+
+      -- Exclusive upper bound
+      mbMaxFor :: Maybe SlotNo
+      mbMaxFor = (\x -> addSlots x $ succWithOrigin at) <$> swindow
 
 -- | Praos needs a ledger that can give it the "active stake distribution"
 --
@@ -134,7 +153,7 @@ instance ( SimpleCrypto c
 -- may not be worth it; it would be a bit of work, and after we have integrated
 -- the Shelley rules, we'll have a proper instance anyway.
 stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
-stakeDist = equalStakeDist . simpleMockLedgerConfig
+stakeDist = equalStakeDist . snd . simpleMockLedgerConfig
 
 pretendTicked :: StakeDist -> Ticked StakeDist
 pretendTicked (StakeDist sd) = TickedStakeDist sd

@@ -124,6 +124,7 @@ prop_simple_praos_convergence TestSetup
             { nodeInfo = \nid -> plainTestNodeInitialization $
                                     protocolInfoPraos
                                       numCoreNodes
+                                      Nothing
                                       nid
                                       params
                                       (HardFork.defaultEraParams

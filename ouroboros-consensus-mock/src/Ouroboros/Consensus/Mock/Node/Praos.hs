@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Mock.Node.Praos (
 import           Data.Bifunctor (second)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 
 import           Cardano.Crypto.KES
@@ -32,12 +33,13 @@ type MockPraosBlock = SimplePraosBlock SimpleMockCrypto PraosMockCrypto
 
 protocolInfoPraos :: IOLike m
                   => NumCoreNodes
+                  -> Maybe Word64   -- ^ stability window
                   -> CoreNodeId
                   -> PraosParams
                   -> HardFork.EraParams
                   -> Natural
                   -> ProtocolInfo m MockPraosBlock
-protocolInfoPraos numCoreNodes nid params eraParams eta0 =
+protocolInfoPraos numCoreNodes mbStabilityWindow nid params eraParams eta0 =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PraosConfig {
@@ -47,7 +49,7 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 =
               , praosInitialStake = genesisStakeDist addrDist
               , praosVerKeys      = verKeys
               }
-          , topLevelConfigLedger  = SimpleLedgerConfig addrDist eraParams
+          , topLevelConfigLedger  = SimpleLedgerConfig (mbStabilityWindow, addrDist) eraParams
           , topLevelConfigBlock   = SimpleBlockConfig
           , topLevelConfigCodec   = SimpleCodecConfig
           , topLevelConfigStorage = SimpleStorageConfig (praosSecurityParam params)

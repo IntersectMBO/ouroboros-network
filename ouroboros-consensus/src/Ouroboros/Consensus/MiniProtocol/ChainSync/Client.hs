@@ -420,7 +420,7 @@ chainSyncClient
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
-    -> Tracer (STM m) TraceChainSyncClientEventSTM
+    -> Tracer (STM m) (TraceChainSyncClientEventSTM blk)
     -> TopLevelConfig blk
     -> ChainDbView m blk
     -> NodeToNodeVersion
@@ -731,7 +731,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
         -- intersection with the current chain. Note that this is cheap when
         -- the chain and candidate haven't changed.
         mKis' <- intersectsWithCurrentChain kis
-        case mKis' of
+        x <- case mKis' of
           Nothing -> return NoLongerIntersects
           Just kis'@KnownIntersectionState { mostRecentIntersection } -> do
             -- We're calling 'ledgerViewForecastAt' in the same STM transaction
@@ -751,11 +751,15 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
               -- intersection have advanced far enough. This will wait on
               -- changes to the current chain via the call to
               -- 'intersectsWithCurrentChain' befoer it.
-              Left (OutsideForecastRange x y z) -> do
-                traceWith tracerSTM $ TraceBlockedOnForecast x y z
+              Left err@OutsideForecastRange{} -> do
+                traceWith tracerSTM $ TraceBlockedOnForecast (castPoint $ blockPoint hdr) err
                 retry
               Right ledgerView ->
                 return $ Intersects kis' ledgerView
+        traceWith tracerSTM $ TraceIntersectCheckDone (castPoint $ blockPoint hdr) $ case x of
+          NoLongerIntersects -> Nothing
+          Intersects kis' _  -> Just $ mostRecentIntersection kis'
+        pure x
 
       case intersectCheck of
         NoLongerIntersects ->
@@ -1237,8 +1241,9 @@ data TraceChainSyncClientEvent blk
   | TraceException ChainSyncClientException
     -- ^ An exception was thrown by the Chain Sync Client.
 
-data TraceChainSyncClientEventSTM
-  = TraceBlockedOnForecast (WithOrigin SlotNo) SlotNo SlotNo
+data TraceChainSyncClientEventSTM blk
+  = TraceBlockedOnForecast (Point blk) OutsideForecastRange
+  | TraceIntersectCheckDone (Point blk) (Maybe (Point blk))
   deriving (Eq, Show)
 
 deriving instance ( BlockSupportsProtocol blk
