@@ -715,6 +715,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           !now <- getCurrentTime
           let hf = getHeaderFields hdr
               slot = headerFieldSlot hf
+              block= headerFieldBlockNo hf
               firstShelleySlot = 4492800
               shelleyStart = read "2020-07-29 21:44:51 UTC" :: UTCTime
               expectedSlotTime = addUTCTime (fromIntegral $ (unSlotNo slot) - firstShelleySlot) shelleyStart
@@ -722,7 +723,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
 
           atomically $ addSlotMetric peer slot $ realToFrac slotDiff
-          traceWith tracer $ TraceDownloadedHeader hdr (realToFrac  slotDiff) $ show peer
+          traceWith tracer $ TraceDownloadedHeader block slot (realToFrac  slotDiff) $ show peer
           continueWithState kis $
             rollForward mkPipelineDecision n hdr (Their theirTip)
       , recvMsgRollBackward = \intersection theirTip -> do
@@ -1245,7 +1246,7 @@ instance Exception ChainSyncClientException
 
 -- | Events traced by the Chain Sync Client.
 data TraceChainSyncClientEvent blk
-  = TraceDownloadedHeader (Header blk) !DiffTime !String
+  = TraceDownloadedHeader !BlockNo !SlotNo !DiffTime !String
     -- ^ While following a candidate chain, we rolled forward by downloading a
     -- header.
   | TraceRolledBack (Point blk)

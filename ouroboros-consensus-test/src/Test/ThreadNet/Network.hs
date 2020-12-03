@@ -913,7 +913,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
                 { chainSyncClientTracer = Tracer $ \case
-                    CSClient.TraceDownloadedHeader hdr _ _
+                    CSClient.TraceDownloadedHeader hdr _ _ _
                       -> case blockPoint hdr of
                             GenesisPoint   -> pure ()
                             BlockPoint s h ->
