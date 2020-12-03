@@ -174,6 +174,7 @@ mkHandlers
               (chainSyncPipeliningLowMark  miniProtocolParameters)
               (chainSyncPipeliningHighMark miniProtocolParameters))
             (Node.chainSyncClientTracer tracers)
+            (Node.chainSyncClientTracerSTM tracers)
             getTopLevelConfig
             (defaultChainDbView getChainDB)
       , hChainSyncServer =

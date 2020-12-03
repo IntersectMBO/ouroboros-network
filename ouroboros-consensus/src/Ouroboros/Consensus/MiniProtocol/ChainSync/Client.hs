@@ -33,6 +33,7 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   , Their (..)
     -- * Trace events
   , TraceChainSyncClientEvent (..)
+  , TraceChainSyncClientEventSTM (..)
   , InvalidBlockReason
   ) where
 
@@ -419,13 +420,14 @@ chainSyncClient
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
+    -> Tracer (STM m) TraceChainSyncClientEventSTM
     -> TopLevelConfig blk
     -> ChainDbView m blk
     -> NodeToNodeVersion
     -> ControlMessageSTM m
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
-chainSyncClient mkPipelineDecision0 tracer cfg
+chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                 ChainDbView
                 { getCurrentChain
                 , getHeaderStateHistory
@@ -749,7 +751,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               -- intersection have advanced far enough. This will wait on
               -- changes to the current chain via the call to
               -- 'intersectsWithCurrentChain' befoer it.
-              Left OutsideForecastRange{} ->
+              Left (OutsideForecastRange x y z) -> do
+                traceWith tracerSTM $ TraceBlockedOnForecast x y z
                 retry
               Right ledgerView ->
                 return $ Intersects kis' ledgerView
@@ -1233,6 +1236,10 @@ data TraceChainSyncClientEvent blk
     -- candidate's chain.
   | TraceException ChainSyncClientException
     -- ^ An exception was thrown by the Chain Sync Client.
+
+data TraceChainSyncClientEventSTM
+  = TraceBlockedOnForecast (WithOrigin SlotNo) SlotNo SlotNo
+  deriving (Eq, Show)
 
 deriving instance ( BlockSupportsProtocol blk
                   , Eq (ValidationErr (BlockProtocol blk))

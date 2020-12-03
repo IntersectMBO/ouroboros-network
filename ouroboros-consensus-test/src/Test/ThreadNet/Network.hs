@@ -1540,12 +1540,13 @@ nullDebugTracer = nullTracer `asTypeOf` showTracing debugTracer
 -- | Occurs throughout in positions that might be useful for debugging.
 nullDebugTracers ::
      ( Monad m
+     , Monad (STM m)
      , Show peer
      , LedgerSupportsProtocol blk
      , TracingConstraints blk
      )
   => Tracers m peer Void blk
-nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
+nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer debugTracer
 
 -- | Occurs throughout in positions that might be useful for debugging.
 nullDebugProtocolTracers ::

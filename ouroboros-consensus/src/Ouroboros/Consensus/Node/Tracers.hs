@@ -3,6 +3,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 module Ouroboros.Consensus.Node.Tracers
@@ -34,11 +35,12 @@ import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Util.IOLike (STM)
 
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (InvalidBlockReason, TraceChainSyncClientEvent)
+                     (InvalidBlockReason, TraceChainSyncClientEvent, TraceChainSyncClientEventSTM)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
                      (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
@@ -48,8 +50,9 @@ import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
   All tracers of a node bundled together
 -------------------------------------------------------------------------------}
 
-data Tracers' remotePeer localPeer blk f = Tracers
+data Tracers' remotePeer localPeer blk f fstm = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
+  , chainSyncClientTracerSTM      :: fstm TraceChainSyncClientEventSTM
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk)
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
   , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])]
@@ -65,10 +68,11 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
   }
 
-instance (forall a. Semigroup (f a))
-      => Semigroup (Tracers' remotePeer localPeer blk f) where
+instance (forall a. Semigroup (f a), forall a. Semigroup (fstm a))
+      => Semigroup (Tracers' remotePeer localPeer blk f fstm) where
   l <> r = Tracers
       { chainSyncClientTracer         = f chainSyncClientTracer
+      , chainSyncClientTracerSTM      = f chainSyncClientTracerSTM
       , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
       , chainSyncServerBlockTracer    = f chainSyncServerBlockTracer
       , blockFetchDecisionTracer      = f blockFetchDecisionTracer
@@ -85,17 +89,18 @@ instance (forall a. Semigroup (f a))
       }
     where
       f :: forall a. Semigroup a
-        => (Tracers' remotePeer localPeer blk f -> a) -> a
+        => (Tracers' remotePeer localPeer blk f fstm -> a) -> a
       f prj = prj l <> prj r
 
 -- | A record of 'Tracer's for the node.
 type Tracers m remotePeer localPeer blk =
-     Tracers'  remotePeer localPeer blk (Tracer m)
+     Tracers'  remotePeer localPeer blk (Tracer m) (Tracer (STM m))
 
 -- | Use a 'nullTracer' for each of the 'Tracer's in 'Tracers'
-nullTracers :: Monad m => Tracers m remotePeer localPeer blk
+nullTracers :: (Monad m, Monad (STM m)) => Tracers m remotePeer localPeer blk
 nullTracers = Tracers
     { chainSyncClientTracer         = nullTracer
+    , chainSyncClientTracerSTM      = nullTracer
     , chainSyncServerHeaderTracer   = nullTracer
     , chainSyncServerBlockTracer    = nullTracer
     , blockFetchDecisionTracer      = nullTracer
@@ -122,9 +127,10 @@ showTracers :: ( Show blk
                , Show remotePeer
                , LedgerSupportsProtocol blk
                )
-            => Tracer m String -> Tracers m remotePeer localPeer blk
-showTracers tr = Tracers
+            => Tracer m String -> Tracer (STM m) String -> Tracers m remotePeer localPeer blk
+showTracers tr trSTM = Tracers
     { chainSyncClientTracer         = showTracing tr
+    , chainSyncClientTracerSTM      = showTracing trSTM
     , chainSyncServerHeaderTracer   = showTracing tr
     , chainSyncServerBlockTracer    = showTracing tr
     , blockFetchDecisionTracer      = showTracing tr
