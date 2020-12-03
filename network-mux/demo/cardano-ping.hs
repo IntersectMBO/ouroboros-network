@@ -229,6 +229,7 @@ handshakeDec = do
              2 -> Right . NodeToNodeVersionV2 <$> CBOR.decodeWord32
              3 -> Right . NodeToNodeVersionV3 <$> CBOR.decodeWord32
              4 -> do
+                 _ <- CBOR.decodeListLen
                  magic <- CBOR.decodeWord32
                  Right . NodeToNodeVersionV4 magic <$> CBOR.decodeBool
              v -> return $ Left $ UnknownVersionInRsp v
