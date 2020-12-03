@@ -28,6 +28,8 @@ import           Data.Foldable (traverse_)
 import           Data.Functor (($>))
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Stack (CallStack, HasCallStack, callStack)
 
@@ -39,13 +41,14 @@ import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.HasIPAddress
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 
 
 -- | Assumptions \/ arguments for a 'ConnectionManager'.
 --
-data ConnectionManagerArguments (muxMode :: MuxMode) handlerTrace socket peerAddr handle handleError version m =
+data ConnectionManagerArguments (muxMode :: MuxMode) handlerTrace socket peerAddr ipAddr handle handleError version m =
     ConnectionManagerArguments {
         -- | Connection manager tracer.
         --
@@ -69,11 +72,17 @@ data ConnectionManagerArguments (muxMode :: MuxMode) handlerTrace socket peerAdd
         --
         cmIPv6Address         :: Maybe peerAddr,
 
-        cmAddressType        :: peerAddr -> Maybe AddressType,
-
         -- | Snocket for the 'socket' type.
         --
         cmSnocket             :: Snocket m socket peerAddr,
+
+        -- | For 'InitiatorMode' or 'InitiatorAndResponderMode' we need
+        -- 'HasIPAddress' record.  'ResponderMode' is only used when running
+        -- a local service (node-to-client).  'LocalAddress' does not support
+        -- 'HasIPAddress',  while in the other two modes we only use
+        -- 'peerAddr ~ SockAddr' which does support 'HasIPAddress' interface.
+        --
+        cmHasIPAddress        :: WithMuxMode muxMode (HasIPAddress peerAddr ipAddr) (),
 
         -- | Callback which runs in a thread dedicated for a given connection.
         --
@@ -88,7 +97,16 @@ data ConnectionManagerArguments (muxMode :: MuxMode) handlerTrace socket peerAdd
         --
         cmPrunePolicy         :: PrunePolicy peerAddr (STM m),
         cmConnectionsLimits   :: AcceptedConnectionsLimit,
-        cmClassifyHandleError :: handleError -> HandleErrorType
+        cmClassifyHandleError :: handleError -> HandleErrorType,
+
+        -- | Set of local peers;  For a local peer (either a relay or a core
+        -- node) the connection manager will not bind to its local address.  In
+        -- case of a system restart a node will be able to immedately reconnect
+        -- to its local peers.  Duplex connections could be held in `TIME_WAIT`
+        -- state, but since we will use ephemeral ports we avoid this, but also
+        -- the node will not use duplex connections with its local relays.
+        --
+        cmLocalIPs            :: STM m (Set ipAddr)
       }
 
 
@@ -254,7 +272,7 @@ data DemoteToColdLocal peerAddr handlerTrace m
 -- is responsible for the resource.
 --
 withConnectionManager
-    :: forall muxMode peerAddr socket handlerTrace handle handleError version m a.
+    :: forall muxMode peerAddr ipAddr socket handlerTrace handle handleError version m a.
        ( Monad             m
        , MonadAsync        m
        , MonadDelay        m
@@ -265,9 +283,12 @@ withConnectionManager
        , Ord      peerAddr
        , Show     peerAddr
        , Typeable peerAddr
+       , Ord      ipAddr
        )
-    => ConnectionManagerArguments muxMode handlerTrace socket peerAddr handle handleError version m
-    -> (ConnectionManager         muxMode              socket peerAddr handle handleError         m
+    => ConnectionManagerArguments
+         muxMode handlerTrace socket peerAddr ipAddr handle handleError version m
+    -> (ConnectionManager
+         muxMode              socket peerAddr        handle handleError         m
          -> m a)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
     -- outside of scope of this callback.  Once it returns all resources
@@ -278,13 +299,14 @@ withConnectionManager ConnectionManagerArguments {
                         cmMuxTracer = muxTracer,
                         cmIPv4Address,
                         cmIPv6Address,
-                        cmAddressType,
                         cmSnocket,
+                        cmHasIPAddress,
                         connectionHandler,
                         connectionDataFlow,
                         cmPrunePolicy,
                         cmConnectionsLimits,
-                        cmClassifyHandleError
+                        cmClassifyHandleError,
+                        cmLocalIPs
                       } k = do
     stateVar <-
       newTMVarIO
@@ -731,17 +753,29 @@ withConnectionManager ConnectionManagerArguments {
               $ \socket -> do
                 (reader, writer) <- newEmptyPromiseIO
                 traceWith tracer (TrConnectionNotFound peerAddr provenance)
+                let mbIPAddr =
+                      case cmHasIPAddress of
+                        WithInitiatorMode hasIPAddress ->
+                          let addr = getIPAddress hasIPAddress peerAddr in
+                          Just (addr, isIPv6 hasIPAddress addr)
+                        WithResponderMode {} -> Nothing
+
+                        WithInitiatorResponderMode hasIPAddress _ ->
+                          let addr = getIPAddress hasIPAddress peerAddr in
+                          Just (addr, isIPv6 hasIPAddress addr)
+
+                localIPs <- atomically cmLocalIPs
                 addr <-
-                  case cmAddressType peerAddr of
-                    Nothing -> pure Nothing
-                    Just IPv4Address ->
-                         traverse_ (bind cmSnocket socket)
-                                   cmIPv4Address
-                      $> cmIPv4Address
-                    Just IPv6Address ->
-                         traverse_ (bind cmSnocket socket)
-                                   cmIPv6Address
-                      $> cmIPv6Address
+                  -- bind only if `peerAddr` is not a member of 'localIPs'
+                  case mbIPAddr of
+                    Just (ip, ipv6) | ip `Set.notMember` localIPs ->
+                      let addr = if ipv6 then cmIPv6Address
+                                         else cmIPv4Address in
+                      traverse_ (bind cmSnocket socket) addr
+                        $> addr
+
+                    _ -> return Nothing
+
                 -- TODO: with @'MonadFix' m@ instance, we could log the real
                 -- address in 'TrConnect' and 'TrConnectError' messages.
                 traceWith tracer (TrConnect addr peerAddr)
