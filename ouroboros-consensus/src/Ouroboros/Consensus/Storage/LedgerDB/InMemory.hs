@@ -531,7 +531,7 @@ ledgerDbPast tip db
     | tip == csTip (ledgerDbAnchor db)
     = Just (csLedger (ledgerDbAnchor db))
     | NotOrigin tip' <- pointToWithOriginRealPoint tip
-    = cpState <$> binarySearch tip' (Seq.getSeq (ledgerDbCheckpoints db))
+    = cpState <$> binarySearch tip' (Seq.fromStrict (ledgerDbCheckpoints db))
     | otherwise
     = Nothing
   where
