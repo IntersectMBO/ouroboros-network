@@ -511,6 +511,13 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
           exitEarly
 
         -- We successfully produced /and/ adopted a block
+        --
+        -- NOTE: we are tracing the transactions we retrieved from the Mempool,
+        -- not the transactions actually /in the block/. They should always
+        -- match, if they don't, that would be a bug. Unfortunately, we can't
+        -- assert this here because the ability to extract transactions from a
+        -- block, i.e., the @HasTxs@ class, is not implementable by all blocks,
+        -- e.g., @DualBlock@.
         trace $ TraceAdoptedBlock currentSlot newBlock txs
 
     trace :: TraceForgeEvent blk -> WithEarlyExit m ()

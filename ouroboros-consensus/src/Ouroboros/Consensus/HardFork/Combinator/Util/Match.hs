@@ -9,6 +9,7 @@
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -89,6 +90,22 @@ matchTelescope = go
     go (S r)  (TS  gx t) = bimap MS (TS gx) $ go r t
     go (Z hx) (TS _gx t) = Left $ ML hx (Telescope.tip t)
     go (S l)  (TZ fx)    = Left $ MR l fx
+
+{-------------------------------------------------------------------------------
+  SOP class instances for 'Mismatch'
+-------------------------------------------------------------------------------}
+
+type instance Prod    (Mismatch f)   = NP
+type instance SListIN (Mismatch f)   = SListI
+type instance AllN    (Mismatch f) c = All c
+
+instance HAp (Mismatch f) where
+  hap = go
+    where
+      go :: NP (g -.-> g') xs -> Mismatch f g xs -> Mismatch f g' xs
+      go (_ :* fs) (MS m)     = MS (go fs m)
+      go (_ :* fs) (ML fx gy) = ML fx (hap fs gy)
+      go (f :* _)  (MR fy gx) = MR fy (apFn f gx)
 
 {-------------------------------------------------------------------------------
   Utilities

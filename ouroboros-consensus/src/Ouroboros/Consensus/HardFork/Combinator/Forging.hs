@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.OptNP (OptNP (..), ViewOptNP (..))
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP
@@ -31,10 +32,13 @@ import           Ouroboros.Consensus.Util.SOP
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
+import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs)
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 -- | If we cannot forge, it's because the current era could not forge
@@ -298,45 +302,69 @@ hardForkForgeBlock blockForging
                    isLeader =
         fmap (HardForkBlock . OneEraBlock)
       $ hsequence
-      $ hizipWith4
+      $ hizipWith3
           forgeBlockOne
-          (distribTopLevelConfig ei cfg)
+          cfgs
           (OptNP.toNP blockForging)
-          -- Although we get a list with transactions that each could be from a
-          -- different era, we know they have been validated against the
-          -- 'LedgerState', which means they __must__ be from the same era.
-          (partition_NS (map (getOneEraGenTx . getHardForkGenTx) txs))
-          -- We know both NSs must be from the same era, because they were all
-          -- produced from the same 'BlockForging'. Unfortunately, we can't
-          -- enforce it statically.
-          (Match.mustMatchNS
-            "IsLeader"
-            (getOneEraIsLeader isLeader)
-            (State.tip ledgerState))
+      $ injectTxs (map (getOneEraGenTx . getHardForkGenTx) txs)
+      -- We know both NSs must be from the same era, because they were all
+      -- produced from the same 'BlockForging'. Unfortunately, we can't enforce
+      -- it statically.
+      $ Match.mustMatchNS
+          "IsLeader"
+          (getOneEraIsLeader isLeader)
+          (State.tip ledgerState)
   where
-    ei = State.epochInfoPrecomputedTransitionInfo
-           (hardForkLedgerConfigShape (configLedger cfg))
-           transition
-           ledgerState
+    cfgs = distribTopLevelConfig ei cfg
+    ei   = State.epochInfoPrecomputedTransitionInfo
+             (hardForkLedgerConfigShape (configLedger cfg))
+             transition
+             ledgerState
 
     missingBlockForgingImpossible :: EraIndex xs -> String
     missingBlockForgingImpossible eraIndex =
         "impossible: current era lacks block forging but we have an IsLeader proof "
         <> show eraIndex
 
+    injectTxs ::
+         [NS GenTx xs]
+      -> NS f xs
+      -> NS (Product f ([] :.: GenTx)) xs
+    injectTxs = noMismatches .: flip (matchTxsNS injTxs)
+      where
+        injTxs :: InPairs InjectTx xs
+        injTxs =
+            InPairs.requiringBoth
+              (hmap (WrapLedgerConfig . configLedger) cfgs)
+              hardForkInjectTxs
+
+        -- | We know the transactions must be valid w.r.t. the given ledger
+        -- state, the Mempool maintains that invariant. That means they are
+        -- either from the same era, or can be injected into that era.
+        noMismatches ::
+             ([Match.Mismatch GenTx f xs], NS (Product f ([] :.: GenTx)) xs)
+           -> NS (Product f ([] :.: GenTx)) xs
+        noMismatches ([], xs)   = xs
+        noMismatches (_errs, _) = error "unexpected unmatchable transactions"
+
     -- | Unwraps all the layers needed for SOP and call 'forgeBlock'.
     forgeBlockOne ::
          Index xs blk
       -> TopLevelConfig blk
       -> (Maybe :.: BlockForging m) blk
-      -> ([] :.: GenTx) blk
-      -> Product WrapIsLeader (Ticked :.: LedgerState) blk
+      -> Product
+           (Product
+              WrapIsLeader
+              (Ticked :.: LedgerState))
+           ([] :.: GenTx)
+           blk
       -> m blk
     forgeBlockOne index
                   cfg'
                   (Comp mBlockForging')
-                  (Comp txs')
-                  (Pair (WrapIsLeader isLeader') (Comp ledgerState')) =
+                  (Pair
+                    (Pair (WrapIsLeader isLeader') (Comp ledgerState'))
+                    (Comp txs')) =
         forgeBlock
           (fromMaybe
               (error (missingBlockForgingImpossible (eraIndexFromIndex index)))

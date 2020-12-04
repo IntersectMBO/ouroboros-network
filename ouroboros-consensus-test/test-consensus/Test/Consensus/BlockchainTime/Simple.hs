@@ -184,9 +184,9 @@ model = \need (Schedule ss) ->
         = go n ss' (offset, nextSlot)
         | nextSlot >  prevSlot
         = (nextSlot :) <$> go (n - 1) ss' (offset, nextSlot)
-        -- If time moved back, but less than 2s, we don't throw an exception
-        | prevOffset - offset < 2
-        = go n ss' (prevOffset, prevSlot)
+        -- If time moved back, but not more than 2s, we don't throw an exception
+        | prevOffset - offset <= 2
+        = go n ss' (offset, prevSlot)
         -- If time moved back too much, we should see an exception
         | otherwise
         = throwError (prevSlot, nextSlot)
