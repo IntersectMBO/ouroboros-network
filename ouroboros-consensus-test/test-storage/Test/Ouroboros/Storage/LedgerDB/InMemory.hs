@@ -64,7 +64,7 @@ tests = testGroup "InMemory" [
   Serialisation
 -------------------------------------------------------------------------------}
 
-prop_serialise_ChainSummary :: Trivial (ChainSummary Int Int) -> Property
+prop_serialise_ChainSummary :: Trivial (ChainSummary Int TestBlock) -> Property
 prop_serialise_ChainSummary (Trivial summary) = prop_serialise summary
 
 {-------------------------------------------------------------------------------
@@ -119,7 +119,7 @@ prop_pastLedger :: ChainSetup -> Property
 prop_pastLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated"    $
     classify withinReach                 "within reach" $
-          ledgerDbPast tbSlot tip csPushed
+          ledgerDbPast tip csPushed
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -127,10 +127,8 @@ prop_pastLedger setup@ChainSetup{..} =
     prefix :: [TestBlock]
     prefix = take (fromIntegral csPrefixLen) csChain
 
-    tip :: WithOrigin TestBlock
-    tip = case prefix of
-            []         -> Origin
-            _otherwise -> NotOrigin (last prefix)
+    tip :: Point TestBlock
+    tip = maybe GenesisPoint blockPoint (lastMaybe prefix)
 
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
     afterPrefix = ledgerDbPushMany' (csBlockConfig setup) prefix csGenSnaps
@@ -185,7 +183,7 @@ prop_pastAfterSwitch :: SwitchSetup -> Property
 prop_pastAfterSwitch setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated"    $
     classify withinReach                  "within reach" $
-          ledgerDbPast tbSlot tip ssSwitched
+          ledgerDbPast tip ssSwitched
       === if withinReach
             then Just (ledgerDbCurrent afterPrefix)
             else Nothing
@@ -193,10 +191,8 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
     prefix :: [TestBlock]
     prefix = take (fromIntegral ssPrefixLen) ssChain
 
-    tip :: WithOrigin TestBlock
-    tip = case prefix of
-            []         -> Origin
-            _otherwise -> NotOrigin (last prefix)
+    tip :: Point TestBlock
+    tip = maybe GenesisPoint blockPoint (lastMaybe prefix)
 
     afterPrefix :: LedgerDB (LedgerState TestBlock) TestBlock
     afterPrefix = ledgerDbPushMany' (csBlockConfig ssChainSetup) prefix (csGenSnaps ssChainSetup)
@@ -213,11 +209,11 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
 -- reference implementation.
 prop_pastVsSpec :: SwitchSetup -> Property
 prop_pastVsSpec SwitchSetup{..} = conjoin [
-          ledgerDbPast     tbSlot r ssSwitched
-      === ledgerDbPastSpec        r ssSwitched
+          ledgerDbPast     r ssSwitched
+      === ledgerDbPastSpec r ssSwitched
       -- Include all blocks in the LedgerDB, but also blocks /not/ in the
       -- LedgerDB
-    | r <- Origin : map NotOrigin (ssChain <> ssRemoved)
+    | r <- GenesisPoint : map blockPoint (ssChain <> ssRemoved)
     ]
 
 {-------------------------------------------------------------------------------
@@ -396,14 +392,18 @@ instance Arbitrary LedgerDbParams where
 newtype Trivial a = Trivial { trivial :: a }
   deriving (Show)
 
-instance Arbitrary (Trivial (ChainSummary Int Int)) where
+instance Arbitrary (Trivial (ChainSummary Int TestBlock)) where
   arbitrary = fmap Trivial $
                 ChainSummary <$> (trivial <$> arbitrary)
                              <*> arbitrary
                              <*> arbitrary
 
-instance Arbitrary (Trivial (WithOrigin Int)) where
+instance Arbitrary (Trivial (Point TestBlock)) where
   arbitrary = fmap Trivial $ do
-                gen <- arbitrary
-                if gen then return Origin
-                       else NotOrigin <$> arbitrary
+      gen <- arbitrary
+      if gen then
+        return GenesisPoint
+      else
+        BlockPoint
+          <$> (SlotNo <$> arbitrary)
+          <*> (testHashFromList . getNonEmpty <$> arbitrary)

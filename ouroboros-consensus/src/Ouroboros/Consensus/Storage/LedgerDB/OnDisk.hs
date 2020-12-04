@@ -18,9 +18,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , InitFailure(..)
     -- ** Instantiate in-memory to @blk@
   , LedgerDB'
-  , ledgerDbTip'
   , ChainSummary'
-  , csTip'
   , AnnLedgerError'
     -- ** Abstraction over the stream API
   , NextBlock(..)
@@ -71,15 +69,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
   Instantiate the in-memory DB to @blk@
 -------------------------------------------------------------------------------}
 
-type LedgerDB'       blk = LedgerDB       (ExtLedgerState blk) (RealPoint blk)
-type ChainSummary'   blk = ChainSummary   (ExtLedgerState blk) (RealPoint blk)
-type AnnLedgerError' blk = AnnLedgerError (ExtLedgerState blk) (RealPoint blk)
-
-csTip' :: ChainSummary' blk -> Point blk
-csTip' = withOriginRealPointToPoint . csTip
-
-ledgerDbTip' :: LedgerDB' blk -> Point blk
-ledgerDbTip' = withOriginRealPointToPoint . ledgerDbTip
+type LedgerDB'       blk = LedgerDB       (ExtLedgerState blk) blk
+type ChainSummary'   blk = ChainSummary   (ExtLedgerState blk) blk
+type AnnLedgerError' blk = AnnLedgerError (ExtLedgerState blk) blk
 
 {-------------------------------------------------------------------------------
   Abstraction over the streaming API provided by the Chain DB
@@ -194,7 +186,7 @@ initLedgerDB ::
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk))
-  -> (forall s. Decoder s (RealPoint blk))
+  -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbParams
   -> ExtLedgerCfg blk
   -> m (ExtLedgerState blk) -- ^ Genesis ledger state
@@ -204,7 +196,7 @@ initLedgerDB replayTracer
              tracer
              hasFS
              decLedger
-             decRef
+             decHash
              params
              conf
              getGenesisLedger
@@ -229,7 +221,7 @@ initLedgerDB replayTracer
                              replayTracer
                              hasFS
                              decLedger
-                             decRef
+                             decHash
                              params
                              conf
                              streamAPI
@@ -278,16 +270,16 @@ initFromSnapshot ::
   => Tracer m (TraceReplayEvent blk ())
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk))
-  -> (forall s. Decoder s (RealPoint blk))
+  -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbParams
   -> ExtLedgerCfg blk
   -> StreamAPI m blk
   -> DiskSnapshot
   -> ExceptT (InitFailure blk) m (RealPoint blk, LedgerDB' blk, Word64)
-initFromSnapshot tracer hasFS decLedger decRef params conf streamAPI ss = do
+initFromSnapshot tracer hasFS decLedger decHash params conf streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
-                readSnapshot hasFS decLedger decRef ss
-    case csTip initSS of
+                readSnapshot hasFS decLedger decHash ss
+    case pointToWithOriginRealPoint (csTip initSS) of
       Origin        -> throwError InitFailureGenesis
       NotOrigin tip -> do
         lift $ traceWith tracer $ ReplayFromSnapshot ss tip ()
@@ -313,14 +305,14 @@ initStartingWith ::
   -> LedgerDB' blk
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
 initStartingWith tracer conf streamAPI initDb = do
-    streamAll streamAPI (ledgerDbTip' initDb)
+    streamAll streamAPI (ledgerDbTip initDb)
       InitFailureTooRecent
       (initDb, 0)
       push
   where
     push :: blk -> (LedgerDB' blk, Word64) -> m (LedgerDB' blk, Word64)
     push blk !(!db, !replayed) = do
-        !db' <- ledgerDbPush conf (ReapplyVal (blockRealPoint blk) blk) db
+        !db' <- ledgerDbPush conf (ReapplyVal blk) db
 
         let replayed' :: Word64
             !replayed' = replayed + 1
@@ -362,10 +354,10 @@ takeSnapshot ::
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
   -> (ExtLedgerState blk -> Encoding)
-  -> (RealPoint blk -> Encoding)
+  -> (HeaderHash blk -> Encoding)
   -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot tracer hasFS encLedger encRef db =
-    case csTip oldest of
+takeSnapshot tracer hasFS encLedger encHash db =
+    case pointToWithOriginRealPoint (csTip oldest) of
       Origin ->
         return Nothing
       NotOrigin tip -> do
@@ -375,7 +367,7 @@ takeSnapshot tracer hasFS encLedger encRef db =
         if List.any ((== number) . dsNumber) snapshots then
           return Nothing
         else do
-          writeSnapshot hasFS encLedger encRef snapshot oldest
+          writeSnapshot hasFS encLedger encHash snapshot oldest
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where
@@ -442,30 +434,31 @@ readSnapshot ::
      forall m blk. IOLike m
   => SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk))
-  -> (forall s. Decoder s (RealPoint blk))
+  -> (forall s. Decoder s (HeaderHash blk))
   -> DiskSnapshot
   -> ExceptT ReadIncrementalErr m (ChainSummary' blk)
-readSnapshot hasFS decLedger decRef =
+readSnapshot hasFS decLedger decHash =
       ExceptT
     . readIncremental hasFS decoder
     . snapshotToPath
   where
     decoder :: Decoder s (ChainSummary' blk)
-    decoder = decodeChainSummary decLedger decRef
+    decoder = decodeChainSummary decLedger decHash
 
 -- | Write snapshot to disk
 writeSnapshot ::
-     forall m l r. MonadThrow m
+     forall m blk. MonadThrow m
   => SomeHasFS m
-  -> (l -> Encoding)
-  -> (r -> Encoding)
-  -> DiskSnapshot -> ChainSummary l r -> m ()
-writeSnapshot (SomeHasFS hasFS) encLedger encRef ss cs = do
+  -> (ExtLedgerState blk -> Encoding)
+  -> (HeaderHash blk -> Encoding)
+  -> DiskSnapshot
+  -> ChainSummary' blk -> m ()
+writeSnapshot (SomeHasFS hasFS) encLedger encHash ss cs = do
     withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
   where
-    encode :: ChainSummary l r -> Encoding
-    encode = encodeChainSummary encLedger encRef
+    encode :: ChainSummary' blk -> Encoding
+    encode = encodeChainSummary encLedger encHash
 
 -- | Delete snapshot from disk
 deleteSnapshot :: HasCallStack => SomeHasFS m -> DiskSnapshot -> m ()
