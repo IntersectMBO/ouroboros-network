@@ -564,12 +564,13 @@ networkErrorPolicies = ErrorPolicies
       , ErrorPolicy
           $ \(e :: MuxError)
                 -> case errorType e of
-                      MuxUnknownMiniProtocol  -> Just ourBug
-                      MuxDecodeError          -> Just ourBug
-                      MuxIngressQueueOverRun  -> Just ourBug
-                      MuxInitiatorOnly        -> Just ourBug
-                      MuxShutdown {}          -> Just ourBug
-                      MuxCleanShutdown        -> Just ourBug
+                      MuxUnknownMiniProtocol       -> Just ourBug
+                      MuxDecodeError               -> Just ourBug
+                      MuxIngressQueueOverRun       -> Just ourBug
+                      MuxInitiatorOnly             -> Just ourBug
+                      MuxShutdown {}               -> Just ourBug
+                      MuxCleanShutdown             -> Just ourBug
+                      MuxBlockedOnCompletionVar {} -> Just ourBug
 
                       -- in case of bearer closed / or IOException we suspend
                       -- the peer for a short time

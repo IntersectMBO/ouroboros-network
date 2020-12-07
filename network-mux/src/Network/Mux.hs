@@ -186,7 +186,9 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
 
 miniProtocolJob
   :: forall mode m.
-     MonadSTM m
+     ( MonadSTM m
+     , MonadThrow (STM m)
+     )
   => Tracer m MuxTrace
   -> EgressQueue m
   -> MiniProtocolState mode m
@@ -216,7 +218,8 @@ miniProtocolJob tracer egressQueue
       mpsJobExit w
       atomically $ do
         writeTVar miniProtocolStatusVar StatusIdle
-        putTMVar completionVar $ Right result
+        putTMVar completionVar (Right result)
+          `orElse` (throwSTM (MuxError (MuxBlockedOnCompletionVar miniProtocolNum) ""))
         case remainder of
           Just trailing ->
             modifyTVar miniProtocolIngressQueue (BL.append trailing)
@@ -260,7 +263,7 @@ data MiniProtocolAction m where
 --  2. it starts responder protocol threads on demand when the first
 --     incoming message arrives.
 --
-monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m)
+monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m, MonadThrow (STM m))
         => Tracer m MuxTrace
         -> JobPool.JobPool m MuxJobResult
         -> EgressQueue m
