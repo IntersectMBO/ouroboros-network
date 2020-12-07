@@ -18,12 +18,13 @@ import           Control.Monad.State (State, evalState, get, modify)
 import           Data.Bifunctor (first)
 import           Data.Either (isRight)
 import           Data.List (find, foldl', intersect, isSuffixOf, nub, partition,
-                     sort, (\\))
+                     sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word
+-- import qualified Debug.Trace as Debug
 import           GHC.Stack (HasCallStack)
 
 import           Test.QuickCheck hiding (elements)
@@ -86,43 +87,47 @@ tests = testGroup "Mempool"
 {-------------------------------------------------------------------------------
   Mempool Pure Properties
 -------------------------------------------------------------------------------}
+
 -- | Test that removed transactions are not in the
 --   result transactionsIds of the returned internal state.
 prop_Mempool_pureRemoveTxsId_removed
-  :: TestSetupRemove
+  :: TestSetupSub
   -> Property
-prop_Mempool_pureRemoveTxsId_removed TestSetupRemove {..} =
-    withInternalState setup $
+prop_Mempool_pureRemoveTxsId_removed TestSetupSub {..} =
+    withInternalState tssSetup $
     \ mpArgs internalSt ledgerState ->
-      let (internalStRes, _)    = pureRemoveTxs (map txId subTxs) mpArgs internalSt ledgerState
+      let (internalStRes, _)    = pureRemoveTxs (map txId tssSubTxs) mpArgs internalSt ledgerState
           txIdsRemaining        = Set.toList (isTxIds internalStRes)
-      in property $ null $ intersect txIdsRemaining (map txId subTxs)
+      in property $ null $ intersect txIdsRemaining (map txId tssSubTxs)
 
 -- | Test that after removing transactions all the other transactions are still available.
+--
 prop_Mempool_pureRemoveTxsId_contra
-    :: TestSetupRemove
+    :: TestSetupWithTxs
     -> Property
-prop_Mempool_pureRemoveTxsId_contra TestSetupRemove {..} =
-    withInternalState setup $
+prop_Mempool_pureRemoveTxsId_contra TestSetupWithTxs {..} =
+    withInternalState testSetup $
     \ mpArgs internalSt ledgerState ->
-      let (internalStRes, _)    = pureRemoveTxs (map txId subTxs) mpArgs internalSt ledgerState
-          txIdsRemaining        = Set.toList (isTxIds internalStRes)
-      in sort txIdsRemaining === sort (map txId (testInitialTxs setup) \\ map txId subTxs)
+      let (_res,internalSt')     = runTryAddTxs mpArgs internalSt (map fst txs)
+          (internalStRes, _tra)  = pureRemoveTxs (map (txId . fst) txs)
+                                      mpArgs internalSt' ledgerState
+          txIdsRemaining         = Set.toList (isTxIds internalStRes)
+      in sort txIdsRemaining === sort (Set.toList (isTxIds internalSt))
 
-data TestSetupRemove = TestSetupRemove
-  { setup  :: TestSetup
-  , subTxs :: [TestTx]
+data TestSetupSub = TestSetupSub
+  { tssSetup  :: TestSetup
+  , tssSubTxs :: [TestTx]
   } deriving (Show)
 
-instance Arbitrary TestSetupRemove where
+instance Arbitrary TestSetupSub where
   arbitrary = do
     testSetup <- arbitrary
     subs      <- sublistOf (testInitialTxs testSetup)
-    return $ TestSetupRemove testSetup subs
+    return $ TestSetupSub testSetup subs
 
-  shrink TestSetupRemove { setup, subTxs } =
-      [ TestSetupRemove { setup = setup', subTxs }
-      | setup' <- shrink setup
+  shrink TestSetupSub { tssSetup, tssSubTxs } =
+      [ TestSetupSub { tssSetup = setup', tssSubTxs }
+      | setup' <- shrink tssSetup
       ]
 
 withInternalState
@@ -130,10 +135,10 @@ withInternalState
   -> (MempoolArgs TestBlock -> InternalState TestBlock -> LedgerState TestBlock -> Property)
   -> Property
 withInternalState testSetup@TestSetup {..} func =
-  let args              = MempoolArgs testLedgerConfig txSize testMempoolCapOverride
-      (slot, st')       = tickLedgerState testLedgerConfig (ForgeInUnknownSlot testLedgerState)
-      internalSt        = initInternalState testMempoolCapOverride zeroTicketNo slot st'
-      (_,internalSt')   = runTryAddTxs args internalSt testInitialTxs
+  let args               = MempoolArgs testLedgerConfig txSize testMempoolCapOverride
+      (slot, st')        = tickLedgerState testLedgerConfig (ForgeInUnknownSlot testLedgerState)
+      internalSt         = initInternalState testMempoolCapOverride zeroTicketNo slot st'
+      (_res,internalSt') = runTryAddTxs args internalSt testInitialTxs
   in  counterexample (ppTestSetup testSetup)
       $ classify
           (isOverride testMempoolCapOverride)
@@ -147,6 +152,48 @@ withInternalState testSetup@TestSetup {..} func =
   where
     isOverride (MempoolCapacityBytesOverride _) = True
     isOverride NoMempoolCapacityBytesOverride   = False
+
+{-------------------------------------------------------------------------------
+  Temporary
+-------------------------------------------------------------------------------}
+
+-- runTryAddTxsTracing ::
+--      String
+--   -> MempoolArgs TestBlock
+--   -> InternalState TestBlock
+--   -> [GenTx TestBlock]
+--   -> ( ([(GenTx TestBlock, MempoolAddTxResult TestBlock)], [GenTx TestBlock])
+--      , InternalState TestBlock
+--      )
+-- runTryAddTxsTracing msg mpArgs is txs =
+--     let res = runTryAddTxs mpArgs is txs
+--     in traceNo ("runTryAddTxs " ++ msg ++ " " ++
+--         show (fst res) ++ " txIds " ++ show (isTxIds (snd res))) res
+--
+-- traceNo :: String -> a -> a
+-- traceNo _msg a = a
+--
+-- traceTx :: String -> InternalState TestBlock -> a -> a
+-- traceTx msg is = traceNo (msg ++ " " ++ show (Set.toList (isTxIds is))
+--                                   ++ " " ++ show (length (isTxs is))
+--                                   ++ " capacity " ++ show (isCapacity is))
+--
+-- traceTxAddRes ::
+--      Show (ApplyTxErr blk)
+--   => String
+--   -> InternalState TestBlock
+--   -> ([(GenTx blk, MempoolAddTxResult blk)], [GenTx blk])
+--   -> a
+--   -> a
+-- traceTxAddRes msg is (txs1,[]) =
+--   Debug.trace ("traceTxAddRes " ++ msg ++ " " ++ show (length txs1)
+--                 ++ " " ++ show (length (isTxIds is))) $
+--   seq (map traceErr txs1)
+--     where
+--       traceErr (_, MempoolTxAdded) = ()
+--       traceErr (_, MempoolTxRejected reason) = Debug.trace ("Rejected: " ++ show reason) ()
+-- traceTxAddRes msg _is (_,_hd:_tl) = Debug.trace (msg ++ "" ++ "Mempool full")
+
 
 {-------------------------------------------------------------------------------
   Mempool Implementation Properties
