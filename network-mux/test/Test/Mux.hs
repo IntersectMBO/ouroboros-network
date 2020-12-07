@@ -275,7 +275,6 @@ instance Arbitrary ArbitrarySDU where
 
 instance Arbitrary Compat.MuxBearerState where
      arbitrary = elements [ Compat.Mature
-                          , Compat.Dying
                           , Compat.Dead
                           ]
 

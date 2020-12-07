@@ -110,9 +110,6 @@ data WithMuxBearer peerid a = WithMuxBearer {
 
 data MuxBearerState = Mature
                     -- ^ MuxBearer has successufully completed the handshake.
-                    | Dying
-                    -- ^ MuxBearer is in the process of beeing torn down,
-                    -- requests may fail.
                     | Dead
                     -- ^ MuxBearer is dead and the underlying bearer has been
                     -- closed.
@@ -146,11 +143,12 @@ data MuxTrace =
     | MuxTraceStartEagerly !MiniProtocolNum !MiniProtocolDir
     | MuxTraceStartOnDemand !MiniProtocolNum !MiniProtocolDir
     | MuxTraceStartedOnDemand !MiniProtocolNum !MiniProtocolDir
+    | MuxTraceTerminating !MiniProtocolNum !MiniProtocolDir
     | MuxTraceShutdown
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
-    show (MuxTraceRecvHeaderEnd MuxSDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x %s %s len %d"
+    show (MuxTraceRecvHeaderEnd MuxSDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x (%s) %s len %d"
         (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
     show (MuxTraceRecvDeltaQObservation MuxSDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
         (unRemoteClockModel mhTimestamp) (show ts) mhLength

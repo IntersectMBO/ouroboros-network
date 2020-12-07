@@ -225,6 +225,7 @@ miniProtocolJob tracer egressQueue
 
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
+    miniProtocolDirEnum :: MiniProtocolDir
     miniProtocolDirEnum = protocolDirEnum miniProtocolDir
 
     -- The Wanton w is the SDUs that are queued but not yet sent for this job.
@@ -233,7 +234,7 @@ miniProtocolJob tracer egressQueue
     -- jobs will be cancelled directly.
     mpsJobExit :: IngressQueue m -> m ()
     mpsJobExit w = do
-        traceWith tracer (MuxTraceState Dying)
+        traceWith tracer (MuxTraceTerminating miniProtocolNum miniProtocolDirEnum)
         atomically $ do
             buf <- readTVar w
             check (BL.null buf)
