@@ -20,6 +20,7 @@ module Ouroboros.Network.Protocol.ChainSync.Server  (
     , ServerStIdle(..)
     , ServerStNext(..)
     , ServerStIntersect(..)
+    , ServerStSparse(..)
 
       -- * Execution as a typed protocol
     , chainSyncServerPeer
@@ -32,8 +33,8 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 
 -- | A chain sync protocol server, on top of some effect 'm'.
 --
-newtype ChainSyncServer header point tip m a = ChainSyncServer {
-    runChainSyncServer :: m (ServerStIdle header point tip m a)
+newtype ChainSyncServer block header point tip m a = ChainSyncServer {
+    runChainSyncServer :: m (ServerStIdle block header point tip m a)
   }
 
 
@@ -43,18 +44,22 @@ newtype ChainSyncServer header point tip m a = ChainSyncServer {
 --  * a next update request
 --  * a find intersection request
 --  * a termination messge
+--  * a block request
 --
 -- It must be prepared to handle either.
 --
-data ServerStIdle header point tip m a = ServerStIdle {
+data ServerStIdle block header point tip m a = ServerStIdle {
 
-       recvMsgRequestNext   :: m (Either (ServerStNext header point tip m a)
-                                      (m (ServerStNext header point tip m a))),
+       recvMsgRequestNext   :: m (Either (ServerStNext block header point tip m a)
+                                      (m (ServerStNext block header point tip m a))),
 
        recvMsgFindIntersect :: [point]
-                            -> m (ServerStIntersect header point tip m a),
+                            -> m (ServerStIntersect block header point tip m a),
 
-       recvMsgDoneClient :: m a
+       recvMsgDoneClient :: m a,
+
+       recvMsgRequestBlock :: point -> m (ServerStSparse block header point tip m a)
+
      }
 
 -- | In the 'StNext' protocol state, the server has agency and must send either:
@@ -63,14 +68,14 @@ data ServerStIdle header point tip m a = ServerStIdle {
 --  * a roll back message
 --  * a termination message
 --
-data ServerStNext header point tip m a where
+data ServerStNext block header point tip m a where
   SendMsgRollForward  :: header -> tip
-                      -> ChainSyncServer header point tip m a
-                      -> ServerStNext header point tip m a
+                      -> ChainSyncServer block header point tip m a
+                      -> ServerStNext block header point tip m a
 
   SendMsgRollBackward :: point -> tip
-                      -> ChainSyncServer header point tip m a
-                      -> ServerStNext header point tip m a
+                      -> ChainSyncServer block header point tip m a
+                      -> ServerStNext block header point tip m a
 
 -- | In the 'StIntersect' protocol state, the server has agency and must send
 -- either:
@@ -79,26 +84,32 @@ data ServerStNext header point tip m a where
 --  * unchanged message,
 --  * termination message
 --
-data ServerStIntersect header point tip m a where
+data ServerStIntersect block header point tip m a where
   SendMsgIntersectFound     :: point -> tip
-                            -> ChainSyncServer header point tip m a
-                            -> ServerStIntersect header point tip m a
+                            -> ChainSyncServer block header point tip m a
+                            -> ServerStIntersect block header point tip m a
 
   SendMsgIntersectNotFound  :: tip
-                            -> ChainSyncServer header point tip m a
-                            -> ServerStIntersect header point tip m a
+                            -> ChainSyncServer block header point tip m a
+                            -> ServerStIntersect block header point tip m a
+
+data ServerStSparse block header point tip m a where
+
+  SendMsgBlock        :: block
+                      -> ChainSyncServer block header point tip m a
+                      -> ServerStSparse block header point tip m a
 
 
 -- | Interpret a 'ChainSyncServer' action sequence as a 'Peer' on the server
 -- side of the 'ChainSyncProtocol'.
 --
 chainSyncServerPeer
-  :: forall header point tip m a.
+  :: forall block header point tip m a.
      Monad m
-  => ChainSyncServer header point tip m a
-  -> Peer (ChainSync header point tip) AsServer StIdle m a
+  => ChainSyncServer block header point tip m a
+  -> Peer (ChainSync block header point tip) AsServer StIdle m a
 chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
-    \(ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient}) ->
+    \(ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient, recvMsgRequestBlock}) ->
 
     pure $ Await (ClientAgency TokIdle) $ \req ->
     case req of
@@ -117,11 +128,15 @@ chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
 
       MsgDone -> Effect $ fmap (Done TokDone) recvMsgDoneClient
 
+      MsgRequestBlock point -> Effect $ do
+        resp <- recvMsgRequestBlock point
+        pure $ handleStSparse resp
+
   where
     handleStNext
       :: TokNextKind nextKind
-      -> ServerStNext header point tip m a
-      -> Peer (ChainSync header point tip) AsServer (StNext nextKind) m a
+      -> ServerStNext block header point tip m a
+      -> Peer (ChainSync block header point tip) AsServer (StNext nextKind) m a
 
     handleStNext toknextkind (SendMsgRollForward  header tip next) =
       Yield (ServerAgency (TokNext toknextkind))
@@ -135,8 +150,8 @@ chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
 
 
     handleStIntersect
-      :: ServerStIntersect header point tip m a
-      -> Peer (ChainSync header point tip) AsServer StIntersect m a
+      :: ServerStIntersect block header point tip m a
+      -> Peer (ChainSync block header point tip) AsServer StIntersect m a
 
     handleStIntersect (SendMsgIntersectFound pIntersect tip next) =
       Yield (ServerAgency TokIntersect)
@@ -146,4 +161,13 @@ chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
     handleStIntersect (SendMsgIntersectNotFound tip next) =
       Yield (ServerAgency TokIntersect)
             (MsgIntersectNotFound tip)
+            (chainSyncServerPeer next)
+
+    handleStSparse
+      :: ServerStSparse block header point tip m a
+      -> Peer (ChainSync block header point tip) AsServer StSparse m a
+
+    handleStSparse (SendMsgBlock block next) =
+      Yield (ServerAgency TokSparse)
+            (MsgBlock block)
             (chainSyncServerPeer next)

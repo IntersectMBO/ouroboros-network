@@ -43,7 +43,7 @@ chainSyncHeadersServer
     -> ChainDB m blk
     -> NodeToNodeVersion
     -> ResourceRegistry m
-    -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
+    -> ChainSyncServer blk (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB _version registry =
     ChainSyncServer $ do
       rdr <- ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
@@ -60,7 +60,7 @@ chainSyncBlocksServer
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> ResourceRegistry m
-    -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
+    -> ChainSyncServer blk (Serialised blk) (Point blk) (Tip blk) m ()
 chainSyncBlocksServer tracer chainDB registry =
     ChainSyncServer $ do
       rdr <- ChainDB.newReader chainDB registry getSerialisedBlockWithPoint
@@ -84,22 +84,23 @@ chainSyncServerForReader
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> Reader  m blk (WithPoint blk b)
-    -> ChainSyncServer b (Point blk) (Tip blk) m ()
+    -> ChainSyncServer blk b (Point blk) (Tip blk) m ()
 chainSyncServerForReader tracer chainDB rdr =
     idle'
   where
-    idle :: ServerStIdle b (Point blk) (Tip blk) m ()
+    idle :: ServerStIdle blk b (Point blk) (Tip blk) m ()
     idle = ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
-        recvMsgDoneClient    = ChainDB.readerClose rdr
+        recvMsgDoneClient    = ChainDB.readerClose rdr,
+        recvMsgRequestBlock  = handleRequestBlock
       }
 
-    idle' :: ChainSyncServer b (Point blk) (Tip blk) m ()
+    idle' :: ChainSyncServer blk b (Point blk) (Tip blk) m ()
     idle' = ChainSyncServer $ return idle
 
-    handleRequestNext :: m (Either (ServerStNext b (Point blk) (Tip blk) m ())
-                                (m (ServerStNext b (Point blk) (Tip blk) m ())))
+    handleRequestNext :: m (Either (ServerStNext blk b (Point blk) (Tip blk) m ())
+                                (m (ServerStNext blk b (Point blk) (Tip blk) m ())))
     handleRequestNext = ChainDB.readerInstruction rdr >>= \case
       Just update -> do
         tip <- atomically $ ChainDB.getCurrentTip chainDB
@@ -117,13 +118,13 @@ chainSyncServerForReader tracer chainDB rdr =
 
     sendNext :: Tip blk
              -> ChainUpdate blk b
-             -> ServerStNext b (Point blk) (Tip blk) m ()
+             -> ServerStNext blk b (Point blk) (Tip blk) m ()
     sendNext tip update = case update of
       AddBlock hdr -> SendMsgRollForward  hdr tip idle'
       RollBack pt  -> SendMsgRollBackward pt tip idle'
 
     handleFindIntersect :: [Point blk]
-                        -> m (ServerStIntersect b (Point blk) (Tip blk) m ())
+                        -> m (ServerStIntersect blk b (Point blk) (Tip blk) m ())
     handleFindIntersect points = do
       -- TODO guard number of points
       changed <- ChainDB.readerForward rdr points
@@ -131,6 +132,17 @@ chainSyncServerForReader tracer chainDB rdr =
       return $ case changed of
         Just pt -> SendMsgIntersectFound    pt tip idle'
         Nothing -> SendMsgIntersectNotFound    tip idle'
+
+    handleRequestBlock :: Point blk
+                       -> m (ServerStSparse blk b (Point blk) (Tip blk) m ())
+    handleRequestBlock point =
+      case pointToWithOriginRealPoint point of
+        Origin       -> error "invalid RequestBlock"
+        NotOrigin rp -> do
+          ChainDB.getBlockComponent chainDB ChainDB.GetVerifiedBlock rp
+            >>= \case
+              Nothing  -> error "TODO"
+              Just blk -> return $ SendMsgBlock blk idle'
 
 {-------------------------------------------------------------------------------
   Trace events

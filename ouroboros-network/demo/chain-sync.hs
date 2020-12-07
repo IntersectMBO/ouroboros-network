@@ -212,14 +212,16 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
 
 
 codecChainSync :: ( CBOR.Serialise block
+                  , CBOR.Serialise header
                   , CBOR.Serialise point
                   , CBOR.Serialise tip
                   )
-               => Codec (ChainSync.ChainSync block point tip)
+               => Codec (ChainSync.ChainSync block header point tip)
                         CBOR.DeserialiseFailure
                         IO LBS.ByteString
 codecChainSync =
     ChainSync.codecChainSync
+      CBOR.encode CBOR.decode
       CBOR.encode CBOR.decode
       CBOR.encode CBOR.decode
       CBOR.encode CBOR.decode
@@ -461,7 +463,7 @@ codecBlockFetch =
 --
 
 chainSyncClient :: ChainSync.ChainSyncClient
-                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                     Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncClient =
     ChainSync.ChainSyncClient $ do
       curvar   <- newTVarIO genesisAnchoredFragment
@@ -474,19 +476,19 @@ chainSyncClient' :: Tracer IO (Point BlockHeader, Point BlockHeader)
                  -> TVar (AF.AnchoredFragment BlockHeader)
                  -> TVar (AF.AnchoredFragment BlockHeader)
                  -> ChainSync.ChainSyncClient
-                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                      Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncClient' syncTracer _currentChainVar candidateChainVar =
     ChainSync.ChainSyncClient (return requestNext)
   where
     requestNext :: ChainSync.ClientStIdle
-                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                     Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     requestNext =
       ChainSync.SendMsgRequestNext
         handleNext
         (return handleNext) -- wait case, could trace
 
     handleNext :: ChainSync.ClientStNext
-                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                    Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     handleNext =
       ChainSync.ClientStNext {
         recvMsgRollForward  = \header _pHead ->
@@ -530,25 +532,26 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
 chainSyncServer :: RandomGen g
                 => g
                 -> ChainSync.ChainSyncServer
-                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                     Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncServer seed =
     let blocks = chainGenerator seed in
     ChainSync.ChainSyncServer (return (idleState blocks))
   where
     idleState :: [Block]
               -> ChainSync.ServerStIdle
-                   BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                   Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     idleState blocks =
       ChainSync.ServerStIdle {
         recvMsgRequestNext   = do threadDelay 500000
                                   return (Left (nextState blocks)),
         recvMsgFindIntersect = \_ -> return (intersectState blocks),
-        recvMsgDoneClient    = return ()
+        recvMsgDoneClient    = return (),
+        recvMsgRequestBlock  = undefined
       }
 
     nextState :: [Block]
               -> ChainSync.ServerStNext
-                   BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                   Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     nextState [] = error "chainSyncServer: impossible"
     nextState (block:blocks) =
       ChainSync.SendMsgRollForward
@@ -559,7 +562,7 @@ chainSyncServer seed =
 
     intersectState :: [Block]
                    -> ChainSync.ServerStIntersect
-                        BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+                        Block BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     intersectState blocks =
       ChainSync.SendMsgIntersectNotFound
          -- pretend chain head is next one:

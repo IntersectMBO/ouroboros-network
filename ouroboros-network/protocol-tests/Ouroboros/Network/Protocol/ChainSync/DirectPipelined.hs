@@ -11,8 +11,8 @@ import Ouroboros.Network.Protocol.ChainSync.Server as Server
 
 
 directPipelined :: Monad m
-                => ChainSyncServer header point tip m a
-                -> ChainSyncClientPipelined header point tip m b
+                => ChainSyncServer block header point tip m a
+                -> ChainSyncClientPipelined block header point tip m b
                 -> m (a, b)
 directPipelined (ChainSyncServer mserver) (ChainSyncClientPipelined mclient) =
     directStIdleM EmptyQ mserver mclient
@@ -20,8 +20,8 @@ directPipelined (ChainSyncServer mserver) (ChainSyncClientPipelined mclient) =
 
 directStIdleM :: Monad m
                  => Queue n (ChainSyncInstruction header point tip)
-                 -> m (ServerStIdle            header point tip m a)
-                 -> m (ClientPipelinedStIdle n header point tip m b)
+                 -> m (ServerStIdle            block header point tip m a)
+                 -> m (ClientPipelinedStIdle n block header point tip m b)
                  -> m (a, b)
 
 directStIdleM queue mServerStIdle mClientStIdle = do
@@ -32,8 +32,8 @@ directStIdleM queue mServerStIdle mClientStIdle = do
 
 directStIdle :: Monad m
              => Queue n (ChainSyncInstruction header point tip)
-             -> ServerStIdle            header point tip m a
-             -> ClientPipelinedStIdle n header point tip m b
+             -> ServerStIdle            block header point tip m a
+             -> ClientPipelinedStIdle n block header point tip m b
              -> m (a, b)
 directStIdle queue@EmptyQ ServerStIdle {recvMsgRequestNext} (SendMsgRequestNext stClientNext stClientAwait) = do
     mStServerNext <- recvMsgRequestNext
@@ -91,3 +91,8 @@ directStIdle EmptyQ ServerStIdle {recvMsgDoneClient} (SendMsgDone clientDone) = 
     msgDoneClient <- recvMsgDoneClient
     return (msgDoneClient, clientDone)
 
+directStIdle queue@EmptyQ ServerStIdle {recvMsgRequestBlock}
+             (SendMsgRequestBlock point
+                ClientPipelinedStSparse {recvMsgBlock}) = do
+    SendMsgBlock block (ChainSyncServer mStServerIdle) <- recvMsgRequestBlock point
+    directStIdleM queue mStServerIdle (recvMsgBlock block)

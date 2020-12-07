@@ -1007,6 +1007,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   (pure $ NTN.ChainSyncTimeout
                      { canAwaitTimeout  = waitForever
                      , mustReplyTimeout = waitForever
+                     , sparseTimeout    = waitForever
                      })
                   (NTN.mkHandlers nodeKernelArgs nodeKernel)
 

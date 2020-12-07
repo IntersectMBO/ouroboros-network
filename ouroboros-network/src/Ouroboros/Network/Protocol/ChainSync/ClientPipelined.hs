@@ -10,6 +10,7 @@ module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
   , ClientPipelinedStIdle (..)
   , ClientStNext (..)
   , ClientPipelinedStIntersect (..)
+  , ClientPipelinedStSparse (..)
   , ChainSyncInstruction (..)
 
   , chainSyncClientPeerPipelined
@@ -28,9 +29,9 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 -- impact how many messages one would like to pipeline.  It also simplifies the
 -- receiver callback.
 --
-newtype ChainSyncClientPipelined header point tip m a =
+newtype ChainSyncClientPipelined block header point tip m a =
   ChainSyncClientPipelined {
-    runChainSyncClientPipelined :: m (ClientPipelinedStIdle Z header point tip m a)
+    runChainSyncClientPipelined :: m (ClientPipelinedStIdle Z block header point tip m a)
   }
 
 
@@ -49,30 +50,35 @@ newtype ChainSyncClientPipelined header point tip m a =
 --
 -- * Terminate the protocol with by sending 'MsgDone'.
 --
-data ClientPipelinedStIdle n header point tip  m a where
+data ClientPipelinedStIdle n block header point tip  m a where
 
     SendMsgRequestNext
-      ::    ClientStNext       Z header point tip m a
-      -> m (ClientStNext       Z header point tip m a)
-      -> ClientPipelinedStIdle Z header point tip m a
+      ::    ClientStNext       Z block header point tip m a
+      -> m (ClientStNext       Z block header point tip m a)
+      -> ClientPipelinedStIdle Z block header point tip m a
 
     SendMsgRequestNextPipelined
-      :: ClientPipelinedStIdle (S n) header point tip m a
-      -> ClientPipelinedStIdle    n  header point tip m a
+      :: ClientPipelinedStIdle (S n) block header point tip m a
+      -> ClientPipelinedStIdle    n  block header point tip m a
 
     SendMsgFindIntersect
       :: [point]
-      -> ClientPipelinedStIntersect   header point tip m a
-      -> ClientPipelinedStIdle      Z header point tip m a
+      -> ClientPipelinedStIntersect   block header point tip m a
+      -> ClientPipelinedStIdle      Z block header point tip m a
 
     CollectResponse
-      :: Maybe (ClientPipelinedStIdle (S n) header point tip m a)
-      -> ClientStNext                    n  header point tip m a
-      -> ClientPipelinedStIdle        (S n) header point tip m a
+      :: Maybe (ClientPipelinedStIdle (S n) block header point tip m a)
+      -> ClientStNext                    n  block header point tip m a
+      -> ClientPipelinedStIdle        (S n) block header point tip m a
 
     SendMsgDone
       :: a
-      -> ClientPipelinedStIdle Z header point tip m a
+      -> ClientPipelinedStIdle Z block header point tip m a
+
+    SendMsgRequestBlock
+      :: point
+      -> ClientPipelinedStSparse   block header point tip m a
+      -> ClientPipelinedStIdle   Z block header point tip m a
 
 -- | Callback for responses received after sending 'MsgRequestNext'.
 --
@@ -80,38 +86,48 @@ data ClientPipelinedStIdle n header point tip  m a where
 -- message which must be 'MsgRollForward' or 'MsgRollBackward'; thus we need
 -- only the two callbacks.
 --
-data ClientStNext n header point tip m a =
+data ClientStNext n block header point tip m a =
      ClientStNext {
        -- | Callback for 'MsgRollForward' message.
        --
        recvMsgRollForward
          :: header
          -> tip
-         -> m (ClientPipelinedStIdle n header point tip m a),
+         -> m (ClientPipelinedStIdle n block header point tip m a),
 
        -- | Callback for 'MsgRollBackward' message.
        --
        recvMsgRollBackward
          :: point
          -> tip
-         -> m (ClientPipelinedStIdle n header point tip m a)
+         -> m (ClientPipelinedStIdle n block header point tip m a)
+
      }
 
 -- | Callbacks for messages received after sending 'MsgFindIntersect'.
 --
 -- We might receive either 'MsgIntersectFound' or 'MsgIntersectNotFound'.
 --
-data ClientPipelinedStIntersect header point tip m a =
+data ClientPipelinedStIntersect block header point tip m a =
      ClientPipelinedStIntersect {
 
        recvMsgIntersectFound
          :: point
          -> tip
-          -> m (ClientPipelinedStIdle Z header point tip m a),
+          -> m (ClientPipelinedStIdle Z block header point tip m a),
 
        recvMsgIntersectNotFound
          :: tip
-         -> m (ClientPipelinedStIdle Z header point tip m a)
+         -> m (ClientPipelinedStIdle Z block header point tip m a)
+     }
+
+data ClientPipelinedStSparse block header point tip m a =
+     ClientPipelinedStSparse {
+
+       recvMsgBlock
+         :: block
+         -> m (ClientPipelinedStIdle Z block header point tip m a)
+
      }
 
 
@@ -132,21 +148,21 @@ data ChainSyncInstruction header point tip
 
 
 chainSyncClientPeerPipelined
-    :: forall header point tip m a.
+    :: forall block header point tip m a.
        Monad m
-    => ChainSyncClientPipelined header point tip m a
-    -> PeerPipelined (ChainSync header point tip) AsClient StIdle m a
+    => ChainSyncClientPipelined block header point tip m a
+    -> PeerPipelined (ChainSync block header point tip) AsClient StIdle m a
 
 chainSyncClientPeerPipelined (ChainSyncClientPipelined mclient) =
     PeerPipelined $ SenderEffect $ chainSyncClientPeerSender Zero <$> mclient
 
 
 chainSyncClientPeerSender
-    :: forall n header point tip m a.
+    :: forall n block header point tip m a.
        Monad m
     => Nat n
-    -> ClientPipelinedStIdle n header point tip m a
-    -> PeerSender (ChainSync header point tip)
+    -> ClientPipelinedStIdle n block header point tip m a
+    -> PeerSender (ChainSync block header point tip)
                   AsClient StIdle n
                   (ChainSyncInstruction header point tip)
                   m a
@@ -254,3 +270,12 @@ chainSyncClientPeerSender Zero (SendMsgDone a) =
       (ClientAgency TokIdle)
       MsgDone
       (SenderDone TokDone a)
+
+chainSyncClientPeerSender n@Zero (SendMsgRequestBlock point stSparse) =
+
+    -- non pipelined 'MsgRequestBlock'
+    SenderYield (ClientAgency TokIdle) (MsgRequestBlock point) $
+    SenderAwait (ServerAgency TokSparse) $ \case
+      MsgBlock block -> SenderEffect $ do
+        let ClientPipelinedStSparse {recvMsgBlock} = stSparse
+        chainSyncClientPeerSender n <$> recvMsgBlock block

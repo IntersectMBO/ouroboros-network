@@ -19,6 +19,7 @@ module Ouroboros.Network.Protocol.ChainSync.Client (
     , ClientStIdle(..)
     , ClientStNext(..)
     , ClientStIntersect(..)
+    , ClientStSparse(..)
 
       -- * Execution as a typed protocol
     , chainSyncClientPeer
@@ -40,13 +41,13 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 
 -- | A chain sync protocol client, on top of some effect 'm'.
 -- The first choice of request is within that 'm'.
-newtype ChainSyncClient header point tip m a = ChainSyncClient {
-    runChainSyncClient :: m (ClientStIdle header point tip m a)
+newtype ChainSyncClient block header point tip m a = ChainSyncClient {
+    runChainSyncClient :: m (ClientStIdle block header point tip m a)
   }
 
 -- | A chain sync client which never sends any message.
 --
-chainSyncClientNull :: MonadTimer m => ChainSyncClient header point tip m a
+chainSyncClientNull :: MonadTimer m => ChainSyncClient block header point tip m a
 chainSyncClientNull = ChainSyncClient $ forever $ threadDelay 43200 {- one day in seconds -}
 
 {-# DEPRECATED chainSyncClientNull "Use Ouroboros.Network.NodeToClient.chainSyncPeerNull" #-}
@@ -54,7 +55,7 @@ chainSyncClientNull = ChainSyncClient $ forever $ threadDelay 43200 {- one day i
 -- | In the 'StIdle' protocol state, the server does not have agency and can choose to
 -- send a request next, or a find intersection message.
 --
-data ClientStIdle header point tip m a where
+data ClientStIdle block header point tip m a where
 
   -- | Send the 'MsgRequestNext', with handlers for the replies.
   --
@@ -66,22 +67,27 @@ data ClientStIdle header point tip m a where
   -- In the waiting case, the client gets the chance to take a local action.
   --
   SendMsgRequestNext
-    ::    ClientStNext header point tip m a
-    -> m (ClientStNext header point tip m a) -- after MsgAwaitReply
-    -> ClientStIdle header point tip m a
+    ::    ClientStNext block header point tip m a
+    -> m (ClientStNext block header point tip m a) -- after MsgAwaitReply
+    -> ClientStIdle block header point tip m a
 
   -- | Send the 'MsgFindIntersect', with handlers for the replies.
   --
   SendMsgFindIntersect
     :: [point]
-    -> ClientStIntersect header point tip m a
-    -> ClientStIdle header point tip m a
+    -> ClientStIntersect block header point tip m a
+    -> ClientStIdle block header point tip m a
 
   -- | The client decided to end the protocol.
   --
   SendMsgDone
     :: a
-    -> ClientStIdle header point tip m a
+    -> ClientStIdle block header point tip m a
+
+  SendMsgRequestBlock
+    :: point
+    -> ClientStSparse block header point tip m a
+    -> ClientStIdle block header point tip m a
 
 -- | In the 'StNext' protocol state, the client does not have agency and is
 -- waiting to receive either
@@ -91,15 +97,15 @@ data ClientStIdle header point tip m a where
 --
 -- It must be prepared to handle any of these.
 --
-data ClientStNext header point tip m a =
+data ClientStNext block header point tip m a =
      ClientStNext {
        recvMsgRollForward  :: header -- header to add to the chain
                            -> tip    -- information about tip of the chain
-                           -> ChainSyncClient header point tip m a,
+                           -> ChainSyncClient block header point tip m a,
 
        recvMsgRollBackward :: point        -- rollback point
                            -> tip          -- information about tip of the chain
-                           -> ChainSyncClient header point tip m a
+                           -> ChainSyncClient block header point tip m a
      }
 
 -- | In the 'StIntersect' protocol state, the client does not have agency and
@@ -111,14 +117,20 @@ data ClientStNext header point tip m a =
 --
 -- It must be prepared to handle any of these.
 --
-data ClientStIntersect header point tip m a =
+data ClientStIntersect block header point tip m a =
      ClientStIntersect {
        recvMsgIntersectFound    :: point        -- found intersection point
                                 -> tip          -- information about tip of the chain
-                                -> ChainSyncClient header point tip m a,
+                                -> ChainSyncClient block header point tip m a,
 
        recvMsgIntersectNotFound :: tip          -- information about tip of the chain
-                                -> ChainSyncClient header point tip m a
+                                -> ChainSyncClient block header point tip m a
+     }
+
+data ClientStSparse block header point tip m a =
+     ClientStSparse {
+       recvMsgBlock :: block
+                    -> ChainSyncClient block header point tip m a
      }
 
 
@@ -129,23 +141,24 @@ data ClientStIntersect header point tip m a =
 -- whether the types are used as protocol inputs or outputs (or both, as is
 -- the case for points).
 --
-mapChainSyncClient :: forall header header' point point' tip tip' m a.
+mapChainSyncClient :: forall block block' header header' point point' tip tip' m a.
                       Functor m
                    => (point  -> point')
                    -> (point' -> point)
+                   -> (block' -> block)
                    -> (header' -> header)
                    -> (tip' -> tip)
-                   -> ChainSyncClient header  point  tip  m a
-                   -> ChainSyncClient header' point' tip' m a
-mapChainSyncClient fpoint fpoint' fheader ftip =
+                   -> ChainSyncClient block header  point  tip  m a
+                   -> ChainSyncClient block' header' point' tip' m a
+mapChainSyncClient fpoint fpoint' fblock fheader ftip =
     goClient
   where
-    goClient :: ChainSyncClient header  point  tip  m a
-             -> ChainSyncClient header' point' tip' m a
+    goClient :: ChainSyncClient block  header  point  tip  m a
+             -> ChainSyncClient block' header' point' tip' m a
     goClient (ChainSyncClient c) = ChainSyncClient (fmap goIdle c)
 
-    goIdle :: ClientStIdle header  point  tip  m a
-           -> ClientStIdle header' point' tip' m a
+    goIdle :: ClientStIdle block  header  point  tip  m a
+           -> ClientStIdle block' header' point' tip' m a
     goIdle (SendMsgRequestNext stNext stAwait) =
       SendMsgRequestNext (goNext stNext) (fmap goNext stAwait)
 
@@ -154,8 +167,11 @@ mapChainSyncClient fpoint fpoint' fheader ftip =
 
     goIdle (SendMsgDone a) = SendMsgDone a
 
-    goNext :: ClientStNext header  point  tip  m a
-           -> ClientStNext header' point' tip' m a
+    goIdle (SendMsgRequestBlock point stSparse) =
+      SendMsgRequestBlock (fpoint point) (goSparse stSparse)
+
+    goNext :: ClientStNext block  header  point  tip  m a
+           -> ClientStNext block' header' point' tip' m a
     goNext ClientStNext{recvMsgRollForward, recvMsgRollBackward} =
       ClientStNext {
         recvMsgRollForward  = \hdr tip ->
@@ -165,8 +181,8 @@ mapChainSyncClient fpoint fpoint' fheader ftip =
           goClient (recvMsgRollBackward (fpoint' pt) (ftip tip))
       }
 
-    goIntersect :: ClientStIntersect header  point  tip  m a
-                -> ClientStIntersect header' point' tip' m a
+    goIntersect :: ClientStIntersect block  header  point  tip  m a
+                -> ClientStIntersect block' header' point' tip' m a
     goIntersect ClientStIntersect { recvMsgIntersectFound,
                                     recvMsgIntersectNotFound } =
       ClientStIntersect {
@@ -177,21 +193,29 @@ mapChainSyncClient fpoint fpoint' fheader ftip =
           goClient (recvMsgIntersectNotFound (ftip tip))
       }
 
+    goSparse :: ClientStSparse block  header  point  tip  m a
+             -> ClientStSparse block' header' point' tip' m a
+    goSparse ClientStSparse{recvMsgBlock} =
+      ClientStSparse {
+        recvMsgBlock        = \blk ->
+          goClient (recvMsgBlock (fblock blk))
+      }
+
 
 -- | Interpret a 'ChainSyncClient' action sequence as a 'Peer' on the client
 -- side of the 'ChainSyncProtocol'.
 --
 chainSyncClientPeer
-  :: forall header point tip m a .
+  :: forall block header point tip m a .
      Monad m
-  => ChainSyncClient header point tip m a
-  -> Peer (ChainSync header point tip) AsClient StIdle m a
+  => ChainSyncClient block header point tip m a
+  -> Peer (ChainSync block header point tip) AsClient StIdle m a
 chainSyncClientPeer (ChainSyncClient mclient) =
     Effect $ fmap chainSyncClientPeer_ mclient
   where
     chainSyncClientPeer_
-      :: ClientStIdle header point tip m a
-      -> Peer (ChainSync header point tip) AsClient StIdle m a
+      :: ClientStIdle block header point tip m a
+      -> Peer (ChainSync block header point tip) AsClient StIdle m a
     chainSyncClientPeer_ (SendMsgRequestNext stNext stAwait) =
         Yield (ClientAgency TokIdle) MsgRequestNext $
         Await (ServerAgency (TokNext TokCanAwait)) $ \resp ->
@@ -235,3 +259,9 @@ chainSyncClientPeer (ChainSyncClient mclient) =
 
     chainSyncClientPeer_ (SendMsgDone a) =
       Yield (ClientAgency TokIdle) MsgDone (Done TokDone a)
+
+    chainSyncClientPeer_ (SendMsgRequestBlock p stSparse) =
+      Yield (ClientAgency TokIdle) (MsgRequestBlock p) $
+      Await (ServerAgency TokSparse) $ \(MsgBlock blk) ->
+      let ClientStSparse{recvMsgBlock} = stSparse in
+      chainSyncClientPeer (recvMsgBlock blk)

@@ -102,7 +102,7 @@ data Handlers m peer blk = Handlers {
         :: NodeToNodeVersion
         -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
-        -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
+        -> ChainSyncClientPipelined blk (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
         -- to support bracket-style initialisation so that we could have the
@@ -111,7 +111,7 @@ data Handlers m peer blk = Handlers {
     , hChainSyncServer
         :: NodeToNodeVersion
         -> ResourceRegistry m
-        -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
+        -> ChainSyncServer blk (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
     , hBlockFetchClient
@@ -208,8 +208,8 @@ mkHandlers
 
 -- | Node-to-node protocol codecs needed to run 'Handlers'.
 data Codecs blk e m bCS bSCS bBF bSBF bTX bKA = Codecs {
-      cChainSyncCodec            :: Codec (ChainSync (Header blk) (Point blk) (Tip blk))           e m bCS
-    , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)) e m bSCS
+      cChainSyncCodec            :: Codec (ChainSync blk (Header blk) (Point blk) (Tip blk))           e m bCS
+    , cChainSyncCodecSerialised  :: Codec (ChainSync blk (SerialisedHeader blk) (Point blk) (Tip blk)) e m bSCS
     , cBlockFetchCodec           :: Codec (BlockFetch blk (Point blk))                             e m bBF
     , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk) (Point blk))                e m bSBF
     , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))                 e m bTX
@@ -227,6 +227,8 @@ defaultCodecs ccfg version = Codecs {
         codecChainSync
           enc
           dec
+          enc
+          dec
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
           (encodeTip   (encodeRawHash p))
@@ -234,6 +236,8 @@ defaultCodecs ccfg version = Codecs {
 
     , cChainSyncCodecSerialised =
         codecChainSync
+          enc
+          dec
           enc
           dec
           (encodePoint (encodeRawHash p))
@@ -278,8 +282,8 @@ defaultCodecs ccfg version = Codecs {
 -- | Identity codecs used in tests.
 identityCodecs :: Monad m
                => Codecs blk CodecFailure m
-                    (AnyMessage (ChainSync (Header blk) (Point blk) (Tip blk)))
-                    (AnyMessage (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)))
+                    (AnyMessage (ChainSync blk (Header blk) (Point blk) (Tip blk)))
+                    (AnyMessage (ChainSync blk (SerialisedHeader blk) (Point blk) (Tip blk)))
                     (AnyMessage (BlockFetch blk (Point blk)))
                     (AnyMessage (BlockFetch (Serialised blk) (Point blk)))
                     (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
@@ -302,8 +306,8 @@ type Tracers m peer blk e =
      Tracers'  peer blk e (Tracer m)
 
 data Tracers' peer blk e f = Tracers {
-      tChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Header blk) (Point blk) (Tip blk))))
-    , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk))))
+      tChainSyncTracer            :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync blk (Header blk) (Point blk) (Tip blk))))
+    , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync blk (SerialisedHeader blk) (Point blk) (Tip blk))))
     , tBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk (Point blk))))
     , tBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk) (Point blk))))
     , tTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))

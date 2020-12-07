@@ -10,8 +10,8 @@ import Ouroboros.Network.Protocol.ChainSync.Server as Server
 -- That's demonstrated here by constructing 'direct'.
 --
 direct :: Monad m
-       => ChainSyncServer header point tip m a
-       -> ChainSyncClient header point tip m b
+       => ChainSyncServer block header point tip m a
+       -> ChainSyncClient block header point tip m b
        -> m (a, b)
 direct (ChainSyncServer mserver) (ChainSyncClient mclient) = do
   server <- mserver
@@ -19,8 +19,8 @@ direct (ChainSyncServer mserver) (ChainSyncClient mclient) = do
   direct_ server client
 
 direct_ :: Monad m
-        => ServerStIdle header point tip m a
-        -> ClientStIdle header point tip m b
+        => ServerStIdle block header point tip m a
+        -> ClientStIdle block header point tip m b
         -> m (a, b)
 direct_  ServerStIdle{recvMsgRequestNext}
         (Client.SendMsgRequestNext stNext stAwait) = do
@@ -55,3 +55,9 @@ direct_ ServerStIdle{recvMsgDoneClient}
        (Client.SendMsgDone clientDone) = do
     msgDoneClient <- recvMsgDoneClient
     return (msgDoneClient, clientDone)
+
+direct_  ServerStIdle{recvMsgRequestBlock}
+        (Client.SendMsgRequestBlock point
+          ClientStSparse{recvMsgBlock}) = do
+    SendMsgBlock block server' <- recvMsgRequestBlock point
+    direct server' (recvMsgBlock block)

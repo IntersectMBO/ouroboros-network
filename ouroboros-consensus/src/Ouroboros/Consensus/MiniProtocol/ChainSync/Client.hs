@@ -65,6 +65,7 @@ import           Ouroboros.Consensus.HeaderStateHistory
                      (HeaderStateHistory (..), validateHeader)
 import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, applyChainTick, tickThenReapply)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -80,8 +81,8 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
-type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
-   client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
+type Consensus (client :: Type -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
+   client blk (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView {
@@ -89,14 +90,18 @@ data ChainDbView m blk = ChainDbView {
     , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
     , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk))
     , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+    , addBlock              :: blk -> m ()
+    , getBlock              :: RealPoint blk -> m (Maybe blk)
     }
 
-defaultChainDbView :: ChainDB m blk -> ChainDbView m blk
+defaultChainDbView :: IOLike m => ChainDB m blk -> ChainDbView m blk
 defaultChainDbView chainDB = ChainDbView {
       getCurrentChain       = ChainDB.getCurrentChain       chainDB
     , getHeaderStateHistory = ChainDB.getHeaderStateHistory chainDB
     , getPastLedger         = ChainDB.getPastLedger         chainDB
     , getIsInvalidBlock     = ChainDB.getIsInvalidBlock     chainDB
+    , addBlock              = void .  ChainDB.addBlock      chainDB
+    , getBlock              = ChainDB.getBlockComponent     chainDB ChainDB.GetVerifiedBlock
     }
 
 -- newtype wrappers to avoid confusing our tip with their tip.
@@ -442,6 +447,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 , getHeaderStateHistory
                 , getPastLedger
                 , getIsInvalidBlock
+                , addBlock
+                , getBlock
                 }
                 _version
                 controlMessageSTM
@@ -741,29 +748,77 @@ chainSyncClient mkPipelineDecision0 tracer cfg
         case mKis' of
           Nothing -> return NoLongerIntersects
           Just kis'@KnownIntersectionState { mostRecentIntersection } -> do
+            -- TODO
+            --
+            -- Use whichever prefix of their candidate fragment the ChainDB
+            -- /already/ /contains/ (cf 'GetBlock' or 'GetVerifiedBlock'?) in
+            -- order to advance the ledger state as far as possible (cf
+            -- 'tickThenReapply') before projecting the ledger view forecast.
+
             -- We're calling 'ledgerViewForecastAt' in the same STM transaction
             -- as 'intersectsWithCurrentChain'. This guarantees the former's
             -- precondition: the intersection is within the last @k@ blocks of
             -- the current chain.
-            forecast <-
+            ledgerState <-
               maybe
-                (error $
-                   "intersection not within last k blocks: " <> show mostRecentIntersection)
-                (ledgerViewForecastAt (configLedger cfg) . ledgerState)
-                <$> getPastLedger mostRecentIntersection
+                (error $ "intersection not within last k blocks: " <> show mostRecentIntersection)
+                ledgerState
+              <$> getPastLedger mostRecentIntersection
 
-            case runExcept $ forecastFor forecast (blockSlot hdr) of
+            case runExcept $
+                   forecastFor
+                     (ledgerViewForecastAt (configLedger cfg) ledgerState)
+                     (blockSlot hdr) of
               -- The header is too far ahead of the intersection point with our
               -- current chain. We have to wait until our chain and the
               -- intersection have advanced far enough. This will wait on
               -- changes to the current chain via the call to
               -- 'intersectsWithCurrentChain' befoer it.
-              Left OutsideForecastRange{} ->
-                retry
+              Left OutsideForecastRange{} -> do
+
+                  -- TODO should we first block for a short time via retry,
+                  -- hoping we'll catch up to them?
+
+                  let KnownIntersectionState { theirFrag } = kis'
+
+                      -- All of the points on their fragment between our
+                      -- intersection and the new header
+                      newPoints =
+                          ( case pointToWithOriginRealPoint mostRecentIntersection of
+                              Origin      -> id
+                              NotOrigin i ->
+                                  if AF.anchorPoint theirFrag == castPoint mostRecentIntersection
+                                  then id
+                                  else drop 1 . dropWhile (/= i)
+                          ) $
+                          map headerRealPoint $
+                          AF.toOldestFirst theirFrag
+
+                  return $ SparseChain kis' ledgerState newPoints
               Right ledgerView ->
                 return $ Intersects kis' ledgerView
 
       case intersectCheck of
+        NoLongerIntersects                       -> pure ()
+        Intersects{}                             -> pure ()
+        SparseChain kis' _ledgerState newPoints -> do
+            traceWith tracer $
+              TraceSparse mostRecentIntersection theirFrag newPoints
+          where
+            KnownIntersectionState
+              { mostRecentIntersection
+              , theirFrag
+              } = kis'
+
+      finishRollForward mkPipelineDecision n hdr theirTip intersectCheck
+
+    finishRollForward :: MkPipelineDecision
+                      -> Nat n
+                      -> Header blk
+                      -> Their (Tip blk)
+                      -> IntersectCheck blk
+                      -> m (Consensus (ClientPipelinedStIdle n) blk m)
+    finishRollForward mkPipelineDecision n hdr theirTip = \case
         NoLongerIntersects ->
           -- Our chain (tip) has changed and it no longer intersects with the
           -- candidate fragment, so we have to find a new intersection, but
@@ -818,6 +873,77 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           atomically $ writeTVar varCandidate theirFrag'
 
           continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
+
+        SparseChain  kis'  ledgerState (nextRealPoint:nextRealPoints) -> do
+            -- The RollForward header is beyond the forecast range, so we humor
+            -- the peer and fetch the next block on their chain. Repeating as
+            -- necessary while applying each block in order to advance the
+            -- ledger state (initially taken from the intersection) will
+            -- eventually advance the forecast range so that it includes the
+            -- RollForward header.
+            --
+            -- This 'SparseChain' portion of the protocol should only be
+            -- relevant during disaster recovery, so we make no effort to
+            -- pipeline/optimize/etc.
+            getBlock nextRealPoint >>= \case
+
+              Just blk -> do
+                  -- For whatever reason, the next block is already in our
+                  -- ChainDB.
+                  traceWith tracer $ TraceHaveBlock nextRealPoint
+                  finishRollForward mkPipelineDecision n hdr theirTip $
+                    case runExcept $
+                           forecastFor
+                             (ledgerViewForecastAt lcfg ledgerState)
+                             (blockSlot hdr) of
+                      Left OutsideForecastRange{} ->
+                          -- TODO How to abort this loop if our intersection
+                          -- point changes and this peer becomes irrelevant?
+                          -- And for other interruptions, like switching from
+                          -- speculative back to conservative mode.
+                          SparseChain kis' ledgerState' nextRealPoints
+                      Right ledgerView            ->
+                          Intersects kis' ledgerView
+                where
+                  lcfg         = configLedger cfg
+                  ledgerState' = tickThenReapply lcfg blk ledgerState
+                    -- TODO The ChainDB already did error checking, right?
+
+              Nothing  -> do
+                  -- Their next block is not already in our ChainDB, so we
+                  -- fetch it from them. Then we reinitiate the protocol by
+                  -- finding the intersection again (just to prevent having to
+                  -- buffer the responses from the in-flight RequestNexts).
+                  --
+                  -- TODO fetch as many as we need before finding the
+                  -- intersection again? On mainnet, we do not anticipate
+                  -- having to fetch more than a handful of blocks.
+                  traceWith tracer $ TraceRequestedBlock nextRealPoint
+                  continueWithState () $
+                    drainThePipe n $
+                    Stateful $ \() -> return $
+                      SendMsgRequestBlock (realPointToPoint nextRealPoint) $
+                      ClientPipelinedStSparse
+                        { recvMsgBlock = \blk -> do
+                            traceWith tracer $ TraceDownloadedBlock (blockRealPoint blk)
+                            addBlock blk
+                            continueWithState () $
+                              findIntersection NoMoreIntersection   -- TODO correct reason
+                        }
+
+        SparseChain kis' ledgerState [] ->
+            -- The RollForward header is the only block we haven't already
+            -- fetched, so we can simply tick to it; there are no remaining
+            -- blocks in between.
+            finishRollForward mkPipelineDecision n hdr theirTip $
+            Intersects kis' $
+            protocolLedgerView lcfg $
+            applyChainTick lcfg (blockSlot hdr) ledgerState
+          where
+            lcfg = configLedger cfg
+
+      where
+        hdrPoint = headerPoint hdr
 
     rollBackward :: MkPipelineDecision
                  -> Nat n
@@ -1017,6 +1143,10 @@ data IntersectCheck blk =
   | Intersects
       (KnownIntersectionState blk)
       (Ticked (LedgerView (BlockProtocol blk)))
+  | SparseChain
+      (KnownIntersectionState blk)
+      !(LedgerState blk)
+      [RealPoint blk]
 
 {-------------------------------------------------------------------------------
   Explicit state
@@ -1237,6 +1367,15 @@ data TraceChainSyncClientEvent blk
     -- candidate's chain.
   | TraceException ChainSyncClientException
     -- ^ An exception was thrown by the Chain Sync Client.
+  | TraceSparse (Point blk) (AnchoredFragment (Header blk)) [RealPoint blk]
+    -- ^ The peer is sparse, begin fetching blocks as necessary.
+  | TraceHaveBlock       (RealPoint blk)
+    -- ^ Our ChainDB contains one of their blocks that's not on our current
+    -- chain.
+  | TraceRequestedBlock  (RealPoint blk)
+    -- ^ We requested a block from their chain.
+  | TraceDownloadedBlock (RealPoint blk)
+    -- ^ We downloaded a block from their chain.
 
 deriving instance ( BlockSupportsProtocol blk
                   , Eq (ValidationErr (BlockProtocol blk))

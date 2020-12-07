@@ -74,7 +74,7 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode,
                      MiniProtocolParameters (..), NodeToNodeVersionData (..),
                      RemoteAddress, combineVersions,
                      defaultMiniProtocolParameters)
-import           Ouroboros.Network.Protocol.Limits (shortWait)
+import           Ouroboros.Network.Protocol.Limits (shortWait, longWait)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime hiding (getSystemStart)
@@ -575,6 +575,7 @@ stdChainSyncTimeout = do
     return NTN.ChainSyncTimeout
       { canAwaitTimeout  = shortWait
       , mustReplyTimeout
+      , sparseTimeout    = longWait
       }
   where
     randomElem xs = do

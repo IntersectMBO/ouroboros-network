@@ -132,7 +132,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
                         (ChainSync.chainSyncClientExample consumerVar
                         (consumerClient done target consumerVar)))
 
-        server :: ChainSync.ChainSyncServer block (Point block) (Tip block) IO ()
+        server :: ChainSync.ChainSyncServer block block (Point block) (Tip block) IO ()
         server = ChainSync.chainSyncServerExample () producerVar
 
         responderApp
@@ -147,6 +147,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
                     (ChainSync.chainSyncServerPeer server)
 
         codecChainSync = ChainSync.codecChainSync encode             decode
+                                                  encode             decode
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode)
 
@@ -205,7 +206,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
     consumerClient :: StrictTMVar IO Bool
                    -> Point block
                    -> StrictTVar IO (Chain block)
-                   -> ChainSync.Client block (Point block) (Tip block) IO ()
+                   -> ChainSync.Client block block (Point block) (Tip block) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

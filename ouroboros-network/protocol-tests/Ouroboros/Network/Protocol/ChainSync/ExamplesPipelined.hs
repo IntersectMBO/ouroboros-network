@@ -30,19 +30,19 @@ import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 -- | Pipelined chain sync client which pipelines at most @omax@ requests according to 'MkPipelineDecision' policy.
 --
 chainSyncClientPipelined
-      :: forall header m a.
+      :: forall block header m a.
          ( HasHeader header
          , MonadSTM m
          )
       => MkPipelineDecision
       -> StrictTVar m (Chain header)
-      -> Client header (Point header) (Tip header) m a
-      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
+      -> Client block header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined block header (Point header) (Tip header) m a
 chainSyncClientPipelined mkPipelineDecision0 chainvar =
     ChainSyncClientPipelined . fmap initialise . getChainPoints
   where
-    initialise :: ([Point header], Client header (Point header) (Tip header) m a)
-               -> ClientPipelinedStIdle Z header (Point header) (Tip header) m a
+    initialise :: ([Point header], Client block header (Point header) (Tip header) m a)
+               -> ClientPipelinedStIdle Z block header (Point header) (Tip header) m a
     initialise (points, client) =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
@@ -63,8 +63,8 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
        -- ^ our head
        -> Tip header
        -- ^ head of the server
-       -> Client header (Point header) (Tip header) m a
-       -> ClientPipelinedStIdle n header (Point header) (Tip header) m a
+       -> Client block header (Point header) (Tip header) m a
+       -> ClientPipelinedStIdle n block header (Point header) (Tip header) m a
 
     go mkPipelineDecision n cliTipBlockNo srvTip client@Client {rollforward, rollbackward} =
       let srvTipBlockNo = getTipBlockNo srvTip in
@@ -143,7 +143,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
     -- outstanding responses and send 'MsgDone'.
     collectAndDone :: Nat n
                    -> a
-                   -> ClientPipelinedStIdle n header (Point header) (Tip header) m a
+                   -> ClientPipelinedStIdle n block header (Point header) (Tip header) m a
 
     collectAndDone Zero     a = SendMsgDone a
 
@@ -157,8 +157,8 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                                     }
 
 
-    getChainPoints :: Client header (Point header) (Tip header) m a
-                   -> m ([Point header], Client header (Point header) (Tip header) m a)
+    getChainPoints :: Client block header (Point header) (Tip header) m a
+                   -> m ([Point header], Client block header (Point header) (Tip header) m a)
     getChainPoints client = do
       pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
       client' <- points client pts
@@ -236,15 +236,15 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 -- >
 --
 chainSyncClientPipelinedMax
-      :: forall header m a.
+      :: forall block header m a.
          ( HasHeader header
          , MonadSTM m
          )
       => Word32
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
-      -> Client header (Point header) (Tip header) m a
-      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
+      -> Client block header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined block header (Point header) (Tip header) m a
 chainSyncClientPipelinedMax omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMax omax)
 
 -- | A pipelined chain-sycn client that pipelines at most @omax@ requests and
@@ -289,20 +289,20 @@ chainSyncClientPipelinedMax omax = chainSyncClientPipelined (constantPipelineDec
 -- >
 --
 chainSyncClientPipelinedMin
-      :: forall header m a.
+      :: forall block header m a.
          ( HasHeader header
          , MonadSTM m
          )
       => Word32
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
-      -> Client header (Point header) (Tip header) m a
-      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
+      -> Client block header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined block header (Point header) (Tip header) m a
 chainSyncClientPipelinedMin omax = chainSyncClientPipelined (constantPipelineDecision $ pipelineDecisionMin omax)
 
 
 chainSyncClientPipelinedLowHigh
-      :: forall header m a.
+      :: forall block header m a.
          ( HasHeader header
          , MonadSTM m
          )
@@ -311,6 +311,6 @@ chainSyncClientPipelinedLowHigh
       -> Word32
       -- ^ high mark
       -> StrictTVar m (Chain header)
-      -> Client header (Point header) (Tip header) m a
-      -> ChainSyncClientPipelined header (Point header) (Tip header) m a
+      -> Client block header (Point header) (Tip header) m a
+      -> ChainSyncClientPipelined block header (Point header) (Tip header) m a
 chainSyncClientPipelinedLowHigh lowMark highMark = chainSyncClientPipelined (pipelineDecisionLowHighMark lowMark highMark)

@@ -165,12 +165,13 @@ demo chain0 updates = do
                 MuxPeer nullTracer
                         (ChainSync.codecChainSync encode             decode
                                                   encode             decode
+                                                  encode             decode
                                                   (encodeTip encode) (decodeTip decode))
                         (ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar)))
 
-            server :: ChainSyncServer block (Point block) (Tip block) IO ()
+            server :: ChainSyncServer block block (Point block) (Tip block) IO ()
             server = ChainSync.chainSyncServerExample () producerVar
 
             producerApp ::OuroborosApplication ResponderMode String BL.ByteString IO Void ()
@@ -180,6 +181,7 @@ demo chain0 updates = do
               ResponderProtocolOnly $
                 MuxPeer nullTracer
                         (ChainSync.codecChainSync encode             decode
+                                                  encode             decode
                                                   encode             decode
                                                   (encodeTip encode) (decodeTip decode))
                         (ChainSync.chainSyncServerPeer server)
@@ -226,7 +228,7 @@ demo chain0 updates = do
     consumerClient :: StrictTMVar IO Bool
                    -> Point block
                    -> StrictTVar IO (Chain block)
-                   -> ChainSync.Client block (Point block) (Tip block) IO ()
+                   -> ChainSync.Client block block (Point block) (Tip block) IO ()
     consumerClient done target chain =
       ChainSync.Client
         { ChainSync.rollforward = \_ -> checkTip target chain >>= \b ->

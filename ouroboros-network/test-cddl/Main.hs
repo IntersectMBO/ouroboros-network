@@ -84,7 +84,7 @@ tests specPath =
 
 -- The concrete/monomorphic types used for the test.
 type MonoCodec x = Codec x DeserialiseFailure IO ByteString
-type CS = ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader)
+type CS = ChainSync BlockHeader BlockHeader (Point BlockHeader) (Tip BlockHeader)
 type BF = BlockFetch Block (Point Block)
 type HS = Handshake VersionNumber CBOR.Term
 type TS = TxSubmission TxId Tx
@@ -92,6 +92,7 @@ type LT = LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject
 
 codecCS :: MonoCodec CS
 codecCS = codecChainSync
+            (wrapCBORinCBOR Serialise.encode) (unwrapCBORinCBOR (const <$> Serialise.decode))
             (wrapCBORinCBOR Serialise.encode) (unwrapCBORinCBOR (const <$> Serialise.decode))
             Serialise.encode (Serialise.decode :: CBOR.Decoder s (Point BlockHeader))
             (encodeTip Serialise.encode) (decodeTip Serialise.decode)

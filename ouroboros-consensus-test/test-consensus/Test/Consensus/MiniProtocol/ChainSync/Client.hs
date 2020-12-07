@@ -210,7 +210,7 @@ newtype ServerUpdates =
 
 type TraceEvent = (Tick, Either
   (TraceChainSyncClientEvent TestBlock)
-  (TraceSendRecv (ChainSync (Header TestBlock) (Point TestBlock) (Tip TestBlock))))
+  (TraceSendRecv (ChainSync TestBlock (Header TestBlock) (Point TestBlock) (Tip TestBlock))))
 
 data ChainSyncOutcome = ChainSyncOutcome {
       finalClientChain :: Chain TestBlock
@@ -283,6 +283,8 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                 readTVar varClientState
           , getIsInvalidBlock = return $
               WithFingerprint (const Nothing) (Fingerprint 0)
+          , addBlock = undefined
+          , getBlock = undefined
           }
 
         client :: StrictTVar m (AnchoredFragment (Header TestBlock))
@@ -299,7 +301,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
-    let server :: ChainSyncServer (Header TestBlock) (Point TestBlock)
+    let server :: ChainSyncServer TestBlock (Header TestBlock) (Point TestBlock)
                                   (Tip TestBlock) m ()
         server = chainSyncServerExample () varChainProducerState
 
