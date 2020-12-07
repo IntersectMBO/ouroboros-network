@@ -156,16 +156,16 @@ instance Show MuxTrace where
          d sp so dqs dqvm dqvs estR sdud
     show (MuxTraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (MuxTraceRecvEnd len) = printf "Bearer Receive End: length %d" len
-    show (MuxTraceSendStart MuxSDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x %s %s length %d"
+    show (MuxTraceSendStart MuxSDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x (%s) %s length %d"
         (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
     show MuxTraceSendEnd = printf "Bearer Send End"
     show (MuxTraceState new) = printf "State: %s" (show new)
-    show (MuxTraceCleanExit mid dir) = printf "Miniprotocol %s %s terminated cleanly" (show mid) (show dir)
+    show (MuxTraceCleanExit mid dir) = printf "Miniprotocol (%s) %s terminated cleanly" (show mid) (show dir)
     show (MuxTraceExceptionExit mid dir e) = printf "Miniprotocol %s %s terminated with exception %s" (show mid) (show dir) (show e)
     show (MuxTraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
-    show (MuxTraceChannelRecvEnd mid len) = printf "Channel Receive End on %s %d" (show mid)
+    show (MuxTraceChannelRecvEnd mid len) = printf "Channel Receive End on (%s) %d" (show mid)
         len
-    show (MuxTraceChannelSendStart mid len) = printf "Channel Send Start on %s %d" (show mid)
+    show (MuxTraceChannelSendStart mid len) = printf "Channel Send Start on (%s) %d" (show mid)
         len
     show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
     show MuxTraceHandshakeStart = "Handshake start"
@@ -177,8 +177,9 @@ instance Show MuxTrace where
     show (MuxTraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
     show MuxTraceSDUReadTimeoutException = "Timed out reading SDU"
     show MuxTraceSDUWriteTimeoutException = "Timed out writing SDU"
-    show (MuxTraceStartEagerly mid dir) = printf "Eagerly started %s in %s" (show mid) (show dir)
-    show (MuxTraceStartOnDemand mid dir) = printf "Preparing to start %s in %s" (show mid) (show dir)
-    show (MuxTraceStartedOnDemand mid dir) = printf "Started %s in %s" (show mid) (show dir)
+    show (MuxTraceStartEagerly mid dir) = printf "Eagerly started (%s) in %s" (show mid) (show dir)
+    show (MuxTraceStartOnDemand mid dir) = printf "Preparing to start (%s) in %s" (show mid) (show dir)
+    show (MuxTraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
+    show (MuxTraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
     show MuxTraceShutdown = "Mux shutdown"
 
