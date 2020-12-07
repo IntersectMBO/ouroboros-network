@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE DerivingVia    #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Test.ThreadNet.Util.Expectations
@@ -8,6 +10,8 @@ module Test.ThreadNet.Util.Expectations
 import           Data.Foldable (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -17,8 +21,9 @@ import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
 import           Test.ThreadNet.Util.NodeJoinPlan
 
-newtype NumBlocks = NumBlocks Word64
-  deriving (Eq, Show)
+newtype NumBlocks = NumBlocks {unNumBlocks :: Word64}
+  deriving (Eq, Generic, Ord)
+  deriving Show via Quiet NumBlocks
 
 -- | Internal accumulator of 'determineForkLength'
 data Acc = Acc

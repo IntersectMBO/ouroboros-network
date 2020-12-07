@@ -33,13 +33,15 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   , Their (..)
     -- * Trace events
   , TraceChainSyncClientEvent (..)
-  , TraceChainSyncClientEventSTM (..)
+  , TraceStmChainSyncClientEvent (..)
   , InvalidBlockReason
   ) where
 
+import           Control.Arrow ((&&&))
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
+import           Data.Function (on)
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -56,6 +58,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
+import           Ouroboros.Network.BlockFetch (CandidateFragment (..))
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -67,6 +70,7 @@ import           Ouroboros.Consensus.HeaderStateHistory
                      (HeaderStateHistory (..), validateHeader)
 import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, LedgerState, applyChainTick, tickThenReapply)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -91,6 +95,8 @@ data ChainDbView m blk = ChainDbView {
     , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
     , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk))
     , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+    , getIsFetched          :: STM m (Point blk -> Bool)
+    , getBlock              :: RealPoint blk -> m (Maybe blk)
     }
 
 defaultChainDbView ::
@@ -101,6 +107,8 @@ defaultChainDbView chainDB = ChainDbView {
     , getHeaderStateHistory = ChainDB.getHeaderStateHistory chainDB
     , getPastLedger         = ChainDB.getPastLedger         chainDB
     , getIsInvalidBlock     = ChainDB.getIsInvalidBlock     chainDB
+    , getIsFetched          = ChainDB.getIsFetched          chainDB
+    , getBlock              = ChainDB.getBlockComponent     chainDB ChainDB.GetVerifiedBlock
     }
 
 -- newtype wrappers to avoid confusing our tip with their tip.
@@ -120,11 +128,11 @@ bracketChainSyncClient
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> ChainDbView m blk
-    -> StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
+    -> StrictTVar m (Map peer (StrictTVar m (CandidateFragment (Header blk))))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
     -> peer
-    -> (    StrictTVar m (AnchoredFragment (Header blk))
+    -> (    (CandidateFragment (Header blk) -> m ())
          -> m a
        )
     -> m a
@@ -136,11 +144,14 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
           tracer
           registry
           getIsInvalidBlock
-          (readTVar varCandidate)
-        body varCandidate
+          (candidateChain <$> readTVar varCandidate)
+        body (atomically . writeTVar varCandidate)
   where
     register = do
-      varCandidate <- newTVarIO $ AF.Empty AF.AnchorGenesis
+      varCandidate <- newTVarIO $ CandidateFragment
+        { candidateChain        = AF.Empty AF.AnchorGenesis
+        , chainSyncBlockedOnGap = False
+        }
       atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
       return varCandidate
 
@@ -420,12 +431,12 @@ chainSyncClient
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
-    -> Tracer (STM m) (TraceChainSyncClientEventSTM blk)
+    -> Tracer (STM m) (TraceStmChainSyncClientEvent blk)
     -> TopLevelConfig blk
     -> ChainDbView m blk
     -> NodeToNodeVersion
     -> ControlMessageSTM m
-    -> StrictTVar m (AnchoredFragment (Header blk))
+    -> (CandidateFragment (Header blk) -> m ())
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                 ChainDbView
@@ -433,12 +444,45 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                 , getHeaderStateHistory
                 , getPastLedger
                 , getIsInvalidBlock
+                , getIsFetched
+                , getBlock
                 }
                 _version
                 controlMessageSTM
-                varCandidate = ChainSyncClientPipelined $
+                setCandidate = ChainSyncClientPipelined $
     continueWithState () $ initialise
   where
+    lcfg :: LedgerConfig blk
+    lcfg = configLedger cfg
+
+    setCandidateOK :: AnchoredFragment (Header blk) -> m ()
+    setCandidateOK af = setCandidate CandidateFragment
+      { candidateChain        = af
+      , chainSyncBlockedOnGap = False
+      }
+
+    setCandidateGap :: AnchoredFragment (Header blk) -> m ()
+    setCandidateGap af = setCandidate CandidateFragment
+      { candidateChain        = af
+      , chainSyncBlockedOnGap = not $ AF.null af
+          -- For example, the fragment will be null if our current chain has a
+          -- gap on it and the peer just now managed to jump across it. Once
+          -- that happens, this local ChainSync client (naively) sees that
+          -- there is a gap on the peer's chain, and so emits the request. But
+          -- it's null since our chain is (an extension of) their fragment.
+          -- This client is proceeds nearly immediately, without needing to
+          -- fetch any blocks, but only after the helper thread iteration pulls
+          -- the block from the ChainDB. But that brief delay may suffice for
+          -- the null request to risk violating an 'assert' in BlockFetch's
+          -- 'chainForkSuffix' function.
+          --
+          -- By suppressing the blocked-on-a-gap annotation, we let BlockFetch
+          -- simply discard this request as NotPlausible.
+          --
+          -- TODO Can we reorganize the helper thread to prevent even exposing
+          -- this null fragment to BlockFetch?
+      }
+
     -- | Start ChainSync by looking for an intersection between our current
     -- chain fragment and their chain.
     initialise :: Stateful m blk () (ClientPipelinedStIdle 'Z)
@@ -524,7 +568,6 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                 intersection
                 (ourTipFromChain ourFrag)
                 theirTip
-        atomically $ writeTVar varCandidate theirFrag
         let kis = assertKnownIntersectionInvariants (configConsensus cfg) $
               KnownIntersectionState
                 { theirFrag               = theirFrag
@@ -629,7 +672,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
               -- Our chain (tip) didn't change or if it did, it still intersects
               -- with the candidate fragment, so we can continue requesting the
               -- next block.
-              atomically $ writeTVar varCandidate theirFrag
+              setCandidateOK theirFrag
               let candTipBlockNo = AF.headBlockNo theirFrag
               return $
                 requestNext kis' mkPipelineDecision n theirTip candTipBlockNo
@@ -724,42 +767,221 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
       whenJust (isInvalidBlock hdrHash) $ \reason ->
         disconnect $ InvalidBlock hdrPoint reason
 
+      -- TODO If we receive a RollForward that includes a gap, and then the
+      -- next reply from the server (NB the RequestNext was already sent) is a
+      -- RollBackward, will we be able to process that, aborting our gappy
+      -- RollForward handler? We don't think so. Is that OK? Seems merely
+      -- suboptimal.
+
+      let -- An empty fragment anchored at the intersection.
+          initialIntersectionFrag :: forall x.
+               (HasHeader x, HeaderHash blk ~ HeaderHash x)
+            => AnchoredFragment x
+          initialIntersectionFrag =
+              case AF.splitAfterPoint ourFrag mostRecentIntersection of
+                Nothing               -> error "impossible"
+                Just (_before, after) ->
+                    AF.Empty $ AF.castAnchor $ AF.anchor after
+            where
+              KnownIntersectionState
+                { mostRecentIntersection
+                , ourFrag
+                } = kis
+
+      let eqFrag :: forall x.
+               HasHeader x
+            => AnchoredFragment x -> AnchoredFragment x -> Bool
+          eqFrag = (==) `on` (AF.anchorPoint &&& AF.headPoint)
+
+      varRequest  <- newTVarIO         (initialIntersectionFrag :: AnchoredFragment (Header blk))
+      varResponse <- uncheckedNewTVarM (initialIntersectionFrag :: AnchoredFragment blk)
+
+      -- This helper thread notifies the primary STM transaction when a
+      -- relevant block from the peer is now available.
+      --
+      -- We introduce this separate thread so that the RollForward handler's
+      -- core logic can remain a single-threaded STM transaction despite the
+      -- fact that retrieving a block from the ChainDB requires IO and happens
+      -- reactively.
+      let helper ::
+               AnchoredFragment (Header blk)
+            -> AnchoredFragment (Header blk)
+            -> m ()
+          helper req rsp = (>>= uncurry helper) $ do
+              fingerprint <- atomically $ do
+                -- transaction inputs
+                request   <- readTVar varRequest
+                isFetched <- getIsFetched
+
+                -- TODO Will the blocks necessarily be in the restricted domain
+                -- of ChainDB.getIsFetched? We may need to widen it, or maybe
+                -- merely its current comment is too strong a statement.
+                --
+                -- TODO We don't think GC will remove them. Explain why not.
+                --
+                -- TODO what if the upstream peer is unable to serve the block?
+                -- Does BlockFetch silently ignore that? How could we notice
+                -- here?
+                --
+                -- TODO separate but related, we need a timeout here. Maybe
+                -- this will also handle the case where they can't serve the
+                -- block.
+
+                let response :: AnchoredFragment (Header blk)
+                    response =
+                        AF.takeWhileOldest
+                          (\hdr' -> isFetched $ castPoint $ blockPoint hdr')
+                          request
+
+                -- use the fingerprint to avoid busy work
+                check $ not $ eqFrag req request && eqFrag rsp response
+
+                traceWith tracerSTM $ TraceStmHelperIteration request response
+
+                pure (request, response)
+
+              let (_request, response) = fingerprint
+              -- NB no other thread writes to varResponse
+              blks <-
+                AF.traverseAnchoredFragment
+                  (fmap (maybe (error "impossible!") id) . getBlock . castRealPoint . blockRealPoint)
+                  response
+              atomically $ writeTVar varResponse blks
+
+              pure fingerprint
+
       -- Get the ledger view required to validate the header
-      -- NOTE: This will block if we are too far behind.
-      intersectCheck <- atomically $ do
+      --
+      -- This STM transaction is sensitive to both the current intersection and
+      -- also which of the peer's blocks have been fetched.
+      intersectCheck <-
+        withAsync (helper initialIntersectionFrag initialIntersectionFrag) $ \_->
+        ($ False) $ fix $ \loop whetherWasBlockedOnGap ->
+        join $ atomically $ do
         -- Before obtaining a 'LedgerView', we must find the most recent
         -- intersection with the current chain. Note that this is cheap when
         -- the chain and candidate haven't changed.
         mKis' <- intersectsWithCurrentChain kis
-        x <- case mKis' of
-          Nothing -> return NoLongerIntersects
-          Just kis'@KnownIntersectionState { mostRecentIntersection } -> do
+        case mKis' of
+          Nothing ->
+              return $ do
+                let KnownIntersectionState { theirFrag } = kis
+                -- Stop annotating this peer's frag as blocked-on-a-gap since
+                -- it's now irrelevant.
+                when whetherWasBlockedOnGap $ setCandidateOK theirFrag
+                return NoLongerIntersects
+          Just kis'@KnownIntersectionState { mostRecentIntersection, theirFrag } -> do
+            -- If this header is outside of the initial forecast range, we've
+            -- requested BlockFetch to fetch the necessary blocks. Slurp in the
+            -- blocks from our helper thread.
+            response <- readTVar varResponse
+            let _ = response :: AnchoredFragment blk
+
+            let advance :: LedgerState blk -> LedgerState blk
+                (goodResponse, advance) =
+                    case AF.splitAfterPoint response mostRecentIntersection of
+                      Nothing               -> (False, id)   -- TODO why does this happen?
+                      Just (_before, after) -> (,) True $ \lSt ->
+                          foldl
+                            (\acc blk -> tickThenReapply lcfg blk acc)
+                            lSt
+                            (AF.toOldestFirst after)
+
+            traceWith tracerSTM $
+              TraceStmForecastingWith (AF.mapAnchoredFragment getHeader response)
+
+            lSt <- getPastLedger mostRecentIntersection >>= \case
+              Just extSt ->
+                  pure $
+                  -- Note that @advance@ is only non-'id' if the original
+                  -- 'mostRecentIntersection' alone did not suffice.
+                  advance $
+                  ledgerState extSt
+              Nothing    ->
+                  error $
+                     "intersection not within last k blocks: "
+                  <> show mostRecentIntersection
+
             -- We're calling 'ledgerViewForecastAt' in the same STM transaction
             -- as 'intersectsWithCurrentChain'. This guarantees the former's
             -- precondition: the intersection is within the last @k@ blocks of
             -- the current chain.
-            forecast <-
-              maybe
-                (error $
-                   "intersection not within last k blocks: " <> show mostRecentIntersection)
-                (ledgerViewForecastAt (configLedger cfg) . ledgerState)
-                <$> getPastLedger mostRecentIntersection
+            let forecast = ledgerViewForecastAt lcfg lSt
 
             case runExcept $ forecastFor forecast (blockSlot hdr) of
-              -- The header is too far ahead of the intersection point with our
-              -- current chain. We have to wait until our chain and the
-              -- intersection have advanced far enough. This will wait on
-              -- changes to the current chain via the call to
-              -- 'intersectsWithCurrentChain' befoer it.
-              Left err@OutsideForecastRange{} -> do
-                traceWith tracerSTM $ TraceBlockedOnForecast (castPoint $ blockPoint hdr) err
-                retry
-              Right ledgerView ->
-                return $ Intersects kis' ledgerView
-        traceWith tracerSTM $ TraceIntersectCheckDone (castPoint $ blockPoint hdr) $ case x of
-          NoLongerIntersects -> Nothing
-          Intersects kis' _  -> Just $ mostRecentIntersection kis'
-        pure x
+              Right ledgerView -> do
+                  traceWith tracerSTM $
+                    TraceStmForecastingDone (AF.mapAnchoredFragment getHeader response)
+                  return $ do
+                    -- We are no longer blocked-on-a-gap.
+                    setCandidateOK theirFrag
+                    return $ Intersects kis' ledgerView
+
+              Left OutsideForecastRange{}
+                  | goodResponse && AF.headHash response == headerPrevHash hdr -> do
+                  -- The RollForward header is the only block we haven't
+                  -- already fetched, so we can simply tick up to it, since
+                  -- there are no remaining blocks in between.
+
+                  traceWith tracerSTM $
+                    TraceStmForecastingDoneTick
+                  return $ do
+                    -- We are no longer blocked-on-a-gap.
+                    setCandidateOK theirFrag
+                    return $
+                      Intersects kis' $
+                      protocolLedgerView lcfg $   -- project without forecasting
+                      applyChainTick lcfg (blockSlot hdr) $
+                      lSt
+
+                  | otherwise -> do
+                  -- We need to fetch more blocks in order to validate this
+                  -- RollForward.
+
+                  -- In the worst-case scenario, we need every block on their
+                  -- fragment up to the RollForward header. This is disaster
+                  -- recovery, so we might as well do the simplest thing and
+                  -- request all the blocks up to but excluding the header we
+                  -- can't yet validate (even though we might not need all
+                  -- those blocks).
+                  --
+                  -- TODO does that choice somehow increase latency of the
+                  -- first block?
+                  --
+                  -- As soon as we're able to validate the header, we'll stop
+                  -- requesting the full range of blocks.
+
+                  -- NB All BlockFetch requests should be anchored at
+                  -- 'mostRecentIntersection'.
+                  let request :: AnchoredFragment (Header blk)
+                      request =
+                          case AF.splitAfterPoint theirFrag mostRecentIntersection of
+                            Nothing               -> error "impossible!"
+                            Just (_before, after) -> after
+
+                  traceWith tracerSTM $ TraceStmWantRequest request
+
+                  -- avoid busy work
+                  --
+                  -- TODO is this redundant?
+                  requested <- readTVar varRequest
+                  check $ not $ eqFrag requested request
+
+                  traceWith tracerSTM $ TraceStmRequesting request
+
+                  -- NB no other thread writes to varRequest
+                  writeTVar varRequest request
+
+                  -- Commit this STM transaction in order to inform BlockFetch
+                  -- of the new candidate and/or the helper thread of the new
+                  -- request.
+                  --
+                  -- We mark the candidate as blocked-on-a-gap so that
+                  -- BlockFetch will fetch it even though we do not prefer it
+                  -- to our current selected chain.
+                  return $ do
+                    setCandidateGap request
+                    loop True
 
       case intersectCheck of
         NoLongerIntersects ->
@@ -817,7 +1039,6 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                   , ourFrag                 = ourFrag
                   , mostRecentIntersection  = mostRecentIntersection'
                   }
-          atomically $ writeTVar varCandidate theirFrag'
 
           continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
 
@@ -885,7 +1106,6 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                     , ourFrag                 = ourFrag
                     , mostRecentIntersection  = mostRecentIntersection'
                     }
-            atomically $ writeTVar varCandidate theirFrag'
 
             continueWithState kis' $ nextStep mkPipelineDecision n theirTip
 
@@ -1241,11 +1461,6 @@ data TraceChainSyncClientEvent blk
   | TraceException ChainSyncClientException
     -- ^ An exception was thrown by the Chain Sync Client.
 
-data TraceChainSyncClientEventSTM blk
-  = TraceBlockedOnForecast (Point blk) OutsideForecastRange
-  | TraceIntersectCheckDone (Point blk) (Maybe (Point blk))
-  deriving (Eq, Show)
-
 deriving instance ( BlockSupportsProtocol blk
                   , Eq (ValidationErr (BlockProtocol blk))
                   , Eq (Header blk)
@@ -1255,3 +1470,26 @@ deriving instance ( BlockSupportsProtocol blk
                   , Show (Header blk)
                   )
                => Show (TraceChainSyncClientEvent blk)
+
+castRealPoint :: RealPoint (Header blk) -> RealPoint blk
+castRealPoint (RealPoint s h) = RealPoint s h
+
+data TraceStmChainSyncClientEvent blk
+  = TraceStmForecastingDone (AnchoredFragment (Header blk))
+  | TraceStmForecastingDoneTick
+  | TraceStmForecastingRetry (Point blk)
+  | TraceStmForecastingWith (AnchoredFragment (Header blk))
+  | TraceStmHelperIteration (AnchoredFragment (Header blk)) (AnchoredFragment (Header blk))
+  | TraceStmRequesting      (AnchoredFragment (Header blk))
+  | TraceStmWantRequest     (AnchoredFragment (Header blk))
+
+deriving instance ( BlockSupportsProtocol blk
+                  , Eq (ValidationErr (BlockProtocol blk))
+                  , Eq (Header blk)
+                  )
+               => Eq   (TraceStmChainSyncClientEvent blk)
+deriving instance ( BlockSupportsProtocol blk
+                  , Show (Header blk)
+                  )
+               => Show (TraceStmChainSyncClientEvent blk)
+

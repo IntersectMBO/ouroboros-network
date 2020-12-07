@@ -98,7 +98,7 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     , getFetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (CandidateFragment (Header blk))))
 
       -- | The node's tracers
     , getTracers             :: Tracers m remotePeer localPeer blk
@@ -164,8 +164,9 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
     -- 'addFetchedBlock' whenever a new block is downloaded.
     void $ forkLinkedThread registry "NodeKernel.blockFetchLogic" $
       blockFetchLogic
-        (blockFetchDecisionTracer tracers)
-        (blockFetchClientTracer   tracers)
+        (blockFetchFingerprintTracer tracers)
+        (blockFetchDecisionTracer    tracers)
+        (blockFetchClientTracer      tracers)
         blockFetchInterface
         fetchClientRegistry
         blockFetchConfiguration
@@ -191,7 +192,7 @@ data InternalState m remotePeer localPeer blk = IS {
     , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (CandidateFragment (Header blk))))
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -219,7 +220,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
+    let getCandidates :: STM m (Map remotePeer (CandidateFragment (Header blk)))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
         blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
@@ -232,7 +233,7 @@ initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
     => TopLevelConfig blk
     -> ChainDB m blk
-    -> STM m (Map peer (AnchoredFragment (Header blk)))
+    -> STM m (Map peer (CandidateFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> BlockchainTime m
     -> BlockFetchConsensusInterface peer (Header blk) blk m
@@ -245,7 +246,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     blockMatchesHeader :: Header blk -> blk -> Bool
     blockMatchesHeader = Block.blockMatchesHeader
 
-    readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
+    readCandidateChains :: STM m (Map peer (CandidateFragment (Header blk)))
     readCandidateChains = getCandidates
 
     readCurrentChain :: STM m (AnchoredFragment (Header blk))
@@ -356,6 +357,8 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
     threadLabel =
         "NodeKernel.blockForging." <> Text.unpack (forgeLabel blockForging)
 
+    lcfg = configLedger cfg
+
     go :: SlotNo -> WithEarlyExit m ()
     go currentSlot = do
         trace $ TraceStartLeadershipCheck currentSlot
@@ -397,10 +400,12 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         ledgerView <-
           case runExcept $ forecastFor
                            (ledgerViewForecastAt
-                              (configLedger cfg)
+                              lcfg
                               (ledgerState unticked))
                            currentSlot of
             Left err -> do
+              -- TODO update this comment
+              --
               -- There are so many empty slots between the tip of our chain and
               -- the current slot that we cannot get an ledger view anymore
               -- In principle, this is no problem; we can still produce a block
@@ -408,7 +413,10 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               -- /want/ to produce a block in this case; we are most likely
               -- missing a blocks on our chain.
               trace $ TraceNoLedgerView currentSlot err
-              exitEarly
+              -- TODO update that ^^^ tracer
+              return $
+                protocolLedgerView lcfg $
+                applyChainTick lcfg currentSlot (ledgerState unticked)
             Right lv ->
               return lv
 
@@ -454,7 +462,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         let tickedLedgerState :: Ticked (LedgerState blk)
             tickedLedgerState =
               applyChainTick
-                (configLedger cfg)
+                lcfg
                 currentSlot
                 (ledgerState unticked)
 

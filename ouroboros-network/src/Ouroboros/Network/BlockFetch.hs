@@ -83,6 +83,7 @@ module Ouroboros.Network.BlockFetch (
     blockFetchLogic,
     BlockFetchConfiguration(..),
     BlockFetchConsensusInterface(..),
+    CandidateFragment (..),
     -- ** Tracer types
     FetchDecision,
     TraceFetchClientState(..),
@@ -114,6 +115,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.DeltaQ ( SizeInBytes )
 
+import           Ouroboros.Network.BlockFetch.Decision (CandidateFragment (..))
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch.ClientRegistry
                    ( FetchClientPolicy(..)
@@ -137,7 +139,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- * They must be already validated.
        -- * They may contain /fewer/ than @K@ blocks.
        -- * Their anchor does not have to intersect with the current chain.
-       readCandidateChains    :: STM m (Map peer (AnchoredFragment header)),
+       readCandidateChains    :: STM m (Map peer (CandidateFragment header)),
 
        -- | Read the K-suffix of the current chain.
        --
@@ -246,13 +248,14 @@ blockFetchLogic :: forall peer header block m.
                    , Ord peer
                    , Hashable peer
                    )
-                => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+                => Tracer (STM m) (FetchStateFingerprint peer header block, FetchStateFingerprint peer header block)
+                -> Tracer m (Map peer (CandidateFragment header), [TraceLabelPeer peer (FetchDecision [Point header])])
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface peer header block m
                 -> FetchClientRegistry peer header block m
                 -> BlockFetchConfiguration
                 -> m Void
-blockFetchLogic decisionTracer clientStateTracer
+blockFetchLogic fingerprintTracer decisionTracer clientStateTracer
                 BlockFetchConsensusInterface{..}
                 registry
                 BlockFetchConfiguration{..} = do
@@ -260,7 +263,7 @@ blockFetchLogic decisionTracer clientStateTracer
     setFetchClientContext registry clientStateTracer fetchClientPolicy
 
     fetchLogicIterations
-      decisionTracer clientStateTracer
+      fingerprintTracer decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
       fetchNonTriggerVariables

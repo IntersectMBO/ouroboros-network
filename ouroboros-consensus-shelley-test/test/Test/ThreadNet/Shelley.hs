@@ -5,6 +5,7 @@ module Test.ThreadNet.Shelley (tests) where
 
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
+import           Data.Ratio (Ratio)
 import           Data.Word (Word64)
 
 import           Test.QuickCheck
@@ -74,7 +75,7 @@ minK = 5   -- Less than this increases risk of CP violations
 maxK :: Word64
 maxK = 10   -- More than this wastes execution time
 
-activeSlotCoeff :: Rational
+activeSlotCoeff :: Ratio Word64
 activeSlotCoeff = 0.5   -- TODO this is high
 
 instance Arbitrary TestSetup where
@@ -137,7 +138,7 @@ instance Arbitrary NightlyTestSetup where
 
         -- run for multiple epochs
         factor <- choose (1, 2)
-        let t' = t + factor * unEpochSize (mkEpochSize setupK activeSlotCoeff)
+        let t' = t + factor * unEpochSize (mkEpochSize setupK (toActiveSlotCoeff activeSlotCoeff))
 
         pure setup
           { setupTestConfig = setupTestConfig
@@ -297,7 +298,7 @@ prop_simple_real_tpraos_convergence TestSetup
         mkGenesisConfig
           genesisProtVer
           setupK
-          activeSlotCoeff
+          (toActiveSlotCoeff activeSlotCoeff)
           setupD
           maxLovelaceSupply
           tpraosSlotLength

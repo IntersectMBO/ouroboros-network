@@ -27,15 +27,42 @@ library
                        Test.ThreadNet.Util.HasCreator.Mock
                        Test.ThreadNet.Util.SimpleBlock
 
+                       Scratch.Praos
+--                       Scratch.ProtocolCombinator
+                       Scratch.ThreadNet.MockNet
+                       Scratch.ThreadNet.MockNetwork
+                       Scratch.ThreadNet.MockNode
+                       Scratch.ThreadNet.Throttler
+                       Scratch.ThreadNet.Types
+                       Scratch.ThreadNet.Usher
+                       Scratch.Toolbox
+
   build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11
                      , cardano-crypto-class
+                     , cborg
                      , containers        >=0.5   && <0.7
                      , serialise         >=0.2   && <0.3
                      , QuickCheck
                      , ouroboros-consensus
                      , ouroboros-consensus-mock
                      , ouroboros-consensus-test
+
+                     , async
+                     , contra-tracer
+                     , cardano-slotting
+                     , hashable
+                     , io-sim
+                     , io-sim-classes
+                     , network-mux
+                     , nothunks
+                     , ouroboros-network
+                     , ouroboros-network-framework
+                     , quiet
+                     , random
+                     , tasty
+                     , tasty-quickcheck
+                     , typed-protocols-examples
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -69,9 +96,13 @@ test-suite test
                      , cborg
                      , containers
                      , QuickCheck
+                     , random
                      , serialise
                      , tasty
                      , tasty-quickcheck
+
+                     , criterion
+                     , deepseq
 
                      , ouroboros-network
                      , ouroboros-consensus

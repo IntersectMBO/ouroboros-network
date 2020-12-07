@@ -402,7 +402,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       return (coreNodeId, vertexStatusVar, readNodeInfo)
 
     -- Wait for the last slot to end
-    OracularClock.waitUntilDone clock
+    OracularClock.blockUntilExhausted clock
 
     -- Collect all nodes' final chains
     vertexInfos <-
@@ -498,7 +498,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             again <- case Map.minViewWithKey rs of
               -- end of test
               Nothing               -> do
-                OracularClock.waitUntilDone clock
+                OracularClock.blockUntilExhausted clock
                 pure Nothing
               -- onset of schedule restart slot
               Just ((s', nr'), rs') -> do

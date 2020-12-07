@@ -1,6 +1,9 @@
 {-# LANGUAGE BangPatterns           #-}
 {-# LANGUAGE DeriveAnyClass         #-}
 {-# LANGUAGE DeriveGeneric          #-}
+{-# LANGUAGE DeriveFoldable         #-}
+{-# LANGUAGE DeriveFunctor          #-}
+{-# LANGUAGE DeriveTraversable      #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
@@ -37,6 +40,7 @@ module Ouroboros.Network.AnchoredSeq (
   , withinBounds
   , map
   , bimap
+  , bitraverse
   , mapPreservingMeasure
   , bimapPreservingMeasure
 
@@ -138,7 +142,7 @@ data Measure v = Measure {
 newtype MeasuredWith v a b = MeasuredWith {
       unMeasuredWith :: b
     }
-  deriving (Show, Eq, Generic, NoThunks)
+  deriving (Show, Eq, Foldable, Functor, Generic, NoThunks, Traversable)
 
 instance Anchorable v a b => Measured (Measure v) (MeasuredWith v a b) where
   measure x = Measure {
@@ -447,6 +451,16 @@ bimap f g s =
     -- intermediary list instead. This has the same time complexity and the lazy
     -- traversal and mapping should give the same space complexity.
     fromOldestFirst (f (anchor s)) (g <$> toOldestFirst s)
+
+-- | \( O(n) \). Maps over the elements.
+bitraverse ::
+     (Applicative i, Anchorable v2 a2 b2)
+  => (a1 -> i a2)
+  -> (b1 -> i b2)
+  -> AnchoredSeq v1 a1 b1
+  -> i (AnchoredSeq v2 a2 b2)
+bitraverse f g s =
+    fromOldestFirst <$> f (anchor s) <*> traverse g (toOldestFirst s)
 
 -- | \( O(n) \). Maps over the elements.
 --

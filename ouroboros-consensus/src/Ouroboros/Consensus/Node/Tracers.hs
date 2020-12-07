@@ -18,11 +18,14 @@ module Ouroboros.Consensus.Node.Tracers
   ) where
 
 import           Control.Tracer (Tracer, nullTracer, showTracing)
+import           Data.Map (Map)
 import           Data.Text (Text)
 import           Data.Time (UTCTime)
 
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
+import           Ouroboros.Network.BlockFetch.State (FetchStateFingerprint)
+import           Ouroboros.Network.BlockFetch.Decision (CandidateFragment)
 import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound)
@@ -40,7 +43,7 @@ import           Ouroboros.Consensus.Util.IOLike (STM)
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                     (InvalidBlockReason, TraceChainSyncClientEvent, TraceChainSyncClientEventSTM)
+                     (InvalidBlockReason, TraceChainSyncClientEvent, TraceStmChainSyncClientEvent)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
                      (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
@@ -52,10 +55,11 @@ import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 
 data Tracers' remotePeer localPeer blk f fstm = Tracers
   { chainSyncClientTracer         :: f (TraceLabelPeer remotePeer (TraceChainSyncClientEvent blk))
-  , chainSyncClientTracerSTM      :: fstm (TraceLabelPeer remotePeer (TraceChainSyncClientEventSTM blk))
+  , chainSyncClientTracerSTM      :: fstm (TraceLabelPeer remotePeer (TraceStmChainSyncClientEvent blk))
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk)
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
-  , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])]
+  , blockFetchFingerprintTracer   :: fstm (FetchStateFingerprint remotePeer (Header blk) blk, FetchStateFingerprint remotePeer (Header blk) blk)
+  , blockFetchDecisionTracer      :: f (Map remotePeer (CandidateFragment (Header blk)), [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])])
   , blockFetchClientTracer        :: f (TraceLabelPeer remotePeer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
   , txInboundTracer               :: f (TraceLabelPeer remotePeer (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk)))
@@ -75,6 +79,7 @@ instance (forall a. Semigroup (f a), forall a. Semigroup (fstm a))
       , chainSyncClientTracerSTM      = f chainSyncClientTracerSTM
       , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
       , chainSyncServerBlockTracer    = f chainSyncServerBlockTracer
+      , blockFetchFingerprintTracer   = f blockFetchFingerprintTracer
       , blockFetchDecisionTracer      = f blockFetchDecisionTracer
       , blockFetchClientTracer        = f blockFetchClientTracer
       , blockFetchServerTracer        = f blockFetchServerTracer
@@ -103,6 +108,7 @@ nullTracers = Tracers
     , chainSyncClientTracerSTM      = nullTracer
     , chainSyncServerHeaderTracer   = nullTracer
     , chainSyncServerBlockTracer    = nullTracer
+    , blockFetchFingerprintTracer   = nullTracer
     , blockFetchDecisionTracer      = nullTracer
     , blockFetchClientTracer        = nullTracer
     , blockFetchServerTracer        = nullTracer
@@ -133,6 +139,7 @@ showTracers tr trSTM = Tracers
     , chainSyncClientTracerSTM      = showTracing trSTM
     , chainSyncServerHeaderTracer   = showTracing tr
     , chainSyncServerBlockTracer    = showTracing tr
+    , blockFetchFingerprintTracer   = showTracing trSTM
     , blockFetchDecisionTracer      = showTracing tr
     , blockFetchClientTracer        = showTracing tr
     , blockFetchServerTracer        = showTracing tr

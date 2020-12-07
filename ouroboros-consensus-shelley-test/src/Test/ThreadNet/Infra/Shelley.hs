@@ -17,7 +17,9 @@ module Test.ThreadNet.Infra.Shelley (
   , KesConfig(..)
   , coreNodeKeys
   , genCoreNode
+  , incrementMajorProtVer
   , incrementMinorProtVer
+  , initialLovelacePerCoreNode
   , mkCredential
   , mkEpochSize
   , mkGenesisConfig
@@ -30,15 +32,15 @@ module Test.ThreadNet.Infra.Shelley (
   , mkVerKey
   , mkKeyPair
   , networkId
+  , toActiveSlotCoeff
   , tpraosSlotLength
-  , initialLovelacePerCoreNode
   ) where
 
 import           Control.Monad.Except (throwError)
 import qualified Data.ByteString as BS
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Ratio (denominator, numerator)
+import           Data.Ratio (Ratio)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -69,7 +71,9 @@ import           Test.Util.Time (dawnOfTime)
 
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, KES, VRF)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff)
+import qualified Shelley.Spec.Ledger.BaseTypes as SL (activeSlotVal,
+                     intervalValue, mkActiveSlotCoeff, truncateUnitInterval,
                      unitIntervalFromRational)
 import qualified Shelley.Spec.Ledger.Keys as SL (signedDSIGN)
 import qualified Shelley.Spec.Ledger.OCert as SL (OCertSignable (..))
@@ -98,7 +102,7 @@ import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 newtype DecentralizationParam =
     DecentralizationParam {decentralizationParamToRational :: Rational }
   deriving (Eq, Generic, Ord)
-  deriving (Show) via (Quiet DecentralizationParam)
+  deriving (Read, Show) via (Quiet DecentralizationParam)
 
 -- | A fraction with denominator @10@ and numerator @0@ to @10@ inclusive
 instance Arbitrary DecentralizationParam where
@@ -113,6 +117,9 @@ instance Arbitrary DecentralizationParam where
 
 tpraosSlotLength :: SlotLength
 tpraosSlotLength = slotLengthFromSec 2
+
+toActiveSlotCoeff :: Ratio Word64 -> SL.ActiveSlotCoeff
+toActiveSlotCoeff = SL.mkActiveSlotCoeff . SL.truncateUnitInterval
 
 {-------------------------------------------------------------------------------
   CoreNode secrets/etc
@@ -247,17 +254,16 @@ mkKesConfig _ (NumSlots t) = KesConfig
 -------------------------------------------------------------------------------}
 
 -- | The epoch size, given @k@ and @f@.
---
--- INVARIANT: @10 * k / f@ must be a whole number.
-mkEpochSize :: SecurityParam -> Rational -> EpochSize
-mkEpochSize (SecurityParam k) f =
-    if r /= 0 then error "10 * k / f must be a whole number" else
-    EpochSize q
+mkEpochSize :: SecurityParam -> SL.ActiveSlotCoeff -> EpochSize
+mkEpochSize (SecurityParam k) asc =
+    EpochSize $
+    -- Note we're matching the fixed-precision aspect of
+    -- 'SL.computeStabilityWindow' here.
+    ceiling $
+    (\x->x::Double) $
+    fromIntegral (10 * k) / fromRational (toRational f)
   where
-    n = numerator   f
-    d = denominator f
-
-    (q, r) = quotRem (10 * k * fromInteger d) (fromInteger n)
+    f = SL.intervalValue . SL.activeSlotVal $ asc
 
 -- | Note: a KES algorithm supports a particular max number of KES evolutions,
 -- but we can configure a potentially lower maximum for the ledger, that's why
@@ -266,7 +272,7 @@ mkGenesisConfig
   :: forall era. PraosCrypto (EraCrypto era)
   => ProtVer   -- ^ Initial protocol version
   -> SecurityParam
-  -> Rational  -- ^ Initial active slot coefficient
+  -> SL.ActiveSlotCoeff  -- ^ Initial active slot coefficient
   -> DecentralizationParam
   -> Word64
      -- ^ Max Lovelace supply, must be >= #coreNodes * initialLovelacePerCoreNode
@@ -281,7 +287,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
-    , sgActiveSlotsCoeff      = f
+    , sgActiveSlotsCoeff      = toRational $ SL.intervalValue $ SL.activeSlotVal f
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = mkEpochSize k f
     , sgSlotsPerKESPeriod     = slotsPerEvolution kesCfg
@@ -416,6 +422,9 @@ mkProtocolShelley genesis initialNonce protVer coreNode =
 
 incrementMinorProtVer :: SL.ProtVer -> SL.ProtVer
 incrementMinorProtVer (SL.ProtVer major minor) = SL.ProtVer major (succ minor)
+
+incrementMajorProtVer :: SL.ProtVer -> SL.ProtVer
+incrementMajorProtVer (SL.ProtVer major minor) = SL.ProtVer (succ major) minor
 
 mkSetDecentralizationParamTxs ::
      forall c. ShelleyBasedEra (ShelleyEra c)

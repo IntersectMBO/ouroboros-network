@@ -26,6 +26,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SlotLength (..))
 import           Ouroboros.Consensus.Util (nTimes)
 
+import           Test.Util.Orphans.Slotting.Read ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Stream (Stream (..))
 
@@ -36,7 +37,7 @@ import           Test.Util.Stream (Stream (..))
 -- | Number of epochs
 newtype EraSize = EraSize {unEraSize :: Word64}
   deriving (Eq, Generic)
-  deriving (Show) via (Quiet EraSize)
+  deriving (Read, Show) via (Quiet EraSize)
 
 {-------------------------------------------------------------------------------
   A test's whole timeline
@@ -48,7 +49,7 @@ newtype EraSize = EraSize {unEraSize :: Word64}
 data Future =
       EraFinal SlotLength EpochSize
     | EraCons  SlotLength EpochSize EraSize Future
-  deriving (Eq, Show)
+  deriving (Eq, Read, Show)
 
 -- | 'Future' with only one era
 singleEraFuture :: SlotLength -> EpochSize -> Future

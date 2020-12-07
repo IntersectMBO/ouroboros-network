@@ -56,6 +56,8 @@ library
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
                        Test.Util.Orphans.Slotting.Arbitrary
+                       Test.Util.Orphans.Slotting.Read
+                       Test.Util.Orphans.Read
                        Test.Util.Orphans.ToExpr
                        Test.Util.Paths
                        Test.Util.QSM
@@ -98,6 +100,7 @@ library
                      , random
                      , serialise         >=0.2   && <0.3
                      , sop-core
+                     , splitmix
                      , tasty
                      , tasty-golden
                      , tasty-hunit

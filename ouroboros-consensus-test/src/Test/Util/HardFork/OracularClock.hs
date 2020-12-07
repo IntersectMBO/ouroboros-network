@@ -36,8 +36,8 @@ import           Test.Util.Slots (NumSlots (..))
 -- 'NumSlots'. Once all 'NumSlots' have passed, the clock is /exhausted/ and
 -- all of its methods begin throwing 'EndOfDaysException'.
 --
--- Notably, 'waitUntilDone' blocks until the the clock is exhausted; so the
--- continuation of that call should promptly reap other threads using this
+-- Notably, 'blockUntilExhausted' blocks until the the clock is exhausted; so
+-- the continuation of that call should promptly reap other threads using this
 -- clock because they will otherwise soon raise 'EndOfDaysException'.
 --
 -- Note: Though the wallclock-slot correspondence depends on the ledger state,
@@ -69,7 +69,11 @@ data OracularClock m = OracularClock
                     -> m (m ())
 
       -- | Block until the clock is exhausted
-    , waitUntilDone :: m ()
+    , blockUntilExhausted :: m ()
+
+      -- | Returns true if the clock is exhausted
+    , whetherSimIsExhausted :: m Bool
+
     }
 
 -- | Forks a thread that executes an action at the onset of each slot
@@ -109,7 +113,11 @@ mkOracularClock :: forall m. (IOLike m)
     -> Future
     -> OracularClock m
 mkOracularClock BTime.SystemTime{..} numSlots future = OracularClock
-    { blockUntilSlot = \slot -> do
+    { blockUntilExhausted = do
+        BTime.RelativeTime now <- finiteSystemTimeCurrent
+        void $ blockUntilTime now endOfDays
+
+    , blockUntilSlot = \slot -> do
         BTime.RelativeTime now <- finiteSystemTimeCurrent
         let later = futureSlotToTime future slot
 
@@ -148,9 +156,10 @@ mkOracularClock BTime.SystemTime{..} numSlots future = OracularClock
           threadDelay $ nominalDelay leftInSlot
           loop
 
-    , waitUntilDone = do
+    , whetherSimIsExhausted = do
         BTime.RelativeTime now <- finiteSystemTimeCurrent
-        void $ blockUntilTime now endOfDays
+        -- refuse to block until @>= endOfDays@
+        pure $ now >= endOfDays
 
     }
   where
@@ -169,18 +178,18 @@ mkOracularClock BTime.SystemTime{..} numSlots future = OracularClock
     exhaustedM = do
         -- throw if this thread isn't terminated in time
         threadDelay $ picosecondsToDiffTime 1   -- the smallest possible delay
-        throwIO EndOfDaysException
+        throwIO (EndOfDaysException numSlots)
 
     -- a 'BTime.systemTimeCurrent' that respects @endOfDays@
     finiteSystemTimeCurrent :: m BTime.RelativeTime
     finiteSystemTimeCurrent = do
         t <- systemTimeCurrent
-
+{-
         -- check if clock is exhausted
         let tFinal = BTime.RelativeTime endOfDays
         when (t >  tFinal) $ throwIO EndOfDaysException
         when (t == tFinal) $ exhaustedM
-
+-}
         pure t
 
     getPresent :: m (SlotNo, NominalDiffTime, BTime.SlotLength)
@@ -205,7 +214,7 @@ mkOracularClock BTime.SystemTime{..} numSlots future = OracularClock
 -- finalizers etc have a chance to terminate it. If that tear down isn't prompt
 -- enough, the thread then throws this exception, which we don't catch
 -- anywhere.
-data EndOfDaysException = EndOfDaysException
+data EndOfDaysException = EndOfDaysException NumSlots
   deriving (Show)
 
 instance Exception EndOfDaysException

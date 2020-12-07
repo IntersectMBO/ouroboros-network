@@ -49,7 +49,7 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Replace 'TxSubmision' with 'Txsubmission2' protocol.
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
+  deriving (Eq, Ord, Enum, Bounded, Read, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }

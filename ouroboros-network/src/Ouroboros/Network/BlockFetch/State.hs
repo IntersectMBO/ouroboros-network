@@ -14,6 +14,8 @@ module Ouroboros.Network.BlockFetch.State (
     FetchMode(..),
     TraceLabelPeer(..),
     TraceFetchClientState(..),
+
+    FetchStateFingerprint(..),
   ) where
 
 import           Data.Functor.Contravariant (contramap)
@@ -45,6 +47,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    )
 import           Ouroboros.Network.BlockFetch.Decision
                    ( fetchDecisions
+                   , CandidateFragment (..)
                    , PeerInfo
                    , FetchDecisionPolicy(..)
                    , FetchMode(..)
@@ -65,13 +68,14 @@ fetchLogicIterations
      , Ord peer
      , Hashable peer
      )
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  => Tracer (STM m) (FetchStateFingerprint peer header block, FetchStateFingerprint peer header block)
+  -> Tracer m (Map peer (CandidateFragment header), [TraceLabelPeer peer (FetchDecision [Point header])])
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> m Void
-fetchLogicIterations decisionTracer clientStateTracer
+fetchLogicIterations fingerprintTracer decisionTracer clientStateTracer
                      fetchDecisionPolicy
                      fetchTriggerVariables
                      fetchNonTriggerVariables =
@@ -84,7 +88,7 @@ fetchLogicIterations decisionTracer clientStateTracer
       -- + act on those decisions
       start <- getMonotonicTime
       stateFingerprint' <- fetchLogicIteration
-        decisionTracer clientStateTracer
+        fingerprintTracer decisionTracer clientStateTracer
         fetchDecisionPolicy
         fetchTriggerVariables
         fetchNonTriggerVariables
@@ -112,14 +116,15 @@ fetchLogicIteration
   :: (Hashable peer, MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  => Tracer (STM m) (FetchStateFingerprint peer header block, FetchStateFingerprint peer header block)
+  -> Tracer m (Map peer (CandidateFragment header), [TraceLabelPeer peer (FetchDecision [Point header])])
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
   -> m (FetchStateFingerprint peer header block)
-fetchLogicIteration decisionTracer clientStateTracer
+fetchLogicIteration fingerprintTracer decisionTracer clientStateTracer
                     fetchDecisionPolicy
                     fetchTriggerVariables
                     fetchNonTriggerVariables
@@ -129,6 +134,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     (stateSnapshot, stateFingerprint') <-
       atomically $
         readStateVariables
+          fingerprintTracer
           fetchTriggerVariables
           fetchNonTriggerVariables
           stateFingerprint
@@ -148,7 +154,8 @@ fetchLogicIteration decisionTracer clientStateTracer
     -- _ <- evaluate (force decisions)
 
     -- Trace the batch of fetch decisions
-    traceWith decisionTracer
+    traceWith decisionTracer $
+      (,) (fetchStatePeerChains stateSnapshot) $
       [ TraceLabelPeer peer (fmap fetchRequestPoints decision)
       | (decision, (_, _, _, peer, _)) <- decisions ]
 
@@ -254,7 +261,7 @@ fetchLogicIterationAct clientStateTracer FetchDecisionPolicy{blockFetchSize}
 --
 data FetchTriggerVariables peer header m = FetchTriggerVariables {
        readStateCurrentChain    :: STM m (AnchoredFragment header),
-       readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
+       readStateCandidateChains :: STM m (Map peer (CandidateFragment header)),
        readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header))
      }
 
@@ -273,10 +280,10 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
 
 data FetchStateFingerprint peer header block =
      FetchStateFingerprint
-       !(Maybe (Point block))
-       !(Map peer (Point header))
+       !(Maybe (Point block))   -- head of current chain
+       !(Map peer (Bool, Point header))   -- candidate fragments
        !(Map peer (PeerFetchStatus header))
-  deriving Eq
+  deriving (Eq, Show)
 
 initialFetchStateFingerprint :: FetchStateFingerprint peer header block
 initialFetchStateFingerprint =
@@ -303,7 +310,7 @@ updateFetchStateFingerprintPeerStatus statuses'
 --
 data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateCurrentChain     :: AnchoredFragment header,
-       fetchStatePeerChains       :: Map peer (AnchoredFragment header),
+       fetchStatePeerChains       :: Map peer (CandidateFragment header),
        fetchStatePeerStates       :: Map peer (PeerFetchStatus   header,
                                                PeerFetchInFlight header,
                                                FetchClientStateVars m header),
@@ -316,12 +323,14 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
 readStateVariables :: (MonadSTM m, Eq peer,
                        HasHeader header, HasHeader block,
                        HeaderHash header ~ HeaderHash block)
-                   => FetchTriggerVariables peer header m
+                   => Tracer (STM m) (FetchStateFingerprint peer header block, FetchStateFingerprint peer header block)
+                   -> FetchTriggerVariables peer header m
                    -> FetchNonTriggerVariables peer header block m
                    -> FetchStateFingerprint peer header block
                    -> STM m (FetchStateSnapshot peer header block m,
                              FetchStateFingerprint peer header block)
-readStateVariables FetchTriggerVariables{..}
+readStateVariables fingerprintTracer
+                   FetchTriggerVariables{..}
                    FetchNonTriggerVariables{..}
                    fetchStateFingerprint = do
 
@@ -334,10 +343,13 @@ readStateVariables FetchTriggerVariables{..}
     let !fetchStateFingerprint' =
           FetchStateFingerprint
             (Just (castPoint (AF.headPoint fetchStateCurrentChain)))
-            (Map.map AF.headPoint fetchStatePeerChains)
+            (Map.map
+               (\x -> (chainSyncBlockedOnGap x, AF.headPoint (candidateChain x)))
+               fetchStatePeerChains)
             fetchStatePeerStatus
 
     -- Check the fingerprint changed, or block and wait until it does
+    traceWith fingerprintTracer (fetchStateFingerprint, fetchStateFingerprint')
     check (fetchStateFingerprint' /= fetchStateFingerprint)
 
     -- Now read all the non-trigger state variables

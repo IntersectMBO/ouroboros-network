@@ -28,7 +28,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 -- layer does not use or provide node ids (it uses addresses).
 data NodeId = CoreId !CoreNodeId
             | RelayId !Word64
-  deriving (Eq, Ord, Show, Generic, NoThunks)
+  deriving (Eq, Ord, Read, Show, Generic, NoThunks)
 
 instance Condense NodeId where
   condense (CoreId (CoreNodeId i)) = "c" ++ show i
@@ -42,7 +42,7 @@ newtype CoreNodeId = CoreNodeId {
     }
   deriving stock   (Eq, Ord, Generic)
   deriving newtype (Condense, Serialise, NoThunks)
-  deriving Show via Quiet CoreNodeId
+  deriving (Read, Show) via Quiet CoreNodeId
 
 instance Hashable CoreNodeId
 

@@ -15,7 +15,7 @@ import qualified Test.QuickCheck as QC
 
 -- | Number of slots
 newtype NumSlots = NumSlots {unNumSlots :: Word64}
-  deriving (Eq, Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks, Ord)
   deriving (Show) via (Quiet NumSlots)
 
 {-------------------------------------------------------------------------------

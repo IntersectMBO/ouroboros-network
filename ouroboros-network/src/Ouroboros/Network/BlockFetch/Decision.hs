@@ -1,4 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,6 +10,7 @@
 module Ouroboros.Network.BlockFetch.Decision (
     -- * Deciding what to fetch
     fetchDecisions,
+    CandidateFragment (..),
     FetchDecisionPolicy(..),
     FetchMode(..),
     PeerInfo,
@@ -30,7 +34,9 @@ import           Data.Hashable
 import           Data.List (foldl', groupBy, sortBy, transpose)
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           NoThunks.Class (NoThunks)
 
 import           Control.Exception (assert)
 import           Control.Monad (guard)
@@ -50,6 +56,13 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                      estimateExpectedResponseDuration,
                      estimateResponseDeadlineProbability)
 
+
+data CandidateFragment header =
+     CandidateFragment {
+       candidateChain        :: AnchoredFragment header,
+       chainSyncBlockedOnGap :: Bool
+     }
+  deriving (Generic, NoThunks, Show)
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
@@ -157,8 +170,8 @@ fetchDecisions
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
-  -> [(AnchoredFragment header, PeerInfo header peer extra)]
-  -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
+  -> [(               CandidateFragment header,  PeerInfo header peer extra)]
+  -> [(FetchDecision (FetchRequest      header), PeerInfo header peer extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  plausibleCandidateChain,
                  compareCandidateChains,
@@ -292,22 +305,28 @@ current chain. So our first task is to filter down to this set.
 -}
 
 
--- | Keep only those candidate chains that are preferred over the current
--- chain. Typically, this means that their length is longer than the length of
--- the current chain.
+-- | Keep only those candidate chains that are preferred over the current chain
+-- or whose ChainSync is stuck on a too-large gap. Typically, this means that
+-- their length is longer than the length of the current chain.
 --
 filterPlausibleCandidates
   :: (AnchoredFragment block -> AnchoredFragment header -> Bool)
   -> AnchoredFragment block  -- ^ The current chain
-  -> [(AnchoredFragment header, peerinfo)]
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
-filterPlausibleCandidates plausibleCandidateChain currentChain chains =
-    [ (chain', peer)
-    | (chain,  peer) <- chains
-    , let chain' = do
-            guard (plausibleCandidateChain currentChain chain)
+  -> [(               CandidateFragment header,  peerinfo)]
+  -> [(FetchDecision (CandidateFragment header), peerinfo)]
+filterPlausibleCandidates plausibleCandidateChain currentChain candidateFrags =
+    [ (candidateFrag', peer)
+    | (candidateFrag,  peer) <- candidateFrags
+    , let candidateFrag' = do
+            let CandidateFragment {
+                    candidateChain
+                  , chainSyncBlockedOnGap
+                  } = candidateFrag
+            guard (   chainSyncBlockedOnGap
+                   || plausibleCandidateChain currentChain candidateChain
+                  )
               ?! FetchDeclineChainNotPlausible
-            return chain
+            return candidateFrag
     ]
 
 
@@ -398,7 +417,10 @@ and chain A was a short fork.
 
 Note that it's possible that we don't find any intersection within the last K
 blocks. This means the candidate forks by more than K and so we are not
-interested in this candidate at all.
+interested in this candidate at all. BlockFetch likely only sees such a
+candidate when it has won a race against the upstream logic, such as the
+corresponding ChainSync client, because in general we expect the upstream logic
+to filter out such a candidate.
 -}
 
 -- | Find the chain suffix for a candidate chain, with respect to the
@@ -407,11 +429,11 @@ interested in this candidate at all.
 chainForkSuffix
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block  -- ^ Current chain.
-  -> AnchoredFragment header -- ^ Candidate chain
+  => AnchoredFragment  block  -- ^ Current chain.
+  -> CandidateFragment header
   -> Maybe (ChainSuffix header)
-chainForkSuffix current candidate =
-    case AF.intersect current candidate of
+chainForkSuffix current candidateFrag =
+    case AF.intersect current candidateChain of
       Nothing                         -> Nothing
       Just (_, _, _, candidateSuffix) ->
         -- If the suffix is empty, it means the candidate chain was equal to
@@ -419,13 +441,17 @@ chainForkSuffix current candidate =
         -- not a plausible candidate, so it must have been filtered out.
         assert (not (AF.null candidateSuffix)) $
         Just (ChainSuffix candidateSuffix)
+  where
+    CandidateFragment {
+        candidateChain
+      } = candidateFrag
 
 selectForkSuffixes
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => AnchoredFragment block
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
-  -> [(FetchDecision (ChainSuffix      header), peerinfo)]
+  -> [(FetchDecision (CandidateFragment header), peerinfo)]
+  -> [(FetchDecision (ChainSuffix       header), peerinfo)]
 selectForkSuffixes current chains =
     [ (mchain', peer)
     | (mchain,  peer) <- chains

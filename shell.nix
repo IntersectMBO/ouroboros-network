@@ -23,6 +23,7 @@ let
     # These programs will be available inside the nix-shell.
     buildInputs = [
       niv
+      gdb
       pkgconfig
     ];
 

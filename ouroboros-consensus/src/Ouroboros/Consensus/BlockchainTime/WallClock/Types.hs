@@ -34,6 +34,8 @@ import           NoThunks.Class (InspectHeap (..), NoThunks,
                      OnlyCheckWhnfNamed (..))
 import           Quiet
 
+import           Ouroboros.Consensus.Util.Time ()
+
 {-------------------------------------------------------------------------------
   System start
 -------------------------------------------------------------------------------}
@@ -99,7 +101,7 @@ data SystemTime m = SystemTime {
 -- | Slot length
 newtype SlotLength = SlotLength { getSlotLength :: NominalDiffTime }
   deriving (Eq, Generic, NoThunks)
-  deriving Show via Quiet SlotLength
+  deriving (Read, Show) via Quiet SlotLength
 
 -- | Constructor for 'SlotLength'
 mkSlotLength :: NominalDiffTime -> SlotLength

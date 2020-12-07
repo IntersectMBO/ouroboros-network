@@ -22,4 +22,4 @@ import           Quiet
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
   deriving (Eq, Generic, NoThunks)
-  deriving Show via Quiet SecurityParam
+  deriving (Read, Show) via Quiet SecurityParam

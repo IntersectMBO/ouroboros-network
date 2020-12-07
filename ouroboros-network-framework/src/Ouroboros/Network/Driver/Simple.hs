@@ -131,8 +131,8 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
                 -> Message ps st st'
                 -> m ()
     sendMessage stok msg = do
-      send (encode stok msg)
       traceWith tracer (TraceSendMsg (AnyMessageAndAgency stok msg))
+      send (encode stok msg)
 
     recvMessage :: forall (pr :: PeerRole) (st :: ps).
                    PeerHasAgency pr st

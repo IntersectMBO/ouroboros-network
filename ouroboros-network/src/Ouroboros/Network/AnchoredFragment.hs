@@ -81,6 +81,7 @@ module Ouroboros.Network.AnchoredFragment (
   intersect,
   intersectionPoint,
   mapAnchoredFragment,
+  traverseAnchoredFragment,
   anchorNewest,
   filter,
   filterWithStop,
@@ -709,3 +710,10 @@ mapAnchoredFragment ::
   -> AnchoredFragment block1
   -> AnchoredFragment block2
 mapAnchoredFragment = bimap castAnchor
+
+traverseAnchoredFragment ::
+     (Applicative i, HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+  => (block1 -> i block2)
+  -> AnchoredFragment block1
+  -> i (AnchoredFragment block2)
+traverseAnchoredFragment = AS.bitraverse (pure . castAnchor)

@@ -9,8 +9,10 @@ import qualified Test.Consensus.Shelley.Golden (tests)
 import qualified Test.Consensus.Shelley.Serialisation (tests)
 import qualified Test.ThreadNet.Shelley (tests)
 
+import           Scratch.Shelley (_main)
+
 main :: IO ()
-main = sodiumInit >> defaultMainWithIohkNightly tests
+main = sodiumInit >> asTypeOf _main (defaultMainWithIohkNightly tests)
 
 tests :: TestTree
 tests =
