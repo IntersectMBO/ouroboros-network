@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 module Ouroboros.Consensus.Util.Versioned
   ( Versioned (..)
   , VersionNumber -- opaque
@@ -14,8 +15,10 @@ module Ouroboros.Consensus.Util.Versioned
   , encodeVersion
   , decodeVersioned
   , decodeVersion
+  , decodeVersionWithHook
   ) where
 
+import qualified Codec.CBOR.Decoding as Dec
 import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Decoding (Decoder, decodeWord8)
 import           Codec.Serialise.Encoding (Encoding, encodeListLen, encodeWord8)
@@ -106,6 +109,52 @@ decodeVersion
   -> forall s. Decoder s a
 decodeVersion versionDecoders =
     versioned <$> decodeVersioned versionDecoders
+
+-- | Same as 'decodeVersion', but with a hook that gets called in case the
+-- encoding was not produced by a versioned encoder. This allows a transition
+-- from non-versioned to versioned encodings.
+--
+-- Versioned encodings start with list length 2. Whenever the encoding starts
+-- this way, this decoder will use the regular versioned decoder. When the
+-- encoding starts differently, either with a different list length ('Just' as
+-- argument) or with another token ('Nothing' as argument), the hook is called,
+-- allowing the previous non-versioned decoder to try to decode the encoding.
+--
+-- Note that the hook should /not/ try to decode the list length /again/.
+--
+-- Note that this will not work if the previous encoding can start with list
+-- length 2, as the new versioned decoder will be called in those cases, not the
+-- hook.
+decodeVersionWithHook
+  :: forall a.
+     (forall s. Maybe Int -> Decoder s a)
+  -> [(VersionNumber, VersionDecoder a)]
+  -> forall s. Decoder s a
+decodeVersionWithHook hook versionDecoders = do
+    tokenType <- Dec.peekTokenType
+
+    if isListLen tokenType then do
+      len <- Dec.decodeListLen
+      case len of
+        2 -> goVersioned
+        _ -> hook (Just len)
+
+    else
+      hook Nothing
+
+  where
+    isListLen :: Dec.TokenType -> Bool
+    isListLen = \case
+        Dec.TypeListLen   -> True
+        Dec.TypeListLen64 -> True
+        _                 -> False
+
+    goVersioned :: forall s. Decoder s a
+    goVersioned = do
+        vn <- decode
+        case lookup vn versionDecoders of
+          Nothing   -> fail $ show $ UnknownVersion vn
+          Just vDec -> getVersionDecoder vn vDec
 
 encodeVersioned
   :: (          a -> Encoding)

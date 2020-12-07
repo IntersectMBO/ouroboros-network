@@ -42,7 +42,7 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-                     (ledgerDbFromGenesis)
+                     (ledgerDbWithAnchor)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
@@ -203,7 +203,7 @@ initLgrDB k chain = do
 
     cfg = testCfg k
 
-    genesisLedgerDB = LgrDB.ledgerDbFromGenesis params testInitExtLedger
+    genesisLedgerDB = LgrDB.ledgerDbWithAnchor params testInitExtLedger
 
     args = LgrDbArgs
       { lgrTopLevelConfig       = cfg

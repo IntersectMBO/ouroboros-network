@@ -53,9 +53,10 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (Serialise (decode, encode))
+import           Codec.Serialise (Serialise (decode))
 import           Control.Tracer
 import           Data.Foldable (foldl')
+import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -290,11 +291,18 @@ decorateReplayTracer immTip = contramap $ fmap (const immTip)
 getCurrent :: IOLike m => LgrDB m blk -> STM m (LedgerDB' blk)
 getCurrent LgrDB{..} = readTVar varDB
 
-getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
+getCurrentState ::
+     (IOLike m, IsLedger (LedgerState blk))
+  => LgrDB m blk -> STM m (ExtLedgerState blk)
 getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
 
-getPastState :: (IOLike m, HasHeader blk)
-             => LgrDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
+getPastState ::
+     (IOLike m, LedgerSupportsProtocol blk)
+     -- The 'LedgerSupportsProtocol' constraint comes from the @IsLedger
+     -- (ExtLedgerState blk)@ instance
+  => LgrDB m blk
+  -> Point blk
+  -> STM m (Maybe (ExtLedgerState blk))
 getPastState LgrDB{..} p = do
     db <- readTVar varDB
     return $ LedgerDB.ledgerDbPast p db
@@ -304,7 +312,8 @@ getHeaderStateHistory ::
   => LgrDB m blk -> STM m (HeaderStateHistory blk)
 getHeaderStateHistory LgrDB{..} = do
     db <- readTVar varDB
-    let (anchor, snapshots) = LedgerDB.ledgerDbPastLedgers headerState db
+    let anchor = headerState $ LedgerDB.ledgerDbAnchor db
+        snapshots = Seq.fromList $ map (headerState . snd) $ LedgerDB.ledgerDbSnapshots db
     return HeaderStateHistory {
         headerStateHistorySnapshots = snapshots
       , headerStateHistoryAnchor    = anchor
@@ -324,7 +333,11 @@ currentPoint = castPoint
 
 takeSnapshot ::
      forall m blk.
-     (IOLike m, LgrDbSerialiseConstraints blk, HasHeader blk)
+     ( IOLike m
+     , LgrDbSerialiseConstraints blk
+     , HasHeader blk
+     , IsLedger (LedgerState blk)
+     )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
     ledgerDB <- atomically $ getCurrent lgrDB
@@ -332,7 +345,6 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
       tracer
       hasFS
       encodeExtLedgerState'
-      encode
       ledgerDB
   where
     ccfg = configCodec cfg

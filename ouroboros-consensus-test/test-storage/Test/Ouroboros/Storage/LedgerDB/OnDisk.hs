@@ -489,7 +489,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain = []
 
     initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbFromGenesis dbLgrParams testInitExtLedger
+    initDB = ledgerDbWithAnchor dbLgrParams testInitExtLedger
 
     getBlock ::
          RealPoint TestBlock
@@ -598,7 +598,6 @@ runDB standalone@DB{..} cmd =
           takeSnapshot
             nullTracer
             hasFS
-            S.encode
             S.encode
             db
     go hasFS Restore = do

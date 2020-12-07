@@ -37,7 +37,9 @@ import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike
@@ -80,11 +82,13 @@ getCurrentChain CDB{..} =
   where
     SecurityParam k = configSecurityParam cdbTopLevelConfig
 
-getCurrentLedger :: IOLike m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
+getCurrentLedger ::
+     (IOLike m, IsLedger (LedgerState blk))
+  => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
 getCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB
 
 getPastLedger ::
-     (HasHeader blk, IOLike m)
+     (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbEnv m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
 getPastLedger CDB{..} = LgrDB.getPastState cdbLgrDB
 

@@ -57,6 +57,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -236,6 +237,7 @@ copyAndSnapshotRunner
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
+     , IsLedger (LedgerState blk)
      , LgrDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
@@ -291,8 +293,12 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
-updateLedgerSnapshots
-  :: (IOLike m, LgrDbSerialiseConstraints blk, HasHeader blk)
+updateLedgerSnapshots ::
+    ( IOLike m
+     , LgrDbSerialiseConstraints blk
+     , HasHeader blk
+     , IsLedger (LedgerState blk)
+     )
   => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do
     void $ LgrDB.takeSnapshot  cdbLgrDB
