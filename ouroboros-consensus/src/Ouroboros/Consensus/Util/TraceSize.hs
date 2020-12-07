@@ -54,7 +54,7 @@ data LedgerDbSize blk = LedgerDbSize {
 traceLedgerDbSize :: MonadIO m
                   => (Word64 -> Bool)
                   -> Tracer m (LedgerDbSize blk)
-                  -> Tracer m (LedgerDB l (RealPoint blk))
+                  -> Tracer m (LedgerDB l blk)
 traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
     let !ledger = LedgerDB.ledgerDbCurrent db
         !tip    = LedgerDB.ledgerDbTip db
@@ -63,11 +63,11 @@ traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
       sizeTip   <- liftIO $ computeHeapSize ledger
       sizeTotal <- liftIO $ computeHeapSize db
       f $ LedgerDbSize {
-              ledgerDbTip       = withOriginRealPointToPoint tip
+              ledgerDbTip       = tip
             , ledgerDbSizeTip   = sizeTip
             , ledgerDbSizeTotal = sizeTotal
             }
   where
-    shouldTrace :: WithOrigin (RealPoint blk) -> Bool
-    shouldTrace Origin         = p 0
-    shouldTrace (NotOrigin pt) = p (unSlotNo (realPointSlot pt))
+    shouldTrace :: Point blk -> Bool
+    shouldTrace GenesisPoint     = p 0
+    shouldTrace (BlockPoint s _) = p (unSlotNo s)

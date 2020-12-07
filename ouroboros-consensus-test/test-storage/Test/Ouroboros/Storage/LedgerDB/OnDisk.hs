@@ -466,7 +466,7 @@ data StandaloneDB m = DB {
     , dbState     :: StrictTVar m ([RealPoint TestBlock], LedgerDB' TestBlock)
 
       -- | Resolve blocks
-    , dbResolve   :: ResolveBlock m (RealPoint TestBlock) TestBlock
+    , dbResolve   :: ResolveBlock m TestBlock
 
       -- | Ledger config
     , dbLedgerCfg :: ExtLedgerCfg TestBlock
@@ -477,7 +477,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
 
-    let dbResolve :: ResolveBlock m (RealPoint TestBlock) TestBlock
+    let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
 
         dbLedgerCfg :: ExtLedgerCfg TestBlock
@@ -493,7 +493,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
 
     getBlock ::
          RealPoint TestBlock
-      -> Map (RealPoint TestBlock) (TestBlock)
+      -> Map (RealPoint TestBlock) TestBlock
       -> TestBlock
     getBlock = Map.findWithDefault (error blockNotFound)
 
@@ -564,7 +564,7 @@ runDB standalone@DB{..} cmd =
     streamAPI = dbStreamAPI standalone
 
     annLedgerErr' ::
-         AnnLedgerError (ExtLedgerState TestBlock) (RealPoint TestBlock)
+         AnnLedgerError (ExtLedgerState TestBlock) TestBlock
       -> ExtValidationError TestBlock
     annLedgerErr' = annLedgerErr
 
@@ -579,7 +579,7 @@ runDB standalone@DB{..} cmd =
             defaultThrowLedgerErrors $
               ledgerDbPush
                 dbLedgerCfg
-                (ApplyVal (blockRealPoint b) b)
+                (ApplyVal b)
                 db
     go _ (Switch n bs) = do
         atomically $ modifyTVar dbBlocks $
@@ -590,7 +590,7 @@ runDB standalone@DB{..} cmd =
               ledgerDbSwitch
                 dbLedgerCfg
                 n
-                (map (\b -> ApplyVal (blockRealPoint b) b) bs)
+                (map ApplyVal bs)
                 db
     go hasFS Snap = do
         (_, db) <- atomically $ readTVar dbState

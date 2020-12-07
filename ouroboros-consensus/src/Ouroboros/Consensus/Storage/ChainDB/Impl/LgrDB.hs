@@ -233,7 +233,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         lgrTracer
         hasFS
         decodeExtLedgerState'
-        (decodeRealPoint decode)
+        decode
         lgrParams
         (ExtLedgerCfg lgrTopLevelConfig)
         lgrGenesis
@@ -297,11 +297,7 @@ getPastState :: (IOLike m, HasHeader blk)
              => LgrDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
 getPastState LgrDB{..} p = do
     db <- readTVar varDB
-    return $
-      LedgerDB.ledgerDbPast
-        realPointSlot
-        (pointToWithOriginRealPoint p)
-        db
+    return $ LedgerDB.ledgerDbPast p db
 
 getHeaderStateHistory ::
      IOLike m
@@ -336,7 +332,7 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
       tracer
       hasFS
       encodeExtLedgerState'
-      (encodeRealPoint encode)
+      encode
       ledgerDB
   where
     ccfg = configCodec cfg
@@ -393,15 +389,11 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     rewrap (Right (Left  e)) = ValidateExceededRollBack e
     rewrap (Right (Right l)) = ValidateSuccessful       l
 
-    mkAps :: forall n r l b. (
-               r ~ RealPoint      blk
-             , l ~ ExtLedgerState blk
-             , b ~                blk
-             )
+    mkAps :: forall n l. l ~ ExtLedgerState blk
           => [Header blk]
-          -> Set r
-          -> [Ap n l r b ( LedgerDB.ResolvesBlocks r b n
-                         , LedgerDB.ThrowsLedgerError l r n
+          -> Set (RealPoint blk)
+          -> [Ap n l blk ( LedgerDB.ResolvesBlocks    n   blk
+                         , LedgerDB.ThrowsLedgerError n l blk
                          )]
     mkAps hdrs prevApplied =
       [ case ( Set.member (headerRealPoint hdr) prevApplied
@@ -409,8 +401,8 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
              ) of
           (False, Nothing)  ->          ApplyRef   (headerRealPoint hdr)
           (True,  Nothing)  -> Weaken $ ReapplyRef (headerRealPoint hdr)
-          (False, Just blk) -> Weaken $ ApplyVal   (blockRealPoint blk) blk
-          (True,  Just blk) -> Weaken $ ReapplyVal (blockRealPoint blk) blk
+          (False, Just blk) -> Weaken $ ApplyVal   blk
+          (True,  Just blk) -> Weaken $ ReapplyVal blk
       | hdr <- hdrs
       ]
 
