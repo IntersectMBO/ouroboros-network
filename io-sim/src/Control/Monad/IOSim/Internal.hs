@@ -1,5 +1,8 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTSyntax                 #-}
@@ -51,6 +54,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Typeable (Typeable)
+import           Quiet (Quiet (..))
+import           GHC.Generics (Generic)
 
 import           Control.Applicative (Alternative (..))
 import           Control.Exception (ErrorCall (..), assert,
@@ -517,7 +522,8 @@ data LabelledThread = LabelledThread {
     labelledThreadId    :: ThreadId,
     labelledThreadLabel :: Maybe ThreadLabel
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Generic)
+  deriving Show via Quiet LabelledThread
 
 labelledThreads :: Map ThreadId (Thread s a) -> [LabelledThread]
 labelledThreads threadMap =
