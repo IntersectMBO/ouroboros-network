@@ -1,9 +1,8 @@
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.ByronSpec.Ledger.Block (
     ByronSpecBlock(..)
@@ -15,7 +14,6 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Block (
   ) where
 
 import           Codec.Serialise
-import           Data.FingerTree.Strict (Measured (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
@@ -77,9 +75,6 @@ type ByronSpecHeader = Header ByronSpecBlock
 
 type instance HeaderHash ByronSpecBlock = Spec.Hash
 instance StandardHash ByronSpecBlock
-
-instance Measured BlockMeasure ByronSpecBlock where
-  measure = blockMeasure
 
 instance HasHeader ByronSpecBlock where
   getHeaderFields = getBlockHeaderFields

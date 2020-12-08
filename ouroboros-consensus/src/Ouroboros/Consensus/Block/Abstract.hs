@@ -1,10 +1,9 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 module Ouroboros.Consensus.Block.Abstract (
     -- * Protocol
@@ -33,8 +32,6 @@ module Ouroboros.Consensus.Block.Abstract (
   , succWithOrigin
     -- * Re-export basic definitions from @ouroboros-network@
   , blockHash
-  , blockMeasure
-  , BlockMeasure -- opaque
   , blockNo
   , blockPoint
   , blockSlot
@@ -67,7 +64,6 @@ import           Codec.Serialise.Encoding (Encoding)
 import qualified Data.ByteString as Strict
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
@@ -78,12 +74,11 @@ import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
                      withOrigin, withOriginFromMaybe, withOriginToMaybe)
 import qualified Cardano.Slotting.Slot as Cardano
 
-import           Ouroboros.Network.Block (BlockMeasure, pattern BlockPoint,
-                     ChainHash (..), pattern GenesisPoint, HasHeader (..),
-                     HeaderFields (..), HeaderHash, Point, StandardHash,
-                     blockHash, blockMeasure, blockNo, blockPoint, blockSlot,
-                     castHash, castHeaderFields, castPoint, pointHash,
-                     pointSlot)
+import           Ouroboros.Network.Block (pattern BlockPoint, ChainHash (..),
+                     pattern GenesisPoint, HasHeader (..), HeaderFields (..),
+                     HeaderHash, Point, StandardHash, blockHash, blockNo,
+                     blockPoint, blockSlot, castHash, castHeaderFields,
+                     castPoint, pointHash, pointSlot)
 
 import           Ouroboros.Consensus.Block.EBB
 
@@ -159,9 +154,6 @@ type instance BlockProtocol (Header blk) = BlockProtocol blk
 type instance HeaderHash (Header blk) = HeaderHash blk
 
 instance HasHeader blk => StandardHash (Header blk)
-
-instance HasHeader (Header blk) => Measured BlockMeasure (Header blk) where
-  measure = blockMeasure
 
 -- | Get the 'HeaderFields' of a block, without requiring 'HasHeader blk'
 --

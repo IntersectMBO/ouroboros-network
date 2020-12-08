@@ -62,7 +62,6 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Kind (Type)
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -267,9 +266,6 @@ class (
 {-------------------------------------------------------------------------------
   HasHeader instance
 -------------------------------------------------------------------------------}
-
-instance Bridge m a => Measured BlockMeasure (DualBlock m a) where
-  measure = blockMeasure
 
 instance Bridge m a => HasHeader (DualBlock m a) where
   getHeaderFields = getBlockHeaderFields

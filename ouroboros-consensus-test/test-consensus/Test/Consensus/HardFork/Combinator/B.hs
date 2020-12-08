@@ -38,7 +38,6 @@ import           Codec.Serialise
 import qualified Data.Binary as B
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
@@ -146,9 +145,6 @@ instance ConfigSupportsNode BlockB where
   getNetworkMagic _ = NetworkMagic 0
 
 instance StandardHash BlockB
-
-instance Measured BlockMeasure BlockB where
-  measure = blockMeasure
 
 instance HasHeader BlockB where
   getHeaderFields = getBlockHeaderFields

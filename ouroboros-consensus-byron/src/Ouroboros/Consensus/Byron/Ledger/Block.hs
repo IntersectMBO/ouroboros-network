@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -36,7 +35,6 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -222,9 +220,6 @@ instance HasHeader (Header ByronBlock) where
 
 instance GetPrevHash ByronBlock where
   headerPrevHash = fromByronPrevHash . CC.abobHdrPrevHash . byronHeaderRaw
-
-instance Measured BlockMeasure ByronBlock where
-  measure = blockMeasure
 
 fromByronPrevHash :: Maybe CC.HeaderHash -> ChainHash ByronBlock
 fromByronPrevHash = \case

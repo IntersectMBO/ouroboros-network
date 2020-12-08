@@ -43,7 +43,6 @@ import           Control.Monad.Except
 import qualified Data.Binary as B
 import           Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -159,9 +158,6 @@ instance ConfigSupportsNode BlockA where
   getNetworkMagic _ = NetworkMagic 0
 
 instance StandardHash BlockA
-
-instance Measured BlockMeasure BlockA where
-  measure = blockMeasure
 
 instance HasHeader BlockA where
   getHeaderFields = getBlockHeaderFields

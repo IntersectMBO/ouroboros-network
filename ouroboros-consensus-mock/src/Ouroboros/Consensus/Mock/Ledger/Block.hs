@@ -68,7 +68,6 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..), serialise)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.Typeable
@@ -236,10 +235,6 @@ instance (SimpleCrypto c, Typeable ext, Typeable ext')
 
 type instance HeaderHash (SimpleBlock' c ext ext') =
   Hash (SimpleHash c) (Header (SimpleBlock' c ext ext'))
-
-instance (SimpleCrypto c, Typeable ext, Typeable ext')
-      => Measured BlockMeasure (SimpleBlock' c ext ext') where
-  measure = blockMeasure
 
 instance (SimpleCrypto c, Typeable ext, Typeable ext')
       => HasHeader (SimpleBlock' c ext ext') where

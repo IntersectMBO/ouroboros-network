@@ -24,7 +24,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Block (
   , undistribAnnTip
   ) where
 
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Function (on)
 import           Data.Functor.Product
 import           Data.Kind (Type)
@@ -80,9 +79,6 @@ instance CanHardFork xs => GetHeader (HardForkBlock xs) where
 -------------------------------------------------------------------------------}
 
 instance CanHardFork xs => StandardHash (HardForkBlock xs)
-
-instance CanHardFork xs => Measured BlockMeasure (HardForkBlock xs) where
-  measure = blockMeasure
 
 instance CanHardFork xs => HasHeader (HardForkBlock xs) where
   getHeaderFields = getBlockHeaderFields
