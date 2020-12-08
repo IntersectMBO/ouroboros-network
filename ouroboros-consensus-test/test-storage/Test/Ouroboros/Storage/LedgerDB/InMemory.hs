@@ -13,10 +13,14 @@ module Test.Ouroboros.Storage.LedgerDB.InMemory (
     tests
   ) where
 
+import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..), fromFlatTerm,
+                     toFlatTerm)
+import           Codec.Serialise (decode, encode)
 import           Data.Maybe (fromJust)
 import           Data.Word
 import           Test.QuickCheck
 import           Test.Tasty
+import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Testing.Serialise (prop_serialise)
@@ -36,7 +40,9 @@ import           Test.Util.TestBlock
 tests :: TestTree
 tests = testGroup "InMemory" [
       testGroup "Serialisation" [
-          testProperty "ChainSummary" prop_serialise_ChainSummary
+          testCase     "encode ChainSummary"    test_encode_ChainSummary
+        , testCase     "decode ChainSummary"    test_decode_ChainSummary
+        , testProperty "serialise ChainSummary" prop_serialise_ChainSummary
         ]
     , testGroup "Genesis" [
           testProperty "length"  prop_genesisLength
@@ -63,6 +69,39 @@ tests = testGroup "InMemory" [
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
+
+example_ChainSummary :: ChainSummary Int TestBlock
+example_ChainSummary =
+    ChainSummary
+      (BlockPoint (SlotNo 3) (testHashFromList [0, 0]))
+      10
+      100
+
+golden_ChainSummary :: FlatTerm
+golden_ChainSummary =
+    [ TkListLen 3
+      -- tip: WithOrigin (RealPoint TestBlock)
+    , TkListLen 1
+    , TkListLen 2
+    , TkInt 3
+    , TkListBegin, TkInt 0, TkInt 0, TkBreak
+      -- chain length: Word64
+    , TkInt 10
+      -- ledger: Int for simplicity
+    , TkInt 100
+    ]
+
+test_encode_ChainSummary :: Assertion
+test_encode_ChainSummary =
+    toFlatTerm (enc example_ChainSummary) @?= golden_ChainSummary
+  where
+    enc = encodeChainSummary encode encode
+
+test_decode_ChainSummary :: Assertion
+test_decode_ChainSummary =
+    fromFlatTerm dec golden_ChainSummary @?= Right example_ChainSummary
+  where
+    dec = decodeChainSummary decode decode
 
 prop_serialise_ChainSummary :: Trivial (ChainSummary Int TestBlock) -> Property
 prop_serialise_ChainSummary (Trivial summary) = prop_serialise summary
