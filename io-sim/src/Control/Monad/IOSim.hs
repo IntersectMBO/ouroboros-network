@@ -63,9 +63,9 @@ selectTraceEvents fn = go
     go (Trace _ _ _ ev trace) = case fn ev of
       Just x  -> x : go trace
       Nothing ->     go trace
-    go (TraceMainException _ e _) = throw (FailureException e)
-    go (TraceDeadlock      _   _) = throw FailureDeadlock
-    go (TraceMainReturn    _ _ _) = []
+    go (TraceMainException _ e _)       = throw (FailureException e)
+    go (TraceDeadlock      _   threads) = throw (FailureDeadlock threads)
+    go (TraceMainReturn    _ _ _)       = []
 
 -- | Select all the traced values matching the expected type. This relies on
 -- the sim's dynamic trace facility.
@@ -104,7 +104,7 @@ data Failure =
        FailureException SomeException
 
        -- | The threads all deadlocked
-     | FailureDeadlock
+     | FailureDeadlock ![LabeledThread]
 
        -- | The main thread terminated normally but other threads were still
        -- alive, and strict shutdown checking was requested.
@@ -114,10 +114,14 @@ data Failure =
 
 instance Exception Failure where
     displayException (FailureException err) = displayException  err
-    displayException FailureDeadlock = "<<io-sim deadlock>>"
+    displayException (FailureDeadlock threads) =
+      concat [ "<<io-sim deadlock: "
+             , intercalate ", " (show `map` threads)
+             , ">>"
+             ]
     displayException (FailureSloppyShutdown threads) =
       concat [ "<<io-sim sloppy shutdown: "
-             , intercalate "," (show `map` threads)
+             , intercalate ", " (show `map` threads)
              , ">>"
              ]
 
@@ -150,7 +154,7 @@ traceResult strict = go
                                | strict = Left (FailureSloppyShutdown tids)
     go (TraceMainReturn _ x _)          = Right x
     go (TraceMainException _ e _)       = Left (FailureException e)
-    go (TraceDeadlock   _   _)          = Left FailureDeadlock
+    go (TraceDeadlock   _   threads)    = Left (FailureDeadlock threads)
 
 traceEvents :: Trace a -> [(Time, ThreadId, Maybe ThreadLabel, TraceEvent)]
 traceEvents (Trace time tid tlbl event t) = (time, tid, tlbl, event)
