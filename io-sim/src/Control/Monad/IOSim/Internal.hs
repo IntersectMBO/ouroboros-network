@@ -31,7 +31,7 @@ module Control.Monad.IOSim.Internal (
   EventlogMarker (..),
   ThreadId,
   ThreadLabel,
-  LabeledThread (..),
+  LabelledThread (..),
   Trace (..),
   TraceEvent (..),
   liftST,
@@ -513,19 +513,19 @@ newtype ClockId   = ClockId   Int deriving (Eq, Ord, Enum, Show)
 
 type ThreadLabel = String
 
-data LabeledThread = LabeledThread {
-    labeledThreadId    :: ThreadId,
-    labeledThreadLabel :: Maybe ThreadLabel
+data LabelledThread = LabelledThread {
+    labelledThreadId    :: ThreadId,
+    labelledThreadLabel :: Maybe ThreadLabel
   }
   deriving (Eq, Ord, Show)
 
-labeledThreads :: Map ThreadId (Thread s a) -> [LabeledThread]
-labeledThreads threadMap =
+labelledThreads :: Map ThreadId (Thread s a) -> [LabelledThread]
+labelledThreads threadMap =
     -- @Map.foldr'@ (and alikes) are not strict enough, to not ratain the
     -- original thread map we need to evaluate the spine of the list.
     -- TODO: https://github.com/haskell/containers/issues/749
     Map.foldr'
-      (\Thread { threadId, threadLabel } !acc -> LabeledThread threadId threadLabel : acc)
+      (\Thread { threadId, threadLabel } !acc -> LabelledThread threadId threadLabel : acc)
       [] threadMap
 
 
@@ -541,9 +541,9 @@ labeledThreads threadMap =
 -- 'selectTraceEventsDynamic' and 'printTraceEventsSay'.
 --
 data Trace a = Trace !Time !ThreadId !(Maybe ThreadLabel) !TraceEvent (Trace a)
-             | TraceMainReturn    !Time a             ![LabeledThread]
-             | TraceMainException !Time SomeException ![LabeledThread]
-             | TraceDeadlock      !Time               ![LabeledThread]
+             | TraceMainReturn    !Time a             ![LabelledThread]
+             | TraceMainException !Time SomeException ![LabelledThread]
+             | TraceDeadlock      !Time               ![LabelledThread]
   deriving Show
 
 data TraceEvent
@@ -660,7 +660,7 @@ schedule thread@Thread{
         -- the main thread is done, so we're done
         -- even if other threads are still running
         return $ Trace time tid tlbl EventThreadFinished
-               $ TraceMainReturn time x (labeledThreads threads)
+               $ TraceMainReturn time x (labelledThreads threads)
 
       ForkFrame -> do
         -- this thread is done
@@ -692,7 +692,7 @@ schedule thread@Thread{
           -- An unhandled exception in the main thread terminates the program
           return (Trace time tid tlbl (EventThrow e) $
                   Trace time tid tlbl (EventThreadUnhandled e) $
-                  TraceMainException time e (labeledThreads threads))
+                  TraceMainException time e (labelledThreads threads))
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
@@ -1052,7 +1052,7 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
 
     -- important to get all events that expire at this time
     case removeMinimums timers of
-      Nothing -> return (TraceDeadlock time (labeledThreads threads))
+      Nothing -> return (TraceDeadlock time (labelledThreads threads))
 
       Just (tmids, time', fired, timers') -> assert (time' >= time) $ do
 
