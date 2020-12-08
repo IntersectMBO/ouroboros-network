@@ -88,7 +88,7 @@ import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
                      signedKES)
 import qualified Shelley.Spec.Ledger.LedgerState as SL (emptyDPState,
                      emptyPPUPState)
-import qualified Shelley.Spec.Ledger.MetaData as SL (MetaDataHash (..))
+import qualified Shelley.Spec.Ledger.Metadata as SL (MetadataHash (..))
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
 import qualified Shelley.Spec.Ledger.Rewards as SL (emptyNonMyopic)
@@ -301,11 +301,11 @@ exampleTxBodyShelley = SL.TxBody
     (SL.Coin 3)
     (SlotNo 10)
     (SJust (SL.Update exampleProposedPPUpdates (EpochNo 0)))
-    (SJust metaDataHash)
+    (SJust metadataHash)
   where
     -- Dummy hash to decouple from the metadata in 'exampleTx'.
-    metaDataHash :: SL.MetaDataHash StandardShelley
-    metaDataHash = SL.MetaDataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
+    metadataHash :: SL.MetadataHash StandardShelley
+    metadataHash = SL.MetadataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
 
 exampleTxBodyMA ::
      forall era. (ShelleyBasedEra era, Val.EncodeMint (Core.Value era))
@@ -320,12 +320,12 @@ exampleTxBodyMA value = MA.TxBody
     (SL.Coin 3)
     (MA.ValidityInterval (SJust (SlotNo 2)) (SJust (SlotNo 4)))
     (SJust (SL.Update exampleProposedPPUpdates (EpochNo 0)))
-    (SJust metaDataHash)
+    (SJust metadataHash)
     value
   where
     -- Dummy hash to decouple from the metadata in 'exampleTx'.
-    metaDataHash :: SL.MetaDataHash era
-    metaDataHash = SL.MetaDataHash $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 30
+    metadataHash :: SL.MetadataHash era
+    metadataHash = SL.MetadataHash $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 30
 
 exampleTxBodyAllegra :: Core.TxBody StandardAllegra
 exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
@@ -347,7 +347,7 @@ exampleScriptMA =
       , MA.RequireSignature (mkKeyHash 100)
       ]
 
-exampleMetadataMap :: Map Word64 SL.MetaDatum
+exampleMetadataMap :: Map Word64 SL.Metadatum
 exampleMetadataMap = Map.fromList [
       (1, SL.S "string")
     , (2, SL.B "bytes")
@@ -356,7 +356,7 @@ exampleMetadataMap = Map.fromList [
     ]
 
 exampleMetadataShelley :: Core.Metadata StandardShelley
-exampleMetadataShelley = SL.MetaData exampleMetadataMap
+exampleMetadataShelley = SL.Metadata exampleMetadataMap
 
 exampleMetadataMA :: (Crypto c, Typeable ma) => Core.Metadata (MA.ShelleyMAEra ma c)
 exampleMetadataMA =
@@ -625,7 +625,7 @@ examplePoolParams = SL.PoolParams {
     , _poolRAcnt  = SL.RewardAcnt SL.Testnet (keyToCredential exampleStakeKey)
     , _poolOwners = Set.singleton $ SL.hashKey $ SL.vKey exampleStakeKey
     , _poolRelays = StrictSeq.empty
-    , _poolMD     = SJust $ SL.PoolMetaData {
+    , _poolMD     = SJust $ SL.PoolMetadata {
           _poolMDUrl  = fromJust $ SL.textToUrl "consensus.pool"
         , _poolMDHash = "{}"
         }
