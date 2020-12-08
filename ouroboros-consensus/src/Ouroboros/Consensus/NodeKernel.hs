@@ -350,6 +350,8 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
     threadLabel =
         "NodeKernel.blockForging." <> Text.unpack (forgeLabel blockForging)
 
+    lcfg = configLedger cfg
+
     go :: SlotNo -> WithEarlyExit m ()
     go currentSlot = do
         trace $ TraceStartLeadershipCheck currentSlot
@@ -391,10 +393,12 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         ledgerView <-
           case runExcept $ forecastFor
                            (ledgerViewForecastAt
-                              (configLedger cfg)
+                              lcfg
                               (ledgerState unticked))
                            currentSlot of
             Left err -> do
+              -- TODO update this comment
+              --
               -- There are so many empty slots between the tip of our chain and
               -- the current slot that we cannot get an ledger view anymore
               -- In principle, this is no problem; we can still produce a block
@@ -402,7 +406,10 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               -- /want/ to produce a block in this case; we are most likely
               -- missing a blocks on our chain.
               trace $ TraceNoLedgerView currentSlot err
-              exitEarly
+              -- TODO update that ^^^ tracer
+              return $
+                protocolLedgerView lcfg $
+                applyChainTick lcfg currentSlot (ledgerState unticked)
             Right lv ->
               return lv
 
