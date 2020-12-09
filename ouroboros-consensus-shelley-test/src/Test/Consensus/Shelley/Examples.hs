@@ -46,7 +46,6 @@ import qualified Data.Sequence.Strict as StrictSeq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
-import           Data.Typeable (Typeable)
 import           Data.Word (Word64, Word8)
 
 import           Cardano.Binary (toCBOR)
@@ -160,8 +159,8 @@ mkDummyHash _ = coerce . SL.hashWithSerialiser @h toCBOR
 mkKeyHash :: forall c discriminator. Crypto c => Int -> SL.KeyHash discriminator c
 mkKeyHash = SL.KeyHash . mkDummyHash (Proxy @(ADDRHASH c))
 
-mkScriptHash :: forall era. ShelleyBasedEra era => Int -> SL.ScriptHash era
-mkScriptHash = SL.ScriptHash . mkDummyHash (Proxy @(ADDRHASH (EraCrypto era)))
+mkScriptHash :: forall c. Crypto c => Int -> SL.ScriptHash c
+mkScriptHash = SL.ScriptHash . mkDummyHash (Proxy @(ADDRHASH c))
 
 -- | @mkKeyPair'@ from @Test.Shelley.Spec.Ledger.Utils@ doesn't work for real
 -- crypto:
@@ -195,7 +194,7 @@ mkVRFKeyPair _ byte = (sk, VRF.deriveVerKeyVRF sk)
 
     sk = VRF.genKeyVRF seed
 
-keyToCredential :: ShelleyBasedEra era => SL.KeyPair r (EraCrypto era) -> SL.Credential r era
+keyToCredential :: Crypto c => SL.KeyPair r c -> SL.Credential r c
 keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
 
 {-------------------------------------------------------------------------------
@@ -280,11 +279,11 @@ examplesMary = examples exampleMultiAssetValue exampleTxBodyMary exampleMetadata
 exampleCoin :: SL.Coin
 exampleCoin = SL.Coin 10
 
-exampleMultiAssetValue :: forall era. ShelleyBasedEra era => MA.Value era
+exampleMultiAssetValue :: forall c. Crypto c => MA.Value c
 exampleMultiAssetValue =
     MA.Value 100 $ Map.singleton policyId $ Map.singleton couttsCoin 1000
   where
-    policyId :: MA.PolicyID era
+    policyId :: MA.PolicyID c
     policyId = MA.PolicyID $ mkScriptHash 1
 
     couttsCoin :: MA.AssetName
@@ -304,7 +303,7 @@ exampleTxBodyShelley = SL.TxBody
     (SJust metadataHash)
   where
     -- Dummy hash to decouple from the metadata in 'exampleTx'.
-    metadataHash :: SL.MetadataHash StandardShelley
+    metadataHash :: SL.MetadataHash StandardCrypto
     metadataHash = SL.MetadataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
 
 exampleTxBodyMA ::
@@ -324,7 +323,7 @@ exampleTxBodyMA value = MA.TxBody
     value
   where
     -- Dummy hash to decouple from the metadata in 'exampleTx'.
-    metadataHash :: SL.MetadataHash era
+    metadataHash :: SL.MetadataHash (EraCrypto era)
     metadataHash = SL.MetadataHash $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 30
 
 exampleTxBodyAllegra :: Core.TxBody StandardAllegra
@@ -333,7 +332,7 @@ exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
 exampleTxBodyMary :: Core.TxBody StandardMary
 exampleTxBodyMary = exampleTxBodyMA exampleMultiAssetValue
 
-exampleScriptMA :: (Crypto c, Typeable ma) => Core.Script (MA.ShelleyMAEra ma c)
+exampleScriptMA :: Crypto c => Core.Script (MA.ShelleyMAEra ma c)
 exampleScriptMA =
     MA.RequireMOf 2 $ StrictSeq.fromList [
         MA.RequireAllOf $ StrictSeq.fromList [
@@ -358,7 +357,7 @@ exampleMetadataMap = Map.fromList [
 exampleMetadataShelley :: Core.Metadata StandardShelley
 exampleMetadataShelley = SL.Metadata exampleMetadataMap
 
-exampleMetadataMA :: (Crypto c, Typeable ma) => Core.Metadata (MA.ShelleyMAEra ma c)
+exampleMetadataMA :: Crypto c => Core.Metadata (MA.ShelleyMAEra ma c)
 exampleMetadataMA =
     MA.Metadata
       exampleMetadataMap
@@ -368,12 +367,12 @@ exampleMetadataMA =
   Individual examples
 -------------------------------------------------------------------------------}
 
-exampleTxIns :: ShelleyBasedEra era => Set (SL.TxIn era)
+exampleTxIns :: Crypto c => Set (SL.TxIn c)
 exampleTxIns = Set.fromList [
       SL.TxIn (SL.TxId (mkDummyHash Proxy 1)) 0
     ]
 
-exampleCerts :: ShelleyBasedEra era => StrictSeq (SL.DCert era)
+exampleCerts :: Crypto c => StrictSeq (SL.DCert c)
 exampleCerts = StrictSeq.fromList [
       SL.DCertDeleg (SL.RegKey (keyToCredential exampleStakeKey))
     , SL.DCertPool (SL.RegPool examplePoolParams)
@@ -383,9 +382,9 @@ exampleCerts = StrictSeq.fromList [
     ]
 
 -- | Shortening @Withdrawals@ to @Wdrl@, seriously?
-exampleWithdrawals :: ShelleyBasedEra era => SL.Wdrl era
+exampleWithdrawals :: Crypto c => SL.Wdrl c
 exampleWithdrawals = SL.Wdrl $ Map.fromList [
-      (SL._poolRAcnt examplePoolParams, (SL.Coin 100))
+      (SL._poolRAcnt examplePoolParams, SL.Coin 100)
     ]
 
 examplePoolDistr :: forall c. PraosCrypto c => SL.PoolDistr c
@@ -551,13 +550,13 @@ exampleNewEpochState value = SL.NewEpochState {
         , esNonMyopic    = nonMyopic
         }
       where
-        addr :: SL.Addr era
+        addr :: SL.Addr (EraCrypto era)
         addr = SL.Addr
                  SL.Testnet
                  (keyToCredential examplePayKey)
                  (SL.StakeRefBase (keyToCredential exampleStakeKey))
 
-    rewardUpdate :: SL.RewardUpdate era
+    rewardUpdate :: SL.RewardUpdate (EraCrypto era)
     rewardUpdate = SL.RewardUpdate {
           deltaT    = SL.DeltaCoin 10
         , deltaR    = SL.DeltaCoin (- 100)
@@ -566,7 +565,7 @@ exampleNewEpochState value = SL.NewEpochState {
         , nonMyopic = nonMyopic
         }
 
-    nonMyopic :: SL.NonMyopic era
+    nonMyopic :: SL.NonMyopic (EraCrypto era)
     nonMyopic = SL.emptyNonMyopic
 
 exampleLedgerState ::
@@ -615,7 +614,7 @@ exampleKeys =
   where
     coldKey = mkDSIGNKeyPair 1
 
-examplePoolParams :: forall era. ShelleyBasedEra era => SL.PoolParams era
+examplePoolParams :: forall c. Crypto c => SL.PoolParams c
 examplePoolParams = SL.PoolParams {
       _poolId     = SL.hashKey $ SL.vKey $ SL.cold poolKeys
     , _poolVrf    = SL.hashVerKeyVRF $ snd $ SL.vrf poolKeys
@@ -631,4 +630,4 @@ examplePoolParams = SL.PoolParams {
         }
     }
   where
-    poolKeys = exampleKeys @(EraCrypto era) @'SL.StakePool
+    poolKeys = exampleKeys @c @'SL.StakePool

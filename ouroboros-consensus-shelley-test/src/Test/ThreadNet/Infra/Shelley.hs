@@ -338,7 +338,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       | CoreNode { cnGenesisKey, cnDelegateKey, cnVRF } <- coreNodes
       ]
 
-    initialFunds :: Map (SL.Addr era) SL.Coin
+    initialFunds :: Map (SL.Addr (EraCrypto era)) SL.Coin
     initialFunds = Map.fromList
       [ (addr, coin)
       | CoreNode { cnDelegateKey, cnStakingKey } <- coreNodes
@@ -349,7 +349,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       ]
 
     -- In this initial stake, each core node delegates its stake to itself.
-    initialStake :: ShelleyGenesisStaking era
+    initialStake :: ShelleyGenesisStaking (EraCrypto era)
     initialStake = ShelleyGenesisStaking
       { sgsPools = Map.fromList
           [ (pk, pp)
@@ -367,7 +367,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       }
       where
         coreNodeToPoolMapping ::
-             Map (SL.KeyHash 'SL.StakePool (EraCrypto era)) (SL.PoolParams era)
+             Map (SL.KeyHash 'SL.StakePool (EraCrypto era)) (SL.PoolParams (EraCrypto era))
         coreNodeToPoolMapping = Map.fromList [
               ( SL.hashKey . SL.VKey . deriveVerKeyDSIGN $ cnStakingKey
               , SL.PoolParams
@@ -443,7 +443,7 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 
     -- Every node signs the transaction body, since it includes a " vote " from
     -- every node.
-    signatures :: Set (SL.WitVKey 'SL.Witness (ShelleyEra c))
+    signatures :: Set (SL.WitVKey 'SL.Witness c)
     signatures =
         SL.makeWitnessesVKey
           (SL.eraIndTxBodyHash body)
@@ -472,7 +472,7 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     -- We use the input of the first node, but we just put it all right back.
     --
     -- ASSUMPTION: This transaction runs in the first slot.
-    touchCoins :: (SL.TxIn (ShelleyEra c), SL.TxOut (ShelleyEra c))
+    touchCoins :: (SL.TxIn c, SL.TxOut (ShelleyEra c))
     touchCoins = case coreNodes of
         []   -> error "no nodes!"
         cn:_ ->
@@ -510,9 +510,7 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 initialLovelacePerCoreNode :: Word64
 initialLovelacePerCoreNode = 1000000
 
-mkCredential ::
-     PraosCrypto (EraCrypto era)
-  => SL.SignKeyDSIGN (EraCrypto era) -> SL.Credential r era
+mkCredential :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.Credential r c
 mkCredential = SL.KeyHashObj . mkKeyHash
 
 mkKeyHash :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyHash r c

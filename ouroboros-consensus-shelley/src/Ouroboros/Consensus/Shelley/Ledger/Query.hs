@@ -61,19 +61,19 @@ import           Ouroboros.Consensus.Shelley.Protocol (TPraosState (..))
   QueryLedger
 -------------------------------------------------------------------------------}
 
-newtype NonMyopicMemberRewards era = NonMyopicMemberRewards {
+newtype NonMyopicMemberRewards c = NonMyopicMemberRewards {
       unNonMyopicMemberRewards ::
-        Map (Either SL.Coin (SL.Credential 'SL.Staking era))
-            (Map (SL.KeyHash 'SL.StakePool (EraCrypto era)) SL.Coin)
+        Map (Either SL.Coin (SL.Credential 'SL.Staking c))
+            (Map (SL.KeyHash 'SL.StakePool c) SL.Coin)
     }
   deriving stock   (Show)
   deriving newtype (Eq)
 
-type Delegations era =
-  Map (SL.Credential 'SL.Staking era)
-      (SL.KeyHash 'SL.StakePool (EraCrypto era))
+type Delegations c =
+  Map (SL.Credential 'SL.Staking c)
+      (SL.KeyHash 'SL.StakePool c)
 
-instance ShelleyBasedEra era => Serialise (NonMyopicMemberRewards era) where
+instance SL.PraosCrypto c => Serialise (NonMyopicMemberRewards c) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
 
@@ -83,8 +83,8 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   -- | Calculate the Non-Myopic Pool Member Rewards for a set of
   -- credentials. See 'SL.getNonMyopicMemberRewards'
   GetNonMyopicMemberRewards
-    :: Set (Either SL.Coin (SL.Credential 'SL.Staking era))
-    -> Query (ShelleyBlock era) (NonMyopicMemberRewards era)
+    :: Set (Either SL.Coin (SL.Credential 'SL.Staking (EraCrypto era)))
+    -> Query (ShelleyBlock era) (NonMyopicMemberRewards (EraCrypto era))
   GetCurrentPParams
     :: Query (ShelleyBlock era) (SL.PParams era)
   GetProposedPParamsUpdates
@@ -98,7 +98,7 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   GetStakeDistribution
     :: Query (ShelleyBlock era) (SL.PoolDistr (EraCrypto era))
   GetFilteredUTxO
-    :: Set (SL.Addr era)
+    :: Set (SL.Addr (EraCrypto era))
     -> Query (ShelleyBlock era) (SL.UTxO era)
   GetUTxO
     :: Query (ShelleyBlock era) (SL.UTxO era)
@@ -126,8 +126,9 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
     -> Query (ShelleyBlock era) (Serialised result)
 
   GetFilteredDelegationsAndRewardAccounts
-    :: Set (SL.Credential 'SL.Staking era)
-    -> Query (ShelleyBlock era) (Delegations era, SL.RewardAccounts era)
+    :: Set (SL.Credential 'SL.Staking (EraCrypto era))
+    -> Query (ShelleyBlock era)
+             (Delegations (EraCrypto era), SL.RewardAccounts (EraCrypto era))
 
   GetGenesisConfig
     :: Query (ShelleyBlock era) (CompactGenesis era)
@@ -311,12 +312,13 @@ getProposedPPUpdates = SL.proposals . SL._ppups
 getEpochState :: SL.NewEpochState era -> SL.EpochState era
 getEpochState = SL.nesEs
 
-getDState :: SL.NewEpochState era -> SL.DState era
+getDState :: SL.NewEpochState era -> SL.DState (EraCrypto era)
 getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
 
-getFilteredDelegationsAndRewardAccounts :: SL.NewEpochState era
-                                        -> Set (SL.Credential 'SL.Staking era)
-                                        -> (Delegations era, SL.RewardAccounts era)
+getFilteredDelegationsAndRewardAccounts ::
+     SL.NewEpochState era
+  -> Set (SL.Credential 'SL.Staking (EraCrypto era))
+  -> (Delegations (EraCrypto era), SL.RewardAccounts (EraCrypto era))
 getFilteredDelegationsAndRewardAccounts ss creds =
     (filteredDelegations, filteredRwdAcnts)
   where
