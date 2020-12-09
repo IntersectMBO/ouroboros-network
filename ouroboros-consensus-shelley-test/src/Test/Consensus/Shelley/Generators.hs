@@ -68,10 +68,6 @@ instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
 instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance CanMock era => Arbitrary (SL.ApplyTxError era) where
-  arbitrary = SL.ApplyTxError <$> arbitrary
-  shrink (ApplyTxError xs) = [ApplyTxError xs' | xs' <- shrink xs]
-
 instance CanMock era => Arbitrary (SomeSecond Query (ShelleyBlock era)) where
   arbitrary = oneof
     [ pure $ SomeSecond GetLedgerTip
