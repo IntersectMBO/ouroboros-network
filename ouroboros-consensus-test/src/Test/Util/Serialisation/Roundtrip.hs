@@ -1,5 +1,5 @@
 {-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -86,11 +86,15 @@ roundtrip' enc dec a = case deserialiseFromBytes dec bs of
       | Lazy.null bs'
       -> a === a' bs
       | otherwise
-      -> counterexample ("left-over bytes: " <> show bs') False
+      -> counterexample ("left-over bytes: " <> toBase16 bs') False
     Left e
-      -> counterexample (show e) False
+      -> counterexample (show e) $
+         counterexample (toBase16 bs) False
   where
     bs = toLazyByteString (enc a)
+
+    toBase16 :: Lazy.ByteString -> String
+    toBase16 = Char8.unpack . Base16.encode
 
 {------------------------------------------------------------------------------
   Test skeleton
@@ -195,7 +199,7 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
 -- For example, a certain constructor can only be used after a certain version
 -- and can thus not be generated for any prior versions.
 data WithVersion v a = WithVersion v a
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
 instance Arbitrary a => Arbitrary (WithVersion () a) where
   arbitrary = WithVersion () <$> arbitrary

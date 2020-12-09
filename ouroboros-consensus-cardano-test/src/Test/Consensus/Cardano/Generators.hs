@@ -347,6 +347,14 @@ instance c ~ MockCryptoCompatByron
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (HardForkApplyTxErrWrongEra <$> arbitrary))
       ]
+  shrink = traverse aux
+    where
+      aux :: CardanoApplyTxErr MockCryptoCompatByron
+         -> [CardanoApplyTxErr MockCryptoCompatByron]
+      aux (HardForkApplyTxErrFromEra (OneEraApplyTxErr x)) =
+          HardForkApplyTxErrFromEra . OneEraApplyTxErr <$> shrink x
+      aux (HardForkApplyTxErrWrongEra x) =
+          HardForkApplyTxErrWrongEra <$> shrink x
 
 instance Arbitrary (Some QueryAnytime) where
   arbitrary = return $ Some GetEraStart
