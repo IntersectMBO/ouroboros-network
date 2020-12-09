@@ -116,7 +116,7 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
-    , resolveBlock   :: RealPoint blk -> m blk
+    , resolveBlock   :: !(RealPoint blk -> m blk)
       -- ^ Read a block from disk
     , cfg            :: !(TopLevelConfig blk)
     , diskPolicy     :: !DiskPolicy
