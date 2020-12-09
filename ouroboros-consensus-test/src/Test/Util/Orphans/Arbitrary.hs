@@ -33,6 +33,7 @@ import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.History (Bound (..))
 import           Ouroboros.Consensus.HeaderValidation (TipInfo)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -235,6 +236,12 @@ instance Arbitrary a => Arbitrary (I a) where
   arbitrary = I <$> arbitrary
   shrink  x = I <$> shrink (unI x)
 
+-- | Forwarding
+instance Arbitrary (ApplyTxErr blk)
+      => Arbitrary (WrapApplyTxErr blk) where
+  arbitrary = WrapApplyTxErr <$> arbitrary
+  shrink x  = WrapApplyTxErr <$> shrink (unwrapApplyTxErr x)
+
 {-------------------------------------------------------------------------------
   NS
 -------------------------------------------------------------------------------}
@@ -250,6 +257,7 @@ instance (All (Arbitrary `Compose` f) xs, IsNonEmpty xs)
             -- weight so that the distribution is uniform
           , (lengthSList pf', S <$> arbitrary)
           ]
+  shrink = hctraverse' (Proxy @(Arbitrary `Compose` f)) shrink
 
 {-------------------------------------------------------------------------------
   Telescope & HardForkState
@@ -279,6 +287,7 @@ instance ( IsNonEmpty xs
           [ (1, TZ <$> arbitrary)
           , (lengthSList pf', TS <$> arbitrary <*> arbitrary)
           ]
+  shrink = hctraverse' (Proxy @(Arbitrary `Compose` f)) shrink
 
 instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` LedgerState) xs)
       => Arbitrary (LedgerState (HardForkBlock xs)) where
