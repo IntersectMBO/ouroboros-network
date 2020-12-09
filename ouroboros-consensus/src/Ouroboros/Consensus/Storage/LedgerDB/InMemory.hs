@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ledgerDbPast
    , ledgerDbSnapshots
    , ledgerDbBimap
+   , ledgerDbPrune
      -- ** Running updates
    , Ap(..)
    , AnnLedgerError(..)
@@ -357,20 +358,22 @@ ledgerDbBimap f g =
     -- the internal 'Checkpoint' type.
     AS.bimap (f . unCheckpoint) (g . unCheckpoint) . ledgerDbCheckpoints
 
-{-------------------------------------------------------------------------------
-  Internal updates
--------------------------------------------------------------------------------}
 
--- | Internal: drop unneeded snapshots from the head of the list
-prune :: GetTip l => SecurityParam -> LedgerDB l -> LedgerDB l
-prune (SecurityParam k) db = db {
+-- | Prune snapshots until at we have at most @k@ snapshots in the LedgerDB,
+-- excluding the snapshots stored at the anchor.
+ledgerDbPrune :: GetTip l => SecurityParam -> LedgerDB l -> LedgerDB l
+ledgerDbPrune (SecurityParam k) db = db {
       ledgerDbCheckpoints = AS.anchorNewest k (ledgerDbCheckpoints db)
     }
 
- -- NOTE: we must inline 'prune' otherwise we get unexplained thunks in
+ -- NOTE: we must inline 'ledgerDbPrune' otherwise we get unexplained thunks in
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
-{-# INLINE prune #-}
+{-# INLINE ledgerDbPrune #-}
+
+{-------------------------------------------------------------------------------
+  Internal updates
+-------------------------------------------------------------------------------}
 
 -- | Push an updated ledger state
 pushLedgerState ::
@@ -378,9 +381,10 @@ pushLedgerState ::
   => SecurityParam
   -> l -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
-pushLedgerState secParam current' db@LedgerDB{..}  = prune secParam $ db {
-      ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint current'
-    }
+pushLedgerState secParam current' db@LedgerDB{..}  =
+    ledgerDbPrune secParam $ db {
+        ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint current'
+      }
 
 {-------------------------------------------------------------------------------
   Internal: rolling back

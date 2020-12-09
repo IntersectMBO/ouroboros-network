@@ -25,9 +25,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Wrappers
   , getCurrent
   , setCurrent
-  , getCurrentState
-  , getPastState
-  , getHeaderStateHistory
   , currentPoint
   , takeSnapshot
   , trimSnapshots
@@ -63,8 +60,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderStateHistory
-                     (HeaderStateHistory (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -285,30 +280,6 @@ decorateReplayTracer immTip = contramap $ fmap (const immTip)
 
 getCurrent :: IOLike m => LgrDB m blk -> STM m (LedgerDB' blk)
 getCurrent LgrDB{..} = readTVar varDB
-
-getCurrentState ::
-     (IOLike m, IsLedger (LedgerState blk))
-  => LgrDB m blk -> STM m (ExtLedgerState blk)
-getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
-
-getPastState ::
-     (IOLike m, LedgerSupportsProtocol blk)
-     -- The 'LedgerSupportsProtocol' constraint comes from the @IsLedger
-     -- (ExtLedgerState blk)@ instance
-  => LgrDB m blk
-  -> Point blk
-  -> STM m (Maybe (ExtLedgerState blk))
-getPastState LgrDB{..} p = do
-    db <- readTVar varDB
-    return $ LedgerDB.ledgerDbPast p db
-
-getHeaderStateHistory ::
-     IOLike m
-  => LgrDB m blk -> STM m (HeaderStateHistory blk)
-getHeaderStateHistory LgrDB{..} = do
-    db <- readTVar varDB
-    return $ HeaderStateHistory $
-      LedgerDB.ledgerDbBimap headerState headerState db
 
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current
