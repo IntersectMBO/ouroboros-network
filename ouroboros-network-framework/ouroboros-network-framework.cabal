@@ -41,6 +41,8 @@ library
                        Ouroboros.Network.Protocol.Limits
 
                        Ouroboros.Network.ConnectionId
+                       Ouroboros.Network.ConnectionManager.Types
+                       Ouroboros.Network.ConnectionManager.Core
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.RateLimiting
