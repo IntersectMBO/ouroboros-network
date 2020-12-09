@@ -403,7 +403,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
         -- about updating the '_delegations' field.
         --
         -- See STS DELEG for details
-        newDState :: SL.DState era
+        newDState :: SL.DState (EraCrypto era)
         newDState = (SL._dstate oldDPState) {
           SL._rewards = Map.map (const $ SL.Coin 0)
                       . Map.mapKeys SL.KeyHashObj
@@ -413,7 +413,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
 
         -- We consider pools as having been registered in slot 0
         -- See STS POOL for details
-        newPState :: SL.PState era
+        newPState :: SL.PState (EraCrypto era)
         newPState = (SL._pstate oldDPState) {
           SL._pParams = sgsPools
         }

@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE DisambiguateRecordFields   #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -10,6 +11,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Shelley mempool integration
@@ -45,12 +47,11 @@ import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
 
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 
-type ShelleyTxId era = SL.TxId era
-
-data instance GenTx (ShelleyBlock era) = ShelleyTx !(ShelleyTxId era) !(SL.Tx era)
+data instance GenTx (ShelleyBlock era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(SL.Tx era)
   deriving stock    (Generic)
 
 deriving instance ShelleyBasedEra era => NoThunks (GenTx (ShelleyBlock era))
@@ -111,8 +112,13 @@ instance ShelleyBasedEra era
 mkShelleyTx :: ShelleyBasedEra era => SL.Tx era -> GenTx (ShelleyBlock era)
 mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
 
-newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (ShelleyTxId era)
-  deriving newtype (Eq, Ord, FromCBOR, ToCBOR, NoThunks)
+newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (SL.TxId (EraCrypto era))
+  deriving newtype (Eq, Ord, NoThunks)
+
+deriving newtype instance (SL.PraosCrypto (EraCrypto era), Typeable era)
+                       => ToCBOR (TxId (GenTx (ShelleyBlock era)))
+deriving newtype instance (SL.PraosCrypto (EraCrypto era), Typeable era)
+                       => FromCBOR (TxId (GenTx (ShelleyBlock era)))
 
 instance Typeable era => ShowProxy (TxId (GenTx (ShelleyBlock era))) where
 

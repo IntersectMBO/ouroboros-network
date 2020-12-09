@@ -142,7 +142,7 @@ migrateUTxO ::
 migrateUTxO migrationInfo curSlot lcfg lst
     | Just utxo <- mbUTxO =
 
-    let picked :: Map (SL.TxIn (ShelleyEra c)) (SL.TxOut (ShelleyEra c))
+    let picked :: Map (SL.TxIn c) (SL.TxOut (ShelleyEra c))
         picked =
             Map.filter pick $ SL.unUTxO utxo
           where
@@ -190,20 +190,20 @@ migrateUTxO migrationInfo curSlot lcfg lst
         bodyHash = SL.eraIndTxBodyHash body
 
         -- Witness the use of bootstrap address's utxo.
-        byronWit :: SL.BootstrapWitness (ShelleyEra c)
+        byronWit :: SL.BootstrapWitness c
         byronWit =
             SL.makeBootstrapWitness bodyHash byronSK $
             Byron.addrAttributes byronAddr
 
         -- Witness the stake delegation.
-        delegWit :: SL.WitVKey 'SL.Witness (ShelleyEra c)
+        delegWit :: SL.WitVKey 'SL.Witness c
         delegWit =
             SL.makeWitnessVKey
               bodyHash
               (Shelley.mkKeyPair stakingSK)
 
         -- Witness the pool registration.
-        poolWit :: SL.WitVKey 'SL.Witness (ShelleyEra c)
+        poolWit :: SL.WitVKey 'SL.Witness c
         poolWit =
             SL.makeWitnessVKey
               bodyHash
@@ -246,14 +246,14 @@ migrateUTxO migrationInfo curSlot lcfg lst
 
     -- We use a base reference for the stake so that we can refer to it in the
     -- same tx that registers it.
-    shelleyAddr :: SL.Addr (ShelleyEra c)
+    shelleyAddr :: SL.Addr c
     shelleyAddr =
         SL.Addr Shelley.networkId
           (Shelley.mkCredential paymentSK)
           (SL.StakeRefBase $ Shelley.mkCredential stakingSK)
 
     -- A simplistic individual pool
-    poolParams :: SL.Coin -> SL.PoolParams (ShelleyEra c)
+    poolParams :: SL.Coin -> SL.PoolParams c
     poolParams pledge = SL.PoolParams
         { SL._poolCost   = SL.Coin 1
         , SL._poolMD     = SL.SNothing
