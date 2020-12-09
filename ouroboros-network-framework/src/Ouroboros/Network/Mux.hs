@@ -33,6 +33,7 @@ module Ouroboros.Network.Mux
   , MiniProtocolLimits (..)
   , RunMiniProtocol (..)
   , MuxPeer (..)
+  , runMuxPeer
   , toApplication
   , mkMuxApplicationBundle
   , ControlMessage (..)
@@ -46,9 +47,6 @@ module Ouroboros.Network.Mux
   , MuxErrorType(..)
   , HasInitiator
   , HasResponder
-
-    -- * For Consensus ThreadNet Tests
-  , runMuxPeer
   ) where
 
 import           Control.Monad.Class.MonadAsync
