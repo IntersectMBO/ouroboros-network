@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+
 
 module Ouroboros.Consensus.Mempool.Impl (
     openMempool
@@ -12,6 +14,7 @@ module Ouroboros.Consensus.Mempool.Impl (
     -- * For testing purposes
   , openMempoolWithoutSyncThread
   , MempoolEnv(..)
+  , MempoolArgs(..)
   ) where
 
 import           Control.Monad.Except
@@ -36,16 +39,6 @@ import           Ouroboros.Consensus.Util.STM (onEachChange)
 {-------------------------------------------------------------------------------
   Top-level API
 -------------------------------------------------------------------------------}
--- | Abstract interface needed to run a Mempool.
-newtype LedgerInterface m blk = LedgerInterface
-  { getCurrentLedgerState :: STM m (LedgerState blk)
-  }
-
--- | Create a 'LedgerInterface' from a 'ChainDB'.
-chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
-chainDBLedgerInterface chainDB = LedgerInterface
-    { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
-    }
 
 openMempool
   :: ( IOLike m
@@ -55,13 +48,11 @@ openMempool
      )
   => ResourceRegistry m
   -> LedgerInterface m blk
-  -> LedgerConfig blk
-  -> MempoolCapacityBytesOverride
+  -> MempoolArgs blk
   -> Tracer m (TraceEventMempool blk)
-  -> (GenTx blk -> TxSizeInBytes)
   -> m (Mempool m blk TicketNo)
-openMempool registry ledger cfg capacityOverride tracer txSize = do
-    env <- initMempoolEnv ledger cfg capacityOverride tracer txSize
+openMempool registry ledger args tracer = do
+    env <- initMempoolEnv ledger args tracer
     forkSyncStateOnTipPointChange registry env
     return $ mkMempool env
 
@@ -76,13 +67,11 @@ openMempoolWithoutSyncThread
      , ValidateEnvelope blk
      )
   => LedgerInterface m blk
-  -> LedgerConfig blk
-  -> MempoolCapacityBytesOverride
+  -> MempoolArgs blk
   -> Tracer m (TraceEventMempool blk)
-  -> (GenTx blk -> TxSizeInBytes)
   -> m (Mempool m blk TicketNo)
-openMempoolWithoutSyncThread ledger cfg capacityOverride tracer txSize =
-    mkMempool <$> initMempoolEnv ledger cfg capacityOverride tracer txSize
+openMempoolWithoutSyncThread ledger args tracer  =
+    mkMempool <$> initMempoolEnv ledger args tracer
 
 mkMempool
   :: ( IOLike m
@@ -102,9 +91,16 @@ mkMempool env = Mempool
     , zeroIdx        = zeroTicketNo
     }
 
-{-------------------------------------------------------------------------------
-  Internal state
--------------------------------------------------------------------------------}
+-- | Abstract interface needed to run a Mempool.
+newtype LedgerInterface m blk = LedgerInterface
+  { getCurrentLedgerState :: STM m (LedgerState blk)
+  }
+
+-- | Create a 'LedgerInterface' from a 'ChainDB'.
+chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
+chainDBLedgerInterface chainDB = LedgerInterface
+    { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
+    }
 
 initMempoolEnv :: ( IOLike m
                   , NoThunks (GenTxId blk)
@@ -112,16 +108,13 @@ initMempoolEnv :: ( IOLike m
                   , ValidateEnvelope blk
                   )
                => LedgerInterface m blk
-               -> LedgerConfig blk
-               -> MempoolCapacityBytesOverride
+               -> MempoolArgs blk
                -> Tracer m (TraceEventMempool blk)
-               -> (GenTx blk -> TxSizeInBytes)
                -> m (MempoolEnv m blk)
-initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
+initMempoolEnv ledgerInterface args tracer = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
-    let (slot, st') = tickLedgerState cfg (ForgeInUnknownSlot st)
-    isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
-    let args = MempoolArgs cfg txSize capacityOverride
+    let (slot, st') = tickLedgerState (mpArgsLedgerCfg args)  (ForgeInUnknownSlot st)
+    isVar <- newTVarIO $ initInternalState (mpArgsCapacityOverride args) zeroTicketNo slot st'
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvArgs             = args
@@ -169,19 +162,20 @@ data MempoolEnv m blk = MempoolEnv {
     , mpEnvTracer   :: Tracer m (TraceEventMempool blk)
     }
 
--- Read the internal state and the ledger state, calls the function with it and writes the state
--- with the first element of the result of the function and returns the second
--- part of the result of the function as result
-atomicallyDoWithState :: IOLike m
+-- | Read the internal state and the ledger state, calls the function
+-- with it and writes the state with the first element of the result
+-- of the function and returns the second part of the result of the
+-- function as result
+atomicallyDoWithState ::
+     IOLike m
   => MempoolEnv m blk
   -> (MempoolArgs blk -> InternalState blk -> LedgerState blk -> (InternalState blk, res))
   -> m res
-atomicallyDoWithState mpEnv func =
-  atomically $ do
-    state <- readTVar (mpEnvStateVar mpEnv)
-    ledgerState <- getCurrentLedgerState (mpEnvLedger mpEnv)
-    let (state', res) = func (mpEnvArgs mpEnv) state ledgerState
-    writeTVar (mpEnvStateVar mpEnv) state'
+atomicallyDoWithState MempoolEnv {..} func = atomically $ do
+    state <- readTVar mpEnvStateVar
+    ledgerState <- getCurrentLedgerState mpEnvLedger
+    let (state', res) = func mpEnvArgs state ledgerState
+    writeTVar mpEnvStateVar state'
     pure res
 
 -- | Add a bunch of transactions (oldest to newest)
@@ -275,13 +269,14 @@ implSyncWithLedger :: ( IOLike m
   => MempoolEnv m blk
   -> m (MempoolSnapshot blk TicketNo)
 implSyncWithLedger mpEnv = do
-  (snapshot, tm) <- atomicallyDoWithState mpEnv pureSyncWithLedger
-  traceWith (mpEnvTracer mpEnv) tm
-  return snapshot
+    (snapshot, tm) <- atomicallyDoWithState mpEnv pureSyncWithLedger
+    traceWith (mpEnvTracer mpEnv) tm
+    return snapshot
 
-implGetSnapshot :: (IOLike m, HasTxId (GenTx blk))
-                => MempoolEnv m blk
-                -> STM m (MempoolSnapshot blk TicketNo)
+implGetSnapshot ::
+  (IOLike m, HasTxId (GenTx blk))
+  => MempoolEnv m blk
+  -> STM m (MempoolSnapshot blk TicketNo)
 implGetSnapshot MempoolEnv{mpEnvStateVar} =
     implSnapshotFromIS <$> readTVar mpEnvStateVar
 
@@ -315,12 +310,4 @@ implGetSnapshotFor mpEnv blockLedgerState =
 -- mempool in bytes.
 implGetCapacity :: IOLike m => MempoolEnv m blk -> STM m MempoolCapacityBytes
 implGetCapacity MempoolEnv{mpEnvStateVar} =
-    isCapacity <$> readTVar mpEnvStateVar
-
--- | \( O(1) \). Return the number of transactions in the Mempool paired with
--- their total size in bytes.
-_getMempoolSize :: IOLike m
-               => MempoolEnv m blk
-               -> STM m MempoolSize
-_getMempoolSize MempoolEnv{mpEnvStateVar} =
-    isMempoolSize <$> readTVar mpEnvStateVar
+    getCapacityIS <$> readTVar mpEnvStateVar
