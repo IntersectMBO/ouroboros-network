@@ -60,9 +60,9 @@ type CanMock era =
   , SL.EraGen era
   , SL.Mock (EraCrypto era)
   , SL.ValidateScript era
+  , Arbitrary (Core.AuxiliaryData era)
+  , Arbitrary (Core.Script era)
   , Arbitrary (Core.TxBody era)
   , Arbitrary (Core.Value era)
-  , Arbitrary (Core.Metadata era)
-  , Arbitrary (Core.Script era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
   )

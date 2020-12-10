@@ -69,6 +69,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Time
 
+import qualified Cardano.Ledger.AuxiliaryData as SL (AuxiliaryDataHash (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
 import qualified Cardano.Ledger.Val as Val
@@ -87,7 +88,6 @@ import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
                      signedKES)
 import qualified Shelley.Spec.Ledger.LedgerState as SL (emptyDPState,
                      emptyPPUPState)
-import qualified Shelley.Spec.Ledger.Metadata as SL (MetadataHash (..))
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
 import qualified Shelley.Spec.Ledger.Rewards as SL (emptyNonMyopic)
@@ -107,7 +107,7 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
 
 import qualified Cardano.Ledger.Mary.Value as MA
 import qualified Cardano.Ledger.ShelleyMA as MA
-import qualified Cardano.Ledger.ShelleyMA.Metadata as MA
+import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 
@@ -205,9 +205,9 @@ examples ::
      forall era. ShelleyBasedEra era
   => Core.Value era
   -> Core.TxBody era
-  -> Core.Metadata era
+  -> Core.AuxiliaryData era
   -> Golden.Examples (ShelleyBlock era)
-examples value txBody metadata = Golden.Examples {
+examples value txBody auxiliaryData = Golden.Examples {
       exampleBlock            = unlabelled blk
     , exampleSerialisedBlock  = unlabelled exampleSerialisedBlock
     , exampleHeader           = unlabelled (getHeader blk)
@@ -224,7 +224,7 @@ examples value txBody metadata = Golden.Examples {
     , exampleExtLedgerState   = unlabelled (exampleExtLedgerState value)
     }
   where
-    tx = exampleTx txBody metadata
+    tx = exampleTx txBody auxiliaryData
     exampleGenTx = mkShelleyTx tx
     blk = exampleBlock tx
 
@@ -264,13 +264,25 @@ examples value txBody metadata = Golden.Examples {
         (SL.emptyPParamsUpdate {SL._keyDeposit = SJust (SL.Coin 100)})
 
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
-examplesShelley = examples exampleCoin exampleTxBodyShelley exampleMetadataShelley
+examplesShelley =
+    examples
+      exampleCoin
+      exampleTxBodyShelley
+      exampleAuxiliaryDataShelley
 
 examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
-examplesAllegra = examples exampleCoin exampleTxBodyAllegra exampleMetadataMA
+examplesAllegra =
+    examples
+      exampleCoin
+      exampleTxBodyAllegra
+      exampleAuxiliaryDataMA
 
 examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
-examplesMary = examples exampleMultiAssetValue exampleTxBodyMary exampleMetadataMA
+examplesMary =
+    examples
+      exampleMultiAssetValue
+      exampleTxBodyMary
+      exampleAuxiliaryDataMA
 
 {-------------------------------------------------------------------------------
   Era-specific individual examples
@@ -300,11 +312,12 @@ exampleTxBodyShelley = SL.TxBody
     (SL.Coin 3)
     (SlotNo 10)
     (SJust (SL.Update exampleProposedPPUpdates (EpochNo 0)))
-    (SJust metadataHash)
+    (SJust auxiliaryDataHash)
   where
-    -- Dummy hash to decouple from the metadata in 'exampleTx'.
-    metadataHash :: SL.MetadataHash StandardCrypto
-    metadataHash = SL.MetadataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
+    -- Dummy hash to decouple from the auxiliaryData in 'exampleTx'.
+    auxiliaryDataHash :: SL.AuxiliaryDataHash StandardCrypto
+    auxiliaryDataHash =
+        SL.AuxiliaryDataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
 
 exampleTxBodyMA ::
      forall era. (ShelleyBasedEra era, Val.EncodeMint (Core.Value era))
@@ -319,12 +332,13 @@ exampleTxBodyMA value = MA.TxBody
     (SL.Coin 3)
     (MA.ValidityInterval (SJust (SlotNo 2)) (SJust (SlotNo 4)))
     (SJust (SL.Update exampleProposedPPUpdates (EpochNo 0)))
-    (SJust metadataHash)
+    (SJust auxiliaryDataHash)
     value
   where
-    -- Dummy hash to decouple from the metadata in 'exampleTx'.
-    metadataHash :: SL.MetadataHash (EraCrypto era)
-    metadataHash = SL.MetadataHash $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 30
+    -- Dummy hash to decouple from the auxiliary data in 'exampleTx'.
+    auxiliaryDataHash :: SL.AuxiliaryDataHash (EraCrypto era)
+    auxiliaryDataHash =
+        SL.AuxiliaryDataHash $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 30
 
 exampleTxBodyAllegra :: Core.TxBody StandardAllegra
 exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
@@ -354,12 +368,12 @@ exampleMetadataMap = Map.fromList [
     , (4, SL.Map [(SL.I 3, SL.B "b")])
     ]
 
-exampleMetadataShelley :: Core.Metadata StandardShelley
-exampleMetadataShelley = SL.Metadata exampleMetadataMap
+exampleAuxiliaryDataShelley :: Core.AuxiliaryData StandardShelley
+exampleAuxiliaryDataShelley = SL.Metadata exampleMetadataMap
 
-exampleMetadataMA :: Crypto c => Core.Metadata (MA.ShelleyMAEra ma c)
-exampleMetadataMA =
-    MA.Metadata
+exampleAuxiliaryDataMA :: Crypto c => Core.AuxiliaryData (MA.ShelleyMAEra ma c)
+exampleAuxiliaryDataMA =
+    MA.AuxiliaryData
       exampleMetadataMap
       (StrictSeq.fromList [exampleScriptMA])
 
@@ -456,9 +470,9 @@ exampleHeaderHash _ = coerce $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 0
 exampleTx ::
      forall era. ShelleyBasedEra era
   => Core.TxBody era
-  -> Core.Metadata era
+  -> Core.AuxiliaryData era
   -> SL.Tx era
-exampleTx txBody metadata = SL.Tx txBody witnessSet (SJust metadata)
+exampleTx txBody auxiliaryData = SL.Tx txBody witnessSet (SJust auxiliaryData)
   where
     witnessSet :: SL.WitnessSet era
     witnessSet = mempty {
