@@ -36,6 +36,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol as X
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams as X
                      ()
 
+-- Instance for 'LedgerSupportsPeerSelection'
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection as X
+                     ()
+
 -- Instances for 'ShowQuery' and 'QueryLedger'
 -- Definition of 'Query', required for serialisation code
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query as X
