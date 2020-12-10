@@ -105,7 +105,6 @@ import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
-import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.ThreadNet.TxGen
@@ -703,7 +702,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbImmutableDbValidation  = ImmutableDB.ValidateAllChunks
         , cdbVolatileDbValidation   = VolatileDB.ValidateAll
         , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-        , cdbParamsLgrDB            = LgrDB.ledgerDbDefaultParams (configSecurityParam cfg)
         , cdbDiskPolicy             = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
           -- Integration
         , cdbTopLevelConfig         = cfg

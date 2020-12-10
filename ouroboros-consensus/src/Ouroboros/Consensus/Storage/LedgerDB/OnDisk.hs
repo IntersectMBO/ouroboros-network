@@ -187,8 +187,7 @@ initLedgerDB ::
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbParams
-  -> ExtLedgerCfg blk
+  -> LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk) -- ^ Genesis ledger state
   -> StreamAPI m blk
   -> m (InitLog blk, LedgerDB' blk, Word64)
@@ -197,8 +196,7 @@ initLedgerDB replayTracer
              hasFS
              decLedger
              decHash
-             params
-             conf
+             cfg
              getGenesisLedger
              streamAPI = do
     snapshots <- listSnapshots hasFS
@@ -210,8 +208,8 @@ initLedgerDB replayTracer
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
         traceWith replayTracer $ ReplayFromGenesis ()
-        initDb <- ledgerDbWithAnchor params <$> getGenesisLedger
-        ml     <- runExceptT $ initStartingWith replayTracer conf streamAPI initDb
+        initDb <- ledgerDbWithAnchor <$> getGenesisLedger
+        ml     <- runExceptT $ initStartingWith replayTracer cfg streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
           Right (l, replayed) -> return (acc InitFromGenesis, l, replayed)
@@ -222,8 +220,7 @@ initLedgerDB replayTracer
                              hasFS
                              decLedger
                              decHash
-                             params
-                             conf
+                             cfg
                              streamAPI
                              s
         case ml of
@@ -271,12 +268,11 @@ initFromSnapshot ::
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbParams
-  -> ExtLedgerCfg blk
+  -> LedgerDbCfg (ExtLedgerState blk)
   -> StreamAPI m blk
   -> DiskSnapshot
   -> ExceptT (InitFailure blk) m (RealPoint blk, LedgerDB' blk, Word64)
-initFromSnapshot tracer hasFS decLedger decHash params conf streamAPI ss = do
+initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decHash ss
     case pointToWithOriginRealPoint (castPoint (getTip initSS)) of
@@ -286,9 +282,9 @@ initFromSnapshot tracer hasFS decLedger decHash params conf streamAPI ss = do
         (initDB, replayed) <-
           initStartingWith
             tracer
-            conf
+            cfg
             streamAPI
-            (ledgerDbWithAnchor params initSS)
+            (ledgerDbWithAnchor initSS)
         return (tip, initDB, replayed)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
@@ -300,11 +296,11 @@ initStartingWith ::
        , HasCallStack
        )
   => Tracer m (TraceReplayEvent blk ())
-  -> ExtLedgerCfg blk
+  -> LedgerDbCfg (ExtLedgerState blk)
   -> StreamAPI m blk
   -> LedgerDB' blk
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
-initStartingWith tracer conf streamAPI initDb = do
+initStartingWith tracer cfg streamAPI initDb = do
     streamAll streamAPI (castPoint (ledgerDbTip initDb))
       InitFailureTooRecent
       (initDb, 0)
@@ -312,14 +308,14 @@ initStartingWith tracer conf streamAPI initDb = do
   where
     push :: blk -> (LedgerDB' blk, Word64) -> m (LedgerDB' blk, Word64)
     push blk !(!db, !replayed) = do
-        !db' <- ledgerDbPush conf (ReapplyVal blk) db
+        !db' <- ledgerDbPush cfg (ReapplyVal blk) db
 
         let replayed' :: Word64
             !replayed' = replayed + 1
 
             events :: [LedgerEvent blk]
             events = inspectLedger
-                       (getExtLedgerCfg conf)
+                       (getExtLedgerCfg (ledgerDbCfg cfg))
                        (ledgerState (ledgerDbCurrent db))
                        (ledgerState (ledgerDbCurrent db'))
 

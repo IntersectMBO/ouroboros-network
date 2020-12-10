@@ -115,11 +115,11 @@ test_decode_ChainSummary =
   Genesis
 -------------------------------------------------------------------------------}
 
-prop_genesisCurrent :: LedgerDbParams -> Property
-prop_genesisCurrent params =
+prop_genesisCurrent :: Property
+prop_genesisCurrent =
     ledgerDbCurrent genSnaps === testInitLedger
   where
-    genSnaps = ledgerDbWithAnchor params testInitLedger
+    genSnaps = ledgerDbWithAnchor testInitLedger
 
 {-------------------------------------------------------------------------------
   Constructing snapshots
@@ -129,12 +129,15 @@ prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger (csBlockConfig setup) (expectedChain o) testInitLedger
+          l === refoldLedger cfg (expectedChain o) testInitLedger
         | (o, l) <- ledgerDbSnapshots csPushed
         ]
   where
     expectedChain :: Word64 -> [TestBlock]
     expectedChain o = take (fromIntegral (csNumBlocks - o)) csChain
+
+    cfg :: LedgerConfig TestBlock
+    cfg = ledgerDbCfg (csBlockConfig setup)
 
 prop_pastLedger :: ChainSetup -> Property
 prop_pastLedger setup@ChainSetup{..} =
@@ -162,9 +165,9 @@ prop_pastLedger setup@ChainSetup{..} =
   Rollback
 -------------------------------------------------------------------------------}
 
-prop_maxRollbackGenesisZero :: LedgerDbParams -> Property
-prop_maxRollbackGenesisZero params =
-        ledgerDbMaxRollback (ledgerDbWithAnchor params testInitLedger)
+prop_maxRollbackGenesisZero :: Property
+prop_maxRollbackGenesisZero =
+        ledgerDbMaxRollback (ledgerDbWithAnchor testInitLedger)
     === 0
 
 prop_snapshotsMaxRollback :: ChainSetup -> Property
@@ -177,7 +180,7 @@ prop_snapshotsMaxRollback setup@ChainSetup{..} =
         , (ledgerDbMaxRollback csPushed) `le` k
         ]
   where
-    SecurityParam k = ledgerDbSecurityParam csParams
+    SecurityParam k = csSecParam
 
 prop_switchSameChain :: SwitchSetup -> Property
 prop_switchSameChain setup@SwitchSetup{..} =
@@ -192,12 +195,15 @@ prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger (csBlockConfig ssChainSetup) (expectedChain o) testInitLedger
+          l === refoldLedger cfg (expectedChain o) testInitLedger
         | (o, l) <- ledgerDbSnapshots ssSwitched
         ]
   where
     expectedChain :: Word64 -> [TestBlock]
     expectedChain o = take (fromIntegral (ssNumBlocks - o)) ssChain
+
+    cfg :: LedgerConfig TestBlock
+    cfg = ledgerDbCfg (csBlockConfig ssChainSetup)
 
 -- | Check 'prop_pastLedger' still holds after switching to a fork
 prop_pastAfterSwitch :: SwitchSetup -> Property
@@ -227,8 +233,8 @@ prop_pastAfterSwitch setup@SwitchSetup{..} =
 -------------------------------------------------------------------------------}
 
 data ChainSetup = ChainSetup {
-      -- | Ledger DB parameters
-      csParams    :: LedgerDbParams
+      -- | Security parameter
+      csSecParam  :: SecurityParam
 
       -- | Number of blocks applied
     , csNumBlocks :: Word64
@@ -252,17 +258,19 @@ data ChainSetup = ChainSetup {
     }
   deriving (Show)
 
-csBlockConfig :: ChainSetup -> LedgerConfig TestBlock
-csBlockConfig = csBlockConfig' . csParams
+csBlockConfig :: ChainSetup -> LedgerDbCfg (LedgerState TestBlock)
+csBlockConfig = csBlockConfig' . csSecParam
 
-csBlockConfig' :: LedgerDbParams -> LedgerConfig TestBlock
-csBlockConfig' dbParams = HardFork.defaultEraParams k slotLength
+csBlockConfig' :: SecurityParam -> LedgerDbCfg (LedgerState TestBlock)
+csBlockConfig' secParam = LedgerDbCfg {
+      ledgerDbCfgSecParam = secParam
+    , ledgerDbCfg         = HardFork.defaultEraParams secParam slotLength
+    }
   where
-    k          = ledgerDbSecurityParam dbParams
     slotLength = slotLengthFromSec 20
 
 chainSetupSaturated :: ChainSetup -> Bool
-chainSetupSaturated = ledgerDbIsSaturated . csPushed
+chainSetupSaturated ChainSetup{..} = ledgerDbIsSaturated csSecParam csPushed
 
 data SwitchSetup = SwitchSetup {
       -- | Chain setup
@@ -299,14 +307,14 @@ data SwitchSetup = SwitchSetup {
 switchSetupSaturated :: SwitchSetup -> Bool
 switchSetupSaturated = chainSetupSaturated . ssChainSetup
 
-mkTestSetup :: LedgerDbParams -> Word64 -> Word64 -> ChainSetup
-mkTestSetup csParams csNumBlocks csPrefixLen =
+mkTestSetup :: SecurityParam -> Word64 -> Word64 -> ChainSetup
+mkTestSetup csSecParam csNumBlocks csPrefixLen =
     ChainSetup {..}
   where
-    csGenSnaps = ledgerDbWithAnchor csParams testInitLedger
+    csGenSnaps = ledgerDbWithAnchor testInitLedger
     csChain    = take (fromIntegral csNumBlocks) $
                    iterate successorBlock (firstBlock 0)
-    csPushed   = ledgerDbPushMany' (csBlockConfig' csParams) csChain csGenSnaps
+    csPushed   = ledgerDbPushMany' (csBlockConfig' csSecParam) csChain csGenSnaps
 
 mkRollbackSetup :: ChainSetup -> Word64 -> Word64 -> Word64 -> SwitchSetup
 mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
@@ -331,20 +339,20 @@ mkRollbackSetup ssChainSetup ssNumRollback ssNumNew ssPrefixLen =
 
 instance Arbitrary ChainSetup where
   arbitrary = do
-      params <- arbitrary
-      let k = maxRollbacks (ledgerDbSecurityParam params)
+      secParam <- arbitrary
+      let k = maxRollbacks secParam
       numBlocks <- choose (0, k * 2)
       prefixLen <- choose (0, numBlocks)
-      return $ mkTestSetup params numBlocks prefixLen
+      return $ mkTestSetup secParam numBlocks prefixLen
 
   shrink ChainSetup{..} = concat [
         -- Shrink the policy
-        [ mkTestSetup csParams' csNumBlocks csPrefixLen
-        | csParams' <- shrink csParams
+        [ mkTestSetup csSecParam' csNumBlocks csPrefixLen
+        | csSecParam' <- shrink csSecParam
         ]
 
         -- Reduce number of blocks
-      , [ mkTestSetup csParams csNumBlocks' csPrefixLen
+      , [ mkTestSetup csSecParam csNumBlocks' csPrefixLen
         | csNumBlocks' <- shrink csNumBlocks
         ]
       ]
@@ -378,13 +386,6 @@ instance Arbitrary SwitchSetup where
   Orphan Arbitrary instances
 -------------------------------------------------------------------------------}
 
-instance Arbitrary LedgerDbParams where
-  arbitrary = do
-      k <- choose (0, 6)
-      return $ LedgerDbParams {
-            ledgerDbSecurityParam = SecurityParam k
-          }
-  shrink params@LedgerDbParams{..} =
-    [ params {ledgerDbSecurityParam = SecurityParam k'}
-    | k' <- shrink (maxRollbacks ledgerDbSecurityParam)
-    ]
+instance Arbitrary SecurityParam where
+  arbitrary = SecurityParam <$> choose (0, 6)
+  shrink (SecurityParam k) = SecurityParam <$> shrink k

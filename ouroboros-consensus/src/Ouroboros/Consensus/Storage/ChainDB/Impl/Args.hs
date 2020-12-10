@@ -49,7 +49,6 @@ data ChainDbArgs f m blk = ChainDbArgs {
     , cdbImmutableDbValidation  :: ImmutableDB.ValidationPolicy
     , cdbVolatileDbValidation   :: VolatileDB.BlockValidationPolicy
     , cdbMaxBlocksPerFile       :: VolatileDB.BlocksPerFile
-    , cdbParamsLgrDB            :: HKD f LgrDB.LedgerDbParams
     , cdbDiskPolicy             :: HKD f LgrDB.DiskPolicy
 
       -- Integration
@@ -177,7 +176,6 @@ fromChainDbArgs ChainDbArgs{..} = (
     , LgrDB.LgrDbArgs {
           lgrTopLevelConfig   = cdbTopLevelConfig
         , lgrHasFS            = cdbHasFSLgrDB
-        , lgrParams           = cdbParamsLgrDB
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
@@ -215,7 +213,6 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
     , cdbImmutableDbValidation  = immValidationPolicy
     , cdbVolatileDbValidation   = volValidationPolicy
     , cdbMaxBlocksPerFile       = volMaxBlocksPerFile
-    , cdbParamsLgrDB            = lgrParams
     , cdbDiskPolicy             = lgrDiskPolicy
       -- Integration
     , cdbTopLevelConfig         = lgrTopLevelConfig

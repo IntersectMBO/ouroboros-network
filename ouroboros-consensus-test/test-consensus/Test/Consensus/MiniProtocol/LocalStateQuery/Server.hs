@@ -35,8 +35,8 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
-                     (LedgerDbParams (..), LgrDB, LgrDbArgs (..), mkLgrDB)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
+                     LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
@@ -196,19 +196,13 @@ initLgrDB k chain = do
     blockMapping = Map.fromList
       [(blockRealPoint b, b) | b <- Chain.toOldestFirst chain]
 
-    params :: LedgerDbParams
-    params = LedgerDbParams
-      { ledgerDbSecurityParam = k
-      }
-
     cfg = testCfg k
 
-    genesisLedgerDB = LgrDB.ledgerDbWithAnchor params testInitExtLedger
+    genesisLedgerDB = LgrDB.ledgerDbWithAnchor testInitExtLedger
 
     args = LgrDbArgs
       { lgrTopLevelConfig       = cfg
       , lgrHasFS                = SomeHasFS (error "lgrHasFS" :: HasFS m ())
-      , lgrParams               = params
       , lgrDiskPolicy           = defaultDiskPolicy k
       , lgrGenesis              = return testInitExtLedger
       , lgrTracer               = nullTracer

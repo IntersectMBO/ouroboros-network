@@ -11,6 +11,7 @@
 {-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE StandaloneDeriving     #-}
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE UndecidableInstances   #-}
@@ -18,8 +19,7 @@
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
      -- * LedgerDB proper
      LedgerDB  -- opaque
-   , LedgerDbParams(..)
-   , ledgerDbDefaultParams
+   , LedgerDbCfg(..)
    , ledgerDbWithAnchor
      -- ** Serialisation
    , encodeSnapshot
@@ -123,12 +123,12 @@ import           Ouroboros.Consensus.Util.Versioned
 -- blocks. For example, if we are on line (*), and roll back 6 blocks, we get
 --
 -- > L3 |> []
-data LedgerDB l = LedgerDB {
+newtype LedgerDB l = LedgerDB {
       -- | Ledger states
-      ledgerDbCheckpoints :: !(AnchoredSeq (WithOrigin SlotNo) (Checkpoint l) (Checkpoint l))
-
-      -- | Ledger DB parameters
-    , ledgerDbParams      :: !LedgerDbParams
+      ledgerDbCheckpoints :: AnchoredSeq
+                               (WithOrigin SlotNo)
+                               (Checkpoint l)
+                               (Checkpoint l)
     }
   deriving (Show, Eq, Generic, NoThunks)
 
@@ -142,18 +142,6 @@ newtype Checkpoint l = Checkpoint {
 instance GetTip l => Anchorable (WithOrigin SlotNo) (Checkpoint l) (Checkpoint l) where
   asAnchor = id
   getAnchorMeasure _ = getTipSlot . unCheckpoint
-
-newtype LedgerDbParams = LedgerDbParams {
-      -- | Security parameter (maximum rollback)
-      ledgerDbSecurityParam :: SecurityParam
-    }
-  deriving (Show, Eq, Generic, NoThunks)
-
--- | Default parameters
-ledgerDbDefaultParams :: SecurityParam -> LedgerDbParams
-ledgerDbDefaultParams securityParam = LedgerDbParams {
-      ledgerDbSecurityParam = securityParam
-    }
 
 {-------------------------------------------------------------------------------
   Ticking
@@ -172,14 +160,9 @@ data instance Ticked (LedgerDB l) = TickedLedgerDB {
 -------------------------------------------------------------------------------}
 
 -- | Ledger DB starting at the specified ledger state
-ledgerDbWithAnchor ::
-     GetTip l
-  => LedgerDbParams
-  -> l
-  -> LedgerDB l
-ledgerDbWithAnchor params anchor = LedgerDB {
+ledgerDbWithAnchor :: GetTip l => l -> LedgerDB l
+ledgerDbWithAnchor anchor = LedgerDB {
       ledgerDbCheckpoints = Empty (Checkpoint anchor)
-    , ledgerDbParams      = params
     }
 
 {-------------------------------------------------------------------------------
@@ -339,12 +322,9 @@ ledgerDbTip :: GetTip l => LedgerDB l -> Point l
 ledgerDbTip = getTip . ledgerDbCurrent
 
 -- | Have we seen at least @k@ blocks?
-ledgerDbIsSaturated :: GetTip l => LedgerDB l -> Bool
-ledgerDbIsSaturated db@LedgerDB{..} =
+ledgerDbIsSaturated :: GetTip l => SecurityParam -> LedgerDB l -> Bool
+ledgerDbIsSaturated (SecurityParam k) db =
     ledgerDbMaxRollback db >= k
-  where
-    LedgerDbParams{..} = ledgerDbParams
-    SecurityParam k    = ledgerDbSecurityParam
 
 -- | Get a past ledger state
 --
@@ -382,13 +362,10 @@ ledgerDbBimap f g =
 -------------------------------------------------------------------------------}
 
 -- | Internal: drop unneeded snapshots from the head of the list
-prune :: GetTip l => LedgerDB l -> LedgerDB l
-prune db@LedgerDB{..} = db {
-      ledgerDbCheckpoints = AS.anchorNewest k ledgerDbCheckpoints
+prune :: GetTip l => SecurityParam -> LedgerDB l -> LedgerDB l
+prune (SecurityParam k) db = db {
+      ledgerDbCheckpoints = AS.anchorNewest k (ledgerDbCheckpoints db)
     }
-  where
-    LedgerDbParams{..} = ledgerDbParams
-    SecurityParam k    = ledgerDbSecurityParam
 
  -- NOTE: we must inline 'prune' otherwise we get unexplained thunks in
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
@@ -398,9 +375,10 @@ prune db@LedgerDB{..} = db {
 -- | Push an updated ledger state
 pushLedgerState ::
      GetTip l
-  => l -- ^ Updated ledger state
+  => SecurityParam
+  -> l -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
-pushLedgerState current' db@LedgerDB{..}  = prune $ db {
+pushLedgerState secParam current' db@LedgerDB{..}  = prune secParam $ db {
       ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint current'
     }
 
@@ -437,21 +415,21 @@ data ExceededRollback = ExceededRollback {
     }
 
 ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
-             => LedgerCfg l
+             => LedgerDbCfg l
              -> Ap m l blk c -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPush cfg ap db =
-    (\current' -> pushLedgerState current' db) <$>
-      applyBlock cfg ap db
+    (\current' -> pushLedgerState (ledgerDbCfgSecParam cfg) current' db) <$>
+      applyBlock (ledgerDbCfg cfg) ap db
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c)
-                 => LedgerCfg l
+                 => LedgerDbCfg l
                  -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
 ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
-               => LedgerCfg l
+               => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l blk c]  -- ^ New blocks to apply
                -> LedgerDB l
@@ -470,7 +448,15 @@ ledgerDbSwitch cfg numRollbacks newBlocks db =
   The LedgerDB itself behaves like a ledger
 -------------------------------------------------------------------------------}
 
-type instance LedgerCfg (LedgerDB l) = LedgerCfg l
+data LedgerDbCfg l = LedgerDbCfg {
+      ledgerDbCfgSecParam :: !SecurityParam
+    , ledgerDbCfg         :: !(LedgerCfg l)
+    }
+  deriving (Generic)
+
+deriving instance NoThunks (LedgerCfg l) => NoThunks (LedgerDbCfg l)
+
+type instance LedgerCfg (LedgerDB l) = LedgerDbCfg l
 
 type instance HeaderHash (LedgerDB l) = HeaderHash l
 
@@ -484,28 +470,29 @@ instance IsLedger l => IsLedger (LedgerDB l) where
   type LedgerErr (LedgerDB l) = LedgerErr l
 
   applyChainTick cfg slot db = TickedLedgerDB {
-        tickedLedgerDbTicked = applyChainTick cfg slot (ledgerDbCurrent db)
+        tickedLedgerDbTicked =
+          applyChainTick (ledgerDbCfg cfg) slot (ledgerDbCurrent db)
       , tickedLedgerDbOrig   = db
       }
 
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
   applyLedgerBlock cfg blk TickedLedgerDB{..} =
       push <$> applyLedgerBlock
-                 cfg
+                 (ledgerDbCfg cfg)
                  blk
                  tickedLedgerDbTicked
    where
      push :: l -> LedgerDB l
-     push l = pushLedgerState l tickedLedgerDbOrig
+     push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
 
   reapplyLedgerBlock cfg blk TickedLedgerDB{..} =
       push $ reapplyLedgerBlock
-               cfg
+               (ledgerDbCfg cfg)
                blk
                tickedLedgerDbTicked
    where
      push :: l -> LedgerDB l
-     push l = pushLedgerState l tickedLedgerDbOrig
+     push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
 
 {-------------------------------------------------------------------------------
   Support for testing
@@ -515,15 +502,15 @@ pureBlock :: blk -> Ap m l blk ()
 pureBlock = ReapplyVal
 
 ledgerDbPush' :: ApplyBlock l blk
-              => LedgerCfg l -> blk -> LedgerDB l -> LedgerDB l
+              => LedgerDbCfg l -> blk -> LedgerDB l -> LedgerDB l
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
 ledgerDbPushMany' :: ApplyBlock l blk
-                  => LedgerCfg l -> [blk] -> LedgerDB l -> LedgerDB l
+                  => LedgerDbCfg l -> [blk] -> LedgerDB l -> LedgerDB l
 ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: forall l blk. ApplyBlock l blk
-                => LedgerCfg l
+                => LedgerDbCfg l
                 -> Word64 -> [blk] -> LedgerDB l -> Maybe (LedgerDB l)
 ledgerDbSwitch' cfg n bs db =
     case runIdentity $ ledgerDbSwitch cfg n (map pureBlock bs) db of

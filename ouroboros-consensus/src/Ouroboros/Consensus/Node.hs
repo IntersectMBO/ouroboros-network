@@ -111,8 +111,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
                      ValidationPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-                     (ledgerDbDefaultParams)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
@@ -455,8 +453,7 @@ mkChainDbArgs
   chunkInfo
   defArgs
   = defArgs {
-      ChainDB.cdbParamsLgrDB    = ledgerDbDefaultParams k
-    , ChainDB.cdbDiskPolicy     = defaultDiskPolicy k
+      ChainDB.cdbDiskPolicy     = defaultDiskPolicy k
 
     , ChainDB.cdbTopLevelConfig = cfg
     , ChainDB.cdbChunkInfo      = chunkInfo

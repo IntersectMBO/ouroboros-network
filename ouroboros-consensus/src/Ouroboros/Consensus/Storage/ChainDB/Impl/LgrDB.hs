@@ -41,7 +41,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Re-exports
   , ExceededRollback(..)
   , LedgerDB.AnnLedgerError(..)
-  , LedgerDbParams(..)
   , DiskPolicy (..)
   , DiskSnapshot
   , TraceEvent (..)
@@ -84,7 +83,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
-                     ExceededRollback (..), LedgerDbParams (..))
+                     ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      DiskSnapshot, LedgerDB', NextBlock (..), StreamAPI (..),
@@ -147,7 +146,6 @@ data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: HKD f DiskPolicy
     , lgrGenesis        :: HKD f (m (ExtLedgerState blk))
     , lgrHasFS          :: SomeHasFS m
-    , lgrParams         :: HKD f LedgerDbParams
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (TraceEvent blk)
@@ -159,7 +157,6 @@ defaultArgs lgrHasFS = LgrDbArgs {
       lgrDiskPolicy     = NoDefault
     , lgrGenesis        = NoDefault
     , lgrHasFS
-    , lgrParams         = NoDefault
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
@@ -234,8 +231,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         hasFS
         decodeExtLedgerState'
         decode
-        lgrParams
-        (ExtLedgerCfg lgrTopLevelConfig)
+        (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
     return (db, replayed)
@@ -382,7 +378,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.ledgerDbSwitch
-               (ExtLedgerCfg cfg)
+               (configLedgerDb cfg)
                numRollbacks
                aps
                ledgerDB
@@ -484,3 +480,16 @@ wrapFailure _ k = catch k rethrow
   where
     rethrow :: FsError -> m x
     rethrow err = throwIO $ LgrDbFailure @blk err
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+configLedgerDb ::
+     ConsensusProtocol (BlockProtocol blk)
+  => TopLevelConfig blk
+  -> LedgerDbCfg (ExtLedgerState blk)
+configLedgerDb cfg = LedgerDbCfg {
+      ledgerDbCfgSecParam = configSecurityParam cfg
+    , ledgerDbCfg         = ExtLedgerCfg cfg
+    }
