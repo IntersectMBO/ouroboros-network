@@ -1,10 +1,13 @@
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeOperators            #-}
 module Ouroboros.Consensus.HardFork.Combinator.Embed.Nary (
     Inject (..)
   , inject'
@@ -12,6 +15,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Nary (
   , injectNestedCtxt_
   , injectQuery
   , injectHardForkState
+    -- * Initial 'ExtLedgerState'
+  , injectInitialExtLedgerState
   ) where
 
 import           Data.Bifunctor (first)
@@ -20,8 +25,10 @@ import           Data.SOP.Dict (Dict (..))
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..))
+import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
+                     genesisHeaderState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -31,6 +38,7 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 {-------------------------------------------------------------------------------
   Injection for a single block into a HardForkBlock
@@ -161,3 +169,67 @@ instance Inject ExtLedgerState where
         ledgerState = inject startBounds idx ledgerState
       , headerState = inject startBounds idx headerState
       }
+
+{-------------------------------------------------------------------------------
+  Initial ExtLedgerState
+-------------------------------------------------------------------------------}
+
+-- | Inject the first era's initial 'ExtLedgerState' and trigger any
+-- translations that should take place in the very first slot.
+--
+-- Performs any hard forks scheduled via 'TriggerHardForkAtEpoch'.
+--
+-- Note: we can translate across multiple eras when computing the initial ledger
+-- state, but we do not support translation across multiple eras in general;
+-- extending 'applyChainTick' to translate across more than one era is not
+-- problematic, but extending 'ledgerViewForecastAt' is a lot more subtle; see
+-- @forecastNotFinal@.
+injectInitialExtLedgerState ::
+     forall x xs. CanHardFork (x ': xs)
+  => TopLevelConfig (HardForkBlock (x ': xs))
+  -> ExtLedgerState x
+  -> ExtLedgerState (HardForkBlock (x ': xs))
+injectInitialExtLedgerState cfg extLedgerState0 =
+    ExtLedgerState {
+        ledgerState = targetEraLedgerState
+      , headerState = targetEraHeaderState
+      }
+  where
+    cfgs :: NP TopLevelConfig (x ': xs)
+    cfgs =
+        distribTopLevelConfig
+          (State.epochInfoLedger
+             (configLedger cfg)
+             (hardForkLedgerStatePerEra targetEraLedgerState))
+          cfg
+
+    targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs))
+    targetEraLedgerState =
+        HardForkLedgerState $
+          -- We can immediately extend it to the right slot, executing any
+          -- scheduled hard forks in the first slot
+          State.extendToSlot
+            (configLedger cfg)
+            (SlotNo 0)
+            (initHardForkState (ledgerState extLedgerState0))
+
+    firstEraChainDepState :: HardForkChainDepState (x ': xs)
+    firstEraChainDepState =
+        initHardForkState $
+          WrapChainDepState $
+            headerStateChainDep $
+              headerState extLedgerState0
+
+    targetEraChainDepState :: HardForkChainDepState (x ': xs)
+    targetEraChainDepState =
+        -- Align the 'ChainDepState' with the ledger state of the target era.
+        State.align
+          (InPairs.requiringBoth
+            (hmap (WrapConsensusConfig . configConsensus) cfgs)
+            (translateChainDepState hardForkEraTranslation))
+          (hpure (fn_2 (\_ st -> st)))
+          (hardForkLedgerStatePerEra targetEraLedgerState)
+          firstEraChainDepState
+
+    targetEraHeaderState :: HeaderState (HardForkBlock (x ': xs))
+    targetEraHeaderState = genesisHeaderState targetEraChainDepState

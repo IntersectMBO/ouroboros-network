@@ -53,13 +53,10 @@ import           Cardano.Prelude (cborError)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
@@ -68,6 +65,7 @@ import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP (Index (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -378,17 +376,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
         pInfoConfig = cfg
-      , pInfoInitLedger = ExtLedgerState {
-            ledgerState =
-              HardForkLedgerState $
-                initHardForkState initLedgerStateByron
-          , headerState =
-              genesisHeaderState $
-                initHardForkState $
-                  WrapChainDepState $
-                    headerStateChainDep initHeaderStateByron
-          }
-      , pInfoBlockForging = maybeToList <$> mBlockForging
+      , pInfoInitLedger =
+          injectInitialExtLedgerState cfg initExtLedgerStateByron
+      , pInfoBlockForging =
+          maybeToList <$> mBlockForging
       }
   where
     -- The major protocol version of the last era is the maximum major protocol
@@ -403,10 +394,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           , topLevelConfigLedger   = ledgerConfigByron
           , topLevelConfigBlock    = blockConfigByron
           }
-      , pInfoInitLedger = ExtLedgerState {
-            ledgerState = initLedgerStateByron
-          , headerState = initHeaderStateByron
-          }
+      , pInfoInitLedger = initExtLedgerStateByron
       } = protocolInfoByron @m protocolParamsByron
 
     partialConsensusConfigByron :: PartialConsensusConfig (BlockProtocol ByronBlock)
