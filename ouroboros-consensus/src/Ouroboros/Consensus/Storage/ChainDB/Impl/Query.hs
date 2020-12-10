@@ -10,9 +10,7 @@
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
   ( -- * Queries
     getCurrentChain
-  , getCurrentLedger
-  , getPastLedger
-  , getHeaderStateHistory
+  , getLedgerDB
   , getTipBlock
   , getTipHeader
   , getTipPoint
@@ -30,14 +28,12 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
-import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike
@@ -80,18 +76,10 @@ getCurrentChain CDB{..} =
   where
     SecurityParam k = configSecurityParam cdbTopLevelConfig
 
-getCurrentLedger :: IOLike m => ChainDbEnv m blk -> STM m (ExtLedgerState blk)
-getCurrentLedger CDB{..} = LgrDB.getCurrentState cdbLgrDB
-
-getPastLedger ::
-     (HasHeader blk, IOLike m)
-  => ChainDbEnv m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
-getPastLedger CDB{..} = LgrDB.getPastState cdbLgrDB
-
-getHeaderStateHistory ::
+getLedgerDB ::
      IOLike m
-  => ChainDbEnv m blk -> STM m (HeaderStateHistory blk)
-getHeaderStateHistory CDB{..} = LgrDB.getHeaderStateHistory cdbLgrDB
+  => ChainDbEnv m blk -> STM m (LgrDB.LedgerDB' blk)
+getLedgerDB CDB{..} = LgrDB.getCurrent cdbLgrDB
 
 getTipBlock
   :: forall m blk.

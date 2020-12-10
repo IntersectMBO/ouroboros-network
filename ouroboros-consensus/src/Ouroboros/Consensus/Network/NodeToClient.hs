@@ -64,6 +64,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
@@ -98,7 +99,11 @@ data Handlers m peer blk = Handlers {
 
 mkHandlers
   :: forall m blk remotePeer localPeer.
-     (IOLike m, LedgerSupportsMempool blk, QueryLedger blk)
+     ( IOLike m
+     , LedgerSupportsMempool blk
+     , LedgerSupportsProtocol blk
+     , QueryLedger blk
+     )
   => NodeKernelArgs m remotePeer localPeer blk
   -> NodeKernel     m remotePeer localPeer blk
   -> Handlers       m            localPeer blk

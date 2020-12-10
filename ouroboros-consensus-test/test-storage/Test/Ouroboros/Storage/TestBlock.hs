@@ -66,7 +66,6 @@ import           Data.Binary (Binary)
 import qualified Data.Binary as Binary
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Functor (($>))
 import           Data.Hashable
 import           Data.Int (Int64)
@@ -207,9 +206,6 @@ instance ConvertRawHash TestBlock where
   toRawHash   _ = Lazy.toStrict . Binary.encode
   fromRawHash _ = Binary.decode . Lazy.fromStrict
   hashSize    _ = 8
-
-instance Measured BlockMeasure TestBlock where
-  measure = blockMeasure
 
 instance HasHeader TestBlock where
   getHeaderFields = getBlockHeaderFields

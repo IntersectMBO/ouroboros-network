@@ -4,7 +4,6 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE NumDecimals                #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -58,8 +57,6 @@ module Ouroboros.Network.Block (
   , maxSlotNoFromMaybe
   , maxSlotNoToMaybe
   , maxSlotNoFromWithOrigin
-  , BlockMeasure(..)
-  , blockMeasure
   , genesisPoint
     -- * Serialisation
   , encodePoint
@@ -88,7 +85,6 @@ import qualified Data.ByteString.Base16.Lazy as B16
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import           Data.Coerce (Coercible, coerce)
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
@@ -139,12 +135,8 @@ castHeaderFields (HeaderFields h s b) = HeaderFields h s b
 
 instance StandardHash b => StandardHash (HeaderFields b)
 
-instance (StandardHash b, Typeable b)
-      => Measured BlockMeasure (HeaderFields b) where
-  measure = blockMeasure
-
 -- | Abstract over the shape of blocks (or indeed just block headers)
-class (StandardHash b, Measured BlockMeasure b, Typeable b) => HasHeader b where
+class (StandardHash b, Typeable b) => HasHeader b where
   getHeaderFields :: b -> HeaderFields b
 
 instance (StandardHash b, Typeable b) => HasHeader (HeaderFields b) where
@@ -165,11 +157,6 @@ blockNo = headerFieldBlockNo . getHeaderFields
 class HasHeader b => HasFullHeader b where
     blockPrevHash  :: b -> ChainHash b
     blockInvariant :: b -> Bool
-
--- | When implementing 'HasHeader', use this method to implement the 'measure'
--- method of the 'Measured' super class.
-blockMeasure :: HasHeader b => b -> BlockMeasure
-blockMeasure b = BlockMeasure (blockSlot b) (blockSlot b) 1
 
 -- | 'StandardHash' summarises the constraints we want header hashes to have
 --
@@ -472,29 +459,6 @@ decodePoint decodeHash = do
         hash <- decodeHash
         return (Point (block slot hash))
       _ -> fail "decodePoint: invalid tag"
-
-{-------------------------------------------------------------------------------
-  Finger Tree Measure
--------------------------------------------------------------------------------}
-
--- | The measure used for 'Ouroboros.Network.AnchoredFragment.AnchoredFragment'.
-data BlockMeasure = BlockMeasure {
-       bmMinSlot :: !SlotNo,
-       bmMaxSlot :: !SlotNo,
-       bmSize    :: !Int
-     }
-  deriving Show
-
-
-instance Semigroup BlockMeasure where
-  vl <> vr =
-    BlockMeasure (min (bmMinSlot vl) (bmMinSlot vr))
-                 (max (bmMaxSlot vl) (bmMaxSlot vr))
-                 (bmSize vl + bmSize vr)
-
-instance Monoid BlockMeasure where
-  mempty = BlockMeasure maxBound minBound 0
-  mappend = (<>)
 
 {-------------------------------------------------------------------------------
   Serialised block/header

@@ -31,7 +31,8 @@ import qualified Prelude
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
+                     AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block

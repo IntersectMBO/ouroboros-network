@@ -25,9 +25,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Wrappers
   , getCurrent
   , setCurrent
-  , getCurrentState
-  , getPastState
-  , getHeaderStateHistory
   , currentPoint
   , takeSnapshot
   , trimSnapshots
@@ -41,7 +38,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Re-exports
   , ExceededRollback(..)
   , LedgerDB.AnnLedgerError(..)
-  , LedgerDbParams(..)
   , DiskPolicy (..)
   , DiskSnapshot
   , TraceEvent (..)
@@ -53,7 +49,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.Serialise (Serialise (decode, encode))
+import           Codec.Serialise (Serialise (decode))
 import           Control.Tracer
 import           Data.Foldable (foldl')
 import           Data.Set (Set)
@@ -64,8 +60,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderStateHistory
-                     (HeaderStateHistory (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -84,7 +78,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
-                     ExceededRollback (..), LedgerDbParams (..))
+                     ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      DiskSnapshot, LedgerDB', NextBlock (..), StreamAPI (..),
@@ -147,7 +141,6 @@ data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: HKD f DiskPolicy
     , lgrGenesis        :: HKD f (m (ExtLedgerState blk))
     , lgrHasFS          :: SomeHasFS m
-    , lgrParams         :: HKD f LedgerDbParams
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (TraceEvent blk)
@@ -159,7 +152,6 @@ defaultArgs lgrHasFS = LgrDbArgs {
       lgrDiskPolicy     = NoDefault
     , lgrGenesis        = NoDefault
     , lgrHasFS
-    , lgrParams         = NoDefault
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
@@ -234,8 +226,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         hasFS
         decodeExtLedgerState'
         decode
-        lgrParams
-        (ExtLedgerCfg lgrTopLevelConfig)
+        (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
     return (db, replayed)
@@ -290,26 +281,6 @@ decorateReplayTracer immTip = contramap $ fmap (const immTip)
 getCurrent :: IOLike m => LgrDB m blk -> STM m (LedgerDB' blk)
 getCurrent LgrDB{..} = readTVar varDB
 
-getCurrentState :: IOLike m => LgrDB m blk -> STM m (ExtLedgerState blk)
-getCurrentState LgrDB{..} = LedgerDB.ledgerDbCurrent <$> readTVar varDB
-
-getPastState :: (IOLike m, HasHeader blk)
-             => LgrDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
-getPastState LgrDB{..} p = do
-    db <- readTVar varDB
-    return $ LedgerDB.ledgerDbPast p db
-
-getHeaderStateHistory ::
-     IOLike m
-  => LgrDB m blk -> STM m (HeaderStateHistory blk)
-getHeaderStateHistory LgrDB{..} = do
-    db <- readTVar varDB
-    let (anchor, snapshots) = LedgerDB.ledgerDbPastLedgers headerState db
-    return HeaderStateHistory {
-        headerStateHistorySnapshots = snapshots
-      , headerStateHistoryAnchor    = anchor
-      }
-
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current
 -- 'LedgerDB'.
@@ -324,7 +295,11 @@ currentPoint = castPoint
 
 takeSnapshot ::
      forall m blk.
-     (IOLike m, LgrDbSerialiseConstraints blk, HasHeader blk)
+     ( IOLike m
+     , LgrDbSerialiseConstraints blk
+     , HasHeader blk
+     , IsLedger (LedgerState blk)
+     )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
     ledgerDB <- atomically $ getCurrent lgrDB
@@ -332,7 +307,6 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
       tracer
       hasFS
       encodeExtLedgerState'
-      encode
       ledgerDB
   where
     ccfg = configCodec cfg
@@ -375,7 +349,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.ledgerDbSwitch
-               (ExtLedgerCfg cfg)
+               (configLedgerDb cfg)
                numRollbacks
                aps
                ledgerDB
@@ -477,3 +451,16 @@ wrapFailure _ k = catch k rethrow
   where
     rethrow :: FsError -> m x
     rethrow err = throwIO $ LgrDbFailure @blk err
+
+{-------------------------------------------------------------------------------
+  Auxiliary
+-------------------------------------------------------------------------------}
+
+configLedgerDb ::
+     ConsensusProtocol (BlockProtocol blk)
+  => TopLevelConfig blk
+  -> LedgerDbCfg (ExtLedgerState blk)
+configLedgerDb cfg = LedgerDbCfg {
+      ledgerDbCfgSecParam = configSecurityParam cfg
+    , ledgerDbCfg         = ExtLedgerCfg cfg
+    }

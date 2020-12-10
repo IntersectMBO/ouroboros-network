@@ -46,10 +46,9 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , getMaxSlotNo
   , isOpen
   , invalid
-  , getPastLedger
   , getIsValid
   , isValid
-  , getHeaderStateHistory
+  , getLedgerDB
     -- * Iterators
   , stream
   , iteratorNext
@@ -104,9 +103,6 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderStateHistory
-                     (HeaderStateHistory (..))
-import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -122,6 +118,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 type IteratorId = Int
 
@@ -314,30 +311,6 @@ immutableSlotNo :: HasHeader blk
                 -> WithOrigin SlotNo
 immutableSlotNo k = Chain.headSlot . immutableChain k
 
--- | Get past ledger state
---
--- TODO: To perfectly match the real implementation, we should only return
--- ledger states for blocks within a certain range from the tip; unfortunately,
--- that specific range depends currently on the ledger DB's in-memory
--- representation. Right now we return 'Nothing' only if requesting a 'Point'
--- that doesn't lie on the current chain
-getPastLedger :: forall blk. LedgerSupportsProtocol blk
-              => TopLevelConfig blk
-              -> Point blk -> Model blk -> Maybe (ExtLedgerState blk)
-getPastLedger cfg p m@Model{..} =
-    case prefix of
-      [] | p /= GenesisPoint ->
-        Nothing
-      _otherwise ->
-        Just $ refoldLedger (ExtLedgerCfg cfg) prefix initLedger
-  where
-    prefix :: [blk]
-    prefix = reverse
-           . dropWhile (\blk -> blockPoint blk /= p)
-           . Chain.toNewestFirst
-           . currentChain
-           $ m
-
 getIsValid :: forall blk. LedgerSupportsProtocol blk
            => TopLevelConfig blk
            -> Model blk
@@ -362,16 +335,24 @@ isValid :: forall blk. LedgerSupportsProtocol blk
         -> Maybe Bool
 isValid = flip . getIsValid
 
-getHeaderStateHistory ::
-     forall blk. LedgerSupportsProtocol blk
+getLedgerDB ::
+     LedgerSupportsProtocol blk
   => TopLevelConfig blk
-  -> Model blk -> HeaderStateHistory blk
-getHeaderStateHistory cfg m@Model { initLedger } =
-      HeaderStateHistory.trim (fromIntegral n)
-    . HeaderStateHistory.fromChain cfg initLedger
-    $ currentChain m
+  -> Model blk
+  -> LedgerDB (ExtLedgerState blk)
+getLedgerDB cfg m@Model{..} =
+      ledgerDbPrune (SecurityParam (maxActualRollback k m))
+    $ ledgerDbPushMany' ledgerDbCfg blks
+    $ ledgerDbWithAnchor initLedger
   where
-    n = maxActualRollback (configSecurityParam cfg) m
+    blks = Chain.toOldestFirst $ currentChain m
+
+    k = configSecurityParam cfg
+
+    ledgerDbCfg = LedgerDbCfg {
+          ledgerDbCfgSecParam = k
+        , ledgerDbCfg         = ExtLedgerCfg cfg
+        }
 
 {-------------------------------------------------------------------------------
   Construction

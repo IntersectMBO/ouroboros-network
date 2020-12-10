@@ -21,6 +21,9 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
     ChainDB(..)
   , getCurrentTip
   , getTipBlockNo
+  , getCurrentLedger
+  , getPastLedger
+  , getHeaderStateHistory
     -- * Adding a block
   , AddBlockPromise(..)
   , addBlockWaitWrittenToDisk
@@ -69,7 +72,9 @@ import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo,
 import qualified Ouroboros.Network.Block as Network
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
+import           Ouroboros.Consensus.HeaderStateHistory
+                     (HeaderStateHistory (..))
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util ((.:))
@@ -80,6 +85,8 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
@@ -156,19 +163,8 @@ data ChainDB m blk = ChainDB {
       -- fragment will move as the chain grows.
     , getCurrentChain    :: STM m (AnchoredFragment (Header blk))
 
-      -- | Get current ledger
-    , getCurrentLedger   :: STM m (ExtLedgerState blk)
-
-      -- | Get the ledger for the given point.
-      --
-      -- When the given point is not among the last @k@ blocks of the current
-      -- chain (i.e., older than @k@ or not on the current chain), 'Nothing' is
-      -- returned.
-    , getPastLedger      :: Point blk -> STM m (Maybe (ExtLedgerState blk))
-
-      -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
-      -- last @k@ blocks of the current chain.
-    , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
+      -- | Return the LedgerDB containing the last @k@ ledger states.
+    , getLedgerDB        :: STM m (LedgerDB (ExtLedgerState blk))
 
       -- | Get block at the tip of the chain, if one exists
       --
@@ -341,6 +337,36 @@ getCurrentTip = fmap (AF.anchorToTip . AF.headAnchor) . getCurrentChain
 getTipBlockNo :: (Monad (STM m), HasHeader (Header blk))
               => ChainDB m blk -> STM m (WithOrigin BlockNo)
 getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
+
+-- | Get current ledger
+getCurrentLedger ::
+     (Monad (STM m), IsLedger (LedgerState blk))
+  => ChainDB m blk -> STM m (ExtLedgerState blk)
+getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
+
+-- | Get the ledger for the given point.
+--
+-- When the given point is not among the last @k@ blocks of the current
+-- chain (i.e., older than @k@ or not on the current chain), 'Nothing' is
+-- returned.
+getPastLedger ::
+     (Monad (STM m), LedgerSupportsProtocol blk)
+  => ChainDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
+getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
+
+-- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
+-- last @k@ blocks of the current chain.
+getHeaderStateHistory ::
+     Monad (STM m)
+  => ChainDB m blk -> STM m (HeaderStateHistory blk)
+getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
+  where
+    toHeaderStateHistory ::
+         LedgerDB (ExtLedgerState blk)
+      -> HeaderStateHistory blk
+    toHeaderStateHistory =
+          HeaderStateHistory
+        . LedgerDB.ledgerDbBimap headerState headerState
 
 {-------------------------------------------------------------------------------
   Adding a block

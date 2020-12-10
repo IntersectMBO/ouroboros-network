@@ -18,8 +18,8 @@ import           Data.Maybe (isJust)
 import           Data.Word (Word64)
 import           GHC.Stack
 
-import           Ouroboros.Network.AnchoredFragment
-                     (AnchoredFragment ((:>), Empty))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
+                     AnchoredSeq ((:>), Empty))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block

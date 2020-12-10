@@ -1,18 +1,19 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
 module Ouroboros.Network.AnchoredFragment (
   -- * AnchoredFragment type and fundamental operations
-  AnchoredFragment(Empty, (:>), (:<)),
+  AnchoredFragment,
+  AnchoredSeq(Empty, (:>), (:<)),
   anchor,
   anchorPoint,
   anchorBlockNo,
 
+  -- * Anchor
   Anchor(..),
   anchorFromBlock,
   anchorFromPoint,
@@ -93,57 +94,23 @@ module Ouroboros.Network.AnchoredFragment (
   filterWithStopSpec
   ) where
 
-import           Prelude hiding (filter, head, last, length, null, splitAt)
+import           Prelude hiding (filter, head, last, length, map, null, splitAt)
 
 import           Data.Either (isRight)
-import           Data.FingerTree.Strict (StrictFingerTree)
-import qualified Data.FingerTree.Strict as FT
-import qualified Data.Foldable as Foldable
 import qualified Data.List as L
-import           Data.Maybe (fromMaybe)
-import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
 
+import           Ouroboros.Network.AnchoredSeq hiding (join, prettyPrint,
+                     rollback)
+import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (At, Origin), withOrigin)
 
--- | An 'AnchoredFragment' is a fragment of a chain that is anchored somewhere
--- in that chain. The 'Anchor' corresponds to the block immediately before the
--- first, leftmost block in the fragment. The block corresponding to the anchor
--- is not present in the fragment. The anchor can be thought of as a left
--- exclusive bound.
---
--- For example, the following fragment is anchored at @a@ and contains @b1@,
--- @b2@, and @b3@, which is the head of the fragment.
---
--- > a ] b1 >: b2 >: b3
---
--- The fact that it is an /exclusive/ bound is particularly convenient when
--- dealing with Genesis. Genesis is the start of the chain, but not an actual
--- block, so we cannot use it an inclusive bound. However, there /is/ an
--- 'Anchor' that refers to Genesis ('AnchorGenesis'), which can be used as the
--- anchor, acting as an exclusive bound.
---
--- An 'AnchoredFragment' anchored at Genesis, can thus be converted to a
--- 'Ouroboros.Network.MockChain.Chain' ('fromAnchoredFragment'), containing all
--- blocks starting from Genesis.
---
--- Without an anchor point, an empty fragment wouldn't give us much more
--- information: is it empty because the whole chain is empty? Or, did we just
--- get an empty fragment that was split off from some later part of the chain?
-data AnchoredFragment block = AnchoredFragment {
-      anchor           :: !(Anchor block)
-    , unanchorFragment :: !(StrictFingerTree BlockMeasure block)
-    }
-  deriving (Show, Eq, Generic, NoThunks)
-
-anchorPoint :: AnchoredFragment block -> Point block
-anchorPoint = anchorToPoint . anchor
-
-anchorBlockNo :: AnchoredFragment block -> WithOrigin BlockNo
-anchorBlockNo = anchorToBlockNo . anchor
+{-------------------------------------------------------------------------------
+  Anchor
+-------------------------------------------------------------------------------}
 
 -- | Anchor of an 'AnchoredFragment'
 data Anchor block =
@@ -156,7 +123,12 @@ data Anchor block =
     -- 'WithOrigin', and we want to enforce here that we have a block number
     -- if and only if the point is not 'Origin'.
     --
-    -- TODO: Use 'HeaderField'?
+    -- Note that we don't use 'HeaderFields' here because that is a view of a
+    -- header with lazy fields and thus unfit for long-term in-memory storage.
+    --
+    -- Moreover, we don't reuse the 'Tip' type, because that type is sent across
+    -- the network, while this type is not. This means we can freely change this
+    -- type to suit our needs without worrying about binary compatibility.
   | Anchor !SlotNo !(HeaderHash block) !BlockNo
   deriving (Generic)
 
@@ -234,64 +206,56 @@ anchorToTip :: (HeaderHash a ~ HeaderHash b) => Anchor a -> Tip b
 anchorToTip AnchorGenesis  = TipGenesis
 anchorToTip (Anchor s h b) = Tip s h b
 
--- | \( O(1) \). Pattern for matching on or creating an empty
--- 'AnchoredFragment'. An empty fragment has/needs an anchor point.
-pattern Empty :: HasHeader block => Anchor block -> AnchoredFragment block
-pattern Empty a <- (viewRight -> EmptyR a)
-  where
-    Empty a = AnchoredFragment a FT.empty
+{-------------------------------------------------------------------------------
+  AnchoredFragment
+-------------------------------------------------------------------------------}
 
--- | Auxiliary data type to define the pattern synonym
-data ViewRight block
-    = EmptyR (Anchor block)
-    | ConsR  (AnchoredFragment block) block
-
-viewRight :: HasHeader block => AnchoredFragment block -> ViewRight block
-viewRight (AnchoredFragment a ft) = case FT.viewr ft of
-    FT.EmptyR   -> EmptyR a
-    ft' FT.:> b -> ConsR (AnchoredFragment a ft') b
-
--- | \( O(1) \). Add a block to the right of the anchored fragment.
-pattern (:>) :: HasHeader block
-             => AnchoredFragment block -> block -> AnchoredFragment block
-pattern af' :> b <- (viewRight -> ConsR af' b)
-  where
-    AnchoredFragment a ft :> b = AnchoredFragment a (ft FT.|> b)
-
--- | Auxiliary data type to define the pattern synonym
-data ViewLeft block
-    = EmptyL (Anchor block)
-    | ConsL  block (AnchoredFragment block)
-
-viewLeft :: HasHeader block => AnchoredFragment block -> ViewLeft block
-viewLeft (AnchoredFragment a ft) = case FT.viewl ft of
-    FT.EmptyL   -> EmptyL a
-    b FT.:< ft' -> ConsL b (AnchoredFragment (anchorFromBlock b) ft')
-
--- | \( O(1) \). View the first, leftmost block of the anchored fragment.
+-- | An 'AnchoredFragment' is a fragment of a chain that is anchored somewhere
+-- in that chain. The 'Anchor' corresponds to the block immediately before the
+-- first, leftmost block in the fragment. The block corresponding to the anchor
+-- is not present in the fragment. The anchor can be thought of as a left
+-- exclusive bound.
 --
--- This is only a view, not a constructor, as adding a block to the left would
--- change the anchor of the fragment, but we have no information about the
--- predecessor of the block we'd be prepending.
-pattern (:<) :: HasHeader block
-             => block -> AnchoredFragment block -> AnchoredFragment block
-pattern b :< af' <- (viewLeft -> ConsL b af')
+-- For example, the following fragment is anchored at @a@ and contains @b1@,
+-- @b2@, and @b3@, which is the head of the fragment.
+--
+-- > a ] b1 >: b2 >: b3
+--
+-- The fact that it is an /exclusive/ bound is particularly convenient when
+-- dealing with Genesis. Genesis is the start of the chain, but not an actual
+-- block, so we cannot use it an inclusive bound. However, there /is/ an
+-- 'Anchor' that refers to Genesis ('AnchorGenesis'), which can be used as the
+-- anchor, acting as an exclusive bound.
+--
+-- An 'AnchoredFragment' anchored at Genesis can thus be converted to a
+-- 'Ouroboros.Network.MockChain.Chain' ('fromAnchoredFragment'), containing all
+-- blocks starting from Genesis.
+--
+-- Without an anchor point, an empty fragment wouldn't give us much more
+-- information: is it empty because the whole chain is empty? Or, did we just
+-- get an empty fragment that was split off from some later part of the chain?
+type AnchoredFragment block = AnchoredSeq (WithOrigin SlotNo) (Anchor block) block
 
-infixl 5 :>, :<
+instance HasHeader block
+      => Anchorable (WithOrigin SlotNo) (Anchor block) block where
+  asAnchor = anchorFromBlock
+  getAnchorMeasure _ = anchorToSlotNo
 
-{-# COMPLETE Empty, (:>) #-}
-{-# COMPLETE Empty, (:<) #-}
+-- | Return the 'Point' corresponding to the anchor.
+anchorPoint :: AnchoredFragment block -> Point block
+anchorPoint = anchorToPoint . anchor
 
-prettyPrint :: String
-            -> (Point block -> String)
-            -> (block -> String)
-            -> AnchoredFragment block
-            -> String
-prettyPrint nl ppPoint ppBlock (AnchoredFragment a ft) =
-    Foldable.foldl'
-      (\s b -> s ++ nl ++ "    " ++ ppBlock b)
-      ("AnchoredFragment (" <> ppPoint (anchorToPoint a) <> "):")
-      ft
+-- | Return the 'BlocKno' corresponding to the anchor.
+anchorBlockNo :: AnchoredFragment block -> WithOrigin BlockNo
+anchorBlockNo = anchorToBlockNo . anchor
+
+prettyPrint ::
+     String
+  -> (Point block -> String)
+  -> (block -> String)
+  -> AnchoredFragment block
+  -> String
+prettyPrint nl ppPoint = AS.prettyPrint nl (ppPoint . anchorToPoint)
 
 -- | \( O(n) \).
 valid :: HasFullHeader block => AnchoredFragment block -> Bool
@@ -366,20 +330,9 @@ validExtension af bSucc =
     blockInvariant bSucc &&
     bSucc `isValidSuccessorOf` headAnchor af
 
--- | \( O(1) \). When the fragment is empty, return the anchor point,
--- otherwise the most recently added block.
-head :: HasHeader block => AnchoredFragment block -> Either (Anchor block) block
-head (_ :> b)  = Right b
-head (Empty a) = Left a
-
 -- | \( O(1) \). When the fragment is empty, the anchor point is returned.
 headPoint :: HasHeader block => AnchoredFragment block -> Point block
 headPoint = anchorToPoint . headAnchor
-
--- | \( O(1) \). The anchor corresponding to the most recently added block
--- (i.e., the anchor that would be needed for a fragment starting /after/ this)
-headAnchor :: HasHeader block => AnchoredFragment block -> Anchor block
-headAnchor = either id anchorFromBlock . head
 
 -- | \( O(1) \). When the fragment is empty, the slot of the anchor point is
 -- returned, which may be origin (no slot).
@@ -396,12 +349,6 @@ headHash = either anchorToHash (BlockHash . blockHash) . head
 headBlockNo :: HasHeader block => AnchoredFragment block -> WithOrigin BlockNo
 headBlockNo = either anchorToBlockNo (At . blockNo) . head
 
--- | \( O(1) \). When the fragment is empty, return the anchor point,
--- otherwise the leftmost block.
-last :: HasHeader block => AnchoredFragment block -> Either (Anchor block) block
-last (b :< _)  = Right b
-last (Empty a) = Left a
-
 -- | \( O(1) \). When the fragment is empty, the anchor point is returned.
 lastPoint :: HasHeader block => AnchoredFragment block -> Point block
 lastPoint = either anchorToPoint blockPoint . last
@@ -410,104 +357,6 @@ lastPoint = either anchorToPoint blockPoint . last
 -- returned, which may be the origin and therefore have no slot.
 lastSlot :: HasHeader block => AnchoredFragment block -> WithOrigin SlotNo
 lastSlot = either anchorToSlotNo (At . blockSlot) . last
-
--- | TODO. Make a list of blocks from a 'AnchoredFragment', in newest-to-oldest
--- order.
-toNewestFirst :: AnchoredFragment block -> [block]
-toNewestFirst = Foldable.foldl' (flip (:)) [] . unanchorFragment
-
--- | \( O(n) \). Make a list of blocks from a 'AnchoredFragment', in
--- oldest-to-newest order.
-toOldestFirst :: AnchoredFragment block -> [block]
-toOldestFirst = Foldable.toList . unanchorFragment
-
--- | \( O(n) \). Make a 'AnchoredFragment' from a list of blocks in
--- newest-to-oldest order. The last block in the list must be the block
--- following the given anchor point.
-fromNewestFirst :: HasHeader block
-                => Anchor block  -- ^ Anchor
-                -> [block] -> AnchoredFragment block
-fromNewestFirst a = foldr (flip (:>)) (Empty a)
-
--- | \( O(n) \). Make a 'AnchoredFragment' from a list of blocks in
--- oldest-to-newest order. The first block in the list must be the block
--- following the given anchor point.
-fromOldestFirst :: HasHeader block
-                => Anchor block  -- ^ Anchor
-                -> [block] -> AnchoredFragment block
-fromOldestFirst a bs = AnchoredFragment a (FT.fromList bs)
-
--- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' at a given
---  position.
---
--- POSTCONDITION: @(before, after) = splitAt i f@, then:
--- * @anchorPoint before == anchorPoint f@
--- * @headPoint   before == anchorPoint after@
--- * @headPoint   after  == headPoint f@
--- * @join before after  == Just f@
-splitAt ::
-      forall block. HasHeader block
-   => Int
-   -> AnchoredFragment block
-   -> (AnchoredFragment block, AnchoredFragment block)
-splitAt i (AnchoredFragment a ft) = case FT.split (\v -> bmSize v > i) ft of
-   (before, after) ->
-     let before' = AnchoredFragment a before
-     in (before', AnchoredFragment (headAnchor before') after)
-
--- | \( O(\log(\min(i,n-i)) \). Drop the newest @n@ blocks from the
--- 'AnchoredFragment'. The anchor point is not changed.
-dropNewest :: HasHeader block
-           => Int  -- ^ @n@
-           -> AnchoredFragment block -> AnchoredFragment block
-dropNewest n af@(AnchoredFragment a ft) =
-    AnchoredFragment a $ FT.takeUntil (\v -> bmSize v > remainingLength) ft
-  where
-    remainingLength = length af - n
-
--- | \( O(\log(\min(i,n-i)) \). Take the oldest @n@ blocks from the
--- 'AnchoredFragment'. The anchor point is not changed.
-takeOldest :: HasHeader block
-           => Int  -- ^ @n@
-           -> AnchoredFragment block -> AnchoredFragment block
-takeOldest n (AnchoredFragment a ft) =
-    AnchoredFragment a $ FT.takeUntil (\v -> bmSize v > n) ft
-
--- | \( O(n) \). Drop the newest blocks that satisfy the predicate, keeping
--- the remainder. The anchor point is not changed.
-dropWhileNewest :: HasHeader block
-                => (block -> Bool)
-                -> AnchoredFragment block
-                -> AnchoredFragment block
-dropWhileNewest _ (Empty a) = Empty a
-dropWhileNewest p af@(af' :> b)
-    | p b       = dropWhileNewest p af'
-    | otherwise = af
-
--- | \( O(n) \). Take the oldest blocks that satisfy the predicate. The anchor
--- point is not changed.
-takeWhileOldest :: HasHeader block
-                => (block -> Bool)
-                -> AnchoredFragment block
-                -> AnchoredFragment block
-takeWhileOldest p = \(AnchoredFragment a ft) -> AnchoredFragment a (go ft)
-  where
-    go ft = case FT.viewl ft of
-        FT.EmptyL
-          -> FT.empty
-        b FT.:< ft'
-          | p b
-          -> b FT.<| go ft'
-          | otherwise
-          -> FT.empty
-
--- | \( O(1) \). Return the number of blocks. The anchor point is not counted.
-length :: HasHeader block => AnchoredFragment block -> Int
-length = bmSize . FT.measure . unanchorFragment
-
--- | \( O(1) \). The anchor point is not counted.
-null :: AnchoredFragment block -> Bool
-null = FT.null . unanchorFragment
 
 -- | \( O(1) \). Add a block to the right of the anchored fragment.
 --
@@ -527,46 +376,7 @@ addBlock b c = c :> b
 rollback :: HasHeader block
          => Point block -> AnchoredFragment block
          -> Maybe (AnchoredFragment block)
-rollback p af@(AnchoredFragment a _)
-    | p == anchorToPoint a
-    = Just (Empty a)
-    | otherwise
-    = fst <$> splitAfterPoint af p
-
--- | \( O(\log(\min(i,n-i)) \). Internal variant of 'lookupBySlot' that
--- returns a 'FT.SearchResult'.
-lookupBySlotFT :: HasHeader block
-               => AnchoredFragment block
-               -> SlotNo
-               -> FT.SearchResult BlockMeasure block
-lookupBySlotFT (AnchoredFragment _ ft) s =
-    FT.search (\vl vr -> bmMaxSlot vl >= s && bmMinSlot vr > s) ft
-
--- | \( O(\log(\min(i,n-i) + s) \) where /s/ is the number of blocks with the
--- same slot. Return all blocks in the chain fragment with a slot equal to the
--- given slot. The blocks will be ordered from oldest to newest.
-lookupBySlot :: HasHeader block
-             => AnchoredFragment block
-             -> SlotNo
-             -> [block]
-lookupBySlot af s = case lookupBySlotFT af s of
-    FT.Position before b _after
-      | blockSlot b == s
-        -- We have found the rightmost block with the given slot, we still
-        -- have to look at the blocks before it with the same slot.
-      -> blocksBefore before [b]
-    _ -> []
-  where
-    -- Look to the left of the block we found for more blocks with the same
-    -- slot.
-    blocksBefore before acc = case FT.viewr before of
-      before' FT.:> b
-        | blockSlot b == s
-        -> blocksBefore before' (b:acc)
-           -- Note that we're prepending an older block each time, so the
-           -- final list of blocks will be ordered from oldest to newest. No
-           -- need to reverse the accumulator.
-      _ -> acc
+rollback p = AS.rollback (pointSlot p) ((== p) . either anchorToPoint blockPoint)
 
 -- | \( O(o \log(\min(i,n-i))) \). Select a bunch of 'Point's based on offsets
 -- from the head of the anchored fragment. This is used in the chain consumer
@@ -580,7 +390,6 @@ lookupBySlot af s = case lookupBySlotFT af s of
 --
 -- > selectPoints (0 : [ fib n | n <- [1 .. 17] ])
 --
---
 -- Only for offsets within the bounds of the anchored fragment will there be
 -- points in the returned list.
 --
@@ -592,20 +401,8 @@ selectPoints ::
   => [Int]
   -> AnchoredFragment block
   -> [Point block]
-selectPoints offsets = go relativeOffsets
-  where
-    relativeOffsets = zipWith (-) offsets (0:offsets)
-
-    go :: [Int] -> AnchoredFragment block -> [Point block]
-    go [] _
-      = []
-    go (off:offs) af
-      | let i = length af - off
-      , i >= 0
-      , (af', _) <- splitAt i af
-      = headPoint af' : go offs af'
-      | otherwise
-      = []
+selectPoints offsets =
+    fmap (either anchorToPoint blockPoint) . AS.selectOffsets offsets
 
 -- | \( O(o * n) \). Specification of 'selectPoints'.
 --
@@ -616,7 +413,7 @@ selectPointsSpec :: HasHeader block
                 => [Int] -> AnchoredFragment block -> [Point block]
 selectPointsSpec offsets c =
     [ ps !! offset
-    | let ps = map blockPoint (toNewestFirst c) <> [anchorPoint c]
+    | let ps = (blockPoint <$> toNewestFirst c) <> [anchorPoint c]
           len = L.length ps
     , offset <- offsets
     , offset < len
@@ -627,8 +424,8 @@ selectPointsSpec offsets c =
 -- is one).
 successorBlock :: HasHeader block
                => Point block -> AnchoredFragment block -> Maybe block
-successorBlock p af@(AnchoredFragment a _)
-    | p == anchorToPoint a
+successorBlock p af
+    | p == anchorPoint af
     = either (const Nothing) Just $ last af
     | otherwise
     = case splitAfterPoint af p of
@@ -639,9 +436,7 @@ successorBlock p af@(AnchoredFragment a _)
 -- point? The anchor point is ignored.
 pointOnFragment :: HasHeader block
                 => Point block -> AnchoredFragment block -> Bool
-pointOnFragment p af = case p of
-    GenesisPoint       -> False
-    BlockPoint bslot _ -> any ((== p) . blockPoint) $ lookupBySlot af bslot
+pointOnFragment p = contains (pointSlot p) ((== p) . blockPoint)
 
 -- | \( O(n) \). Specification of 'pointOnFragment'.
 --
@@ -663,14 +458,13 @@ pointOnFragmentSpec p = go
 -- the fragment.
 withinFragmentBounds :: HasHeader block
                      => Point block -> AnchoredFragment block -> Bool
-withinFragmentBounds p af@(AnchoredFragment a _) =
-    p == anchorToPoint a || pointOnFragment p af
+withinFragmentBounds p =
+    withinBounds
+      (pointSlot p)
+      ((== p) . either anchorToPoint blockPoint)
 
 -- | \( O(p \log(\min(i,n-i)) \). Find the first 'Point' in the list of points
 -- that is within the fragment bounds. Return 'Nothing' if none of them are.
---
--- __Note__: in contrast to 'CF.findFirstPoint', this is based on
--- 'withinFragmentBounds' instead of 'CF.pointOnFragment'.
 findFirstPoint
   :: HasHeader block
   => [Point block]
@@ -692,45 +486,6 @@ applyChainUpdates :: HasHeader block
 applyChainUpdates []     c = Just c
 applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 
--- | Take the @n@ newest blocks from the fragment.
---
--- WARNING: this may change the anchor of the fragment!
---
--- When the fragment itself is shorter than @n@ blocks, the fragment will be
--- returned unmodified.
-anchorNewest :: forall block. HasHeader block
-             => Word64  -- ^ @n@
-             -> AnchoredFragment block
-             -> AnchoredFragment block
-anchorNewest n c
-    | toDrop <= 0
-    = c
-    | toDrop < 5
-      -- Hybrid approach: microbenchmarks have shown that a linear drop is
-      -- faster when the number of elements is small. For a larger number of
-      -- elements, the asymptotic complexity of 'splitAt' wins.
-    = linearDrop toDrop c
-    | otherwise
-    = snd $ splitAt toDrop c
-  where
-    len, toDrop :: Int
-    len    = length c
-    toDrop = len - fromIntegral n
-
-    linearDrop :: Int -> AnchoredFragment block -> AnchoredFragment block
-    linearDrop !_ (Empty a) = Empty a
-    linearDrop !0 c'        = c'
-    linearDrop !m (_ :< c') = linearDrop (m - 1) c'
-
--- | \( O(\max(n_1, n_2)) \). Check whether the first anchored fragment is a
--- prefix of the second.
---
--- The two 'AnchoredFragment's must have the same anchor point, otherwise the
--- first cannot be a prefix of the second.
-isPrefixOf :: (HasHeader block, Eq block)
-           => AnchoredFragment block -> AnchoredFragment block -> Bool
-af1 `isPrefixOf` af2 =
-    anchor af1 == anchor af2 && toOldestFirst af1 `L.isPrefixOf` toOldestFirst af2
 
 -- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' after the given
 --  'Point'. Return 'Nothing' if given 'Point' is not within the fragment
@@ -752,27 +507,11 @@ splitAfterPoint
    => AnchoredFragment block1
    -> Point block2
    -> Maybe (AnchoredFragment block1, AnchoredFragment block1)
-splitAfterPoint af@(AnchoredFragment a ft) p =
-    case p of
-      _ | anchorToPoint a == castPoint p
-        -> Just (Empty a, af)
-      BlockPoint slot _
-        | (l, r) <- FT.split (\v -> bmMaxSlot v > slot) ft
-          -- @l@ contains blocks with a slot <= the given slot. There could be
-          -- multiple with the given slot, so try them one by one.
-        -> go slot l r
-      _otherwise
-        -> Nothing
-  where
-    go slot l r = case FT.viewr l of
-      l' FT.:> b
-        | blockPoint b == castPoint p
-        , let al = AnchoredFragment a l
-        -> Just (al, AnchoredFragment (headAnchor al) r)
-        | blockSlot b == slot
-        -> go slot l' (b FT.<| r)
-      -- Empty tree or the slot number doesn't match anymore
-      _ -> Nothing
+splitAfterPoint af p =
+    splitAfterMeasure
+      (pointSlot p)
+      ((== castPoint p) . either anchorToPoint blockPoint)
+      af
 
 -- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredFragment' before the given
 --  'Point'. Return 'Nothing' if given 'Point' is not on the fragment
@@ -792,24 +531,11 @@ splitBeforePoint
    => AnchoredFragment block1
    -> Point block2
    -> Maybe (AnchoredFragment block1, AnchoredFragment block1)
-splitBeforePoint _ GenesisPoint = Nothing
-splitBeforePoint (AnchoredFragment a ft) p@(BlockPoint bslot _)
-    | (l, r) <- FT.split (\v -> bmMaxSlot v >= bslot) ft
-      -- @r@ contains blocks with a slot >= the given slot. There could be
-      -- multiple with the given slot, so try them one by one.
-    = go l r
-    | otherwise
-    = Nothing
-  where
-    go l r = case FT.viewl r of
-      b FT.:< r'
-        | blockPoint b == castPoint p
-        , let al = AnchoredFragment a l
-        -> Just (al, AnchoredFragment (headAnchor al) r)
-        | blockSlot b == bslot
-        -> go (l FT.|> b) r'
-      -- Empty tree or the slot number doesn't match anymore
-      _ -> Nothing
+splitBeforePoint af p =
+    splitBeforeMeasure
+      (pointSlot p)
+      ((== castPoint p) . blockPoint)
+      af
 
 -- | Select a slice of an anchored fragment between two points, inclusive.
 --
@@ -839,11 +565,8 @@ join :: HasHeader block
      => AnchoredFragment block
      -> AnchoredFragment block
      -> Maybe (AnchoredFragment block)
-join af1@(AnchoredFragment a1 ft1) af2@(AnchoredFragment _ ft2)
-    | headPoint af1 == anchorPoint af2
-    = Just $ AnchoredFragment a1 (ft1 FT.>< ft2)
-    | otherwise
-    = Nothing
+join = AS.join $ \aOrB a ->
+    either anchorToPoint blockPoint aOrB == anchorToPoint a
 
 -- | \( O(n_2 \log(n_1)) \). Look for the most recent intersection of two
 -- 'AnchoredFragment's @c1@ and @c2@.
@@ -976,155 +699,13 @@ intersectionPoint c1 c2 = case c1 `intersect` c2 of
     Just (_, _, s1, _) -> Just (anchorPoint s1)
     Nothing            -> Nothing
 
--- | \( O(n) \). Maps over the chain blocks. This is not allowed to change the
--- block `Point`s, or it would create an invalid chain. The 'anchorPoint' is
--- not affected.
+-- | \( O(n) \). Maps over the chain's blocks. This is not allowed to change the
+-- block 'Point's, or it would create an invalid chain. The 'anchorPoint' is not
+-- affected.
 --
-mapAnchoredFragment :: (HasHeader block1, HasHeader block2,
-                        HeaderHash block1 ~ HeaderHash block2)
-                 => (block1 -> block2)
-                 -> AnchoredFragment block1
-                 -> AnchoredFragment block2
-mapAnchoredFragment f (AnchoredFragment a ft) =
-    AnchoredFragment (castAnchor a) (FT.fmap' f ft)
-
--- | \( O\(n\) \). Variation on 'filterWithStop' without a stop condition.
-filter ::
-     forall block. HasHeader block
-  => (block -> Bool)  -- ^ Filtering predicate
-  -> AnchoredFragment block
-  -> [AnchoredFragment block]
-filter p = filterWithStop p (const False)
-
--- | \( O(n + r * \log(\min(i,n-i)) \) where /r/ is the number of consecutive
--- ranges of blocks to be included in the result.
---
--- Filter out blocks that don't match the predicate.
---
--- As filtering removes blocks the result is a sequence of disconnected
--- fragments. The fragments are in the original order and are of maximum size.
---
--- As soon as the stop condition is true, the filtering stops and the remaining
--- fragment (starting with the first element for which the stop condition is
--- true) is the final fragment in the returned list.
---
--- The stop condition wins from the filtering predicate: if the stop condition
--- is true for an element, but the filter predicate not, then the element
--- still ends up in final fragment.
---
--- For example, given the fragment containing @[1, 2, 3, 4, 5, 6]@:
---
--- > filter         odd        -> [[1], [3], [5]]
--- > filterWithStop odd (>= 4) -> [[1], [3], [4, 5, 6]]
-filterWithStop ::
-     forall block. HasHeader block
-  => (block -> Bool)  -- ^ Filtering predicate
-  -> (block -> Bool)  -- ^ Stop condition
-  -> AnchoredFragment block
-  -> [AnchoredFragment block]
-filterWithStop p stop c =
-    map (applyFilterRange c) $ startRange (zip [0..] (toOldestFirst c))
-  where
-    startRange :: [(Int, block)] -> [FilterRange]
-    startRange [] = []
-    startRange ((i, blk):blks)
-        | stop blk
-         -- We can stop filtering, the last range is from @blk@ to the end of the
-         -- fragment.
-        = [FilterRange i (length c - 1)]
-
-        | p blk
-          -- We can use @blk@ to start a range, try extending it with the next
-          -- block
-        = extendRange i i blks
-
-        | otherwise
-          -- Not part of a range, try the next block
-        = startRange blks
-
-    extendRange :: Int -> Int -> [(Int, block)] -> [FilterRange]
-    extendRange !start !end [] = [FilterRange start end]
-    extendRange !start !end ((i, blk):blks)
-        | stop blk
-          -- We can stop filtering, the last range is from @start@ to the end of the
-          -- fragment.
-        = [FilterRange start (length c - 1)]
-
-        | p blk
-          -- Extend the open range with @blk@
-        = extendRange start i blks
-
-        | otherwise
-          -- End the open range and try starting another one
-        = FilterRange start end : startRange blks
-
--- | Range with /inclusive/ bounds, i.e., indices, that should be included in
--- the result of a filtering operation.
---
--- INVARIANT: the first lower bound <= the upper bound
---
--- When used in combination with a fragment, both indices should be in the [0,
--- size of fragment) range.
-data FilterRange = FilterRange !Int !Int
-  deriving (Show)
-
--- | \( O(\log(\min(i,n-i)) \). Apply a 'FilterRange' to a fragment, returning
--- the fragment matching the range.
---
--- For example, @FilterRange 0 0@ correspond to the first element of the
--- fragment. @FilterRange 0 1@ corresponds to the first two elements of the
--- fragment.
---
--- Since both bounds are inclusive, the fragment is never empty.
---
--- PRECONDITION: both indices are in the @[0, size of fragment)@ range.
-applyFilterRange ::
-     forall block. HasHeader block
-  => AnchoredFragment block
-  -> FilterRange
-  -> AnchoredFragment block
-applyFilterRange c (FilterRange start stop) = inRange
-  where
-    (_before, fromStart) = splitAt start c
-    (inRange, _after)    = splitAt (stop - start + 1) fromStart
-
--- | \( O\(n\) \). Naive reference implementation of 'filterWithStop'.
---
--- While the asymptotic complexity of this function is better than that of
--- 'filterWithStop', the allocation cost is high. This function deconstructs and
--- reconstructs the fragment (until the stop condition is reached), even when no
--- blocks are removed.
-filterWithStopSpec ::
-     forall block. HasHeader block
-  => (block -> Bool)  -- ^ Filtering predicate
-  -> (block -> Bool)  -- ^ Stop condition
-  -> AnchoredFragment block
-  -> [AnchoredFragment block]
-filterWithStopSpec p stop = goNext []
-  where
-    goNext :: [AnchoredFragment block]  -- Previously constructed fragments
-           -> AnchoredFragment block    -- Fragment still to process
-           -> [AnchoredFragment block]
-    goNext cs af = go cs (Empty (anchor af)) af
-
-    go :: [AnchoredFragment block]  -- Previously constructed fragments
-       -> AnchoredFragment block    -- Currently accumulating fragment
-       -> AnchoredFragment block    -- Fragment still to process
-       -> [AnchoredFragment block]
-    go cs c' af@(b :< c) | stop b = reverse (addToAcc (join' c' af) cs)
-                         | p    b = go cs (c' :> b) c
-    go cs c' (_ :< c)             = goNext (addToAcc c' cs) c
-    go cs c' (Empty _)            = reverse (addToAcc c' cs)
-
-    addToAcc :: AnchoredFragment block
-             -> [AnchoredFragment block]
-             -> [AnchoredFragment block]
-    addToAcc (Empty _) acc =    acc
-    addToAcc c'        acc = c':acc
-
-    -- This is called with @c'@ and @(b : < c)@. @c'@ is the fragment
-    -- containing the blocks before @b@, so they must be joinable.
-    join' :: AnchoredFragment block
-          -> AnchoredFragment block
-          -> AnchoredFragment block
-    join' a b = fromMaybe (error "could not join fragments") $ join a b
+mapAnchoredFragment ::
+     (HasHeader block2, HeaderHash block1 ~ HeaderHash block2)
+  => (block1 -> block2)
+  -> AnchoredFragment block1
+  -> AnchoredFragment block2
+mapAnchoredFragment = bimap castAnchor

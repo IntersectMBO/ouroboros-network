@@ -58,7 +58,6 @@ module Test.Util.TestBlock (
 import           Codec.Serialise (Serialise (..))
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Int
 import           Data.List (transpose)
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -213,9 +212,6 @@ instance GetPrevHash TestBlock where
         Just prevHash -> BlockHash (TestHash prevHash)
 
 instance StandardHash TestBlock
-
-instance Measured BlockMeasure TestBlock where
-  measure = blockMeasure
 
 instance Condense TestBlock where
   condense b = mconcat [

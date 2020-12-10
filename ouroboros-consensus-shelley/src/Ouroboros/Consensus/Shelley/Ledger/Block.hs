@@ -37,7 +37,6 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
-import           Data.FingerTree.Strict (Measured (..))
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
@@ -159,9 +158,6 @@ instance ShelleyBasedEra era => GetPrevHash (ShelleyBlock era) where
     . SL.bheaderPrev
     . SL.bhbody
     . shelleyHeaderRaw
-
-instance ShelleyBasedEra era => Measured BlockMeasure (ShelleyBlock era) where
-  measure = blockMeasure
 
 instance ShelleyBasedEra era => StandardHash (ShelleyBlock era)
 

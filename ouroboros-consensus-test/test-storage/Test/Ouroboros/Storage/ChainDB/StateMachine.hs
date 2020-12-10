@@ -70,7 +70,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -97,8 +96,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-                     (LedgerDbParams (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -134,9 +132,7 @@ data Cmd blk it rdr
     -- smaller than the block's slot number (such that the block is from the
     -- future) and larger or equal to the current slot, and add the block.
   | GetCurrentChain
-  | GetCurrentLedger
-  | GetPastLedger         (Point blk)
-  | GetHeaderStateHistory
+  | GetLedgerDB
   | GetTipBlock
   | GetTipHeader
   | GetTipPoint
@@ -200,8 +196,7 @@ deriving instance SOP.HasDatatypeInfo (Cmd blk it rdr)
 data Success blk it rdr
   = Unit                ()
   | Chain               (AnchoredFragment (Header blk))
-  | Ledger              (ExtLedgerState blk)
-  | MbLedger            (Maybe (ExtLedgerState blk))
+  | LedgerDB            (LedgerDB (ExtLedgerState blk))
   | MbBlock             (Maybe blk)
   | MbAllComponents     (Maybe (AllComponents blk))
   | MbGCedAllComponents (MaybeGCedBlock (AllComponents blk))
@@ -209,7 +204,6 @@ data Success blk it rdr
   | Point               (Point blk)
   | BlockNo             BlockNo
   | IsValid             IsValidResult
-  | HdrStateHistory     (HeaderStateHistory blk)
   | UnknownRange        (UnknownRange blk)
   | Iter                it
   | IterResult          (IteratorResult blk (AllComponents blk))
@@ -336,9 +330,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       AddBlock blk             -> Point               <$> (advanceAndAdd st (blockSlot blk) blk)
       AddFutureBlock blk s     -> Point               <$> (advanceAndAdd st s               blk)
       GetCurrentChain          -> Chain               <$> atomically getCurrentChain
-      GetCurrentLedger         -> Ledger              <$> atomically getCurrentLedger
-      GetPastLedger pt         -> MbLedger            <$> atomically (getPastLedger pt)
-      GetHeaderStateHistory    -> HdrStateHistory     <$> atomically getHeaderStateHistory
+      GetLedgerDB              -> LedgerDB            <$> atomically getLedgerDB
       GetTipBlock              -> MbBlock             <$> getTipBlock
       GetTipHeader             -> MbHeader            <$> getTipHeader
       GetTipPoint              -> Point               <$> atomically getTipPoint
@@ -553,9 +545,7 @@ runPure cfg = \case
     AddBlock blk             -> ok  Point               $ update  (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> ok  Point               $ update  (advanceAndAdd s               blk)
     GetCurrentChain          -> ok  Chain               $ query   (Model.volatileChain k getHeader)
-    GetCurrentLedger         -> ok  Ledger              $ query    Model.currentLedger
-    GetPastLedger pt         -> ok  MbLedger            $ query   (Model.getPastLedger cfg pt)
-    GetHeaderStateHistory    -> ok  HdrStateHistory     $ query   (Model.getHeaderStateHistory cfg)
+    GetLedgerDB              -> ok  LedgerDB            $ query   (Model.getLedgerDB cfg)
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
     GetTipHeader             -> ok  MbHeader            $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint              -> ok  Point               $ query    Model.tipPoint
@@ -782,14 +772,13 @@ generator
 generator genBlock m@Model {..} = At <$> frequency
     [ (30, genAddBlock)
     , (if empty then 1 else 10, return GetCurrentChain)
-    , (if empty then 1 else 10, return GetCurrentLedger)
+    , (if empty then 1 else 10, return GetLedgerDB)
     , (if empty then 1 else 10, return GetTipBlock)
       -- To check that we're on the right chain
     , (if empty then 1 else 10, return GetTipPoint)
     , (10, genGetBlockComponent)
     , (if empty then 1 else 10, return GetMaxSlotNo)
     , (if empty then 1 else 10, genGetIsValid)
-    , (if empty then 1 else 10, genGetPastLedger)
 
     -- Iterators
     , (if empty then 1 else 10, uncurry Stream <$> genBounds)
@@ -865,17 +854,6 @@ generator genBlock m@Model {..} = At <$> frequency
       return $ if Model.garbageCollectablePoint secParam dbModel pt
         then GetGCedBlockComponent pt
         else GetBlockComponent     pt
-
-    genGetPastLedger :: Gen (Cmd blk it rdr)
-    genGetPastLedger = do
-        GetPastLedger <$> elements onChain
-      where
-        volatileFrag = Model.volatileChain secParam id $ dbModel
-
-        -- Non-empty list of points on the volatile fragment of our chain
-        onChain :: [Point blk]
-        onChain = AF.anchorPoint volatileFrag
-                : map blockPoint (AF.toOldestFirst volatileFrag)
 
     genAddBlock = do
       let curSlot = Model.currentSlot dbModel
@@ -1600,9 +1578,6 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbImmutableDbValidation  = ValidateAllChunks
     , cdbVolatileDbValidation   = VolatileDB.ValidateAll
     , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-    , cdbParamsLgrDB            = LedgerDbParams {
-                                      ledgerDbSecurityParam = configSecurityParam cfg
-                                    }
     , cdbDiskPolicy             = defaultDiskPolicy (configSecurityParam cfg)
 
       -- Integration

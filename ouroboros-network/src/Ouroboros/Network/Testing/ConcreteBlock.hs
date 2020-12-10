@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -42,7 +41,6 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , fixupAnchoredFragmentFrom
   ) where
 
-import           Data.FingerTree.Strict (Measured (measure))
 import           Data.Function (fix)
 import           Data.Hashable
 import           Data.String (IsString)
@@ -136,12 +134,6 @@ newtype BodyHash = BodyHash Int
 
 instance StandardHash BlockHeader
 instance StandardHash Block
-
-instance Measured BlockMeasure BlockHeader where
-  measure = blockMeasure
-
-instance Measured BlockMeasure Block where
-  measure = blockMeasure
 
 type instance HeaderHash BlockHeader = ConcreteHeaderHash
 type instance HeaderHash Block       = ConcreteHeaderHash

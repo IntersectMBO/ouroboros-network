@@ -121,7 +121,9 @@ data LedgerInterface m blk = LedgerInterface
   }
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
-chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
+chainDBLedgerInterface ::
+     (IOLike m, IsLedger (LedgerState blk))
+  => ChainDB m blk -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
     }

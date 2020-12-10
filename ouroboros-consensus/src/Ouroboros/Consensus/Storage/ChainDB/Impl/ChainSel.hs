@@ -36,8 +36,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.AnchoredFragment (Anchor,
-                     AnchoredFragment (..))
+import           Ouroboros.Network.AnchoredFragment (Anchor, AnchoredFragment,
+                     AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
