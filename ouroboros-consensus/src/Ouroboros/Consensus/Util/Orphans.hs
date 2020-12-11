@@ -21,7 +21,6 @@ import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as PSQ
 import           Data.SOP.Strict
-import           Data.Void (Void)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..),
                      allNoThunks, noThunksInKeysAndValues)
 
@@ -103,9 +102,6 @@ deriving via OnlyCheckWhnfNamed "Decoder" (Decoder s a) instance NoThunks (Decod
 deriving via OnlyCheckWhnfNamed "Tracer" (Tracer m ev) instance NoThunks (Tracer m ev)
 
 deriving newtype instance NoThunks Time
-
--- TODO move to nothunks
-deriving anyclass instance NoThunks Void
 
 instance NoThunks a => NoThunks (K a b) where
   showTypeOf _ = showTypeOf (Proxy @a)
