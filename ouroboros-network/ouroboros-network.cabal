@@ -94,6 +94,8 @@ library
                        Ouroboros.Network.Protocol.TxSubmission.Client
                        Ouroboros.Network.Protocol.TxSubmission.Server
                        Ouroboros.Network.Protocol.TxSubmission.Codec
+                       Ouroboros.Network.Protocol.TxSubmission2.Type
+                       Ouroboros.Network.Protocol.TxSubmission2.Codec
                        Ouroboros.Network.Protocol.LocalTxSubmission.Type
                        Ouroboros.Network.Protocol.LocalTxSubmission.Client
                        Ouroboros.Network.Protocol.LocalTxSubmission.Server

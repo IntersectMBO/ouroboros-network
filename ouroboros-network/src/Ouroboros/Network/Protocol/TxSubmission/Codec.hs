@@ -77,7 +77,15 @@ codecTxSubmission encodeTxId decodeTxId
                   encodeTx   decodeTx =
     mkCodecCborLazyBS
       (encodeTxSubmission encodeTxId encodeTx)
-      (decodeTxSubmission decodeTxId decodeTx)
+      decode
+  where
+    decode :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
+              PeerHasAgency pr st
+           -> forall s. CBOR.Decoder s (SomeMessage st)
+    decode stok = do
+      len <- CBOR.decodeListLen
+      key <- CBOR.decodeWord
+      decodeTxSubmission decodeTxId decodeTx stok len key
 
 encodeTxSubmission
     :: forall txid tx.
@@ -145,17 +153,18 @@ decodeTxSubmission
     -> (forall s . CBOR.Decoder s tx)
     -> (forall (pr :: PeerRole) (st :: TxSubmission txid tx) s.
                PeerHasAgency pr st
+            -> Int
+            -> Word
             -> CBOR.Decoder s (SomeMessage st))
 decodeTxSubmission decodeTxId decodeTx = decode
   where
     decode :: forall (pr :: PeerRole) s (st :: TxSubmission txid tx).
               PeerHasAgency pr st
+           -> Int
+           -> Word
            -> CBOR.Decoder s (SomeMessage st)
-    decode stok = do
-      len <- CBOR.decodeListLen
-      key <- CBOR.decodeWord
+    decode stok len key = do
       case (stok, len, key) of
-
         (ServerAgency TokIdle,       4, 0) -> do
           blocking <- CBOR.decodeBool
           ackNo    <- CBOR.decodeWord16
