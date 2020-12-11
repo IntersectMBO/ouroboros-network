@@ -34,6 +34,8 @@ module Ouroboros.Network.Diffusion
 
 import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Exception
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -41,8 +43,10 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, maybeToList)
 import qualified Data.Set as Set
+import           Data.Set (Set)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
+import           System.Random (newStdGen)
 
 import qualified Data.IP as IP
 import           Network.Mux ( MiniProtocolBundle (..)
@@ -52,6 +56,7 @@ import           Network.Mux ( MiniProtocolBundle (..)
                              , WithMuxBearer (..)
                              )
 import           Network.Mux.Timeout (withTimeoutSerial)
+import qualified Network.DNS as DNS
 import           Network.Socket (SockAddr (..), AddrInfo)
 import qualified Network.Socket as Socket
 
@@ -80,13 +85,18 @@ import           Ouroboros.Network.HasIPAddress
 import           Ouroboros.Network.RethrowPolicy
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAddress)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS ( DomainAddress
+                                                              , resolveDomainAddresses
+                                                              )
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types ( TracePeerSelection (..)
                                                                 , DebugPeerSelection (..)
                                                                 )
 import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsensusInterface (..)
-                                                             , TraceLedgerPeers)
+                                                             , TraceLedgerPeers
+                                                             , NumberOfPeers
+                                                             , UseLedgerAfter (..)
+                                                             , runLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerStateActions ( PeerSelectionActionsTrace (..)
                                                                   , PeerStateActionsArguments (..)
                                                                   , PeerConnectionHandle
@@ -224,6 +234,7 @@ nullTracers = DiffusionTracers {
       , dtLocalConnectionManagerTracer  = nullTracer
       , dtLocalServerTracer             = nullTracer
       , dtDiffusionInitializationTracer = nullTracer
+      , dtLedgerPeersTracer             = nullTracer
   }
 
 -- | Network Node argumets
@@ -330,6 +341,7 @@ runDataDiffusion tracers
                                        , daRethrowPolicy
                                        , daMiniProtocolParameters
                                        , daLocalRethrowPolicy
+                                       , daLedgerPeersCtx
                                        } =
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- nameing convenstion is that we use /local/ prefix for /node-to-client/
@@ -375,6 +387,19 @@ runDataDiffusion tracers
     serverStateVar            <- Server.newStateVarIO
     localServerStateVar       <- Server.newStateVarIO
     localServerControlChannel <- Server.newControlChannel
+
+    -- RNG used for picking random peers from the ledger.
+    ledgerPeersRng <- newStdGen
+    -- Request interface, supply the number of peers desired.
+    ledgerPeersReq <- newEmptyTMVarIO :: IO (StrictTMVar IO NumberOfPeers)
+    -- Response interface, returns a Set of peers. Nothing indicates that the
+    -- ledger hasn't caught up to `useLedgerAfter`. May return less than
+    -- the number of peers requested.
+    ledgerPeersRsp <- newEmptyTMVarIO :: IO (StrictTMVar IO (Maybe (Set SockAddr, DiffTime)))
+    -- Require the ledger to be passed the provided slot number before it is used as a source of
+    -- public root peers.
+    -- After 2020-12-08 14:53:36.03 UTC TODO: Should be configurable
+    let useLedgerAfter = UseLedgerAfter 15872925
 
     let -- snocket for remote communication.
         snocket :: SocketSnocket
@@ -543,76 +568,95 @@ runDataDiffusion tracers
                     spsConnectionManager = connectionManager
                   }
                 $ \peerStateActions ->
+                Async.withAsync
+                  (runLedgerPeers
+                    ledgerPeersRng
+                    dtLedgerPeersTracer
+                    useLedgerAfter
+                    daLedgerPeersCtx
+                    (resolveDomainAddresses
+                      dtTracePublicRootPeersTracer
+                      timeout
+                      DNS.defaultResolvConf
+                      )
+                    (takeTMVar ledgerPeersReq)
+                    (putTMVar ledgerPeersRsp)
+                  )
+                  $ \ledgerPeerThread ->
 
-                --
-                -- Run peer selection (p2p governor)
-                --
+                    --
+                    -- Run peer selection (p2p governor)
+                    --
 
-                withPeerSelectionActions
-                  dtTraceLocalRootPeersTracer
-                  dtTracePublicRootPeersTracer
-                  timeout
-                  daPeerSelectionTargets
-                  (Map.fromList daStaticLocalRootPeers)
-                  daLocalRootPeers
-                  daPublicRootPeers
-                  peerStateActions
-                  $ \mbLocalPeerRootProviderThread peerSelectionActions ->
+                    withPeerSelectionActions
+                      dtTraceLocalRootPeersTracer
+                      dtTracePublicRootPeersTracer
+                      timeout
+                      daPeerSelectionTargets
+                      (Map.fromList daStaticLocalRootPeers)
+                      daLocalRootPeers
+                      daPublicRootPeers
+                      peerStateActions
+                      (putTMVar ledgerPeersReq)
+                      (takeTMVar ledgerPeersRsp)
+                      $ \mbLocalPeerRootProviderThread peerSelectionActions ->
 
-                  Async.withAsync
-                    (Governor.peerSelectionGovernor
-                      dtTracePeerSelectionTracer
-                      dtDebugPeerSelectionTracer
-                      peerSelectionActions
-                      Diffusion.Policies.simplePeerSelectionPolicy)
-                    $ \governorThread ->
+                      Async.withAsync
+                        (Governor.peerSelectionGovernor
+                          dtTracePeerSelectionTracer
+                          dtDebugPeerSelectionTracer
+                          peerSelectionActions
+                          Diffusion.Policies.simplePeerSelectionPolicy)
+                        $ \governorThread ->
 
-                    case mbServerControlChannel of
-                      -- 'InitiatorOnlyDiffusionMode'
-                      Nothing ->
+                        case mbServerControlChannel of
+                          -- 'InitiatorOnlyDiffusionMode'
+                          Nothing ->
 
-                        -- wait for any thread to fail
-                        snd <$> Async.waitAny
-                          (maybeToList mbLocalPeerRootProviderThread
-                          ++ [ localServerThread
-                             , governorThread
-                             ])
+                            -- wait for any thread to fail
+                            snd <$> Async.waitAny
+                              (maybeToList mbLocalPeerRootProviderThread
+                              ++ [ localServerThread
+                                 , governorThread
+                                 , ledgerPeerThread
+                                 ])
 
-                      -- InitiatorAndResponderDiffusionMode
-                      Just serverControlChannel -> do
-                        let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
-                            mkAddr addr = (Socket.addrFamily addr, Socket.addrAddress addr)
+                          -- InitiatorAndResponderDiffusionMode
+                          Just serverControlChannel -> do
+                            let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
+                                mkAddr addr = (Socket.addrFamily addr, Socket.addrAddress addr)
 
-                        withSockets tracer snocket
-                                    (catMaybes
-                                      [ fmap (fmap mkAddr) daIPv4Address
-                                      , fmap (fmap mkAddr) daIPv6Address
-                                      ])
-                                    $ \sockets addresses -> do
-                          --
-                          -- Run server
-                          --
-                          traceWith tracer (RunServer addresses)
-                          Async.withAsync
-                            (Server.run
-                              ServerArguments {
-                                  serverSockets = sockets,
-                                  serverSnocket = snocket,
-                                  serverTracer  = dtServerTracer,
-                                  serverControlChannel,
-                                  serverConnectionLimits = daAcceptedConnectionsLimit,
-                                  serverConnectionManager = connectionManager,
-                                  serverStateVar = serverStateVar
-                                })
-                                $ \serverThread ->
+                            withSockets tracer snocket
+                                        (catMaybes
+                                          [ fmap (fmap mkAddr) daIPv4Address
+                                          , fmap (fmap mkAddr) daIPv6Address
+                                          ])
+                                        $ \sockets addresses -> do
+                              --
+                              -- Run server
+                              --
+                              traceWith tracer (RunServer addresses)
+                              Async.withAsync
+                                (Server.run
+                                  ServerArguments {
+                                      serverSockets = sockets,
+                                      serverSnocket = snocket,
+                                      serverTracer  = dtServerTracer,
+                                      serverControlChannel,
+                                      serverConnectionLimits = daAcceptedConnectionsLimit,
+                                      serverConnectionManager = connectionManager,
+                                      serverStateVar = serverStateVar
+                                    })
+                                    $ \serverThread ->
 
-                                  -- wait for any thread to fail
-                                  snd <$> Async.waitAny
-                                    (maybeToList mbLocalPeerRootProviderThread
-                                    ++ [ localServerThread
-                                       , serverThread
-                                       , governorThread
-                                       ])
+                                      -- wait for any thread to fail
+                                      snd <$> Async.waitAny
+                                        (maybeToList mbLocalPeerRootProviderThread
+                                        ++ [ localServerThread
+                                           , serverThread
+                                           , governorThread
+                                           , ledgerPeerThread
+                                           ])
   where
     DiffusionTracers { dtMuxTracer
                      , dtHandshakeTracer
@@ -627,6 +671,7 @@ runDataDiffusion tracers
                      , dtLocalHandshakeTracer
                      , dtLocalConnectionManagerTracer
                      , dtLocalServerTracer
+                     , dtLedgerPeersTracer
                      -- the tracer
                      , dtDiffusionInitializationTracer = tracer
                      } = tracers
