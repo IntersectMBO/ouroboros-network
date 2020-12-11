@@ -1,19 +1,14 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE InstanceSigs          #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.Node (
     protocolInfoCardano
@@ -43,7 +38,7 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
-import           Data.SOP.Strict ((:.:), AllZip, K (..), NP (..), unComp)
+import           Data.SOP.Strict hiding (shape, shift)
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
@@ -53,6 +48,8 @@ import           Cardano.Prelude (cborError)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -81,9 +78,11 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol (TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
+import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
+import           Ouroboros.Consensus.Cardano.ShelleyBased
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
@@ -329,6 +328,11 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
       transitionTrigger    :: TriggerHardFork
     }
 
+-- | Create a 'ProtocolInfo' for 'CardanoBlock'
+--
+-- NOTE: the initial staking and funds in the 'ShelleyGenesis' are ignored,
+-- /unless/ configured to skip the Byron era and hard fork to Shelley or a later
+-- era from the start using @TriggerHardForkAtEpoch 0@ for testing purposes.
 protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
@@ -375,9 +379,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       } =
     assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
-        pInfoConfig = cfg
-      , pInfoInitLedger =
-          injectInitialExtLedgerState cfg initExtLedgerStateByron
+        pInfoConfig       = cfg
+      , pInfoInitLedger   = initExtLedgerStateCardano
       , pInfoBlockForging =
           maybeToList <$> mBlockForging
       }
@@ -541,6 +544,35 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
       }
 
+    -- When the initial ledger state is not in the Byron era, register the
+    -- initial staking and initial funds (if provided in the genesis config) in
+    -- the ledger state.
+    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c)
+    initExtLedgerStateCardano = ExtLedgerState {
+          headerState = initHeaderState
+        , ledgerState = overShelleyBasedLedgerState register initLedgerState
+        }
+      where
+        initHeaderState :: HeaderState (CardanoBlock c)
+        initLedgerState :: LedgerState (CardanoBlock c)
+        ExtLedgerState initLedgerState initHeaderState =
+          injectInitialExtLedgerState cfg initExtLedgerStateByron
+
+        register ::
+             (EraCrypto era ~ c, ShelleyBasedEra era)
+          => LedgerState (ShelleyBlock era)
+          -> LedgerState (ShelleyBlock era)
+        register st = st {
+              Shelley.shelleyLedgerState =
+                -- We must first register the initial funds, because the stake
+                -- information depends on it.
+                  registerGenesisStaking
+                    (SL.sgStaking genesisShelley)
+                . registerInitialFunds
+                    (SL.sgInitialFunds genesisShelley)
+                $ Shelley.shelleyLedgerState st
+            }
+
     mBlockForging :: m (Maybe (BlockForging m (CardanoBlock c)))
     mBlockForging = do
         mShelleyBased <- mBlockForgingShelleyBased
@@ -564,7 +596,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         reassoc ::
              NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)
           -> OptNP 'False (BlockForging m) (CardanoEras c)
-        reassoc = OptSkip . injectShelley unComp . OptNP.fromNonEmptyNP
+        reassoc = OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
 
 protocolClientInfoCardano
   :: forall c.
@@ -600,22 +632,3 @@ mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFo
               maxMajorProtVer
         , shelleyTriggerHardFork = shelleyTriggerHardFork
         }
-
-{-------------------------------------------------------------------------------
-  Injection from Shelley-based eras into the Cardano eras
--------------------------------------------------------------------------------}
-
--- | Witness the relation between the Cardano eras and the Shelley-based eras.
-class    cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
-instance cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
-
-injectShelley ::
-     AllZip InjectShelley shelleyEras cardanoEras
-  => (   forall shelleyEra cardanoEra.
-         InjectShelley shelleyEra cardanoEra
-      => f shelleyEra -> g cardanoEra
-     )
-  -> OptNP empty f shelleyEras -> OptNP empty g cardanoEras
-injectShelley _ OptNil         = OptNil
-injectShelley f (OptSkip   xs) = OptSkip (injectShelley f xs)
-injectShelley f (OptCons x xs) = OptCons (f x) (injectShelley f xs)
