@@ -1,8 +1,10 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 
@@ -459,3 +461,5 @@ data Peer ps (pr :: PeerRole) (st :: ps) m a where
          -> (forall st'. Message ps st st' -> Peer ps pr st' m a)
          -> Peer ps pr st m a
 
+
+deriving instance Functor m => Functor (Peer ps (pr :: PeerRole) (st :: ps) m)
