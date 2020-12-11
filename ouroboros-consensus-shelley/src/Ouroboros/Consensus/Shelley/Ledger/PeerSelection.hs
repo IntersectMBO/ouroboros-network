@@ -65,11 +65,11 @@ instance c ~ EraCrypto era
 
       relayToRelayAddress :: SL.StakePoolRelay -> Maybe RelayAddress
       relayToRelayAddress (SL.SingleHostAddr (SJust (Port port)) (SJust ipv4) _) =
-          Just $ RelayAddressAddr (IPv4 ipv4) (fromIntegral port)
+          Just $ RelayAddress (IPv4 ipv4) (fromIntegral port)
       relayToRelayAddress (SL.SingleHostAddr (SJust (Port port)) SNothing (SJust ipv6)) =
-          Just $ RelayAddressAddr (IPv6 ipv6) (fromIntegral port)
+          Just $ RelayAddress (IPv6 ipv6) (fromIntegral port)
       relayToRelayAddress (SL.SingleHostName (SJust (Port port)) dnsName) =
-          Just $ RelayAddressDomain $ DomainAddress (encodeUtf8 $ dnsToText dnsName) (fromIntegral port)
+          Just $ RelayDomain $ DomainAddress (encodeUtf8 $ dnsToText dnsName) (fromIntegral port)
       relayToRelayAddress _ =
           -- This could be an unsupported relay (SRV records) or an unusable
           -- relay such as a relay with an IP address but without a port number.
