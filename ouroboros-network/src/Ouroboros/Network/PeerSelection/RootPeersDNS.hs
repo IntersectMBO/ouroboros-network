@@ -13,13 +13,15 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     -- * DNS based provider for local root peers
     localRootPeersProvider,
     DomainAddress (..),
-    RelayAddress (..),
     IP.IP (..),
     TraceLocalRootPeers(..),
 
     -- * DNS based provider for public root peers
     publicRootPeersProvider,
     TracePublicRootPeers(..),
+
+    -- DNS lookup support
+    resolveDomainAddresses,
 
     -- * DNS type re-exports
     DNS.ResolvConf,
@@ -31,6 +33,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
   ) where
 
 import           Data.Word (Word32)
+import           Data.List (foldl')
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Set as Set
@@ -58,13 +61,6 @@ import qualified Network.Socket as Socket
 import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Types
-
--- | A relay can have either an IP address and a port number or
--- a domain with a port number.
--- TODO: move to a Ledger Peer file.
-data RelayAddress = RelayAddressDomain DomainAddress
-                  | RelayAddressAddr IP.IP Socket.PortNumber
-                  deriving (Show, Eq, Ord)
 
 -- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
 -- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
@@ -395,6 +391,66 @@ publicRootPeersProvider tracer timeout resolvConf domains action = do
             -- If all the lookups failed we'll return an empty set with a minimum
             -- TTL, and the governor will invoke its exponential backoff.
             return (ips, ttl)
+
+-- | Provides DNS resulution functionality.
+--
+resolveDomainAddresses :: Tracer IO TracePublicRootPeers
+                       -> TimeoutFn IO
+                       -> DNS.ResolvConf
+                       -> [DomainAddress]
+                       -> IO (Map DomainAddress (Set Socket.SockAddr))
+resolveDomainAddresses tracer timeout resolvConf domains = do
+    traceWith tracer (TracePublicRootDomains domains)
+#if !defined(mingw32_HOST_OS)
+    rr <- resolverResource resolvConf
+#else
+    let rr = newResolverResource resolvConf
+#endif
+    resourceVar <- newTVarIO rr
+    requestPublicRootPeers resourceVar
+  where
+    requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
+                           -> IO (Map DomainAddress (Set Socket.SockAddr))
+    requestPublicRootPeers resourceVar = do
+        rr <- atomically $ readTVar resourceVar
+        (er, rr') <- withResource rr
+        atomically $ writeTVar resourceVar rr'
+        case er of
+          Left (DNSError err) -> throwIO err
+          Left (IOError  err) -> throwIO err
+          Right resolver -> do
+            let lookups =
+                  [ lookupAWithTTL timeout resolvConf resolver daDomain
+                  |  DomainAddress {daDomain} <- domains ]
+            -- The timeouts here are handled by the 'lookupAWithTTL'. They're
+            -- configured via the DNS.ResolvConf resolvTimeout field and defaults
+            -- to 3 sec.
+            results <- withAsyncAll lookups (atomically . mapM waitSTM)
+            sequence_
+              [ traceWith tracer $ case result of
+                  Left  dnserr -> TracePublicRootFailure daDomain dnserr
+                  Right ipttls -> TracePublicRootResult  daDomain ipttls
+              | (DomainAddress {daDomain}, result) <- zip domains results ]
+            return $ foldl' buildResult Map.empty $ zip domains results
+
+    buildResult :: Map DomainAddress (Set Socket.SockAddr)
+                -> (DomainAddress, Either DNS.DNSError [(IPv4, DNS.TTL)])
+                -> Map DomainAddress (Set Socket.SockAddr)
+    buildResult mr (_, Left _) = mr
+    buildResult mr (domain, Right ipsttls) =
+        Map.alter addFn domain mr
+      where
+        addFn :: Maybe (Set Socket.SockAddr) -> Maybe (Set Socket.SockAddr)
+        addFn Nothing =
+            let ips = map fst ipsttls
+                !addrs = map (Socket.SockAddrInet (daPortNumber domain) . IP.toHostAddress) ips
+                !addrSet = Set.fromList addrs in
+            Just addrSet
+        addFn (Just addrSet) =
+            let ips = map fst ipsttls
+                !addrs = map (Socket.SockAddrInet (daPortNumber domain) . IP.toHostAddress) ips
+                !addrSet' = Set.union addrSet (Set.fromList addrs) in
+            Just addrSet'
 
 
 ---------------------------------------------
