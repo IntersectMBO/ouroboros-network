@@ -658,12 +658,13 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         -- 'responder'.  If a 'responder' throws 'MuxError' we
                         -- might not want to shutdown the consumer (which is
                         -- using different connection), as we do below:
-                        MuxBearerClosed         -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxSDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxSDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxShutdown {}          -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxCleanShutdown        -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxBearerClosed              -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxIOException{}             -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxSDUReadTimeout            -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxSDUWriteTimeout           -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxShutdown {}               -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxCleanShutdown             -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxBlockedOnCompletionVar {} -> Just (SuspendPeer shortDelay shortDelay)
 
           -- Error policy for TxSubmission protocol: outbound side (client role)
         , ErrorPolicy
