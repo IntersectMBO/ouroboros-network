@@ -36,8 +36,8 @@ newtype ArbitraryRelayAddress = ArbitraryRelayAddress RelayAddress
 
 instance Arbitrary ArbitraryRelayAddress where
     arbitrary = do
-      ArbitraryRelayAddress <$> elements [ RelayAddressAddr (read "1.1.1.1") 1234
-               , RelayAddressDomain (DomainAddress "relay.iohk.example" 1234)
+      ArbitraryRelayAddress <$> elements [ RelayAddress (read "1.1.1.1") 1234
+               , RelayDomain (DomainAddress "relay.iohk.example" 1234)
                ]
 
 data StakePool = StakePool {
@@ -73,11 +73,11 @@ prop_pick100 :: Word16
              -> Property
 prop_pick100 seed =
     let rng = mkStdGen $ fromIntegral seed
-        sps = [ (1, RelayAddressAddr (read "1.1.1.1") 1  :| [])
-              , (0, RelayAddressAddr (read "0.0.0.0") 0  :| [])
+        sps = [ (1, RelayAddress (read "1.1.1.1") 1  :| [])
+              , (0, RelayAddress (read "0.0.0.0") 0  :| [])
               ]
         peerMap = accPoolStake sps
-        tr = (runSimTrace $ pickPeers rng verboseTracer peerMap 1) in
+        tr = (runSimTrace $ pickPeers rng verboseTracer peerMap $ NumberOfPeers 1) in
     ioProperty $ do
         tr' <- evaluateTrace tr
         case tr' of
@@ -87,7 +87,7 @@ prop_pick100 seed =
                  return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
              SimReturn (_, peers) _trace -> do
                  -- printf "Log: %s\n" (intercalate "\n" _trace)
-                 return $ peers === [ RelayAddressAddr (read "1.1.1.1") 1 ]
+                 return $ peers === [ RelayAddress (read "1.1.1.1") 1 ]
 
 -- | Veify that given at least one peer we manage to pick `count` peers.
 prop_pick :: LedgerPools
@@ -97,7 +97,7 @@ prop_pick :: LedgerPools
 prop_pick (LedgerPools lps) count seed =
     let rng = mkStdGen $ fromIntegral seed
         peerMap = accPoolStake lps
-        tr = runSimTrace (pickPeers rng verboseTracer peerMap count) in
+        tr = runSimTrace (pickPeers rng verboseTracer peerMap $ NumberOfPeers count) in
     ioProperty $ do
         tr' <- evaluateTrace tr
         case tr' of

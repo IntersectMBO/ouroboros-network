@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns     #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RankNTypes       #-}
@@ -28,6 +27,7 @@ import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 
@@ -43,16 +43,19 @@ withPeerSelectionActions
   -> [DomainAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
+  -> (NumberOfPeers -> STM IO ())
+  -> STM IO (Maybe (Set Socket.SockAddr, DiffTime))
   -> (Maybe (Async IO Void) -> PeerSelectionActions Socket.SockAddr peerconn IO -> IO a)
   -- ^ continuation, recieves a handle to the local roots peer provider thread
   -- (only if local root peers where non-empty).
   -> IO a
-withPeerSelectionActions localRootTracer publicRootTracer timeout targets _staticLocalRootPeers localRootPeers publicRootPeers peerStateActions k = do
+withPeerSelectionActions localRootTracer publicRootTracer timeout targets _staticLocalRootPeers
+  localRootPeers publicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
     localRootsVar <- newTVarIO Map.empty
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = pure targets,
             readLocalRootPeers = pure [],
-            requestPublicRootPeers,
+            requestPublicRootPeers = requestLedgerPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions
           }
@@ -68,6 +71,17 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout targets _stati
             (a :| as))
           (\thread -> k (Just thread) peerSelectionActions)
   where
+    -- We first try to get poublic root peers from the ledger, but if it fails
+    -- (for example because the node hasn't synced far enough) we fall back
+    -- to using the manually configured bootstrap root peers.
+    requestLedgerPeers :: Int -> IO (Set Socket.SockAddr, DiffTime)
+    requestLedgerPeers n = do
+        atomically $ reqLedgerPeers $ NumberOfPeers $ fromIntegral n
+        peers_m <- atomically getLedgerPeers
+        case peers_m of
+             Nothing -> requestPublicRootPeers n
+             Just peers -> return peers
+
     -- For each call we re-initialise the dns library which forces reading
     -- `/etc/resolv.conf`:
     -- https://github.com/input-output-hk/cardano-node/issues/731
