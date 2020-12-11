@@ -15,6 +15,11 @@ module Ouroboros.Network.Protocol.TxSubmission.Test (
     tests
    ,TxId (..)
    ,Tx (..)
+   ,TxSubmissionTestParams (..)
+   ,testClient
+   ,testServer
+   ,codec
+   ,DistinctList (..)
    ) where
 
 import           Data.List (nub)

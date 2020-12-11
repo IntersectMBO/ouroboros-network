@@ -211,6 +211,7 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.TxSubmission.Direct
                        Ouroboros.Network.Protocol.TxSubmission.Examples
                        Ouroboros.Network.Protocol.TxSubmission.Test
+                       Ouroboros.Network.Protocol.TxSubmission2.Test
                        Ouroboros.Network.Protocol.KeepAlive.Direct
                        Ouroboros.Network.Protocol.KeepAlive.Examples
                        Ouroboros.Network.Protocol.KeepAlive.Test

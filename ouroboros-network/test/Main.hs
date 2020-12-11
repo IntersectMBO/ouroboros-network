@@ -20,6 +20,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
 import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
 import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
 import qualified Ouroboros.Network.Protocol.TxSubmission.Test (tests)
+import qualified Ouroboros.Network.Protocol.TxSubmission2.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
 import qualified Ouroboros.Network.Protocol.TipSample.Test (tests)
@@ -44,6 +45,7 @@ tests =
   , Ouroboros.Network.Protocol.BlockFetch.Test.tests
   , Ouroboros.Network.Protocol.LocalTxSubmission.Test.tests
   , Ouroboros.Network.Protocol.TxSubmission.Test.tests
+  , Ouroboros.Network.Protocol.TxSubmission2.Test.tests
   , Ouroboros.Network.Protocol.Handshake.Test.tests
   , Ouroboros.Network.Protocol.KeepAlive.Test.tests
   , Ouroboros.Network.Protocol.TipSample.Test.tests

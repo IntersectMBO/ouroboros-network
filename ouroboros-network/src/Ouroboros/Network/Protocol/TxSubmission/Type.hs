@@ -76,6 +76,9 @@ instance ( ShowProxy txid
       , showProxy (Proxy :: Proxy tx)
       ]
 
+instance ShowProxy (StIdle :: TxSubmission txid tx) where
+    showProxy _ = "StIdle"
+
 
 data StBlockingStyle where
 
