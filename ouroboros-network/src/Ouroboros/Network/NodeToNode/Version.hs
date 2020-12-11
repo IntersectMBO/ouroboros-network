@@ -45,6 +45,10 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable @CardanoNodeToNodeVersion4@, i.e., Mary
+    | NodeToNodeV_6
+    -- ^ Changes:
+    --
+    -- * Replace 'TxSubmision' with 'Txsubmission2' protocol.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -55,12 +59,14 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_3  = CBOR.TInt 3
     encodeTerm NodeToNodeV_4  = CBOR.TInt 4
     encodeTerm NodeToNodeV_5  = CBOR.TInt 5
+    encodeTerm NodeToNodeV_6  = CBOR.TInt 6
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
     decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
     decodeTerm (CBOR.TInt 3) = Right NodeToNodeV_3
     decodeTerm (CBOR.TInt 4) = Right NodeToNodeV_4
     decodeTerm (CBOR.TInt 5) = Right NodeToNodeV_5
+    decodeTerm (CBOR.TInt 6) = Right NodeToNodeV_6
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n

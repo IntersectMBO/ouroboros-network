@@ -313,7 +313,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> BlockNodeToNodeVersion blk
-      -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ()
+      -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeKernelArgs nodeKernel version =
         NTN.mkApps
           nodeKernel
@@ -336,7 +336,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
     mkDiffusionApplications
       :: MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
-          -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ()
+          -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ByteString ()
          )
       -> (   BlockNodeToClientVersion blk
           -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()

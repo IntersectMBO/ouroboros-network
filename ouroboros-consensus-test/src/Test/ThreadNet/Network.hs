@@ -69,6 +69,7 @@ import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
 import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -1057,6 +1058,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
            Lazy.ByteString
            Lazy.ByteString
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+           (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
            (AnyMessage KeepAlive)
     customNodeToNodeCodecs cfg = NTN.Codecs
         { cChainSyncCodec =
@@ -1074,6 +1076,9 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cTxSubmissionCodec =
             mapFailureCodec CodecIdFailure $
               NTN.cTxSubmissionCodec NTN.identityCodecs
+        , cTxSubmission2Codec =
+            mapFailureCodec CodecIdFailure $
+              NTN.cTxSubmission2Codec NTN.identityCodecs
         , cKeepAliveCodec =
             mapFailureCodec CodecIdFailure $
               NTN.cKeepAliveCodec NTN.identityCodecs
@@ -1605,7 +1610,8 @@ type LimitedApp' m peer blk =
         -- channel with the same type on both ends, i.e., 'Lazy.ByteString'.
         Lazy.ByteString
         Lazy.ByteString
-        (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+        (AnyMessage (TxSubmission  (GenTxId blk) (GenTx blk)))
+        (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
         (AnyMessage KeepAlive)
         ()
 
