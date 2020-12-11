@@ -241,6 +241,7 @@ codecTxSubmissionId = Codec encode decode
   decode stok = return $ DecodePartial $ \bytes -> return $ case (stok, bytes) of
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxIds {}))) -> DecodeDone (SomeMessage msg) Nothing
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxs {})))   -> DecodeDone (SomeMessage msg) Nothing
+    (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgKThxBye {})))      -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency TokTxs,       Just (AnyMessage msg@(MsgReplyTxs {})))     -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency (TokTxIds b), Just (AnyMessage msg)) -> case (b, msg) of
       (TokBlocking,    MsgReplyTxIds (BlockingReply {}))    -> DecodeDone (SomeMessage msg) Nothing

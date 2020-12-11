@@ -71,6 +71,7 @@ tests =
   , testProperty "connect 1"           prop_connect1
   , testProperty "connect 2"           prop_connect2
   , testProperty "codec"               prop_codec
+  , testProperty "codec id"            prop_codec_id
   , testProperty "codec 2-splits"      prop_codec_splits2
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3
@@ -323,6 +324,12 @@ codec = codecTxSubmission
 prop_codec :: AnyMessageAndAgency (TxSubmission TxId Tx) -> Bool
 prop_codec msg =
   runST (prop_codecM codec msg)
+
+-- | Check the codec round trip property for the id condec.
+--
+prop_codec_id :: AnyMessageAndAgency (TxSubmission TxId Tx) -> Bool
+prop_codec_id msg =
+  runST (prop_codecM codecTxSubmissionId msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
