@@ -1,6 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -40,6 +41,7 @@ import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -264,10 +266,14 @@ instance NodeInitStorage ByronBlock where
 
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.
-  nodeInitChainDB cfg InitChainDB { addBlockIfEmpty } = do
-      addBlockIfEmpty (return genesisEBB)
+  nodeInitChainDB cfg InitChainDB { getCurrentLedger, addBlock } = do
+      tip <- ledgerTipPoint (Proxy @ByronBlock) <$> getCurrentLedger
+      case tip of
+        BlockPoint {} -> return ()
+        GenesisPoint  -> addBlock genesisEBB
     where
-      genesisEBB = forgeEBB (getByronBlockConfig cfg) (SlotNo 0) (BlockNo 0) GenesisHash
+      genesisEBB =
+        forgeEBB (getByronBlockConfig cfg) (SlotNo 0) (BlockNo 0) GenesisHash
 
   nodeCheckIntegrity = verifyBlockIntegrity . getByronBlockConfig
 
