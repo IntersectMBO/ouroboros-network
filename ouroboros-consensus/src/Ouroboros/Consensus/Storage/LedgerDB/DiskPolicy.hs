@@ -59,9 +59,33 @@ data DiskPolicy = DiskPolicy {
       --   to reapply to get to the chain tip. This is useful, as it allows the
       --   policy to decide to take a snapshot /on node startup/ if a lot of
       --   blocks had to be replayed.
-      --
       -- See also 'defaultDiskPolicy'
-    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
+    , onDiskShouldTakeSnapshot    :: Maybe DiffTime -> Word64 -> Bool
+
+      --   | This additional policy makes it possible to do snapshots every n epochs
+      --   and to keep m of them.
+      --   If n or m equals zero, no epoch snapshot will be taken.
+      --   The epoch snapshots will be named with the slot number plus the prefix: _epoch.
+    , onDiskEveryEpochSnapshots   :: Int
+    , onDiskKeepEpochSnapshots    :: Int
+
+      --   | This additional policy makes it possible to write snapshots
+      --   at the slot before a HardFork and keep m of them.
+      --   The HardFork snapshots will be named with the slot number
+      --   plus the prefix: _hard_fork.
+    , onDiskHardforkSnapshots     :: Bool
+    , onDiskKeepHardforkSnapshots :: Int
+
+      --   | This additional policy makes it possible to specify specific slot numbers for
+      --   doing a snapshot.
+      --   A newer call will reset previous settings, so a call with an empty list will
+      --   clear all specific snapshots of the pipe.
+      --   Any slot number is only used once.
+      --   The specific snapshots will be named with the slot number
+      --   plus the prefix: _specific.
+      --   As this feature is for debugguing, none of these snaphots
+      --   will be removed automatically.
+    , onDiskSpecificSnapshots     :: [Word64]
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
