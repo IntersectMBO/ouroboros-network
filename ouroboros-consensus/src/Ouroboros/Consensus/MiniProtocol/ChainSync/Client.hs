@@ -54,7 +54,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
-import           Ouroboros.Network.Block (Tip, getTipBlockNo, getTipPoint)
+import           Ouroboros.Network.Block (Tip, getTipBlockNo)
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -267,8 +267,6 @@ data UnknownIntersectionState blk = UnknownIntersectionState
   , ourHeaderStateHistory :: !(HeaderStateHistory blk)
     -- ^ 'HeaderStateHistory' corresponding to the tip (most recent block) of
     -- 'ourFrag'.
-  , ourTip                :: !(Our (Tip blk))
-    -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   }
   deriving (Generic)
 
@@ -302,8 +300,6 @@ data KnownIntersectionState blk = KnownIntersectionState
     -- this follows that both fragments intersect. This also means that
     -- 'theirFrag' forks off within the last @k@ headers/blocks of the
     -- 'ourFrag'.
-  , ourTip                  :: !(Our (Tip blk))
-    -- ^ INVARIANT: must correspond to the tip of 'ourFrag'.
   , mostRecentIntersection  :: !(Point blk)
     -- ^ The most recent intersection point between 'theirFrag' and 'ourFrag'.
     -- Note that this is not necessarily the anchor point of both 'theirFrag'
@@ -335,7 +331,6 @@ checkKnownIntersectionInvariants cfg KnownIntersectionState
                                      { ourFrag
                                      , theirFrag
                                      , theirHeaderStateHistory
-                                     , ourTip
                                      , mostRecentIntersection
                                      }
     -- 'theirHeaderStateHistory' invariant
@@ -380,17 +375,6 @@ checkKnownIntersectionInvariants cfg KnownIntersectionState
       , show ourFragAnchor
       , "vs"
       , show theirFragAnchor
-      ]
-
-    -- 'ourTip' invariant
-    | let ourTipPoint = getTipPoint (unOur ourTip)
-          ourFragTipPoint = castPoint (AF.headPoint ourFrag)
-    , ourTipPoint /= ourFragTipPoint
-    = throwError $ unwords
-      [ "ourTip is not the tip of ourFrag:"
-      , show ourTipPoint
-      , "vs"
-      , show ourFragTipPoint
       ]
 
     -- 'mostRecentIntersection' invariant
@@ -480,18 +464,19 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                     $ AF.selectPoints
                         (map fromIntegral (offsets maxOffset))
                         ourFrag
-          ourTip    = ourTipFromChain ourFrag
           uis = UnknownIntersectionState {
               ourFrag               = ourFrag
             , ourHeaderStateHistory = ourHeaderStateHistory
-            , ourTip                = ourTip
             }
       return $ SendMsgFindIntersect points $ ClientPipelinedStIntersect
         { recvMsgIntersectFound = \i theirTip' ->
             continueWithState uis $
               intersectFound (castPoint i) (Their theirTip')
         , recvMsgIntersectNotFound = \theirTip' ->
-            return $ terminate $ mkResult ourTip (Their theirTip')
+            return $ terminate $
+              mkResult
+                (ourTipFromChain ourFrag)
+                (Their theirTip')
         }
 
     -- | One of the points we sent intersected our chain. This intersection
@@ -505,9 +490,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                  = Stateful $ \UnknownIntersectionState
                      { ourFrag
                      , ourHeaderStateHistory
-                     , ourTip = ourTip
                      } -> do
-      traceWith tracer $ TraceFoundIntersection intersection ourTip theirTip
+      traceWith tracer $
+        TraceFoundIntersection intersection (ourTipFromChain ourFrag) theirTip
       traceException $ do
         -- Roll back the current chain fragment to the @intersection@.
         --
@@ -532,15 +517,17 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             -- we sent only points from the candidate chain to find an
             -- intersection with. The node must have sent us an invalid
             -- intersection point.
-            Nothing     -> disconnect $
-              InvalidIntersection intersection ourTip theirTip
+            Nothing -> disconnect $
+              InvalidIntersection
+                intersection
+                (ourTipFromChain ourFrag)
+                theirTip
         atomically $ writeTVar varCandidate theirFrag
         let kis = assertKnownIntersectionInvariants (configConsensus cfg) $
               KnownIntersectionState
                 { theirFrag               = theirFrag
                 , theirHeaderStateHistory = theirHeaderStateHistory
                 , ourFrag                 = ourFrag
-                , ourTip                  = ourTip
                 , mostRecentIntersection  = intersection
                 }
         continueWithState kis $ nextStep mkPipelineDecision0 Zero theirTip
@@ -598,7 +585,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                      ourFrag                 = ourFrag'
                    , theirFrag               = trimmedCandidateFrag
                    , theirHeaderStateHistory = trimmedHeaderStateHistory'
-                   , ourTip                  = ourTipFromChain ourFrag'
                    , mostRecentIntersection  = castPoint intersection
                    }
              where
@@ -782,8 +768,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           -- have obtained a 'LedgerView' that we can use to validate @hdr@.
 
           let KnownIntersectionState {
-                  ourTip
-                , ourFrag
+                  ourFrag
                 , theirFrag
                 , theirHeaderStateHistory
                 , mostRecentIntersection
@@ -793,13 +778,19 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           let expectPrevHash = castHash (AF.headHash theirFrag)
               actualPrevHash = headerPrevHash hdr
           when (actualPrevHash /= expectPrevHash) $
-            disconnect $ DoesntFit actualPrevHash expectPrevHash ourTip theirTip
+            disconnect $
+              DoesntFit
+                actualPrevHash
+                expectPrevHash
+                (ourTipFromChain ourFrag)
+                theirTip
 
           theirHeaderStateHistory' <-
             case runExcept $ validateHeader cfg ledgerView hdr theirHeaderStateHistory of
               Right theirHeaderStateHistory' -> return theirHeaderStateHistory'
               Left  vErr ->
-                disconnect $ HeaderError hdrPoint vErr ourTip theirTip
+                disconnect $
+                  HeaderError hdrPoint vErr (ourTipFromChain ourFrag) theirTip
 
           let theirFrag' = theirFrag :> hdr
               -- Advance the most recent intersection if we have the same header
@@ -817,7 +808,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                     theirFrag               = theirFrag'
                   , theirHeaderStateHistory = theirHeaderStateHistory'
                   , ourFrag                 = ourFrag
-                  , ourTip                  = ourTip
                   , mostRecentIntersection  = mostRecentIntersection'
                   }
           atomically $ writeTVar varCandidate theirFrag'
@@ -837,7 +827,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                    { theirFrag
                    , theirHeaderStateHistory
                    , ourFrag
-                   , ourTip
                    , mostRecentIntersection
                    } -> traceException $ do
         case attemptRollback rollBackPoint (theirFrag, theirHeaderStateHistory) of
@@ -865,7 +854,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           -- Thus, @k - r + s >= k@.
           Nothing ->
             terminateAfterDrain n $
-              RolledBackPastIntersection rollBackPoint ourTip theirTip
+              RolledBackPastIntersection
+                rollBackPoint
+                (ourTipFromChain ourFrag)
+                theirTip
 
           Just (theirFrag', theirHeaderStateHistory') -> do
             -- We just rolled back to @intersection@, either our most recent
@@ -884,7 +876,6 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                       theirFrag               = theirFrag'
                     , theirHeaderStateHistory = theirHeaderStateHistory'
                     , ourFrag                 = ourFrag
-                    , ourTip                  = ourTip
                     , mostRecentIntersection  = mostRecentIntersection'
                     }
             atomically $ writeTVar varCandidate theirFrag'
