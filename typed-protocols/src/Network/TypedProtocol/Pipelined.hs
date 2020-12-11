@@ -16,6 +16,7 @@ module Network.TypedProtocol.Pipelined
   , Nat (Zero, Succ)
   , natToInt
   , unsafeIntToNat
+  , fmapPeerPipelined
   ) where
 
 import           Unsafe.Coerce (unsafeCoerce)
@@ -35,6 +36,15 @@ import           Network.TypedProtocol.Core
 data PeerPipelined ps (pr :: PeerRole) (st :: ps) m a where
   PeerPipelined :: PeerSender    ps pr st Z c m a
                 -> PeerPipelined ps pr st     m a
+
+
+-- | More general than 'fmap', as it allows to change the protocol.
+--
+fmapPeerPipelined :: (forall c. PeerSender ps pr st Z c m a -> PeerSender ps' pr st' Z c m b)
+                  -> PeerPipelined ps  pr st  m a
+                  -> PeerPipelined ps' pr st' m b
+fmapPeerPipelined f (PeerPipelined peer) = PeerPipelined (f peer)
+
 
 -- | This is the pipelined variant of 'Peer'.
 --
