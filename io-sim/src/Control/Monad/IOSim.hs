@@ -21,7 +21,7 @@ module Control.Monad.IOSim (
   Trace(..),
   TraceEvent(..),
   ThreadLabel,
-  LabelledThread (..),
+  Labelled (..),
   traceEvents,
   traceResult,
   selectTraceEvents,
@@ -104,12 +104,12 @@ data Failure =
        FailureException SomeException
 
        -- | The threads all deadlocked
-     | FailureDeadlock ![LabelledThread]
+     | FailureDeadlock ![Labelled ThreadId]
 
        -- | The main thread terminated normally but other threads were still
        -- alive, and strict shutdown checking was requested.
        -- See 'runSimStrictShutdown'
-     | FailureSloppyShutdown [LabelledThread]
+     | FailureSloppyShutdown [Labelled ThreadId]
   deriving Show
 
 instance Exception Failure where

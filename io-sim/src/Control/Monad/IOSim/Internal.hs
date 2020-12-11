@@ -34,7 +34,7 @@ module Control.Monad.IOSim.Internal (
   EventlogMarker (..),
   ThreadId,
   ThreadLabel,
-  LabelledThread (..),
+  Labelled (..),
   Trace (..),
   TraceEvent (..),
   liftST,
@@ -139,7 +139,8 @@ data StmA s a where
   ReturnStm    :: a -> StmA s a
   ThrowStm     :: SomeException -> StmA s a
 
-  NewTVar      :: x -> (TVar s x -> StmA s b) -> StmA s b
+  NewTVar      :: Maybe String -> x -> (TVar s x -> StmA s b) -> StmA s b
+  LabelTVar    :: String -> TVar s a -> StmA s b -> StmA s b
   ReadTVar     :: TVar s a -> (a -> StmA s b) -> StmA s b
   WriteTVar    :: TVar s a ->  a -> StmA s b  -> StmA s b
   Retry        :: StmA s b
@@ -319,7 +320,7 @@ instance MonadSTMTx (STM s) where
   type TQueue_    (STM s) = TQueueDefault (IOSim s)
   type TBQueue_   (STM s) = TBQueueDefault (IOSim s)
 
-  newTVar         x = STM $ \k -> NewTVar x k
+  newTVar         x = STM $ \k -> NewTVar Nothing x k
   readTVar   tvar   = STM $ \k -> ReadTVar tvar k
   writeTVar  tvar x = STM $ \k -> WriteTVar tvar x (k ())
   retry             = STM $ \_ -> Retry
@@ -350,6 +351,14 @@ instance MonadSTMTx (STM s) where
   lengthTBQueue     = lengthTBQueueDefault
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
+
+instance MonadLabelledSTMTx (STM s) where
+  labelTVar tvar label = STM $ \k -> LabelTVar label tvar (k ())
+  labelTMVar   = labelTMVarDefault
+  labelTQueue  = labelTQueueDefault
+  labelTBQueue = labelTBQueueDefault
+
+instance MonadLabelledSTM (IOSim s) where
 
 instance MonadSTM (IOSim s) where
   type STM       (IOSim s) = STM s
@@ -485,7 +494,7 @@ data Thread s a = Thread {
     threadBlocked :: !Bool,
     threadMasking :: !MaskingState,
     -- other threads blocked in a ThrowTo to us because we are or were masked
-    threadThrowTo :: ![(SomeException, ThreadId)],
+    threadThrowTo :: ![(SomeException, Labelled ThreadId)],
     threadClockId :: !ClockId,
     threadLabel   :: Maybe ThreadLabel
   }
@@ -516,22 +525,29 @@ newtype TVarId    = TVarId    Int deriving (Eq, Ord, Enum, Show)
 newtype TimeoutId = TimeoutId Int deriving (Eq, Ord, Enum, Show)
 newtype ClockId   = ClockId   Int deriving (Eq, Ord, Enum, Show)
 
-type ThreadLabel = String
+unTimeoutId :: TimeoutId -> Int
+unTimeoutId (TimeoutId a) = a
 
-data LabelledThread = LabelledThread {
-    labelledThreadId    :: ThreadId,
-    labelledThreadLabel :: Maybe ThreadLabel
+type ThreadLabel = String
+type TVarLabel   = String
+
+data Labelled a = Labelled {
+    l_labelled :: !a,
+    l_label    :: !(Maybe String)
   }
   deriving (Eq, Ord, Generic)
-  deriving Show via Quiet LabelledThread
+  deriving Show via Quiet (Labelled a)
 
-labelledThreads :: Map ThreadId (Thread s a) -> [LabelledThread]
+labelledTVarId :: TVar s a -> ST s (Labelled TVarId)
+labelledTVarId TVar { tvarId, tvarLabel } = (Labelled tvarId) <$> readSTRef tvarLabel
+
+labelledThreads :: Map ThreadId (Thread s a) -> [Labelled ThreadId]
 labelledThreads threadMap =
     -- @Map.foldr'@ (and alikes) are not strict enough, to not ratain the
     -- original thread map we need to evaluate the spine of the list.
     -- TODO: https://github.com/haskell/containers/issues/749
     Map.foldr'
-      (\Thread { threadId, threadLabel } !acc -> LabelledThread threadId threadLabel : acc)
+      (\Thread { threadId, threadLabel } !acc -> Labelled threadId threadLabel : acc)
       [] threadMap
 
 
@@ -547,9 +563,9 @@ labelledThreads threadMap =
 -- 'selectTraceEventsDynamic' and 'printTraceEventsSay'.
 --
 data Trace a = Trace !Time !ThreadId !(Maybe ThreadLabel) !TraceEvent (Trace a)
-             | TraceMainReturn    !Time a             ![LabelledThread]
-             | TraceMainException !Time SomeException ![LabelledThread]
-             | TraceDeadlock      !Time               ![LabelledThread]
+             | TraceMainReturn    !Time a             ![Labelled ThreadId]
+             | TraceMainException !Time SomeException ![Labelled ThreadId]
+             | TraceDeadlock      !Time               ![Labelled ThreadId]
   deriving Show
 
 data TraceEvent
@@ -560,17 +576,17 @@ data TraceEvent
   | EventThrowTo        SomeException ThreadId -- This thread used ThrowTo
   | EventThrowToBlocked                        -- The ThrowTo blocked
   | EventThrowToWakeup                         -- The ThrowTo resumed
-  | EventThrowToUnmasked ThreadId              -- A pending ThrowTo was activated
+  | EventThrowToUnmasked (Labelled ThreadId)   -- A pending ThrowTo was activated
 
   | EventThreadForked    ThreadId
   | EventThreadFinished                  -- terminated normally
   | EventThreadUnhandled SomeException   -- terminated due to unhandled exception
 
-  | EventTxCommitted   [TVarId] -- tx wrote to these
-                       [TVarId] -- and created these
+  | EventTxCommitted   [Labelled TVarId] -- tx wrote to these
+                       [TVarId]          -- and created these
   | EventTxAborted
-  | EventTxBlocked     [TVarId] -- tx blocked reading these
-  | EventTxWakeup      [TVarId] -- changed vars causing retry
+  | EventTxBlocked     [Labelled TVarId] -- tx blocked reading these
+  | EventTxWakeup      [Labelled TVarId] -- changed vars causing retry
 
   | EventTimerCreated   TimeoutId TVarId Time
   | EventTimerUpdated   TimeoutId        Time
@@ -781,8 +797,12 @@ schedule thread@Thread{
               trace)
 
     NewTimeout d k -> do
-      tvar  <- execNewTVar nextVid TimeoutPending
-      tvar' <- execNewTVar (succ nextVid) False
+      tvar  <- execNewTVar nextVid
+                           (Just $ "<<timeout-state " ++ show (unTimeoutId nextTmid) ++ ">>")
+                           TimeoutPending
+      tvar' <- execNewTVar (succ nextVid)
+                           (Just $ "<<timeout " ++ show (unTimeoutId nextTmid) ++ ">>")
+                           False
       let expiry  = d `addTime` time
           t       = Timeout tvar tvar' nextTmid
           timers' = PSQ.insert nextTmid expiry (TimerVars tvar tvar') timers
@@ -855,7 +875,7 @@ schedule thread@Thread{
           let thread'     = thread { threadControl = ThreadControl (k x) ctl }
               (unblocked,
                simstate') = unblockThreads wakeup simstate
-              vids        = [ tvarId tvar | SomeTVar tvar <- written ]
+          vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
               -- We don't interrupt runnable threads to provide fairness
               -- anywhere else. We do it here by putting the tx that committed
               -- a transaction to the back of the runqueue, behind all other
@@ -881,7 +901,7 @@ schedule thread@Thread{
 
         StmTxBlocked read -> do
           mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
-          let vids = [ tvarId tvar | SomeTVar tvar <- read ]
+          vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) read
           trace <- deschedule Blocked thread simstate
           return (Trace time tid tlbl (EventTxBlocked vids) trace)
 
@@ -930,7 +950,7 @@ schedule thread@Thread{
         then do
           -- The target thread has async exceptions masked so we add the
           -- exception and the source thread id to the pending async exceptions.
-          let adjustTarget t = t { threadThrowTo = (e, tid) : threadThrowTo t }
+          let adjustTarget t = t { threadThrowTo = (e, Labelled tid tlbl) : threadThrowTo t }
               threads'       = Map.adjust adjustTarget tid' threads
           trace <- deschedule Blocked thread' simstate { threads = threads' }
           return $ Trace time tid tlbl (EventThrowTo e tid')
@@ -1001,7 +1021,7 @@ deschedule Interruptable thread@Thread {
                          , threadMasking = MaskedInterruptible
                          , threadThrowTo = etids }
         (unblocked,
-         simstate') = unblockThreads [tid'] simstate
+         simstate') = unblockThreads [l_labelled tid'] simstate
     trace <- schedule thread' simstate'
     return $ Trace time tid tlbl (EventThrowToUnmasked tid')
            $ traceMany [ (time, tid'', tlbl'', EventThrowToWakeup)
@@ -1031,7 +1051,7 @@ deschedule Blocked thread simstate@SimState{threads} =
 deschedule Terminated thread simstate@SimState{ curTime = time, threads } = do
     -- This thread is done. If there are other threads blocked in a
     -- ThrowTo targeted at this thread then we can wake them up now.
-    let wakeup      = map snd (reverse (threadThrowTo thread))
+    let wakeup      = map (l_labelled . snd) (reverse (threadThrowTo thread))
         (unblocked,
          simstate') = unblockThreads wakeup simstate
     trace <- reschedule simstate'
@@ -1200,6 +1220,9 @@ data TVar s a = TVar {
        --
        tvarId      :: !TVarId,
 
+       -- | Label.
+       tvarLabel   :: !(STRef s (Maybe TVarLabel)),
+
        -- | The var's current value
        --
        tvarCurrent :: !(STRef s a),
@@ -1345,9 +1368,13 @@ execAtomically =
         let ctl' = OrElseLeftFrame b k written writtenSeq ctl
         go ctl' read Map.empty [] nextVid a
 
-      NewTVar x k -> do
-        v <- execNewTVar nextVid x
+      NewTVar !mbLabel x k -> do
+        v <- execNewTVar nextVid mbLabel x
         go ctl read written writtenSeq (succ nextVid) (k v)
+
+      LabelTVar !label tvar k -> do
+        writeSTRef (tvarLabel tvar) $! (Just label)
+        go ctl read written writtenSeq nextVid k
 
       ReadTVar v k
         | tvarId v `Map.member` read -> do
@@ -1400,12 +1427,14 @@ execAtomically' = go Map.empty
       _ -> error "execAtomically': only for special case of reads and writes"
 
 
-execNewTVar :: TVarId -> a -> ST s (TVar s a)
-execNewTVar nextVid x = do
+execNewTVar :: TVarId -> Maybe String -> a -> ST s (TVar s a)
+execNewTVar nextVid !mbLabel x = do
+    tvarLabel   <- newSTRef mbLabel
     tvarCurrent <- newSTRef x
     tvarUndo    <- newSTRef []
     tvarBlocked <- newSTRef ([], Set.empty)
-    return TVar {tvarId = nextVid, tvarCurrent, tvarUndo, tvarBlocked}
+    return TVar {tvarId = nextVid, tvarLabel,
+                 tvarCurrent, tvarUndo, tvarBlocked}
 
 execReadTVar :: TVar s a -> ST s a
 execReadTVar TVar{tvarCurrent} = readSTRef tvarCurrent
@@ -1463,10 +1492,10 @@ unblockAllThreadsFromTVar TVar{tvarBlocked} = do
 -- the var writes that woke them.
 --
 threadsUnblockedByWrites :: [SomeTVar s]
-                         -> ST s ([ThreadId], Map ThreadId (Set TVarId))
+                         -> ST s ([ThreadId], Map ThreadId (Set (Labelled TVarId)))
 threadsUnblockedByWrites written = do
   tidss <- sequence
-             [ (,) (tvarId tvar) <$> readTVarBlockedThreads tvar
+             [ (,) <$> labelledTVarId tvar <*> readTVarBlockedThreads tvar
              | SomeTVar tvar <- written ]
   -- Threads to wake up, in wake up order, annotated with the vars written that
   -- caused the unblocking.

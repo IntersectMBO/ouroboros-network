@@ -199,7 +199,9 @@ class MonadSTMTx stm => MonadLabelledSTMTx stm where
   labelTQueue  :: TQueue_  stm a -> String -> stm ()
   labelTBQueue :: TBQueue_ stm a -> String -> stm ()
 
--- | A convenience class which provides 'MonadSTM' and 'MonadLabelledSTMTx' constraints.
+-- | A convenience class which provides 'MonadSTM' and 'MonadLabelledSTMTx'
+-- constraints.
+--
 class (MonadSTM m, MonadLabelledSTMTx (STM m))
    => MonadLabelledSTM m where
   labelTVarIO    :: TVar    m a -> String -> m ()
@@ -272,12 +274,16 @@ instance MonadSTM IO where
   newTMVarIO      = STM.newTMVarIO
   newEmptyTMVarIO = STM.newEmptyTMVarIO
 
+-- | noop instance
+--
 instance MonadLabelledSTMTx STM.STM where
   labelTVar    = \_  _ -> return ()
   labelTMVar   = \_  _ -> return ()
   labelTQueue  = \_  _ -> return ()
   labelTBQueue = \_  _ -> return ()
 
+-- | noop instance
+--
 instance MonadLabelledSTM IO where
   labelTVarIO    = \_  _ -> return ()
   labelTMVarIO   = \_  _ -> return ()
