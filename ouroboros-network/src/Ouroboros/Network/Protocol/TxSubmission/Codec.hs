@@ -12,6 +12,8 @@
 module Ouroboros.Network.Protocol.TxSubmission.Codec (
     codecTxSubmission
   , codecTxSubmissionId
+  , encodeTxSubmission
+  , decodeTxSubmission
 
   , byteLimitsTxSubmission
   , timeLimitsTxSubmission
@@ -73,7 +75,19 @@ codecTxSubmission
   -> Codec (TxSubmission txid tx) CBOR.DeserialiseFailure m ByteString
 codecTxSubmission encodeTxId decodeTxId
                   encodeTx   decodeTx =
-    mkCodecCborLazyBS encode decode
+    mkCodecCborLazyBS
+      (encodeTxSubmission encodeTxId encodeTx)
+      (decodeTxSubmission decodeTxId decodeTx)
+
+encodeTxSubmission
+    :: forall txid tx.
+       (txid -> CBOR.Encoding)
+    -> (tx -> CBOR.Encoding)
+    -> (forall (pr :: PeerRole) (st :: TxSubmission txid tx) (st' :: TxSubmission txid tx).
+               PeerHasAgency pr st
+            -> Message (TxSubmission txid tx) st st'
+            -> CBOR.Encoding)
+encodeTxSubmission encodeTxId encodeTx = encode
   where
     encode :: forall (pr :: PeerRole) st st'.
               PeerHasAgency pr st
@@ -125,6 +139,15 @@ codecTxSubmission encodeTxId decodeTxId
      <> CBOR.encodeWord 4
 
 
+decodeTxSubmission
+    :: forall txid tx.
+       (forall s . CBOR.Decoder s txid)
+    -> (forall s . CBOR.Decoder s tx)
+    -> (forall (pr :: PeerRole) (st :: TxSubmission txid tx) s.
+               PeerHasAgency pr st
+            -> CBOR.Decoder s (SomeMessage st))
+decodeTxSubmission decodeTxId decodeTx = decode
+  where
     decode :: forall (pr :: PeerRole) s (st :: TxSubmission txid tx).
               PeerHasAgency pr st
            -> CBOR.Decoder s (SomeMessage st)
