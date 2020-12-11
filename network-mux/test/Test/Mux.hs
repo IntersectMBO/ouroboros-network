@@ -8,7 +8,6 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 
@@ -31,7 +30,6 @@ import qualified Data.Map as M
 import           Data.Tuple (swap)
 import           Data.Word
 import           Test.QuickCheck hiding ((.&.))
-import           Test.QuickCheck.Gen
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
