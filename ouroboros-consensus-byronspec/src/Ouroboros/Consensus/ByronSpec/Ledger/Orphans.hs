@@ -31,8 +31,8 @@ import qualified Byron.Spec.Ledger.Delegation as Spec
 import qualified Byron.Spec.Ledger.STS.UTXO as Spec
 import qualified Byron.Spec.Ledger.STS.UTXOW as Spec
 import qualified Byron.Spec.Ledger.STS.UTXOWS as Spec
-import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Control.State.Transition as Spec
 
 import           Test.Cardano.Chain.Elaboration.Block as Spec.Test

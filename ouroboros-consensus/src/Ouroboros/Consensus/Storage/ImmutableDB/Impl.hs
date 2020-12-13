@@ -103,8 +103,7 @@ import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad (replicateM_, unless, when)
 import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State.Strict (get, lift, modify, put)
-import           Control.Tracer (Tracer, traceWith)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
 import           GHC.Stack (HasCallStack)
 

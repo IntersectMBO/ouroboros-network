@@ -41,9 +41,9 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
 import           Data.Word (Word64)
-import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
+import qualified Generics.SOP as SOP
 import           System.IO.Temp (withTempDirectory)
 import           System.Random (getStdRandom, randomR)
 import           Text.Read (readMaybe)

@@ -44,7 +44,7 @@ import qualified Data.Foldable as Foldable
 import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Sequence.Strict (StrictSeq ((:<|), (:|>), Empty), (|>))
+import           Data.Sequence.Strict (StrictSeq (Empty, (:<|), (:|>)), (|>))
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word
 import           GHC.Generics (Generic)

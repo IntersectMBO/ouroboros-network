@@ -21,8 +21,8 @@ import           GHC.Generics (Generic)
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Delegation as Spec
-import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis

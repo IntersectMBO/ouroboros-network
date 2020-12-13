@@ -31,7 +31,7 @@ import           Control.Monad.Except (Except, runExcept, throwError)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict ((:.:) (..), NP (..), unComp)
+import           Data.SOP.Strict (NP (..), unComp, (:.:) (..))
 import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)

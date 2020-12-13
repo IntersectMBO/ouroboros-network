@@ -43,7 +43,7 @@ import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
-import           Data.SOP.Strict ((:.:), AllZip, K (..), NP (..), unComp)
+import           Data.SOP.Strict (AllZip, K (..), NP (..), unComp, (:.:))
 import           Data.Word (Word16)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)

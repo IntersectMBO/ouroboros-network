@@ -23,8 +23,8 @@ import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Delegation as CC
 import qualified Cardano.Chain.MempoolPayload as CC
-import qualified Cardano.Chain.Update as CC
 import qualified Cardano.Chain.UTxO as CC
+import qualified Cardano.Chain.Update as CC
 
 import           Ouroboros.Consensus.Util.Condense
 

@@ -23,9 +23,9 @@ import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
+import           Data.SOP.Strict (NP (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.SOP.Strict (NP (..))
 import           Data.Word (Word64)
 
 import           Test.QuickCheck

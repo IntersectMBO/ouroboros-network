@@ -165,5 +165,5 @@ determineForkLength k (NodeJoinPlan joinPlan) (LeaderSchedule sched) =
         -- slot in which the node joins the network
         joinSlot :: CoreNodeId -> SlotNo
         joinSlot nid = case Map.lookup nid joinPlan of
-            Nothing -> error "determineForkLength: incomplete node join plan"
+            Nothing    -> error "determineForkLength: incomplete node join plan"
             Just slot' -> slot'

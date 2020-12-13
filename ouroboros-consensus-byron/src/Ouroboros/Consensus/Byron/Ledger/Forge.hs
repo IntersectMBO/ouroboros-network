@@ -27,8 +27,8 @@ import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Ssc as CC.Ssc
-import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.UTxO as CC.UTxO
+import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
 

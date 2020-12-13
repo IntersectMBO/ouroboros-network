@@ -60,8 +60,8 @@ import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.MempoolPayload as CC
-import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Utxo
+import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Block
