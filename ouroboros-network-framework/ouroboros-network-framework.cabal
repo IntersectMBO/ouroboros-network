@@ -28,6 +28,7 @@ library
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux
+                       Ouroboros.Network.MuxMode
                        Ouroboros.Network.Util.ShowProxy
 
                        Ouroboros.Network.Protocol.Handshake
