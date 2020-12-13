@@ -1,0 +1,38 @@
+name: Stylish Haskell
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Install Stylish Haskell
+      run: |
+        STYLISH_HASKELL_VERSION=0.12.2.0
+        STYLISH_HASKELL_URL=https://github.com/jaspervdj/stylish-haskell/releases/download/v$STYLISH_HASKELL_VERSION/stylish-haskell-v$STYLISH_HASKELL_VERSION-linux-x86_64.tar.gz
+        curl -sL \
+          --connect-timeout 5 \
+          --max-time 10 \
+          --retry 5 \
+          --retry-delay 0 \
+          --retry-max-time 40 \
+          $STYLISH_HASKELL_URL \
+          -o stylish-haskell.tar.gz
+        tar -zxvf stylish-haskell.tar.gz
+        echo $PATH
+        mkdir -p $HOME/.local/bin/
+        echo "$HOME/.local/bin/" >> $GITHUB_PATH
+        mv stylish-haskell-v$STYLISH_HASKELL_VERSION-linux-x86_64/stylish-haskell $HOME/.local/bin/
+
+    - name: Run stylish-haskell
+      run: |
+        stylish-haskell --version
+        stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.hs`
+        git diff --exit-code
