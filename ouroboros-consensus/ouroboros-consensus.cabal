@@ -290,7 +290,7 @@ library
                      , filepath          >=1.4   && <1.5
                      , hashable
                      , mtl               >=2.2   && <2.3
-                     , nothunks
+                     , nothunks          >=0.1.2 && <0.2
                      , psqueues          >=0.2.3 && <0.3
                      , random
                      , quiet             >=0.2   && <0.3
