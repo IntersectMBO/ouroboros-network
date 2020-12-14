@@ -410,7 +410,7 @@ networkErrorPolicies = ErrorPolicies
     ourBug = Throw
 
     shortDelay :: DiffTime
-    shortDelay = 20 -- seconds
+    shortDelay = 2 -- seconds
 
 type LocalConnectionId = ConnectionId LocalAddress
 

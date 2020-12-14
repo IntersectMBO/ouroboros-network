@@ -147,4 +147,4 @@ consensusErrorPolicy pb = ErrorPolicies {
     -- We might want to tweak the delays for the various different kinds of
     -- problems, but we'd need to establish a policy on how to set them.
     defaultDelay :: DiffTime
-    defaultDelay = 200 -- seconds
+    defaultDelay = 3 -- seconds

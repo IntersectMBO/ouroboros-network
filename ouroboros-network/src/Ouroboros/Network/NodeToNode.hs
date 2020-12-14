@@ -629,10 +629,10 @@ remoteNetworkErrorPolicy = ErrorPolicies {
     misconfiguredPeer = SuspendConsumer defaultDelay
 
     defaultDelay :: DiffTime
-    defaultDelay = 200 -- seconds
+    defaultDelay = 3 -- seconds
 
     shortDelay :: DiffTime
-    shortDelay = 20 -- seconds
+    shortDelay = 2 -- seconds
 
     veryShortDelay :: DiffTime
     veryShortDelay = 1 -- seconds
