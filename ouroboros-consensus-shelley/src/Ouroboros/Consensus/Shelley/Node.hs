@@ -38,15 +38,18 @@ module Ouroboros.Consensus.Shelley.Node (
   , SL.emptyGenesisStaking
   , validateGenesis
   , registerGenesisStaking
+  , registerInitialFunds
   ) where
 
 import           Data.Bifunctor (first)
 import           Data.Foldable (toList)
 import           Data.Functor.Identity (Identity)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
 import           Data.Text (Text)
 import qualified Data.Text as Text
+import           GHC.Stack (HasCallStack)
 
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Slotting.EpochInfo
@@ -344,6 +347,9 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     initialEpochNo :: EpochNo
     initialEpochNo = 0
 
+    -- We can just use 'SL.genesisUtxO' to compute the initial UTxO from the
+    -- initial funds. No need to combine the initial funds with an existing
+    -- UTxO, so no need for 'registerInitialFunds'.
     initialUtxo :: SL.UTxO era
     initialUtxo = SL.genesisUtxO genesis
 
@@ -483,3 +489,72 @@ registerGenesisStaking staking nes = nes {
           (SL._utxo (SL._utxoState ledgerState))
           dState'
           pState'
+
+-- | Register the initial funds in the 'SL.NewEpochState'.
+--
+-- HERE BE DRAGONS! This function is intended to help in testing.
+--
+-- In production, the genesis should /not/ contain any initial funds.
+--
+-- The given funds are /added/ to the existing UTxO.
+--
+-- PRECONDITION: the given funds must not be part of the existing UTxO.
+-- > forall (addr, _) in initialFunds.
+-- >    Map.notElem (SL.initialFundsPseudoTxIn addr) existingUTxO
+--
+-- PROPERTY:
+-- >    genesisUTxO genesis
+-- > == <genesisUTxO'> (sgInitialFunds genesis)
+-- > == <extractUTxO> (registerInitialFunds (sgInitialFunds genesis)
+-- >                                        <empty NewEpochState>)
+--
+-- TODO move to @cardano-ledger-specs@.
+registerInitialFunds ::
+     forall era. (ShelleyBasedEra era, HasCallStack)
+  => Map (SL.Addr (EraCrypto era)) SL.Coin
+  -> SL.NewEpochState era
+  -> SL.NewEpochState era
+registerInitialFunds initialFunds nes = nes {
+      SL.nesEs = epochState {
+          SL.esAccountState = accountState'
+        , SL.esLState       = ledgerState'
+        }
+    }
+  where
+    epochState   = SL.nesEs          nes
+    accountState = SL.esAccountState epochState
+    ledgerState  = SL.esLState       epochState
+    utxoState    = SL._utxoState     ledgerState
+    utxo         = SL._utxo          utxoState
+    reserves     = SL._reserves      accountState
+
+    initialFundsUtxo :: SL.UTxO era
+    initialFundsUtxo = SL.UTxO $ Map.fromList [
+          (txIn, txOut)
+        | (addr, amount) <- Map.toList initialFunds
+        ,  let txIn  = SL.initialFundsPseudoTxIn addr
+               txOut = SL.TxOut addr (inject amount)
+        ]
+
+    utxo' = mergeUtxoNoOverlap utxo initialFundsUtxo
+
+    -- Update the reserves
+    accountState' = accountState {
+          SL._reserves = reserves <-> coin (SL.balance initialFundsUtxo)
+        }
+
+    ledgerState' = ledgerState {
+          SL._utxoState = utxoState {
+              SL._utxo = utxo'
+            }
+        }
+
+    -- | Merge two UTxOs, throw an 'error' in case of overlap
+    mergeUtxoNoOverlap ::
+         HasCallStack
+      => SL.UTxO era -> SL.UTxO era -> SL.UTxO era
+    mergeUtxoNoOverlap (SL.UTxO m1) (SL.UTxO m2) = SL.UTxO $
+        Map.unionWithKey
+          (\k _ _ -> error $ "initial fund part of UTxO: " <> show k)
+          m1
+          m2
