@@ -70,7 +70,7 @@ tests = testGroup "Mempool"
       , testProperty "not removed transactions remain"      prop_pure_removeTxs_contra
       , testProperty "valid added txs == getTxs"            prop_pure_addTxs_getTxs
       , testProperty "addTxs txs == mapM runTryAddTxs txs"  prop_pure_addTxs_one_vs_multiple
-      , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_pure_snapshotTxs_snapshotTxsAfter
+      , testProperty "snapshotTxs == snapshotTxsAfter ze.." prop_pure_snapshotTxs_snapshotTxsAfter
       , testProperty "result of addTxs"                     prop_pure_addTxs_result
       , testProperty "invalid transactions are never added" prop_pure_InvalidTxsNeverAdded
       , testProperty "result of getCapacity"                prop_pure_getCapacity
@@ -117,14 +117,14 @@ prop_pure_removeTxs_contra
 prop_pure_removeTxs_contra TestSetupWithTxs {..} =
     withInternalState testSetup $
     \ mpArgs internalSt ledgerState ->
-      let (_res,internalSt')  = runTryAddTxs mpArgs internalSt (map fst txs)
-          (internalStRes, _)  = pureRemoveTxs
+      let (_res,internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
+          (internalStRes, _) = pureRemoveTxs
                                   (map (txId . fst) txs)
                                   mpArgs
                                   internalSt'
                                   ledgerState
-          txIdsRemaining      = Set.toAscList (getTxIdsIS internalStRes)
-          txIdsInitial        = sort (Set.toList (getTxIdsIS internalSt))
+          txIdsRemaining     = Set.toAscList (getTxIdsIS internalStRes)
+          txIdsInitial       = Set.toAscList (getTxIdsIS internalSt)
       in txIdsRemaining === txIdsInitial
 
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
@@ -132,7 +132,8 @@ prop_pure_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
 prop_pure_snapshotTxs_snapshotTxsAfter setup =
     withInternalState setup $
     \ _mpArgs internalSt _ledgerState ->
-      let MempoolSnapshot { snapshotTxs, snapshotTxsAfter } = implSnapshotFromIS internalSt
+      let MempoolSnapshot { snapshotTxs, snapshotTxsAfter } =
+            implSnapshotFromIS internalSt
       in  snapshotTxs === snapshotTxsAfter zeroTicketNo
 
 
@@ -169,7 +170,7 @@ prop_pure_addTxs_result :: TestSetupWithTxs -> Property
 prop_pure_addTxs_result TestSetupWithTxs {..} =
   withInternalState testSetup $
   \ mpArgs internalSt _ledgerState ->
-      let ((result,_), _internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
+      let ((result, _), _internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
       in counterexample (ppTxs txs) $
         [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
         [(testTx, valid)            | (testTx, valid) <- txs]
@@ -224,7 +225,7 @@ prop_pure_Capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
       let capacity' = getCapacityIS internalSt
           snapshot  = implSnapshotFromIS internalSt
           curSize   = (msNumBytes . snapshotMempoolSize) snapshot
-          (res@(processed, unprocessed),_internalSt') =
+          (res@(processed, unprocessed), _internalSt') =
                      runTryAddTxs mpArgs internalSt (map fst txs)
       in  counterexample ("Initial size: " <> show curSize)    $
           classify (null processed)   "no transactions added"  $
@@ -268,12 +269,13 @@ prop_pure_Capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
 {-------------------------------------------------------------------------------
   Mempool Pure Test Infrastructure
 -------------------------------------------------------------------------------}
+
 -- | A TestSetup together with a random selection of transactions from
 -- this TestSetup
 data TestSetupSub = TestSetupSub {
     -- | The TestSetup
     tssSetup  :: TestSetup
-    -- |  tssSubTxs 'subsetOf' testInitialTxs tssSetup
+    -- |  INVARIANT: tssSubTxs `subsetOf` testInitialTxs tssSetup
   , tssSubTxs :: [TestTx]
   } deriving (Show)
 
@@ -290,7 +292,8 @@ instance Arbitrary TestSetupSub where
 
 withInternalState
   :: TestSetup
-  -> (MempoolArgs TestBlock -> InternalState TestBlock -> LedgerState TestBlock -> Property)
+  -> (MempoolArgs TestBlock -> InternalState TestBlock -> LedgerState TestBlock
+      -> Property)
   -> Property
 withInternalState testSetup@TestSetup {..} func =
     counterexample (ppTestSetup testSetup)
@@ -307,11 +310,18 @@ withInternalState testSetup@TestSetup {..} func =
                                        <> condense invalidTx
           Nothing             -> func args internalSt' testLedgerState
   where
-    args                  = MempoolArgs testLedgerConfig txSize testMempoolCapOverride
-    (slot, st')           = tickLedgerState testLedgerConfig
+    args                   = MempoolArgs
+                                testLedgerConfig
+                                txSize
+                                testMempoolCapOverride
+    (slot, st')            = tickLedgerState testLedgerConfig
                               (ForgeInUnknownSlot testLedgerState)
-    internalSt            = initInternalState testMempoolCapOverride zeroTicketNo slot st'
-    ((res,_),internalSt') = runTryAddTxs args internalSt testInitialTxs
+    internalSt             = initInternalState
+                                testMempoolCapOverride
+                                zeroTicketNo
+                                slot
+                                st'
+    ((res,_), internalSt') = runTryAddTxs args internalSt testInitialTxs
     isOverride (MempoolCapacityBytesOverride _) = True
     isOverride NoMempoolCapacityBytesOverride   = False
 

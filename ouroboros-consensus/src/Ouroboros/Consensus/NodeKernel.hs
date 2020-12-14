@@ -209,13 +209,15 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
                                  , blockFetchSize, btime
                                  , mempoolCapacityOverride
                                  } = do
-    varCandidates <- newTVarIO mempty
-    let args      =  MempoolArgs (configLedger cfg) txInBlockSize mempoolCapacityOverride
-    mempool       <- openMempool registry
+    varCandidates   <- newTVarIO mempty
+    let mempoolArgs =  MempoolArgs
+                        (configLedger cfg)
+                        txInBlockSize
+                        mempoolCapacityOverride
+    mempool         <- openMempool registry
                                  (chainDBLedgerInterface chainDB)
-                                 args
+                                 mempoolArgs
                                  (mempoolTracer tracers)
-
     fetchClientRegistry <- newFetchClientRegistry
 
     let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
