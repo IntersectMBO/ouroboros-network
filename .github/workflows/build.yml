@@ -66,11 +66,18 @@ jobs:
           flags: -external-libsodium-vrf
         EOF
 
+    - name: Select optimal cabal version
+      run: |
+        case "$OS" in
+          Windows_NT)   echo "CABAL_VERSION=3.2.0.0"      >> $GITHUB_ENV;;
+          *)            echo "CABAL_VERSION=3.4.0.0-rc4"  >> $GITHUB_ENV;;
+        esac
+
     - uses: actions/setup-haskell@v1
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: '3.2.0.0'
+        cabal-version: ${{ env.CABAL_VERSION }}
 
     - name: Patch GHC 8.10.2 linker
       if: matrix.os == 'windows-latest' && matrix.ghc == '8.10.2'
@@ -131,8 +138,7 @@ jobs:
         cat ./cabal.project.local.ci.windows >> ./cabal.project.local
         cat ./cabal.project.local
 
-    # Build dependencies
-    - name: Build dependencies
+    - name: Install happy
       run: |
         cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
 
