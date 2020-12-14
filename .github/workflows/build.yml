@@ -17,7 +17,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
 
     - name: Select build directory
       run: |
@@ -95,26 +95,26 @@ jobs:
 
     # Cache cabal-store
     - name: cache cabal store
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
-        key: cabal-store-8.10.2
+        key: cabal-store-${{ matrix.ghc }}-${{ matrix.os }}
     # Cache parts of dist-newstyle (C:\dist)
     - name: cache buiddir [cache]
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: C:\dist\cache
-        key: dist-cache
+        key: dist-cache-${{ matrix.ghc }}-${{ matrix.os }}
     - name: cache buiddir [src]
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: C:\dist\src
-        key: dist-src
+        key: dist-src-${{ matrix.ghc }}-${{ matrix.os }}
     - name: cache builddir [packagedb]
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: C:\dist\packagedb
-        key: dist-packagedb
+        key: dist-packagedb-${{ matrix.ghc }}-${{ matrix.os }}
 
     - name: update Hackage index
       run: cabal v2-update
@@ -123,8 +123,7 @@ jobs:
     - name: checkout ouroboros-network repository
       uses: actions/checkout@v2
 
-    # Build dependencies
-    - name: Build dependencies
+    - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
 
     - name: Use cabal.project.local.windows
