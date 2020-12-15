@@ -68,6 +68,8 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client (WhetherSparse)
+
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
@@ -91,8 +93,8 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
       -- | The fetch client registry, used for the block fetch clients.
     , getFetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
 
-      -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+      -- | The node's peers' candidate and whether it is sparse
+    , getPeerViews           :: StrictTVar m (Map remotePeer (WhetherSparse, StrictTVar m (AnchoredFragment (Header blk))))
 
       -- | The node's tracers
     , getTracers             :: Tracers m remotePeer localPeer blk
@@ -151,7 +153,7 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
 
     mapM_ (forkBlockForging maxTxCapacityOverride st) blockForging
 
-    let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
+    let IS { blockFetchInterface, fetchClientRegistry, varPeerViews,
              mempool } = st
 
     -- Run the block fetch logic in the background. This will call
@@ -169,7 +171,7 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
       , getMempool             = mempool
       , getTopLevelConfig      = cfg
       , getFetchClientRegistry = fetchClientRegistry
-      , getNodeCandidates      = varCandidates
+      , getPeerViews           = varPeerViews
       , getTracers             = tracers
       }
 
@@ -185,7 +187,7 @@ data InternalState m remotePeer localPeer blk = IS {
     , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , varPeerViews        :: StrictTVar m (Map remotePeer (WhetherSparse, StrictTVar m (AnchoredFragment (Header blk))))
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -203,8 +205,8 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
                                  , blockFetchSize, btime
                                  , mempoolCapacityOverride
                                  } = do
-    varCandidates <- newTVarIO mempty
-    mempool       <- openMempool registry
+    varPeerViews <- newTVarIO mempty
+    mempool      <- openMempool registry
                                  (chainDBLedgerInterface chainDB)
                                  (configLedger cfg)
                                  mempoolCapacityOverride
@@ -214,7 +216,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
     fetchClientRegistry <- newFetchClientRegistry
 
     let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
-        getCandidates = readTVar varCandidates >>= traverse readTVar
+        getCandidates = readTVar varPeerViews >>= traverse (readTVar . snd)
 
         blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface

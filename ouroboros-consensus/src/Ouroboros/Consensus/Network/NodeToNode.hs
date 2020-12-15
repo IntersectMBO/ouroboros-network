@@ -102,6 +102,8 @@ data Handlers m peer blk = Handlers {
         :: NodeToNodeVersion
         -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
+        -> (WhetherSparse -> m ())
+        -> STM m ()
         -> ChainSyncClientPipelined blk (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
@@ -444,8 +446,8 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
         bracketChainSyncClient
             (Node.chainSyncClientTracer (getTracers kernel))
             (defaultChainDbView (getChainDB kernel))
-            (getNodeCandidates kernel)
-            them $ \varCandidate -> do
+            (getPeerViews kernel)
+            them $ \varCandidate writeWhetherSparse checkSparsityDisaster -> do
               chainSyncTimeout <- genChainSyncTimeout
               (_, trailing) <-
                 runPipelinedPeerWithLimits
@@ -455,7 +457,12 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version controlMessageSTM varCandidate
+                  $ hChainSyncClient
+                      version
+                      controlMessageSTM
+                      varCandidate
+                      writeWhetherSparse
+                      checkSparsityDisaster
               return ((), trailing)
 
     aChainSyncServer

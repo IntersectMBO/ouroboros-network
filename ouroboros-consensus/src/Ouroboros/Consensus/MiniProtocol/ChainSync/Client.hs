@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DuplicateRecordFields      #-}
@@ -31,6 +32,8 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
   , defaultChainDbView
   , Our (..)
   , Their (..)
+    -- * Peer sparseness
+  , WhetherSparse (..)
     -- * Trace events
   , TraceChainSyncClientEvent (..)
   , InvalidBlockReason
@@ -121,32 +124,46 @@ bracketChainSyncClient
        )
     => Tracer m (TraceChainSyncClientEvent blk)
     -> ChainDbView m blk
-    -> StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
-       -- ^ The candidate chains, we need the whole map because we
+    -> StrictTVar m (Map peer (WhetherSparse, StrictTVar m (AnchoredFragment (Header blk))))
+       -- ^ The candidate chains and their sparseness, we need the whole map because we
        -- (de)register nodes (@peer@).
     -> peer
     -> (    StrictTVar m (AnchoredFragment (Header blk))
+         -> (WhetherSparse -> m ())
+         -> STM m ()
+         -- TODO those three arguments deserve a record. Also, the var is only
+         -- ever read from and just m would suffice.
          -> m a
        )
     -> m a
-bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
+bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock }
+                       varPeerViews
                        peer body =
     withRegistry $ \registry ->
-      bracket register unregister $ \varCandidate -> do
+      bracket register unregister $ \(varCandidate, writeWhetherSparse, checkSparsityDisaster) -> do
         rejectInvalidBlocks
           tracer
           registry
           getIsInvalidBlock
           (readTVar varCandidate)
-        body varCandidate
+        body varCandidate writeWhetherSparse checkSparsityDisaster
   where
+    updWhetherSparse x (_whetherSparse, varCandidate) = (x, varCandidate)
+
     register = do
       varCandidate <- newTVarIO $ AF.Empty AF.AnchorGenesis
-      atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
-      return varCandidate
+      atomically $ do
+        modifyTVar varPeerViews $ Map.insert peer (IsNotSparse, varCandidate)
+      let writeWhetherSparse x = atomically $ do
+              -- TODO do not write to the TVar if the peer's sparisity hasn't
+              -- changed?
+              modifyTVar varPeerViews $ Map.adjust (updWhetherSparse x) peer
 
-    unregister _ = do
-      atomically $ modifyTVar varCandidates $ Map.delete peer
+          checkSparsityDisaster =
+              readTVar varPeerViews >>= check . all ((== IsSparse) . fst)
+      return (varCandidate, writeWhetherSparse, checkSparsityDisaster)
+
+    unregister _ = atomically $ modifyTVar varPeerViews $ Map.delete peer
 
 -- Our task: after connecting to an upstream node, try to maintain an
 -- up-to-date header-only fragment representing their chain. We maintain
@@ -423,6 +440,9 @@ assertKnownIntersectionInvariants
 assertKnownIntersectionInvariants cfg kis =
     assertWithMsg (checkKnownIntersectionInvariants cfg kis) kis
 
+data WhetherSparse = IsSparse | IsNotSparse
+  deriving (Eq, Generic, NoThunks, Show)
+
 -- | Chain sync client
 --
 -- This never terminates. In case of a failure, a 'ChainSyncClientException'
@@ -440,6 +460,10 @@ chainSyncClient
     -> NodeToNodeVersion
     -> ControlMessageSTM m
     -> StrictTVar m (AnchoredFragment (Header blk))
+    -> (WhetherSparse -> m ())
+       -- ^ reports whether this client instance's peer is sparse
+    -> STM m ()
+       -- ^ block until all client instances' peers are sparse
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg
                 ChainDbView
@@ -452,7 +476,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 }
                 _version
                 controlMessageSTM
-                varCandidate = ChainSyncClientPipelined $
+                varCandidate
+                writeWhetherSparse
+                checkSparsityDisaster = ChainSyncClientPipelined $
     continueWithState () $ initialise
   where
     -- | Start ChainSync by looking for an intersection between our current
@@ -738,6 +764,20 @@ chainSyncClient mkPipelineDecision0 tracer cfg
       whenJust (isInvalidBlock hdrHash) $ \reason ->
         disconnect $ InvalidBlock hdrPoint reason
 
+      continueWithState kis $
+        rollForward2 mkPipelineDecision n hdr theirTip IsNotSparse
+
+    rollForward2 :: forall n.
+                    MkPipelineDecision
+                 -> Nat n
+                 -> Header blk
+                 -> Their (Tip blk)
+                 -> WhetherSparse
+                 -> Stateful m blk
+                     (KnownIntersectionState blk)
+                     (ClientPipelinedStIdle n)
+    rollForward2 mkPipelineDecision n hdr theirTip whetherSparse
+               = Stateful $ \kis -> traceException $ do
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
       intersectCheck <- atomically $ do
@@ -776,8 +816,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               -- 'intersectsWithCurrentChain' befoer it.
               Left OutsideForecastRange{} -> do
 
-                  -- TODO should we first block for a short time via retry,
-                  -- hoping we'll catch up to them?
+                  case whetherSparse of
+                    IsNotSparse -> pure ()
+                    IsSparse    -> checkSparsityDisaster
 
                   let KnownIntersectionState { theirFrag } = kis'
 
@@ -798,27 +839,48 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               Right ledgerView ->
                 return $ Intersects kis' ledgerView
 
+      let updateWhetherSparse :: WhetherSparse -> m ()
+          updateWhetherSparse x =
+              when (whetherSparse /= x) $ writeWhetherSparse x
+
+          proceed :: m (Consensus (ClientPipelinedStIdle n) blk m)
+          proceed =
+              rollForward3 mkPipelineDecision n hdr theirTip intersectCheck
+
       case intersectCheck of
-        NoLongerIntersects                       -> pure ()
-        Intersects{}                             -> pure ()
+        NoLongerIntersects                      -> do
+            updateWhetherSparse IsNotSparse
+            proceed
+        Intersects{}                            -> do
+            updateWhetherSparse IsNotSparse
+            proceed
         SparseChain kis' _ledgerState newPoints -> do
-            traceWith tracer $
-              TraceSparse mostRecentIntersection theirFrag newPoints
+            updateWhetherSparse IsSparse
+            case whetherSparse of
+              IsNotSparse -> do
+                  -- Our peer just became sparse, so re-enter the STM
+                  -- transaction. We only dropped out of it to inform the
+                  -- others that we're now sparse.
+                  continueWithState kis' $
+                    rollForward2 mkPipelineDecision n hdr theirTip IsSparse
+              IsSparse    -> do
+                  -- We are now in disaster recovery mode.
+                  traceWith tracer $
+                    TraceSparse mostRecentIntersection theirFrag newPoints
+                  proceed
           where
             KnownIntersectionState
               { mostRecentIntersection
               , theirFrag
               } = kis'
 
-      finishRollForward mkPipelineDecision n hdr theirTip intersectCheck
-
-    finishRollForward :: MkPipelineDecision
-                      -> Nat n
-                      -> Header blk
-                      -> Their (Tip blk)
-                      -> IntersectCheck blk
-                      -> m (Consensus (ClientPipelinedStIdle n) blk m)
-    finishRollForward mkPipelineDecision n hdr theirTip = \case
+    rollForward3 :: MkPipelineDecision
+                 -> Nat n
+                 -> Header blk
+                 -> Their (Tip blk)
+                 -> IntersectCheck blk
+                 -> m (Consensus (ClientPipelinedStIdle n) blk m)
+    rollForward3 mkPipelineDecision n hdr theirTip = \case
         NoLongerIntersects ->
           -- Our chain (tip) has changed and it no longer intersects with the
           -- candidate fragment, so we have to find a new intersection, but
@@ -891,16 +953,14 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   -- For whatever reason, the next block is already in our
                   -- ChainDB.
                   traceWith tracer $ TraceHaveBlock nextRealPoint
-                  finishRollForward mkPipelineDecision n hdr theirTip $
+                  -- TODO How to abort this loop if our intersection point
+                  -- changes and this peer becomes irrelevant?
+                  rollForward3 mkPipelineDecision n hdr theirTip $
                     case runExcept $
                            forecastFor
                              (ledgerViewForecastAt lcfg ledgerState)
                              (blockSlot hdr) of
                       Left OutsideForecastRange{} ->
-                          -- TODO How to abort this loop if our intersection
-                          -- point changes and this peer becomes irrelevant?
-                          -- And for other interruptions, like switching from
-                          -- speculative back to conservative mode.
                           SparseChain kis' ledgerState' nextRealPoints
                       Right ledgerView            ->
                           Intersects kis' ledgerView
@@ -927,18 +987,34 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                         { recvMsgBlock = \blk -> do
                             traceWith tracer $ TraceDownloadedBlock (blockRealPoint blk)
                             addBlock blk
+                            writeWhetherSparse IsNotSparse
+                              -- That write maintains the (undocumented!)
+                              -- invariant that the varPeerViews map and our
+                              -- local thread agree on our peer's sparsity
+                              -- status.
+                              --
+                              -- TODO Does it also risk thrashing? When do we
+                              -- want to stop letting other client instances
+                              -- also enter StSparse?
                             continueWithState () $
                               findIntersection NoMoreIntersection   -- TODO correct reason
                         }
 
-        SparseChain kis' ledgerState [] ->
+        SparseChain kis' ledgerState [] -> do
             -- The RollForward header is the only block we haven't already
             -- fetched, so we can simply tick to it; there are no remaining
             -- blocks in between.
-            finishRollForward mkPipelineDecision n hdr theirTip $
-            Intersects kis' $
-            protocolLedgerView lcfg $
-            applyChainTick lcfg (blockSlot hdr) ledgerState
+            writeWhetherSparse IsNotSparse
+              -- That write maintains the (undocumented!) invariant that the
+              -- varPeerViews map and our local thread agree on our peer's
+              -- sparsity status.
+              --
+              -- TODO Does it also risk thrashing? When do we want to stop
+              -- letting other client instances also enter StSparse?
+            rollForward3 mkPipelineDecision n hdr theirTip $
+              Intersects kis' $
+              protocolLedgerView lcfg $
+              applyChainTick lcfg (blockSlot hdr) ledgerState
           where
             lcfg = configLedger cfg
 
