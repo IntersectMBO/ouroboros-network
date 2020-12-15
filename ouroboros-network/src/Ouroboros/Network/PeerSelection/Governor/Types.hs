@@ -414,49 +414,49 @@ newtype Completion m peeraddr peerconn =
                  -> Time -> Decision m peeraddr peerconn)
 
 data TracePeerSelection peeraddr =
-       TraceLocalRootPeersChanged (Map peeraddr PeerAdvertise)
-                                  (Map peeraddr PeerAdvertise)
-     | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
-     | TracePublicRootsRequest Int Int
-     | TracePublicRootsResults (Set peeraddr) Int DiffTime
-     | TracePublicRootsFailure SomeException Int DiffTime
+       TraceLocalRootPeersChanged !(Map peeraddr PeerAdvertise)
+                                  !(Map peeraddr PeerAdvertise)
+     | TraceTargetsChanged     !PeerSelectionTargets !PeerSelectionTargets
+     | TracePublicRootsRequest !Int !Int
+     | TracePublicRootsResults !(Set peeraddr) !Int !DiffTime
+     | TracePublicRootsFailure !SomeException !Int !DiffTime
      -- | target known peers, actual known peers, peers available for gossip,
      -- peers selected for gossip
-     | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr)
-     | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
+     | TraceGossipRequests     !Int !Int !(Set peeraddr) !(Set peeraddr)
+     | TraceGossipResults      ![(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
      -- | target known peers, actual known peers, selected peers
-     | TraceForgetColdPeers    Int Int (Set peeraddr)
+     | TraceForgetColdPeers    !Int !Int !(Set peeraddr)
      -- | target established, actual established, selected peers
-     | TracePromoteColdPeers   Int Int (Set peeraddr)
+     | TracePromoteColdPeers   !Int !Int !(Set peeraddr)
      -- | target established, actual established, peer, delay until next
      -- promotion, reason
-     | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
+     | TracePromoteColdFailed  !Int !Int !peeraddr !DiffTime !SomeException
      -- | target established, actual established, peer
-     | TracePromoteColdDone    Int Int peeraddr
+     | TracePromoteColdDone    !Int !Int !peeraddr
      -- | target active, actual active, selected peers
-     | TracePromoteWarmPeers   Int Int (Set peeraddr)
+     | TracePromoteWarmPeers   !Int !Int !(Set peeraddr)
      -- | target active, actual active, peer, reason
-     | TracePromoteWarmFailed  Int Int peeraddr SomeException
+     | TracePromoteWarmFailed  !Int !Int !peeraddr !SomeException
      -- | target active, actual active, peer
-     | TracePromoteWarmDone    Int Int peeraddr
+     | TracePromoteWarmDone    !Int !Int !peeraddr
      -- | target established, actual established, selected peers
-     | TraceDemoteWarmPeers    Int Int (Set peeraddr)
+     | TraceDemoteWarmPeers    !Int !Int !(Set peeraddr)
      -- | target established, actual established, peer, reason
-     | TraceDemoteWarmFailed   Int Int  peeraddr SomeException
+     | TraceDemoteWarmFailed   !Int !Int  !peeraddr !SomeException
      -- | target established, actual established, peer
-     | TraceDemoteWarmDone     Int Int peeraddr
+     | TraceDemoteWarmDone     !Int !Int !peeraddr
      -- | target active, actual active, selected peers
-     | TraceDemoteHotPeers     Int Int (Set peeraddr)
+     | TraceDemoteHotPeers     !Int !Int !(Set peeraddr)
      -- | target active, actual active, peer, reason
-     | TraceDemoteHotFailed    Int Int peeraddr SomeException
+     | TraceDemoteHotFailed    !Int !Int !peeraddr !SomeException
      -- | target active, actual active, peer
-     | TraceDemoteHotDone      Int Int peeraddr
-     | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
+     | TraceDemoteHotDone      !Int !Int !peeraddr
+     | TraceDemoteAsynchronous !(Map peeraddr PeerStatus)
      | TraceGovernorWakeup
   deriving Show
 
 data DebugPeerSelection peeraddr peerconn =
-       TraceGovernorState Time
-                          (Maybe DiffTime)
-                          (PeerSelectionState peeraddr peerconn)
+       TraceGovernorState !Time
+                          !(Maybe DiffTime)
+                          !(PeerSelectionState peeraddr peerconn)
   deriving (Show, Functor)
