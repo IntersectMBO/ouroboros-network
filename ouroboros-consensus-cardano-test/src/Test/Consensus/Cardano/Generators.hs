@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
-                     nonEmptyFromList)
+                     nonEmptyFromList, nonEmptyToList)
 import           Ouroboros.Consensus.Util.SOP (nsFromIndex)
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -432,7 +432,23 @@ instance (Arbitrary a, SListI xs) => Arbitrary (NonEmpty xs a) where
       return $ fromMaybe (error "nonEmptyFromList failed") $ nonEmptyFromList xs
 
 instance Arbitrary (History.Interpreter (CardanoEras c)) where
-  arbitrary = History.mkInterpreter . History.Summary <$> arbitrary
+  arbitrary =
+      History.mkInterpreter . History.Summary . enforceInvariant <$> arbitrary
+    where
+      -- Enforce the invariant that when the last era in the summary is the
+      -- final era, it is unbounded. The decoder relies on this.
+      enforceInvariant xs
+        | length (nonEmptyToList xs) == lengthSList (Proxy @(CardanoEras c))
+        = fixEndBound xs
+        | otherwise
+        = xs
+
+      fixEndBound ::
+           NonEmpty xs History.EraSummary
+        -> NonEmpty xs History.EraSummary
+      fixEndBound (NonEmptyCons e es) = NonEmptyCons e (fixEndBound es)
+      fixEndBound (NonEmptyOne  e)    =
+          NonEmptyOne  e { History.eraEnd = History.EraUnbounded }
 
 instance Arbitrary (EraIndex (CardanoEras c)) where
   arbitrary = do

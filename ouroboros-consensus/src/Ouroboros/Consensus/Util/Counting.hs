@@ -45,6 +45,7 @@ module Ouroboros.Consensus.Util.Counting (
   , nonEmptyLast
   , nonEmptyInit
   , nonEmptyFromList
+  , nonEmptyToList
   , nonEmptyWeaken
   , nonEmptyStrictPrefixes
   , nonEmptyMapOne
@@ -309,6 +310,14 @@ nonEmptyFromList = go (sList @xs)
         (SCons, y:ys') -> NonEmptyCons y <$> go sList ys'
         (SCons, [])    -> Nothing
         (SNil,  _)     -> Nothing
+
+-- | Convert a 'NonEmpty' to a list.
+nonEmptyToList :: forall xs a. NonEmpty xs a -> [a]
+nonEmptyToList = go
+  where
+    go :: forall xs'. NonEmpty xs' a -> [a]
+    go (NonEmptyOne  x)    = x : []
+    go (NonEmptyCons x xs) = x : go xs
 
 nonEmptyWeaken :: NonEmpty xs a -> AtMost xs a
 nonEmptyWeaken = go
