@@ -20,6 +20,7 @@ REGENERATE=${2:-"true"}
 BUILD_DIR=${3:-"dist-newstyle"}
 
 GHC_VERSION=$(ghc --numeric-version)
+OS_ARCH="$(cat dist-newstyle/cache/plan.json | jq -r '.arch + "-" + .os' | head -n 1 | xargs)"
 
 
 # we don't include `--use-index` option, because then quickjump data is not
@@ -55,9 +56,9 @@ if [[ !( -d ${OUTPUT_DIR} ) ]]; then
 fi
 
 # copy the new docs
-for dir in $(ls "${BUILD_DIR}/build/x86_64-linux/ghc-${GHC_VERSION}"); do
+for dir in $(ls "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}"); do
   package=$(echo "${dir}" | sed 's/-[0-9]\+\(\.[0-9]\+\)*//')
-  cp -r "${BUILD_DIR}/build/x86_64-linux/ghc-${GHC_VERSION}/${dir}/noopt/doc/html/${package}" ${OUTPUT_DIR}
+  cp -r "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}/${dir}/noopt/doc/html/${package}" ${OUTPUT_DIR}
 done
 
 # --read-interface options
@@ -69,7 +70,7 @@ interface_options () {
 
 # Generate top level index using interface files
 #
-haddock \
+cabal haddock \
   -o ${OUTPUT_DIR} \
   --title "ouroboros-network" \
   --package-name "Ouroboros-Network & Ouroboros-Consensus" \

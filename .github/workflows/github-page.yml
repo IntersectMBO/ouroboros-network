@@ -4,23 +4,35 @@ on:
   schedule:
     - cron:  '0 0 * * *'
 
-
-# based on: https://github.com/haskell/cabal/blob/master/.github/workflows/linux.yml
-
 jobs:
   haddocks:
     name: "Haddocks"
-    runs-on: ubuntu-18.04
+
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ["8.10.2"]
+        os: [ubuntu-latest]
+
     container:
       image: phadej/ghc:8.10.2-bionic
+
     steps:
       - name: set PATH
         run: |
-          echo "::add-path::$HOME/.cabal/bin"
+          echo "$HOME/.cabal/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: |
           apt-get update
           apt-get install -y libsodium-dev jq
+
       - name: install cabal-plan
         run: |
           mkdir -p $HOME/.cabal/bin
@@ -29,12 +41,14 @@ jobs:
           xz -d < cabal-plan.xz > $HOME/.cabal/bin/cabal-plan
           rm -f cabal-plan.xz
           chmod a+x $HOME/.cabal/bin/cabal-plan
+
       # Cache cabal-store
       - name: cache cabal store
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: ~/.cabal/store
-          key: cabal-store-8.10.2
+          key: cabal-store-${{ matrix.os }}
+
       - name: Update Hackage index
         run: cabal v2-update
 
@@ -53,10 +67,10 @@ jobs:
 
       # Cache dist-newstyle directory
       - name: cache dist-newstyle
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
           path: dist-newstyle
-          key: dist-newstyle
+          key: dist-newstyle-${{ matrix.os }}
 
       - name: build Haddock documentation 🔧
         run: |
