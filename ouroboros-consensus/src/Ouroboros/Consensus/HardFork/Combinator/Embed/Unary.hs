@@ -37,7 +37,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Unary (
 
 import           Data.Bifunctor (first)
 import           Data.Coerce
-import           Data.Functor.Contravariant
 import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.SOP.Strict
@@ -60,6 +59,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -371,11 +371,11 @@ instance Isomorphic AnnTip where
 instance Functor m => Isomorphic (InitChainDB m) where
   project :: forall blk. NoHardForks blk
           => InitChainDB m (HardForkBlock '[blk]) -> InitChainDB m blk
-  project = contramap (inject' (Proxy @(I blk)))
+  project = InitChainDB.map (inject' (Proxy @(I blk))) project
 
   inject :: forall blk. NoHardForks blk
          => InitChainDB m blk -> InitChainDB m (HardForkBlock '[blk])
-  inject = contramap (project' (Proxy @(I blk)))
+  inject = InitChainDB.map (project' (Proxy @(I blk))) inject
 
 instance Isomorphic ProtocolClientInfo where
   project ProtocolClientInfo{..} = ProtocolClientInfo {

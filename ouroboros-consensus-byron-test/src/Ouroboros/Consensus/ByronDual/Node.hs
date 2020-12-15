@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -218,8 +219,11 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
 
 instance NodeInitStorage DualByronBlock where
   -- Just like Byron, we need to start with an EBB
-  nodeInitChainDB cfg InitChainDB { addBlockIfEmpty } = do
-      addBlockIfEmpty (return genesisEBB)
+  nodeInitChainDB cfg InitChainDB { getCurrentLedger, addBlock } = do
+      tip <- ledgerTipPoint (Proxy @DualByronBlock) <$> getCurrentLedger
+      case tip of
+        BlockPoint {} -> return ()
+        GenesisPoint  -> addBlock genesisEBB
     where
       genesisEBB :: DualByronBlock
       genesisEBB = DualBlock {
