@@ -60,6 +60,7 @@ library
                        Ouroboros.Network.NodeToNode.Version
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.NodeToClient.Version
+                       Ouroboros.Network.ReceiveDelay
                        Ouroboros.Network.Tracers
                        Ouroboros.Network.Point
                        Ouroboros.Network.PeerSelection.Types
@@ -152,6 +153,7 @@ library
                        serialise         >=0.2 && <0.3,
                        random,
                        stm               >=2.4 && <2.6,
+                       time              >=1.6 && <1.11,
 
                        cardano-binary,
                        cardano-prelude,

@@ -285,7 +285,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
               WithFingerprint (const Nothing) (Fingerprint 0)
           }
 
-        client :: StrictTVar m (AnchoredFragment (Header TestBlock))
+        client :: StrictTVar m (AnchoredFragment (Timed (Header TestBlock)))
                -> Consensus ChainSyncClientPipelined
                     TestBlock
                     m
@@ -293,6 +293,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                    (pipelineDecisionLowHighMark 10 20)
                    chainSyncTracer
                    nodeCfg
+                   (LogicalClock.mockSystemTime clock)
                    chainDbView
                    maxBound
                    (return Continue)
@@ -380,7 +381,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       mbResult      <- readTVar varClientResult
       return ChainSyncOutcome {
           finalServerChain = testHeader <$> finalServerChain
-        , syncedFragment   = AF.mapAnchoredFragment testHeader candidateFragment
+        , syncedFragment   = AF.mapAnchoredFragment (testHeader . getTimed) candidateFragment
         , ..
         }
   where

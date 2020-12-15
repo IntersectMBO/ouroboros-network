@@ -285,6 +285,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
             cfg
             blockForging
             rnTraceConsensus
+            systemTime
             btime
             chainDB
       nodeKernel <- initNodeKernel nodeKernelArgs
@@ -477,6 +478,7 @@ mkNodeKernelArgs
   -> TopLevelConfig blk
   -> m [BlockForging m blk]
   -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> SystemTime m
   -> BlockchainTime m
   -> ChainDB m blk
   -> m (NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
@@ -487,6 +489,7 @@ mkNodeKernelArgs
   cfg
   initBlockForging
   tracers
+  systemTime
   btime
   chainDB
   = do
@@ -495,6 +498,7 @@ mkNodeKernelArgs
       { tracers
       , registry
       , cfg
+      , systemTime
       , btime
       , chainDB
       , blockForging

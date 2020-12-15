@@ -953,7 +953,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             ledgerState <$> ChainDB.getCurrentLedger chainDB
         , hfbtLedgerConfig   = configLedger pInfoConfig
         , hfbtRegistry       = registry
-        , hfbtSystemTime     = OracularClock.finiteSystemTime clock
+        , hfbtSystemTime     = systemTime
         , hfbtTracer         =
             contramap
               -- We don't really have a SystemStart in the tests
@@ -968,6 +968,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             { tracers
             , registry
             , cfg                     = pInfoConfig
+            , systemTime
             , btime
             , chainDB
             , initChainDB             = nodeInitChainDB

@@ -101,7 +101,7 @@ data Handlers m peer blk = Handlers {
       hChainSyncClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> StrictTVar m (AnchoredFragment (Header blk))
+        -> StrictTVar m (AnchoredFragment (Timed (Header blk)))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation
@@ -162,7 +162,7 @@ mkHandlers
   -> NodeKernel     m remotePeer localPeer blk
   -> Handlers       m remotePeer           blk
 mkHandlers
-      NodeKernelArgs {keepAliveRng, miniProtocolParameters}
+      NodeKernelArgs {keepAliveRng, miniProtocolParameters, systemTime}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
         hChainSyncClient =
@@ -172,6 +172,7 @@ mkHandlers
               (chainSyncPipeliningHighMark miniProtocolParameters))
             (Node.chainSyncClientTracer tracers)
             getTopLevelConfig
+            systemTime
             (defaultChainDbView getChainDB)
       , hChainSyncServer =
           chainSyncHeadersServer

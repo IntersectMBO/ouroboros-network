@@ -45,6 +45,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
    , ExceededRollback(..)
    , ledgerDbPush
    , ledgerDbSwitch
+   , ledgerDbRewind
      -- * Exports for the benefit of tests
      -- ** Additional queries
    , ledgerDbMaxRollback
@@ -447,6 +448,19 @@ ledgerDbSwitch cfg numRollbacks newBlocks db =
           }
       Just db' ->
         Right <$> ledgerDbPushMany cfg newBlocks db'
+
+-- | Rewind to the given point. If the point is not in the LedgerDB (not the
+-- anchor either), 'Nothing' is returned.
+ledgerDbRewind ::
+     forall blk l. (HasHeader blk, GetTip l, HeaderHash l ~ HeaderHash blk)
+  => Point blk -> LedgerDB l -> Maybe (LedgerDB l)
+ledgerDbRewind pt =
+      fmap LedgerDB
+    . AS.rollback (pointSlot pt) ((== pt) . either getTip' getTip')
+    . ledgerDbCheckpoints
+  where
+    getTip' :: Checkpoint l -> Point blk
+    getTip' = castPoint . getTip . unCheckpoint
 
 {-------------------------------------------------------------------------------
   The LedgerDB itself behaves like a ledger
