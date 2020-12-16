@@ -13,8 +13,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        subset: [network, consensus]
         ghc: ["8.6.5", "8.10.2"]
         os: [ubuntu-latest, windows-latest]
+        exclude:
+          - os: windows-latest
+            subset: consensus
 
     steps:
     - uses: actions/checkout@v2
@@ -29,6 +33,9 @@ jobs:
 
         echo "CABAL_BUILDDIR=$CABAL_BUILDDIR"
         echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
+
+    - name: Set cache version
+      run: echo "CACHE_VERSION=9w76Z3Q"          >> $GITHUB_ENV
 
     - name: Install pkgconfiglite
       if: matrix.os == 'windows-latest'
@@ -59,12 +66,14 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: brew install libsodium
 
-    - name: Configure to use libsodium
+    - name: Install build environment
+      if: matrix.os == 'ubuntu-latest'
       run: |
-        cat >> cabal.project <<EOF
-        package cardano-crypto-praos
-          flags: -external-libsodium-vrf
-        EOF
+        sudo apt-get update
+        sudo apt-get -y install libsodium23 libsodium-dev
+        sudo apt-get -y install libsystemd0 libsystemd-dev
+        sudo apt-get -y remove --purge software-properties-common
+        sudo apt-get -y autoremove
 
     - name: Select optimal cabal version
       run: |
@@ -86,15 +95,6 @@ jobs:
           's|C:/GitLabRunner/builds/2WeHDSFP/0/ghc/ghc/inplace/mingw/bin/ld.exe|C:/ProgramData/chocolatey/lib/ghc.8.10.2/tools/ghc-8.10.2/mingw/bin/ld.exe|g' \
           C:/ProgramData/chocolatey/lib/ghc.8.10.2/tools/ghc-8.10.2/lib/settings
 
-    - name: Install build environment
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install libsodium23 libsodium-dev
-        sudo apt-get -y install libsystemd0 libsystemd-dev
-        sudo apt-get -y remove --purge software-properties-common
-        sudo apt-get -y autoremove
-
     - name: Set up temp directory
       run: |
         echo 'TMPDIR=${{ runner.temp }}'  >> $GITHUB_ENV
@@ -105,23 +105,23 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
-        key: cabal-store-${{ matrix.ghc }}-${{ matrix.os }}
+        key: cabal-store-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
     # Cache parts of dist-newstyle (C:\dist)
-    - name: cache buiddir [cache]
+    - name: cache build directory [cache]
       uses: actions/cache@v2
       with:
         path: C:\dist\cache
-        key: dist-cache-${{ matrix.ghc }}-${{ matrix.os }}
-    - name: cache buiddir [src]
+        key: dist-cache-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
+    - name: cache build directory [src]
       uses: actions/cache@v2
       with:
         path: C:\dist\src
-        key: dist-src-${{ matrix.ghc }}-${{ matrix.os }}
-    - name: cache builddir [packagedb]
+        key: dist-src-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
+    - name: cache build directory [packagedb]
       uses: actions/cache@v2
       with:
         path: C:\dist\packagedb
-        key: dist-packagedb-${{ matrix.ghc }}-${{ matrix.os }}
+        key: dist-packagedb-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
 
     - name: update Hackage index
       run: cabal v2-update
@@ -136,6 +136,14 @@ jobs:
     - name: Use cabal.project.local.windows
       run: |
         cat ./cabal.project.local.ci.windows >> ./cabal.project.local
+
+        cat >> cabal.project.local <<EOF
+        package cardano-crypto-praos
+          flags: -external-libsodium-vrf
+        package ouroboros-consensus-shelley-test
+          flags: -external-libsodium-vrf
+        EOF
+
         cat ./cabal.project.local
 
     - name: Install happy
@@ -156,28 +164,80 @@ jobs:
 
     # ntp-client
     - name: ntp-client [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build ntp-client
 
     - name: io-sim-classes [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build io-sim-classes
 
     - name: io-sim [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build io-sim
 
     - name: typed-protocols [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols
 
     - name: typed-protocols-examples [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols-examples
 
     - name: network-mux [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build network-mux
 
     - name: ouroboros-network-framework [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network-framework
 
     - name: ouroboros-network [build]
+      if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network
+
+    - name: ouroboros-consensus [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus
+
+    - name: ouroboros-consensus-mock [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-mock
+
+    - name: ouroboros-consensus-test [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-test
+
+    - name: ouroboros-consensus-mock-test [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-mock-test
+
+    - name: ouroboros-consensus-byron [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-byron
+
+    - name: ouroboros-consensus-byronspec [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-byronspec
+
+    - name: ouroboros-consensus-byron-test [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-byron-test
+
+    - name: ouroboros-consensus-shelley [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-shelley
+
+    - name: ouroboros-consensus-shelley-test [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-shelley-test
+
+    - name: ouroboros-consensus-cardano [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-cardano
+
+    - name: ouroboros-consensus-cardano-test [build]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-cardano-test
 
     #
     # Test network packages
@@ -188,26 +248,77 @@ jobs:
       run: cabal --builddir="$CABAL_BUILDDIR" run Win32-network:test
 
     - name: ntp-client [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run ntp-client:test
 
     - name: io-sim [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run io-sim:test
 
     - name: io-sim-classes [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run io-sim-classes:test
 
     - name: typed-protocols-examples [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-examples:tests
 
     - name: network-mux [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run network-mux:test
 
     # issue: #1818
     - name: ourobors-network-framework [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
 
     - name: ouroboros-network [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test
+
+
+    # - name: ouroboros-consensus [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus
+
+    # - name: ouroboros-consensus-mock [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock
+
+    # - name: ouroboros-consensus-test [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-test
+
+    # - name: ouroboros-consensus-mock-test [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock-test
+
+    # - name: ouroboros-consensus-byron [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron
+
+    # - name: ouroboros-consensus-byronspec [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byronspec
+
+    # - name: ouroboros-consensus-byron-test [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron-test
+
+    # - name: ouroboros-consensus-shelley [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley
+
+    # - name: ouroboros-consensus-shelley-test [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley-test
+
+    # - name: ouroboros-consensus-cardano [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano
+
+    # - name: ouroboros-consensus-cardano-test [test]
+    #   if: matrix.subset == 'consensus'
+    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano-test
 
     # TODO: we need to install the cddl tool
     # - name: ouroboros-network [cddl]
