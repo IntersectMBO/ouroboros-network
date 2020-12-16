@@ -65,6 +65,11 @@ data HardForkForgeStateInfo xs where
          OneEraForgeStateInfo xs
       -> HardForkForgeStateInfo xs
 
+    -- | The 'ForgeState' of the current era was unchanged.
+    CurrentEraForgeStateUnchanged ::
+         OneEraForgeStateInfo xs
+      -> HardForkForgeStateInfo xs
+
 deriving instance CanHardFork xs => Show (HardForkForgeStateInfo xs)
 
 type instance ForgeStateInfo (HardForkBlock xs) = HardForkForgeStateInfo xs
@@ -86,10 +91,10 @@ hardForkBlockForging ::
 hardForkBlockForging forgeLabel blockForging =
     BlockForging {
         forgeLabel       = forgeLabel
-      , canBeLeader      = hardForkCanBeLeader               blockForging
-      , updateForgeState = hardForkUpdateForgeState          blockForging
-      , checkCanForge    = hardForkCheckCanForge             blockForging
-      , forgeBlock       = hardForkForgeBlock                blockForging
+      , canBeLeader      = hardForkCanBeLeader      blockForging
+      , updateForgeState = hardForkUpdateForgeState blockForging
+      , checkCanForge    = hardForkCheckCanForge    blockForging
+      , forgeBlock       = hardForkForgeBlock       blockForging
       }
 
 hardForkCanBeLeader ::
@@ -135,9 +140,9 @@ hardForkUpdateForgeState blockForging
       -> ForgeStateUpdateInfo (HardForkBlock '[blk])
     injectSingle forgeStateUpdateInfo = ForgeStateUpdateInfo $
         case getForgeStateUpdateInfo forgeStateUpdateInfo of
-          Updated      info -> Updated      $ injInfo        index info
-          Unchanged    info -> Unchanged    $ injInfo        index info
-          UpdateFailed err  -> UpdateFailed $ injUpdateError index err
+          Updated      info -> Updated      $ injInfoUpdated   index info
+          Unchanged    info -> Unchanged    $ injInfoUnchanged index info
+          UpdateFailed err  -> UpdateFailed $ injUpdateError   index err
       where
         index :: Index '[blk] blk
         index = IZ
@@ -157,12 +162,22 @@ hardForkUpdateForgeState blockForging
               curSlot
               (unwrapTickedChainDepState chainDepState')
 
-    injInfo ::
+    injInfoUpdated ::
          Index xs blk
       -> ForgeStateInfo blk
       -> ForgeStateInfo (HardForkBlock xs)
-    injInfo index =
+    injInfoUpdated index =
           CurrentEraForgeStateUpdated
+        . OneEraForgeStateInfo
+        . injectNS index
+        . WrapForgeStateInfo
+
+    injInfoUnchanged ::
+         Index xs blk
+      -> ForgeStateInfo blk
+      -> ForgeStateInfo (HardForkBlock xs)
+    injInfoUnchanged index =
+          CurrentEraForgeStateUnchanged
         . OneEraForgeStateInfo
         . injectNS index
         . WrapForgeStateInfo
@@ -192,9 +207,9 @@ hardForkUpdateForgeState blockForging
                 Nothing -> Unchanged $ CurrentEraLacksBlockForging $ eraIndexFromIndex index
                 Just forgeStateUpdateInfo ->
                   case getForgeStateUpdateInfo forgeStateUpdateInfo of
-                    Updated      info -> Updated      $ injInfo        index info
-                    Unchanged    info -> Unchanged    $ injInfo        index info
-                    UpdateFailed err  -> UpdateFailed $ injUpdateError index err
+                    Updated      info -> Updated      $ injInfoUpdated   index info
+                    Unchanged    info -> Unchanged    $ injInfoUnchanged index info
+                    UpdateFailed err  -> UpdateFailed $ injUpdateError   index err
 
 -- | PRECONDITION: the ticked 'ChainDepState', the 'HardForkIsLeader', and the
 -- 'HardForkStateInfo' are all from the same era, and we must have a
