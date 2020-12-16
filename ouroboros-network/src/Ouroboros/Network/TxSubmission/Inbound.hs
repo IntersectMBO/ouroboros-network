@@ -317,13 +317,15 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             bufferedTxs2 = foldl' (flip Map.delete)
                                    bufferedTxs1 acknowledgedTxIds
 
-        _writtenTxids <- mempoolAddTxs txsReady
+            -- If we are acknowleding transactions that are still in unacknowledgedTxIds'
+            -- we need to re-add them so that we also can acknowledge them again later.
+            -- This will happen incase of duplicate txids within the same window.
+            live = filter (`elem` unacknowledgedTxIds') $ toList acknowledgedTxIds
+            bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <>
+                               (Map.fromList (zip live (repeat Nothing)))
 
-        -- If we are acknowleding transactions that are still in unacknowledgedTxIds'
-        -- we need to re-add them so that we also can acknowledge them again later.
-        -- This will happen incase of duplicate txids within the same window.
-        let live = filter (`elem` unacknowledgedTxIds') $ toList acknowledgedTxIds
-            bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <> (Map.fromList (zip live (repeat Nothing)))
+
+        _writtenTxids <- mempoolAddTxs txsReady
 
         continueWithStateM (serverIdle n) st {
           bufferedTxs         = bufferedTxs3,
@@ -340,10 +342,10 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
     -- mempool.
     --
     acknowledgeTxIds :: ServerState txid tx
-                              -> StrictSeq txid
-                              -> Map txid TxSizeInBytes
-                              -> MempoolSnapshot txid tx idx
-                              -> ServerState txid tx
+                     -> StrictSeq txid
+                     -> Map txid TxSizeInBytes
+                     -> MempoolSnapshot txid tx idx
+                     -> ServerState txid tx
     acknowledgeTxIds st txidsSeq _ _ | Seq.null txidsSeq  = st
     acknowledgeTxIds st txidsSeq txidsMap MempoolSnapshot{mempoolHasTx} =
         -- Return the next 'ServerState'
@@ -356,6 +358,9 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         }
       where
 
+        -- Divide the new txids in two: those that are already in the
+        -- mempool or in flight and those that are not. We'll request some txs from the
+        -- latter.
         (ignoredTxids, availableTxidsMp) =
               Map.partitionWithKey
                 (\txid _ -> mempoolHasTx txid)
@@ -363,12 +368,9 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
 
         availableTxidsU =
               Map.filterWithKey
-                (\txid _ -> not $ elem txid (unacknowledgedTxIds st))
+                (\txid _ -> notElem txid (unacknowledgedTxIds st))
                 txidsMap
 
-        -- Divide the new txids in two: those that are already in the
-        -- mempool or in flight and those that are not. We'll request some txs from the
-        -- latter.
         availableTxids' = availableTxids st <> Map.intersection availableTxidsMp availableTxidsU
 
         -- The txs that we intentionally don't request, because they are
