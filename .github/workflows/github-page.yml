@@ -1,76 +1,124 @@
 name: "Haddock documentation"
 
 on:
+  push:
   schedule:
     - cron:  '0 0 * * *'
-
-
-# based on: https://github.com/haskell/cabal/blob/master/.github/workflows/linux.yml
 
 jobs:
   haddocks:
     name: "Haddocks"
-    runs-on: ubuntu-18.04
-    container:
-      image: phadej/ghc:8.10.2-bionic
+
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ["8.10.2"]
+        os: [ubuntu-latest]
+
     steps:
-      - name: set PATH
-        run: |
-          echo "::add-path::$HOME/.cabal/bin"
-      - name: Install dependencies
-        run: |
-          apt-get update
-          apt-get install -y libsodium-dev jq
-      - name: install cabal-plan
-        run: |
-          mkdir -p $HOME/.cabal/bin
-          curl -sL https://github.com/haskell-hvr/cabal-plan/releases/download/v0.6.2.0/cabal-plan-0.6.2.0-x86_64-linux.xz > cabal-plan.xz
-          echo "de73600b1836d3f55e32d80385acc055fd97f60eaa0ab68a755302685f5d81bc  cabal-plan.xz" | sha256sum -c -
-          xz -d < cabal-plan.xz > $HOME/.cabal/bin/cabal-plan
-          rm -f cabal-plan.xz
-          chmod a+x $HOME/.cabal/bin/cabal-plan
-      # Cache cabal-store
-      - name: cache cabal store
-        uses: actions/cache@v1
-        with:
-          path: ~/.cabal/store
-          key: cabal-store-8.10.2
-      - name: Update Hackage index
-        run: cabal v2-update
+    - uses: actions/checkout@v1
 
-      # checkout git repository
-      - name: checkout ouroboros-network repository
-        run: |
-          git clone --depth 1 https://github.com/${{ github.repository }}.git .
-          git config --local user.email "marcin.szamotulski@iohk.io"
-          git config --local user.name ${{ github.actor }}
-          git fetch origin ${{ github.ref }}:temporary-ci-branch
-          git checkout ${{ github.sha }}
+    - name: Select build directory
+      run: |
+        if [ "$OS" == Windows_NT ]; then
+          CABAL_BUILDDIR="D:\\a\\_temp\\dist"
+        else
+          CABAL_BUILDDIR="dist-newstyle"
+        fi
 
-      - name: configure
-        run: |
-          ln -s cabal.project.local.github-pages cabal.project.local
+        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR"
+        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
 
-      # Cache dist-newstyle directory
-      - name: cache dist-newstyle
-        uses: actions/cache@v1
-        with:
-          path: dist-newstyle
-          key: dist-newstyle
+    - name: Install pkgconfiglite
+      if: matrix.os == 'windows-latest'
+      run: choco install -y pkgconfiglite
 
-      - name: build Haddock documentation 🔧
-        run: |
-          mkdir ./haddocks
-          ./scripts/haddocs.sh ./haddocks
+    - name: Install libsodium
+      if: matrix.os == 'windows-latest'
+      run: |
+        curl -Ls \
+          --connect-timeout 5 \
+          --max-time 10 \
+          --retry 5 \
+          --retry-delay 0 \
+          --retry-max-time 40 \
+          https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-mingw.tar.gz -o libsodium-1.0.18-mingw.tar.gz
+        tar zxvf libsodium-1.0.18-mingw.tar.gz
 
-      - name: deploy to gh-pages 🚀
-        run: |
-          git fetch origin gh-pages:gh-pages
-          git checkout gh-pages
-          cp -r ./haddocks/* ./
-          rm -rf haddocks
-          git add -A
-          git commit -m "Deployed haddocks" || true
-          git push https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git HEAD:gh-pages
+        sed -i "s|/d/a/1/s/|D:/a/cardano-node/cardano-node/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
 
+        export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig)"
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
+        export LIBSODIUM_PATH="$(readlink -f libsodium-win64/bin | sed 's|^/d|D:|g' | tr / '\\')"
+        echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
+        echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
+
+    - name: Configure to use libsodium
+      run: |
+        cat >> cabal.project <<EOF
+        package cardano-crypto-praos
+          flags: -external-libsodium-vrf
+        EOF
+
+    - uses: actions/setup-haskell@v1
+      id: setup-haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: '3.4.0.0-rc4'
+
+    - name: Install build environment
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libsodium23 libsodium-dev
+        sudo apt-get -y install libsystemd0 libsystemd-dev
+        sudo apt-get -y remove --purge software-properties-common
+        sudo apt-get -y autoremove
+
+    - name: Set up temp directory
+      run: |
+        echo 'TMPDIR=${{ runner.temp }}'  >> $GITHUB_ENV
+        echo 'TMP=${{ runner.temp }}'     >> $GITHUB_ENV
+
+    - uses: actions/cache@v2
+      name: Cache cabal store
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-haddock-${{ runner.os }}-${{ matrix.ghc }}-v1-${{ hashFiles('cabal-cache.cabal') }}-${{ github.sha }}
+        restore-keys: cache-haddock-${{ runner.os }}-${{ matrix.ghc }}-v1-${{ hashFiles('cabal-cache.cabal') }}-
+
+    - name: Update Hackage index
+      run: cabal v2-update
+
+    - name: Checkout ouroboros-network repository
+      uses: actions/checkout@v2
+
+    - name: Build dependencies
+      run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
+
+    - name: Use cabal.project.local.github-pages
+      run: |
+        cat ./cabal.project.local.github-pages >> ./cabal.project.local
+        cat ./cabal.project.local
+
+    - name: build Haddock documentation 🔧
+      run: |
+        mkdir ./haddocks
+        ./scripts/haddocs.sh ./haddocks
+
+    - name: deploy to gh-pages 🚀
+      run: |
+        git fetch origin gh-pages:gh-pages
+        git checkout gh-pages
+        cp -r ./haddocks/* ./
+        rm -rf haddocks
+        git add -A
+        git commit -m "Deployed haddocks" || true
+        git push https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git HEAD:gh-pages
