@@ -367,7 +367,6 @@ executable demo-chain-sync
                        network,
                        random,
                        serialise,
-                       splitmix < 0.1,
                        stm,
 
                        QuickCheck,

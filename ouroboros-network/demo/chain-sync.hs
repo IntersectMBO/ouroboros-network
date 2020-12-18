@@ -34,7 +34,6 @@ import           System.Environment
 import           System.Exit
 import           System.IO
 import           System.Random
-import           System.Random.SplitMix
 
 import qualified Codec.Serialise as CBOR
 
@@ -198,7 +197,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    prng = mkSMGen 0
+    prng = mkStdGen 0
 
     app :: OuroborosApplication ResponderMode addr LBS.ByteString IO Void ()
     app = demoProtocol2 chainSync
@@ -424,7 +423,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    prng = mkSMGen 0
+    prng = mkStdGen 0
 
     app :: OuroborosApplication ResponderMode LocalAddress LBS.ByteString IO Void ()
     app = demoProtocol3 chainSync blockFetch
