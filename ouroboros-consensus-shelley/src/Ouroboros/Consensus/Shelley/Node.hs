@@ -347,11 +347,11 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     initialEpochNo :: EpochNo
     initialEpochNo = 0
 
-    -- We can just use 'SL.genesisUtxO' to compute the initial UTxO from the
+    -- We can just use 'SL.genesisUTxO' to compute the initial UTxO from the
     -- initial funds. No need to combine the initial funds with an existing
     -- UTxO, so no need for 'registerInitialFunds'.
     initialUtxo :: SL.UTxO era
-    initialUtxo = SL.genesisUtxO genesis
+    initialUtxo = SL.genesisUTxO genesis
 
     initShelleyState :: SL.ChainState era
     initShelleyState =
