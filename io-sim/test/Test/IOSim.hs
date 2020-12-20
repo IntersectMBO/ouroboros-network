@@ -754,8 +754,8 @@ unit_async_13 =
            (uninterruptibleMask_ $ do
               tid <- forkIO $ atomically retry
               throwTo tid DivideByZero)
-       of Left FailureDeadlock -> property True
-          _                    -> property False
+       of Left FailureDeadlock {} -> property True
+          _                       -> property False
 
 
 unit_async_14 =

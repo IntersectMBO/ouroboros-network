@@ -1,3 +1,4 @@
+{-# LANGUAGE DefaultSignatures      #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeFamilies           #-}
@@ -5,6 +6,8 @@
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadSTMTx (..)
+  , MonadLabelledSTM (..)
+  , MonadLabelledSTMTx (..)
   , LazyTVar
   , LazyTMVar
   , TVar
@@ -14,6 +17,7 @@ module Control.Monad.Class.MonadSTM
 
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
+  , labelTMVarDefault
   , newTMVarDefault
   , newTMVarIODefault
   , newEmptyTMVarDefault
@@ -29,6 +33,7 @@ module Control.Monad.Class.MonadSTM
 
   -- * Default 'TBQueue' implementation
   , TQueueDefault (..)
+  , labelTQueueDefault
   , newTQueueDefault
   , readTQueueDefault
   , tryReadTQueueDefault
@@ -37,6 +42,7 @@ module Control.Monad.Class.MonadSTM
 
   -- * Default 'TBQueue' implementation
   , TBQueueDefault (..)
+  , labelTBQueueDefault
   , newTBQueueDefault
   , readTBQueueDefault
   , tryReadTBQueueDefault
@@ -184,6 +190,37 @@ newEmptyTMVarM  :: MonadSTM m => m (TMVar m a)
 newEmptyTMVarM = newEmptyTMVarIO
 {-# DEPRECATED newEmptyTMVarM "Use newEmptyTMVarIO" #-}
 
+
+-- | Labelled 'TVar's, 'TMVar's, 'TQueue's and 'TBQueue's.
+--
+class MonadSTMTx stm => MonadLabelledSTMTx stm where
+  labelTVar    :: TVar_    stm a -> String -> stm ()
+  labelTMVar   :: TMVar_   stm a -> String -> stm ()
+  labelTQueue  :: TQueue_  stm a -> String -> stm ()
+  labelTBQueue :: TBQueue_ stm a -> String -> stm ()
+
+-- | A convenience class which provides 'MonadSTM' and 'MonadLabelledSTMTx'
+-- constraints.
+--
+class (MonadSTM m, MonadLabelledSTMTx (STM m))
+   => MonadLabelledSTM m where
+  labelTVarIO    :: TVar    m a -> String -> m ()
+  labelTMVarIO   :: TMVar   m a -> String -> m ()
+  labelTQueueIO  :: TQueue  m a -> String -> m ()
+  labelTBQueueIO :: TBQueue m a -> String -> m ()
+
+  default labelTVarIO :: TVar m a -> String -> m ()
+  labelTVarIO = \v l -> atomically (labelTVar v l)
+
+  default labelTMVarIO :: TMVar m a -> String -> m ()
+  labelTMVarIO = \v l -> atomically (labelTMVar v l)
+
+  default labelTQueueIO :: TQueue m a -> String -> m ()
+  labelTQueueIO = \v l -> atomically (labelTQueue v l)
+
+  default labelTBQueueIO :: TBQueue m a -> String -> m ()
+  labelTBQueueIO = \v l -> atomically (labelTBQueue v l)
+
 --
 -- Instance for IO uses the existing STM library implementations
 --
@@ -237,12 +274,28 @@ instance MonadSTM IO where
   newTMVarIO      = STM.newTMVarIO
   newEmptyTMVarIO = STM.newEmptyTMVarIO
 
+-- | noop instance
+--
+instance MonadLabelledSTMTx STM.STM where
+  labelTVar    = \_  _ -> return ()
+  labelTMVar   = \_  _ -> return ()
+  labelTQueue  = \_  _ -> return ()
+  labelTBQueue = \_  _ -> return ()
+
+-- | noop instance
+--
+instance MonadLabelledSTM IO where
+  labelTVarIO    = \_  _ -> return ()
+  labelTMVarIO   = \_  _ -> return ()
+  labelTQueueIO  = \_  _ -> return ()
+  labelTBQueueIO = \_  _ -> return ()
+
 -- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
 data BlockedIndefinitely = BlockedIndefinitely {
       blockedIndefinitelyCallStack :: CallStack
     , blockedIndefinitelyException :: BlockedIndefinitelyOnSTM
     }
-  deriving (Show)
+  deriving Show
 
 instance Exception BlockedIndefinitely where
   displayException (BlockedIndefinitely cs e) = unlines [
@@ -270,6 +323,11 @@ instance MonadSTM m => MonadSTM (ReaderT r m) where
 
 newtype TMVarDefault m a = TMVar (TVar m (Maybe a))
 
+labelTMVarDefault
+  :: MonadLabelledSTM m
+  => TMVarDefault m a -> String -> STM m ()
+labelTMVarDefault (TMVar tvar) = labelTVar tvar
+
 newTMVarDefault :: MonadSTM m => a -> STM m (TMVarDefault m a)
 newTMVarDefault a = do
   t <- newTVar (Just a)
@@ -291,7 +349,7 @@ newEmptyTMVarDefault = do
 
 newEmptyTMVarIODefault :: MonadSTM m => m (TMVarDefault m a)
 newEmptyTMVarIODefault = do
-  t <- newTVarM Nothing
+  t <- newTVarIO Nothing
   return (TMVar t)
 
 newEmptyTMVarMDefault :: MonadSTM m => m (TMVarDefault m a)
@@ -357,6 +415,13 @@ isEmptyTMVarDefault (TMVar t) = do
 data TQueueDefault m a = TQueue !(TVar m [a])
                                 !(TVar m [a])
 
+labelTQueueDefault
+  :: MonadLabelledSTM m
+  => TQueueDefault m a -> String -> STM m ()
+labelTQueueDefault (TQueue read write) label = do
+  labelTVar read (label ++ "-read")
+  labelTVar write (label ++ "-write")
+
 newTQueueDefault :: MonadSTM m => STM m (TQueueDefault m a)
 newTQueueDefault = do
   read  <- newTVar []
@@ -407,6 +472,15 @@ data TBQueueDefault m a = TBQueue
   !(TVar m Natural) -- write capacity
   !(TVar m [a])     -- written elements
   !Natural
+
+labelTBQueueDefault
+  :: MonadLabelledSTM m
+  => TBQueueDefault m a -> String -> STM m ()
+labelTBQueueDefault (TBQueue rsize read wsize write _size) label = do
+  labelTVar rsize (label ++ "-rsize")
+  labelTVar read (label ++ "-read")
+  labelTVar wsize (label ++ "-wsize")
+  labelTVar write (label ++ "-write")
 
 newTBQueueDefault :: MonadSTM m => Natural -> STM m (TBQueueDefault m a)
 newTBQueueDefault size = do

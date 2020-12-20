@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TypeFamilies          #-}
 
@@ -13,6 +14,8 @@ module Control.Monad.Class.MonadSTM.Strict
   , LazyTMVar
     -- * 'StrictTVar'
   , StrictTVar
+  , labelTVar
+  , labelTVarIO
   , castStrictTVar
   , toLazyTVar
   , newTVar
@@ -24,11 +27,13 @@ module Control.Monad.Class.MonadSTM.Strict
   , stateTVar
     -- * 'StrictTMVar'
   , StrictTMVar
+  , labelTMVar
+  , labelTMVarIO
   , castStrictTMVar
   , newTMVar
   , newTMVarIO
-  , newEmptyTMVarIO
   , newEmptyTMVar
+  , newEmptyTMVarIO
   , takeTMVar
   , tryTakeTMVar
   , putTMVar
@@ -48,7 +53,8 @@ module Control.Monad.Class.MonadSTM.Strict
   ) where
 
 import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
-                     TMVar, TVar, isEmptyTMVar, modifyTVar, newEmptyTMVar,
+                     TMVar, TVar, isEmptyTMVar, labelTVar, labelTVarIO,
+                     labelTMVar, labelTMVarIO, modifyTVar, newEmptyTMVar,
                      newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
                      newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
                      readTMVar, readTVar, stateTVar, swapTMVar, takeTMVar,
@@ -73,6 +79,12 @@ data StrictTVar m a = StrictTVar
    , tvar      :: !(LazyTVar m a)
    }
 
+labelTVar :: MonadLabelledSTM m => StrictTVar m a -> String -> STM m ()
+labelTVar StrictTVar { tvar } = Lazy.labelTVar tvar
+
+labelTVarIO :: MonadLabelledSTM m => StrictTVar m a -> String -> m ()
+labelTVarIO v = atomically . labelTVar v
+
 castStrictTVar :: LazyTVar m ~ LazyTVar n
                => StrictTVar m a -> StrictTVar n a
 castStrictTVar StrictTVar{invariant, tvar} = StrictTVar{invariant, tvar}
@@ -86,7 +98,6 @@ toLazyTVar StrictTVar { tvar } = tvar
 
 newTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
 newTVar !a = StrictTVar (const Nothing) <$> Lazy.newTVar a
-
 newTVarIO :: MonadSTM m => a -> m (StrictTVar m a)
 newTVarIO = newTVarWithInvariantIO (const Nothing)
 
@@ -141,6 +152,12 @@ updateTVar = stateTVar
 -- we would not be able to put a value into an empty TMVar, which would lead
 -- to very hard to debug bugs where code is blocked indefinitely.
 newtype StrictTMVar m a = StrictTMVar (LazyTMVar m a)
+
+labelTMVar :: MonadLabelledSTM m => StrictTMVar m a -> String -> STM m ()
+labelTMVar (StrictTMVar tvar) = Lazy.labelTMVar tvar
+
+labelTMVarIO :: MonadLabelledSTM m => StrictTMVar m a -> String -> m ()
+labelTMVarIO v = atomically . labelTMVar v
 
 castStrictTMVar :: LazyTMVar m ~ LazyTMVar n
                 => StrictTMVar m a -> StrictTMVar n a

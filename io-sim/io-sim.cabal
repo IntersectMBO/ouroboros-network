@@ -44,7 +44,8 @@ library
                        exceptions        >=0.10,
                        containers,
                        psqueues          >=0.2 && <0.3,
-                       time              >=1.6 && <1.11
+                       time              >=1.6 && <1.11,
+                       quiet
 
   ghc-options:         -Wall
                        -Wcompat
