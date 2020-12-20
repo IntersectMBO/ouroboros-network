@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveFunctor      #-}
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE PatternSynonyms    #-}
 {-# LANGUAGE PolyKinds          #-}
 {-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ViewPatterns       #-}
 
 module Network.TypedProtocol.Pipelined
@@ -16,6 +18,7 @@ module Network.TypedProtocol.Pipelined
   , Nat (Zero, Succ)
   , natToInt
   , unsafeIntToNat
+  , fmapPeerPipelined
   ) where
 
 import           Unsafe.Coerce (unsafeCoerce)
@@ -35,6 +38,16 @@ import           Network.TypedProtocol.Core
 data PeerPipelined ps (pr :: PeerRole) (st :: ps) m a where
   PeerPipelined :: PeerSender    ps pr st Z c m a
                 -> PeerPipelined ps pr st     m a
+
+deriving instance Functor m => Functor (PeerPipelined ps (pr :: PeerRole) (st :: ps) m)
+
+-- | More general than 'fmap', as it allows to change the protocol.
+--
+fmapPeerPipelined :: (forall c. PeerSender ps pr st Z c m a -> PeerSender ps' pr st' Z c m b)
+                  -> PeerPipelined ps  pr st  m a
+                  -> PeerPipelined ps' pr st' m b
+fmapPeerPipelined f (PeerPipelined peer) = PeerPipelined (f peer)
+
 
 -- | This is the pipelined variant of 'Peer'.
 --
@@ -121,6 +134,8 @@ data PeerSender ps (pr :: PeerRole) (st :: ps) (n :: Outstanding) c m a where
   SenderCollect  :: Maybe (PeerSender ps pr (st :: ps) (S n) c m a)
                  -> (c ->  PeerSender ps pr (st :: ps)    n  c m a)
                  ->        PeerSender ps pr (st :: ps) (S n) c m a
+
+deriving instance Functor m => Functor (PeerSender ps (pr :: PeerRole) (st :: ps) (n :: Outstanding) c m)
 
 data PeerReceiver ps (pr :: PeerRole) (st :: ps) (stdone :: ps) m c where
 

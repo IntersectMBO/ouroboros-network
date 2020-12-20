@@ -12,6 +12,8 @@
 module Ouroboros.Network.Protocol.TxSubmission.Codec (
     codecTxSubmission
   , codecTxSubmissionId
+  , encodeTxSubmission
+  , decodeTxSubmission
 
   , byteLimitsTxSubmission
   , timeLimitsTxSubmission
@@ -73,7 +75,27 @@ codecTxSubmission
   -> Codec (TxSubmission txid tx) CBOR.DeserialiseFailure m ByteString
 codecTxSubmission encodeTxId decodeTxId
                   encodeTx   decodeTx =
-    mkCodecCborLazyBS encode decode
+    mkCodecCborLazyBS
+      (encodeTxSubmission encodeTxId encodeTx)
+      decode
+  where
+    decode :: forall (pr :: PeerRole) (st :: TxSubmission txid tx).
+              PeerHasAgency pr st
+           -> forall s. CBOR.Decoder s (SomeMessage st)
+    decode stok = do
+      len <- CBOR.decodeListLen
+      key <- CBOR.decodeWord
+      decodeTxSubmission decodeTxId decodeTx stok len key
+
+encodeTxSubmission
+    :: forall txid tx.
+       (txid -> CBOR.Encoding)
+    -> (tx -> CBOR.Encoding)
+    -> (forall (pr :: PeerRole) (st :: TxSubmission txid tx) (st' :: TxSubmission txid tx).
+               PeerHasAgency pr st
+            -> Message (TxSubmission txid tx) st st'
+            -> CBOR.Encoding)
+encodeTxSubmission encodeTxId encodeTx = encode
   where
     encode :: forall (pr :: PeerRole) st st'.
               PeerHasAgency pr st
@@ -125,14 +147,24 @@ codecTxSubmission encodeTxId decodeTxId
      <> CBOR.encodeWord 4
 
 
+decodeTxSubmission
+    :: forall txid tx.
+       (forall s . CBOR.Decoder s txid)
+    -> (forall s . CBOR.Decoder s tx)
+    -> (forall (pr :: PeerRole) (st :: TxSubmission txid tx) s.
+               PeerHasAgency pr st
+            -> Int
+            -> Word
+            -> CBOR.Decoder s (SomeMessage st))
+decodeTxSubmission decodeTxId decodeTx = decode
+  where
     decode :: forall (pr :: PeerRole) s (st :: TxSubmission txid tx).
               PeerHasAgency pr st
+           -> Int
+           -> Word
            -> CBOR.Decoder s (SomeMessage st)
-    decode stok = do
-      len <- CBOR.decodeListLen
-      key <- CBOR.decodeWord
+    decode stok len key = do
       case (stok, len, key) of
-
         (ServerAgency TokIdle,       4, 0) -> do
           blocking <- CBOR.decodeBool
           ackNo    <- CBOR.decodeWord16
@@ -209,6 +241,7 @@ codecTxSubmissionId = Codec encode decode
   decode stok = return $ DecodePartial $ \bytes -> return $ case (stok, bytes) of
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxIds {}))) -> DecodeDone (SomeMessage msg) Nothing
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxs {})))   -> DecodeDone (SomeMessage msg) Nothing
+    (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgKThxBye {})))      -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency TokTxs,       Just (AnyMessage msg@(MsgReplyTxs {})))     -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency (TokTxIds b), Just (AnyMessage msg)) -> case (b, msg) of
       (TokBlocking,    MsgReplyTxIds (BlockingReply {}))    -> DecodeDone (SomeMessage msg) Nothing

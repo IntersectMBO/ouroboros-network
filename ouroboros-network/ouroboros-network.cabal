@@ -94,6 +94,8 @@ library
                        Ouroboros.Network.Protocol.TxSubmission.Client
                        Ouroboros.Network.Protocol.TxSubmission.Server
                        Ouroboros.Network.Protocol.TxSubmission.Codec
+                       Ouroboros.Network.Protocol.TxSubmission2.Type
+                       Ouroboros.Network.Protocol.TxSubmission2.Codec
                        Ouroboros.Network.Protocol.LocalTxSubmission.Type
                        Ouroboros.Network.Protocol.LocalTxSubmission.Client
                        Ouroboros.Network.Protocol.LocalTxSubmission.Server
@@ -102,6 +104,9 @@ library
                        Ouroboros.Network.Protocol.KeepAlive.Client
                        Ouroboros.Network.Protocol.KeepAlive.Server
                        Ouroboros.Network.Protocol.KeepAlive.Codec
+                       Ouroboros.Network.Protocol.Trans.Hello.Type
+                       Ouroboros.Network.Protocol.Trans.Hello.Codec
+                       Ouroboros.Network.Protocol.Trans.Hello.Util
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
@@ -206,6 +211,7 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.TxSubmission.Direct
                        Ouroboros.Network.Protocol.TxSubmission.Examples
                        Ouroboros.Network.Protocol.TxSubmission.Test
+                       Ouroboros.Network.Protocol.TxSubmission2.Test
                        Ouroboros.Network.Protocol.KeepAlive.Direct
                        Ouroboros.Network.Protocol.KeepAlive.Examples
                        Ouroboros.Network.Protocol.KeepAlive.Test
