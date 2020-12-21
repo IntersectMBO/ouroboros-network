@@ -17,8 +17,8 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Protocol.Handshake.Version
-                  (Acceptable (..), Accept (..))
+import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
+                     Acceptable (..))
 
 
 -- | Enumeration of node to client protocol versions.
@@ -35,6 +35,8 @@ data NodeToClientVersion
     -- ^ enabled @CardanoNodeToClientVersion4@, i.e., Allegra
     | NodeToClientV_6
     -- ^ enabled @CardanoNodeToClientVersion5@, i.e., Mary
+    | NodeToClientV_7
+    -- ^ enabled @CardanoNodeToClientVersion6@, adding a query
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -53,6 +55,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       encodeTerm NodeToClientV_4 = CBOR.TInt (4 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_5 = CBOR.TInt (5 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_6 = CBOR.TInt (6 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_7 = CBOR.TInt (7 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -64,6 +67,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (4, True)  -> Right NodeToClientV_4
         (5, True)  -> Right NodeToClientV_5
         (6, True)  -> Right NodeToClientV_6
+        (7, True)  -> Right NodeToClientV_7
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"

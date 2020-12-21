@@ -21,6 +21,9 @@ data ShelleyNodeToClientVersion =
 
     -- | New queries introduced
   | ShelleyNodeToClientVersion2
+
+    -- | New query introduced
+  | ShelleyNodeToClientVersion3
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion (ShelleyBlock era) where
@@ -38,8 +41,12 @@ instance SupportedNetworkProtocolVersion (ShelleyBlock era) where
         (NodeToClientV_1, ShelleyNodeToClientVersion1)
         -- Enable the LocalStateQuery protocol, no serialisation changes
       , (NodeToClientV_2, ShelleyNodeToClientVersion1)
-        -- V_3 enables the hard fork, which didn't affect Shelley-only when
-        -- introduced. However, we have retroactively claimed V_3 to enable
-        -- 'ShelleyNodeToClientVersion2'.
+        -- V_3 enables the hard fork to Shelley, which didn't affect
+        -- Shelley-only when introduced. However, we have retroactively claimed
+        -- V_3 to enable 'ShelleyNodeToClientVersion2'.
       , (NodeToClientV_3, ShelleyNodeToClientVersion2)
+        -- V_4 enables the hard fork to Allegra, which didn't affect
+        -- Shelley-only when introduced. However, we have retroactively claimed
+        -- V_4 to enable 'ShelleyNodeToClientVersion3'.
+      , (NodeToClientV_4, ShelleyNodeToClientVersion3)
       ]
