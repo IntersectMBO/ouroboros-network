@@ -90,20 +90,23 @@ data Protocol (m :: Type -> Type) blk p where
 
   -- | Run TPraos against the Shelley ledger
   ProtocolShelley
-    :: ProtocolParamsShelleyBased StandardShelley []
+    :: ProtocolParamsShelleyBased StandardShelley
     -> ProtocolParamsShelley
     -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
 
   -- | Run TPraos against the Mary ledger
   ProtocolMary
-    :: ProtocolParamsShelleyBased StandardMary []
+    :: ProtocolParamsShelleyBased StandardMary
     -> ProtocolParamsMary
     -> Protocol m (ShelleyBlockHFC StandardMary) ProtocolMary
 
   -- | Run the protocols of /the/ Cardano block
+  --
+  -- WARNING: only a single set of Shelley credentials is allowed when used for
+  -- mainnet. Testnets allow multiple Shelley credentials.
   ProtocolCardano
     :: ProtocolParamsByron
-    -> ProtocolParamsShelleyBased StandardShelley Maybe
+    -> ProtocolParamsShelleyBased StandardShelley
     -> ProtocolParamsShelley
     -> ProtocolParamsAllegra
     -> ProtocolParamsMary

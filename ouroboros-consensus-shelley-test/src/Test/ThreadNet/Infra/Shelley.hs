@@ -405,7 +405,7 @@ mkProtocolShelley genesis initialNonce protVer coreNode =
       ProtocolParamsShelleyBased {
           shelleyBasedGenesis           = genesis
         , shelleyBasedInitialNonce      = initialNonce
-        , shelleyBasedLeaderCredentials = Just $ mkLeaderCredentials coreNode
+        , shelleyBasedLeaderCredentials = [mkLeaderCredentials coreNode]
         }
       ProtocolParamsShelley {
           shelleyProtVer = protVer
