@@ -20,7 +20,6 @@
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelleyBased
   , protocolInfoShelley
-  , protocolInfoMary
   , ProtocolParamsShelleyBased (..)
   , ProtocolParamsShelley (..)
   , ProtocolParamsAllegra (..)
@@ -251,17 +250,6 @@ protocolInfoShelley protocolParamsShelleyBased
                     ProtocolParamsShelley {
                         shelleyProtVer = protVer
                       } =
-    protocolInfoShelleyBased protocolParamsShelleyBased protVer
-
-protocolInfoMary ::
-     forall m c. (IOLike m, ShelleyBasedEra (MaryEra c))
-  => ProtocolParamsShelleyBased (MaryEra c)
-  -> ProtocolParamsMary
-  -> ProtocolInfo m (ShelleyBlock (MaryEra c))
-protocolInfoMary protocolParamsShelleyBased
-                 ProtocolParamsMary {
-                     maryProtVer = protVer
-                   } =
     protocolInfoShelleyBased protocolParamsShelleyBased protVer
 
 protocolInfoShelleyBased ::

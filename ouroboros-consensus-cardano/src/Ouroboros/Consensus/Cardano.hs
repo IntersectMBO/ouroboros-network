@@ -70,7 +70,6 @@ import           Ouroboros.Consensus.Cardano.ShelleyHFC
 
 type ProtocolByron   = HardForkProtocol '[ ByronBlock ]
 type ProtocolShelley = HardForkProtocol '[ ShelleyBlock StandardShelley ]
-type ProtocolMary    = HardForkProtocol '[ ShelleyBlock StandardMary ]
 type ProtocolCardano = HardForkProtocol '[ ByronBlock
                                          , ShelleyBlock StandardShelley
                                          , ShelleyBlock StandardAllegra
@@ -93,12 +92,6 @@ data Protocol (m :: Type -> Type) blk p where
     :: ProtocolParamsShelleyBased StandardShelley
     -> ProtocolParamsShelley
     -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
-
-  -- | Run TPraos against the Mary ledger
-  ProtocolMary
-    :: ProtocolParamsShelleyBased StandardMary
-    -> ProtocolParamsMary
-    -> Protocol m (ShelleyBlockHFC StandardMary) ProtocolMary
 
   -- | Run the protocols of /the/ Cardano block
   --
@@ -124,7 +117,6 @@ data Protocol (m :: Type -> Type) blk p where
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
 verifyProtocol ProtocolByron{}   = Refl
 verifyProtocol ProtocolShelley{} = Refl
-verifyProtocol ProtocolMary{}    = Refl
 verifyProtocol ProtocolCardano{} = Refl
 
 {-------------------------------------------------------------------------------
@@ -139,9 +131,6 @@ protocolInfo (ProtocolByron params) =
 
 protocolInfo (ProtocolShelley paramsShelleyBased paramsShelley) =
     inject $ protocolInfoShelley paramsShelleyBased paramsShelley
-
-protocolInfo (ProtocolMary paramsShelleyBased paramsMary) =
-    inject $ protocolInfoMary paramsShelleyBased paramsMary
 
 protocolInfo (ProtocolCardano
                paramsByron
@@ -169,7 +158,6 @@ protocolInfo (ProtocolCardano
 runProtocol :: Protocol m blk p -> Dict (RunNode blk)
 runProtocol ProtocolByron{}   = Dict
 runProtocol ProtocolShelley{} = Dict
-runProtocol ProtocolMary{}    = Dict
 runProtocol ProtocolCardano{} = Dict
 
 {-------------------------------------------------------------------------------
