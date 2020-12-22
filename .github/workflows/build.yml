@@ -140,8 +140,6 @@ jobs:
         cat >> cabal.project.local <<EOF
         package cardano-crypto-praos
           flags: -external-libsodium-vrf
-        package ouroboros-consensus-shelley-test
-          flags: -external-libsodium-vrf
         EOF
 
         cat ./cabal.project.local
