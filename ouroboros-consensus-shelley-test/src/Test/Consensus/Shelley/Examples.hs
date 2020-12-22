@@ -72,7 +72,6 @@ import           Ouroboros.Consensus.Util.Time
 import qualified Cardano.Ledger.AuxiliaryData as SL (AuxiliaryDataHash (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
-import qualified Cardano.Ledger.Val as Val
 import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (Seed (..),
@@ -320,7 +319,7 @@ exampleTxBodyShelley = SL.TxBody
         SL.AuxiliaryDataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
 
 exampleTxBodyMA ::
-     forall era. (ShelleyBasedEra era, Val.EncodeMint (Core.Value era))
+     forall era. ShelleyBasedEra era
   => Core.Value era -> MA.TxBody era
 exampleTxBodyMA value = MA.TxBody
     exampleTxIns

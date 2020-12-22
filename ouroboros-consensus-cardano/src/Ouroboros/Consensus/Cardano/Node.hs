@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Cardano.Node (
   , pattern CardanoNodeToClientVersion3
   , pattern CardanoNodeToClientVersion4
   , pattern CardanoNodeToClientVersion5
+  , pattern CardanoNodeToClientVersion6
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -297,6 +298,20 @@ pattern CardanoNodeToClientVersion5 =
       :* Nil
       )
 
+-- | The hard fork enabled, and the Shelley, Allegra, and Mary eras enabled, but
+-- using 'ShelleyNodeToClientVersion3' for the Shelley-based eras , which
+-- enables new queries.
+pattern CardanoNodeToClientVersion6 :: BlockNodeToClientVersion (CardanoBlock c)
+pattern CardanoNodeToClientVersion6 =
+    HardForkNodeToClientEnabled
+      HardForkSpecificNodeToClientVersion2
+      (  EraNodeToClientEnabled ByronNodeToClientVersion1
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      :* Nil
+      )
+
 instance CardanoHardForkConstraints c
       => SupportedNetworkProtocolVersion (CardanoBlock c) where
   supportedNodeToNodeVersions _ = Map.fromList $
@@ -314,6 +329,7 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_4, CardanoNodeToClientVersion3)
       , (NodeToClientV_5, CardanoNodeToClientVersion4)
       , (NodeToClientV_6, CardanoNodeToClientVersion5)
+      , (NodeToClientV_7, CardanoNodeToClientVersion6)
       ]
 
 {-------------------------------------------------------------------------------

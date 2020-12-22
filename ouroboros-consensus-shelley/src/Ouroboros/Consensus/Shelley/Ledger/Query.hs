@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (RewardAccounts)
+import qualified Shelley.Spec.Ledger.RewardProvenance as SL (RewardProvenance)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -142,6 +143,23 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   DebugChainDepState
     :: Query (ShelleyBlock era) (SL.ChainDepState (EraCrypto era))
 
+  GetRewardProvenance
+    :: Query (ShelleyBlock era) (SL.RewardProvenance (EraCrypto era))
+
+  -- WARNING: please add new queries to the end of the list and stick to this
+  -- order in all other pattern matches on queries. This helps in particular
+  -- with the en/decoders, as we want the CBOR tags to be ordered.
+  --
+  -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@ must
+  -- be added. See #2830 for a template on how to do this.
+  --
+  -- WARNING: never modify an existing query that has been incorporated in a
+  -- release of the node, as it will break compatibility with deployed nodes.
+  -- Instead, add a new query. To remove the old query, first to stop supporting
+  -- it by modifying 'querySupportedVersion' (@< X@) and when the version is no
+  -- longer used (because mainnet has hard-forked to a newer version), it can be
+  -- removed.
+
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
@@ -177,6 +195,8 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
           st
         DebugChainDepState ->
           tpraosStateChainDepState (headerStateChainDep hst)
+        GetRewardProvenance ->
+          snd $ SL.getRewardInfo globals st
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -258,6 +278,10 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
     = Just Refl
   sameDepIndex DebugChainDepState _
     = Nothing
+  sameDepIndex GetRewardProvenance GetRewardProvenance
+    = Just Refl
+  sameDepIndex GetRewardProvenance _
+    = Nothing
 
 deriving instance Eq   (Query (ShelleyBlock era) result)
 deriving instance Show (Query (ShelleyBlock era) result)
@@ -278,6 +302,7 @@ instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
       GetGenesisConfig                           -> show
       DebugNewEpochState                         -> show
       DebugChainDepState                         -> show
+      GetRewardProvenance                        -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: Query (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
@@ -296,9 +321,13 @@ querySupportedVersion = \case
     GetGenesisConfig                           -> (>= v2)
     DebugNewEpochState                         -> (>= v2)
     DebugChainDepState                         -> (>= v2)
+    GetRewardProvenance                        -> (>= v3)
+    -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
+    -- must be added. See #2830 for a template on how to do this.
   where
     v1 = ShelleyNodeToClientVersion1
     v2 = ShelleyNodeToClientVersion2
+    v3 = ShelleyNodeToClientVersion3
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -362,6 +391,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 12
     DebugChainDepState ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 13
+    GetRewardProvenance ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 14
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -384,6 +415,7 @@ decodeShelleyQuery = do
       (1, 11) -> return $ SomeSecond GetGenesisConfig
       (1, 12) -> return $ SomeSecond DebugNewEpochState
       (1, 13) -> return $ SomeSecond DebugChainDepState
+      (1, 14) -> return $ SomeSecond GetRewardProvenance
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -406,6 +438,7 @@ encodeShelleyResult query = case query of
     GetGenesisConfig                           -> toCBOR
     DebugNewEpochState                         -> toCBOR
     DebugChainDepState                         -> toCBOR
+    GetRewardProvenance                        -> toCBOR
 
 decodeShelleyResult ::
      ShelleyBasedEra era
@@ -426,3 +459,4 @@ decodeShelleyResult query = case query of
     GetGenesisConfig                           -> fromCBOR
     DebugNewEpochState                         -> fromCBOR
     DebugChainDepState                         -> fromCBOR
+    GetRewardProvenance                        -> fromCBOR
