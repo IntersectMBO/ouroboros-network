@@ -36,8 +36,8 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
+import           Data.Functor.These (These1 (..))
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (maybeToList)
 import           Data.SOP.Strict hiding (shape, shift)
 import           Data.Word (Word16)
 
@@ -333,10 +333,13 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
 -- NOTE: the initial staking and funds in the 'ShelleyGenesis' are ignored,
 -- /unless/ configured to skip the Byron era and hard fork to Shelley or a later
 -- era from the start using @TriggerHardForkAtEpoch 0@ for testing purposes.
+--
+-- PRECONDITION: only a single set of Shelley credentials is allowed when used
+-- for mainnet (check against @'SL.gNetworkId' 'shelleyBasedGenesis'@).
 protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
-  -> ProtocolParamsShelleyBased (ShelleyEra c) Maybe
+  -> ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
   -> ProtocolParamsAllegra
   -> ProtocolParamsMary
@@ -357,7 +360,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                     ProtocolParamsShelleyBased {
                         shelleyBasedGenesis           = genesisShelley
                       , shelleyBasedInitialNonce      = initialNonceShelley
-                      , shelleyBasedLeaderCredentials = mCredsShelleyBased
+                      , shelleyBasedLeaderCredentials = credssShelleyBased
                       }
                     ProtocolParamsShelley {
                         shelleyProtVer = protVerShelley
@@ -376,13 +379,16 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       }
                     ProtocolParamsTransition {
                         transitionTrigger = triggerHardForkAllegraMary
-                      } =
-    assertWithMsg (validateGenesis genesisShelley) $
+                      }
+  | SL.Mainnet <- SL.sgNetworkId genesisShelley
+  , length credssShelleyBased > 1
+  = error "Multiple Shelley-based credentials not allowed for mainnet"
+  | otherwise
+  = assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
         pInfoConfig       = cfg
       , pInfoInitLedger   = initExtLedgerStateCardano
-      , pInfoBlockForging =
-          maybeToList <$> mBlockForging
+      , pInfoBlockForging = blockForging
       }
   where
     -- The major protocol version of the last era is the maximum major protocol
@@ -426,7 +432,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerShelley
           genesisShelley
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
+          (tpraosBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigShelley ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
@@ -452,7 +458,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerAllegra
           genesisAllegra
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
+          (tpraosBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAllegra ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (AllegraEra c)))
@@ -475,7 +481,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         Shelley.mkShelleyBlockConfig
           protVerMary
           genesisMary
-          (tpraosBlockIssuerVKey <$> maybeToList mCredsShelleyBased)
+          (tpraosBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigMary ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (MaryEra c)))
@@ -573,25 +579,52 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                 $ Shelley.shelleyLedgerState st
             }
 
-    mBlockForging :: m (Maybe (BlockForging m (CardanoBlock c)))
-    mBlockForging = do
-        mShelleyBased <- mBlockForgingShelleyBased
-        return
-          $ fmap (hardForkBlockForging "Cardano")
-          $ OptNP.combine mBlockForgingByron mShelleyBased
+    -- | For each element in the list, a block forging thread will be started.
+    --
+    -- When no credentials are passed, there will be no threads.
+    --
+    -- Typically, there will only be a single set of credentials for Shelley.
+    --
+    -- In case there are multiple credentials for Shelley, which is only done
+    -- for testing/benchmarking purposes, we'll have a separate thread for each
+    -- of them.
+    --
+    -- If Byron credentials are passed, we merge them with the Shelley
+    -- credentials if possible, so that we only have a single thread running in
+    -- the case we have Byron credentials and a single set of Shelley
+    -- credentials. If there are multiple Shelley credentials, we merge the
+    -- Byron credentials with the first Shelley one but still have separate
+    -- threads for the remaining Shelley ones.
+    blockForging :: m [BlockForging m (CardanoBlock c)]
+    blockForging = do
+        shelleyBased <- blockForgingShelleyBased
+        let blockForgings :: [OptNP 'False (BlockForging m) (CardanoEras c)]
+            blockForgings = case (mBlockForgingByron, shelleyBased) of
+              (Nothing,    shelleys)         -> shelleys
+              (Just byron, [])               -> [byron]
+              (Just byron, shelley:shelleys) ->
+                  OptNP.zipWith merge byron shelley : shelleys
+                where
+                  -- When merging Byron with Shelley-based eras, we should never
+                  -- merge two from the same era.
+                  merge (These1 _ _) = error "forgings of the same era"
+                  merge (This1 x)    = x
+                  merge (That1 y)    = y
+
+        return $ hardForkBlockForging "Cardano" <$> blockForgings
 
     mBlockForgingByron :: Maybe (OptNP 'False (BlockForging m) (CardanoEras c))
     mBlockForgingByron = do
         creds <- mCredsByron
         return $ byronBlockForging creds `OptNP.at` IZ
 
-    mBlockForgingShelleyBased :: m (Maybe (OptNP 'False (BlockForging m) (CardanoEras c)))
-    mBlockForgingShelleyBased = do
-        mShelleyBased <-
+    blockForgingShelleyBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
+    blockForgingShelleyBased = do
+        shelleyBased <-
           traverse
             (shelleySharedBlockForging (Proxy @(ShelleyBasedEras c)) tpraosParams)
-            mCredsShelleyBased
-        return $ reassoc <$> mShelleyBased
+            credssShelleyBased
+        return $ reassoc <$> shelleyBased
       where
         reassoc ::
              NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)

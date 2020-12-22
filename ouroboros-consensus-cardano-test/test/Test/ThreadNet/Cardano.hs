@@ -498,7 +498,7 @@ mkProtocolCardanoAndHardForkTxs
         ProtocolParamsShelleyBased {
             shelleyBasedGenesis           = genesisShelley
           , shelleyBasedInitialNonce      = initialNonce
-          , shelleyBasedLeaderCredentials = Just leaderCredentialsShelley
+          , shelleyBasedLeaderCredentials = [leaderCredentialsShelley]
           }
         ProtocolParamsShelley {
             shelleyProtVer = SL.ProtVer shelleyMajorVersion 0

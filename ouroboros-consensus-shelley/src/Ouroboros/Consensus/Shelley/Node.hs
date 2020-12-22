@@ -20,7 +20,6 @@
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelleyBased
   , protocolInfoShelley
-  , protocolInfoMary
   , ProtocolParamsShelleyBased (..)
   , ProtocolParamsShelley (..)
   , ProtocolParamsAllegra (..)
@@ -42,7 +41,6 @@ module Ouroboros.Consensus.Shelley.Node (
   ) where
 
 import           Data.Bifunctor (first)
-import           Data.Foldable (toList)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -217,7 +215,7 @@ validateGenesis = first errsToString . SL.validateGenesis
 --
 -- The @era@ parameter determines from which era the genesis config will be
 -- used.
-data ProtocolParamsShelleyBased era f = ProtocolParamsShelleyBased {
+data ProtocolParamsShelleyBased era = ProtocolParamsShelleyBased {
       shelleyBasedGenesis           :: SL.ShelleyGenesis era
       -- | The initial nonce, typically derived from the hash of Genesis
       -- config JSON file.
@@ -225,7 +223,7 @@ data ProtocolParamsShelleyBased era f = ProtocolParamsShelleyBased {
       -- WARNING: chains using different values of this parameter will be
       -- mutually incompatible.
     , shelleyBasedInitialNonce      :: SL.Nonce
-    , shelleyBasedLeaderCredentials :: f (TPraosLeaderCredentials (EraCrypto era))
+    , shelleyBasedLeaderCredentials :: [TPraosLeaderCredentials (EraCrypto era)]
     }
 
 -- | Parameters needed to run Shelley
@@ -244,8 +242,8 @@ data ProtocolParamsMary = ProtocolParamsMary {
     }
 
 protocolInfoShelley ::
-     forall m c f. (IOLike m, ShelleyBasedEra (ShelleyEra c), Foldable f)
-  => ProtocolParamsShelleyBased (ShelleyEra c) f
+     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c))
+  => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
 protocolInfoShelley protocolParamsShelleyBased
@@ -254,20 +252,9 @@ protocolInfoShelley protocolParamsShelleyBased
                       } =
     protocolInfoShelleyBased protocolParamsShelleyBased protVer
 
-protocolInfoMary ::
-     forall m c f. (IOLike m, ShelleyBasedEra (MaryEra c), Foldable f)
-  => ProtocolParamsShelleyBased (MaryEra c) f
-  -> ProtocolParamsMary
-  -> ProtocolInfo m (ShelleyBlock (MaryEra c))
-protocolInfoMary protocolParamsShelleyBased
-                 ProtocolParamsMary {
-                     maryProtVer = protVer
-                   } =
-    protocolInfoShelleyBased protocolParamsShelleyBased protVer
-
 protocolInfoShelleyBased ::
-     forall m era f. (IOLike m, ShelleyBasedEra era, Foldable f)
-  => ProtocolParamsShelleyBased era f
+     forall m era. (IOLike m, ShelleyBasedEra era)
+  => ProtocolParamsShelleyBased era
   -> SL.ProtVer
   -> ProtocolInfo m (ShelleyBlock era)
 protocolInfoShelleyBased ProtocolParamsShelleyBased {
@@ -280,7 +267,8 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = sequence $ shelleyBlockForging tpraosParams <$> toList credentialss
+      , pInfoBlockForging =
+          traverse (shelleyBlockForging tpraosParams) credentialss
       }
   where
     maxMajorProtVer :: MaxMajorProtVer
@@ -315,7 +303,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
         mkShelleyBlockConfig
           protVer
           genesis
-          (tpraosBlockIssuerVKey <$> toList credentialss)
+          (tpraosBlockIssuerVKey <$> credentialss)
 
     storageConfig :: StorageConfig (ShelleyBlock era)
     storageConfig = ShelleyStorageConfig {
