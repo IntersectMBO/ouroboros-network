@@ -101,11 +101,11 @@ prop_pure_removeTxs
   -> Property
 prop_pure_removeTxs TestSetupSub {..} =
     withInternalState tssSetup $
-    \ mpArgs internalSt ledgerState ->
+    \ mpArgs internalState ledgerState ->
       let (internalStRes, _) = pureRemoveTxs
                                   (map txId tssSubTxs)
                                   mpArgs
-                                  internalSt ledgerState
+                                  internalState ledgerState
           txIdsRemaining     = Set.toList (getTxIdsIS internalStRes)
       in property $ null $ intersect txIdsRemaining (map txId tssSubTxs)
 
@@ -116,24 +116,27 @@ prop_pure_removeTxs_contra
     -> Property
 prop_pure_removeTxs_contra TestSetupWithTxs {..} =
     withInternalState testSetup $
-    \ mpArgs internalSt ledgerState ->
-      let (_res, internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
-          (internalStRes, _)  = pureRemoveTxs
-                                  (map (txId . fst) txs)
-                                  mpArgs
-                                  internalSt'
-                                  ledgerState
-          txIdsRemaining      = Set.toAscList (getTxIdsIS internalStRes)
-          txIdsInitial        = Set.toAscList (getTxIdsIS internalSt)
+    \ mpArgs internalState ledgerState ->
+      let (_res, internalState') = runTryAddTxs
+                                    mpArgs
+                                    internalState
+                                    (map fst txs)
+          (internalStRes, _)     = pureRemoveTxs
+                                    (map (txId . fst) txs)
+                                    mpArgs
+                                    internalState'
+                                    ledgerState
+          txIdsRemaining         = Set.toAscList (getTxIdsIS internalStRes)
+          txIdsInitial           = Set.toAscList (getTxIdsIS internalState)
       in txIdsRemaining === txIdsInitial
 
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
 prop_pure_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
 prop_pure_snapshotTxs_snapshotTxsAfter setup =
     withInternalState setup $
-    \ _mpArgs internalSt _ledgerState ->
+    \ _mpArgs internalState _ledgerState ->
       let MempoolSnapshot { snapshotTxs, snapshotTxsAfter } =
-            implSnapshotFromIS internalSt
+            implSnapshotFromIS internalState
       in  snapshotTxs === snapshotTxsAfter zeroTicketNo
 
 
@@ -144,9 +147,12 @@ prop_pure_addTxs_getTxs
   -> Property
 prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalSt _ledgerState ->
-    let (_res, internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
-        MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalSt'
+  \ mpArgs internalState _ledgerState ->
+    let (_res, internalState')          = runTryAddTxs
+                                            mpArgs
+                                            internalState
+                                            (map fst txs)
+        MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
     in counterexample (ppTxs txs) $
         validTxs setup `isSuffixOf` map fst snapshotTxs
 
@@ -155,11 +161,11 @@ prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
 prop_pure_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalSt _ledgerState ->
-      let internalSt' = foldl' (\ is tx -> snd $ runTryAddTxs mpArgs is [tx])
-                               internalSt
+  \ mpArgs internalState _ledgerState ->
+      let internalState' = foldl' (\ is tx -> snd $ runTryAddTxs mpArgs is [tx])
+                               internalState
                                (map fst txs)
-          MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalSt'
+          MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
       in counterexample (ppTxs txs) $
           validTxs setup `isSuffixOf` map fst snapshotTxs
 
@@ -169,8 +175,11 @@ prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
 prop_pure_addTxs_result :: TestSetupWithTxs -> Property
 prop_pure_addTxs_result TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalSt _ledgerState ->
-      let ((result, _), _internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
+  \ mpArgs internalState _ledgerState ->
+      let ((result, _), _internalSt') = runTryAddTxs
+                                          mpArgs
+                                          internalState
+                                          (map fst txs)
       in counterexample (ppTxs txs) $
         [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
         [(testTx, valid)            | (testTx, valid) <- txs]
@@ -179,11 +188,16 @@ prop_pure_addTxs_result TestSetupWithTxs {..} =
 prop_pure_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
 prop_pure_InvalidTxsNeverAdded setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalSt _ledgerState ->
-      let MempoolSnapshot { snapshotTxs = ta } = implSnapshotFromIS internalSt
-          txsInMempoolBefore  = map fst ta
-          (_res, internalSt') = runTryAddTxs mpArgs internalSt (allTxs setup)
-          MempoolSnapshot { snapshotTxs = tb } = implSnapshotFromIS internalSt'
+  \ mpArgs internalState _ledgerState ->
+      let MempoolSnapshot { snapshotTxs = ta } = implSnapshotFromIS
+                                                  internalState
+          txsInMempoolBefore                   = map fst ta
+          (_res, internalState')               = runTryAddTxs
+                                                  mpArgs
+                                                  internalState
+                                                  (allTxs setup)
+          MempoolSnapshot { snapshotTxs = tb } = implSnapshotFromIS
+                                                  internalState'
           txsInMempoolAfter   = map fst tb
       in counterexample (ppTxs txs) $ conjoin
         -- Check for each transaction in the mempool (ignoring those already
@@ -206,8 +220,8 @@ prop_pure_InvalidTxsNeverAdded setup@TestSetupWithTxs {..} =
 prop_pure_getCapacity :: MempoolCapTestSetup -> Property
 prop_pure_getCapacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
   withInternalState testSetup $
-  \ _mpArgs internalSt _ledgerState ->
-      let actualCapacity = getCapacityIS internalSt
+  \ _mpArgs internalState _ledgerState ->
+      let actualCapacity = getCapacityIS internalState
       in  actualCapacity === testCapacity
   where
     MempoolCapacityBytesOverride testCapacity = testMempoolCapOverride testSetup
@@ -221,12 +235,12 @@ prop_pure_getCapacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
 prop_pure_Capacity :: MempoolCapTestSetup -> Property
 prop_pure_Capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
   withInternalState testSetup $
-  \ mpArgs internalSt _ledgerState ->
-      let capacity' = getCapacityIS internalSt
-          snapshot  = implSnapshotFromIS internalSt
+  \ mpArgs internalState _ledgerState ->
+      let capacity' = getCapacityIS internalState
+          snapshot  = implSnapshotFromIS internalState
           curSize   = (msNumBytes . snapshotMempoolSize) snapshot
           (res@(processed, unprocessed), _internalSt') =
-                     runTryAddTxs mpArgs internalSt (map fst txs)
+                     runTryAddTxs mpArgs internalState (map fst txs)
       in  counterexample ("Initial size: " <> show curSize)    $
           classify (null processed)   "no transactions added"  $
           classify (null unprocessed) "all transactions added" $
@@ -308,20 +322,21 @@ withInternalState testSetup@TestSetup {..} func =
       $ case find (isMempoolTxRejected . snd) res of
           Just (invalidTx, _) -> error $ "Invalid initial transaction: "
                                        <> condense invalidTx
-          Nothing             -> func args internalSt' testLedgerState
+          Nothing             -> func args internalState' testLedgerState
   where
-    args                   = MempoolArgs
-                                testLedgerConfig
-                                txSize
-                                testMempoolCapOverride
-    (slot, st')            = tickLedgerState testLedgerConfig
-                              (ForgeInUnknownSlot testLedgerState)
-    internalSt             = initInternalState
-                                testMempoolCapOverride
-                                zeroTicketNo
-                                slot
-                                st'
-    ((res,_), internalSt') = runTryAddTxs args internalSt testInitialTxs
+    args                      = MempoolArgs
+                                   testLedgerConfig
+                                   txSize
+                                   testMempoolCapOverride
+    (slot, st')               = tickLedgerState
+                                   testLedgerConfig
+                                   (ForgeInUnknownSlot testLedgerState)
+    internalState             = initInternalState
+                                   testMempoolCapOverride
+                                   zeroTicketNo
+                                   slot
+                                   st'
+    ((res,_), internalState') = runTryAddTxs args internalState testInitialTxs
     isOverride (MempoolCapacityBytesOverride _) = True
     isOverride NoMempoolCapacityBytesOverride   = False
 
