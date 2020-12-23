@@ -117,14 +117,14 @@ prop_pure_removeTxs_contra
 prop_pure_removeTxs_contra TestSetupWithTxs {..} =
     withInternalState testSetup $
     \ mpArgs internalSt ledgerState ->
-      let (_res,internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
-          (internalStRes, _) = pureRemoveTxs
+      let (_res, internalSt') = runTryAddTxs mpArgs internalSt (map fst txs)
+          (internalStRes, _)  = pureRemoveTxs
                                   (map (txId . fst) txs)
                                   mpArgs
                                   internalSt'
                                   ledgerState
-          txIdsRemaining     = Set.toAscList (getTxIdsIS internalStRes)
-          txIdsInitial       = Set.toAscList (getTxIdsIS internalSt)
+          txIdsRemaining      = Set.toAscList (getTxIdsIS internalStRes)
+          txIdsInitial        = Set.toAscList (getTxIdsIS internalSt)
       in txIdsRemaining === txIdsInitial
 
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
@@ -156,7 +156,7 @@ prop_pure_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
   \ mpArgs internalSt _ledgerState ->
-      let internalSt' = foldl' (\ is tx -> snd $ runTryAddTxs mpArgs is  [tx])
+      let internalSt' = foldl' (\ is tx -> snd $ runTryAddTxs mpArgs is [tx])
                                internalSt
                                (map fst txs)
           MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalSt'

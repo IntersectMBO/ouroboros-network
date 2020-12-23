@@ -169,7 +169,10 @@ data MempoolEnv m blk = MempoolEnv {
 atomicallyDoWithState ::
      IOLike m
   => MempoolEnv m blk
-  -> (MempoolArgs blk -> InternalState blk -> LedgerState blk -> (InternalState blk, res))
+  -> (MempoolArgs blk
+      -> InternalState blk
+      -> LedgerState blk
+      -> (InternalState blk, res))
   -> m res
 atomicallyDoWithState MempoolEnv {..} func = atomically $ do
     state <- readTVar mpEnvStateVar

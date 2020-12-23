@@ -210,10 +210,6 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
                                  , mempoolCapacityOverride
                                  } = do
     varCandidates   <- newTVarIO mempty
-    let mempoolArgs =  MempoolArgs
-                        (configLedger cfg)
-                        txInBlockSize
-                        mempoolCapacityOverride
     mempool         <- openMempool registry
                                  (chainDBLedgerInterface chainDB)
                                  mempoolArgs
@@ -226,8 +222,12 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
         blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
         blockFetchInterface = initBlockFetchConsensusInterface
           cfg chainDB getCandidates blockFetchSize btime
-
     return IS {..}
+  where mempoolArgs =  MempoolArgs
+                        (configLedger cfg)
+                        txInBlockSize
+                        mempoolCapacityOverride
+
 
 initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
