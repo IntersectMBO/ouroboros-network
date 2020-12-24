@@ -35,15 +35,22 @@ jobs:
         echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
 
     - name: Set cache version
-      run: echo "CACHE_VERSION=9w76Z3Q"          >> $GITHUB_ENV
+      run: echo "CACHE_VERSION=9w76Z3Q" >> $GITHUB_ENV
 
     - name: Install pkgconfiglite
       if: matrix.os == 'windows-latest'
       run: choco install -y pkgconfiglite
 
-    - name: Install libsodium
+    - name: Install libsodium (Windows)
       if: matrix.os == 'windows-latest'
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
       run: |
+        echo "RUNNER_TEMP=$RUNNER_TEMP"
+        cd "$RUNNER_TEMP"
+
+        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
+
         curl -Ls \
           --connect-timeout 5 \
           --max-time 10 \
@@ -51,18 +58,19 @@ jobs:
           --retry-delay 0 \
           --retry-max-time 40 \
           https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-mingw.tar.gz -o libsodium-1.0.18-mingw.tar.gz
-        tar zxvf libsodium-1.0.18-mingw.tar.gz
 
-        sed -i "s|/d/a/1/s/|D:/a/cardano-node/cardano-node/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
+        tar zxvf libsodium-1.0.18-mingw.tar.gz
+        sed -i "s|/d/a/1/s/|$RUNNER_TEMP_FWD\/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
 
         export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig)"
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
         export LIBSODIUM_PATH="$(readlink -f libsodium-win64/bin | sed 's|^/d|D:|g' | tr / '\\')"
         echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
         echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
 
-    - name: Install libsodium
+    - name: Install libsodium (MacOS)
       if: matrix.os == 'macos-latest'
       run: brew install libsodium
 
@@ -88,6 +96,29 @@ jobs:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: ${{ env.CABAL_VERSION }}
 
+    - name: MacOS cabal setup work-around
+      if: matrix.os == 'macos-latest'
+      run: |
+        echo insecure >> $HOME/.curlrc
+        ghcup install cabal 3.4.0.0-rc4
+        ghcup set cabal 3.4.0.0-rc4
+        rm $HOME/.curlrc
+
+    - name: Windows cabal setup work-around
+      if: matrix.os == 'windows-latest'
+      run: |
+        mkdir -p "$HOME/.local/bin"
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        curl -Ls -o cabal.zip \
+          https://mistuke.blob.core.windows.net/binaries/unofficial/cabal/cabal-install-3.4.0.0-rc3-x86_64-unknown-mingw32.zip
+        unzip cabal.zip
+        mv cabal.exe "$HOME/.local/bin/"
+
+    - name: Haskell versions
+      run: |
+        ghc --version
+        cabal --version
+
     - name: Patch GHC 8.10.2 linker
       if: matrix.os == 'windows-latest' && matrix.ghc == '8.10.2'
       run: |
@@ -96,9 +127,11 @@ jobs:
           C:/ProgramData/chocolatey/lib/ghc.8.10.2/tools/ghc-8.10.2/lib/settings
 
     - name: Set up temp directory
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
       run: |
-        echo 'TMPDIR=${{ runner.temp }}'  >> $GITHUB_ENV
-        echo 'TMP=${{ runner.temp }}'     >> $GITHUB_ENV
+        echo "TMPDIR=$RUNNER_TEMP"  >> $GITHUB_ENV
+        echo "TMP=$RUNNER_TEMP"     >> $GITHUB_ENV
 
     # Cache cabal-store
     - name: cache cabal store
@@ -106,29 +139,9 @@ jobs:
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cabal-store-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
-    # Cache parts of dist-newstyle (C:\dist)
-    - name: cache build directory [cache]
-      uses: actions/cache@v2
-      with:
-        path: C:\dist\cache
-        key: dist-cache-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
-    - name: cache build directory [src]
-      uses: actions/cache@v2
-      with:
-        path: C:\dist\src
-        key: dist-src-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
-    - name: cache build directory [packagedb]
-      uses: actions/cache@v2
-      with:
-        path: C:\dist\packagedb
-        key: dist-packagedb-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
 
     - name: update Hackage index
       run: cabal v2-update
-
-    # checkout repository
-    - name: checkout ouroboros-network repository
-      uses: actions/checkout@v2
 
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
@@ -151,6 +164,14 @@ jobs:
     # Build dependencies
     - name: Build dependencies
       run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
+
+    - name: Print logs
+      if: always()
+      run: |
+        for x in $(find 'C:\Users\runneradmin\AppData\Roaming\cabal\logs' -name '*.log'); do
+          echo "==== $x ===="
+          cat "$x"
+        done
 
     #
     # Build & Test network packages
