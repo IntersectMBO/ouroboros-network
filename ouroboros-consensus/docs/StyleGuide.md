@@ -162,6 +162,12 @@ the rules below, it is good practice to update the code's style to match them.
 
       whichever is more natural.
 
+      TODO NSF: It seems this implicitly assumes we'll never add a `where`
+      clause.
+
+      TODO NSF: Ever hang the definitions under the `let`? This can save
+      horizontal space.
+
    e. `do` is placed after the `=`:
 
       ```haskell
@@ -185,6 +191,9 @@ the rules below, it is good practice to update the code's style to match them.
             baz
 
       ```
+
+    TODO NSF: Explicitly address case alternatives. Just like for `let` RHSs,
+    address the `where`.
 
 2. __Line length__: we limit the number of characters per line to 80.
 
@@ -317,6 +326,34 @@ the rules below, it is good practice to update the code's style to match them.
       everything on the same line as the function call, or else a line
       per argument.
 
+    TODO NSF: These rules for several arguments should apply to function
+    definitions too: how to line-divide the formals of a function with many. My
+    recommendation: do no pattern matching in the formals. If that's still too
+    long, one formal per line. Even better, of course, consider instead
+    introducing a record type for the arguments.
+
+    TODO NSF: What about calls in an applicative functor? What to do with the
+    `<$>` and the many `<*>` splats? I propose:
+
+      ```haskell
+         fooBar
+	   <$> x
+           <*> (baz + 1)
+           <*> bar
+           <*> foo (bar x)
+      ```
+
+      I could argue a slight preference for the following, but linters would
+      hate it, and it's probably easy to confuse with a monadic return value.
+
+      ```haskell
+         pure fooBar
+           <*> x
+           <*> (baz + 1)
+           <*> bar
+           <*> foo (bar x)
+      ```
+
    c. Class or instance contexts: when a class or instance declaration doesn't
       fit onto a single line because of the super-class context, wrap the line
       before the `=>` and align the class name with the first character in the
@@ -402,6 +439,8 @@ the rules below, it is good practice to update the code's style to match them.
       *Why*: The alignment of the `.`s and the function names makes the
       structure easy to see at a glance.
 
+    TODO NSF: Does this generalize to all repeated binary operators?
+
 3. __Parentheses__: avoid redundant parentheses, except when they help with the
    order of operations. Use your judgement, and aim for clarity. Redundant
    parentheses sometimes help the reader, but sometimes confuse as they
@@ -443,6 +482,8 @@ the rules below, it is good practice to update the code's style to match them.
    (True,) <$> foo
    ```
 
+    TODO NSF: There is no 5 here. NBD
+
 6. __Function composition and the dollar operator__:
 
    Choose between using parenthesis, `$` and `.` in whichever way you think
@@ -476,6 +517,11 @@ the rules below, it is good practice to update the code's style to match them.
 
    *Why:* for consistency with `instance .. where` and `class .. where`, which
    we also don't put on a new line.
+
+   TODO NSF: I don't understand how this is related to opening braces. Either
+   I'm overlooking something I've never thought of, or I don't think it's
+   relevant. If that second one is the common reaction, then this reason runs
+   the risk of being pedantic. Is there a more defensible reason?
 
 8. __Blank lines__: we use *exactly one blank line* between different
    declarations: export lists, import lists, declarations, etc.
@@ -562,6 +608,10 @@ the rules below, it is good practice to update the code's style to match them.
 
 10. __Comment style__: in general we prefer `--` over `{- .. -}`. We sometimes
     make exceptions for big non-Haddock comments.
+
+    TODO NSF: Is there a reason for this one? I recently read
+    https://kowainik.github.io/posts/haddock-tips and thought their motivation
+    for `{-` sounded reasonable.
 
 11. __Haddock formatting__: we use [Haddock formatting](haddock-formatting) in
     docstrings. We also do this in comments for consistency.
@@ -671,6 +721,13 @@ the rules below, it is good practice to update the code's style to match them.
 
     It is immediately obvious in the aligned code, but not in the unaligned
     code.
+
+   TODO NSF: Tangentially, I would vote for `\case` here. Related: Do we have
+   guidance for when to use multiple clauses in a function definition and when
+   not to? My preference is to never do it: always use case. If you can't stand
+   the resulting tuples' commas, use tuple sections as a pattern ctor. Better
+   yet: relegate the core "simulatenous pattern" logic to a small helper
+   function.
 
 13. __Pattern guard alignment__:
 
@@ -875,6 +932,10 @@ the rules below, it is good practice to update the code's style to match them.
     ```
     *Why:* one can add extra imports without having to modify the export list.
 
+    TODO NSF: Does the extra trailing comma pose some risk? Otherwise, GHC's
+    acceptance of it allows us to avoid special-casing the first line: every
+    export item ends with `,\\n`.
+
 17. __Syntactic extensions__: we like to use some syntactic language extensions.
     Some argue against having to learn additional syntax, but we believe the
     learning curve is minimal and using them can help improve the clarity of the
@@ -960,6 +1021,9 @@ the rules below, it is good practice to update the code's style to match them.
     is _not_ an improvement: replacing record field names with positional
     arguments is a big loss in clarity.
 
+    TODO NSF: Explicitly recommend introducing a separate record type for `X`
+    and a corresponding single-argument `X :: X -> Foo`.
+
 20. __Pointfree__: Use your judgement when to use pointfree style and when not
     to use it; aim for clarity.
 
@@ -1028,6 +1092,10 @@ the rules below, it is good practice to update the code's style to match them.
     pb = Proxy
     ```
 
+    TODO NSF: Any guidance regarding `TypeApplications`? (I think they're OK
+    only for extremely stable and common functions that have exactly one type
+    parameter, or at least a really obvious first type parameter.)
+
 24. __Redundant pragmas__: remove unused language pragmas when possible.
 
     *Why:* if a module lists the `CPP`, `AllowAmbiguousTypes`,
@@ -1093,12 +1161,19 @@ There are more general guidelines on how we write and structure code.
    smaller parts and accept the loss of the help of the compiler to avoid
    incoherence as an acceptable compromise.
 
+    TODO NSF: Call-out that they are relatively benign in modules that are
+    specific to an executable, like a specific test suite entrypoint.
+
 4. __Assertions__: If it helps to explain what a function does, we try to be
    clear about preconditions, postconditions, and invariants. When possible,
    it is useful to reinforce such invariants with assertions so that if our
    reasoning turns out to be invalid, we will notice. The use of `assertWithMsg`
    is preferred over `assert`, so that if the assertion fails, we get some
    kind of informative error message rather than just a Prolog-like "no".
+
+    TODO NSF: Explicitly name it
+    `Ouroboros.Consensus.Util.Assert.assertWithMsg`, since it's not a standard
+    definition.
 
 5. __Test packages__: In order to make test code from test suite A available
    in test suite B, we define test suites as a test suite library which is
