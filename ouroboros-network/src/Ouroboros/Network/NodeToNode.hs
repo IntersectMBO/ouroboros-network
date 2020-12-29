@@ -89,6 +89,12 @@ module Ouroboros.Network.NodeToNode (
   , WithDomainName (..)
   , WithAddr (..)
   , HandshakeTr
+
+  -- * For Consensus ThreadNet Tests
+  , chainSyncMiniProtocolNum
+  , blockFetchMiniProtocolNum
+  , txSubmissionMiniProtocolNum
+  , keepAliveMiniProtocolNum
   ) where
 
 import           Control.Monad.Class.MonadST
@@ -244,22 +250,22 @@ nodeToNodeProtocols MiniProtocolParameters {
         ]
    where
     chainSyncMiniProtocol chainSyncProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 2
+        miniProtocolNum    = chainSyncMiniProtocolNum
       , miniProtocolLimits = chainSyncProtocolLimits
       , miniProtocolRun    = chainSyncProtocol
       }
     blockFetchMiniProtocol blockFetchProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 3
+        miniProtocolNum    = blockFetchMiniProtocolNum
       , miniProtocolLimits = blockFetchProtocolLimits
       , miniProtocolRun    = blockFetchProtocol
       }
     txSubmissionMiniProtocol txSubmissionProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 4
+        miniProtocolNum    = txSubmissionMiniProtocolNum
       , miniProtocolLimits = txSubmissionProtocolLimits
       , miniProtocolRun    = txSubmissionProtocol
       }
     keepAliveMiniProtocol keepAliveProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 8
+        miniProtocolNum    = keepAliveMiniProtocolNum
       , miniProtocolLimits = keepAliveProtocolLimits
       , miniProtocolRun    = keepAliveProtocol
       }
@@ -375,6 +381,18 @@ nodeToNodeProtocols MiniProtocolParameters {
           -- One small outstanding message.
           maximumIngressQueue = addSafetyMargin 1280
         }
+
+chainSyncMiniProtocolNum :: MiniProtocolNum
+chainSyncMiniProtocolNum = MiniProtocolNum 2
+
+blockFetchMiniProtocolNum :: MiniProtocolNum
+blockFetchMiniProtocolNum = MiniProtocolNum 3
+
+txSubmissionMiniProtocolNum :: MiniProtocolNum
+txSubmissionMiniProtocolNum = MiniProtocolNum 4
+
+keepAliveMiniProtocolNum :: MiniProtocolNum
+keepAliveMiniProtocolNum = MiniProtocolNum 8
 
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --

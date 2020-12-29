@@ -129,7 +129,6 @@ prop_simple_leader_schedule_convergence TestSetup
                   { praosSecurityParam = k
                   , praosSlotsPerEpoch = unEpochSize epochSize
                   , praosLeaderF       = dummyF
-                  , praosLifetimeKES   = 1000000
                   }
                   (HardFork.defaultEraParams k slotLength)
                   schedule
