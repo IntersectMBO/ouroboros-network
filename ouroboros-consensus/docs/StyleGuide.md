@@ -619,7 +619,7 @@ the rules below, it is good practice to update the code's style to match them.
     -- PRECONDITION: x must be greater than y
     -- > x > y
     --
-    -- POSTCONDITION: the result will be positivei
+    -- POSTCONDITION: the result will be positive
     foo :: ..
 
     data Foo = Foo {
@@ -661,6 +661,7 @@ the rules below, it is good practice to update the code's style to match them.
     foo (Quux a b c) = bar a b c
     foo (Bar b c) = bar [] b c
     foo (FooBar a c) = bar a []
+    ```
 
     ```haskell
     foo (Quux   a b c) = bar a  b  c
