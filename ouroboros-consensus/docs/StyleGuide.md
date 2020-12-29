@@ -108,7 +108,7 @@ the rules below, it is good practice to update the code's style to match them.
 
       The `deriving` is indented from the left margin, and the constructors
       are indented from the `deriving` clause. This provides a consistent
-      style for datatypes with multiple constructors (see below).  
+      style for datatypes with multiple constructors (see below).
 
       Multiple deriving clauses using `DerivingStrategies` are aligned:
 
@@ -162,6 +162,16 @@ the rules below, it is good practice to update the code's style to match them.
 
       whichever is more natural.
 
+      In the rare case that you want a `where` clause on a `let` binding, indent
+      by 4 spaces, like described in (a):
+
+      ```haskell
+      let fooBarBaz =
+              ..
+            where
+              aux = ..
+      ```
+
    e. `do` is placed after the `=`:
 
       ```haskell
@@ -175,16 +185,44 @@ the rules below, it is good practice to update the code's style to match them.
 
       ```haskell
       foo .. = atomically $ do
-         bar
-         baz
+          bar
+          baz
 
       -- If the first line too long:
       foo .. =
           atomically $ do
             bar
             baz
-
       ```
+
+      The `where` block can be indented by 2 spaces, as described in (a).
+
+      In a `case`, use hanging `do`:
+
+      ```haskell
+      case foo of
+        X -> do
+          ..
+        Y -> do
+          ..
+      ```
+
+   f. While it is technically possible to add a `where` clause to a pattern
+      match case, use a `let` instead, to emphasise that the binding is local:
+
+      ```haskell
+      case x of y
+        A x -> A_body
+        B y ->
+          let bl = bl_body y
+          in  B_body
+      ```
+
+      Note that we align `B_body` with `bl` in the `let` block. At the moment we
+      are not being very consistent with this.
+
+      Using a `where` clause for a `case` can be okay, but tends to make the
+      scope a bit confusing, so we try to avoid it.
 
 2. __Line length__: we limit the number of characters per line to 80.
 
@@ -221,11 +259,11 @@ the rules below, it is good practice to update the code's style to match them.
       ```
 
       *Why:* Keeping the `::` on the first line is consistent with the rest of
-      the style (compare to `modulee Foo where` for example), and has a
-      practical benefit: it makes it much easier to grep for the definition of
-      `fooBar`. The `->` is indented 2 spaces from the left margin, as usual;
-      the first argument is aligned with the rest (and happens to therefore be
-      indented 5 spaces).
+      the style (compare to `module Foo where` for example), and has a practical
+      benefit: it makes it much easier to grep for the definition of `fooBar`.
+      The `->` is indented 2 spaces from the left margin, as usual; the first
+      argument is aligned with the rest (and happens to therefore be indented 5
+      spaces).
 
       When there are constraints:
 
@@ -306,7 +344,7 @@ the rules below, it is good practice to update the code's style to match them.
       *Why*: multiple lines of multiple arguments are hard to read; for example,
       in
 
-      ```haskell      
+      ```haskell
       fooBar
         x (baz + 1)
         bar (foo (bar x))
@@ -317,7 +355,63 @@ the rules below, it is good practice to update the code's style to match them.
       everything on the same line as the function call, or else a line
       per argument.
 
-   c. Class or instance contexts: when a class or instance declaration doesn't
+      When writing a function call in the applicative style that does not fit on
+      a single line, indent it as follows:
+
+      ```haskell
+      fooBar
+        <$> x
+        <*> baz + 1
+        <*> bar
+        <*> foo (bar x)
+      ```
+
+   c. Argument lists: put the formal arguments of a function on a single line
+      when possible:
+
+      ```haskell
+      foo a b (SomeRecord {field = x}) =
+          ..
+      ```
+
+      Bracketing a pattern match on a record is optional, but we feel it aids
+      clarity. (It is not necessary for a `RecordWildCards` style match,
+      however.)
+
+      When that does not fit on a single line, move any pattern matches to a
+      `where` block:
+
+      ```haskell
+      foo a b c =
+          ..
+        where
+          SomeRecord {field = x} = c
+      ```
+
+      When that is still not enough, then the function has so many arguments
+      that *naming* them is not only useful for alignment, it also helps to
+      clarify call sites: introduce a record.
+
+      ```haskell
+      foo args =
+          ..
+        where
+          Args {
+              argA = a
+            , argB = b
+            , argC = SomeRecord {field = x}
+            } = args
+      ```
+
+      If the field names of the `Args` type are named appropriately, using
+      `RecordWildCards` is also acceptable, see also (17).
+
+      ```haskell
+      foo Args {..} =
+          ..
+      ```
+
+   d. Class or instance contexts: when a class or instance declaration doesn't
       fit onto a single line because of the super-class context, wrap the line
       before the `=>` and align the class name with the first character in the
       context:
@@ -342,7 +436,7 @@ the rules below, it is good practice to update the code's style to match them.
                ) => C a where
       ```
 
-   d. Tuples in type signatures:
+   e. Tuples in type signatures:
 
       ```haskell
       foo ::
@@ -355,7 +449,7 @@ the rules below, it is good practice to update the code's style to match them.
            )
       ```
 
-   e. Datatypes:
+   f. Datatypes:
 
       ```haskell
       data Foo =
@@ -374,7 +468,7 @@ the rules below, it is good practice to update the code's style to match them.
           }
       ```
 
-   f. Type synonyms:
+   g. Type synonyms:
 
       ```haskell
       type Foo a b =
@@ -390,7 +484,7 @@ the rules below, it is good practice to update the code's style to match them.
         )
       ```
 
-   g. Function composition:
+   h. Function composition:
 
       ```haskell
       foo =
@@ -401,6 +495,8 @@ the rules below, it is good practice to update the code's style to match them.
 
       *Why*: The alignment of the `.`s and the function names makes the
       structure easy to see at a glance.
+
+      This generalises to other binary operators, e.g., `+`, `*`, etc.
 
 3. __Parentheses__: avoid redundant parentheses, except when they help with the
    order of operations. Use your judgement, and aim for clarity. Redundant
@@ -443,12 +539,12 @@ the rules below, it is good practice to update the code's style to match them.
    (True,) <$> foo
    ```
 
-6. __Function composition and the dollar operator__:
+5. __Function composition and the dollar operator__:
 
    Choose between using parenthesis, `$` and `.` in whichever way you think
    results in the most readable code.
 
-7. __Opening braces__: we don't start a new line for opening braces:
+6. __Opening braces__: we don't start a new line for opening braces:
 
    ```haskell
    data Foo = Foo {
@@ -474,10 +570,12 @@ the rules below, it is good practice to update the code's style to match them.
          } = foo
    ```
 
-   *Why:* for consistency with `instance .. where` and `class .. where`, which
-   we also don't put on a new line.
+   There don't seem to be any really good arguments for putting the bracket
+   either on the same line or on the next, other than the fact that the opening
+   bracket indicates that there is more to follow. It is also consistent with
+   the `where` in `instance .. where` and `class .. where`.
 
-8. __Blank lines__: we use *exactly one blank line* between different
+7. __Blank lines__: we use *exactly one blank line* between different
    declarations: export lists, import lists, declarations, etc.
 
    *Why:* a blank line helps with readability. Always using a single one is
@@ -523,7 +621,7 @@ the rules below, it is good practice to update the code's style to match them.
 
    [https://stackoverflow.com/questions/729692/why-should-text-files-end-with-a-newline]: posix-line
 
-9. __Sections__: we group related definitions in sections that start with a
+8. __Sections__: we group related definitions in sections that start with a
    section title. The same grouping can be replicated in the export list.
 
     ```haskell
@@ -560,10 +658,10 @@ the rules below, it is good practice to update the code's style to match them.
     which is separated from the first line by one blank line. The section header
     has a single blank line above and below it.
 
-10. __Comment style__: in general we prefer `--` over `{- .. -}`. We sometimes
-    make exceptions for big non-Haddock comments.
+9. __Comment style__: in general we tend to use `--` instead of `{- .. -}`. We
+   sometimes make exceptions for big non-Haddock comments.
 
-11. __Haddock formatting__: we use [Haddock formatting](haddock-formatting) in
+10. __Haddock formatting__: we use [Haddock formatting](haddock-formatting) in
     docstrings. We also do this in comments for consistency.
 
     ```haskell
@@ -635,7 +733,7 @@ the rules below, it is good practice to update the code's style to match them.
 
     [https://www.haskell.org/haddock/doc/html/ch03s08.html]: haddock-formatting
 
-12. __Alignment__: we align things when it helps with readability.
+11. __Alignment__: we align things when it helps with readability.
 
     Alignment makes it clear which things are the *same* and which things are
     *different*, compare the following code block
@@ -672,7 +770,7 @@ the rules below, it is good practice to update the code's style to match them.
     It is immediately obvious in the aligned code, but not in the unaligned
     code.
 
-13. __Pattern guard alignment__:
+12. __Pattern guard alignment__:
 
     This is one area in which we have not yet converged on a single style,
     and there are two styles in use:
@@ -729,10 +827,23 @@ the rules below, it is good practice to update the code's style to match them.
         ..
     ```
 
-    Choose whichever style you prefer.
+    Choose whichever style you prefer. The latter style is more suitable for
+    hanging `do`.
 
     In either style, use of `_otherwise` instead of `_`, as the latter is
     easy to miss.
+
+13. __case vs function with multiple clauses__:
+
+    The choice between using a `case` and having multiple clauses of the
+    function can help emphasise the structure of the code, and the differences
+    and commonalities between the cases.
+
+    ```haskell
+    foo acc visited = \case
+        []   -> ..
+        x:xs -> ..
+    ```
 
 14. __if-then-else__:
 
@@ -917,7 +1028,7 @@ the rules below, it is good practice to update the code's style to match them.
                                       Nothing
     ```
 
-19. __Records__:
+18. __Records__:
 
     For records we often use `NamedFieldPuns` to make it convenient to
     extract fields from the record. We also tend to use `RecordWildCards`
@@ -935,8 +1046,8 @@ the rules below, it is good practice to update the code's style to match them.
     extension with such records, and this naming convention means that it's
     still pretty clear where the field names were brought into scope.
 
-    To avoid long lines, it is something useful to use record deconstruction
-    in local bindings:
+    To avoid long lines, it is sometimes useful to use record deconstruction in
+    local bindings:
 
     ```haskell
     foo someRecord =
@@ -948,24 +1059,30 @@ the rules below, it is good practice to update the code's style to match them.
     We try to avoid partial fields, but replacing partial fields such as
 
     ```haskell
-    data Foo = X {foo :: A, bar :: B} | Y
+    data Foo = FooX {foo :: A, bar :: B} | FooY
     ```
 
     with
 
     ```haskell
-    data Foo = X A B | Y
+    data Foo = FooX A B | FooY
     ```
 
     is _not_ an improvement: replacing record field names with positional
-    arguments is a big loss in clarity.
+    arguments is a big loss in clarity. Instead, introduce a record to be used
+    as an argument to the `FooX` constructor.
 
-20. __Pointfree__: Use your judgement when to use pointfree style and when not
+    ```haskell
+    data X = X {foo :: A, bar :: B}
+    data Foo = FooX X | FooY
+    ```
+
+19. __Pointfree__: Use your judgement when to use pointfree style and when not
     to use it; aim for clarity.
 
-21. __Warnings__: we use the following warnings for each Cabal component:
+20. __Warnings__: we use the following warnings for each Cabal component:
 
-    ```haskell    
+    ```haskell
     -Wall
     -Wcompat
     -Wincomplete-uni-patterns
@@ -990,7 +1107,7 @@ the rules below, it is good practice to update the code's style to match them.
     For consistency, always use `-Wx` and `-Wno-x` instead of `-fwarn-x` and
     `-fno-warn-x`.
 
-22. __HasCallStack__: when using `error` in code paths should be impossible and
+21. __HasCallStack__: when using `error` in code paths should be impossible and
     are indicative of bugs, make sure enough `HasCallStack` constraints are in
     scope so that the error message will result in a useful callstack.
 
@@ -1008,7 +1125,7 @@ the rules below, it is good practice to update the code's style to match them.
     Without the extra wrapper `foo`, the call stack would only start at `_foo`,
     which is rather useless.
 
-23. __Ambiguous types__: we avoid `AllowAmbiguousTypes`. Instead, we add a
+22. __Ambiguous types__: we avoid `AllowAmbiguousTypes`. Instead, we add a
     `Proxy` argument for the ambiguous type variable.
 
     *Why:* this makes it explicit which type variable is ambiguous.
@@ -1017,8 +1134,12 @@ the rules below, it is good practice to update the code's style to match them.
 
     *Why:* this is less verbose than `Proxy :: Proxy X`.
 
-    In general, use type application instead of a type annotations, as the
-    latter is in most cases more verbose.
+    Generally try to avoid type applications, as they are rather brittle: if the
+    type arguments to the function change order, suddenly a function call might
+    no longer work, often with a hard to understand error message. This gets
+    even worse when a function doesn't have an explicit `forall`, and so the
+    order is not even specified. Prefer to use `Proxy`, possibly by introducing
+    some auxiliary functions.
 
     When the same `Proxy` can be used multiple times, one can define it locally
     like so:
@@ -1028,7 +1149,7 @@ the rules below, it is good practice to update the code's style to match them.
     pb = Proxy
     ```
 
-24. __Redundant pragmas__: remove unused language pragmas when possible.
+23. __Redundant pragmas__: remove unused language pragmas when possible.
 
     *Why:* if a module lists the `CPP`, `AllowAmbiguousTypes`,
     `UndecidableInstances`, or any other suspicious extension, it triggers an
@@ -1093,12 +1214,15 @@ There are more general guidelines on how we write and structure code.
    smaller parts and accept the loss of the help of the compiler to avoid
    incoherence as an acceptable compromise.
 
+   Orphans in test suites are also acceptable.
+
 4. __Assertions__: If it helps to explain what a function does, we try to be
-   clear about preconditions, postconditions, and invariants. When possible,
-   it is useful to reinforce such invariants with assertions so that if our
-   reasoning turns out to be invalid, we will notice. The use of `assertWithMsg`
-   is preferred over `assert`, so that if the assertion fails, we get some
-   kind of informative error message rather than just a Prolog-like "no".
+   clear about preconditions, postconditions, and invariants. When possible, it
+   is useful to reinforce such invariants with assertions so that if our
+   reasoning turns out to be invalid, we will notice. The use of
+   `Ouroboros.Consensus.Util.Assert.assertWithMsg` is preferred over `assert`,
+   so that if the assertion fails, we get some kind of informative error message
+   rather than just a Prolog-like "no".
 
 5. __Test packages__: In order to make test code from test suite A available
    in test suite B, we define test suites as a test suite library which is
