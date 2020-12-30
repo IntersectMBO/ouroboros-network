@@ -313,11 +313,11 @@ filterPlausibleCandidates
   :: (AnchoredFragment block -> AnchoredFragment header -> Bool)
   -> AnchoredFragment block  -- ^ The current chain
   -> [(               CandidateFragment header,  peerinfo)]
-  -> [(FetchDecision (CandidateFragment header), peerinfo)]
+  -> [(FetchDecision (AnchoredFragment  header), peerinfo)]
 filterPlausibleCandidates plausibleCandidateChain currentChain candidateFrags =
-    [ (candidateFrag', peer)
+    [ (eAF, peer)
     | (candidateFrag,  peer) <- candidateFrags
-    , let candidateFrag' = do
+    , let eAF = do
             let CandidateFragment {
                     candidateChain
                   , chainSyncBlockedOnGap
@@ -326,7 +326,7 @@ filterPlausibleCandidates plausibleCandidateChain currentChain candidateFrags =
                    || plausibleCandidateChain currentChain candidateChain
                   )
               ?! FetchDeclineChainNotPlausible
-            return candidateFrag
+            return candidateChain
     ]
 
 
@@ -429,11 +429,11 @@ to filter out such a candidate.
 chainForkSuffix
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment  block  -- ^ Current chain.
-  -> CandidateFragment header
+  => AnchoredFragment block  -- ^ Current chain.
+  -> AnchoredFragment header -- ^ Candidate chain
   -> Maybe (ChainSuffix header)
-chainForkSuffix current candidateFrag =
-    case AF.intersect current candidateChain of
+chainForkSuffix current candidate =
+    case AF.intersect current candidate of
       Nothing                         -> Nothing
       Just (_, _, _, candidateSuffix) ->
         -- If the suffix is empty, it means the candidate chain was equal to
@@ -441,17 +441,13 @@ chainForkSuffix current candidateFrag =
         -- not a plausible candidate, so it must have been filtered out.
         assert (not (AF.null candidateSuffix)) $
         Just (ChainSuffix candidateSuffix)
-  where
-    CandidateFragment {
-        candidateChain
-      } = candidateFrag
 
 selectForkSuffixes
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => AnchoredFragment block
-  -> [(FetchDecision (CandidateFragment header), peerinfo)]
-  -> [(FetchDecision (ChainSuffix       header), peerinfo)]
+  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
+  -> [(FetchDecision (ChainSuffix      header), peerinfo)]
 selectForkSuffixes current chains =
     [ (mchain', peer)
     | (mchain,  peer) <- chains
