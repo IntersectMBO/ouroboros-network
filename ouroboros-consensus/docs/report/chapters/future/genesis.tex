@@ -292,7 +292,7 @@ construct.
 \begin{lemma}
 \label{lemma:adversarial-before-k}
 An adversary cannot forge a chain that forks off more than $k$ blocks from
-an alert node's tip and is denser than than the alert's node chain at
+an alert node's tip and is denser than the alert node's chain at
 the intersection between the two chains.
 \end{lemma}
 
@@ -312,7 +312,7 @@ An adversary cannot forge a chain that satisfies all of the below:
 %
 \begin{itemize}
 \item It forks off at most $s$ slots from the wallclock.
-\item If forks off more than $k$ blocks before that tip of an alert node.
+\item If forks off more than $k$ blocks before the tip of an alert node.
 \item It is longer than the alert node's current chain.
 \end{itemize}
 \end{lemma}
@@ -377,7 +377,7 @@ a region of $s$ slots starting at the intersection.
 
 As we saw in \cref{lemma:rule-equivalence}, the Density rule is equivalent
 to the Longest Chain rule if the intersection is within $k$ blocks, so the
-original rule and the simplified form as in fact equivalent.
+original rule and the simplified form are in fact equivalent.
 
 For completeness sake, we should note that this equivalence only holds for
 suitable choice of $s$. If $s$ is much smaller (for example, the paper uses $s =
