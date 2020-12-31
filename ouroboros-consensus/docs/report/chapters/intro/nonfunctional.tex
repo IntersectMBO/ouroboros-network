@@ -1,0 +1,91 @@
+\chapter{Non-functional requirements}
+\label{nonfunctional}
+
+This whole chapter is Duncan-suitable :)
+\duncan
+
+\section{Network layer}
+\label{nonfunctional:network}
+
+This report is not intended as a comprehensive discussion of the network layer;
+see \cite{network-spec} instead. However, in order to understand
+some of the design decisions in the consensus layer we need to understand some
+of the requirements imposed on it by the network layer.
+
+TODOs:
+
+\begin{itemize}
+\item Highlight relevant aspects of the design of the network layer
+\item Discuss requirements this imposes on the consensus layer
+Primary example: Forecasting.
+\item How do we keep the overlap between network and consensus as small
+as possible? Network protocols do not involve consensus protocols
+(chain sync client is not dependent on chain selection). Chain sync
+client + "pre chain selection" + block download logic keeps things isolated.
+\item Why do we even want to validate headers ahead of time? (Thread model etc.)
+(Section for Duncan?).
+Section with a sketch on an analysis of the amortised cost for attackers versus
+our own costs to defend against it ("budget for work" that grows and shrinks
+as you interact with a node).
+\end{itemize}
+
+\subsection{Header/Body Split (aka: Header submission)}
+\label{nonfunctional:network:headerbody}
+
+Discuss the chain fragments that we store per upstream node.
+Discuss why we want to validate headers here -- without a full ledger state
+(necessarily so, since no block bodies -- can't update ledger state): to prevent
+DoS attacks.
+(\cref{ledger:forecasting} contains a discussion of this from the point of view of
+the ledger).
+Forward reference to the chain sync client (\cref{chainsyncclient}).
+Discuss why it's useful if the chain sync client can race ahead  for
+\emph{performance} (why it's required for chain selection is the discussed in
+\cref{forecast:ledgerview}).
+
+See also section on avoiding the stability window
+(\cref{low-density:pre-genesis}).
+
+\subsection{Block submission}
+\label{nonfunctional:network:blocksubmission}
+
+Forward reference to \cref{servers:blockfetch}.
+
+\subsection{Transaction submission}
+\label{nonfunctional:network:txsubmission}
+
+Mention that these are defined entirely network side, no consensus involvement
+(just an abstraction over the mempool).
+
+\section{Security "cost" concerns}
+
+TODO: Look through the code and git history to find instances of where we
+one way but not the other because it would give an attacker an easy way to
+make it do lots of work (where were many such instances).
+
+Fragile. Future work: how might be make this less brittle?
+Or indeed, how might we test this?
+
+Counter-examples (things we don't want to do)
+
+\begin{itemize}
+\item Parallel validation of an entire epoch of data (say, crypto only).
+You might do a lot of work before realising that that work was not needed because
+of an invalid block in the middle.
+\end{itemize}
+
+Future work: opportunities for parallelism that we don't yet exploit
+(important example: script evaluation in Goguen).
+
+\section{Hard time constraints}
+
+Must produce a block on time, get it to the next slot leader
+
+Bad counter-example: reward calculation in the Shelley ledger bad
+(give examples of why).
+
+\section{Predictable resource requirements}
+
+make best == worst
+
+(not \emph{just} a security concern: a concern even if every node honest)

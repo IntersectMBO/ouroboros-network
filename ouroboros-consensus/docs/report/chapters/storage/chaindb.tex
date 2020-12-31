@@ -1,0 +1,141 @@
+\chapter{Chain Database}
+\label{chaindb}
+
+TODO\todo{TODO}: This is currently a disjoint collection of snippets.
+
+\section{Block processing queue}
+\label{chaindb:queue}
+
+Discuss the chain DB's block processing queue, the future/promises/events,
+concurrency concerns, etc.
+
+Discuss the problem of the effective queue size (\#2721).
+
+\section{Marking invalid blocks}
+\label{chaindb:invalidblocks}
+
+The chain database keeps a set of hashes of known-to-be-invalid blocks.
+This information is used by the chain sync client (\cref{chainsyncclient}) to
+terminate connections to nodes with a chain that contains an invalid block.
+
+\begin{lemma}
+\label{chaindb:dont-mark-invalid-successors}
+When the chain database discovers an invalid block $X$, it is sufficient
+to mark only $X$; there is no need to additionally mark any successors of $X$.
+\end{lemma}
+
+\begin{proof}[Proof (sketch).]
+The chain sync client maintains a chain fragment corresponding to some suffix
+of the upstream node's chain, and it preserves an invariant that that suffix
+must intersect with the node's own current chain. It can therefore never be
+the case that the fragment contains a successor of $X$ but not $X$ itself:
+since $X$ is invalid, the node will never adopt it, and so a fragment that
+intersects the node's current chain and includes a successor of $X$ \emph{must}
+also contain $X$.
+\end{proof}
+
+TODO\todo{TODO}: We should discuss how this relates to GC (\cref{chaindb:gc}).
+
+\section{Effective maximum rollback}
+
+The maximum rollback we can support is bound by the length of the current  fragment. This will be less than $k$ only if
+
+\begin{itemize}
+\item We are near genesis and the immutable database is empty, or
+\item Due to data corruption the volatile database lost some blocks
+\end{itemize}
+
+Only the latter case is some cause for concern: we are in a state where
+conceptually we \emph{could} roll back up to $k$ blocks, but due to how we chose
+to organise the data on disk (the immutable/volatile split) we cannot. One
+option here would be to move blocks \emph{back} from the immutable DB to the
+volatile DB under these circumstances, and indeed, if there were other parts of
+the system where rollback might be instigated that would be the right thing to
+do: those other parts of the system should not be aware of particulars of the
+disk layout.
+
+However, since the chain database is \emph{exclusively} in charge of switching
+to forks, all the logic can be isolated to the chain database. So, when we have
+a short volatile fragment, we will just not roll back more than the length of
+that fragment. Conceptually this can be justified also: the fact that $I$ is the
+tip of the immutable DB means that \emph{at some point} it was in our chain at
+least $k$ blocks back, and so we considered it to be immutable: the fact that
+some data loss occurred does not really change that. We may still roll back more
+than $k$ blocks when disk corruption occurs in the immutable database, of
+course.
+
+One use case of the current fragment merits a closer examination. When the chain
+sync client (\cref{chainsyncclient}) looks for an intersection between our chain
+and the chain of the upstream peer, it sends points from our chain fragment. If
+the volatile fragment is shorter than $k$ due to data corruption, the client
+would have fewer points to send to the upstream node. However, this is the
+correct behaviour: it would mean we cannot connect to upstream nodes who fork
+more than $k$ of what \emph{used to be} our tip before the data corruption, even
+if that's not where our tip is anymore. In the extreme case, if the volatile
+database gets entirely erased, only a single point is available (the tip of the
+immutable database $I$), and hence we can only connect to upstream nodes that
+have $I$ on their chain.  This is precisely stating that we can only sync with
+upstream nodes that have a chain that extends our immutable chain.
+
+\section{Garbage collection}
+\label{chaindb:gc}
+
+Blocks on chains that are never selected, or indeed blocks whose
+predecessor we never learn, will eventually be garbage collected when their
+slot number number is more than $k$ away from the tip of the selected chain.\footnote{This is slot based rather than block based for historical
+reasons only; we should probably change this.}
+
+\begin{bug}
+The chain DB (more specifically, the volatile DB) can still grow without bound
+if we allow upstream nodes to rapidly switch between forks; this should be
+addressed at the network layer (for instance, by introducing rate limiting for
+rollback in the chain sync client, \cref{chainsyncclient}).
+\end{bug}
+
+Although this is GC of the volatile DB, I feel it belongs here more than in
+the volatile DB chapter because here we know \emph{when} we could GC.
+But perhaps it should be split into two: a section on how GC is implemented
+in the volatile DB chapter, and then a section here how it's used in the
+chain DB. References from elsewhere in the report to GC should probably
+refer here, though, not to the vol DB chapter.
+
+\subsection{GC delay}
+
+For performance reasons neither the immutable DB nor the volatile DB ever makes
+explicit \lstinline!fsync! calls to flush data to disk. This means that when the
+node crashes, recently added blocks may be lost. When this happens in the
+volatile DB it's not a huge deal: when the node starts back up and the chain
+database is initialised we just run chain selection on whatever blocks still
+remain; in typical cases we just end up with a slightly shorter chain.
+
+However, when this happens in the immutable database the impact may be larger.
+In particular, if we delete blocks from the volatile database as soon as we add
+them to the immutable database, then data loss in the immutable database would
+result in a gap between the volatile database and the immutable database, making
+\emph{all} blocks in the volatile database unusable. We can recover from this, but it
+would result in a large rollback (in particular, one larger than $k$).
+
+To avoid this, we currently have a delay between adding blocks to the immutable
+DB and removing them from the volatile DB (garbage collection). The delay is
+configurable, but should be set in such a way that the possibility that the
+block has not yet been written to disk at the time of garbage collection is
+minimised;a a relatively short delay should suffice (currently we use a delay of
+1 minute), though there are other reasons for preferring a longer delay:
+
+\begin{itemize}
+\item Clock changes can more easily be accommodated with more overlap (\cref{{future:clockchanges}})
+\item The time delay also determines the worst-case validity of iterators
+(todo\todo{TODO}: reference to relevant section).
+\end{itemize}
+
+Larger delays will of course result in more overlap between the two databases.
+During normal node operation this might not be much, but the overlap might be
+more significant during bulk syncing.
+
+Notwithstanding the above discussion, an argument could be made that the
+additional complexity due to the delay is not worth it; even a ``rollback'' of
+more than $k$ is easily recovered from\footnote{Note that the node will never
+actually notice such a rollback; the node would crash when discovering data
+loss, and then restart with a smaller chain}, and clock changes as well, as
+iterators asking for blocks that now live on distant chains, are not important
+use cases. We could therefore decide to remove it altogether.
