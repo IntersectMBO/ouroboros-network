@@ -15,7 +15,7 @@ jobs:
       matrix:
         subset: [network, consensus]
         ghc: ["8.6.5", "8.10.2"]
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         exclude:
           - os: windows-latest
             subset: consensus
