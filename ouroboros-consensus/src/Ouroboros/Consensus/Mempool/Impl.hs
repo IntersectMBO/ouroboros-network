@@ -261,8 +261,8 @@ implRemoveTxs
   -> [GenTxId blk]
   -> m ()
 implRemoveTxs mpEnv txIds = do
-  tm <- atomicallyDoWithState mpEnv (pureRemoveTxs txIds)
-  unless (null txIds) $ traceWith (mpEnvTracer mpEnv) tm
+    tm <- atomicallyDoWithState mpEnv (pureRemoveTxs txIds)
+    unless (null txIds) $ traceWith (mpEnvTracer mpEnv) tm
 
 implSyncWithLedger :: ( IOLike m
                       , LedgerSupportsMempool blk

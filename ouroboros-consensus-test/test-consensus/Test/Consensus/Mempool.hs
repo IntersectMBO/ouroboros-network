@@ -72,15 +72,15 @@ tests = testGroup "Mempool"
       , testProperty "addTxs txs == mapM runTryAddTxs txs"  prop_pure_addTxs_one_vs_multiple
       , testProperty "snapshotTxs == snapshotTxsAfter ze.." prop_pure_snapshotTxs_snapshotTxsAfter
       , testProperty "result of addTxs"                     prop_pure_addTxs_result
-      , testProperty "invalid transactions are never added" prop_pure_InvalidTxsNeverAdded
+      , testProperty "invalid transactions are never added" prop_pure_invalidTxsNeverAdded
       , testProperty "result of getCapacity"                prop_pure_getCapacity
-      , testProperty "tryAddTxs with mempool at capacity"   prop_pure_Capacity
+      , testProperty "tryAddTxs with mempool at capacity"   prop_pure_capacity
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx"  prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"                prop_Mempool_addTxs_getTxs
   , testProperty "addTxs txs == mapM (addTxs . pure) txs"   prop_Mempool_addTxs_one_vs_multiple
   , testProperty "result of addTxs"                         prop_Mempool_addTxs_result
-  , testProperty "invalid transactions are never added"     prop_Mempool_InvalidTxsNeverAdded
+  , testProperty "invalid transactions are never added"     prop_Mempool_invalidTxsNeverAdded
   , testProperty "result of getCapacity"                    prop_Mempool_getCapacity
   , testProperty "tryAddTxs with mempool at capacity"       prop_Mempool_Capacity
   , testProperty "Added valid transactions are traced"      prop_Mempool_TraceValidTxs
@@ -107,7 +107,7 @@ prop_pure_removeTxs TestSetupSub {..} =
                                   mpArgs
                                   internalState ledgerState
           txIdsRemaining     = Set.toList (getTxIdsIS internalStRes)
-      in property $ null $ intersect txIdsRemaining (map txId tssSubTxs)
+      in  property $ null $ intersect txIdsRemaining (map txId tssSubTxs)
 
 -- | Test that after removing transactions all the other transactions
 -- are still available.
@@ -128,7 +128,7 @@ prop_pure_removeTxs_contra TestSetupWithTxs {..} =
                                     ledgerState
           txIdsRemaining         = Set.toAscList (getTxIdsIS internalStRes)
           txIdsInitial           = Set.toAscList (getTxIdsIS internalState)
-      in txIdsRemaining === txIdsInitial
+      in  txIdsRemaining === txIdsInitial
 
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
 prop_pure_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
@@ -153,8 +153,8 @@ prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
                                             internalState
                                             (map fst txs)
         MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
-    in counterexample (ppTxs txs) $
-        validTxs setup `isSuffixOf` map fst snapshotTxs
+    in  counterexample (ppTxs txs) $
+          validTxs setup `isSuffixOf` map fst snapshotTxs
 
 -- | Same as 'prop_Mempool_addTxs_getTxs', but add the transactions one-by-one
 -- instead of all at once.
@@ -166,8 +166,8 @@ prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
                                internalState
                                (map fst txs)
           MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
-      in counterexample (ppTxs txs) $
-          validTxs setup `isSuffixOf` map fst snapshotTxs
+      in  counterexample (ppTxs txs) $
+            validTxs setup `isSuffixOf` map fst snapshotTxs
 
 -- | Test that the result of adding transaction to a 'Mempool' matches our
 -- expectation: invalid transactions have errors associated with them and
@@ -180,13 +180,13 @@ prop_pure_addTxs_result TestSetupWithTxs {..} =
                                           mpArgs
                                           internalState
                                           (map fst txs)
-      in counterexample (ppTxs txs) $
-        [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
-        [(testTx, valid)            | (testTx, valid) <- txs]
+      in  counterexample (ppTxs txs) $
+            [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
+            [(testTx, valid)            | (testTx, valid) <- txs]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
-prop_pure_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
-prop_pure_InvalidTxsNeverAdded setup@TestSetupWithTxs {..} =
+prop_pure_invalidTxsNeverAdded :: TestSetupWithTxs -> Property
+prop_pure_invalidTxsNeverAdded setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
   \ mpArgs internalState _ledgerState ->
       let MempoolSnapshot { snapshotTxs = ta } = implSnapshotFromIS
@@ -199,7 +199,7 @@ prop_pure_InvalidTxsNeverAdded setup@TestSetupWithTxs {..} =
           MempoolSnapshot { snapshotTxs = tb } = implSnapshotFromIS
                                                   internalState'
           txsInMempoolAfter   = map fst tb
-      in counterexample (ppTxs txs) $ conjoin
+      in  counterexample (ppTxs txs) $ conjoin
         -- Check for each transaction in the mempool (ignoring those already
         -- in the mempool beforehand) that it was a valid transaction.
         --
@@ -232,8 +232,8 @@ prop_pure_getCapacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
 -- Ignore the "100% empty Mempool" label in the test output, that is there
 -- because we reuse 'withTestMempool' and always start with an empty Mempool
 -- and 'LedgerState'.
-prop_pure_Capacity :: MempoolCapTestSetup -> Property
-prop_pure_Capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
+prop_pure_capacity :: MempoolCapTestSetup -> Property
+prop_pure_capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
   withInternalState testSetup $
   \ mpArgs internalState _ledgerState ->
       let capacity' = getCapacityIS internalState
@@ -384,8 +384,8 @@ prop_Mempool_addTxs_result setup =
         [(testTx, valid)            | (testTx, valid) <- txs setup]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
-prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
-prop_Mempool_InvalidTxsNeverAdded setup =
+prop_Mempool_invalidTxsNeverAdded :: TestSetupWithTxs -> Property
+prop_Mempool_invalidTxsNeverAdded setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       txsInMempoolBefore <- map fst . snapshotTxs <$>
         atomically (getSnapshot mempool)
