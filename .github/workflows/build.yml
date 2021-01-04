@@ -270,49 +270,49 @@ jobs:
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test
 
 
-    # - name: ouroboros-consensus [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus
+    - name: ouroboros-consensus [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus
 
-    # - name: ouroboros-consensus-mock [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock
+    - name: ouroboros-consensus-mock [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock
 
-    # - name: ouroboros-consensus-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-test
+    - name: ouroboros-consensus-test [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-test
 
-    # - name: ouroboros-consensus-mock-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock-test
+    - name: ouroboros-consensus-mock-test [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock-test
 
-    # - name: ouroboros-consensus-byron [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron
+    - name: ouroboros-consensus-byron [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron
 
-    # - name: ouroboros-consensus-byronspec [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byronspec
+    - name: ouroboros-consensus-byronspec [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byronspec
 
-    # - name: ouroboros-consensus-byron-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron-test
+    - name: ouroboros-consensus-byron-test [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron-test
 
-    # - name: ouroboros-consensus-shelley [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley
+    - name: ouroboros-consensus-shelley [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley
 
-    # - name: ouroboros-consensus-shelley-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley-test
+    - name: ouroboros-consensus-shelley-test [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley-test
 
-    # - name: ouroboros-consensus-cardano [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano
+    - name: ouroboros-consensus-cardano [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano
 
-    # - name: ouroboros-consensus-cardano-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano-test
+    - name: ouroboros-consensus-cardano-test [test]
+      if: matrix.subset == 'consensus'
+      run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano-test
 
     # TODO: we need to install the cddl tool
     # - name: ouroboros-network [cddl]
