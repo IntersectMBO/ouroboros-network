@@ -60,18 +60,17 @@ the tip of the shared prefix and ``now'': in other words, they must be
 \end{center}
 %
 This motivates the first part of the Longest Chain rule: chain length is a
-useful proxy for chain density, which in turn reflects honesty.
-The second part of the rule---the intersection
-point is no more than $k$ blocks away from our tip---is important because we can
-only meaningfully compare density \emph{near the intersection point}. As we get
-further away from the intersection point, an adversary can start to influence
-the leadership schedule. This means that if the adversary's chain forks off from
-the honest chain far back enough, they can construct a chain that is longer than
-the honest chain. The Longest Chain  rule therefore restricts rollback, so that
-we will simply not even consider chains that fork off that far back. We can
-still resolve minor forks that happen in the honest chain during the normal
-operation of the protocol, because---so the analysis guarantees---those will not
-be deeper than $k$ blocks.
+useful proxy for chain density, which in turn reflects honesty. The second part
+of the rule---the intersection point is no more than $k$ blocks away from our
+tip---is important because we can only meaningfully compare density \emph{near
+  the intersection point}. As we get further away from the intersection point,
+an adversary can start to influence the leadership schedule. This means that if
+the adversary's chain forks off from the honest chain far back enough, they can
+construct a chain that is longer than the honest chain. The Longest Chain rule
+therefore restricts rollback, so that we will simply not even consider chains
+that fork off that far back. We can still resolve minor forks that happen in the
+honest chain during the normal operation of the protocol, because---so the
+analysis guarantees---those will not be deeper than $k$ blocks.
 
 \subsection{Nodes joining late}
 \label{genesis:background:joining-late}
@@ -141,12 +140,11 @@ involve a rollback of more than $k$ blocks, which the Praos rule forbids.
 \subsection{The Density rule}
 \label{genesis:background:density-rule}
 
-It is therefore clear that we need a different chain selection rule
-so that nodes can (re)join, and the
-Ouroboros Genesis paper \cite{cryptoeprint:2018:378} proposes one, shown  in
-\cref{genesis:maxvalid-bg}. In this chapter we will work with a slightly
-simplified  (though equivalent) form of this rule, which we will term the
-Density Rule:
+It is therefore clear that we need a different chain selection rule so that
+nodes can (re)join, and the Ouroboros Genesis paper \cite{cryptoeprint:2018:378}
+proposes one, shown in \cref{genesis:maxvalid-bg}. In this chapter we will work
+with a slightly simplified (though equivalent) form of this rule, which we will
+term the Density Rule:
 %
 \begin{definition}[Density Rule]
 A candidate chain is preferred over our current chain if it is denser
@@ -293,9 +291,9 @@ construct.
 
 \begin{lemma}
 \label{lemma:adversarial-before-k}
-An adversary cannot forge a chain that forks off more than $k$ blocks from
-an alert node's tip and is denser than the alert node's chain at
-the intersection between the two chains.
+An adversary cannot forge a chain that forks off more than $k$ blocks from an
+alert node's tip and is denser than the alert node's chain at the intersection
+between the two chains.
 \end{lemma}
 
 \begin{proof}
