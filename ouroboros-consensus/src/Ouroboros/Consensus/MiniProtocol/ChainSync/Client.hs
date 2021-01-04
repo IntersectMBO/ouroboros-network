@@ -149,7 +149,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
   where
     register = do
       varCandidate <- newTVarIO $ CandidateFragment
-        { candidateChain        = AF.Empty AF.AnchorGenesis
+        { candidateChain        = genesisAnchoredFragment
         , chainSyncBlockedOnGap = False
         }
       atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
@@ -464,23 +464,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
     setCandidateGap :: AnchoredFragment (Header blk) -> m ()
     setCandidateGap af = setCandidate CandidateFragment
       { candidateChain        = af
-      , chainSyncBlockedOnGap = not $ AF.null af
-          -- For example, the fragment will be null if our current chain has a
-          -- gap on it and the peer just now managed to jump across it. Once
-          -- that happens, this local ChainSync client (naively) sees that
-          -- there is a gap on the peer's chain, and so emits the request. But
-          -- it's null since our chain is (an extension of) their fragment.
-          -- This client proceeds nearly immediately, without needing to fetch
-          -- any blocks, but only after the helper thread iteration pulls the
-          -- blocks from the ChainDB. But that brief delay may suffice for the
-          -- null request to risk violating an 'assert' in BlockFetch's
-          -- 'chainForkSuffix' function.
-          --
-          -- By suppressing the blocked-on-a-gap annotation, we let BlockFetch
-          -- harmlessly discard this request as NotPlausible.
-          --
-          -- TODO Can we reorganize the helper thread to prevent even exposing
-          -- this null fragment to BlockFetch?
+      , chainSyncBlockedOnGap = True
       }
 
     -- | Start ChainSync by looking for an intersection between our current
@@ -690,7 +674,11 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                  => Nat n
                  -> Stateful m blk s (ClientPipelinedStIdle 'Z)
                  -> Stateful m blk s (ClientPipelinedStIdle n)
-    drainThePipe n0 m = Stateful $ go n0
+    drainThePipe n0 m = Stateful $ \st -> do
+        -- We only drain when the candidate fragment is no longer relevant, so
+        -- update it to a trivial value.
+        setCandidateOK genesisAnchoredFragment
+        go n0 st
       where
         go :: forall n'. Nat n'
            -> s
@@ -860,7 +848,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
         withAsync (helper initialIntersectionFrag initialIntersectionFrag) $ \_->
         -- The folowing reads from 'varResponse' and writes to 'varRequest',
         -- complementing the helper thread.
-        ($ False) $ fix $ \loop whetherWasBlockedOnGap ->
+        fix $ \loop ->
         join $ atomically $
         -- Fist, we must find the most recent intersection with the current
         -- chain. Note that this is cheap when the chain and candidate haven't
@@ -869,12 +857,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
         -- Then we must determine the 'LedgerView' for the new header's slot.
         intersectsWithCurrentChain kis >>= \case
           Nothing ->
-              return $ do
-                let KnownIntersectionState { theirFrag } = kis
-                -- Stop annotating this peer's frag as blocked-on-a-gap since
-                -- it's now irrelevant.
-                when whetherWasBlockedOnGap $ setCandidateOK theirFrag
-                return NoLongerIntersects
+              return $ return NoLongerIntersects
           Just kis'@KnownIntersectionState { mostRecentIntersection, theirFrag } -> do
               -- In the worst-case scenario, we need to fetch every block on
               -- their fragment up to this new RollForward header. This is only
@@ -939,10 +922,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                     traceWith tracerSTM $
                       TraceStmForecastingDone
                         (AF.mapAnchoredFragment getHeader response)
-                    return $ do
-                      -- We are no longer blocked-on-a-gap.
-                      setCandidateOK theirFrag
-                      return $ Intersects kis' ledgerView
+                    return $ return $ Intersects kis' ledgerView
 
                 Left OutsideForecastRange{}
                     -- The RollForward header is the only block we haven't
@@ -953,10 +933,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                     -- remaining blocks in between.
                     traceWith tracerSTM $
                       TraceStmForecastingDoneTick
-                    return $ do
-                      -- We are no longer blocked-on-a-gap.
-                      setCandidateOK theirFrag
-                      return $
+                    return $ return $
                         Intersects kis' $
                         protocolLedgerView lcfg $   -- project without forecasting
                         applyChainTick lcfg hdrSlot $
@@ -965,10 +942,11 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                     -- We need to fetch more blocks in order to validate this
                     -- RollForward.
                     --
-                    -- Never attempt to fetch more than k blocks; that's the
-                    -- most we'd need in order to validate the k+1th header,
-                    -- which is the most we'd need in order to determine if the
-                    -- peer's chain is plausible.
+                    -- Never attempt to fetch more than k blocks past the
+                    -- intersection; that's the most we'd need in order to
+                    -- validate the k+1th such header, which is the most we'd
+                    -- need in order to determine if the peer's chain is
+                    -- preferable to our own.
                     | AF.length request <= fromIntegral k -> do
                     traceWith tracerSTM $ TraceStmWantRequest request
 
@@ -992,7 +970,7 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
                     -- to our current selected chain.
                     return $ do
                       setCandidateGap request
-                      loop True
+                      loop
 
                     -- The above guards are false. In particular the request
                     -- would involve more than k blocks, which is
@@ -1501,6 +1479,13 @@ eqFrag :: forall x.
      HasHeader x
   => AnchoredFragment x -> AnchoredFragment x -> Bool
 eqFrag = (==) `on` (AF.anchorPoint &&& AF.headPoint)
+
+-- | The empty fragment anchored at genesis.
+--
+-- Notably this fragment is always valid and BlockFetch will immediately
+-- discard it as implausible.
+genesisAnchoredFragment :: HasHeader blk => AnchoredFragment blk
+genesisAnchoredFragment = AF.Empty AF.AnchorGenesis
 
 data TraceStmChainSyncClientEvent blk
   = TraceStmForecastingDone (AnchoredFragment (Header blk))

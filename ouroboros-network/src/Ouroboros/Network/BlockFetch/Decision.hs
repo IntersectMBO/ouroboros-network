@@ -313,10 +313,10 @@ filterPlausibleCandidates
   :: (AnchoredFragment block -> AnchoredFragment header -> Bool)
   -> AnchoredFragment block  -- ^ The current chain
   -> [(               CandidateFragment header,  peerinfo)]
-  -> [(FetchDecision (AnchoredFragment  header), peerinfo)]
+  -> [(FetchDecision (CandidateFragment header), peerinfo)]
 filterPlausibleCandidates plausibleCandidateChain currentChain candidateFrags =
     [ (eAF, peer)
-    | (candidateFrag,  peer) <- candidateFrags
+    | (candidateFrag, peer) <- candidateFrags
     , let eAF = do
             let CandidateFragment {
                     candidateChain
@@ -326,7 +326,7 @@ filterPlausibleCandidates plausibleCandidateChain currentChain candidateFrags =
                    || plausibleCandidateChain currentChain candidateChain
                   )
               ?! FetchDeclineChainNotPlausible
-            return candidateChain
+            return candidateFrag
     ]
 
 
@@ -429,31 +429,43 @@ to filter out such a candidate.
 chainForkSuffix
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block  -- ^ Current chain.
-  -> AnchoredFragment header -- ^ Candidate chain
-  -> Maybe (ChainSuffix header)
-chainForkSuffix current candidate =
-    case AF.intersect current candidate of
-      Nothing                         -> Nothing
-      Just (_, _, _, candidateSuffix) ->
+  => AnchoredFragment  block  -- ^ Current chain.
+  -> CandidateFragment header
+  -> FetchDecision (ChainSuffix header)
+chainForkSuffix current candidateFrag =
+    case AF.intersect current candidateChain of
+      Nothing                         ->
+        Left FetchDeclineChainNoIntersection
+      Just (_, _, _, candidateSuffix) -> do
         -- If the suffix is empty, it means the candidate chain was equal to
         -- the current chain and didn't fork off. Such a candidate chain is
         -- not a plausible candidate, so it must have been filtered out.
-        assert (not (AF.null candidateSuffix)) $
-        Just (ChainSuffix candidateSuffix)
+        --
+        -- We forgive it if the chain was blocked on a gap, because then it's
+        -- possible that the intersection advanced and BlockFetch won the race
+        -- versus ChainSync updating the candidate fragment. Both threads may
+        -- be unblocked by the current chain advancing one block along the
+        -- fetch request. And a blocked-on-a-gap request could consist of
+        -- merely one block.
+        if AF.null candidateSuffix then do
+          assert chainSyncBlockedOnGap $ Left FetchDeclineChainNotPlausible
+        else do
+          return (ChainSuffix candidateSuffix)
+  where
+    CandidateFragment {
+        candidateChain
+      , chainSyncBlockedOnGap
+      } = candidateFrag
 
 selectForkSuffixes
   :: (HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => AnchoredFragment block
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
-  -> [(FetchDecision (ChainSuffix      header), peerinfo)]
+  -> [(FetchDecision (CandidateFragment header), peerinfo)]
+  -> [(FetchDecision (ChainSuffix       header), peerinfo)]
 selectForkSuffixes current chains =
-    [ (mchain', peer)
-    | (mchain,  peer) <- chains
-    , let mchain' = do
-            chain <- mchain
-            chainForkSuffix current chain ?! FetchDeclineChainNoIntersection
+    [ (mchain >>= chainForkSuffix current, peer)
+    | (mchain, peer) <- chains
     ]
 
 {-
