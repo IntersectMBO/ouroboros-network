@@ -87,6 +87,32 @@ nix-build -A haskellPackages.ouroboros-consensus.checks
 
 Consensus layer of the family Ouroboros blockchain protocols.
 
+## Formatting
+
+The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This
+is enforced by CI.
+
+Either enable editor integration or run the following command to manually
+format all of the consensus code (but not the network code):
+
+```bash
+stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.hs`
+```
+
+Alternatively, call the script used by CI itself:
+https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/buildkite/check-stylish.sh
+
+```bash
+./scripts/buildkite/check-stylish.sh
+```
+
+When using Nix, you can use the following command, which will build and use
+the right version of `stylish-haskell`.
+
+```bash
+nix-shell --run ./scripts/buildkite/check-stylish.sh
+```
+
 ## Tests
 
 ### Consensus test suite
@@ -144,30 +170,4 @@ cabal new-run ouroboros-consensus-cardano-test:test
 or with `nix`
 ```
 nix-build -A haskellPackages.ouroboros-consensus-cardano-test.checks.test
-```
-
-## Formatting
-
-The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This
-is enforced by CI.
-
-Either enable editor integration or run the following command to manually
-format all of the consensus code (but not the network code):
-
-```bash
-stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.hs`
-```
-
-Alternatively, call the script used by CI itself:
-https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/buildkite/check-stylish.sh
-
-```bash
-./scripts/buildkite/check-stylish.sh
-```
-
-When using Nix, you can use the following command, which will build and use
-the right version of `stylish-haskell`.
-
-```bash
-nix-shell --run ./scripts/buildkite/check-stylish.sh
 ```
