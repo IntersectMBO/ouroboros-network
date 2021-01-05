@@ -86,7 +86,7 @@ jobs:
     - name: Select optimal cabal version
       run: |
         case "$OS" in
-          Windows_NT)   echo "CABAL_VERSION=3.4.0.1-rc3"  >> $GITHUB_ENV;;
+          Windows_NT)   echo "CABAL_VERSION=3.4.0.0-rc5"  >> $GITHUB_ENV;;
           *)            echo "CABAL_VERSION=3.4.0.0-rc4"  >> $GITHUB_ENV;;
         esac
 
