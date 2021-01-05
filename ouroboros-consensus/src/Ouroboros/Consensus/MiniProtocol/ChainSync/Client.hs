@@ -739,6 +739,37 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
             rollBackward mkPipelineDecision n intersection' (Their theirTip)
       }
 
+    -- This handler validates the received header. It cannot do so before
+    -- acquiring a 'LedgerView' for that header's slot.
+    --
+    -- Under normal circumstances, the 'LedgerView' is forecast from the
+    -- (cached) 'LedgerState' that resulted from applying the block that is the
+    -- 'mostRecentIntersection' of the peer's chain with the (local node's)
+    -- current chain. However, if the peer's chain has reached a low enough
+    -- density (low enough to indicate a disaster of some sort), we will not be
+    -- able to forecast from the intersection's ledger state to the new
+    -- header's slot.
+    --
+    -- There are two possible ways foward in the low-density case. First, we
+    -- can reactively wait until our current chain evolves such that the
+    -- intersection becomes recent enough that the new forecast range reaches
+    -- the RollForward header. (Note that this is not gauranteed to happen.)
+    -- Second, we can proactively begin fetching the blocks on their chain. In
+    -- general, these fetchs will not affect the local node's current chain.
+    -- Each block we fetch lets us advance the intersection's ledger state
+    -- through time by applying the fetched blocks. This advancement is
+    -- happening temporarily, in this ChainSync client's ephemeral local state;
+    -- we're not affecting the local node's selected chain at all. Eventually
+    -- that advanced ledger state will either be able to forecast the ledger
+    -- view for the header's slot or else it will actually be the ledger state
+    -- in which the header was forged and so we can simply tick it up to the
+    -- necessary slot. Since there are no blocks in between, we need not do any
+    -- forecasting.
+    --
+    -- We support both of those ways forward: we react to changes in the local
+    -- node's current chain and, for a low density chain, we simultaneously
+    -- instruct BlockFetch to fetch the blocks on the peer's chain (but only up
+    -- to @k@ blocks after the intersection).
     rollForward :: MkPipelineDecision
                 -> Nat n
                 -> Header blk
@@ -842,8 +873,8 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
 
       -- Get the ledger view required to validate the header
       --
-      -- This STM transaction is sensitive to both the current intersection and
-      -- also which of the peer's blocks have been fetched.
+      -- This STM transaction is sensitive to both the current chain (via the
+      -- intersection) and also which of the peer's blocks have been fetched.
       intersectCheck <-
         withAsync (helper initialIntersectionFrag initialIntersectionFrag) $ \_->
         -- The folowing reads from 'varResponse' and writes to 'varRequest',
@@ -915,16 +946,14 @@ chainSyncClient mkPipelineDecision0 tracer tracerSTM cfg
               -- transaction as 'intersectsWithCurrentChain'. This guarantees
               -- the former's precondition: the intersection is within the last
               -- @k@ blocks of the current chain.
-              let forecast = ledgerViewForecastAt lcfg lSt
-
-              case runExcept $ forecastFor forecast hdrSlot of
-                Right ledgerView -> do
+              case tryForecast (Proxy :: Proxy blk) lcfg lSt hdrSlot of
+                Just ledgerView -> do
                     traceWith tracerSTM $
                       TraceStmForecastingDone
                         (AF.mapAnchoredFragment getHeader response)
                     return $ return $ Intersects kis' ledgerView
 
-                Left OutsideForecastRange{}
+                Nothing
                     -- The RollForward header is the only block we haven't
                     -- already fetched, so we can simply tick up to it, since
                     -- there are no remaining blocks in between.
@@ -1506,3 +1535,19 @@ deriving instance ( BlockSupportsProtocol blk
                   )
                => Show (TraceStmChainSyncClientEvent blk)
 
+-----
+
+tryForecast :: forall proxy blk.
+     LedgerSupportsProtocol blk
+  => proxy blk
+  -> LedgerConfig blk
+  -> LedgerState blk
+  -> SlotNo
+  -> Maybe (Ticked (LedgerView (BlockProtocol blk)))
+tryForecast _ cfg st s =
+    case runExcept $ forecastFor forecast s of
+      Left{}  -> Nothing
+      Right x -> Just x
+  where
+    forecast :: Forecast (LedgerView (BlockProtocol blk))
+    forecast = ledgerViewForecastAt cfg st
