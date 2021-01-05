@@ -27,7 +27,7 @@ let
   };
 
   self = {
-    inherit haskellPackages docs;
+    inherit haskellPackages network-docs consensus-docs;
 
     inherit (haskellPackages.ouroboros-network.identifier) version;
 

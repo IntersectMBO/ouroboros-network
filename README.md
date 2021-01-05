@@ -19,14 +19,14 @@
 We have two documents which describe various levels of the networking layer of
 the Cardano Shelley implementation:
 
-* [Introduction to the design of Data Diffusion and Networking of Cardano Shelley](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.docs.x86_64-linux/latest/download/1)
+* [Introduction to the design of Data Diffusion and Networking of Cardano Shelley](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.network-docs.x86_64-linux/latest/download/1)
 
   This document explains the technical requirements and key constraints for the networking
   layer of the _Cardano Shelley_ implementation of _Ouroboros Praos_.  This is
   a design document.
 
-* [The Shelley Networking Protocol](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.docs.x86_64-linux/latest/download/2)
-  
+* [The Shelley Networking Protocol](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.network-docs.x86_64-linux/latest/download/2)
+
   This document is a technical specification of the networking protocol.  It
   includes serialisation formats, necessary details of multiplexer and
   technical specifications of mini-protocols used by either _node-to-node_ and
@@ -87,6 +87,41 @@ nix-build -A haskellPackages.ouroboros-consensus.checks
 
 Consensus layer of the family Ouroboros blockchain protocols.
 
+## Ouroboros-Consensus Documentation
+
+The `ouroboros-consensus/docs` folder contains documentation about the consensus
+layer.
+
+* [The Cardano Consensus and Storage Layer](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.consensus-docs.x86_64-linux/latest/download/1)
+
+  This technical report explains the design of the consensus and storage layer.
+
+## Formatting
+
+The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This
+is enforced by CI.
+
+Either enable editor integration or run the following command to manually
+format all of the consensus code (but not the network code):
+
+```bash
+stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.hs`
+```
+
+Alternatively, call the script used by CI itself:
+https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/buildkite/check-stylish.sh
+
+```bash
+./scripts/buildkite/check-stylish.sh
+```
+
+When using Nix, you can use the following command, which will build and use
+the right version of `stylish-haskell`.
+
+```bash
+nix-shell --run ./scripts/buildkite/check-stylish.sh
+```
+
 ## Tests
 
 ### Consensus test suite
@@ -144,30 +179,4 @@ cabal new-run ouroboros-consensus-cardano-test:test
 or with `nix`
 ```
 nix-build -A haskellPackages.ouroboros-consensus-cardano-test.checks.test
-```
-
-## Formatting
-
-The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This
-is enforced by CI.
-
-Either enable editor integration or run the following command to manually
-format all of the consensus code (but not the network code):
-
-```bash
-stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.hs`
-```
-
-Alternatively, call the script used by CI itself:
-https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/buildkite/check-stylish.sh
-
-```bash
-./scripts/buildkite/check-stylish.sh
-```
-
-When using Nix, you can use the following command, which will build and use
-the right version of `stylish-haskell`.
-
-```bash
-nix-shell --run ./scripts/buildkite/check-stylish.sh
 ```
