@@ -60,17 +60,17 @@ the tip of the shared prefix and ``now'': in other words, they must be
 \end{center}
 %
 This motivates the first part of the Longest Chain rule: chain length is a
-useful proxy for chain density. The second part of the rule---the intersection
-point is no more than $k$ blocks away from our tip---is important because we can
-only meaningfully compare density \emph{near the intersection point}. As we get
-further away from the intersection point, an adversary can start to influence
-the leadership schedule. This means that if the adversary's chain forks off from
-the honest chain far back enough, they can construct a chain that is longer than
-the honest chain. The Longest Chain  rule therefore restricts rollback, so that
-we will simply not even consider chains that fork off that far back. We can
-still resolve minor forks that happen in the honest chain during the normal
-operation of the protocol, because---so the analysis guarantees---those will not
-be deeper than $k$ blocks.
+useful proxy for chain density, which in turn reflects honesty. The second part
+of the rule---the intersection point is no more than $k$ blocks away from our
+tip---is important because we can only meaningfully compare density \emph{near
+  the intersection point}. As we get further away from the intersection point,
+an adversary can start to influence the leadership schedule. This means that if
+the adversary's chain forks off from the honest chain far back enough, they can
+construct a chain that is longer than the honest chain. The Longest Chain rule
+therefore restricts rollback, so that we will simply not even consider chains
+that fork off that far back. We can still resolve minor forks that happen in the
+honest chain during the normal operation of the protocol, because---so the
+analysis guarantees---those will not be deeper than $k$ blocks.
 
 \subsection{Nodes joining late}
 \label{genesis:background:joining-late}
@@ -140,11 +140,11 @@ involve a rollback of more than $k$ blocks, which the Praos rule forbids.
 \subsection{The Density rule}
 \label{genesis:background:density-rule}
 
-It is therefore clear that we need a different chain selection rule, and the
-Ouroboros Genesis paper \cite{cryptoeprint:2018:378} proposes one, shown  in
-\cref{genesis:maxvalid-bg}. In this chapter we will work with a slightly
-simplified  (though equivalent) form of this rule, which we will term the
-Density Rule:
+It is therefore clear that we need a different chain selection rule so that
+nodes can (re)join, and the Ouroboros Genesis paper \cite{cryptoeprint:2018:378}
+proposes one, shown in \cref{genesis:maxvalid-bg}. In this chapter we will work
+with a slightly simplified (though equivalent) form of this rule, which we will
+term the Density Rule:
 %
 \begin{definition}[Density Rule]
 A candidate chain is preferred over our current chain if it is denser
@@ -262,7 +262,7 @@ Remains to show that the intersection is at most $s$ slots away, so that we can
 apply \cref{lemma:tip-density-is-chain-length}. This is easiest to see by
 contradiction: suppose the intersection is \emph{more} than $s$ slots away. Then
 we would have a section on the chain which is more than $s$ slots long but
-contains fewer than $k$ blocks; the analysis
+contains fewer than $k$ blocks; the Chain Growth analysis in
 \cite{cryptoeprint:2017:573,cryptoeprint:2018:378} tells us that the probability
 of this happening is negligibly small (provided $s$ is at least $3k/f$).
 \end{proof}
@@ -291,9 +291,9 @@ construct.
 
 \begin{lemma}
 \label{lemma:adversarial-before-k}
-An adversary cannot forge a chain that forks off more than $k$ blocks from
-an alert node's tip and is denser than than the alert's node chain at
-the intersection between the two chains.
+An adversary cannot forge a chain that forks off more than $k$ blocks from an
+alert node's tip and is denser than the alert node's chain at the intersection
+between the two chains.
 \end{lemma}
 
 \begin{proof}
@@ -311,14 +311,14 @@ adversary might try to construct near the wallclock:
 An adversary cannot forge a chain that satisfies all of the below:
 %
 \begin{itemize}
-\item It forks off at most $s$ slots from the wallclock.
-\item If forks off more than $k$ blocks before that tip of an alert node.
+\item It forks off no more than $s$ slots from the wallclock.
+\item If forks off more than $k$ blocks before the tip of an alert node.
 \item It is longer than the alert node's current chain.
 \end{itemize}
 \end{lemma}
 
 \begin{proof}
-The situation looks like this:
+This example satisfies the first two criteria but not the third:
 %
 \begin{center}
 \begin{tikzpicture}[yscale=0.75]
@@ -377,7 +377,7 @@ a region of $s$ slots starting at the intersection.
 
 As we saw in \cref{lemma:rule-equivalence}, the Density rule is equivalent
 to the Longest Chain rule if the intersection is within $k$ blocks, so the
-original rule and the simplified form as in fact equivalent.
+original rule and the simplified form are in fact equivalent.
 
 For completeness sake, we should note that this equivalence only holds for
 suitable choice of $s$. If $s$ is much smaller (for example, the paper uses $s =
