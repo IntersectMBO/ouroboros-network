@@ -87,6 +87,15 @@ nix-build -A haskellPackages.ouroboros-consensus.checks
 
 Consensus layer of the family Ouroboros blockchain protocols.
 
+## Ouroboros-Consensus Documentation
+
+The `ouroboros-consensus/docs` folder contains documentation about the consensus
+layer.
+
+* [The Cardano Consensus and Storage Layer](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.consensus-docs.x86_64-linux/latest/download/1)
+
+  This technical report explains the design of the consensus and storage layer.
+
 ## Formatting
 
 The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This

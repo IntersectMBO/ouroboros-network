@@ -11,4 +11,5 @@ pkgs: _: with pkgs; {
   };
 
   network-docs = callPackage ./network-docs.nix {};
+  consensus-docs = callPackage ./consensus-docs.nix {};
 }

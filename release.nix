@@ -63,7 +63,7 @@ let
   nonDefaultBuildSystems = tail supportedSystems;
 
   # Paths or prefixes of paths of derivations to build only on the default system (ie. linux on hydra):
-  onlyBuildOnDefaultSystem = [ ["network-docs"] ];
+  onlyBuildOnDefaultSystem = [ ["network-docs" "consensus-docs"] ];
   # Paths or prefix of paths for which cross-builds (mingwW64, musl64) are disabled:
   noCrossBuild = let
     # checks are available from two path:
