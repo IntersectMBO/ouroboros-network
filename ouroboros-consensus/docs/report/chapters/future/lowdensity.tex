@@ -94,8 +94,8 @@ transactions in the block are available in the UTxO in the ledger state.
 Depending on the choice of consensus protocol, we may also need part of the
 ledger state to be able to validate the block \emph{header}. For example, in
 Praos and Genesis we need to know the active stake distribution in order to be
-to verify that whoever produced the block had a right to do so. We call the part
-of the ledger state that we need to validate block headers the \emph{ledger
+able to verify that whoever produced the block had a right to do so. We call the
+part of the ledger state that we need to validate block headers the \emph{ledger
 view} (\cref{consensus:class:ledgerview}).
 
 We call it a ledger \emph{view} because it is a projection out of the full
@@ -119,7 +119,7 @@ diagram:
 Let's recall the Praos example again: we can compute the active stake
 distribution from the ledger state, but in order to understand how the active
 stake distribution evolves, we need to know how the full UTxO evolves, and for
-that we need to the full blocks. (We discussed this also in
+that we need the full blocks. (We discussed this also in
 \cref{hfc:failed:forecasting}.)
 
 Let's stay with Praos a little longer. The active stake distribution changes
