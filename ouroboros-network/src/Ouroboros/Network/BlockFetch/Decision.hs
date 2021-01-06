@@ -13,9 +13,13 @@ module Ouroboros.Network.BlockFetch.Decision (
     FetchDecision,
     FetchDecline(..),
 
+    -- ** Non-empty chain suffixes
+    ChainSuffix,   -- opaque
+    getChainSuffix,
+    mkChainSuffix,
+    BadChainSuffix(..),
+
     -- ** Components of the decision-making process
-    filterPlausibleCandidates,
-    selectForkSuffixes,
     filterNotAlreadyFetched,
     filterNotAlreadyInFlightWithPeer,
     prioritisePeerChains,
@@ -51,7 +55,7 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                      estimateResponseDeadlineProbability)
 
 
-data FetchDecisionPolicy header = FetchDecisionPolicy {
+data FetchDecisionPolicy header x candDecline = FetchDecisionPolicy {
        maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
 
        maxConcurrencyBulkSync  :: Word,
@@ -59,9 +63,11 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        decisionLoopInterval    :: DiffTime,
        peerSalt                :: Int,
 
-       plausibleCandidateChain :: HasCallStack
+       -- | INVARIANT It preserves the length and order of the list.
+       filterCandidates        :: HasCallStack
                                => AnchoredFragment header
-                               -> AnchoredFragment header -> Bool,
+                               -> [x]
+                               -> [Either candDecline (ChainSuffix header)],
 
        compareCandidateChains  :: HasCallStack
                                => AnchoredFragment header
@@ -108,13 +114,12 @@ type PeerInfo header peer extra =
 -- to fetch any blocks. This type is used to wrap intermediate and final
 -- results.
 --
-type FetchDecision result = Either FetchDecline result
+type FetchDecision candDecline result = Either (FetchDecline candDecline) result
 
 -- | All the various reasons we can decide not to fetch blocks from a peer.
 --
-data FetchDecline =
-     FetchDeclineChainNotPlausible
-   | FetchDeclineChainNoIntersection
+data FetchDecline candDecline =
+     FetchDeclineX candDecline
    | FetchDeclineAlreadyFetched
    | FetchDeclineInFlightThisPeer
    | FetchDeclineInFlightOtherPeer
@@ -152,15 +157,15 @@ fetchDecisions
       Hashable peer,
       HasHeader header,
       HeaderHash header ~ HeaderHash block)
-  => FetchDecisionPolicy header
+  => FetchDecisionPolicy header x candDecline
   -> FetchMode
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
-  -> [(AnchoredFragment header, PeerInfo header peer extra)]
-  -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
+  -> [(x, PeerInfo header peer extra)]
+  -> [(FetchDecision candDecline (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
-                 plausibleCandidateChain,
+                 filterCandidates,
                  compareCandidateChains,
                  blockFetchSize
                }
@@ -197,13 +202,12 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
       fetchedMaxSlotNo
 
     -- Select the suffix up to the intersection with the current chain.
-  . selectForkSuffixes
-      currentChain
-
-    -- First, filter to keep chains the consensus layer tells us are plausible.
-  . filterPlausibleCandidates
-      plausibleCandidateChain
-      currentChain
+  . (\xpeers -> let (xs, peers) = unzip xpeers in
+                zip
+                  (map
+                    (either (Left . FetchDeclineX) Right)
+                    (filterCandidates currentChain xs))
+                  peers)
   where
     -- Data swizzling functions to get the right info into each stage.
     swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
@@ -291,25 +295,7 @@ We are only interested in candidate chains that are strictly longer than our
 current chain. So our first task is to filter down to this set.
 -}
 
-
--- | Keep only those candidate chains that are preferred over the current
--- chain. Typically, this means that their length is longer than the length of
--- the current chain.
---
-filterPlausibleCandidates
-  :: (AnchoredFragment block -> AnchoredFragment header -> Bool)
-  -> AnchoredFragment block  -- ^ The current chain
-  -> [(AnchoredFragment header, peerinfo)]
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
-filterPlausibleCandidates plausibleCandidateChain currentChain chains =
-    [ (chain', peer)
-    | (chain,  peer) <- chains
-    , let chain' = do
-            guard (plausibleCandidateChain currentChain chain)
-              ?! FetchDeclineChainNotPlausible
-            return chain
-    ]
-
+-- TODO move this comment to NodeKernel?
 
 {-
 In the example, this leaves us with only the candidate chains: A, B and C, but
@@ -370,6 +356,23 @@ empty fetch range, but this is ok since we never request empty ranges.
 newtype ChainSuffix header =
     ChainSuffix { getChainSuffix :: AnchoredFragment header }
 
+data BadChainSuffix = ChainSuffixEmpty | ChainSuffixNoIntersection
+  deriving (Eq, Ord, Show)
+
+-- | Smart constructor, enforcing 'ChainSuffix' invariants
+mkChainSuffix
+  :: (HasHeader header, HasHeader block,
+      HeaderHash header ~ HeaderHash block)
+  => AnchoredFragment block  -- ^ Current chain.
+  -> AnchoredFragment header -- ^ Candidate chain
+  -> Either BadChainSuffix (ChainSuffix header)
+mkChainSuffix current candidate =
+    case AF.intersect current candidate of
+      Nothing                     -> Left ChainSuffixNoIntersection
+      Just (_, _, _, candidateSuffix)
+        | AF.null candidateSuffix -> Left ChainSuffixEmpty
+        | otherwise               -> Right (ChainSuffix candidateSuffix)
+
 {-
 We define the /chain suffix/ as the suffix of the candidate chain up until (but
 not including) where it intersects the current chain.
@@ -401,38 +404,7 @@ blocks. This means the candidate forks by more than K and so we are not
 interested in this candidate at all.
 -}
 
--- | Find the chain suffix for a candidate chain, with respect to the
--- current chain.
---
-chainForkSuffix
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block  -- ^ Current chain.
-  -> AnchoredFragment header -- ^ Candidate chain
-  -> Maybe (ChainSuffix header)
-chainForkSuffix current candidate =
-    case AF.intersect current candidate of
-      Nothing                         -> Nothing
-      Just (_, _, _, candidateSuffix) ->
-        -- If the suffix is empty, it means the candidate chain was equal to
-        -- the current chain and didn't fork off. Such a candidate chain is
-        -- not a plausible candidate, so it must have been filtered out.
-        assert (not (AF.null candidateSuffix)) $
-        Just (ChainSuffix candidateSuffix)
-
-selectForkSuffixes
-  :: (HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => AnchoredFragment block
-  -> [(FetchDecision (AnchoredFragment header), peerinfo)]
-  -> [(FetchDecision (ChainSuffix      header), peerinfo)]
-selectForkSuffixes current chains =
-    [ (mchain', peer)
-    | (mchain,  peer) <- chains
-    , let mchain' = do
-            chain <- mchain
-            chainForkSuffix current chain ?! FetchDeclineChainNoIntersection
-    ]
+-- TODO move this comment to NodeKernel?
 
 {-
 We define the /fetch range/ as the suffix of the fork range that has not yet
@@ -477,8 +449,8 @@ filterNotAlreadyFetched
   :: (HasHeader header, HeaderHash header ~ HeaderHash block)
   => (Point block -> Bool)
   -> MaxSlotNo
-  -> [(FetchDecision (ChainSuffix        header), peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
+  -> [(FetchDecision candDecline (ChainSuffix        header), peerinfo)]
+  -> [(FetchDecision candDecline (CandidateFragments header), peerinfo)]
 filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
     [ (mcandidates, peer)
     | (mcandidate,  peer) <- chains
@@ -497,9 +469,9 @@ filterNotAlreadyFetched alreadyDownloaded fetchedMaxSlotNo chains =
 
 filterNotAlreadyInFlightWithPeer
   :: HasHeader header
-  => [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
+  => [(FetchDecision candDecline (CandidateFragments header), PeerFetchInFlight header,
                                                   peerinfo)]
-  -> [(FetchDecision (CandidateFragments header), peerinfo)]
+  -> [(FetchDecision candDecline (CandidateFragments header), peerinfo)]
 filterNotAlreadyInFlightWithPeer chains =
     [ (mcandidatefragments',          peer)
     | (mcandidatefragments, inflight, peer) <- chains
@@ -528,11 +500,11 @@ filterNotAlreadyInFlightWithPeer chains =
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
   => FetchMode
-  -> [( FetchDecision [AnchoredFragment header]
+  -> [( FetchDecision candDecline [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
       , peerinfo )]
-  -> [(FetchDecision [AnchoredFragment header], peerinfo)]
+  -> [(FetchDecision candDecline [AnchoredFragment header], peerinfo)]
 
 filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline chains =
     [ (mchainfragments,       peer)
@@ -605,14 +577,14 @@ filterWithMaxSlotNo p maxSlotNo =
     AF.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)
 
 prioritisePeerChains
-  :: forall header peer. HasHeader header
+  :: forall header peer candDecline. HasHeader header
   => FetchMode
   -> (AnchoredFragment header -> AnchoredFragment header -> Ordering)
   -> (header -> SizeInBytes)
-  -> [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
+  -> [(FetchDecision candDecline (CandidateFragments header), PeerFetchInFlight header,
                                                   PeerGSV,
                                                   peer)]
-  -> [(FetchDecision [AnchoredFragment header],   peer)]
+  -> [(FetchDecision candDecline [AnchoredFragment header],   peer)]
 prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
     --TODO: last tie-breaker is still original order (which is probably
     -- peerid order). We should use a random tie breaker so that adversaries
@@ -780,29 +752,29 @@ obviously take that into account when considering later peer chains.
 
 
 fetchRequestDecisions
-  :: forall extra header peer.
+  :: forall extra header peer x candDecline.
       ( Hashable peer
       , HasHeader header
       , Ord peer
       )
-  => FetchDecisionPolicy header
+  => FetchDecisionPolicy header x candDecline
   -> FetchMode
-  -> [( FetchDecision [AnchoredFragment header]
+  -> [( FetchDecision candDecline [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
       , PeerGSV
       , peer
       , extra)]
-  -> [(FetchDecision (FetchRequest header), extra)]
+  -> [(FetchDecision candDecline (FetchRequest header), extra)]
 fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
   where
     go :: Word
        -> Set (Point header)
        -> MaxSlotNo
-       -> [(Either FetchDecline [AnchoredFragment header],
+       -> [(FetchDecision candDecline [AnchoredFragment header],
             PeerFetchStatus header, PeerFetchInFlight header, PeerGSV, peer, extra)]
-       -> [(FetchDecision (FetchRequest header), extra)]
+       -> [(FetchDecision candDecline (FetchRequest header), extra)]
     go !_ !_ !_ [] = []
     go !nConcurrentFetchPeers !blocksFetchedThisRound !maxSlotNoFetchedThisRound
        ((mchainfragments, status, inflight, gsvs, peer, extra) : cps) =
@@ -900,14 +872,14 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
 
 fetchRequestDecision
   :: HasHeader header
-  => FetchDecisionPolicy header
+  => FetchDecisionPolicy header x candDecline
   -> FetchMode
   -> Word
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
   -> PeerFetchStatus header
-  -> FetchDecision [AnchoredFragment header]
-  -> FetchDecision (FetchRequest  header)
+  -> FetchDecision candDecline [AnchoredFragment header]
+  -> FetchDecision candDecline (FetchRequest  header)
 
 fetchRequestDecision _ _ _ _ _ _ (Left decline)
   = Left decline

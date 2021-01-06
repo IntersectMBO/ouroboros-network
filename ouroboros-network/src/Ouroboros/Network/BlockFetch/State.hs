@@ -64,15 +64,18 @@ fetchLogicIterations
      , MonadSTM m
      , Ord peer
      , Hashable peer
+     , Eq candFP
      )
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+  => Tracer m [TraceLabelPeer peer (FetchDecision candDecline [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-  -> FetchDecisionPolicy header
-  -> FetchTriggerVariables peer header m
+  -> FetchDecisionPolicy header cand candDecline
+  -> (cand -> candFP)
+  -> FetchTriggerVariables peer header m cand
   -> FetchNonTriggerVariables peer header block m
   -> m Void
 fetchLogicIterations decisionTracer clientStateTracer
                      fetchDecisionPolicy
+                     candidateFingerprint
                      fetchTriggerVariables
                      fetchNonTriggerVariables =
 
@@ -86,6 +89,7 @@ fetchLogicIterations decisionTracer clientStateTracer
       stateFingerprint' <- fetchLogicIteration
         decisionTracer clientStateTracer
         fetchDecisionPolicy
+        candidateFingerprint
         fetchTriggerVariables
         fetchNonTriggerVariables
         stateFingerprint
@@ -111,16 +115,19 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 fetchLogicIteration
   :: (Hashable peer, MonadSTM m, Ord peer,
       HasHeader header, HasHeader block,
-      HeaderHash header ~ HeaderHash block)
-  => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+      HeaderHash header ~ HeaderHash block,
+      Eq candFP)
+  => Tracer m [TraceLabelPeer peer (FetchDecision candDecline [Point header])]
   -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-  -> FetchDecisionPolicy header
-  -> FetchTriggerVariables peer header m
+  -> FetchDecisionPolicy header cand candDecline
+  -> (cand -> candFP)
+  -> FetchTriggerVariables peer header m cand
   -> FetchNonTriggerVariables peer header block m
-  -> FetchStateFingerprint peer header block
-  -> m (FetchStateFingerprint peer header block)
+  -> FetchStateFingerprint peer header block candFP
+  -> m (FetchStateFingerprint peer header block candFP)
 fetchLogicIteration decisionTracer clientStateTracer
                     fetchDecisionPolicy
+                    candidateFingerprint
                     fetchTriggerVariables
                     fetchNonTriggerVariables
                     stateFingerprint = do
@@ -129,6 +136,7 @@ fetchLogicIteration decisionTracer clientStateTracer
     (stateSnapshot, stateFingerprint') <-
       atomically $
         readStateVariables
+          candidateFingerprint
           fetchTriggerVariables
           fetchNonTriggerVariables
           stateFingerprint
@@ -178,9 +186,9 @@ fetchDecisionsForStateSnapshot
       HeaderHash header ~ HeaderHash block,
       Ord peer,
       Hashable peer)
-  => FetchDecisionPolicy header
-  -> FetchStateSnapshot peer header block m
-  -> [( FetchDecision (FetchRequest header),
+  => FetchDecisionPolicy header cand candDecline
+  -> FetchStateSnapshot peer header block m cand
+  -> [( FetchDecision candDecline (FetchRequest header),
         PeerInfo header peer (FetchClientStateVars m header, peer)
       )]
 
@@ -225,8 +233,8 @@ fetchDecisionsForStateSnapshot
 --
 fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
                        => Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                       -> FetchDecisionPolicy header
-                       -> [(FetchDecision (FetchRequest header),
+                       -> FetchDecisionPolicy header cand candDecline
+                       -> [(FetchDecision candDecline (FetchRequest header),
                             PeerGSV,
                             FetchClientStateVars m header,
                             peer)]
@@ -252,9 +260,9 @@ fetchLogicIterationAct clientStateTracer FetchDecisionPolicy{blockFetchSize}
 -- and it is not necessary to determine exactly what changed, just that there
 -- was some change.
 --
-data FetchTriggerVariables peer header m = FetchTriggerVariables {
+data FetchTriggerVariables peer header m cand = FetchTriggerVariables {
        readStateCurrentChain    :: STM m (AnchoredFragment header),
-       readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
+       readStateCandidateChains :: STM m (Map peer cand),
        readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header))
      }
 
@@ -271,14 +279,14 @@ data FetchNonTriggerVariables peer header block m = FetchNonTriggerVariables {
      }
 
 
-data FetchStateFingerprint peer header block =
+data FetchStateFingerprint peer header block candFP =
      FetchStateFingerprint
        !(Maybe (Point block))
-       !(Map peer (Point header))
+       !(Map peer candFP)
        !(Map peer (PeerFetchStatus header))
   deriving Eq
 
-initialFetchStateFingerprint :: FetchStateFingerprint peer header block
+initialFetchStateFingerprint :: FetchStateFingerprint peer header block candFP
 initialFetchStateFingerprint =
     FetchStateFingerprint
       Nothing
@@ -287,8 +295,8 @@ initialFetchStateFingerprint =
 
 updateFetchStateFingerprintPeerStatus :: Ord peer
                                       => [(peer, PeerFetchStatus header)]
-                                      -> FetchStateFingerprint peer header block
-                                      -> FetchStateFingerprint peer header block
+                                      -> FetchStateFingerprint peer header block candFP
+                                      -> FetchStateFingerprint peer header block candFP
 updateFetchStateFingerprintPeerStatus statuses'
     (FetchStateFingerprint current candidates statuses) =
     FetchStateFingerprint
@@ -301,9 +309,9 @@ updateFetchStateFingerprintPeerStatus statuses'
 -- Note that the domain of 'fetchStatePeerChains' is a subset of the domain
 -- of 'fetchStatePeerStates' and 'fetchStatePeerReqVars'.
 --
-data FetchStateSnapshot peer header block m = FetchStateSnapshot {
+data FetchStateSnapshot peer header block m cand = FetchStateSnapshot {
        fetchStateCurrentChain     :: AnchoredFragment header,
-       fetchStatePeerChains       :: Map peer (AnchoredFragment header),
+       fetchStatePeerChains       :: Map peer cand,
        fetchStatePeerStates       :: Map peer (PeerFetchStatus   header,
                                                PeerFetchInFlight header,
                                                FetchClientStateVars m header),
@@ -315,13 +323,16 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
 
 readStateVariables :: (MonadSTM m, Eq peer,
                        HasHeader header, HasHeader block,
-                       HeaderHash header ~ HeaderHash block)
-                   => FetchTriggerVariables peer header m
+                       HeaderHash header ~ HeaderHash block,
+                       Eq candFP)
+                   => (cand -> candFP)
+                   -> FetchTriggerVariables peer header m cand
                    -> FetchNonTriggerVariables peer header block m
-                   -> FetchStateFingerprint peer header block
-                   -> STM m (FetchStateSnapshot peer header block m,
-                             FetchStateFingerprint peer header block)
-readStateVariables FetchTriggerVariables{..}
+                   -> FetchStateFingerprint peer header block candFP
+                   -> STM m (FetchStateSnapshot peer header block m cand,
+                             FetchStateFingerprint peer header block candFP)
+readStateVariables candidateFingerprint
+                   FetchTriggerVariables{..}
                    FetchNonTriggerVariables{..}
                    fetchStateFingerprint = do
 
@@ -334,7 +345,7 @@ readStateVariables FetchTriggerVariables{..}
     let !fetchStateFingerprint' =
           FetchStateFingerprint
             (Just (castPoint (AF.headPoint fetchStateCurrentChain)))
-            (Map.map AF.headPoint fetchStatePeerChains)
+            (Map.map candidateFingerprint fetchStatePeerChains)
             fetchStatePeerStatus
 
     -- Check the fingerprint changed, or block and wait until it does

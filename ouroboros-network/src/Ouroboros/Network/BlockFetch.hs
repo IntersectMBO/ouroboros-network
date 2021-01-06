@@ -116,6 +116,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.DeltaQ ( SizeInBytes )
 
+import           Ouroboros.Network.BlockFetch.Decision (ChainSuffix)
 import           Ouroboros.Network.BlockFetch.State
 import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus(..))
 import           Ouroboros.Network.BlockFetch.ClientRegistry
@@ -131,7 +132,7 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
 --
 -- These are provided as input to the block fetch by the consensus layer.
 --
-data BlockFetchConsensusInterface peer header block m =
+data BlockFetchConsensusInterface peer header block m cand candFP candDecline =
      BlockFetchConsensusInterface {
 
        -- | Read the K-suffixes of the candidate chains.
@@ -140,7 +141,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- * They must be already validated.
        -- * They may contain /fewer/ than @K@ blocks.
        -- * Their anchor does not have to intersect with the current chain.
-       readCandidateChains    :: STM m (Map peer (AnchoredFragment header)),
+       readCandidateChains    :: STM m (Map peer cand),
 
        -- | Read the K-suffix of the current chain.
        --
@@ -178,7 +179,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- fragment, the filtering (with a linear cost) is stopped as soon as a
        -- block has a slot number higher than this slot number, as it cannot
        -- have been downloaded anyway.
-       readFetchedMaxSlotNo    :: STM m MaxSlotNo,
+       readFetchedMaxSlotNo   :: STM m MaxSlotNo,
 
        -- | Given the current chain, is the given chain plausible as a
        -- candidate chain. Classically for Ouroboros this would simply
@@ -186,9 +187,16 @@ data BlockFetchConsensusInterface peer header block m =
        -- with operational key certificates there are also cases where
        -- we would consider a chain of equal length to the current chain.
        --
-       plausibleCandidateChain :: HasCallStack
+       filterCandidates        :: HasCallStack
                                => AnchoredFragment header
-                               -> AnchoredFragment header -> Bool,
+                               -> [cand]
+                               -> [Either candDecline (ChainSuffix header)],
+
+       -- | Summarize a candidate.
+       --
+       -- This is used to avoid unnecessary work.
+       --
+       candidateFingerprint    :: cand -> candFP,
 
        -- | Compare two candidate chains and return a preference ordering.
        -- This is used as part of selecting which chains to prioritise for
@@ -261,7 +269,7 @@ data BlockFetchConfiguration =
 --
 -- This runs forever and should be shut down using mechanisms such as async.
 --
-blockFetchLogic :: forall peer header block m.
+blockFetchLogic :: forall peer header block m cand candFP candDecline.
                    ( HasHeader header
                    , HasHeader block
                    , HeaderHash header ~ HeaderHash block
@@ -270,10 +278,11 @@ blockFetchLogic :: forall peer header block m.
                    , MonadSTM m
                    , Ord peer
                    , Hashable peer
+                   , Eq candFP
                    )
-                => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
+                => Tracer m [TraceLabelPeer peer (FetchDecision candDecline [Point header])]
                 -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                -> BlockFetchConsensusInterface peer header block m
+                -> BlockFetchConsensusInterface peer header block m cand candFP candDecline
                 -> FetchClientRegistry peer header block m
                 -> BlockFetchConfiguration
                 -> m Void
@@ -287,6 +296,7 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchLogicIterations
       decisionTracer clientStateTracer
       fetchDecisionPolicy
+      candidateFingerprint
       fetchTriggerVariables
       fetchNonTriggerVariables
   where
@@ -298,7 +308,7 @@ blockFetchLogic decisionTracer clientStateTracer
                           blockForgeUTCTime
                         }
 
-    fetchDecisionPolicy :: FetchDecisionPolicy header
+    fetchDecisionPolicy :: FetchDecisionPolicy header cand candDecline
     fetchDecisionPolicy =
       FetchDecisionPolicy {
         maxInFlightReqsPerPeer   = bfcMaxRequestsInflight,
@@ -307,12 +317,12 @@ blockFetchLogic decisionTracer clientStateTracer
         decisionLoopInterval     = bfcDecisionLoopInterval,
         peerSalt                 = bfcSalt,
 
-        plausibleCandidateChain,
+        filterCandidates,
         compareCandidateChains,
         blockFetchSize
       }
 
-    fetchTriggerVariables :: FetchTriggerVariables peer header m
+    fetchTriggerVariables :: FetchTriggerVariables peer header m cand
     fetchTriggerVariables =
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,
