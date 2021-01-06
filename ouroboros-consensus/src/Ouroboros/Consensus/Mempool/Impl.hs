@@ -92,15 +92,17 @@ mkMempool env = Mempool
     }
 
 -- | Abstract interface needed to run a Mempool.
-newtype LedgerInterface m blk = LedgerInterface
-  { getCurrentLedgerState :: STM m (LedgerState blk)
+newtype LedgerInterface m blk = LedgerInterface {
+  getCurrentLedgerState :: STM m (LedgerState blk)
   }
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
-chainDBLedgerInterface :: IOLike m => ChainDB m blk -> LedgerInterface m blk
+chainDBLedgerInterface :: (IsLedger (LedgerState blk), IOLike m)
+  => ChainDB m blk
+  -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
-    { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
-    }
+  { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
+  }
 
 initMempoolEnv :: ( IOLike m
                   , NoThunks (GenTxId blk)
