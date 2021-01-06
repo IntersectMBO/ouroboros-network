@@ -11,6 +11,8 @@ module Ouroboros.Network.BlockFetch.Examples (
     blockFetchExample1,
     mockBlockFetchServer1,
     exampleFixedPeerGSVs,
+    -- * A stub used in tests/examples
+    ExampleDeclineReason (..)
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -45,6 +47,7 @@ import           Ouroboros.Network.Mux (ControlMessageSTM)
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.BlockFetch.Decision (mkChainSuffix)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
@@ -63,7 +66,7 @@ blockFetchExample0 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                                 (FetchDecision ExampleDeclineReason [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -169,7 +172,7 @@ blockFetchExample1 :: forall m.
                       (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => Tracer m [TraceLabelPeer Int
-                                 (FetchDecision [Point BlockHeader])]
+                                 (FetchDecision ExampleDeclineReason [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
                                  (TraceFetchClientState BlockHeader))
                    -> Tracer m (TraceLabelPeer Int
@@ -261,12 +264,22 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
 -- Sample block fetch configurations
 --
 
+data ExampleDeclineReason = ExampleDeclineSomeReason
+  deriving (Show)
+
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
                         => (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
-                        -> BlockFetchConsensusInterface peer header block m
+                        -> BlockFetchConsensusInterface
+                             peer
+                             header
+                             block
+                             m
+                             (AnchoredFragment.AnchoredFragment header)
+                             (Point header)
+                             ExampleDeclineReason
 sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
@@ -280,8 +293,9 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
                                getTestFetchedBlocks blockHeap,
       addFetchedBlock        = addTestFetchedBlock blockHeap,
 
-      plausibleCandidateChain,
       compareCandidateChains,
+      filterCandidates,
+      candidateFingerprint   = AnchoredFragment.headPoint,
 
       blockFetchSize         = \_ -> 2000,
       blockMatchesHeader     = \_ _ -> True,
@@ -290,8 +304,16 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
       blockForgeUTCTime      = headerFieldsForgeUTCTime
       }
   where
-    plausibleCandidateChain cur candidate =
+    plausibleCandidateChain cur candidate  =
       AnchoredFragment.headBlockNo candidate > AnchoredFragment.headBlockNo cur
+    filterCandidates        cur candidates =
+        [ if not $ plausibleCandidateChain cur candidate
+          then Left ExampleDeclineSomeReason
+          else case mkChainSuffix cur candidate of
+            Right suffix -> Right suffix
+            Left  _      -> Left ExampleDeclineSomeReason
+        | candidate <- candidates
+        ]
 
     compareCandidateChains c1 c2 =
       AnchoredFragment.headBlockNo c1 `compare` AnchoredFragment.headBlockNo c2

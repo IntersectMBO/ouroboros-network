@@ -199,7 +199,7 @@ chainPoints = map (castPoint . blockPoint)
 
 data Example1TraceEvent =
      TraceFetchDecision       [TraceLabelPeer Int
-                                (FetchDecision [Point BlockHeader])]
+                                (FetchDecision ExampleDeclineReason [Point BlockHeader])]
    | TraceFetchClientState    (TraceLabelPeer Int
                                 (TraceFetchClientState BlockHeader))
    | TraceFetchClientSendRecv (TraceLabelPeer Int

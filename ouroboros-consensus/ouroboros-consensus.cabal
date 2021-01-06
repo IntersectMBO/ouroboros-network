@@ -145,6 +145,7 @@ library
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Serialisation
                        Ouroboros.Consensus.Node.Tracers
+                       Ouroboros.Consensus.Node.Types
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.LeaderSchedule

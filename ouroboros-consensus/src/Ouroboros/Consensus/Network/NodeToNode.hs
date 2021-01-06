@@ -42,7 +42,6 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      decodeTip, encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
@@ -88,6 +87,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
+import           Ouroboros.Consensus.Node.Types
 import           Ouroboros.Consensus.NodeKernel
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Util (ShowProxy)
@@ -106,7 +106,7 @@ data Handlers m peer blk = Handlers {
       hChainSyncClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> StrictTVar m (AnchoredFragment (Header blk))
+        -> (CandidateFragment (Header blk) -> m ())
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation

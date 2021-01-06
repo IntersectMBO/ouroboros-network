@@ -66,6 +66,7 @@ import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.BlockFetch.Decision (mkChainSuffix)
 
 
 main :: IO ()
@@ -249,6 +250,9 @@ demoProtocol3 chainSync blockFetch =
     ]
 
 
+data DemoDeclineReason = DemoDeclineSomeReason
+  deriving (Show)
+
 clientBlockFetch :: [FilePath] -> IO ()
 clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     registry   <- newFetchClientRegistry
@@ -299,7 +303,13 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy IO)) clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
-                             LocalConnectionId BlockHeader Block IO
+                             LocalConnectionId
+                             BlockHeader
+                             Block
+                             IO
+                             (AF.AnchoredFragment BlockHeader)
+                             (Point BlockHeader)
+                             DemoDeclineReason
         blockFetchPolicy =
             BlockFetchConsensusInterface {
               readCandidateChains    = readTVar candidateChainsVar
@@ -315,8 +325,9 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               addFetchedBlock        = \p b -> addTestFetchedBlock blockHeap
                                          (castPoint p) (blockHeader b),
 
-              plausibleCandidateChain,
               compareCandidateChains,
+              filterCandidates,
+              candidateFingerprint   = AF.headPoint,
 
               blockFetchSize         = \_ -> 1000,
               blockMatchesHeader     = \_ _ -> True,
@@ -325,8 +336,16 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
             }
           where
-            plausibleCandidateChain cur candidate =
+            plausibleCandidateChain cur candidate  =
                 AF.headBlockNo candidate > AF.headBlockNo cur
+            filterCandidates        cur candidates =
+                [ if not $ plausibleCandidateChain cur candidate
+                  then Left DemoDeclineSomeReason
+                  else case mkChainSuffix cur candidate of
+                    Right suffix -> Right suffix
+                    Left  _      -> Left DemoDeclineSomeReason
+                | candidate <- candidates
+                ]
 
             headerForgeUTCTime (FromConsensus hdr) =
                 pure $
@@ -410,7 +429,6 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
 
     chainTracer :: Tracer IO (Point BlockHeader, Point BlockHeader)
     chainTracer = contramap (\x -> "cur chain  : " ++ show x) stdoutTracer
-
 
 serverBlockFetch :: FilePath -> IO Void
 serverBlockFetch sockAddr = withIOManager $ \iocp -> do

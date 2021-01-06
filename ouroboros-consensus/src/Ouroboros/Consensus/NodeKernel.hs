@@ -24,6 +24,7 @@ module Ouroboros.Consensus.NodeKernel (
   , getPeersFromCurrentLedgerAfterSlot
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad
 import           Control.Monad.Except
 import           Data.Bifunctor (second)
@@ -45,6 +46,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.Decision (BadChainSuffix (..), ChainSuffix, mkChainSuffix)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
@@ -70,6 +72,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
+import           Ouroboros.Consensus.Node.Types
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
@@ -102,7 +105,7 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     , getFetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (CandidateFragment (Header blk))))
 
       -- | The node's tracers
     , getTracers             :: Tracers m remotePeer localPeer blk
@@ -187,15 +190,26 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
   Internal node components
 -------------------------------------------------------------------------------}
 
+-- | Unexperted alias
+type BlockFetchConsensusInterfaceSyn m remotePeer blk =
+  BlockFetchConsensusInterface
+    remotePeer
+    (Header blk)
+    blk
+    m
+    (CandidateFragment (Header blk))
+    (CandidateFingerprint (Header blk))
+    CandidateDecline
+
 data InternalState m remotePeer localPeer blk = IS {
       tracers             :: Tracers m remotePeer localPeer blk
     , cfg                 :: TopLevelConfig blk
     , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
     , chainDB             :: ChainDB m blk
-    , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
+    , blockFetchInterface :: BlockFetchConsensusInterfaceSyn m remotePeer blk
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (CandidateFragment (Header blk))))
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -223,7 +237,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
+    let getCandidates :: STM m (Map remotePeer (CandidateFragment (Header blk)))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
     blockFetchInterface <-
@@ -233,7 +247,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
         getCandidates
         blockFetchSize
         btime
-    let _ = blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
+    let _ = blockFetchInterface :: BlockFetchConsensusInterfaceSyn m remotePeer blk
 
     return IS {..}
 
@@ -247,10 +261,10 @@ initBlockFetchConsensusInterface
        )
     => TopLevelConfig blk
     -> ChainDB m blk
-    -> STM m (Map peer (AnchoredFragment (Header blk)))
+    -> STM m (Map peer (CandidateFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> BlockchainTime m
-    -> m (BlockFetchConsensusInterface peer (Header blk) blk m)
+    -> m (BlockFetchConsensusInterfaceSyn m peer blk)
 initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime = do
     cache <-
       History.runWithCachedSummary
@@ -311,7 +325,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     blockMatchesHeader :: Header blk -> blk -> Bool
     blockMatchesHeader = Block.blockMatchesHeader
 
-    readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
+    readCandidateChains :: STM m (Map peer (CandidateFragment (Header blk)))
     readCandidateChains = getCandidates
 
     readCurrentChain :: STM m (AnchoredFragment (Header blk))
@@ -347,6 +361,48 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
 
     readFetchedMaxSlotNo :: STM m MaxSlotNo
     readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB
+
+    filterCandidates ::
+         AnchoredFragment (Header blk)
+      -> [CandidateFragment (Header blk)]
+      -> [Either CandidateDecline (ChainSuffix (Header blk))]
+    filterCandidates ours = map $ \cand ->
+        let CandidateFragment {
+                candidateChain
+              , candidateIsLowDensity
+              } = cand
+        in
+        if not $
+                plausibleCandidateChain ours candidateChain
+             || candidateIsLowDensity
+        then Left DeclineNotPlausible
+        else case mkChainSuffix ours candidateChain of
+                Right suffix                   ->
+                  Right suffix
+                Left ChainSuffixNoIntersection ->
+                  Left DeclineStale
+                Left ChainSuffixEmpty          ->
+                  -- If the suffix is empty, it means the candidate chain was
+                  -- equal to the current chain and didn't fork off. Such a
+                  -- candidate chain is not a plausible candidate, so it must
+                  -- have been filtered out. /Unless/ it had been marked as
+                  -- plausible; this can happen eg due to the
+                  -- ChainSync/BlockFetch race.
+                  assert candidateIsLowDensity
+                    $ Left DeclineNull
+
+    candidateFingerprint ::
+         CandidateFragment (Header blk)
+      -> CandidateFingerprint (Header blk)
+    candidateFingerprint cand =
+        CandidateFingerprint
+          (AF.headPoint candidateChain)
+          candidateIsLowDensity
+      where
+        CandidateFragment {
+            candidateChain
+          , candidateIsLowDensity
+          } = cand
 
     -- Note that @ours@ comes from the ChainDB and @cand@ from the ChainSync
     -- client.

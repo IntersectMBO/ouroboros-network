@@ -15,6 +15,7 @@ import           Data.List (intercalate, unfoldr)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
+import qualified Data.Set as Set
 import           Data.Typeable
 
 import           Test.QuickCheck
@@ -55,13 +56,14 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended hiding (ledgerState)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Types (CandidateFragment, candidateChain)
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..), Watcher (..),
                      WithFingerprint (..), forkLinkedWatcher)
 
 import           Test.Util.LogicalClock (LogicalClock, NumTicks (..), Tick (..))
@@ -259,11 +261,25 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     varCandidates   <- uncheckedNewTVarM Map.empty
     varClientState  <- uncheckedNewTVarM Genesis
     varClientResult <- uncheckedNewTVarM Nothing
-    -- Candidates are removed from the candidates map when disconnecting, so
-    -- we lose access to them. Therefore, store the candidate 'TVar's in a
-    -- separate map too, one that isn't emptied. We can use this map to look
-    -- at the final state of each candidate.
+
+    -- Candidates are removed from the candidates map when disconnecting, so we
+    -- lose access to them. Therefore, we aggregate the contents of the
+    -- candidates map whenever it changes. This almost guarantees that we can
+    -- then inspect final state of every candidate.
     varFinalCandidates <- uncheckedNewTVarM Map.empty
+    let forkLinkedCandidatesWatcher :: m ()
+        forkLinkedCandidatesWatcher =
+              void
+            $ forkLinkedWatcher registry "candidates copier"
+            $ Watcher {
+                  wFingerprint = Map.keysSet
+                , wInitial     = Just Set.empty
+                , wNotify      = \news -> atomically $ do
+                    modifyTVar varFinalCandidates $ \olds ->
+                      Map.unionWith (\_old new -> new) olds news
+                , wReader      = readTVar varCandidates
+                }
+    forkLinkedCandidatesWatcher        
 
     (tracer, getTrace) <- first (addTick clock) <$> recordingTracerTVar
     let chainSyncTracer = contramap Left  tracer
@@ -283,9 +299,12 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                 readTVar varClientState
           , getIsInvalidBlock = return $
               WithFingerprint (const Nothing) (Fingerprint 0)
+
+          , getIsFetched = error "this test does not involve low-density chains"
+          , getBlock     = error "this test does not involve low-density chains"
           }
 
-        client :: StrictTVar m (AnchoredFragment (Header TestBlock))
+        client :: (CandidateFragment (Header TestBlock) -> m ())
                -> Consensus ChainSyncClientPipelined
                     TestBlock
                     m
@@ -354,12 +373,10 @@ runChainSync securityParam (ClientUpdates clientUpdates)
            chainSyncTracer
            chainDbView
            varCandidates
-           serverId $ \varCandidate -> do
-             atomically $ modifyTVar varFinalCandidates $
-               Map.insert serverId varCandidate
+           serverId $ \setCandidate -> do
              (result, _) <-
                runPipelinedPeer protocolTracer codecChainSyncId clientChannel $
-                 chainSyncClientPeerPipelined $ client varCandidate
+                 chainSyncClientPeerPipelined $ client setCandidate
              atomically $ writeTVar varClientResult (Just (Right result))
              return ()
         `catch` \(ex :: ChainSyncClientException) -> do
@@ -385,7 +402,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       mbResult      <- readTVar varClientResult
       return ChainSyncOutcome {
           finalServerChain = testHeader <$> finalServerChain
-        , syncedFragment   = AF.mapAnchoredFragment testHeader candidateFragment
+        , syncedFragment   = AF.mapAnchoredFragment testHeader (candidateChain candidateFragment)
         , ..
         }
   where

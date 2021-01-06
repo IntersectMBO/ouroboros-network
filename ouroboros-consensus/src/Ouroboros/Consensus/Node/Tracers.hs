@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Node.Types
 
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
@@ -52,7 +53,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk)
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
-  , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])]
+  , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision CandidateDecline [Point (Header blk)])]
   , blockFetchClientTracer        :: f (TraceLabelPeer remotePeer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
   , txInboundTracer               :: f (TraceLabelPeer remotePeer (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk)))
