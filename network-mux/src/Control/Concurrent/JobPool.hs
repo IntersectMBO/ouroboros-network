@@ -42,10 +42,17 @@ withJobPool =
         JobPool <$> newTVar Map.empty
                 <*> newTQueue
 
+    -- 'bracket' requires that the 'close' callback is uninterruptible.  Note
+    -- also that 'async' library is using 'uninterruptibleClose' in
+    -- 'withAsync' combinator.  This can only deadlock if the threads in
+    -- 'JobPool' got deadlocked so that the asynchronous exception cannot be
+    -- delivered, e.g. deadlock in an ffi call or a tight loop which does not
+    -- allocate (which is not a deadlock per se, but rather a rare unfortunate
+    -- condition).
     close :: JobPool m a -> m ()
     close JobPool{jobsVar} = do
       jobs <- atomically (readTVar jobsVar)
-      mapM_ cancel jobs
+      mapM_ uninterruptibleCancel jobs
 
 forkJob :: forall m a.
            (MonadAsync m, MonadMask m)
