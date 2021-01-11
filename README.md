@@ -32,6 +32,8 @@ the Cardano Shelley implementation:
   technical specifications of mini-protocols used by either _node-to-node_ and
   _node-to-client_ flavors of the protocol. 
 
+* [Haddock documentation](https://input-output-hk.github.io/ouroboros-network/)
+
 ## Ouroboros-Network API
 
 The API consists of three layers:
