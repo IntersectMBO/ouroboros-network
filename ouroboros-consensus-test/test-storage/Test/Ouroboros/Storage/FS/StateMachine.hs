@@ -16,6 +16,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-unused-matches #-}
 
 module Test.Ouroboros.Storage.FS.StateMachine (
     tests
