@@ -27,7 +27,8 @@ packages: ./typed-protocols
 constraints:
   ip < 1.5,
   hedgehog >= 1.0,
-  bimap >= 0.4.0
+  bimap >= 0.4.0,
+  ListLike < 4.7.2
 
 package Win32-network
   tests: True
