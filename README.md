@@ -30,7 +30,7 @@ the Cardano Shelley implementation:
   This document is a technical specification of the networking protocol.  It
   includes serialisation formats, necessary details of multiplexer and
   technical specifications of mini-protocols used by either _node-to-node_ and
-  _node-to-client_ flavors of the protocol. 
+  _node-to-client_ flavours of the protocol.
 
 * [Haddock documentation](https://input-output-hk.github.io/ouroboros-network/)
 
@@ -44,11 +44,26 @@ The API consists of three layers:
 
 • versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use `simpleSingletonVersion` if your application does not depend on negotiated version data.  However, `Ouroboros.Network.NodeToNode` and `Ouroboros.Network.NodeToClient` expose `V1` api which hides versioning from the caller.
 
-## Demo application
+## Demo applications
 
-You can run a demo application, check
-[chain-sync-demo](https://github.com/input-output-hk/ouroboros-network/wiki/Ouroboros-Network-Demo)
-wiki page.
+* [demo-chain-sync](https://github.com/input-output-hk/ouroboros-network/wiki/Ouroboros-Network-Demo)
+* [cardano-ping](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/cardano-ping.hs)
+* [mux-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/mux-demo.hs)
+* [demo-ping-pong](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network-framework/demo/ping-pong.hs)
+* [named-pipe-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/Win32-network/demo/named-pipe-demo.hs) (Windows only)
+* [demo-ntp-client](https://github.com/input-output-hk/ouroboros-network/blob/master/ntp-client/demo/Main.hs)
+
+<details>
+<summary>Instructions</summary>
+To run a demo type:
+
+```
+cabal run <DEMO_NAME> --
+```
+
+After `--` you will need to pass arguments, when a demo is run without
+arguments it will specify what arguments it needs.
+</details>
 
 ## Tests
 
