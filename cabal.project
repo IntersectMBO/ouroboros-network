@@ -28,7 +28,7 @@ constraints:
   ip < 1.5,
   hedgehog >= 1.0,
   bimap >= 0.4.0,
-  ListLike < 4.7.2
+  ListLike >= 4.7.3
 
 package Win32-network
   tests: True
