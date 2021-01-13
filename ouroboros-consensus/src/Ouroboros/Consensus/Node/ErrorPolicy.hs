@@ -92,7 +92,7 @@ consensusErrorPolicy pb = ErrorPolicies {
         , ErrorPolicy $ \(e :: ChainDbError blk) ->
             case e of
               ClosedDBError{}        -> Just shutdownNode
-              ClosedReaderError{}    -> Just ourBug
+              ClosedFollowerError{}  -> Just ourBug
               InvalidIteratorRange{} -> Just theyBuggyOrEvil
 
           -- We have some resource registries that are used per-connection,

@@ -63,7 +63,7 @@ import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
-                     ReaderNext, ReaderState)
+                     FollowerNext, FollowerState)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
@@ -85,7 +85,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..))
 
 import           Ouroboros.Consensus.Storage.ChainDB hiding
-                     (TraceReaderEvent (..))
+                     (TraceFollowerEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB
@@ -100,8 +100,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
-import           Test.Ouroboros.Storage.ChainDB.Model (IteratorId,
-                     ModelSupportsBlock, ReaderId)
+import           Test.Ouroboros.Storage.ChainDB.Model (FollowerId, IteratorId,
+                     ModelSupportsBlock)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
@@ -123,7 +123,7 @@ import           Test.Util.WithEq
 -------------------------------------------------------------------------------}
 
 -- | Commands
-data Cmd blk it rdr
+data Cmd blk it flr
   = AddBlock       blk
     -- ^ Advance the current slot to the block's slot (unless smaller than the
     -- current slot) and add the block.
@@ -146,13 +146,13 @@ data Cmd blk it rdr
   | IteratorNextGCed      it
     -- ^ Only for blocks that may have been garbage collected.
   | IteratorClose         it
-  | NewReader
-  | ReaderInstruction     rdr
-    -- ^ 'readerInstructionBlocking' is excluded, as it requires multiple
-    -- threads. Its code path is pretty much the same as 'readerInstruction'
+  | NewFollower
+  | FollowerInstruction   flr
+    -- ^ 'followerInstructionBlocking' is excluded, as it requires multiple
+    -- threads. Its code path is pretty much the same as 'followerInstruction'
     -- anyway.
-  | ReaderForward         rdr [Point blk]
-  | ReaderClose           rdr
+  | FollowerForward       flr [Point blk]
+  | FollowerClose         flr
   | Close
   | Reopen
     -- Internal
@@ -189,11 +189,11 @@ data Cmd blk it rdr
 -- something we are testing in 'prop_trace', see
 -- 'invalidBlockNeverValidatedAgain'.
 
-deriving instance SOP.Generic         (Cmd blk it rdr)
-deriving instance SOP.HasDatatypeInfo (Cmd blk it rdr)
+deriving instance SOP.Generic         (Cmd blk it flr)
+deriving instance SOP.HasDatatypeInfo (Cmd blk it flr)
 
 -- | Return type for successful database operations.
-data Success blk it rdr
+data Success blk it flr
   = Unit                ()
   | Chain               (AnchoredFragment (Header blk))
   | LedgerDB            (LedgerDB (ExtLedgerState blk))
@@ -208,7 +208,7 @@ data Success blk it rdr
   | Iter                it
   | IterResult          (IteratorResult blk (AllComponents blk))
   | IterResultGCed      (IteratorResultGCed blk)
-  | Rdr                 rdr
+  | Flr                 flr
   | MbChainUpdate       (Maybe (ChainUpdate blk (AllComponents blk)))
   | MbPoint             (Maybe (Point blk))
   | MaxSlot             MaxSlotNo
@@ -265,15 +265,15 @@ type TestConstraints blk =
   , SerialiseDiskConstraints          blk
   )
 
-deriving instance (TestConstraints blk, Eq   it, Eq   rdr)
-               => Eq   (Success blk it rdr)
-deriving instance (TestConstraints blk, Show it, Show rdr)
-               => Show (Success blk it rdr)
+deriving instance (TestConstraints blk, Eq   it, Eq   flr)
+               => Eq   (Success blk it flr)
+deriving instance (TestConstraints blk, Show it, Show flr)
+               => Show (Success blk it flr)
 
 -- | Short-hand
 type TestIterator m blk = WithEq (Iterator m blk (AllComponents blk))
 -- | Short-hand
-type TestReader   m blk = WithEq (Reader   m blk (AllComponents blk))
+type TestFollower m blk = WithEq (Follower m blk (AllComponents blk))
 
 -- | The current ChainDB instance and things related to it.
 --
@@ -323,8 +323,8 @@ close ChainDBState { chainDB, addBlockAsync } = do
 run :: forall m blk.
        (IOLike m, TestConstraints blk)
     => ChainDBEnv m blk
-    ->    Cmd     blk (TestIterator m blk) (TestReader m blk)
-    -> m (Success blk (TestIterator m blk) (TestReader m blk))
+    ->    Cmd     blk (TestIterator m blk) (TestFollower m blk)
+    -> m (Success blk (TestIterator m blk) (TestFollower m blk))
 run env@ChainDBEnv { varDB, .. } cmd =
     readMVar varDB >>= \st@ChainDBState { chainDB = ChainDB{..}, internal } -> case cmd of
       AddBlock blk             -> Point               <$> (advanceAndAdd st (blockSlot blk) blk)
@@ -342,10 +342,10 @@ run env@ChainDBEnv { varDB, .. } cmd =
       IteratorNext  it         -> IterResult          <$> iteratorNext (unWithEq it)
       IteratorNextGCed  it     -> iterResultGCed      <$> iteratorNext (unWithEq it)
       IteratorClose it         -> Unit                <$> iteratorClose (unWithEq it)
-      NewReader                -> reader              =<< newReader registry allComponents
-      ReaderInstruction rdr    -> MbChainUpdate       <$> readerInstruction (unWithEq rdr)
-      ReaderForward rdr pts    -> MbPoint             <$> readerForward (unWithEq rdr) pts
-      ReaderClose rdr          -> Unit                <$> readerClose (unWithEq rdr)
+      NewFollower              -> follower            =<< newFollower registry allComponents
+      FollowerInstruction flr  -> MbChainUpdate       <$> followerInstruction (unWithEq flr)
+      FollowerForward flr pts  -> MbPoint             <$> followerForward (unWithEq flr) pts
+      FollowerClose flr        -> Unit                <$> followerClose (unWithEq flr)
       Close                    -> Unit                <$> close st
       Reopen                   -> Unit                <$> reopen env
       RunBgTasks               -> ignore              <$> runBgTasks internal
@@ -355,7 +355,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
     isValidResult = IsValid . IsValidResult True
     iterResultGCed = IterResultGCed . IteratorResultGCed True
     iter = either (return . UnknownRange) (fmap Iter . giveWithEq)
-    reader = fmap Rdr . giveWithEq
+    follower = fmap Flr . giveWithEq
     ignore _ = Unit ()
 
     advanceAndAdd :: ChainDBState m blk -> SlotNo -> blk -> m (Point blk)
@@ -521,14 +521,14 @@ instance Arbitrary MaxClockSkew where
 -------------------------------------------------------------------------------}
 
 -- | Responses are either successful termination or an error.
-newtype Resp blk it rdr = Resp
-  { getResp :: Either (ChainDbError blk) (Success blk it rdr) }
+newtype Resp blk it flr = Resp
+  { getResp :: Either (ChainDbError blk) (Success blk it flr) }
   deriving (Functor, Foldable, Traversable)
 
-deriving instance (TestConstraints blk, Show it, Show rdr)
-               => Show (Resp blk it rdr)
+deriving instance (TestConstraints blk, Show it, Show flr)
+               => Show (Resp blk it flr)
 
-instance (TestConstraints blk, Eq it, Eq rdr) => Eq (Resp blk it rdr) where
+instance (TestConstraints blk, Eq it, Eq flr) => Eq (Resp blk it flr) where
   Resp (Left  e) == Resp (Left  e') = e == e'
   Resp (Right a) == Resp (Right a') = a == a'
   _              == _               = False
@@ -538,9 +538,9 @@ instance (TestConstraints blk, Eq it, Eq rdr) => Eq (Resp blk it rdr) where
 runPure :: forall blk.
            TestConstraints blk
         => TopLevelConfig  blk
-        -> Cmd             blk IteratorId ReaderId
+        -> Cmd             blk IteratorId FollowerId
         -> DBModel         blk
-        -> (Resp           blk IteratorId ReaderId, DBModel blk)
+        -> (Resp           blk IteratorId FollowerId, DBModel blk)
 runPure cfg = \case
     AddBlock blk             -> ok  Point               $ update  (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> ok  Point               $ update  (advanceAndAdd s               blk)
@@ -557,10 +557,10 @@ runPure cfg = \case
     IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext it allComponents)
     IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext it allComponents)
     IteratorClose it         -> ok  Unit                $ update_ (Model.iteratorClose it)
-    NewReader                -> ok  Rdr                 $ update   Model.newReader
-    ReaderInstruction rdr    -> err MbChainUpdate       $ updateE (Model.readerInstruction rdr allComponents)
-    ReaderForward rdr pts    -> err MbPoint             $ updateE (Model.readerForward rdr pts)
-    ReaderClose rdr          -> ok  Unit                $ update_ (Model.readerClose rdr)
+    NewFollower              -> ok  Flr                 $ update   Model.newFollower
+    FollowerInstruction flr  -> err MbChainUpdate       $ updateE (Model.followerInstruction flr allComponents)
+    FollowerForward flr pts  -> err MbPoint             $ updateE (Model.followerForward flr pts)
+    FollowerClose flr        -> ok  Unit                $ update_ (Model.followerClose flr)
     RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmutableDB k)
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
@@ -599,8 +599,8 @@ runPure cfg = \case
 
 runIO :: TestConstraints blk
       => ChainDBEnv IO blk
-      ->     Cmd  blk (TestIterator IO blk) (TestReader IO blk)
-      -> IO (Resp blk (TestIterator IO blk) (TestReader IO blk))
+      ->     Cmd  blk (TestIterator IO blk) (TestFollower IO blk)
+      -> IO (Resp blk (TestIterator IO blk) (TestFollower IO blk))
 runIO env cmd = Resp <$> try (run env cmd)
 
 {-------------------------------------------------------------------------------
@@ -608,12 +608,12 @@ runIO env cmd = Resp <$> try (run env cmd)
 -------------------------------------------------------------------------------}
 
 -- | Collect all iterators created.
-iters :: Bitraversable t => t it rdr -> [it]
+iters :: Bitraversable t => t it flr -> [it]
 iters = bifoldMap (:[]) (const [])
 
--- | Collect all readers created.
-rdrs :: Bitraversable t => t it rdr -> [rdr]
-rdrs = bifoldMap (const []) (:[])
+-- | Collect all followers created.
+flrs :: Bitraversable t => t it flr -> [flr]
+flrs = bifoldMap (const []) (:[])
 
 {-------------------------------------------------------------------------------
   Model
@@ -625,20 +625,20 @@ type IterRef blk m r = Reference (Opaque (TestIterator m blk)) r
 -- | Mapping between iterator references and mocked iterators
 type KnownIters blk m r = RefEnv (Opaque (TestIterator m blk)) IteratorId r
 
--- | Concrete or symbolic references to a real reader
-type ReaderRef blk m r = Reference (Opaque (TestReader m blk)) r
+-- | Concrete or symbolic references to a real follower
+type FollowerRef blk m r = Reference (Opaque (TestFollower m blk)) r
 
--- | Mapping between iterator references and mocked readers
-type KnownReaders blk m r = RefEnv (Opaque (TestReader m blk)) ReaderId r
+-- | Mapping between iterator references and mocked followers
+type KnownFollowers blk m r = RefEnv (Opaque (TestFollower m blk)) FollowerId r
 
 type DBModel blk = Model.Model blk
 
 -- | Execution model
 data Model blk m r = Model
-  { dbModel      :: DBModel                blk
-  , knownIters   :: KnownIters             blk m r
-  , knownReaders :: KnownReaders           blk m r
-  , modelConfig  :: Opaque (TopLevelConfig blk)
+  { dbModel        :: DBModel                blk
+  , knownIters     :: KnownIters             blk m r
+  , knownFollowers :: KnownFollowers         blk m r
+  , modelConfig    :: Opaque (TopLevelConfig blk)
   } deriving (Generic)
 
 deriving instance (TestConstraints blk, Show1 r) => Show (Model blk m r)
@@ -649,24 +649,25 @@ initModel :: TopLevelConfig blk
           -> MaxClockSkew
           -> Model blk m r
 initModel cfg initLedger (MaxClockSkew maxClockSkew) = Model
-  { dbModel      = Model.empty initLedger maxClockSkew
-  , knownIters   = RE.empty
-  , knownReaders = RE.empty
-  , modelConfig  = QSM.Opaque cfg
+  { dbModel        = Model.empty initLedger maxClockSkew
+  , knownIters     = RE.empty
+  , knownFollowers = RE.empty
+  , modelConfig    = QSM.Opaque cfg
   }
 
 -- | Key property of the model is that we can go from real to mock responses
 toMock :: (Bifunctor (t blk), Eq1 r)
-       => Model blk m r -> At t blk m r -> t blk IteratorId ReaderId
-toMock Model {..} (At t) = bimap (knownIters RE.!) (knownReaders RE.!) t
+       => Model blk m r -> At t blk m r -> t blk IteratorId FollowerId
+toMock Model {..} (At t) = bimap (knownIters RE.!) (knownFollowers RE.!) t
 
 -- | Step the mock semantics
 --
 -- We cannot step the whole Model here (see 'event', below)
-step :: (TestConstraints blk, Eq1 r)
-     => Model  blk m r
-     -> At Cmd blk m r
-     -> (Resp  blk IteratorId ReaderId, DBModel blk)
+step ::
+     (TestConstraints blk, Eq1 r)
+  => Model  blk m r
+  -> At Cmd blk m r
+  -> (Resp  blk IteratorId FollowerId, DBModel blk)
 step model@Model { dbModel, modelConfig } cmd =
     runPure (QSM.unOpaque modelConfig) (toMock model cmd) dbModel
 
@@ -675,14 +676,14 @@ step model@Model { dbModel, modelConfig } cmd =
 -------------------------------------------------------------------------------}
 
 -- | Instantiate functor @t blk@ to
--- @t blk ('IterRef' blk m r) ('ReaderRef' blk m r)@.
+-- @t blk ('IterRef' blk m r) ('FollowerRef' blk m r)@.
 --
--- Needed because we need to (partially) apply @'At' t blk rdr m@ to @r@.
-newtype At t blk m r = At { unAt :: t blk (IterRef blk m r) (ReaderRef blk m r) }
+-- Needed because we need to (partially) apply @'At' t blk flr m@ to @r@.
+newtype At t blk m r = At { unAt :: t blk (IterRef blk m r) (FollowerRef blk m r) }
   deriving (Generic)
 
 
-deriving instance Show (t blk (IterRef blk m r) (ReaderRef blk m r))
+deriving instance Show (t blk (IterRef blk m r) (FollowerRef blk m r))
                => Show (At t blk m r)
 
 deriving instance (TestConstraints blk, Eq1 r) => Eq (At Resp blk m r)
@@ -716,7 +717,7 @@ data Event blk m r = Event
   { eventBefore   :: Model  blk m r
   , eventCmd      :: At Cmd blk m r
   , eventAfter    :: Model  blk m r
-  , eventMockResp :: Resp   blk     IteratorId ReaderId
+  , eventMockResp :: Resp   blk     IteratorId FollowerId
   }
 
 deriving instance (TestConstraints blk, Show1 r) => Show (Event blk m r)
@@ -736,24 +737,24 @@ lockstep model@Model {..} cmd (At resp) = Event
   where
     (mockResp, dbModel') = step model cmd
     newIters   = RE.fromList $ zip (iters resp) (iters mockResp)
-    newReaders = RE.fromList $ zip (rdrs  resp) (rdrs  mockResp)
+    newFollowers = RE.fromList $ zip (flrs  resp) (flrs  mockResp)
     model' = case unAt cmd of
-      -- When closing the database, all open iterators and readers are closed
+      -- When closing the database, all open iterators and followers are closed
       -- too, so forget them.
       Close -> model
-        { dbModel      = dbModel'
-        , knownIters   = RE.empty
-        , knownReaders = RE.empty
+        { dbModel        = dbModel'
+        , knownIters     = RE.empty
+        , knownFollowers = RE.empty
         }
       WipeVolatileDB -> model
-        { dbModel      = dbModel'
-        , knownIters   = RE.empty
-        , knownReaders = RE.empty
+        { dbModel        = dbModel'
+        , knownIters     = RE.empty
+        , knownFollowers = RE.empty
         }
       _ -> model
-        { dbModel      = dbModel'
-        , knownIters   = knownIters `RE.union` newIters
-        , knownReaders = knownReaders `RE.union` newReaders
+        { dbModel        = dbModel'
+        , knownIters     = knownIters `RE.union` newIters
+        , knownFollowers = knownFollowers `RE.union` newFollowers
         }
 
 
@@ -787,13 +788,13 @@ generator genBlock m@Model {..} = At <$> frequency
       -- we can stream multiple blocks from an iterator.
     , (if null iterators then 0 else 2, genIteratorClose)
 
-    -- Readers
-    , (10, return NewReader)
-    , (if null readers then 0 else 10, genReaderInstruction)
-    , (if null readers then 0 else 10, genReaderForward)
+    -- Followers
+    , (10, return NewFollower)
+    , (if null followers then 0 else 10, genFollowerInstruction)
+    , (if null followers then 0 else 10, genFollowerForward)
       -- Use a lower frequency for closing, so that the chance increases that
-      -- we can read multiple blocks from a reader
-    , (if null readers then 0 else 2, genReaderClose)
+      -- we can read multiple blocks from a follower
+    , (if null followers then 0 else 2, genFollowerClose)
 
     , (if empty then 1 else 10, return Close)
     , (if Model.isOpen dbModel then
@@ -815,8 +816,8 @@ generator genBlock m@Model {..} = At <$> frequency
     iterators :: [Reference (Opaque (TestIterator m blk)) Symbolic]
     iterators = RE.keys knownIters
 
-    readers :: [Reference (Opaque (TestReader m blk)) Symbolic]
-    readers = RE.keys knownReaders
+    followers :: [Reference (Opaque (TestFollower m blk)) Symbolic]
+    followers = RE.keys knownFollowers
 
     genRandomPoint :: Gen (RealPoint blk)
     genRandomPoint = blockRealPoint <$> genBlock m
@@ -839,7 +840,7 @@ generator genBlock m@Model {..} = At <$> frequency
       , (9, realPointToPoint <$> genRealPoint)
       ]
 
-    genGetIsValid :: Gen (Cmd blk it rdr)
+    genGetIsValid :: Gen (Cmd blk it flr)
     genGetIsValid =
       GetIsValid <$> genRealPoint `suchThat` \(RealPoint _ hash) ->
         -- Ignore blocks from the future, since the real implementation might
@@ -848,7 +849,7 @@ generator genBlock m@Model {..} = At <$> frequency
         -- 'Model.getIsValid' (which uses 'Model.validChains').
         Map.notMember hash (Model.futureBlocks dbModel)
 
-    genGetBlockComponent :: Gen (Cmd blk it rdr)
+    genGetBlockComponent :: Gen (Cmd blk it flr)
     genGetBlockComponent = do
       pt <- genRealPoint
       return $ if Model.garbageCollectablePoint secParam dbModel pt
@@ -909,18 +910,18 @@ generator genBlock m@Model {..} = At <$> frequency
         then IteratorNextGCed it
         else IteratorNext     it
 
-    genReaderInstruction = ReaderInstruction <$> elements readers
-    genReaderForward     = ReaderForward     <$> elements readers
-                                             <*> genReaderForwardPoints
+    genFollowerInstruction = FollowerInstruction <$> elements followers
+    genFollowerForward     = FollowerForward     <$> elements followers
+                                                 <*> genFollowerForwardPoints
 
-    genReaderForwardPoints :: Gen [Point blk]
-    genReaderForwardPoints = choose (1, 3) >>= \n ->
-      sortOn (Down . pointSlot) <$> replicateM n genReaderForwardPoint
+    genFollowerForwardPoints :: Gen [Point blk]
+    genFollowerForwardPoints = choose (1, 3) >>= \n ->
+      sortOn (Down . pointSlot) <$> replicateM n genFollowerForwardPoint
 
-    genReaderForwardPoint :: Gen (Point blk)
-    genReaderForwardPoint = genPoint
+    genFollowerForwardPoint :: Gen (Point blk)
+    genFollowerForwardPoint = genPoint
 
-    genReaderClose = ReaderClose <$> elements readers
+    genFollowerClose = FollowerClose <$> elements followers
 
 chooseSlot :: SlotNo -> SlotNo -> Gen SlotNo
 chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
@@ -955,7 +956,7 @@ precondition :: forall m blk. TestConstraints blk
              => Model blk m Symbolic -> At Cmd blk m Symbolic -> Logic
 precondition Model {..} (At cmd) =
    forall (iters cmd) (`member` RE.keys knownIters)   .&&
-   forall (rdrs  cmd) (`member` RE.keys knownReaders) .&&
+   forall (flrs  cmd) (`member` RE.keys knownFollowers) .&&
    case cmd of
      -- Even though we ensure this in the generator, shrinking might change
      -- it.
@@ -977,7 +978,7 @@ precondition Model {..} (At cmd) =
      -- We do not allow multiple future blocks with the same block number, as
      -- the real implementation might have to switch between forks when they
      -- are no longer in the future, whereas the model will pick the right
-     -- chain directly. This causes readers to go out of sync.
+     -- chain directly. This causes followers to go out of sync.
      -- https://github.com/input-output-hk/ouroboros-network/issues/2234
      AddFutureBlock blk s     -> s .>= Model.currentSlot dbModel .&&
                                  blockSlot blk .> s .&&
@@ -1116,17 +1117,17 @@ instance CommandNames (At Cmd blk m) where
   cmdNames (_ :: Proxy (At Cmd blk m r)) =
     constrNames (Proxy @(Cmd blk () ()))
 
-deriving instance Generic ReaderNext
+deriving instance Generic FollowerNext
 deriving instance Generic IteratorId
 deriving instance Generic (Chain blk)
 deriving instance Generic (ChainProducerState blk)
-deriving instance Generic (ReaderState blk)
+deriving instance Generic (FollowerState blk)
 
 deriving instance ToExpr Fingerprint
-deriving instance ToExpr ReaderNext
+deriving instance ToExpr FollowerNext
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ChainHash blk)
-deriving instance ToExpr (HeaderHash blk) => ToExpr (ReaderState blk)
+deriving instance ToExpr (HeaderHash blk) => ToExpr (FollowerState blk)
 deriving instance ToExpr blk => ToExpr (Chain blk)
 deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
@@ -1185,8 +1186,8 @@ deriving instance SOP.Generic         (TraceEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceEvent blk)
 deriving instance SOP.Generic         (TraceAddBlockEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceAddBlockEvent blk)
-deriving instance SOP.Generic         (ChainDB.TraceReaderEvent blk)
-deriving instance SOP.HasDatatypeInfo (ChainDB.TraceReaderEvent blk)
+deriving instance SOP.Generic         (ChainDB.TraceFollowerEvent blk)
+deriving instance SOP.HasDatatypeInfo (ChainDB.TraceFollowerEvent blk)
 deriving instance SOP.Generic         (TraceCopyToImmutableDBEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceCopyToImmutableDBEvent blk)
 deriving instance SOP.Generic         (TraceValidationEvent blk)
@@ -1217,11 +1218,12 @@ data Tag =
 type EventPred m = C.Predicate (Event Blk m Symbolic) Tag
 
 -- | Convenience combinator for creating classifiers for successful commands
-successful :: (    Event Blk m Symbolic
-                -> Success Blk IteratorId ReaderId
-                -> Either Tag (EventPred m)
-              )
-           -> EventPred m
+successful ::
+     (    Event Blk m Symbolic
+       -> Success Blk IteratorId FollowerId
+       -> Either Tag (EventPred m)
+     )
+  -> EventPred m
 successful f = C.predicate $ \ev -> case eventMockResp ev of
     Resp (Left  _ ) -> Right $ successful f
     Resp (Right ok) -> f ev ok
@@ -1460,7 +1462,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
 
       closeRegistry threadRegistry
 
-      -- 'closeDB' should have closed all open 'Reader's and 'Iterator's,
+      -- 'closeDB' should have closed all open 'Follower's and 'Iterator's,
       -- freeing up all resources, so there should be no more clean-up
       -- actions left.
       --
@@ -1544,10 +1546,10 @@ traceEventName = \case
     TraceAddBlockEvent          ev    -> "AddBlock."          <> case ev of
       AddBlockValidation        ev' -> constrName ev'
       _                             -> constrName ev
-    TraceReaderEvent            ev    -> "Reader."            <> constrName ev
+    TraceFollowerEvent          ev    -> "Follower."            <> constrName ev
     TraceCopyToImmutableDBEvent ev    -> "CopyToImmutableDB." <> constrName ev
     TraceInitChainSelEvent      ev    -> "InitChainSel."      <> case ev of
-      InitChainSelValidation    ev'   -> constrName ev'
+      InitChainSelValidation    ev' -> constrName ev'
     TraceOpenEvent              ev    -> "Open."              <> constrName ev
     TraceGCEvent                ev    -> "GC."                <> constrName ev
     TraceIteratorEvent          ev    -> "Iterator."          <> constrName ev

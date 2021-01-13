@@ -113,7 +113,7 @@ data Handlers m peer blk = Handlers {
         -- closure include these and not need to be explicit about them here.
 
     , hChainSyncServer
-        :: ChainDB.Reader m blk (ChainDB.WithPoint blk (SerialisedHeader blk))
+        :: ChainDB.Follower m blk (ChainDB.WithPoint blk (SerialisedHeader blk))
         -> NodeToNodeVersion
         -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 
@@ -490,16 +490,16 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       withRegistry $ \registry -> do
         chainSyncTimeout <- genChainSyncTimeout
         bracket
-          (chainSyncHeaderServerReader (getChainDB kernel) registry)
-          ChainDB.readerClose
-          (\rdr -> runPeerWithLimits
+          (chainSyncHeaderServerFollower (getChainDB kernel) registry)
+          ChainDB.followerClose
+          (\flr -> runPeerWithLimits
             (contramap (TraceLabelPeer them) tChainSyncSerialisedTracer)
             cChainSyncCodecSerialised
             (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
             (timeLimitsChainSync chainSyncTimeout)
             channel
             $ chainSyncServerPeer
-            $ hChainSyncServer rdr version
+            $ hChainSyncServer flr version
           )
 
     aBlockFetchClient

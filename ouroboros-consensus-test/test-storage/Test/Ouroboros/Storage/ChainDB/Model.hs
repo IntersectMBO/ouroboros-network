@@ -19,7 +19,7 @@
 module Test.Ouroboros.Storage.ChainDB.Model (
     Model -- opaque
   , IteratorId
-  , CPS.ReaderId
+  , CPS.FollowerId
     -- * Construction
   , empty
   , addBlock
@@ -53,11 +53,11 @@ module Test.Ouroboros.Storage.ChainDB.Model (
   , stream
   , iteratorNext
   , iteratorClose
-    -- * Readers
-  , newReader
-  , readerInstruction
-  , readerForward
-  , readerClose
+    -- * Followers
+  , newFollower
+  , followerInstruction
+  , followerForward
+  , followerClose
     -- * ModelSupportsBlock
   , ModelSupportsBlock
     -- * Exported for testing purposes
@@ -537,35 +537,37 @@ iteratorClose :: IteratorId -> Model blk -> Model blk
 iteratorClose itrId m = m { iterators = Map.insert itrId [] (iterators m) }
 
 {-------------------------------------------------------------------------------
-  Readers
+  Followers
 -------------------------------------------------------------------------------}
 
-readerExists :: CPS.ReaderId -> Model blk -> Bool
-readerExists rdrId = CPS.readerExists rdrId . cps
+followerExists :: CPS.FollowerId -> Model blk -> Bool
+followerExists flrId = CPS.followerExists flrId . cps
 
-checkIfReaderExists :: CPS.ReaderId -> Model blk
-                    -> a
-                    -> Either (ChainDbError blk) a
-checkIfReaderExists rdrId m a
-    | readerExists rdrId m
+checkIfFollowerExists ::
+     CPS.FollowerId
+  -> Model blk
+  -> a
+  -> Either (ChainDbError blk) a
+checkIfFollowerExists flrId m a
+    | followerExists flrId m
     = Right a
     | otherwise
-    = Left ClosedReaderError
+    = Left ClosedFollowerError
 
-newReader :: HasHeader blk => Model blk -> (CPS.ReaderId, Model blk)
-newReader m = (rdrId, m { cps = cps' })
+newFollower :: HasHeader blk => Model blk -> (CPS.FollowerId, Model blk)
+newFollower m = (flrId, m { cps = cps' })
   where
-    (cps', rdrId) = CPS.initReader GenesisPoint (cps m)
+    (cps', flrId) = CPS.initFollower GenesisPoint (cps m)
 
-readerInstruction
-  :: forall blk b. ModelSupportsBlock blk
-  => CPS.ReaderId
+followerInstruction ::
+     forall blk b. ModelSupportsBlock blk
+  => CPS.FollowerId
   -> BlockComponent blk b
   -> Model blk
   -> Either (ChainDbError blk)
             (Maybe (ChainUpdate blk b), Model blk)
-readerInstruction rdrId blockComponent m = checkIfReaderExists rdrId m $
-    rewrap $ CPS.readerInstruction rdrId (cps m)
+followerInstruction flrId blockComponent m = checkIfFollowerExists flrId m $
+    rewrap $ CPS.followerInstruction flrId (cps m)
   where
     toB :: blk -> b
     toB blk = getBlockComponent blk blockComponent
@@ -576,25 +578,26 @@ readerInstruction rdrId blockComponent m = checkIfReaderExists rdrId m $
     rewrap Nothing            = (Nothing, m)
     rewrap (Just (upd, cps')) = (Just (toB <$> upd), m { cps = cps' })
 
-readerForward :: HasHeader blk
-              => CPS.ReaderId
-              -> [Point blk]
-              -> Model blk
-              -> Either (ChainDbError blk)
-                        (Maybe (Point blk), Model blk)
-readerForward rdrId points m = checkIfReaderExists rdrId m $
+followerForward ::
+     HasHeader blk
+  => CPS.FollowerId
+  -> [Point blk]
+  -> Model blk
+  -> Either (ChainDbError blk) (Maybe (Point blk), Model blk)
+followerForward flrId points m = checkIfFollowerExists flrId m $
     case CPS.findFirstPoint points (cps m) of
       Nothing     -> (Nothing, m)
       Just ipoint -> (Just ipoint, m { cps = cps' })
         where
-          cps' = CPS.updateReader rdrId ipoint (cps m)
+          cps' = CPS.updateFollower flrId ipoint (cps m)
 
-readerClose :: CPS.ReaderId
-            -> Model blk
-            -> Model blk
-readerClose rdrId m
-    | readerExists rdrId m
-    = m { cps = CPS.deleteReader rdrId (cps m) }
+followerClose ::
+     CPS.FollowerId
+  -> Model blk
+  -> Model blk
+followerClose flrId m
+    | followerExists flrId m
+    = m { cps = CPS.deleteFollower flrId (cps m) }
     | otherwise
     = m
 
@@ -944,7 +947,7 @@ copyToImmutableDB secParam m = m {
 closeDB :: Model blk -> Model blk
 closeDB m@Model{..} = m {
       isOpen        = False
-    , cps           = cps { CPS.chainReaders = Map.empty }
+    , cps           = cps { CPS.chainFollowers = Map.empty }
     , iterators     = Map.empty
     }
 

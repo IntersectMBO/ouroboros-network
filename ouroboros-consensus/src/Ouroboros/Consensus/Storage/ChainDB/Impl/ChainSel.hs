@@ -692,14 +692,14 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
                              (ledgerState $ LgrDB.ledgerDbCurrent curLedger)
                              (ledgerState $ LgrDB.ledgerDbCurrent newLedger)
 
-              -- Update the readers
+              -- Update the followers
               --
-              -- 'Reader.switchFork' needs to know the intersection point
+              -- 'Follower.switchFork' needs to know the intersection point
               -- (@ipoint@) between the old and the current chain.
               let ipoint = castPoint $ Diff.getAnchorPoint chainDiff
-              readerHandles <- Map.elems <$> readTVar cdbReaders
-              forM_ readerHandles $ \readerHandle ->
-                rhSwitchFork readerHandle ipoint newChain
+              followerHandles <- Map.elems <$> readTVar cdbFollowers
+              forM_ followerHandles $ \followerHandle ->
+                fhSwitchFork followerHandle ipoint newChain
 
               return (curChain, newChain, events)
 

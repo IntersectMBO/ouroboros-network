@@ -52,9 +52,9 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , streamAll
     -- * Invalid block reason
   , InvalidBlockReason(..)
-    -- * Readers
-  , Reader(..)
-  , traverseReader
+    -- * Followers
+  , Follower(..)
+  , traverseFollower
     -- * Recovery
   , ChainDbFailure(..)
   , IsEBB(..)
@@ -110,7 +110,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 -- * Chain selection (on initialization and whenever a block is added)
 -- * Trigger full recovery whenever we detect disk failure in any component
 -- * Provide iterators across fixed fragments of the current chain
--- * Provide readers that track the status of the current chain
+-- * Provide followers that track the status of the current chain
 --
 -- The ChainDB instantiates all the various type parameters of these databases
 -- to conform to the unified interface we provide here.
@@ -232,7 +232,7 @@ data ChainDB m blk = ChainDB {
       -- unbroken path from the starting point to the end point /at the time
       -- of initialization/ of the iterator. Once the iterator has been
       -- initialized, it will not be affected by subsequent calls to
-      -- 'addBlock'. To track the current chain, use a 'Reader' instead.
+      -- 'addBlock'. To track the current chain, use a 'Follower' instead.
       --
       -- Streaming blocks older than @k@ is permitted, but only when they are
       -- part of the current fork (at the time of initialization). Streaming a
@@ -271,16 +271,15 @@ data ChainDB m blk = ChainDB {
       --
       -- To stream all blocks from the current chain, use 'streamAll', as it
       -- correctly handles an empty ChainDB.
-    , stream
-        :: forall b.
-           ResourceRegistry m
+    , stream ::
+           forall b. ResourceRegistry m
         -> BlockComponent blk b
         -> StreamFrom blk -> StreamTo blk
         -> m (Either (UnknownRange blk) (Iterator m blk b))
 
-      -- | Chain reader
+      -- | Chain follower
       --
-      -- A chain reader is an iterator that tracks the state of the /current/
+      -- A chain follower is an iterator that tracks the state of the /current/
       -- chain: calling @next@ on the iterator will either give you the next
       -- block header, or (if we have switched to a fork) the instruction to
       -- rollback.
@@ -296,11 +295,10 @@ data ChainDB m blk = ChainDB {
       -- * The server side of the chain sync mini-protocol for the
       --   node-to-client protocol using blocks.
       --
-    , newReader
-        :: forall b.
-           ResourceRegistry m
+    , newFollower ::
+           forall b. ResourceRegistry m
         -> BlockComponent blk b
-        -> m (Reader m blk b)
+        -> m (Follower m blk b)
 
       -- | Function to check whether a block is known to be invalid.
       --
@@ -561,7 +559,7 @@ data UnknownRange blk =
 -- which case the bounds don't make sense. This function correctly handles
 -- this case.
 --
--- Note that this is not a 'Reader', so the stream will not include blocks
+-- Note that this is not a 'Follower', so the stream will not include blocks
 -- that are added to the current chain after starting the stream.
 streamAll ::
      (MonadSTM m, HasHeader blk, HasCallStack)
@@ -606,64 +604,64 @@ instance LedgerSupportsProtocol blk
       => NoThunks (InvalidBlockReason blk)
 
 {-------------------------------------------------------------------------------
-  Readers
+  Followers
 -------------------------------------------------------------------------------}
 
--- | Reader
+-- | Follower
 --
--- See 'newHeaderReader' for more info.
+-- See 'newFollower' for more info.
 --
 -- The type parameter @a@ will be instantiated with @blk@ or @Header @blk@.
-data Reader m blk a = Reader {
+data Follower m blk a = Follower {
       -- | The next chain update (if one exists)
       --
       -- Not in @STM@ because might have to read the blocks or headers from
       -- disk.
       --
       -- We may roll back more than @k@, but only in case of data loss.
-      readerInstruction         :: m (Maybe (ChainUpdate blk a))
+      followerInstruction         :: m (Maybe (ChainUpdate blk a))
 
-      -- | Blocking version of 'readerInstruction'
-    , readerInstructionBlocking :: m (ChainUpdate blk a)
+      -- | Blocking version of 'followerInstruction'
+    , followerInstructionBlocking :: m (ChainUpdate blk a)
 
-      -- | Move the reader forward
+      -- | Move the follower forward
       --
       -- Must be given a list of points in order of preference; the iterator
       -- will move forward to the first point on the list that is on the current
       -- chain. Returns 'Nothing' if the iterator did not move, or the new point
       -- otherwise.
       --
-      -- When successful, the first call to 'readerInstruction' after
-      -- 'readerForward' will be a 'RollBack' to the point returned by
-      -- 'readerForward'.
+      -- When successful, the first call to 'followerInstruction' after
+      -- 'followerForward' will be a 'RollBack' to the point returned by
+      -- 'followerForward'.
       --
       -- Cannot live in @STM@ because the points specified might live in the
       -- immutable DB.
-    , readerForward             :: [Point blk] -> m (Maybe (Point blk))
+    , followerForward             :: [Point blk] -> m (Maybe (Point blk))
 
-      -- | Close the reader.
+      -- | Close the follower.
       --
       -- Idempotent.
       --
-      -- After closing, all other operations on the reader will throw
-      -- 'ClosedReaderError'.
-    , readerClose               :: m ()
+      -- After closing, all other operations on the follower will throw
+      -- 'ClosedFollowerError'.
+    , followerClose               :: m ()
     }
   deriving (Functor)
 
--- | Variant of 'traverse' instantiated to @'Reader' m blk@ that executes the
--- monadic function when calling 'readerInstruction' and
--- 'readerInstructionBlocking'.
-traverseReader
+-- | Variant of 'traverse' instantiated to @'Follower' m blk@ that executes the
+-- monadic function when calling 'followerInstruction' and
+-- 'followerInstructionBlocking'.
+traverseFollower
   :: Monad m
   => (b -> m b')
-  -> Reader m blk b
-  -> Reader m blk b'
-traverseReader f rdr = Reader
-    { readerInstruction         = readerInstruction         rdr >>= traverse (traverse f)
-    , readerInstructionBlocking = readerInstructionBlocking rdr >>= traverse f
-    , readerForward             = readerForward             rdr
-    , readerClose               = readerClose               rdr
+  -> Follower m blk b
+  -> Follower m blk b'
+traverseFollower f flr = Follower
+    { followerInstruction         = followerInstruction         flr >>= traverse (traverse f)
+    , followerInstructionBlocking = followerInstructionBlocking flr >>= traverse f
+    , followerForward             = followerForward             flr
+    , followerClose               = followerClose               flr
     }
 
 {-------------------------------------------------------------------------------
@@ -718,11 +716,11 @@ data ChainDbError blk =
     -- ChainDB is included in the error.
     ClosedDBError PrettyCallStack
 
-    -- | The reader is closed.
+    -- | The follower is closed.
     --
-    -- This will be thrown when performing any operation on a closed readers,
-    -- except for 'readerClose'.
-  | ClosedReaderError
+    -- This will be thrown when performing any operation on a closed followers,
+    -- except for 'followerClose'.
+  | ClosedFollowerError
 
     -- | When there is no chain/fork that satisfies the bounds passed to
     -- 'streamBlocks'.
@@ -745,7 +743,7 @@ instance (Typeable blk, StandardHash blk) => Exception (ChainDbError blk) where
       "The database was used after it was closed because it encountered an unrecoverable error"
 
     -- The user won't see the exceptions below, they are not fatal.
-    ClosedReaderError {} ->
-      "The block/header reader was used after it was closed"
+    ClosedFollowerError {} ->
+      "The block/header follower was used after it was closed"
     InvalidIteratorRange {} ->
       "An invalid range of blocks was requested"

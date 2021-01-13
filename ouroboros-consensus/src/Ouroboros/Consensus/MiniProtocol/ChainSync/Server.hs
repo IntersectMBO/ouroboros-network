@@ -7,8 +7,8 @@
 module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
-  , chainSyncHeaderServerReader
-  , chainSyncBlockServerReader
+  , chainSyncHeaderServerFollower
+  , chainSyncBlockServerFollower
   , Tip
     -- * Trace events
   , TraceChainSyncServerEvent (..)
@@ -20,7 +20,7 @@ import           Ouroboros.Network.Block (ChainUpdate (..), Serialised,
                      Tip (..))
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader,
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Follower,
                      WithPoint (..), getSerialisedBlockWithPoint,
                      getSerialisedHeaderWithPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
@@ -32,17 +32,17 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 
-chainSyncHeaderServerReader
+chainSyncHeaderServerFollower
     :: ChainDB m blk
     -> ResourceRegistry m
-    -> m (Reader m blk (WithPoint blk (SerialisedHeader blk)))
-chainSyncHeaderServerReader chainDB registry = ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
+    -> m (Follower m blk (WithPoint blk (SerialisedHeader blk)))
+chainSyncHeaderServerFollower chainDB registry = ChainDB.newFollower chainDB registry getSerialisedHeaderWithPoint
 
-chainSyncBlockServerReader
+chainSyncBlockServerFollower
     :: ChainDB m blk
     -> ResourceRegistry m
-    -> m (Reader m blk (WithPoint blk (Serialised blk)))
-chainSyncBlockServerReader chainDB registry = ChainDB.newReader chainDB registry getSerialisedBlockWithPoint
+    -> m (Follower m blk (WithPoint blk (Serialised blk)))
+chainSyncBlockServerFollower chainDB registry = ChainDB.newFollower chainDB registry getSerialisedBlockWithPoint
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
 --
@@ -56,12 +56,12 @@ chainSyncHeadersServer
        )
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
-    -> Reader m blk (WithPoint blk (SerialisedHeader blk))
+    -> Follower m blk (WithPoint blk (SerialisedHeader blk))
     -> NodeToNodeVersion
     -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
-chainSyncHeadersServer tracer chainDB rdr _version =
+chainSyncHeadersServer tracer chainDB flr _version =
     ChainSyncServer $
-      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr in
+      let ChainSyncServer server = chainSyncServerForFollower tracer chainDB flr in
       server
 
 -- | Chain Sync Server for blocks for a given a 'ChainDB'.
@@ -73,32 +73,32 @@ chainSyncBlocksServer
     :: forall m blk. (IOLike m, HasHeader (Header blk))
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
-    -> Reader m blk (WithPoint blk (Serialised blk))
+    -> Follower m blk (WithPoint blk (Serialised blk))
     -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
-chainSyncBlocksServer tracer chainDB rdr =
+chainSyncBlocksServer tracer chainDB flr =
     ChainSyncServer $
-      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr in
+      let ChainSyncServer server = chainSyncServerForFollower tracer chainDB flr in
       server
 
 -- | A chain sync server.
 --
 -- This is a version of
 -- 'Ouroboros.Network.Protocol.ChainSync.Examples.chainSyncServerExample' that
--- uses a 'chainDB' and a 'Reader' instead of
+-- uses a 'chainDB' and a 'Follower' instead of
 -- 'Ourboros.Network.ChainProducerState.ChainProducerState'.
 --
--- All the hard work is done by the 'Reader's provided by the 'ChainDB'.
+-- All the hard work is done by the 'Follower's provided by the 'ChainDB'.
 --
-chainSyncServerForReader
-    :: forall m blk b.
-       ( IOLike m
-       , HasHeader (Header blk)
-       )
-    => Tracer m (TraceChainSyncServerEvent blk)
-    -> ChainDB m blk
-    -> Reader  m blk (WithPoint blk b)
-    -> ChainSyncServer b (Point blk) (Tip blk) m ()
-chainSyncServerForReader tracer chainDB rdr =
+chainSyncServerForFollower ::
+     forall m blk b.
+     ( IOLike m
+     , HasHeader (Header blk)
+     )
+  => Tracer m (TraceChainSyncServerEvent blk)
+  -> ChainDB m blk
+  -> Follower  m blk (WithPoint blk b)
+  -> ChainSyncServer b (Point blk) (Tip blk) m ()
+chainSyncServerForFollower tracer chainDB flr =
     idle'
   where
     idle :: ServerStIdle b (Point blk) (Tip blk) m ()
@@ -113,16 +113,16 @@ chainSyncServerForReader tracer chainDB rdr =
 
     handleRequestNext :: m (Either (ServerStNext b (Point blk) (Tip blk) m ())
                                 (m (ServerStNext b (Point blk) (Tip blk) m ())))
-    handleRequestNext = ChainDB.readerInstruction rdr >>= \case
+    handleRequestNext = ChainDB.followerInstruction flr >>= \case
       Just update -> do
         tip <- atomically $ ChainDB.getCurrentTip chainDB
         traceWith tracer $
           TraceChainSyncServerRead tip (point <$> update)
         return $ Left $ sendNext tip (withoutPoint <$> update)
       Nothing     -> return $ Right $ do
-        -- Reader is at the head, we have to block and wait for the chain to
+        -- Follower is at the head, we have to block and wait for the chain to
         -- change.
-        update <- ChainDB.readerInstructionBlocking rdr
+        update <- ChainDB.followerInstructionBlocking flr
         tip    <- atomically $ ChainDB.getCurrentTip chainDB
         traceWith tracer $
           TraceChainSyncServerReadBlocked tip (point <$> update)
@@ -139,7 +139,7 @@ chainSyncServerForReader tracer chainDB rdr =
                         -> m (ServerStIntersect b (Point blk) (Tip blk) m ())
     handleFindIntersect points = do
       -- TODO guard number of points
-      changed <- ChainDB.readerForward rdr points
+      changed <- ChainDB.followerForward flr points
       tip     <- atomically $ ChainDB.getCurrentTip chainDB
       return $ case changed of
         Just pt -> SendMsgIntersectFound    pt tip idle'
