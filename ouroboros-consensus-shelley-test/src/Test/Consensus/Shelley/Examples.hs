@@ -72,6 +72,7 @@ import           Ouroboros.Consensus.Util.Time
 import qualified Cardano.Ledger.AuxiliaryData as SL (AuxiliaryDataHash (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
+import qualified Control.State.Transition.Extended as SL (PredicateFailure)
 import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (Seed (..),
@@ -202,7 +203,13 @@ keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
 -------------------------------------------------------------------------------}
 
 examples ::
-     forall era. ShelleyBasedEra era
+     forall era.
+     ( ShelleyBasedEra era
+     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
+       ~ SL.LedgerPredicateFailure era
+     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
+       ~ SL.DelegsPredicateFailure era
+     )
   => Core.Value era
   -> Core.TxBody era
   -> Core.AuxiliaryData era
@@ -489,8 +496,21 @@ exampleTx txBody auxiliaryData = SL.Tx txBody witnessSet (SJust auxiliaryData)
 
 -- TODO incomplete, this type has tons of constructors that can all change.
 -- <https://github.com/input-output-hk/ouroboros-network/issues/1896.
-exampleApplyTxErr :: ShelleyBasedEra era => ApplyTxErr (ShelleyBlock era)
-exampleApplyTxErr = ApplyTxError []
+exampleApplyTxErr ::
+     forall era.
+     ( ShelleyBasedEra era
+     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
+       ~ SL.LedgerPredicateFailure era
+     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
+       ~ SL.DelegsPredicateFailure era
+     )
+  => ApplyTxErr (ShelleyBlock era)
+exampleApplyTxErr =
+      ApplyTxError
+    $ pure
+    $ SL.LedgerFailure
+    $ SL.DelegsFailure
+    $ SL.DelegateeNotRegisteredDELEG @era (mkKeyHash 1)
 
 exampleAnnTip :: forall era. ShelleyBasedEra era => AnnTip (ShelleyBlock era)
 exampleAnnTip = AnnTip {
