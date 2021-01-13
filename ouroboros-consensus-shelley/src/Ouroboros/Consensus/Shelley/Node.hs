@@ -66,8 +66,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
+import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
@@ -499,10 +499,10 @@ registerGenesisStaking staking nes = nes {
 --
 -- TODO move to @cardano-ledger-specs@.
 registerInitialFunds ::
-    forall era.
-    ( ShelleyBasedEra era
-    , HasCallStack
-    )
+     forall era.
+     ( ShelleyBasedEra era
+     , HasCallStack
+     )
   => Map (SL.Addr (EraCrypto era)) SL.Coin
   -> SL.NewEpochState era
   -> SL.NewEpochState era

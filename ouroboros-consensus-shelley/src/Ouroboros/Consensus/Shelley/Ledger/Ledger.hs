@@ -167,12 +167,9 @@ data instance LedgerState (ShelleyBlock era) = ShelleyLedgerState {
     }
   deriving (Generic)
 
-deriving instance ShelleyBasedEra era
-  => Show (LedgerState (ShelleyBlock era))
-deriving instance ShelleyBasedEra era
-  => Eq   (LedgerState (ShelleyBlock era))
-deriving instance ShelleyBasedEra era
-  => NoThunks(LedgerState (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => Show     (LedgerState (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => Eq       (LedgerState (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => NoThunks (LedgerState (ShelleyBlock era))
 
 -- | Information required to determine the hard fork point from Shelley to the
 -- next ledger
@@ -231,7 +228,7 @@ data instance Ticked (LedgerState (ShelleyBlock era)) = TickedShelleyLedgerState
   deriving (Generic)
 
 deriving instance ShelleyBasedEra era
-  => NoThunks (Ticked (LedgerState (ShelleyBlock era)))
+               => NoThunks (Ticked (LedgerState (ShelleyBlock era)))
 
 untickedShelleyLedgerTipPoint ::
      Ticked (LedgerState (ShelleyBlock era))
