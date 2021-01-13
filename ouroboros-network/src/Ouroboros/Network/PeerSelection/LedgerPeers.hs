@@ -49,7 +49,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Text.Printf
 
 -- | Only use the ledger after the given slot number.
-data UseLedgerAfter = DontUseLedger | UseLedgerAfter SlotNo deriving Show
+data UseLedgerAfter = DontUseLedger | UseLedgerAfter SlotNo deriving (Eq, Show)
 
 isLedgerPeersEnabled :: UseLedgerAfter -> Bool
 isLedgerPeersEnabled DontUseLedger = False
