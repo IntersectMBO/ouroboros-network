@@ -260,6 +260,7 @@ data DiffusionArguments = DiffusionArguments {
     , daStaticLocalRootPeers :: [(Socket.SockAddr, PeerAdvertise)]
     , daLocalRootPeers       :: [(DomainAddress, PeerAdvertise)]
     , daPublicRootPeers      :: [DomainAddress]
+    , daUseLedgerAfter       :: UseLedgerAfter
 
     , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
       -- ^ parameters for limiting number of accepted connections
@@ -552,6 +553,7 @@ runDataDiffusion tracers
                                     , daStaticLocalRootPeers
                                     , daLocalRootPeers
                                     , daPublicRootPeers
+                                    , daUseLedgerAfter
                                     , daAcceptedConnectionsLimit
                                     , daDiffusionMode
                                     , daProtocolIdleTimeout
@@ -621,10 +623,6 @@ runDataDiffusion tracers
     -- ledger hasn't caught up to `useLedgerAfter`. May return less than
     -- the number of peers requested.
     ledgerPeersRsp <- newEmptyTMVarIO :: IO (StrictTMVar IO (Maybe (Set SockAddr, DiffTime)))
-    -- Require the ledger to be passed the provided slot number before it is used as a source of
-    -- public root peers.
-    -- After 2020-12-08 14:53:36.03 UTC TODO: Should be configurable
-    let useLedgerAfter = UseLedgerAfter 15872925
 
     let -- snocket for remote communication.
         snocket :: SocketSnocket
@@ -736,7 +734,7 @@ runDataDiffusion tracers
             (runLedgerPeers
               ledgerPeersRng
               dtLedgerPeersTracer
-              useLedgerAfter
+              daUseLedgerAfter
               daLedgerPeersCtx
               (resolveDomainAddresses
                 dtTracePublicRootPeersTracer
