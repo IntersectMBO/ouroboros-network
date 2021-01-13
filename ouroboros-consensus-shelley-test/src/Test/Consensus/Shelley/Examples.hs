@@ -490,12 +490,7 @@ exampleTx txBody auxiliaryData = SL.Tx txBody witnessSet (SJust auxiliaryData)
 -- TODO incomplete, this type has tons of constructors that can all change.
 -- <https://github.com/input-output-hk/ouroboros-network/issues/1896.
 exampleApplyTxErr :: ShelleyBasedEra era => ApplyTxErr (ShelleyBlock era)
-exampleApplyTxErr =
-      ApplyTxError
-    $ pure
-    $ SL.LedgerFailure
-    $ SL.DelegsFailure
-    $ SL.DelegateeNotRegisteredDELEG (mkKeyHash 1)
+exampleApplyTxErr = ApplyTxError []
 
 exampleAnnTip :: forall era. ShelleyBasedEra era => AnnTip (ShelleyBlock era)
 exampleAnnTip = AnnTip {
