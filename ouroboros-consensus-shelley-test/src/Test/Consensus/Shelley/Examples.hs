@@ -105,6 +105,7 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
 import qualified Cardano.Ledger.Mary.Value as MA
+import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import qualified Cardano.Ledger.ShelleyMA as MA
 import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
@@ -549,7 +550,7 @@ exampleNewEpochState value = SL.NewEpochState {
               _utxoState = SL.UTxOState {
                   _utxo      = SL.UTxO $ Map.fromList [
                       (SL.TxIn (SL.TxId (mkDummyHash Proxy 1)) 0,
-                       SL.TxOut addr value)
+                       SL.makeTxOut (Proxy @era) addr value)
                     ]
                 , _deposited = SL.Coin 1000
                 , _fees      = SL.Coin 1
