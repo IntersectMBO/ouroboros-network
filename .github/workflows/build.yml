@@ -90,13 +90,14 @@ jobs:
           *)            echo "CABAL_VERSION=3.4.0.0-rc4"  >> $GITHUB_ENV;;
         esac
 
-    - uses: haskell/actions/setup@v1
+    - name: Install Haskell
+      uses: haskell/actions/setup@v1
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: ${{ env.CABAL_VERSION }}
 
-    - name: Haskell versions
+    - name: Show Haskell tool versions
       run: |
         ghc --version
         cabal --version
@@ -108,20 +109,19 @@ jobs:
         echo "TMPDIR=$RUNNER_TEMP"  >> $GITHUB_ENV
         echo "TMP=$RUNNER_TEMP"     >> $GITHUB_ENV
 
-    # Cache cabal-store
-    - name: cache cabal store
+    - name: Cache cabal store
       uses: actions/cache@v2
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cabal-store-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
 
-    - name: update Hackage index
+    - name: Update Hackage index
       run: cabal v2-update
 
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
 
-    - name: Use cabal.project.local.windows
+    - name: Use cabal.project.local.ci.windows
       run: |
         cat ./cabal.project.local.ci.windows >> ./cabal.project.local
 
@@ -136,7 +136,6 @@ jobs:
       run: |
         cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
 
-    # Build dependencies
     - name: Build dependencies
       run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
 
@@ -148,46 +147,47 @@ jobs:
           cat "$x"
         done
 
-    #
-    # Build & Test network packages
-    #
+    # Build Win32 specific packages
 
     - name: Win32-network [build]
       if: matrix.os == 'windows-latest'
       run: cabal --builddir="$CABAL_BUILDDIR" build Win32-network
 
-    # ntp-client
+    # Build network packages
+
     - name: ntp-client [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build ntp-client
 
     - name: io-sim-classes [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build io-sim-classes
 
     - name: io-sim [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build io-sim
 
     - name: typed-protocols [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols
 
     - name: typed-protocols-examples [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols-examples
 
     - name: network-mux [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build network-mux
 
     - name: ouroboros-network-framework [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network-framework
 
     - name: ouroboros-network [build]
-      if: matrix.subset == 'consensus'
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network
+
+    # Build consensus packages
 
     - name: ouroboros-consensus [build]
       if: matrix.subset == 'consensus'
@@ -233,13 +233,13 @@ jobs:
       if: matrix.subset == 'consensus'
       run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-cardano-test
 
-    #
-    # Test network packages
-    #
+    # Test Win32 specific packages
 
     - name: Win32-network [test]
       if: matrix.os == 'windows-latest'
       run: cabal --builddir="$CABAL_BUILDDIR" run Win32-network:test
+
+    # Test network packages
 
     - name: ntp-client [test]
       if: matrix.subset == 'network'
@@ -267,8 +267,10 @@ jobs:
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
 
     - name: ouroboros-network [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test
 
+    # Test consensus packages
 
     # - name: ouroboros-consensus [test]
     #   if: matrix.subset == 'consensus'
