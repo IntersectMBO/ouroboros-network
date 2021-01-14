@@ -209,8 +209,8 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
                                  , blockFetchSize, btime
                                  , mempoolCapacityOverride
                                  } = do
-    varCandidates   <- newTVarIO mempty
-    mempool         <- openMempool registry
+    varCandidates <- newTVarIO mempty
+    mempool       <- openMempool registry
                                  (chainDBLedgerInterface chainDB)
                                  mempoolArgs
                                  (mempoolTracer tracers)
