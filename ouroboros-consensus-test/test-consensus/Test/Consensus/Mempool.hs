@@ -143,7 +143,7 @@ prop_pure_removeTxs
   -> Property
 prop_pure_removeTxs TestSetupSub {..} =
     withInternalState tssSetup $
-    \ mpArgs internalState ledgerState ->
+    \mpArgs internalState ledgerState ->
       let (internalStRes, _) = pureRemoveTxs
                                   (map txId tssSubTxs)
                                   mpArgs
@@ -158,7 +158,7 @@ prop_pure_removeTxs_contra
     -> Property
 prop_pure_removeTxs_contra TestSetupWithTxs {..} =
     withInternalState testSetup $
-    \ mpArgs internalState ledgerState ->
+    \mpArgs internalState ledgerState ->
       let (_res, internalState') = runTryAddTxs
                                     mpArgs
                                     internalState
@@ -176,7 +176,7 @@ prop_pure_removeTxs_contra TestSetupWithTxs {..} =
 prop_pure_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
 prop_pure_snapshotTxs_snapshotTxsAfter setup =
     withInternalState setup $
-    \ _mpArgs internalState _ledgerState ->
+    \_mpArgs internalState _ledgerState ->
       let MempoolSnapshot { snapshotTxs, snapshotTxsAfter } =
             implSnapshotFromIS internalState
       in  snapshotTxs === snapshotTxsAfter zeroTicketNo
@@ -189,7 +189,7 @@ prop_pure_addTxs_getTxs
   -> Property
 prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalState _ledgerState ->
+  \mpArgs internalState _ledgerState ->
     let (_res, internalState')          = runTryAddTxs
                                             mpArgs
                                             internalState
@@ -203,8 +203,8 @@ prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
 prop_pure_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalState _ledgerState ->
-      let internalState' = foldl' (\ is tx -> snd $ runTryAddTxs mpArgs is [tx])
+  \mpArgs internalState _ledgerState ->
+      let internalState' = foldl' (\is tx -> snd $ runTryAddTxs mpArgs is [tx])
                                internalState
                                (map fst txs)
           MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
@@ -217,7 +217,7 @@ prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
 prop_pure_addTxs_result :: TestSetupWithTxs -> Property
 prop_pure_addTxs_result TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalState _ledgerState ->
+  \mpArgs internalState _ledgerState ->
       let ((result, _), _internalSt') = runTryAddTxs
                                           mpArgs
                                           internalState
@@ -230,7 +230,7 @@ prop_pure_addTxs_result TestSetupWithTxs {..} =
 prop_pure_invalidTxsNeverAdded :: TestSetupWithTxs -> Property
 prop_pure_invalidTxsNeverAdded setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
-  \ mpArgs internalState _ledgerState ->
+  \mpArgs internalState _ledgerState ->
       let MempoolSnapshot { snapshotTxs = ta } = implSnapshotFromIS
                                                   internalState
           txsInMempoolBefore                   = map fst ta
@@ -262,7 +262,7 @@ prop_pure_invalidTxsNeverAdded setup@TestSetupWithTxs {..} =
 prop_pure_getCapacity :: MempoolCapTestSetup -> Property
 prop_pure_getCapacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
     withInternalState testSetup $
-    \ _mpArgs internalState _ledgerState ->
+    \_mpArgs internalState _ledgerState ->
         let actualCapacity = getCapacityIS internalState
         in  actualCapacity === testCapacity
   where
@@ -277,7 +277,7 @@ prop_pure_getCapacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
 prop_pure_capacity :: MempoolCapTestSetup -> Property
 prop_pure_capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
     withInternalState testSetup $
-    \ mpArgs internalState _ledgerState ->
+    \mpArgs internalState _ledgerState ->
         let capacity' = getCapacityIS internalState
             snapshot  = implSnapshotFromIS internalState
             curSize   = (msNumBytes . snapshotMempoolSize) snapshot
