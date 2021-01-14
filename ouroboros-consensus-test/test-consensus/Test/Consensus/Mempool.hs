@@ -242,7 +242,7 @@ prop_pure_invalidTxsNeverAdded setup@TestSetupWithTxs {..} =
                                                    (allTxs setup)
           MempoolSnapshot { snapshotTxs = tb } = implSnapshotFromIS
                                                    internalState'
-          txsInMempoolAfter   = map fst tb
+          txsInMempoolAfter                    = map fst tb
       in  counterexample (ppTxs txs) $ conjoin
         -- Check for each transaction in the mempool (ignoring those already
         -- in the mempool beforehand) that it was a valid transaction.
