@@ -244,16 +244,16 @@ prop_pure_invalidTxsNeverAdded setup@TestSetupWithTxs {..} =
                                                    internalState'
           txsInMempoolAfter                    = map fst tb
       in  counterexample (ppTxs txs) $ conjoin
-        -- Check for each transaction in the mempool (ignoring those already
-        -- in the mempool beforehand) that it was a valid transaction.
-        --
-        -- Note that we can't check that no invalid transactions are in the
-        -- mempool because the same transaction could be added twice: the
-        -- first time as a valid one and the second time as an invalid one.
-        [ find (== txInMempool) (validTxs setup) === Just txInMempool
-        | txInMempool <- txsInMempoolAfter
-        , txInMempool `notElem` txsInMempoolBefore
-        ]
+            -- Check for each transaction in the mempool (ignoring those already
+            -- in the mempool beforehand) that it was a valid transaction.
+            --
+            -- Note that we can't check that no invalid transactions are in the
+            -- mempool because the same transaction could be added twice: the
+            -- first time as a valid one and the second time as an invalid one.
+            [ find (== txInMempool) (validTxs setup) === Just txInMempool
+            | txInMempool <- txsInMempoolAfter
+            , txInMempool `notElem` txsInMempoolBefore
+            ]
 
 -- | Test that 'getCapacity' returns the 'MempoolCapacityBytes' value that the
 -- mempool was initialized with.
