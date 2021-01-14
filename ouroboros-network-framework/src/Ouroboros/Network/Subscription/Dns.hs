@@ -163,7 +163,8 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
     handleResult ipv6Rsps ipv4Rsps (Right (Right _)) = do
         -- Try to use IPv4 result first.
         traceWith tracer DnsTraceLookupIPv4First
-        return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Right ipv6Rsps)
+        ipv4Res <- atomically $ takeTMVar ipv4Rsps
+        return $ SubscriptionTarget $ listTargets (Left ipv4Res) (Right ipv6Rsps)
 
 
     -- | Returns a series of SockAddr, where the address family will alternate
@@ -188,26 +189,7 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
           else listTargets ipvB (Left addrs)
 
     -- No result for either family yet.
-    listTargets (Right addrsVarA) (Right addrsVarB) = do
-        -- TODO: can be implemented with orElse once support for it is added to MonadSTM.
-        addrsRes <- atomically $ do
-            a_m <- tryReadTMVar addrsVarA
-            b_m <- tryReadTMVar addrsVarB
-            case (a_m, b_m) of
-                 (Nothing, Nothing) -> retry
-                 (Just a, _)        -> return $ Left a
-                 (_, Just b)        -> return $ Right b
-        let (addrs, nextAddrs) = case addrsRes of
-                                      Left a  -> (a, Right addrsVarB)
-                                      Right a -> (a, Right addrsVarA)
-        if null addrs
-           then listTargets (Right addrsVarB) (Left [])
-           else do
-             let addr = head addrs
-             b <- runBeforeConnect peerStatesVar beforeConnect addr
-             if b
-               then return $ Just (head addrs, SubscriptionTarget (listTargets nextAddrs (Left $ tail addrs)))
-               else listTargets nextAddrs (Left $ tail addrs)
+    listTargets (Right _) (Right _) = error "Can't happen"
 
     -- Wait on the result for one family.
     listTargets (Right addrsVar) (Left []) = do
