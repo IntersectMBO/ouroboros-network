@@ -532,7 +532,13 @@ extendVRPrevApplied cfg txTicket vr =
                       }
   where
     TxTicket { txTicketTx = tx } = txTicket
-    ValidationResult { vrValid, vrSlotNo, vrValidTxIds, vrAfter, vrInvalid } = vr
+    ValidationResult {
+        vrValid
+      , vrSlotNo
+      , vrValidTxIds
+      , vrAfter
+      , vrInvalid
+      } = vr
 
 -- | Extend 'ValidationResult' with a new transaction (one which we have not
 -- previously validated) that may or may not be valid in this ledger state.
