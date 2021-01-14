@@ -385,6 +385,7 @@ withInternalState testSetup@TestSetup {..} func =
                                   slot
                                   st'
     ((res, _), internalState') = runTryAddTxs args internalState testInitialTxs
+
     isOverride (MempoolCapacityBytesOverride _) = True
     isOverride NoMempoolCapacityBytesOverride   = False
 
