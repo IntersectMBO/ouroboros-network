@@ -285,7 +285,7 @@ prop_pure_capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
             curSize   = (msNumBytes . snapshotMempoolSize) snapshot
 
             (res@(processed, unprocessed), _internalSt') =
-                       runTryAddTxs mpArgs internalState (map fst txs)
+                runTryAddTxs mpArgs internalState (map fst txs)
         in  counterexample ("Initial size: " <> show curSize)    $
             classify (null processed)   "no transactions added"  $
             classify (null unprocessed) "all transactions added" $
