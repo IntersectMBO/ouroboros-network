@@ -178,7 +178,6 @@ prop_pure_snapshotTxs_snapshotTxsAfter setup =
             implSnapshotFromIS internalState
       in  snapshotTxs === snapshotTxsAfter zeroTicketNo
 
-
 -- | Test that all valid transactions added to a 'Mempool' can be retrieved
 -- afterward.
 prop_pure_addTxs_getTxs :: TestSetupWithTxs -> Property
