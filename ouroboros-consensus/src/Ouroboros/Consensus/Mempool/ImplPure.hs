@@ -245,7 +245,8 @@ pureTryAddTxs
   -> [GenTx blk]
   -> InternalState blk
   -> TryAddTxs blk
-pureTryAddTxs _      [] _  = Done
+pureTryAddTxs _      []                     _
+    = Done
 pureTryAddTxs mpArgs toAdd@(firstTx:toAdd') state
     | let firstTxSize = mpArgsTxSize mpArgs firstTx
           curSize = msNumBytes $ isMempoolSize state
