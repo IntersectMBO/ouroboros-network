@@ -60,35 +60,77 @@ import           Test.Util.QuickCheck (elements)
 tests :: TestTree
 tests = testGroup "Mempool"
   [ testGroup "TxSeq"
-      [ testProperty "lookupByTicketNo complete"            prop_TxSeq_lookupByTicketNo_complete
-      , testProperty "lookupByTicketNo sound"               prop_TxSeq_lookupByTicketNo_sound
-      , testProperty "splitAfterTxSize"                     prop_TxSeq_splitAfterTxSize
-      , testProperty "splitAfterTxSizeSpec"                 prop_TxSeq_splitAfterTxSizeSpec
+      [ testProperty "lookupByTicketNo complete" prop_TxSeq_lookupByTicketNo_complete
+      , testProperty "lookupByTicketNo sound"    prop_TxSeq_lookupByTicketNo_sound
+      , testProperty "splitAfterTxSize"          prop_TxSeq_splitAfterTxSize
+      , testProperty "splitAfterTxSizeSpec"      prop_TxSeq_splitAfterTxSizeSpec
       ]
-  , testGroup "MempoolPure"
-      [ testProperty "removed transactions are removed"     prop_pure_removeTxs
-      , testProperty "not removed transactions remain"      prop_pure_removeTxs_contra
-      , testProperty "valid added txs == getTxs"            prop_pure_addTxs_getTxs
-      , testProperty "addTxs txs == mapM runTryAddTxs txs"  prop_pure_addTxs_one_vs_multiple
-      , testProperty "snapshotTxs == snapshotTxsAfter ze.." prop_pure_snapshotTxs_snapshotTxsAfter
-      , testProperty "result of addTxs"                     prop_pure_addTxs_result
-      , testProperty "invalid transactions are never added" prop_pure_invalidTxsNeverAdded
-      , testProperty "result of getCapacity"                prop_pure_getCapacity
-      , testProperty "tryAddTxs with mempool at capacity"   prop_pure_capacity
+  , testGroup "MempoolPure" $
+      pureTests ++
+      [ testProperty "not removed transactions remain" prop_pure_removeTxs_contra
       ]
-  , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx"  prop_Mempool_snapshotTxs_snapshotTxsAfter
-  , testProperty "valid added txs == getTxs"                prop_Mempool_addTxs_getTxs
-  , testProperty "addTxs txs == mapM (addTxs . pure) txs"   prop_Mempool_addTxs_one_vs_multiple
-  , testProperty "result of addTxs"                         prop_Mempool_addTxs_result
-  , testProperty "invalid transactions are never added"     prop_Mempool_invalidTxsNeverAdded
-  , testProperty "result of getCapacity"                    prop_Mempool_getCapacity
-  , testProperty "tryAddTxs with mempool at capacity"       prop_Mempool_Capacity
-  , testProperty "Added valid transactions are traced"      prop_Mempool_TraceValidTxs
-  , testProperty "Rejected invalid txs are traced"          prop_Mempool_TraceRejectedTxs
-  , testProperty "Removed invalid txs are traced"           prop_Mempool_TraceRemovedTxs
-  , testProperty "idx consistency"                          prop_Mempool_idx_consistency
-  , testProperty "removeTxs"                                prop_Mempool_removeTxs
+  , testGroup "MempoolImpure" $
+      impureTests ++
+      [ testProperty "Added valid transactions are traced" prop_Mempool_TraceValidTxs
+      , testProperty "Rejected invalid txs are traced"     prop_Mempool_TraceRejectedTxs
+      , testProperty "Removed invalid txs are traced"      prop_Mempool_TraceRemovedTxs
+      , testProperty "idx consistency"                     prop_Mempool_idx_consistency
+      ]
   ]
+  where
+    pureTests :: [TestTree]
+    pureTests =
+      [ testProperty name prop
+      | PureAndImpureProp name prop _impure <- pureAndImpureProps
+      ]
+
+    impureTests :: [TestTree]
+    impureTests =
+      [ testProperty name prop
+      | PureAndImpureProp name _pure prop <- pureAndImpureProps
+      ]
+
+    pureAndImpureProps :: [PureAndImpureProp]
+    pureAndImpureProps =
+      [ mkPureAndImpureProp "valid added txs == getTxs"
+          prop_pure_addTxs_getTxs
+          prop_Mempool_addTxs_getTxs
+      , mkPureAndImpureProp "snapshotTxs == snapshotTxsAfter zeroIdx"
+          prop_pure_snapshotTxs_snapshotTxsAfter
+          prop_Mempool_snapshotTxs_snapshotTxsAfter
+      , mkPureAndImpureProp "tryAddTxs with mempool at capacity"
+          prop_pure_capacity
+          prop_Mempool_Capacity
+      , mkPureAndImpureProp "invalid transactions are never added"
+          prop_pure_invalidTxsNeverAdded
+          prop_Mempool_invalidTxsNeverAdded
+      , mkPureAndImpureProp "result of addTxs"
+          prop_pure_addTxs_result
+          prop_Mempool_addTxs_result
+      , mkPureAndImpureProp "result of getCapacity"
+          prop_pure_getCapacity
+          prop_Mempool_getCapacity
+      , mkPureAndImpureProp "adding many agrees with many singleton adds"
+          prop_pure_addTxs_one_vs_multiple
+          prop_Mempool_addTxs_one_vs_multiple
+      , mkPureAndImpureProp "removed transactions are removed"
+          prop_pure_removeTxs
+          prop_Mempool_removeTxs
+      ]
+
+-- | A property that we check against both the core pure implementation and
+-- also against the impure wrapper around the pure one.
+data PureAndImpureProp =
+    PureAndImpureProp
+      String
+      Property    -- ^ pure
+      Property    -- ^ impure
+
+mkPureAndImpureProp
+  :: (Testable prop1, Testable prop2)
+  => String -> prop1 -> prop2 -> PureAndImpureProp
+mkPureAndImpureProp name prop1 prop2 =
+    PureAndImpureProp name (property prop1) (property prop2)
 
 {-------------------------------------------------------------------------------
   Mempool Pure Properties
