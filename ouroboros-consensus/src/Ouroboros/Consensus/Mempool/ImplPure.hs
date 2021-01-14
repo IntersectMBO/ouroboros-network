@@ -239,8 +239,8 @@ data TryAddTxs blk =
 -- 'InternalState'.
 --
 -- See 'runTryAddTxs' for an example of a pure interpreter of this control flow.
-pureTryAddTxs ::
-     (LedgerSupportsMempool blk, HasTxId (GenTx blk))
+pureTryAddTxs
+  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
   => MempoolArgs blk
   -> [GenTx blk]
   -> InternalState blk
@@ -276,8 +276,8 @@ pureTryAddTxs mpArgs toAdd@(firstTx:toAdd') state
 
 -- | Run the 'TryAddTxs' flow in a pure way, returning the result as well as the
 -- final 'InternalState'.
-runTryAddTxs ::
-     forall blk. (LedgerSupportsMempool blk, HasTxId (GenTx blk))
+runTryAddTxs
+  :: forall blk. (LedgerSupportsMempool blk, HasTxId (GenTx blk))
   => MempoolArgs blk
   -> InternalState blk
   -> [GenTx blk]
