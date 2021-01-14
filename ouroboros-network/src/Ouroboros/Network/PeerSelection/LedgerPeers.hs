@@ -23,6 +23,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
     ) where
 
 
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -70,6 +71,8 @@ data TraceLedgerPeers =
     | FetchingNewLedgerState !Int
       -- ^ Trace for fetching a new list of peers from the ledger. Int is the number of peers
       -- returned.
+    | DisabledLedgerPeers
+      -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedger.
     | WaitingOnRequest
     | RequestForPeers !NumberOfPeers
     | ReusingLedgerState !Int !DiffTime
@@ -96,6 +99,7 @@ instance Show TraceLedgerPeers where
           cnt
           (show age)
     show FallingBackToBootstrapPeers = "Falling back to bootstrap peers"
+    show DisabledLedgerPeers = "LedgerPeers is disabled"
 
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
@@ -208,7 +212,7 @@ runLedgerPeers inRng tracer useLedgerAfter LedgerPeersConsensusInterface{..} doR
                              then
                                  case useLedgerAfter of
                                    DontUseLedger -> do
-                                     traceWith tracer $ FetchingNewLedgerState 0
+                                     traceWith tracer DisabledLedgerPeers
                                      return (Map.empty, now)
                                    UseLedgerAfter slot -> do
                                      peers_m <- atomically $ lpGetPeers slot
@@ -222,7 +226,8 @@ runLedgerPeers inRng tracer useLedgerAfter LedgerPeersConsensusInterface{..} doR
 
         if Map.null peerMap'
            then do
-               traceWith tracer FallingBackToBootstrapPeers
+               when (isLedgerPeersEnabled useLedgerAfter) $
+                   traceWith tracer FallingBackToBootstrapPeers
                atomically $ putRsp Nothing
                go rng ts peerMap'
            else do
