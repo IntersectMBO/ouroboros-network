@@ -322,10 +322,11 @@ pureRemoveTxs txIds mpArgs IS{isTxs, isLastTicketNo} ledgerState =
       -- Filtering is O(n), but this function will rarely be used, as it is an
       -- escape hatch when there's an inconsistency between the ledger and the
       -- mempool.
-    txTickets' = filter
-                   ((`notElem` toRemove) . txId . txTicketTx)
-                   (TxSeq.toList isTxs)
+    txTickets'     = filter
+                       ((`notElem` toRemove) . txId . txTicketTx)
+                       (TxSeq.toList isTxs)
     (slot, ticked) = tickLedgerState cfg (ForgeInUnknownSlot ledgerState)
+
     vr = revalidateTxsFor
             capacityOverride
             cfg
@@ -333,14 +334,17 @@ pureRemoveTxs txIds mpArgs IS{isTxs, isLastTicketNo} ledgerState =
             ticked
             isLastTicketNo
             txTickets'
-    state' = internalStateFromVR vr
-    removed = map fst (vrInvalid vr)
+
+    state'      = internalStateFromVR vr
+    removed     = map fst (vrInvalid vr)
     mempoolSize = isMempoolSize state'
-    tracer = TraceMempoolManuallyRemovedTxs txIds removed mempoolSize
+    tracer      = TraceMempoolManuallyRemovedTxs txIds removed mempoolSize
+
     MempoolArgs
-      { mpArgsLedgerCfg = cfg
+      { mpArgsLedgerCfg        = cfg
       , mpArgsCapacityOverride = capacityOverride
       } = mpArgs
+
     toRemove = Set.fromList txIds
 
 pureSyncWithLedger
