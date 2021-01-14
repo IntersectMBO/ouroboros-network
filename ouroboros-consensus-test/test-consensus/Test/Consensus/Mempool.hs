@@ -643,10 +643,10 @@ ppTestSetup :: TestSetup -> String
 ppTestSetup TestSetup { testInitialTxs
                       , testMempoolCapOverride
                       } = unlines $
-    ["Initial contents of the Mempool:"]  <>
-    map ppTestTxWithHash testInitialTxs <>
-    ["Mempool capacity override:"]        <>
-    [show testMempoolCapOverride]
+       ["Initial contents of the Mempool:"]
+    <> map ppTestTxWithHash testInitialTxs
+    <> ["Mempool capacity override:"]
+    <> [show testMempoolCapOverride]
 
 ppTestTxWithHash :: TestTx -> String
 ppTestTxWithHash x = condense
