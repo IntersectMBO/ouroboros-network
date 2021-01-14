@@ -233,16 +233,19 @@ prop_pure_invalidTxsNeverAdded :: TestSetupWithTxs -> Property
 prop_pure_invalidTxsNeverAdded setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
   \mpArgs internalState _ledgerState ->
-      let MempoolSnapshot { snapshotTxs = ta } = implSnapshotFromIS
-                                                   internalState
-          txsInMempoolBefore                   = map fst ta
-          (_res, internalState')               = runTryAddTxs
-                                                   mpArgs
-                                                   internalState
-                                                   (allTxs setup)
-          MempoolSnapshot { snapshotTxs = tb } = implSnapshotFromIS
-                                                   internalState'
-          txsInMempoolAfter                    = map fst tb
+      let MempoolSnapshot { snapshotTxs = ta } =
+            implSnapshotFromIS internalState
+
+          txsInMempoolBefore     = map fst ta
+          (_res, internalState') = runTryAddTxs
+                                     mpArgs
+                                     internalState
+                                     (allTxs setup)
+
+          MempoolSnapshot { snapshotTxs = tb } =
+            implSnapshotFromIS internalState'
+
+          txsInMempoolAfter = map fst tb
       in  counterexample (ppTxs txs) $ conjoin
             -- Check for each transaction in the mempool (ignoring those already
             -- in the mempool beforehand) that it was a valid transaction.
