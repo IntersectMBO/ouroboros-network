@@ -182,23 +182,23 @@ prop_pure_snapshotTxs_snapshotTxsAfter setup =
 -- afterward.
 prop_pure_addTxs_getTxs :: TestSetupWithTxs -> Property
 prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
-  withInternalState testSetup $
-  \mpArgs internalState _ledgerState ->
-    let (_res, internalState') = runTryAddTxs
-                                   mpArgs
-                                   internalState
-                                   (map fst txs)
+    withInternalState testSetup $
+    \mpArgs internalState _ledgerState ->
+      let (_res, internalState') = runTryAddTxs
+                                     mpArgs
+                                     internalState
+                                     (map fst txs)
 
-        MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
-    in  counterexample (ppTxs txs) $
-          validTxs setup `isSuffixOf` map fst snapshotTxs
+          MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
+      in  counterexample (ppTxs txs) $
+            validTxs setup `isSuffixOf` map fst snapshotTxs
 
 -- | Same as 'prop_Mempool_addTxs_getTxs', but add the transactions one-by-one
 -- instead of all at once.
 prop_pure_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
-  withInternalState testSetup $
-  \mpArgs internalState _ledgerState ->
+    withInternalState testSetup $
+    \mpArgs internalState _ledgerState ->
       let internalState' = foldl'
                              (\is tx -> snd $ runTryAddTxs mpArgs is [tx])
                              internalState
@@ -213,8 +213,8 @@ prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
 -- valid transactions don't.
 prop_pure_addTxs_result :: TestSetupWithTxs -> Property
 prop_pure_addTxs_result TestSetupWithTxs {..} =
-  withInternalState testSetup $
-  \mpArgs internalState _ledgerState ->
+    withInternalState testSetup $
+    \mpArgs internalState _ledgerState ->
       let ((result, _), _internalSt') = runTryAddTxs
                                           mpArgs
                                           internalState
@@ -226,8 +226,8 @@ prop_pure_addTxs_result TestSetupWithTxs {..} =
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_pure_invalidTxsNeverAdded :: TestSetupWithTxs -> Property
 prop_pure_invalidTxsNeverAdded setup@TestSetupWithTxs {..} =
-  withInternalState testSetup $
-  \mpArgs internalState _ledgerState ->
+    withInternalState testSetup $
+    \mpArgs internalState _ledgerState ->
       let (_res, internalState') = runTryAddTxs
                                      mpArgs
                                      internalState
