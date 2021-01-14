@@ -250,7 +250,7 @@ pureTryAddTxs mpArgs toAdd state = case toAdd of
 
     firstTx:toAdd'
       | let firstTxSize = mpArgsTxSize mpArgs firstTx
-            curSize = msNumBytes $ isMempoolSize state
+            curSize     = msNumBytes $ isMempoolSize state
       , curSize + firstTxSize > getMempoolCapacityBytes (isCapacity state)
       -> NoSpaceLeft toAdd
 
