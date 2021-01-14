@@ -3,6 +3,196 @@
 
 TODO\todo{TODO}: This is currently a disjoint collection of snippets.
 
+\section{Union of the Volatile DB and the Immutable DB}
+\label{chaindb:union}
+
+As discussed in \cref{storage:components}, the blocks in the Chain DB are
+divided between the Volatile DB (\cref{volatile}) and the Immutable DB
+(\cref{immutable}). Yet, it presents a unified view of the two databases.
+Whereas the Immutable DB only contains the immutable chain and the Volatile DB
+the volatile \emph{parts} of multiple forks, by combining the two, the Chain DB
+contains multiple forks.
+
+\subsection{Looking up blocks}
+\label{chaindb:union:lookup}
+
+Just like the two underlying databases the Chain DB allows looking up a
+\lstinline!BlockComponent! of a block by its point. By comparing the slot number
+of the point to the slot of the immutable tip, we could decide in which database
+to look up the block. However, this would not be correct: the point might have a
+slot older than the immutable tip, but refer to a block not in the Immutable DB,
+i.e., a block on an older fork. More importantly, there is a potential race
+condition: between the time at which the immutable tip was retrieved and the
+time the block is retrieved from the Volatile DB, the block might have been
+copied to the Immutable DB and garbage collected from the Volatile DB, resulting
+in a false negative. Nevertheless, the overlap between the two makes this
+scenario very unlikely.
+
+For these reasons, we look up a block in the Chain DB as follows. We first look
+up the given point in the Volatile DB. If the block is not in the Volatile DB,
+we fall back to the Immutable DB. This means that if, at the same, a block is
+copied from the Volatile DB to the Immutable DB and garbage collected from the
+Volatile DB, we will still find it in the Immutable DB. Note that failed lookups
+in the Volatile DB are cheap, as no disk access is required.
+
+\subsection{Iterators}
+\label{chaindb:union:iterators}
+
+Similar to the Immutable DB (\cref{immutable:api:iterators}), the Chain DB
+allows streaming blocks using iterators. We only support streaming blocks from
+the current chain or from a recent fork. We \emph{do not} support streaming from
+a fork that starts before the current immutable tip, as these blocks are likely
+to be garbage collected soon. Moreover, it is of no use to us to serve another
+node blocks from a fork we discarded.
+
+We might have to stream blocks from the Immutable DB, the Volatile DB, or from
+both. If the end bound is older or equal to the immutable tip, we simply try to
+open an Immutable DB iterator with the given bounds. If the end bound is newer
+than the immutable tip, we construct a path of points (see
+\lstinline!filterByPredecessor! in \cref{volatile:api}) connecting the end bound
+to the start bound. This path is either entirely in the Volatile DB or it is
+partial because a block is missing from the Volatile DB. If the missing block is
+the tip of the Immutable DB, we will have to stream from the Immutable DB in
+addition to the Volatile DB. If the missing block is not the tip of the
+Immutable DB, we consider the range to be invalid. In other words, we allow
+streaming from both databases, but only if the immutable tip is the transition
+point between the two, it cannot be a block before the tip, as that would mean
+the fork is too old.
+
+\todo{TODO} Image?
+
+To stream blocks from the Volatile DB, we maintain the constructed path of
+points as a list in memory and look up the corresponding block (component) in
+the Volatile DB one by one.
+
+Consider the following scenario: we open a Chain DB iterator to stream the
+beginning of the current volatile chain, i.e., the blocks in the Volatile DB
+right after the immutable tip. However, before streaming the iterator's first
+block, we switch to a long fork that forks off all the way back at our immutable
+tip. If that fork is longer than the previous chain, blocks from the start of
+our chain will be copied from the Volatile DB to the Immutable DB,\todo{link}
+advancing the immutable tip. This means the blocks the iterator will stream are
+now part of a fork older than $k$. In this new situation, we would not allow
+opening an iterator with the same range as the already-opened iterator. However,
+we do allow streaming these blocks using the already opened iterator, as the
+blocks to stream are unlikely to have already been garbage collected.
+Nevertheless, it is still theoretically possible\footnote{This is unlikely, as
+there is a delay between copying and garbage collection (see
+\cref{chaindb:gc:delay}) and there are network time-outs on the block fetch
+protocol, of which the server-side (see \cref{servers:blockfetch}) is the
+primary user of Chain DB iterators.} that such a block has already been garbage
+collected. For this reason, the Chain DB extends the Immutable DB's
+\lstinline!IteratorResult! type (see \cref{immutable:api:iterators}) with the
+\lstinline!IteratorBlockGCed! constructor:
+%
+\begin{lstlisting}
+data IteratorResult blk b =
+    IteratorExhausted
+  | IteratorResult b
+  | IteratorBlockGCed (RealPoint blk)
+\end{lstlisting}
+
+There is another scenario to consider: we stream the blocks from the start of
+the current volatile chain, just like in the previous scenario. However, in this
+case, we do not switch to a fork, but our chain is extended with new blocks,
+which means blocks from the start of our volatile chain are copied from the
+Volatile DB to the Immutable DB. If these blocks have been copied and garbage
+collected before the iterator is used to stream them from the Volatile DB (which
+is unlikely, as explained in the previous scenario), the iterator will
+incorrectly yield \lstinline!IteratorBlockGCed!. Instead, when a block that was
+planned to be streamed from the Volatile DB is missing, we first look in the
+Immutable DB for the block in case it has been copied there. After the block
+copied to the Immutable has been streamed, we continue with the remaining blocks
+to stream from the Volatile DB. It might be the case that the next block has
+also been copied and garbage collected, requiring another switch to the
+Immutable DB. In the theoretical worst case, we have to switch between the two
+databases for each block, but this is nearly impossible to happen in practice.
+
+\subsection{Followers}
+\label{chaindb:union:followers}
+
+In addition to iterators, the Chain DB also supports \emph{followers}. Unlike an
+iterator, which is used to request a static segment of the current chain or a
+recent fork, a follower is used to follow the \emph{current chain}. Either from
+the start of from a suggested more recent point. Unlike iterators, followers are
+dynamic, they will follow the chain when it grows or forks. A follower is
+pull-based, just like its primary user, the chain sync server (see
+\cref{servers:chainsync}). This avoids the need to have a growing queue of
+changes to the chain on the server side in case the client side is slower.
+
+The API of a follower is as follows:
+%
+\begin{lstlisting}
+data Follower m blk a = Follower {
+      followerInstruction         :: m (Maybe (ChainUpdate blk a))
+    , followerInstructionBlocking :: m (ChainUpdate blk a)
+    , followerForward             :: [Point blk] -> m (Maybe (Point blk))
+    , followerClose               :: m ()
+    }
+\end{lstlisting}
+%
+The \lstinline!a! parameter is the same \lstinline!a! as the one in
+\lstinline!BlockComponent! (see \cref{immutable:api:block-component}), as a
+follower for any block component \lstinline!a! can be opened.
+
+A follower always has an implicit position associated with it. The
+\lstinline!followerInstruction! operation and its blocking variant allow
+requesting the next instruction w.r.t.\ the follower's implicit position, i.e.,
+a \lstinline!ChainUpdate!:
+%
+\begin{lstlisting}
+data ChainUpdate block a =
+    AddBlock a
+  | RollBack (Point block)
+\end{lstlisting}
+%
+The \lstinline!AddBlock! constructor indicates that to follow the current chain,
+the follower should extend its chain with the given block (component). Switching
+to a fork is represented by first rolling back to a certain point
+(\lstinline!RollBack!), followed by at least as many new blocks
+(\lstinline!AddBlock!) as blocks that have been rolled back. If we were to
+represent switching to a fork using a constructor like:
+%
+\begin{lstlisting}
+  | SwitchToFork (Point block) [a]
+\end{lstlisting}
+%
+we would need to have many blocks or block components in memory at the same
+time.
+
+These operations are implemented as follows. In case the follower is looking at
+the immutable part of the chain, an Immutable DB iterator is used and no
+rollbacks will be encountered. When the follower has advanced into the volatile
+part of the chain, the in-memory fragment containing the last $k$ headers is
+used (see \cref{storage:inmemory}). Depending on the block component, the
+corresponding block might have to be read from the Volatile DB.
+
+When a new chain has been adopted during chain selection (see
+\cref{chainsel:addblock}), all open followers that are looking at the part of
+the current chain that was rolled back are updated so that their next
+instruction will be the correct \lstinline!RollBack!. By definition, followers
+looking at the immutable part of the chain will be unaffected.
+
+By default, a follower will start from the very start of the chain, i.e., at
+genesis. Accordingly, the first instruction will be an \lstinline!AddBlock! with
+the very first block of the chain. As mentioned, the primary user of a follower
+is the chain sync server, of which the clients in most cases already have large
+parts of the chain. The \lstinline!followerForward! operation can be used in
+these cases to find a more recent intersection from which the follower can
+start. The client will sent a few recent points from its chain and the follower
+will try to find the most recent of them that is on our current chain. This is
+implemented by looking up blocks by their point in the current chain fragment
+and the Immutable DB.
+
+Followers are affected by garbage collection similarly to how iterators are
+(\cref{chaindb:union:iterators}): when the implicit position of the follower is
+in the immutable part of the chain, an Immutable DB iterator with a static range
+is used. Such an iterator is not aware of blocks appended to the Immutable DB
+since the iterator was opened. This means that when the iterator reaches its
+end, we first have to check whether more blocks have been appended to the
+Immutable DB. If so, a new iterator is opened to stream these blocks. If not, we
+switch over to the in-memory fragment.
+
 \section{Block processing queue}
 \label{chaindb:queue}
 
@@ -100,6 +290,7 @@ chain DB. References from elsewhere in the report to GC should probably
 refer here, though, not to the vol DB chapter.
 
 \subsection{GC delay}
+\label{chaindb:gc:delay}
 
 For performance reasons neither the immutable DB nor the volatile DB ever makes
 explicit \lstinline!fsync! calls to flush data to disk. This means that when the

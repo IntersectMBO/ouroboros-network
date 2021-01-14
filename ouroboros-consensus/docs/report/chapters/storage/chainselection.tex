@@ -344,8 +344,9 @@ The initialisation of the chain database proceeds as follows.
 
 \item
 \label{chaindb:init:imm}
-Initialise the immutable database, determine its tip $I$, and ask the
-ledger DB for the corresponding ledger state $L$.
+Initialise the immutable database, determine its tip $I$, and ask the ledger DB
+for the corresponding ledger state $L$ (see
+\cref{ledgerdb:on-disk:initialisation}).
 
 \item Compute the set of candidates anchored at the immutable database's tip
 \label{chaindb:init:compute}
