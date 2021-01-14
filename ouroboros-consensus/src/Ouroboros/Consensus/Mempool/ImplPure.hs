@@ -323,8 +323,8 @@ pureRemoveTxs txIds mpArgs IS{isTxs, isLastTicketNo} ledgerState =
       -- escape hatch when there's an inconsistency between the ledger and the
       -- mempool.
     txTickets' = filter
-            ((`notElem` toRemove) . txId . txTicketTx)
-            (TxSeq.toList isTxs)
+                   ((`notElem` toRemove) . txId . txTicketTx)
+                   (TxSeq.toList isTxs)
     (slot, ticked) = tickLedgerState cfg (ForgeInUnknownSlot ledgerState)
     vr = revalidateTxsFor
             capacityOverride
