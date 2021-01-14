@@ -367,18 +367,19 @@ withInternalState testSetup@TestSetup {..} func =
                                        <> condense invalidTx
           Nothing             -> func args internalState' testLedgerState
   where
-    args                      = MempoolArgs
-                                  testLedgerConfig
-                                  txSize
-                                  testMempoolCapOverride
-    (slot, st')               = tickLedgerState
-                                  testLedgerConfig
-                                  (ForgeInUnknownSlot testLedgerState)
-    internalState             = initInternalState
-                                  testMempoolCapOverride
-                                  zeroTicketNo
-                                  slot
-                                  st'
+    args          = MempoolArgs
+                      testLedgerConfig
+                      txSize
+                      testMempoolCapOverride
+    (slot, st')   = tickLedgerState
+                      testLedgerConfig
+                      (ForgeInUnknownSlot testLedgerState)
+    internalState = initInternalState
+                      testMempoolCapOverride
+                      zeroTicketNo
+                      slot
+                      st'
+
     ((res, _), internalState') = runTryAddTxs args internalState testInitialTxs
 
     isOverride (MempoolCapacityBytesOverride _) = True
