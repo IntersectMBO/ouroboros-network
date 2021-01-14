@@ -277,16 +277,16 @@ prop_pure_capacity :: MempoolCapTestSetup -> Property
 prop_pure_capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
     withInternalState testSetup $
     \mpArgs internalState _ledgerState ->
-        let capacity' = getCapacityIS internalState
-            snapshot  = implSnapshotFromIS internalState
-            curSize   = (msNumBytes . snapshotMempoolSize) snapshot
+      let capacity' = getCapacityIS internalState
+          snapshot  = implSnapshotFromIS internalState
+          curSize   = (msNumBytes . snapshotMempoolSize) snapshot
 
-            (res@(processed, unprocessed), _internalSt') =
-                runTryAddTxs mpArgs internalState (map fst txs)
-        in  counterexample ("Initial size: " <> show curSize)
-              $ classify (null processed)   "no transactions added"
-              $ classify (null unprocessed) "all transactions added"
-              $ blindErrors res === expectedResult capacity' curSize
+          (res@(processed, unprocessed), _internalSt') =
+              runTryAddTxs mpArgs internalState (map fst txs)
+      in  counterexample ("Initial size: " <> show curSize)
+            $ classify (null processed)   "no transactions added"
+            $ classify (null unprocessed) "all transactions added"
+            $ blindErrors res === expectedResult capacity' curSize
   where
     -- | Convert 'MempoolAddTxResult' into a 'Bool':
     -- isMempoolTxAdded -> True, isMempoolTxRejected -> False.
