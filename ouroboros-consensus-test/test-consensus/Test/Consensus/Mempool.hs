@@ -145,9 +145,9 @@ prop_pure_removeTxs TestSetupSub {..} =
     withInternalState tssSetup $
     \mpArgs internalState ledgerState ->
       let (internalStRes, _) = pureRemoveTxs
-                                  (map txId tssSubTxs)
-                                  mpArgs
-                                  internalState ledgerState
+                                 (map txId tssSubTxs)
+                                 mpArgs
+                                 internalState ledgerState
           txIdsRemaining     = Set.toList (getTxIdsIS internalStRes)
       in  property $ null $ intersect txIdsRemaining (map txId tssSubTxs)
 
