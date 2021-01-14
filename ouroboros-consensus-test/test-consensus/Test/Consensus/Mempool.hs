@@ -191,10 +191,11 @@ prop_pure_addTxs_getTxs
 prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
   \mpArgs internalState _ledgerState ->
-    let (_res, internalState')          = runTryAddTxs
-                                            mpArgs
-                                            internalState
-                                            (map fst txs)
+    let (_res, internalState') = runTryAddTxs
+                                   mpArgs
+                                   internalState
+                                   (map fst txs)
+
         MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
     in  counterexample (ppTxs txs) $
           validTxs setup `isSuffixOf` map fst snapshotTxs
