@@ -160,14 +160,14 @@ prop_pure_removeTxs_contra TestSetupWithTxs {..} =
     withInternalState testSetup $
     \mpArgs internalState ledgerState ->
       let (_res, internalState') = runTryAddTxs
-                                    mpArgs
-                                    internalState
-                                    (map fst txs)
+                                     mpArgs
+                                     internalState
+                                     (map fst txs)
           (internalStRes, _)     = pureRemoveTxs
-                                    (map (txId . fst) txs)
-                                    mpArgs
-                                    internalState'
-                                    ledgerState
+                                     (map (txId . fst) txs)
+                                     mpArgs
+                                     internalState'
+                                     ledgerState
           txIdsRemaining         = Set.toAscList (getTxIdsIS internalStRes)
           txIdsInitial           = Set.toAscList (getTxIdsIS internalState)
       in  txIdsRemaining === txIdsInitial
