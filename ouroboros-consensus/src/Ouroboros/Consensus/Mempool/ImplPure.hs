@@ -9,32 +9,22 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Mempool.ImplPure (
-    MempoolArgs(..)
-  , InternalState -- opaque
-  , initInternalState
-  , getCapacityIS
-  , getTxIdsIS
+    MempoolArgs (..)
   , MempoolCapacityBytesOverride(..)
-  , tickLedgerState
-  , ValidationResult(..)
-  , revalidateTxsFor
-  , validateStateFor
-  , validationResultFromIS
-  , validateIS
-  , extendVRNew
-  , internalStateFromVR
-  , implSnapshotGetMempoolSize
-  , implSnapshotHasTx
-  , implSnapshotGetTxs
-  , implSnapshotGetTx
-  , implSnapshotGetTxsForSize
+  , InternalState -- opaque
+  , TryAddTxs (..)
+  , getCapacityIS
   , implSnapshotFromIS
-  , TryAddTxs(..)
-  , pureTryAddTxs
-  , pureSyncWithLedger
-  , pureRemoveTxs
+  , initInternalState
+  , internalStateFromVR
   , isMempoolSize
+  , pureRemoveTxs
+  , pureSyncWithLedger
+  , pureTryAddTxs
+  , tickLedgerState
+  , validateStateFor
     -- * For testing purposes
+  , getTxIdsIS
   , runTryAddTxs
   ) where
 
