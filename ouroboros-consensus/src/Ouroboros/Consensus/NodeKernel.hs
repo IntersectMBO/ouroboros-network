@@ -229,7 +229,6 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
                     txInBlockSize
                     mempoolCapacityOverride
 
-
 initBlockFetchConsensusInterface
     :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
     => TopLevelConfig blk
