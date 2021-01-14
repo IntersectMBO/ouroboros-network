@@ -223,7 +223,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
         blockFetchInterface = initBlockFetchConsensusInterface
           cfg chainDB getCandidates blockFetchSize btime
     return IS {..}
-  where mempoolArgs =  MempoolArgs
+  where mempoolArgs = MempoolArgs
                         (configLedger cfg)
                         txInBlockSize
                         mempoolCapacityOverride
