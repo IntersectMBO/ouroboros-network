@@ -373,17 +373,17 @@ withInternalState testSetup@TestSetup {..} func =
           Nothing             -> func args internalState' testLedgerState
   where
     args                      = MempoolArgs
-                                   testLedgerConfig
-                                   txSize
-                                   testMempoolCapOverride
+                                  testLedgerConfig
+                                  txSize
+                                  testMempoolCapOverride
     (slot, st')               = tickLedgerState
-                                   testLedgerConfig
-                                   (ForgeInUnknownSlot testLedgerState)
+                                  testLedgerConfig
+                                  (ForgeInUnknownSlot testLedgerState)
     internalState             = initInternalState
-                                   testMempoolCapOverride
-                                   zeroTicketNo
-                                   slot
-                                   st'
+                                  testMempoolCapOverride
+                                  zeroTicketNo
+                                  slot
+                                  st'
     ((res, _), internalState') = runTryAddTxs args internalState testInitialTxs
     isOverride (MempoolCapacityBytesOverride _) = True
     isOverride NoMempoolCapacityBytesOverride   = False
