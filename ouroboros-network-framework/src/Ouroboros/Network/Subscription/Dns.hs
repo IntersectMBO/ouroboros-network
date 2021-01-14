@@ -140,8 +140,8 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
     handleResult :: StrictTMVar m [Socket.SockAddr]
                  -> StrictTMVar m [Socket.SockAddr]
                  -> Either
-                      (Either SomeException (Maybe DNS.DNSError))
-                      (Either SomeException (Maybe DNS.DNSError))
+                      (Either SomeException ())
+                      (Either SomeException ())
                  -> m (SubscriptionTarget m Socket.SockAddr)
 
     handleResult _ ipv4Rsps (Left (Left e_ipv6)) = do
@@ -223,32 +223,29 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
     resolveAAAA :: Resolver m
                 -> StrictTMVar m [Socket.SockAddr]
-                -> m (Maybe DNS.DNSError)
+                -> m ()
     resolveAAAA resolver rspsVar = do
         r_e <- lookupAAAA resolver domain
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
                  traceWith tracer $ DnsTraceLookupAAAAError e
-                 return $ Just e
              Right r -> do
                  traceWith tracer $ DnsTraceLookupAAAAResult r
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
-                 return Nothing
 
     resolveA :: Resolver m
-             -> Async m (Maybe DNS.DNSError)
+             -> Async m ()
              -> StrictTMVar m [Socket.SockAddr]
-             -> m (Maybe DNS.DNSError)
+             -> m ()
     resolveA resolver aid_ipv6 rspsVar= do
         r_e <- lookupA resolver domain
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
                  traceWith tracer $ DnsTraceLookupAError e
-                 return $ Just e
              Right r -> do
                  traceWith tracer $ DnsTraceLookupAResult r
 
@@ -265,7 +262,6 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
-                 return Nothing
 
 
 dnsSubscriptionWorker'
