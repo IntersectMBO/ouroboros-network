@@ -39,6 +39,7 @@ import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
+import           Data.Maybe (isJust)
 
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
@@ -117,7 +118,6 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
              withResolverFn rs $ \resolver -> do
                  ipv6Rsps <- newEmptyTMVarIO
                  ipv4Rsps <- newEmptyTMVarIO
-                 gotIpv6Rsp <- newTVarIO False
 
                  -- Though the DNS lib does have its own timeouts, these do not work
                  -- on Windows reliably so as a workaround we add an extra layer
@@ -126,8 +126,8 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
                  --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
                  --       of an exception in the main thread.
                  res <- timeout 20 $ do
-                          aid_ipv6 <- async $ resolveAAAA resolver gotIpv6Rsp ipv6Rsps
-                          aid_ipv4 <- async $ resolveA resolver gotIpv6Rsp ipv4Rsps
+                          aid_ipv6 <- async $ resolveAAAA resolver ipv6Rsps
+                          aid_ipv4 <- async $ resolveA resolver aid_ipv6 ipv4Rsps
                           rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
                           handleResult ipv6Rsps ipv4Rsps rd_e
                  case res of
@@ -222,15 +222,13 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
              Nothing    -> listTargets (Left a) (Right addrsVar)
 
     resolveAAAA :: Resolver m
-                -> StrictTVar m Bool
                 -> StrictTMVar m [Socket.SockAddr]
                 -> m (Maybe DNS.DNSError)
-    resolveAAAA resolver gotIpv6RspVar rspsVar = do
+    resolveAAAA resolver rspsVar = do
         r_e <- lookupAAAA resolver domain
         case r_e of
              Left e  -> do
                  atomically $ putTMVar rspsVar []
-                 atomically $ writeTVar gotIpv6RspVar True
                  traceWith tracer $ DnsTraceLookupAAAAError e
                  return $ Just e
              Right r -> do
@@ -238,14 +236,13 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
-                 atomically $ writeTVar gotIpv6RspVar True
                  return Nothing
 
     resolveA :: Resolver m
-             -> StrictTVar m Bool
+             -> Async m (Maybe DNS.DNSError)
              -> StrictTMVar m [Socket.SockAddr]
              -> m (Maybe DNS.DNSError)
-    resolveA resolver gotIpv6RspVar rspsVar= do
+    resolveA resolver aid_ipv6 rspsVar= do
         r_e <- lookupA resolver domain
         case r_e of
              Left e  -> do
@@ -263,8 +260,8 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
                  timeoutVar <- registerDelay resolutionDelay
                  atomically $ do
                      timedOut   <- Lazy.readTVar timeoutVar
-                     gotIpv6Rsp <- readTVar gotIpv6RspVar
-                     check (timedOut || gotIpv6Rsp)
+                     ipv6Done <- pollSTM aid_ipv6
+                     check (timedOut || isJust ipv6Done)
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
                  atomically $ putTMVar rspsVar r
