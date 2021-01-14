@@ -37,6 +37,7 @@ module Test.Consensus.Shelley.Examples (
 
 import qualified Data.ByteString as Strict
 import           Data.Coerce (coerce)
+import           Data.Default.Class (def)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -86,11 +87,8 @@ import qualified Shelley.Spec.Ledger.EpochBoundary as SL (BlocksMade (..),
 import qualified Shelley.Spec.Ledger.Hashing as SL (hashAnnotated)
 import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
                      signedKES)
-import qualified Shelley.Spec.Ledger.LedgerState as SL (emptyDPState,
-                     emptyPPUPState)
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
-import qualified Shelley.Spec.Ledger.Rewards as SL (emptyNonMyopic)
 import qualified Shelley.Spec.Ledger.STS.Delegs as SL
                      (DelegsPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.STS.Ledger as SL
@@ -253,7 +251,7 @@ examples value txBody auxiliaryData = Golden.Examples {
     results = labelled [
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
         , ("EpochNo",                SomeResult GetEpochNo 10)
-        , ("EmptyPParams",           SomeResult GetCurrentPParams SL.emptyPParams)
+        , ("EmptyPParams",           SomeResult GetCurrentPParams def)
         , ("ProposedPParamsUpdates", SomeResult GetProposedPParamsUpdates proposedPParamsUpdates)
         , ("StakeDistribution",      SomeResult GetStakeDistribution examplePoolDistr)
         , ("NonMyopicMemberRewards", SomeResult (GetNonMyopicMemberRewards Set.empty)
@@ -569,10 +567,10 @@ exampleNewEpochState value = SL.NewEpochState {
                     ]
                 , _deposited = SL.Coin 1000
                 , _fees      = SL.Coin 1
-                , _ppups     = SL.emptyPPUPState
+                , _ppups     = def
 
                 }
-            , _delegationState = SL.emptyDPState
+            , _delegationState = def
             }
         , esPrevPp       = SL.emptyPParams
         , esPp           = SL.emptyPParams { SL._minUTxOValue = SL.Coin 1 }
@@ -595,7 +593,7 @@ exampleNewEpochState value = SL.NewEpochState {
         }
 
     nonMyopic :: SL.NonMyopic (EraCrypto era)
-    nonMyopic = SL.emptyNonMyopic
+    nonMyopic = def
 
 exampleLedgerState ::
      forall era. ShelleyBasedEra era
