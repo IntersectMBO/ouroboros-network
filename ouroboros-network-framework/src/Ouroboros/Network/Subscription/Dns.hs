@@ -140,6 +140,17 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
                    Just st ->
                      return (SubscriptionTarget $ pure st)
   where
+    -- Creates a subscription target from an optional first socket and a tail
+    targetCons
+      :: Socket.SockAddr
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    targetCons addr next = do
+      b <- runBeforeConnect peerStatesVar beforeConnect addr
+      if b
+        then return $ Just (addr, SubscriptionTarget next)
+        else next
+
     handleResult :: Async m [Socket.SockAddr]
                  -> Either SomeException [Socket.SockAddr]
                  -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
@@ -166,11 +177,7 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
     listTargets (Left []) ipvB = listTargets ipvB (Left [])
 
     -- Result for one address family
-    listTargets (Left (addr : addrs)) ipvB = do
-        b <- runBeforeConnect peerStatesVar beforeConnect addr
-        if b
-          then pure $ Just (addr, SubscriptionTarget (listTargets ipvB (Left addrs)))
-          else listTargets ipvB (Left addrs)
+    listTargets (Left (addr : addrs)) ipvB = targetCons addr $ listTargets ipvB (Left addrs)
 
     -- No result for either family yet.
     listTargets (Right _) (Right _) = error "Can't happen"
