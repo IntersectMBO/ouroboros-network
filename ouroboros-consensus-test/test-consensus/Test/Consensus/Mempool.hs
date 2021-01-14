@@ -223,8 +223,8 @@ prop_pure_addTxs_result TestSetupWithTxs {..} =
                                           internalState
                                           (map fst txs)
       in  counterexample (ppTxs txs) $
-            [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
-            [(testTx, valid)            | (testTx, valid) <- txs]
+                [(tx,     isMempoolTxAdded res) | (tx,     res  ) <- result]
+            === [(testTx, valid               ) | (testTx, valid) <- txs   ]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_pure_invalidTxsNeverAdded :: TestSetupWithTxs -> Property
@@ -422,8 +422,8 @@ prop_Mempool_addTxs_result setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       result <- addTxs mempool (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
-        [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
-        [(testTx, valid)            | (testTx, valid) <- txs setup]
+            [(tx,     isMempoolTxAdded res) | (tx,     res  ) <- result   ]
+        === [(testTx, valid               ) | (testTx, valid) <- txs setup]
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_invalidTxsNeverAdded :: TestSetupWithTxs -> Property
