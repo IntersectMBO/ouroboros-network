@@ -317,7 +317,7 @@ pureRemoveTxs
   -> LedgerState blk
   -> (InternalState blk, TraceEventMempool blk)
 pureRemoveTxs txIds mpArgs IS{isTxs, isLastTicketNo} ledgerState =
-  (state', tracer)
+    (state', tracer)
   where
       -- Filtering is O(n), but this function will rarely be used, as it is an
       -- escape hatch when there's an inconsistency between the ledger and the
