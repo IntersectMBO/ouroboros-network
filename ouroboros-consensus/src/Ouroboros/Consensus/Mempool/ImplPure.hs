@@ -245,30 +245,31 @@ pureTryAddTxs
   -> [GenTx blk]
   -> InternalState blk
   -> TryAddTxs blk
-pureTryAddTxs _      []                     _
-    = Done
-pureTryAddTxs mpArgs toAdd@(firstTx:toAdd') state
-    | let firstTxSize = mpArgsTxSize mpArgs firstTx
-          curSize = msNumBytes $ isMempoolSize state
-    , curSize + firstTxSize > getMempoolCapacityBytes (isCapacity state)
-    = NoSpaceLeft toAdd
+pureTryAddTxs mpArgs toAdd state = case toAdd of
+    [] -> Done
 
-    | otherwise
-    , let vr = extendVRNew cfg firstTx txSize $ validationResultFromIS state
-    = case vrInvalid vr of
-        [(_, err)] ->
-          RejectInvalidTx
-            firstTx
-            err
-            (pureTryAddTxs mpArgs toAdd')
-        -- We only extended the ValidationResult with a single transaction
-        -- ('firstTx'). So if it's not in 'vrInvalid', it will be in
-        -- 'vrNewValid'.
-        _otherwise ->
-          WriteValidTx
-            (internalStateFromVR vr)
-            firstTx
-            (pureTryAddTxs mpArgs toAdd')
+    firstTx:toAdd'
+      | let firstTxSize = mpArgsTxSize mpArgs firstTx
+            curSize = msNumBytes $ isMempoolSize state
+      , curSize + firstTxSize > getMempoolCapacityBytes (isCapacity state)
+      -> NoSpaceLeft toAdd
+
+      | otherwise
+      , let vr = extendVRNew cfg firstTx txSize $ validationResultFromIS state
+      -> case vrInvalid vr of
+          [(_, err)] ->
+            RejectInvalidTx
+              firstTx
+              err
+              (pureTryAddTxs mpArgs toAdd')
+          -- We only extended the ValidationResult with a single transaction
+          -- ('firstTx'). So if it's not in 'vrInvalid', it will be in
+          -- 'vrNewValid'.
+          _otherwise ->
+            WriteValidTx
+              (internalStateFromVR vr)
+              firstTx
+              (pureTryAddTxs mpArgs toAdd')
   where
     MempoolArgs
       { mpArgsLedgerCfg = cfg
