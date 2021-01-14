@@ -378,7 +378,7 @@ withInternalState testSetup@TestSetup {..} func =
                                    zeroTicketNo
                                    slot
                                    st'
-    ((res,_), internalState') = runTryAddTxs args internalState testInitialTxs
+    ((res, _), internalState') = runTryAddTxs args internalState testInitialTxs
     isOverride (MempoolCapacityBytesOverride _) = True
     isOverride NoMempoolCapacityBytesOverride   = False
 
