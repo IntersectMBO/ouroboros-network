@@ -168,8 +168,9 @@ prop_pure_removeTxs_contra TestSetupWithTxs {..} =
                                      mpArgs
                                      internalState'
                                      ledgerState
-          txIdsRemaining         = Set.toAscList (getTxIdsIS internalStRes)
-          txIdsInitial           = Set.toAscList (getTxIdsIS internalState)
+
+          txIdsRemaining = Set.toAscList (getTxIdsIS internalStRes)
+          txIdsInitial   = Set.toAscList (getTxIdsIS internalState)
       in  txIdsRemaining === txIdsInitial
 
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
