@@ -262,8 +262,8 @@ prop_pure_getCapacity :: MempoolCapTestSetup -> Property
 prop_pure_getCapacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
     withInternalState testSetup $
     \_mpArgs internalState _ledgerState ->
-        let actualCapacity = getCapacityIS internalState
-        in  actualCapacity === testCapacity
+      let actualCapacity = getCapacityIS internalState
+      in  actualCapacity === testCapacity
   where
     MempoolCapacityBytesOverride testCapacity = testMempoolCapOverride testSetup
 
