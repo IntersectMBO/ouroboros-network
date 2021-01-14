@@ -210,6 +210,7 @@ prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
                              (\is tx -> snd $ runTryAddTxs mpArgs is [tx])
                              internalState
                              (map fst txs)
+
           MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
       in  counterexample (ppTxs txs) $
             validTxs setup `isSuffixOf` map fst snapshotTxs
