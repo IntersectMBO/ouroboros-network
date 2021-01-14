@@ -17,6 +17,7 @@ import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.Bifunctor (first)
 import           Data.Either (isRight)
+import           Data.Function (on)
 import           Data.List (find, foldl', intersect, isSuffixOf, nub, partition,
                      sort)
 import           Data.Map (Map)
@@ -168,10 +169,9 @@ prop_pure_removeTxs_contra TestSetupWithTxs {..} =
                                      mpArgs
                                      internalState'
                                      ledgerState
-
-          txIdsRemaining = Set.toAscList (getTxIdsIS internalStRes)
-          txIdsInitial   = Set.toAscList (getTxIdsIS internalState)
-      in  txIdsRemaining === txIdsInitial
+      in  ((===) `on` (Set.toAscList . getTxIdsIS))
+            internalStRes
+            internalState
 
 -- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
 prop_pure_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
