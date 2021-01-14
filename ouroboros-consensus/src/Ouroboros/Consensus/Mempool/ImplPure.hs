@@ -556,7 +556,7 @@ extendVRNew cfg tx txSize vr = assert (isNothing vrNewValid) $
     case runExcept (applyTx cfg vrSlotNo tx vrAfter) of
       Left err  -> vr { vrInvalid      = (tx, err) : vrInvalid
                       }
-      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo (txSize tx)
+      Right st' -> vr { vrValid        = vrValid :> TxTicket tx nextTicketNo sz
                       , vrValidTxIds   = Set.insert (txId tx) vrValidTxIds
                       , vrNewValid     = Just tx
                       , vrAfter        = st'
@@ -574,6 +574,8 @@ extendVRNew cfg tx txSize vr = assert (isNothing vrNewValid) $
       } = vr
 
     nextTicketNo = succ vrLastTicketNo
+
+    sz = txSize tx
 
 -- | Validate the internal state against the current ledger state and the
 -- given 'BlockSlot', revalidating if necessary.
