@@ -593,7 +593,6 @@ validateIS mpArgs state ledgerState =
       (ForgeInUnknownSlot ledgerState)
       state
 
-
 -- | Given a (valid) internal state, validate it against the given ledger
 -- state and 'BlockSlot'.
 --
