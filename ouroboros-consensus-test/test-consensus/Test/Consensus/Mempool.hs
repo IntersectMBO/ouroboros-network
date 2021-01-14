@@ -139,9 +139,7 @@ mkPureAndImpureProp name prop1 prop2 =
 
 -- | Test that after removing the transactions
 -- the Mempool no longer contains those transactions
-prop_pure_removeTxs
-  :: TestSetupSub
-  -> Property
+prop_pure_removeTxs :: TestSetupSub -> Property
 prop_pure_removeTxs TestSetupSub {..} =
     withInternalState tssSetup $
     \mpArgs internalState ledgerState ->
@@ -154,9 +152,7 @@ prop_pure_removeTxs TestSetupSub {..} =
 
 -- | Test that after removing transactions all the other transactions
 -- are still available.
-prop_pure_removeTxs_contra
-    :: TestSetupWithTxs
-    -> Property
+prop_pure_removeTxs_contra :: TestSetupWithTxs -> Property
 prop_pure_removeTxs_contra TestSetupWithTxs {..} =
     withInternalState testSetup $
     \mpArgs internalState ledgerState ->
@@ -185,9 +181,7 @@ prop_pure_snapshotTxs_snapshotTxsAfter setup =
 
 -- | Test that all valid transactions added to a 'Mempool' can be retrieved
 -- afterward.
-prop_pure_addTxs_getTxs
-  :: TestSetupWithTxs
-  -> Property
+prop_pure_addTxs_getTxs :: TestSetupWithTxs -> Property
 prop_pure_addTxs_getTxs setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
   \mpArgs internalState _ledgerState ->
