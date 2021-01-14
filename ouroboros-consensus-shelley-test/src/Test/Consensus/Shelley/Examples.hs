@@ -37,6 +37,7 @@ module Test.Consensus.Shelley.Examples (
 
 import qualified Data.ByteString as Strict
 import           Data.Coerce (coerce)
+import           Data.Default.Class (def)
 import           Data.Functor.Identity (Identity (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -72,6 +73,7 @@ import           Ouroboros.Consensus.Util.Time
 import qualified Cardano.Ledger.AuxiliaryData as SL (AuxiliaryDataHash (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
+import qualified Control.State.Transition.Extended as SL (PredicateFailure)
 import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (Seed (..),
@@ -85,11 +87,8 @@ import qualified Shelley.Spec.Ledger.EpochBoundary as SL (BlocksMade (..),
 import qualified Shelley.Spec.Ledger.Hashing as SL (hashAnnotated)
 import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
                      signedKES)
-import qualified Shelley.Spec.Ledger.LedgerState as SL (emptyDPState,
-                     emptyPPUPState)
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
-import qualified Shelley.Spec.Ledger.Rewards as SL (emptyNonMyopic)
 import qualified Shelley.Spec.Ledger.STS.Delegs as SL
                      (DelegsPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.STS.Ledger as SL
@@ -105,6 +104,7 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
 import qualified Cardano.Ledger.Mary.Value as MA
+import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import qualified Cardano.Ledger.ShelleyMA as MA
 import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
@@ -201,7 +201,13 @@ keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
 -------------------------------------------------------------------------------}
 
 examples ::
-     forall era. ShelleyBasedEra era
+     forall era.
+     ( ShelleyBasedEra era
+     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
+       ~ SL.LedgerPredicateFailure era
+     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
+       ~ SL.DelegsPredicateFailure era
+     )
   => Core.Value era
   -> Core.TxBody era
   -> Core.AuxiliaryData era
@@ -245,7 +251,7 @@ examples value txBody auxiliaryData = Golden.Examples {
     results = labelled [
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
         , ("EpochNo",                SomeResult GetEpochNo 10)
-        , ("EmptyPParams",           SomeResult GetCurrentPParams SL.emptyPParams)
+        , ("EmptyPParams",           SomeResult GetCurrentPParams def)
         , ("ProposedPParamsUpdates", SomeResult GetProposedPParamsUpdates proposedPParamsUpdates)
         , ("StakeDistribution",      SomeResult GetStakeDistribution examplePoolDistr)
         , ("NonMyopicMemberRewards", SomeResult (GetNonMyopicMemberRewards Set.empty)
@@ -488,13 +494,21 @@ exampleTx txBody auxiliaryData = SL.Tx txBody witnessSet (SJust auxiliaryData)
 
 -- TODO incomplete, this type has tons of constructors that can all change.
 -- <https://github.com/input-output-hk/ouroboros-network/issues/1896.
-exampleApplyTxErr :: ShelleyBasedEra era => ApplyTxErr (ShelleyBlock era)
+exampleApplyTxErr ::
+     forall era.
+     ( ShelleyBasedEra era
+     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
+       ~ SL.LedgerPredicateFailure era
+     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
+       ~ SL.DelegsPredicateFailure era
+     )
+  => ApplyTxErr (ShelleyBlock era)
 exampleApplyTxErr =
       ApplyTxError
     $ pure
     $ SL.LedgerFailure
     $ SL.DelegsFailure
-    $ SL.DelegateeNotRegisteredDELEG (mkKeyHash 1)
+    $ SL.DelegateeNotRegisteredDELEG @era (mkKeyHash 1)
 
 exampleAnnTip :: forall era. ShelleyBasedEra era => AnnTip (ShelleyBlock era)
 exampleAnnTip = AnnTip {
@@ -549,14 +563,14 @@ exampleNewEpochState value = SL.NewEpochState {
               _utxoState = SL.UTxOState {
                   _utxo      = SL.UTxO $ Map.fromList [
                       (SL.TxIn (SL.TxId (mkDummyHash Proxy 1)) 0,
-                       SL.TxOut addr value)
+                       SL.makeTxOut (Proxy @era) addr value)
                     ]
                 , _deposited = SL.Coin 1000
                 , _fees      = SL.Coin 1
-                , _ppups     = SL.emptyPPUPState
+                , _ppups     = def
 
                 }
-            , _delegationState = SL.emptyDPState
+            , _delegationState = def
             }
         , esPrevPp       = SL.emptyPParams
         , esPp           = SL.emptyPParams { SL._minUTxOValue = SL.Coin 1 }
@@ -579,7 +593,7 @@ exampleNewEpochState value = SL.NewEpochState {
         }
 
     nonMyopic :: SL.NonMyopic (EraCrypto era)
-    nonMyopic = SL.emptyNonMyopic
+    nonMyopic = def
 
 exampleLedgerState ::
      forall era. ShelleyBasedEra era

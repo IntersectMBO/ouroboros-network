@@ -66,6 +66,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
@@ -498,7 +499,10 @@ registerGenesisStaking staking nes = nes {
 --
 -- TODO move to @cardano-ledger-specs@.
 registerInitialFunds ::
-     forall era. (ShelleyBasedEra era, HasCallStack)
+     forall era.
+     ( ShelleyBasedEra era
+     , HasCallStack
+     )
   => Map (SL.Addr (EraCrypto era)) SL.Coin
   -> SL.NewEpochState era
   -> SL.NewEpochState era
@@ -521,7 +525,7 @@ registerInitialFunds initialFunds nes = nes {
           (txIn, txOut)
         | (addr, amount) <- Map.toList initialFunds
         ,  let txIn  = SL.initialFundsPseudoTxIn addr
-               txOut = SL.TxOut addr (inject amount)
+               txOut = SL.makeTxOut (Proxy @era) addr (inject amount)
         ]
 
     utxo' = mergeUtxoNoOverlap utxo initialFundsUtxo

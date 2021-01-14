@@ -63,6 +63,7 @@ type CanMock era =
   , Arbitrary (Core.AuxiliaryData era)
   , Arbitrary (Core.Script era)
   , Arbitrary (Core.TxBody era)
+  , Arbitrary (Core.TxOut era)
   , Arbitrary (Core.Value era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
   )
