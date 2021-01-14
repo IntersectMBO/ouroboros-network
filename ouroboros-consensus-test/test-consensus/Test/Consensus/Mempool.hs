@@ -204,9 +204,10 @@ prop_pure_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
 prop_pure_addTxs_one_vs_multiple setup@TestSetupWithTxs {..} =
   withInternalState testSetup $
   \mpArgs internalState _ledgerState ->
-      let internalState' = foldl' (\is tx -> snd $ runTryAddTxs mpArgs is [tx])
-                               internalState
-                               (map fst txs)
+      let internalState' = foldl'
+                             (\is tx -> snd $ runTryAddTxs mpArgs is [tx])
+                             internalState
+                             (map fst txs)
           MempoolSnapshot { snapshotTxs } = implSnapshotFromIS internalState'
       in  counterexample (ppTxs txs) $
             validTxs setup `isSuffixOf` map fst snapshotTxs
