@@ -1189,7 +1189,6 @@ prop_TxSeq_splitAfterTxSize tss =
     txSizeSum :: [TxTicket tx] -> TxSizeInBytes
     txSizeSum = sum . map txTicketTxSizeInBytes
 
-
 -- | Test that the results of 'splitAfterTxSizeSpec', a specification of
 -- 'splitAfterTxSize', match those of the real 'splitAfterTxSize'
 -- implementation.
