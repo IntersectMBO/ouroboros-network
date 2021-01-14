@@ -1031,7 +1031,7 @@ withTestMempool setup@TestSetup {..} prop =
           args
           tracer
 
-      result  <- addTxs mempool testInitialTxs
+      result <- addTxs mempool testInitialTxs
       -- the invalid transactions are reported in the same order they were
       -- added, so the first error is not the result of a cascade
       whenJust (find (isMempoolTxRejected . snd) result) $ \(invalidTx, _) ->
