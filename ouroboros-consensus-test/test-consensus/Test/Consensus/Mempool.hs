@@ -283,6 +283,7 @@ prop_pure_capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
         let capacity' = getCapacityIS internalState
             snapshot  = implSnapshotFromIS internalState
             curSize   = (msNumBytes . snapshotMempoolSize) snapshot
+
             (res@(processed, unprocessed), _internalSt') =
                        runTryAddTxs mpArgs internalState (map fst txs)
         in  counterexample ("Initial size: " <> show curSize)    $
