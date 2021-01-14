@@ -1150,8 +1150,7 @@ prop_TxSeq_lookupByTicketNo_complete xs =
     txseq = TxSeq.fromList $ zipWith3 TxTicket xs (map TicketNo [0..]) (repeat 0)
 
 -- | Only finds elements in the sequence
-prop_TxSeq_lookupByTicketNo_sound ::
-    [Small Int] -> Small Int -> Property
+prop_TxSeq_lookupByTicketNo_sound :: [Small Int] -> Small Int -> Property
 prop_TxSeq_lookupByTicketNo_sound smalls small =
     case TxSeq.lookupByTicketNo txseq (mkTicketNo needle) of
       Just tx' ->
