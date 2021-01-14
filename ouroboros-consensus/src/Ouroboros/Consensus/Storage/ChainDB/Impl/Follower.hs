@@ -415,14 +415,15 @@ forward ::
   -> [Point blk]
   -> m (Maybe (Point blk))
 forward registry varFollower blockComponent CDB{..} = \pts -> do
-    -- NOTE: we don't use 'Query.getCurrentChain', which only returns the last
-    -- @k@ headers, because we want to see the headers that have not yet been
-    -- written to the ImmutableDB too.
-    (curChain, followerState) <- atomically $
-      (,) <$> readTVar cdbChain <*> readTVar varFollower
-    slotNoAtImmutableDBTip <- atomically $
-      ImmutableDB.getTipSlot cdbImmutableDB
-    findFirstPointOnChain curChain followerState slotNoAtImmutableDBTip pts
+    -- NOTE: we use 'cdbChain' instead of 'Query.getCurrentChain', which only
+    -- returns the last @k@ headers, because we need to also see the headers
+    -- that happen to have not yet been copied over to the ImmutableDB.
+    join $ atomically $
+      findFirstPointOnChain
+        <$> readTVar cdbChain
+        <*> readTVar varFollower
+        <*> ImmutableDB.getTipSlot cdbImmutableDB
+        <*> pure pts
   where
     findFirstPointOnChain ::
          HasCallStack
