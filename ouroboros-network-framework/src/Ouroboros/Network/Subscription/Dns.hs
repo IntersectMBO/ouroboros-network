@@ -126,41 +126,30 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
                           aid_ipv6 <- async $ resolveAAAA resolver
                           aid_ipv4 <- async $ resolveA resolver aid_ipv6
                           rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-                          handleResult aid_ipv6 aid_ipv4 rd_e
+                          case rd_e of
+                            Left r -> do
+                              traceWith tracer DnsTraceLookupIPv6First
+                              handleResult aid_ipv4 r
+                            Right r -> do
+                              traceWith tracer DnsTraceLookupIPv4First
+                              handleResult aid_ipv6 r
                  case res of
                    Nothing -> do
                      -- TODO: the thread timedout, we should trace it
                      return (SubscriptionTarget $ pure Nothing)
                    Just st ->
-                     return st
+                     return (SubscriptionTarget $ pure st)
   where
     handleResult :: Async m [Socket.SockAddr]
-                 -> Async m [Socket.SockAddr]
-                 -> Either
-                      (Either SomeException [Socket.SockAddr])
-                      (Either SomeException [Socket.SockAddr])
-                 -> m (SubscriptionTarget m Socket.SockAddr)
+                 -> Either SomeException [Socket.SockAddr]
+                 -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
 
-    handleResult _ ipv4Rsps (Left (Left e_ipv6)) = do
-        -- AAAA lookup finished first, but with an error.
-        traceWith tracer $ DnsTraceLookupException e_ipv6
-        return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Left [])
+    handleResult activeAsync (Left e) = do
+        traceWith tracer $ DnsTraceLookupException e
+        listTargets (Right activeAsync) (Left [])
 
-    handleResult _ ipv4Rsps (Left (Right ipv6Res)) = do
-        -- Try to use IPv6 result first.
-        traceWith tracer DnsTraceLookupIPv6First
-        return $ SubscriptionTarget $ listTargets (Left ipv6Res) (Right ipv4Rsps)
-
-    handleResult ipv6Rsps _ (Right (Left e_ipv4)) = do
-        -- A lookup finished first, but with an error.
-        traceWith tracer $ DnsTraceLookupException e_ipv4
-        return $ SubscriptionTarget $ listTargets (Right ipv6Rsps) (Left [])
-
-    handleResult ipv6Rsps _ (Right (Right ipv4Res)) = do
-        -- Try to use IPv4 result first.
-        traceWith tracer DnsTraceLookupIPv4First
-        return $ SubscriptionTarget $ listTargets (Left ipv4Res) (Right ipv6Rsps)
-
+    handleResult activeAsync (Right ipv6Res) =
+        listTargets (Left ipv6Res) (Right activeAsync)
 
     -- | Returns a series of SockAddr, where the address family will alternate
     -- between IPv4 and IPv6 as soon as the corresponding lookup call has
