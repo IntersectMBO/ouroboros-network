@@ -286,10 +286,10 @@ prop_pure_capacity (MempoolCapTestSetup TestSetupWithTxs {..}) =
 
             (res@(processed, unprocessed), _internalSt') =
                 runTryAddTxs mpArgs internalState (map fst txs)
-        in  counterexample ("Initial size: " <> show curSize)    $
-            classify (null processed)   "no transactions added"  $
-            classify (null unprocessed) "all transactions added" $
-            blindErrors res === expectedResult capacity' curSize
+        in  counterexample ("Initial size: " <> show curSize)
+              $ classify (null processed)   "no transactions added"
+              $ classify (null unprocessed) "all transactions added"
+              $ blindErrors res === expectedResult capacity' curSize
   where
     -- | Convert 'MempoolAddTxResult' into a 'Bool':
     -- isMempoolTxAdded -> True, isMempoolTxRejected -> False.
@@ -489,11 +489,11 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
     curSize <- msNumBytes . snapshotMempoolSize <$>
       atomically (getSnapshot mempool)
     res@(processed, unprocessed) <- tryAddTxs mempool (map fst txsToAdd)
-    return $
-      counterexample ("Initial size: " <> show curSize)    $
-      classify (null processed)   "no transactions added"  $
-      classify (null unprocessed) "all transactions added" $
-      blindErrors res === expectedResult capacity curSize
+    return
+      $ counterexample ("Initial size: " <> show curSize)
+      $ classify (null processed)   "no transactions added"
+      $ classify (null unprocessed) "all transactions added"
+      $ blindErrors res === expectedResult capacity curSize
   where
     TestSetupWithTxs testSetup txsToAdd = testSetupWithTxs
 
