@@ -80,7 +80,7 @@ import           Test.Util.Tracer (recordingTracerTVar)
 
 tests :: TestTree
 tests = testGroup "ChainSyncClient"
-    [ testProperty "chainSync"                 $ prop_chainSync
+    [ testProperty "chainSync"                   prop_chainSync
     , testProperty "joinUpdates/spreadUpdates" $ prop_joinUpdates_spreadUpdates k
     , testProperty "genChainUpdates"           $ prop_genChainUpdates           k updatesToGenerate
     ]

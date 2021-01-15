@@ -170,6 +170,7 @@ test-suite test-consensus
                      , quiet
                      , serialise
                      , sop-core
+                     , stm
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
