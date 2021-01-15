@@ -157,50 +157,50 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
     handleResult activeAsync (Left e) = do
         traceWith tracer $ DnsTraceLookupException e
-        listTargets (Right activeAsync) (Left [])
+        listTargets (Right activeAsync) []
 
-    handleResult activeAsync (Right ipv6Res) =
-        listTargets (Left ipv6Res) (Right activeAsync)
+    handleResult activeAsync (Right []) =
+        listTargets (Right activeAsync) []
+
+    handleResult activeAsync (Right (addr:addrs)) =
+        targetCons addr $ listTargets (Right activeAsync) addrs
 
     -- | Returns a series of SockAddr, where the address family will alternate
     -- between IPv4 and IPv6 as soon as the corresponding lookup call has
     -- completed.
     --
     listTargets :: Either [Socket.SockAddr] (Async m [Socket.SockAddr])
-                -> Either [Socket.SockAddr] (Async m [Socket.SockAddr])
+                -> [Socket.SockAddr]
                 -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
 
     -- No result left to try
-    listTargets (Left []) (Left []) = return Nothing
+    listTargets (Left []) [] = return Nothing
 
     -- No results left to try for one family
-    listTargets (Left []) ipvB = listTargets ipvB (Left [])
+    listTargets (Left []) ipvB = listTargets (Left ipvB) []
 
     -- Result for one address family
-    listTargets (Left (addr : addrs)) ipvB = targetCons addr $ listTargets ipvB (Left addrs)
-
-    -- No result for either family yet.
-    listTargets (Right _) (Right _) = error "Can't happen"
+    listTargets (Left (addr : addrs)) ipvB = targetCons addr $ listTargets (Left ipvB) addrs
 
     -- Wait on the result for one family.
-    listTargets (Right asyn) (Left []) = do
+    listTargets (Right asyn) [] = do
         result <- waitCatch asyn
         case result of
           Left e -> do
             traceWith tracer $ DnsTraceLookupException e
-            listTargets (Left []) (Left [])
+            listTargets (Left []) []
           Right addrs -> do
-            listTargets (Left addrs) (Left [])
+            listTargets (Left addrs) []
 
     -- Peek at the result for one family.
-    listTargets (Right asyn) (Left a) = do
+    listTargets (Right asyn) a@(addr : addrs) = do
         result <- poll asyn
         case result of
           Just (Left e) -> do
             traceWith tracer $ DnsTraceLookupException e
-            listTargets (Left []) (Left a)
-          Just (Right addrs) -> listTargets (Left addrs) (Left a)
-          Nothing -> listTargets (Left a) (Right asyn)
+            listTargets (Left []) a
+          Just (Right newAddrs) -> listTargets (Left newAddrs) a
+          Nothing -> targetCons addr $ listTargets (Right asyn) addrs
 
     resolveAAAA :: Resolver m
                 -> m [Socket.SockAddr]
