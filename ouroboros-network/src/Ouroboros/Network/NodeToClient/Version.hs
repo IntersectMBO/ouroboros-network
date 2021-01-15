@@ -37,6 +37,8 @@ data NodeToClientVersion
     -- ^ enabled @CardanoNodeToClientVersion5@, i.e., Mary
     | NodeToClientV_7
     -- ^ enabled @CardanoNodeToClientVersion6@, adding a query
+    | NodeToClientV_8
+    -- ^ 'LocalStateQuery' protocol codec change, allows to acquire tip point.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -56,6 +58,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       encodeTerm NodeToClientV_5 = CBOR.TInt (5 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_6 = CBOR.TInt (6 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_7 = CBOR.TInt (7 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_8 = CBOR.TInt (8 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -68,6 +71,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (5, True)  -> Right NodeToClientV_5
         (6, True)  -> Right NodeToClientV_6
         (7, True)  -> Right NodeToClientV_7
+        (8, True)  -> Right NodeToClientV_8
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"

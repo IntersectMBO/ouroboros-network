@@ -64,6 +64,8 @@ tests =
   , testProperty "codec 2-splits"      prop_codec_splits2
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3
+  , testProperty "codecs V7/V8 compatible"
+                                       prop_codec_V7_compatible
   , testProperty "codec cbor"          prop_codec_cbor
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
@@ -76,25 +78,25 @@ tests =
 --
 
 data Query result where
-  QueryPoint :: Query (Point Block)
+  QueryPoint :: Query (Maybe (Point Block))
 
 deriving instance Show (Query result)
 instance ShowProxy Query where
 
 -- | Information to test an example server and client.
 data Setup = Setup
-  { clientInput   :: [(Point Block, Query (Point Block))]
+  { clientInput   :: [(Maybe (Point Block), Query (Maybe (Point Block)))]
     -- ^ Input for 'localStateQueryClient'
-  , serverAcquire :: Point Block -> Either AcquireFailure (Point Block)
+  , serverAcquire :: Maybe (Point Block) -> Either AcquireFailure (Maybe (Point Block))
     -- ^ First input parameter for 'localStateQueryServer'
-  , serverAnswer  :: forall result. Point Block -> Query result -> result
+  , serverAnswer  :: forall result. Maybe (Point Block) -> Query result -> result
     -- ^ Second input parameter for 'localStateQueryServer'
-  , expected      :: [(Point Block, Either AcquireFailure (Point Block))]
+  , expected      :: [(Maybe (Point Block), Either AcquireFailure (Maybe (Point Block)))]
     -- ^ Expected result for the 'localStateQueryClient'.
   }
 
 mkSetup
-  :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+  :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
      -- ^ For each point, the given state queries will be executed. In case of
      -- the second field is an 'AcquireFailure', the server will fail with
      -- that failure.
@@ -118,7 +120,7 @@ mkSetup input = Setup {
         ]
     }
   where
-    answer :: Point Block -> Query result -> result
+    answer :: Maybe (Point Block) -> Query result -> result
     answer pt q = case q of
       QueryPoint -> pt
 
@@ -130,7 +132,7 @@ mkSetup input = Setup {
 -- | Run a simple local state query client and server, directly on the wrappers,
 -- without going via the 'Peer'.
 --
-prop_direct :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+prop_direct :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
             -> Property
 prop_direct input =
     runSimOrThrow
@@ -150,7 +152,7 @@ prop_direct input =
 -- | Run a simple local state query client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-prop_connect :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+prop_connect :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
              -> Property
 prop_connect input =
     case runSimOrThrow
@@ -176,7 +178,7 @@ prop_channel :: ( MonadAsync m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
-             -> Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+             -> Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
              -> m Property
 prop_channel createChannels input =
 
@@ -185,7 +187,7 @@ prop_channel createChannels input =
     runConnectedPeers
       createChannels
       nullTracer
-      codec
+      (codec True)
       (localStateQueryClientPeer $
        localStateQueryClient clientInput)
       (localStateQueryServerPeer $
@@ -195,7 +197,7 @@ prop_channel createChannels input =
 
 -- | Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+prop_channel_ST :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
                 -> Property
 prop_channel_ST input =
     runSimOrThrow
@@ -203,14 +205,14 @@ prop_channel_ST input =
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+prop_channel_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
                 -> Property
 prop_channel_IO input =
     ioProperty (prop_channel createConnectedChannels input)
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO :: Map (Point Block) (Maybe AcquireFailure, Query (Point Block))
+prop_pipe_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
              -> Property
 prop_pipe_IO input =
     ioProperty (prop_channel createPipeConnectedChannels input)
@@ -226,13 +228,32 @@ instance Arbitrary AcquireFailure where
     , AcquireFailurePointNotOnChain
     ]
 
-instance Arbitrary (Query (Point Block)) where
+instance Arbitrary (Query (Maybe (Point Block))) where
   arbitrary = pure QueryPoint
 
 instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)) where
   arbitrary = oneof
+    [ getAnyMessageAndAgencyV7 <$> arbitrary
+
+    , pure $ AnyMessageAndAgency (ClientAgency TokIdle)
+        (MsgAcquire Nothing)
+
+    , pure $ AnyMessageAndAgency (ClientAgency TokAcquired)
+        (MsgReAcquire Nothing)
+    ]
+
+-- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
+--
+newtype AnyMessageAndAgencyV7 = AnyMessageAndAgencyV7 {
+    getAnyMessageAndAgencyV7
+      :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  }
+  deriving Show
+
+instance Arbitrary AnyMessageAndAgencyV7 where
+  arbitrary = AnyMessageAndAgencyV7 <$> oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        (MsgAcquire <$> arbitrary)
+        (MsgAcquire . Just <$> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency TokAcquiring) <$>
         pure MsgAcquired
@@ -241,7 +262,7 @@ instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Que
         (MsgFailure <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgQuery <$> (arbitrary :: Gen (Query (Point Block))))
+        (MsgQuery <$> (arbitrary :: Gen (Query (Maybe (Point Block)))))
 
     , AnyMessageAndAgency (ServerAgency (TokQuerying QueryPoint)) <$>
         (MsgResult QueryPoint <$> arbitrary)
@@ -250,11 +271,12 @@ instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Que
         pure MsgRelease
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgReAcquire <$> arbitrary)
+        (MsgReAcquire . Just <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokIdle) <$>
         pure MsgDone
     ]
+
 
 instance ShowQuery Query where
   showResult QueryPoint = show
@@ -293,13 +315,16 @@ instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
 
 
 codec :: MonadST m
-      => Codec (LocalStateQuery Block (Point Block) Query)
+      => Bool
+      -> Codec (LocalStateQuery Block (Point Block) Query)
                 DeserialiseFailure
                 m ByteString
-codec = codecLocalStateQuery
-          Serialise.encode Serialise.decode
-          encodeQuery      decodeQuery
-          encodeResult     decodeResult
+codec canAcquireTip =
+    codecLocalStateQuery
+      canAcquireTip
+      Serialise.encode Serialise.decode
+      encodeQuery      decodeQuery
+      encodeResult     decodeResult
   where
     encodeQuery :: Query result -> CBOR.Encoding
     encodeQuery QueryPoint = Serialise.encode ()
@@ -321,7 +346,7 @@ prop_codec
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec msg =
-  runST (prop_codecM codec msg)
+  runST (prop_codecM (codec True) msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
@@ -329,7 +354,7 @@ prop_codec_splits2
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 codec msg)
+  runST (prop_codec_splitsM splits2 (codec True) msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
@@ -337,10 +362,16 @@ prop_codec_splits3
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec_splits3 msg =
-  runST (prop_codec_splitsM splits3 codec msg)
+  runST (prop_codec_splitsM splits3 (codec True) msg)
 
 prop_codec_cbor
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec_cbor msg =
-  runST (prop_codec_cborM codec msg)
+  runST (prop_codec_cborM (codec True) msg)
+
+prop_codec_V7_compatible
+  :: AnyMessageAndAgencyV7
+  -> Bool
+prop_codec_V7_compatible (AnyMessageAndAgencyV7 msg) =
+    runST (prop_codecs_compatM (codec False) (codec True) msg)
