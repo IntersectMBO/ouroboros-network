@@ -38,11 +38,14 @@ module Network.TypedProtocol.Codec (
   , prop_codec_splits
   , prop_codec_binary_compatM
   , prop_codec_binary_compat
+  , prop_codecs_compatM
+  , prop_codecs_compat
   , SamePeerHasAgency(..)
   ) where
 
 import           Control.Exception (Exception)
 import           Data.Kind (Type)
+import           Data.Monoid (All (..))
 
 import           Network.TypedProtocol.Core
                    ( Protocol(..), PeerRole(..)
@@ -450,3 +453,45 @@ prop_codec_binary_compat
   -> Bool
 prop_codec_binary_compat runM codecA codecB stokEq msgA =
      runM $ prop_codec_binary_compatM codecA codecB stokEq msgA
+
+
+-- | Compatibility between two codecs of the same protocol.  Encode a message
+-- with one codec and decode it with the other one, then compare if the result
+-- is the same as initial message.
+--
+prop_codecs_compatM
+  :: forall ps failure m bytes.
+     ( Monad m
+     , Eq (AnyMessage ps)
+     , forall a. Monoid a => Monoid (m a)
+     )
+  => Codec ps failure m bytes
+  -> Codec ps failure m bytes
+  -> AnyMessageAndAgency ps
+  -> m Bool
+prop_codecs_compatM codecA codecB
+                    (AnyMessageAndAgency stok msg) =
+    getAll <$> do r <- decode codecB stok >>= runDecoder [encode codecA stok msg]
+                  case r of
+                    Right (SomeMessage msg') -> return $ All $ AnyMessage msg' == AnyMessage msg
+                    Left _                   -> return $ All False
+            <> do r <- decode codecA stok >>= runDecoder [encode codecB stok msg]
+                  case r of
+                    Right (SomeMessage msg') -> return $ All $ AnyMessage msg' == AnyMessage msg
+                    Left _                   -> return $ All False
+
+-- | Like @'prop_codecs_compatM'@ but run in a pure monad @m@, e.g. @Identity@.
+--
+prop_codecs_compat
+  :: forall ps failure m bytes.
+     ( Monad m
+     , Eq (AnyMessage ps)
+     , forall a. Monoid a => Monoid (m a)
+     )
+  => (forall a. m a -> a)
+  -> Codec ps failure m bytes
+  -> Codec ps failure m bytes
+  -> AnyMessageAndAgency ps
+  -> Bool
+prop_codecs_compat run codecA codecB msg =
+    run $ prop_codecs_compatM codecA codecB msg
