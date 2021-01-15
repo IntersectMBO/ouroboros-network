@@ -157,50 +157,49 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
     handleResult activeAsync (Left e) = do
         traceWith tracer $ DnsTraceLookupException e
-        listTargets (Right activeAsync) []
+        threadTargetCycle activeAsync []
 
     handleResult activeAsync (Right []) =
-        listTargets (Right activeAsync) []
+        threadTargetCycle activeAsync []
 
     handleResult activeAsync (Right (addr:addrs)) =
-        targetCons addr $ listTargets (Right activeAsync) addrs
+        targetCons addr $ threadTargetCycle activeAsync addrs
 
-    -- | Returns a series of SockAddr, where the address family will alternate
-    -- between IPv4 and IPv6 as soon as the corresponding lookup call has
-    -- completed.
-    --
-    listTargets :: Either [Socket.SockAddr] (Async m [Socket.SockAddr])
-                -> [Socket.SockAddr]
-                -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    -- Called when a thread is still running, and the other finished already
+    -- Cycles between trying to get a result from the running thread, and the results of the finished thread
+    -- If results of the finished thread are exhausted, wait until the running thread completes
+    threadTargetCycle
+      :: Async m [Socket.SockAddr]
+      -> [Socket.SockAddr]
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    threadTargetCycle asyn [] = do
+      result <- waitCatch asyn
+      case result of
+        Left e -> do
+          traceWith tracer $ DnsTraceLookupException e
+          targetCycle [] []
+        Right addrs -> do
+          targetCycle addrs []
+    threadTargetCycle asyn a@(addr : addrs) = do
+      result <- poll asyn
+      case result of
+        -- The running thread finished, handle the result, then cycle over all results
+        Just (Left e) -> do
+          traceWith tracer $ DnsTraceLookupException e
+          targetCycle [] a
+        Just (Right newAddrs) -> targetCycle newAddrs a
+        -- The running thread is still going, emit an address of the finished thread, then check again
+        Nothing -> targetCons addr $ threadTargetCycle asyn addrs
 
-    -- No result left to try
-    listTargets (Left []) [] = return Nothing
-
-    -- No results left to try for one family
-    listTargets (Left []) ipvB = listTargets (Left ipvB) []
-
-    -- Result for one address family
-    listTargets (Left (addr : addrs)) ipvB = targetCons addr $ listTargets (Left ipvB) addrs
-
-    -- Wait on the result for one family.
-    listTargets (Right asyn) [] = do
-        result <- waitCatch asyn
-        case result of
-          Left e -> do
-            traceWith tracer $ DnsTraceLookupException e
-            listTargets (Left []) []
-          Right addrs -> do
-            listTargets (Left addrs) []
-
-    -- Peek at the result for one family.
-    listTargets (Right asyn) a@(addr : addrs) = do
-        result <- poll asyn
-        case result of
-          Just (Left e) -> do
-            traceWith tracer $ DnsTraceLookupException e
-            listTargets (Left []) a
-          Just (Right newAddrs) -> listTargets (Left newAddrs) a
-          Nothing -> targetCons addr $ listTargets (Right asyn) addrs
+    -- Called when both threads exited and we know the results of both.
+    -- Returns a subscription target that cycles between the results until both results are exhausted
+    targetCycle
+      :: [Socket.SockAddr]
+      -> [Socket.SockAddr]
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    targetCycle [] [] = return Nothing
+    targetCycle [] ipvB = targetCycle ipvB []
+    targetCycle (addr : addrs) ipvB = targetCons addr $ targetCycle ipvB addrs
 
     resolveAAAA :: Resolver m
                 -> m [Socket.SockAddr]
