@@ -4,7 +4,6 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 
 -- | Intended for qualified import
 module Ouroboros.Consensus.Network.NodeToNode (
@@ -182,11 +181,7 @@ mkHandlers
             getChainDB
       , hBlockFetchClient =
           blockFetchClient
-      , hBlockFetchServer = \version ->
-          blockFetchServer
-            (Node.blockFetchServerTracer tracers)
-            getChainDB
-            version
+      , hBlockFetchServer = blockFetchServer (Node.blockFetchServerTracer tracers) getChainDB
       , hTxSubmissionClient = \version controlMessageSTM peer ->
           txSubmissionOutbound
             (contramap (TraceLabelPeer peer) (Node.txOutboundTracer tracers))
@@ -632,7 +627,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
         (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsKeepAlive
         channel
-        $ keepAliveServerPeer
+        . keepAliveServerPeer
         $ keepAliveServer
 
 {-------------------------------------------------------------------------------
@@ -661,15 +656,15 @@ initiator miniProtocolParameters version Apps {..} =
       -- a quadruple uniquely determinaing a connection).
       (\them controlMessageSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient version controlMessageSTM them))),
+            InitiatorProtocolOnly (MuxPeerRaw (aChainSyncClient version controlMessageSTM them)),
           blockFetchProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient version controlMessageSTM them))),
+            InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient version controlMessageSTM them)),
           txSubmissionProtocol =
             if version >= NodeToNodeV_6
               then InitiatorProtocolOnly (MuxPeerRaw (aTxSubmission2Client version controlMessageSTM them))
               else InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient  version controlMessageSTM them)),
           keepAliveProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them)))
+            InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them))
         })
       version
 
@@ -687,14 +682,14 @@ responder miniProtocolParameters version Apps {..} =
       miniProtocolParameters
       (\them _controlMessageSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer version them))),
+            ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer version them)),
           blockFetchProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer version them))),
+            ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer version them)),
           txSubmissionProtocol =
             if version >= NodeToNodeV_6
               then ResponderProtocolOnly (MuxPeerRaw (aTxSubmission2Server version them))
               else ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer  version them)),
           keepAliveProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aKeepAliveServer version them)))
+            ResponderProtocolOnly (MuxPeerRaw (aKeepAliveServer version them))
         })
       version

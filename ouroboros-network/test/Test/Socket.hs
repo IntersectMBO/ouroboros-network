@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
@@ -113,7 +112,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
 
     producerVar <- newTVarIO (CPS.initChainProducerState chain0)
     consumerVar <- newTVarIO chain0
-    done <- atomically newEmptyTMVar
+    done <- newEmptyTMVarIO
     networkState <- newNetworkMutableState
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0

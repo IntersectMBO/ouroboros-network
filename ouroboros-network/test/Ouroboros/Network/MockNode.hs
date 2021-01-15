@@ -1,8 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -90,7 +88,7 @@ chainValidation :: forall block m. (HasFullHeader block, MonadSTM m)
                 -> StrictTVar m (Maybe (Chain block))
                 -> m ()
 chainValidation peerChainVar candidateChainVar = do
-    st <- atomically (newTVar genesisPoint)
+    st <- newTVarIO genesisPoint
     forever (atomically (update st))
   where
     update :: StrictTVar m (Point block) -> STM m ()
@@ -210,7 +208,7 @@ observeChainProducerState
   -> StrictTVar m (ChainProducerState block)
   -> m ()
 observeChainProducerState nid probe cpsVar = do
-    st <- atomically (newTVar genesisPoint)
+    st <- newTVarIO genesisPoint
     forever (update st)
   where
     update :: StrictTVar m (Point block) -> m ()
@@ -250,7 +248,7 @@ forkRelayKernel :: forall block m.
 forkRelayKernel upstream cpsVar = do
   -- Mutable state
   -- 2. candidate chains
-  candidateChainVars <- replicateM (length upstream) (atomically (newTVar Nothing))
+  candidateChainVars <- replicateM (length upstream) (newTVarIO Nothing)
   -- chain validation threads
   zipWithM_
     (\chain cchain -> forkIO $ chainValidation chain cchain)
@@ -287,7 +285,7 @@ relayNode _nid initChain chans = do
   -- 1. input chains
   upstream <- zipWithM startConsumer [0..] (consumerChans chans)
   -- 2. ChainProducerState
-  cpsVar <- atomically $ newTVar (initChainProducerState initChain)
+  cpsVar <- newTVarIO (initChainProducerState initChain)
 
   forkRelayKernel upstream cpsVar
 
@@ -306,7 +304,7 @@ relayNode _nid initChain chans = do
                   -> Channel m (AnyMessage (ChainSync block (Point block) (Tip block)))
                   -> m (StrictTVar m (Chain block))
     startConsumer _cid channel = do
-      chainVar <- atomically $ newTVar Genesis
+      chainVar <- newTVarIO Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
       void $ forkIO $ void $ runPeer nullTracer
                                    codecChainSyncId
@@ -367,9 +365,8 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
             cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
             writeTVar cpsVar (switchFork (addBlock chain block) cps)
             return True
-      if cont
-        then applyGeneratedBlock getBlock
-        else return ()
+
+      when cont $ applyGeneratedBlock getBlock
 
     addBlock :: Chain block -> block -> Chain block
     addBlock c b =

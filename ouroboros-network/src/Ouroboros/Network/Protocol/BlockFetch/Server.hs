@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Ouroboros.Network.Protocol.BlockFetch.Server where
 
 import Network.TypedProtocol.Core
@@ -55,7 +57,7 @@ blockFetchServerPeer
   => BlockFetchServer block point m a
   -> Peer (BlockFetch block point) AsServer BFIdle m a
 blockFetchServerPeer (BlockFetchServer requestHandler result) =
-    Await (ClientAgency TokIdle) $ \msg -> case msg of
+    Await (ClientAgency TokIdle) $ \case
       MsgRequestRange range -> Effect $ sendBatch <$> requestHandler range
       MsgClientDone         -> Done TokDone result
  where

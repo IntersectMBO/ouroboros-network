@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -98,18 +99,16 @@ chainSyncServerPeer
   => ChainSyncServer header point tip m a
   -> Peer (ChainSync header point tip) AsServer StIdle m a
 chainSyncServerPeer (ChainSyncServer mterm) = Effect $ mterm >>=
-    \(ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient}) ->
+    \ServerStIdle{recvMsgRequestNext, recvMsgFindIntersect, recvMsgDoneClient} ->
 
-    pure $ Await (ClientAgency TokIdle) $ \req ->
-    case req of
+    pure $ Await (ClientAgency TokIdle) $ \case
       MsgRequestNext -> Effect $ do
         mresp <- recvMsgRequestNext
         pure $ case mresp of
           Left  resp    -> handleStNext TokCanAwait resp
           Right waiting -> Yield (ServerAgency (TokNext TokCanAwait))
-                                 MsgAwaitReply $ Effect $ do
-                             resp <- waiting
-                             pure $ handleStNext TokMustReply resp
+                                 MsgAwaitReply 
+                                 (Effect (handleStNext TokMustReply <$> waiting))
 
       MsgFindIntersect points -> Effect $ do
         resp <- recvMsgFindIntersect points

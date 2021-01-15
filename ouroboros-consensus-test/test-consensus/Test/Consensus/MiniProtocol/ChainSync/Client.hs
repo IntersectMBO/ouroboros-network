@@ -71,6 +71,9 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 import           Test.Util.Tracer (recordingTracerTVar)
 
+{- HLINT ignore "Redundant $" -}
+{- HLINT ignore "Use list literal" -}
+
 {-------------------------------------------------------------------------------
   Top-level tests
 -------------------------------------------------------------------------------}
@@ -310,7 +313,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       -- has thrown an exception or has gracefully terminated, so that at the
       -- end, we can read the chains in the states they were in when the
       -- exception was thrown.
-      stop <- fmap isJust $ atomically $ readTVar varClientResult
+      stop <- isJust <$> readTVarIO varClientResult
       unless stop $ do
         -- Client
         whenJust (Map.lookup tick clientUpdates) $ \chainUpdates ->

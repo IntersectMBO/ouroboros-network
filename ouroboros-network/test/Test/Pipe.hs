@@ -150,9 +150,9 @@ demo chain0 updates = do
         let chan1 = Mx.pipeChannelFromHandles hndRead1 hndWrite2
             chan2 = Mx.pipeChannelFromHandles hndRead2 hndWrite1
 #endif
-        producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
-        consumerVar <- atomically $ newTVar chain0
-        done <- atomically newEmptyTMVar
+        producerVar <- newTVarIO (CPS.initChainProducerState chain0)
+        consumerVar <- newTVarIO chain0
+        done <- newEmptyTMVarIO
 
         let Just expectedChain = Chain.applyChainUpdates updates chain0
             target = Chain.headPoint expectedChain

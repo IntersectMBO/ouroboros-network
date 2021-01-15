@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -17,13 +16,12 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.List (foldl')
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
 import           Control.Exception (assert)
-import           Control.Monad (forever)
+import           Control.Monad (forever, void)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
@@ -55,6 +53,7 @@ import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 
+{- HLINT ignore "Reduce duplication" -}
 
 -- | Run a single block fetch protocol until the chain is downloaded.
 --
@@ -101,9 +100,9 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
 
     -- Order of shutdown here is important for this example: must kill off the
     -- fetch thread before the peer threads.
-    _ <- waitAnyCancel $ [ fetchAsync, driverAsync,
-                           clientAsync, serverAsync,
-                           syncClientAsync, keepAliveAsync]
+    _ <- waitAnyCancel [ fetchAsync, driverAsync,
+                         clientAsync, serverAsync,
+                         syncClientAsync, keepAliveAsync]
     return ()
 
   where
@@ -125,7 +124,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                -> TestFetchedBlockHeap m Block
                -> m ()
     blockFetch registry blockHeap =
-        blockFetchLogic
+        void $ blockFetchLogic
           decisionTracer clientStateTracer
           (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
           registry
@@ -136,7 +135,6 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
             bfcDecisionLoopInterval   = 0.01,
             bfcSalt                   = 0
           })
-        >> return ()
 
     driver :: TestFetchedBlockHeap m Block -> m ()
     driver blockHeap = do
@@ -228,7 +226,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                -> TestFetchedBlockHeap m Block
                -> m ()
     blockFetch registry blockHeap =
-        blockFetchLogic
+        void $ blockFetchLogic
           decisionTracer clientStateTracer
           (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
           registry
@@ -239,7 +237,6 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
             bfcDecisionLoopInterval   = 0.01,
             bfcSalt                   = 0
           })
-        >> return ()
 
     driver :: TestFetchedBlockHeap m Block -> m ()
     driver blockHeap = do
@@ -275,7 +272,7 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
       plausibleCandidateChain,
       compareCandidateChains,
 
-      blockFetchSize         = \_ -> 2000,
+      blockFetchSize         = const 2000,
       blockMatchesHeader     = \_ _ -> True
     }
   where
@@ -366,7 +363,7 @@ runFetchClientAndServerAsync clientTracer serverTracer
       runFetchClient
         clientTracer
         registry peerid
-        (fromMaybe id (delayChannel <$> clientDelay) clientChannel)
+        (maybe id delayChannel clientDelay clientChannel)
         client
 
     serverAsync <- async $ do
@@ -374,7 +371,7 @@ runFetchClientAndServerAsync clientTracer serverTracer
       labelThread threadId ("block-fetch-server-" ++ show peerid)
       runFetchServer
         serverTracer
-        (fromMaybe id (delayChannel <$> serverDelay) serverChannel)
+        (maybe id delayChannel serverDelay serverChannel)
         server
 
     -- we are tagging messages with the current peerid, not the target
@@ -385,13 +382,13 @@ runFetchClientAndServerAsync clientTracer serverTracer
       labelThread threadId ("registry-" ++ show peerid)
       bracketSyncWithFetchClient
         registry peerid
-        (forever (threadDelay 1000) >> return ())
+        (void $ forever (threadDelay 1000))
     keepAliveAsync <- async $ do
       threadId <- myThreadId
       labelThread threadId ("keep-alive-" ++ show peerid)
       bracketKeepAliveClient
         registry peerid
-        (\_ -> forever (threadDelay 1000) >> return ())
+        (\_ -> void $ forever (threadDelay 1000))
 
     return (clientAsync, serverAsync, syncClientAsync, keepAliveAsync)
 

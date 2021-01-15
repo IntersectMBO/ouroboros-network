@@ -4,7 +4,6 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 
 -- | Intended for qualified import
 module Ouroboros.Consensus.Network.NodeToClient (
@@ -79,6 +78,8 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+
+{- HLINT ignore "Reduce duplication" -}
 
 {-------------------------------------------------------------------------------
   Handlers
@@ -399,10 +400,10 @@ responder version Apps {..} =
     nodeToClientProtocols
       (\peer _shouldStopSTM -> NodeToClientProtocols {
           localChainSyncProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer peer))),
+            ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer peer)),
           localTxSubmissionProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer peer))),
+            ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer peer)),
           localStateQueryProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aStateQueryServer peer)))
+            ResponderProtocolOnly (MuxPeerRaw (aStateQueryServer peer))
         })
       version

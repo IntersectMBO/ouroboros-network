@@ -22,6 +22,7 @@ module Control.Monad.Class.MonadSTM.Strict
   , newTVarIO
   , newTVarWithInvariantIO
   , readTVar
+  , readTVarIO
   , writeTVar
   , modifyTVar
   , stateTVar
@@ -122,6 +123,9 @@ newTVarWithInvariantM = newTVarWithInvariantIO
 
 readTVar :: MonadSTM m => StrictTVar m a -> STM m a
 readTVar StrictTVar { tvar } = Lazy.readTVar tvar
+
+readTVarIO :: MonadSTM m => StrictTVar m a -> m a
+readTVarIO tvar = atomically $ readTVar tvar
 
 writeTVar :: (MonadSTM m, HasCallStack) => StrictTVar m a -> a -> STM m ()
 writeTVar StrictTVar { tvar, invariant } !a =

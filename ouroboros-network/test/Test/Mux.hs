@@ -1,9 +1,8 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
@@ -102,9 +101,9 @@ demo chain0 updates delay = do
     let sduLen = 1280
     let server_w = client_r
         server_r = client_w
-    producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
-    consumerVar <- atomically $ newTVar chain0
-    done <- atomically newEmptyTMVar
+    producerVar <- newTVarIO (CPS.initChainProducerState chain0)
+    consumerVar <- newTVarIO chain0
+    done <- newEmptyTMVarIO
 
     let Just expectedChain = Chain.applyChainUpdates updates chain0
         target = Chain.headPoint expectedChain

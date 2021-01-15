@@ -60,6 +60,9 @@ import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+{- HLINT ignore "Reduce duplication" -}
+{- HLINT ignore "Use camelCase" -}
+
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
   [ testProperty "direct ST" propChainSyncDirectST
@@ -139,16 +142,16 @@ chainSyncForkExperiment
   -> m Property
 chainSyncForkExperiment run (ChainProducerStateForkTest cps chain) = do
   let pchain = ChainProducerState.producerChain cps
-  cpsVar   <- atomically $ newTVar cps
-  chainVar <- atomically $ newTVar chain
-  doneVar  <- atomically $ newTVar False
+  cpsVar   <- newTVarIO cps
+  chainVar <- newTVarIO chain
+  doneVar  <- newTVarIO False
   let server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDirectST :: ChainProducerStateForkTest -> Property
@@ -200,9 +203,9 @@ chainSyncPipelinedForkExperiment
   -> m Bool
 chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps chain) = do
   let pchain = ChainProducerState.producerChain cps
-  cpsVar   <- atomically $ newTVar cps
-  chainVar <- atomically $ newTVar chain
-  doneVar  <- atomically $ newTVar False
+  cpsVar   <- newTVarIO cps
+  chainVar <- newTVarIO chain
+  doneVar  <- newTVarIO False
   let server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
@@ -210,7 +213,7 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain == cchain)
 
 --
@@ -543,9 +546,9 @@ chainSyncDemo
   -> m Property
 chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   let pchain = ChainProducerState.producerChain cps
-  cpsVar   <- atomically $ newTVar cps
-  chainVar <- atomically $ newTVar chain
-  doneVar  <- atomically $ newTVar False
+  cpsVar   <- newTVarIO cps
+  chainVar <- newTVarIO chain
+  doneVar  <- newTVarIO False
 
   let server :: ChainSyncServer Block (Point Block) (Tip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
@@ -562,7 +565,7 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
     done <- readTVar doneVar
     unless done retry
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDemoST
@@ -611,9 +614,9 @@ chainSyncDemoPipelined
   -> m Property
 chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTest cps chain) = do
   let pchain = ChainProducerState.producerChain cps
-  cpsVar   <- atomically $ newTVar cps
-  chainVar <- atomically $ newTVar chain
-  doneVar  <- atomically $ newTVar False
+  cpsVar   <- newTVarIO cps
+  chainVar <- newTVarIO chain
+  doneVar  <- newTVarIO False
 
   let server :: ChainSyncServer Block (Point Block) (Tip Block) m a
       server = ChainSyncExamples.chainSyncServerExample
@@ -630,7 +633,7 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
     done <- readTVar doneVar
     unless done retry
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDemoPipelinedMaxST

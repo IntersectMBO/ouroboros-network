@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
@@ -67,6 +66,7 @@ import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
 
+{- HLINT ignore "Reduce duplication" -}
 
 main :: IO ()
 main = do
@@ -316,7 +316,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               plausibleCandidateChain,
               compareCandidateChains,
 
-              blockFetchSize         = \_ -> 1000,
+              blockFetchSize         = const 1000,
               blockMatchesHeader     = \_ _ -> True
             }
           where
@@ -369,7 +369,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                           (localAddressFromPath sockAddr)
                     | sockAddr <- sockAddrs ]
 
-    fetchAsync <- async $
+    fetchAsync <- async . void $
                     blockFetchLogic
                       (contramap show stdoutTracer) -- decisionTracer
                       (contramap show stdoutTracer) -- state tracer
@@ -382,7 +382,6 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                         bfcDecisionLoopInterval   = 0.01,
                         bfcSalt                   = 0
                         })
-                 >> return ()
 
     chainAsync <- async (chainSelection Map.empty)
 
@@ -488,7 +487,7 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     handleNext =
       ChainSync.ClientStNext {
-        recvMsgRollForward  = \header _pHead ->
+        ChainSync.recvMsgRollForward  = \header _pHead ->
           ChainSync.ChainSyncClient $ do
             addBlock header
             --FIXME: the notTooFarAhead bit is not working
@@ -496,7 +495,7 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
 --            notTooFarAhead
             return requestNext
 
-      , recvMsgRollBackward = \pIntersect _pHead ->
+      , ChainSync.recvMsgRollBackward = \pIntersect _pHead ->
           ChainSync.ChainSyncClient $ do
             rollback pIntersect
             return requestNext
@@ -539,10 +538,10 @@ chainSyncServer seed =
                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     idleState blocks =
       ChainSync.ServerStIdle {
-        recvMsgRequestNext   = do threadDelay 500000
-                                  return (Left (nextState blocks)),
-        recvMsgFindIntersect = \_ -> return (intersectState blocks),
-        recvMsgDoneClient    = return ()
+        ChainSync.recvMsgRequestNext   = do threadDelay 500000
+                                            return (Left (nextState blocks)),
+        ChainSync.recvMsgFindIntersect = \_ -> return (intersectState blocks),
+        ChainSync.recvMsgDoneClient    = return ()
       }
 
     nextState :: [Block]
@@ -712,7 +711,7 @@ data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
 mkTestFetchedBlockHeap :: [Point BlockHeader]
                        -> IO (TestFetchedBlockHeap IO BlockHeader)
 mkTestFetchedBlockHeap points = do
-    v <- atomically (newTVar (Set.fromList points))
+    v <- newTVarIO (Set.fromList points)
     return TestFetchedBlockHeap {
       getTestFetchedBlocks = readTVar v,
       addTestFetchedBlock  = \p _b -> atomically (modifyTVar' v (Set.insert p))

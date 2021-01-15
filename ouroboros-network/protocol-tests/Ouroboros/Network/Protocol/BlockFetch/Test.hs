@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Test (tests) where
 import qualified Codec.Serialise as S
 import           Control.Monad.ST (runST)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Maybe (fromMaybe)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
@@ -47,6 +48,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+{- HLINT ignore "Use camelCase" -}
 
 tests :: TestTree
 tests =
@@ -338,11 +340,11 @@ genBlockFetch :: Gen block
               -> Gen (ChainRange point)
               -> Gen (AnyMessageAndAgency (BlockFetch block point))
 genBlockFetch genBlock genChainRange = oneof
-    [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
+    [ AnyMessageAndAgency (ClientAgency TokIdle) .
         MsgRequestRange <$> genChainRange
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks
-    , AnyMessageAndAgency (ServerAgency TokStreaming) <$>
+    , AnyMessageAndAgency (ServerAgency TokStreaming) .
         MsgBlock <$> genBlock
     , return $ AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
@@ -492,7 +494,4 @@ receivedBlockBodies
 receivedBlockBodies chain points =
     map f (pointsToRanges chain points)
  where
-    f (ChainRange from to) =
-      case Chain.selectBlockRange chain from to of
-        Nothing -> []
-        Just bs -> bs
+    f (ChainRange from to) = fromMaybe [] (Chain.selectBlockRange chain from to)
