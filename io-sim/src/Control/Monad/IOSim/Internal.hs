@@ -59,7 +59,7 @@ import           Data.Typeable (Typeable)
 import           Quiet (Quiet (..))
 import           GHC.Generics (Generic)
 
-import           Control.Applicative (Alternative (..))
+import           Control.Applicative (Alternative (..), liftA2)
 import           Control.Exception (ErrorCall (..), assert,
                      asyncExceptionFromException, asyncExceptionToException)
 import           Control.Monad (MonadPlus, join)
@@ -195,6 +195,16 @@ instance Monad (IOSim s) where
     fail = Fail.fail
 #endif
 
+instance Semigroup a => Semigroup (IOSim s a) where
+    (<>) = liftA2 (<>)
+
+instance Monoid a => Monoid (IOSim s a) where
+    mempty = pure mempty
+
+#if !(MIN_VERSION_base(4,11,0))
+    mappend = liftA2 mappend
+#endif
+
 instance Fail.MonadFail (IOSim s) where
   fail msg = IOSim $ \_ -> Throw (toException (IO.Error.userError msg))
 
@@ -235,7 +245,6 @@ instance Alternative (STM s) where
     (<|>) = orElse
 
 instance MonadPlus (STM s) where
-
 
 instance MonadSay (IOSim s) where
   say msg = IOSim $ \k -> Say msg (k ())
