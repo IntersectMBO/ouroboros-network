@@ -120,6 +120,7 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
       , hStateQueryServer =
           localStateQueryServer
             (ExtLedgerCfg cfg)
+            (ChainDB.getTipPoint getChainDB)
             (ChainDB.getPastLedger getChainDB)
             (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
       }
@@ -165,8 +166,9 @@ defaultCodecs :: forall m blk.
                  )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
+              -> N.NodeToClientVersion
               -> DefaultCodecs blk m
-defaultCodecs ccfg version = Codecs {
+defaultCodecs ccfg version networkVersion = Codecs {
       cChainSyncCodec =
         codecChainSync
           enc
@@ -185,6 +187,7 @@ defaultCodecs ccfg version = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
+          (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
           (enc . SomeSecond)
@@ -212,8 +215,9 @@ clientCodecs :: forall m blk.
                 )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk
+             -> N.NodeToClientVersion
              -> ClientCodecs blk m
-clientCodecs ccfg version = Codecs {
+clientCodecs ccfg version networkVersion = Codecs {
       cChainSyncCodec =
         codecChainSync
           enc
@@ -232,6 +236,7 @@ clientCodecs ccfg version = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
+          (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
           (enc . SomeSecond)
