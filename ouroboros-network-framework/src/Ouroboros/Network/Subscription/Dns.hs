@@ -129,10 +129,10 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
                           case rd_e of
                             Left r -> do
                               traceWith tracer DnsTraceLookupIPv6First
-                              handleResult aid_ipv4 r
+                              handleThreadResult r $ threadTargetCycle aid_ipv4
                             Right r -> do
                               traceWith tracer DnsTraceLookupIPv4First
-                              handleResult aid_ipv6 r
+                              handleThreadResult r $ threadTargetCycle aid_ipv6
                  case res of
                    Nothing -> do
                      -- TODO: the thread timedout, we should trace it
@@ -151,19 +151,17 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
         then return $ Just (addr, SubscriptionTarget next)
         else next
 
-    handleResult :: Async m [Socket.SockAddr]
-                 -> Either SomeException [Socket.SockAddr]
-                 -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
-
-    handleResult activeAsync (Left e) = do
-        traceWith tracer $ DnsTraceLookupException e
-        threadTargetCycle activeAsync []
-
-    handleResult activeAsync (Right []) =
-        threadTargetCycle activeAsync []
-
-    handleResult activeAsync (Right (addr:addrs)) =
-        targetCons addr $ threadTargetCycle activeAsync addrs
+    -- Takes the result of a thread, returning an optional first socket in the subscription target result,
+    -- then calls the given function to get the tail
+    handleThreadResult
+      :: Either SomeException [Socket.SockAddr]
+      -> ([Socket.SockAddr] -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr)))
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    handleThreadResult (Left e) cont = do
+      traceWith tracer $ DnsTraceLookupException e
+      cont []
+    handleThreadResult (Right []) cont = cont []
+    handleThreadResult (Right (addr:addrs)) cont = targetCons addr $ cont addrs
 
     -- Called when a thread is still running, and the other finished already
     -- Cycles between trying to get a result from the running thread, and the results of the finished thread
@@ -174,20 +172,12 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
       -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
     threadTargetCycle asyn [] = do
       result <- waitCatch asyn
-      case result of
-        Left e -> do
-          traceWith tracer $ DnsTraceLookupException e
-          targetCycle [] []
-        Right addrs -> do
-          targetCycle addrs []
+      handleThreadResult result $ targetCycle []
     threadTargetCycle asyn a@(addr : addrs) = do
       result <- poll asyn
       case result of
         -- The running thread finished, handle the result, then cycle over all results
-        Just (Left e) -> do
-          traceWith tracer $ DnsTraceLookupException e
-          targetCycle [] a
-        Just (Right newAddrs) -> targetCycle newAddrs a
+        Just r -> handleThreadResult r $ targetCycle a
         -- The running thread is still going, emit an address of the finished thread, then check again
         Nothing -> targetCons addr $ threadTargetCycle asyn addrs
 
