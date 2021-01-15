@@ -42,7 +42,7 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-                     (ledgerDbPast, ledgerDbWithAnchor)
+                     (ledgerDbPast, ledgerDbTip, ledgerDbWithAnchor)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
@@ -75,14 +75,17 @@ prop_localStateQueryServer
   :: SecurityParam
   -> BlockTree
   -> Permutation
+  -> Positive (Small Int)
   -> Property
-prop_localStateQueryServer k bt p = checkOutcome k chain actualOutcome
+prop_localStateQueryServer k bt p (Positive (Small n)) = checkOutcome k chain actualOutcome
   where
     chain :: Chain TestBlock
     chain = treePreferredChain bt
 
-    points :: [Point TestBlock]
-    points = blockPoint <$> permute p (treeToBlocks bt)
+    points :: [Maybe (Point TestBlock)]
+    points = permute p $
+         replicate n Nothing
+      ++ (Just . blockPoint <$> (treeToBlocks bt))
 
     actualOutcome = runSimOrThrow $ do
       let client = mkClient points
@@ -109,7 +112,7 @@ prop_localStateQueryServer k bt p = checkOutcome k chain actualOutcome
 checkOutcome
   :: SecurityParam
   -> Chain TestBlock
-  -> [(Point TestBlock, Either AcquireFailure (Point TestBlock))]
+  -> [(Maybe (Point TestBlock), Either AcquireFailure (Point TestBlock))]
   -> Property
 checkOutcome k chain = conjoin . map (uncurry checkResult)
   where
@@ -118,10 +121,10 @@ checkOutcome k chain = conjoin . map (uncurry checkResult)
       Chain.drop (fromIntegral (maxRollbacks k)) chain
 
     checkResult
-      :: Point TestBlock
+      :: Maybe (Point TestBlock)
       -> Either AcquireFailure (Point TestBlock)
       -> Property
-    checkResult pt = \case
+    checkResult (Just pt) = \case
       Right result
         -> tabulate "Acquired" ["Success"] $ result === pt
       Left AcquireFailurePointNotOnChain
@@ -140,16 +143,19 @@ checkOutcome k chain = conjoin . map (uncurry checkResult)
            (property False)
         | otherwise
         -> tabulate "Acquired" ["AcquireFailurePointTooOld"] $ property True
+    checkResult Nothing = \case
+      Right _result -> tabulate "Acquired" ["Success"] True
+      Left  failure -> counterexample ("acuire tip point resulted in " ++ show failure) False
 
 mkClient
   :: Monad m
-  => [Point TestBlock]
+  => [Maybe (Point TestBlock)]
   -> LocalStateQueryClient
        TestBlock
        (Point TestBlock)
        (Query TestBlock)
        m
-       [(Point TestBlock, Either AcquireFailure (Point TestBlock))]
+       [(Maybe (Point TestBlock), Either AcquireFailure (Point TestBlock))]
 mkClient points = localStateQueryClient [(pt, QueryLedgerTip) | pt <- points]
 
 mkServer
@@ -162,6 +168,7 @@ mkServer k chain = do
     return $
       localStateQueryServer
         cfg
+        (castPoint . LgrDB.ledgerDbTip <$> LgrDB.getCurrent lgrDB)
         (\pt -> LgrDB.ledgerDbPast pt <$> LgrDB.getCurrent lgrDB)
         getImmutablePoint
   where
