@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE OverloadedStrings   #-}
 
 {- Partial implementation of RFC8305, https://tools.ietf.org/html/rfc8305 .
  - Prioritization of destination addresses doesn't implement longest prefix matching
@@ -53,10 +54,9 @@ import           Ouroboros.Network.Socket
 resolutionDelay :: DiffTime
 resolutionDelay = 0.05 -- 50ms delay
 
-
 data DnsSubscriptionTarget = DnsSubscriptionTarget {
       dstDomain :: !DNS.Domain
-    , dstPort   :: !Socket.PortNumber
+    , dstPort   :: !(Maybe Socket.PortNumber)
     , dstValency :: !Int
     } deriving (Eq, Show)
 
@@ -64,6 +64,7 @@ data DnsSubscriptionTarget = DnsSubscriptionTarget {
 data Resolver m = Resolver {
       lookupA    :: DNS.Domain -> Socket.PortNumber -> m (Either DNS.DNSError [Socket.SockAddr])
     , lookupAAAA :: DNS.Domain -> Socket.PortNumber -> m (Either DNS.DNSError [Socket.SockAddr])
+    , lookupSRV  :: DNS.Domain -> m (Either DNS.DNSError [(Socket.PortNumber, DNS.Domain)])
     }
 
 withResolver :: DNS.ResolvSeed -> (Resolver IO -> IO a) -> IO a
@@ -71,7 +72,8 @@ withResolver rs k = do
     DNS.withResolver rs $ \dnsResolver ->
         k (Resolver
              (ipv4ToSockAddr dnsResolver)
-             (ipv6ToSockAddr dnsResolver))
+             (ipv6ToSockAddr dnsResolver)
+             (srvToSockAddr dnsResolver))
   where
     ipv4ToSockAddr dnsResolver d port = do
         r <- DNS.lookupA dnsResolver d
@@ -84,6 +86,12 @@ withResolver rs k = do
         r <- DNS.lookupAAAA dnsResolver d
         case r of
              (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 port 0 (IP.toHostAddress6 ip) 0) ips
+             (Left e)    -> return $ Left e
+
+    srvToSockAddr dnsResolver d = do
+        r <- DNS.lookupSRV dnsResolver d
+        case r of
+             (Right results) -> return $ Right $ map (\(_, _, port, domain) -> (fromIntegral port, domain)) results
              (Left e)    -> return $ Left e
 
 
@@ -116,7 +124,22 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect subscriptio
 
          Right rs -> do
              withResolverFn rs $ \resolver -> do
-               lookupDomain resolver (dstDomain subscriptionTarget) (dstPort subscriptionTarget)
+               case dstPort subscriptionTarget of
+                 Just port -> lookupDomain resolver (dstDomain subscriptionTarget) port
+                 Nothing -> do
+                   srvResult <- lookupSRV resolver (dstDomain subscriptionTarget)
+                   case srvResult of
+                     Left e -> do
+                       traceWith tracer $ DnsTraceLookupSRVError e
+                       return (SubscriptionTarget (pure Nothing))
+                     Right r@[] -> do
+                       traceWith tracer $ DnsTraceLookupSRVResult r
+                       return (SubscriptionTarget (pure Nothing))
+                     -- TODO: Handle more than one result
+                     Right r@((port, domain):_) -> do
+                       traceWith tracer $ DnsTraceLookupSRVResult r
+                       lookupDomain resolver domain port
+
   where
 
     lookupDomain :: Resolver m -> DNS.Domain -> Socket.PortNumber -> m (SubscriptionTarget m Socket.SockAddr)
@@ -319,16 +342,20 @@ data DnsTrace =
       DnsTraceLookupException SomeException
     | DnsTraceLookupAError DNS.DNSError
     | DnsTraceLookupAAAAError DNS.DNSError
+    | DnsTraceLookupSRVError DNS.DNSError
     | DnsTraceLookupIPv6First
     | DnsTraceLookupIPv4First
     | DnsTraceLookupAResult [Socket.SockAddr]
     | DnsTraceLookupAAAAResult [Socket.SockAddr]
+    | DnsTraceLookupSRVResult [(Socket.PortNumber, DNS.Domain)]
 
 instance Show DnsTrace where
     show (DnsTraceLookupException e)   = "lookup exception " ++ show e
     show (DnsTraceLookupAError e)      = "A lookup failed with " ++ show e
     show (DnsTraceLookupAAAAError e)   = "AAAA lookup failed with " ++ show e
+    show (DnsTraceLookupSRVError e)    = "SRV lookup failed with " ++ show e
     show DnsTraceLookupIPv4First       = "Returning IPv4 address first"
     show DnsTraceLookupIPv6First       = "Returning IPv6 address first"
     show (DnsTraceLookupAResult as)    = "Lookup A result: " ++ show as
     show (DnsTraceLookupAAAAResult as) = "Lookup AAAAA result: " ++ show as
+    show (DnsTraceLookupSRVResult as)  = "Lookup SRV result: " ++ show as
