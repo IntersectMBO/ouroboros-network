@@ -62,25 +62,25 @@ data DnsSubscriptionTarget = DnsSubscriptionTarget {
 
 
 data Resolver m = Resolver {
-      lookupA    :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
-    , lookupAAAA :: DNS.Domain -> m (Either DNS.DNSError [Socket.SockAddr])
+      lookupA    :: DNS.Domain -> Socket.PortNumber -> m (Either DNS.DNSError [Socket.SockAddr])
+    , lookupAAAA :: DNS.Domain -> Socket.PortNumber -> m (Either DNS.DNSError [Socket.SockAddr])
     }
 
-withResolver :: Socket.PortNumber -> DNS.ResolvSeed -> (Resolver IO -> IO a) -> IO a
-withResolver port rs k = do
+withResolver :: DNS.ResolvSeed -> (Resolver IO -> IO a) -> IO a
+withResolver rs k = do
     DNS.withResolver rs $ \dnsResolver ->
         k (Resolver
              (ipv4ToSockAddr dnsResolver)
              (ipv6ToSockAddr dnsResolver))
   where
-    ipv4ToSockAddr dnsResolver d = do
+    ipv4ToSockAddr dnsResolver d port = do
         r <- DNS.lookupA dnsResolver d
         case r of
              (Right ips) -> return $ Right $ map (Socket.SockAddrInet port .
                                                   IP.toHostAddress) ips
              (Left e)    -> return $ Left e
 
-    ipv6ToSockAddr dnsResolver d = do
+    ipv6ToSockAddr dnsResolver d port = do
         r <- DNS.lookupAAAA dnsResolver d
         case r of
              (Right ips) -> return $ Right $ map (\ip -> Socket.SockAddrInet6 port 0 (IP.toHostAddress6 ip) 0) ips
@@ -100,7 +100,7 @@ dnsResolve :: forall a m s.
     -> BeforeConnect m s Socket.SockAddr
     -> DnsSubscriptionTarget
     -> m (SubscriptionTarget m Socket.SockAddr)
-dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscriptionTarget domain _ _) = do
+dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscriptionTarget domain port _) = do
     rs_e <- (Right <$> getSeed) `catches`
         [ Handler (\ (e :: DNS.DNSError) ->
             return (Left $ toException e) :: m (Either SomeException a))
@@ -198,7 +198,7 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
     resolveAAAA :: Resolver m
                 -> m [Socket.SockAddr]
     resolveAAAA resolver = do
-        r_e <- lookupAAAA resolver domain
+        r_e <- lookupAAAA resolver domain port
         case r_e of
              Left e  -> do
                  traceWith tracer $ DnsTraceLookupAAAAError e
@@ -213,7 +213,7 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
              -> Async m [Socket.SockAddr]
              -> m [Socket.SockAddr]
     resolveA resolver aid_ipv6 = do
-        r_e <- lookupA resolver domain
+        r_e <- lookupA resolver domain port
         case r_e of
              Left e  -> do
                  traceWith tracer $ DnsTraceLookupAError e
@@ -287,14 +287,13 @@ dnsSubscriptionWorker
     -> DnsSubscriptionParams a
     -> (Socket.Socket -> IO a)
     -> IO Void
-dnsSubscriptionWorker snocket subTracer dnsTracer errTrace networkState
-                      params@SubscriptionParams { spSubscriptionTarget } k =
+dnsSubscriptionWorker snocket subTracer dnsTracer errTrace networkState params k =
    dnsSubscriptionWorker'
        snocket
        subTracer dnsTracer errTrace
        networkState
        (DNS.makeResolvSeed DNS.defaultResolvConf)
-       (withResolver (dstPort spSubscriptionTarget)) 
+       withResolver
        params
        mainTx
        k
