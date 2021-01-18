@@ -8,6 +8,7 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
   , chainSyncHeaderServerReader
+  , chainSyncBlockServerReader
   , Tip
     -- * Trace events
   , TraceChainSyncServerEvent (..)
@@ -37,6 +38,11 @@ chainSyncHeaderServerReader
     -> m (Reader m blk (WithPoint blk (SerialisedHeader blk)))
 chainSyncHeaderServerReader chainDB registry = ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
 
+chainSyncBlockServerReader
+    :: ChainDB m blk
+    -> ResourceRegistry m
+    -> m (Reader m blk (WithPoint blk (Serialised blk)))
+chainSyncBlockServerReader chainDB registry = ChainDB.newReader chainDB registry getSerialisedBlockWithPoint
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
 --
@@ -67,12 +73,11 @@ chainSyncBlocksServer
     :: forall m blk. (IOLike m, HasHeader (Header blk))
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
-    -> ResourceRegistry m
+    -> Reader m blk (WithPoint blk (Serialised blk))
     -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
-chainSyncBlocksServer tracer chainDB registry =
-    ChainSyncServer $ do
-      rdr <- ChainDB.newReader chainDB registry getSerialisedBlockWithPoint
-      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
+chainSyncBlocksServer tracer chainDB rdr =
+    ChainSyncServer $
+      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr in
       server
 
 -- | A chain sync server.

@@ -329,6 +329,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
     mkNodeToClientApps nodeKernelArgs nodeKernel version =
         NTC.mkApps
+          nodeKernel
           rnTraceNTC
           (NTC.defaultCodecs codecConfig version)
           (NTC.mkHandlers nodeKernelArgs nodeKernel)
