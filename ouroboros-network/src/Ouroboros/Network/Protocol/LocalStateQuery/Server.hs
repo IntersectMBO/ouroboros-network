@@ -36,7 +36,7 @@ newtype LocalStateQueryServer block point (query :: Type -> Type) m a = LocalSta
 -- It must be prepared to handle either.
 --
 data ServerStIdle block point query m a = ServerStIdle {
-       recvMsgAcquire :: point
+       recvMsgAcquire :: Maybe point
                       -> m (ServerStAcquiring block point query m a),
 
        recvMsgDone    :: m a
@@ -70,7 +70,7 @@ data ServerStAcquired block point query m a = ServerStAcquired {
                           query result
                        -> m (ServerStQuerying  block point query m a result),
 
-      recvMsgReAcquire :: point
+      recvMsgReAcquire :: Maybe point
                        -> m (ServerStAcquiring block point query m a),
 
       recvMsgRelease   :: m (ServerStIdle      block point query m a)

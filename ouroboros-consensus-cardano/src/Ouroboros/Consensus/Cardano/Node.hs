@@ -330,6 +330,7 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_5, CardanoNodeToClientVersion4)
       , (NodeToClientV_6, CardanoNodeToClientVersion5)
       , (NodeToClientV_7, CardanoNodeToClientVersion6)
+      , (NodeToClientV_8, CardanoNodeToClientVersion6)
       ]
 
 {-------------------------------------------------------------------------------

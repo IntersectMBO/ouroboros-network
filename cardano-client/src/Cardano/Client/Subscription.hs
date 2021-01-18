@@ -111,4 +111,4 @@ versionedProtocols codecConfig networkMagic callback =
       versionedNodeToClientProtocols
         version
         (NodeToClientVersionData networkMagic)
-        (callback version (clientCodecs codecConfig blockVersion))
+        (callback version (clientCodecs codecConfig blockVersion version))
