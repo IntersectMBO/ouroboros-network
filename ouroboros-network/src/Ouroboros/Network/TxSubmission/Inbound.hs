@@ -322,7 +322,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             -- This will happen incase of duplicate txids within the same window.
             live = filter (`elem` unacknowledgedTxIds') $ toList acknowledgedTxIds
             bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <>
-                               (Map.fromList (zip live (repeat Nothing)))
+                               Map.fromList (zip live (repeat Nothing))
 
 
         _writtenTxids <- mempoolAddTxs txsReady
@@ -368,7 +368,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
 
         availableTxidsU =
               Map.filterWithKey
-                (\txid _ -> notElem txid (unacknowledgedTxIds st))
+                (\txid _ -> txid `notElem` unacknowledgedTxIds st)
                 txidsMap
 
         availableTxids' = availableTxids st <> Map.intersection availableTxidsMp availableTxidsU
@@ -395,7 +395,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         -- If so we can remove acknowledged txs from our buffer provided that they
         -- are not still in unacknowledgedTxIds''. This happens in case of duplicate
         -- txids.
-        bufferedTxs'' = forceElemsToWHNF $ foldl' (\m txid -> if elem txid unacknowledgedTxIds''
+        bufferedTxs'' = forceElemsToWHNF $ foldl' (\m txid -> if txid `elem` unacknowledgedTxIds''
                                               then m
                                               else Map.delete txid m)
                                 bufferedTxs' acknowledgedTxIds
