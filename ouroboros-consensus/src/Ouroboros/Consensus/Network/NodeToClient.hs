@@ -86,7 +86,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 -- | Protocol handlers for node-to-client (local) communication
 data Handlers m peer blk = Handlers {
       hChainSyncServer
-        :: ResourceRegistry m
+        :: ChainDB.Reader m blk (ChainDB.WithPoint blk (Serialised blk))
         -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
 
     , hTxSubmissionServer
@@ -326,7 +326,7 @@ data Apps m peer bCS bTX bSQ a = Apps {
 
 -- | Construct the 'NetworkApplication' for the node-to-client protocols
 mkApps
-  :: forall m peer blk e bCS bTX bSQ.
+  :: forall m remotePeer localPeer blk e bCS bTX bSQ.
      ( IOLike m
      , Exception e
      , ShowProxy blk
@@ -335,29 +335,34 @@ mkApps
      , ShowProxy (GenTx blk)
      , ShowQuery (Query blk)
      )
-  => Tracers m peer blk e
+  => NodeKernel m remotePeer localPeer blk
+  -> Tracers m localPeer blk e
   -> Codecs blk e m bCS bTX bSQ
-  -> Handlers m peer blk
-  -> Apps m peer bCS bTX bSQ ()
-mkApps Tracers {..} Codecs {..} Handlers {..} =
+  -> Handlers m localPeer blk
+  -> Apps m localPeer bCS bTX bSQ ()
+mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
     Apps {..}
   where
     aChainSyncServer
-      :: peer
+      :: localPeer
       -> Channel m bCS
       -> m ((), Maybe bCS)
     aChainSyncServer them channel = do
       labelThisThread "LocalChainSyncServer"
       withRegistry $ \registry ->
-        runPeer
-          (contramap (TraceLabelPeer them) tChainSyncTracer)
-          cChainSyncCodec
-          channel
-          $ chainSyncServerPeer
-          $ hChainSyncServer registry
+        bracket
+          (chainSyncBlockServerReader (getChainDB kernel) registry)
+          ChainDB.readerClose
+          (\rdr -> runPeer
+            (contramap (TraceLabelPeer them) tChainSyncTracer)
+            cChainSyncCodec
+            channel
+            $ chainSyncServerPeer
+            $ hChainSyncServer rdr
+          )
 
     aTxSubmissionServer
-      :: peer
+      :: localPeer
       -> Channel m bTX
       -> m ((), Maybe bTX)
     aTxSubmissionServer them channel = do
@@ -369,7 +374,7 @@ mkApps Tracers {..} Codecs {..} Handlers {..} =
         (localTxSubmissionServerPeer (pure hTxSubmissionServer))
 
     aStateQueryServer
-      :: peer
+      :: localPeer
       -> Channel m bSQ
       -> m ((), Maybe bSQ)
     aStateQueryServer them channel = do
