@@ -7,6 +7,7 @@
 module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
   ( chainSyncHeadersServer
   , chainSyncBlocksServer
+  , chainSyncHeaderServerReader
   , Tip
     -- * Trace events
   , TraceChainSyncServerEvent (..)
@@ -29,6 +30,14 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
+
+chainSyncHeaderServerReader
+    :: ChainDB m blk
+    -> ResourceRegistry m
+    -> m (Reader m blk (WithPoint blk (SerialisedHeader blk)))
+chainSyncHeaderServerReader chainDB registry = ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
+
+
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
 --
 -- The node-to-node protocol uses the chain sync mini-protocol with chain
@@ -41,13 +50,12 @@ chainSyncHeadersServer
        )
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
+    -> Reader m blk (WithPoint blk (SerialisedHeader blk))
     -> NodeToNodeVersion
-    -> ResourceRegistry m
     -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
-chainSyncHeadersServer tracer chainDB _version registry =
-    ChainSyncServer $ do
-      rdr <- ChainDB.newReader chainDB registry getSerialisedHeaderWithPoint
-      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr
+chainSyncHeadersServer tracer chainDB rdr _version =
+    ChainSyncServer $
+      let ChainSyncServer server = chainSyncServerForReader tracer chainDB rdr in
       server
 
 -- | Chain Sync Server for blocks for a given a 'ChainDB'.
@@ -92,7 +100,7 @@ chainSyncServerForReader tracer chainDB rdr =
     idle = ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
-        recvMsgDoneClient    = ChainDB.readerClose rdr
+        recvMsgDoneClient    = pure ()
       }
 
     idle' :: ChainSyncServer b (Point blk) (Tip blk) m ()
