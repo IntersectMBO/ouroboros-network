@@ -88,6 +88,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -112,8 +113,8 @@ data Handlers m peer blk = Handlers {
         -- closure include these and not need to be explicit about them here.
 
     , hChainSyncServer
-        :: NodeToNodeVersion
-        -> ResourceRegistry m
+        :: ChainDB.Reader m blk (ChainDB.WithPoint blk (SerialisedHeader blk))
+        -> NodeToNodeVersion
         -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
@@ -488,14 +489,18 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       labelThisThread "ChainSyncServer"
       withRegistry $ \registry -> do
         chainSyncTimeout <- genChainSyncTimeout
-        runPeerWithLimits
-          (contramap (TraceLabelPeer them) tChainSyncSerialisedTracer)
-          cChainSyncCodecSerialised
-          (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
-          (timeLimitsChainSync chainSyncTimeout)
-          channel
-          $ chainSyncServerPeer
-          $ hChainSyncServer version registry
+        bracket
+          (chainSyncHeaderServerReader (getChainDB kernel) registry)
+          ChainDB.readerClose
+          (\rdr -> runPeerWithLimits
+            (contramap (TraceLabelPeer them) tChainSyncSerialisedTracer)
+            cChainSyncCodecSerialised
+            (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+            (timeLimitsChainSync chainSyncTimeout)
+            channel
+            $ chainSyncServerPeer
+            $ hChainSyncServer rdr version
+          )
 
     aBlockFetchClient
       :: NodeToNodeVersion
