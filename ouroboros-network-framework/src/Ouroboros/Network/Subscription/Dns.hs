@@ -100,7 +100,7 @@ dnsResolve :: forall a m s.
     -> BeforeConnect m s Socket.SockAddr
     -> DnsSubscriptionTarget
     -> m (SubscriptionTarget m Socket.SockAddr)
-dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscriptionTarget domain port _) = do
+dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect subscriptionTarget = do
     rs_e <- (Right <$> getSeed) `catches`
         [ Handler (\ (e :: DNS.DNSError) ->
             return (Left $ toException e) :: m (Either SomeException a))
@@ -116,30 +116,35 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
          Right rs -> do
              withResolverFn rs $ \resolver -> do
-                 -- Though the DNS lib does have its own timeouts, these do not work
-                 -- on Windows reliably so as a workaround we add an extra layer
-                 -- of timeout on the outside.
-                 -- TODO: Fix upstream dns lib.
-                 --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
-                 --       of an exception in the main thread.
-                 res <- timeout 20 $ do
-                          aid_ipv6 <- async $ resolveAAAA resolver
-                          aid_ipv4 <- async $ resolveA resolver aid_ipv6
-                          rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-                          case rd_e of
-                            Left r -> do
-                              traceWith tracer DnsTraceLookupIPv6First
-                              handleThreadResult r $ threadTargetCycle aid_ipv4
-                            Right r -> do
-                              traceWith tracer DnsTraceLookupIPv4First
-                              handleThreadResult r $ threadTargetCycle aid_ipv6
-                 case res of
-                   Nothing -> do
-                     -- TODO: the thread timedout, we should trace it
-                     return (SubscriptionTarget $ pure Nothing)
-                   Just st ->
-                     return (SubscriptionTarget $ pure st)
+               lookupDomain resolver (dstDomain subscriptionTarget) (dstPort subscriptionTarget)
   where
+
+    lookupDomain :: Resolver m -> DNS.Domain -> Socket.PortNumber -> m (SubscriptionTarget m Socket.SockAddr)
+    lookupDomain resolver domain port = do
+      -- Though the DNS lib does have its own timeouts, these do not work
+      -- on Windows reliably so as a workaround we add an extra layer
+      -- of timeout on the outside.
+      -- TODO: Fix upstream dns lib.
+      --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
+      --       of an exception in the main thread.
+      res <- timeout 20 $ do
+               aid_ipv6 <- async $ resolveAAAA resolver domain port
+               aid_ipv4 <- async $ resolveA resolver aid_ipv6 domain port
+               rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
+               case rd_e of
+                 Left r -> do
+                   traceWith tracer DnsTraceLookupIPv6First
+                   handleThreadResult r $ threadTargetCycle aid_ipv4
+                 Right r -> do
+                   traceWith tracer DnsTraceLookupIPv4First
+                   handleThreadResult r $ threadTargetCycle aid_ipv6
+      case res of
+        Nothing -> do
+          -- TODO: the thread timedout, we should trace it
+          return (SubscriptionTarget $ pure Nothing)
+        Just st ->
+          return (SubscriptionTarget $ pure st)
+
     -- Creates a subscription target from an optional first socket and a tail
     targetCons
       :: Socket.SockAddr
@@ -196,8 +201,10 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
         interleave (x : xs) ys = x : interleave ys xs
 
     resolveAAAA :: Resolver m
+                -> DNS.Domain
+                -> Socket.PortNumber
                 -> m [Socket.SockAddr]
-    resolveAAAA resolver = do
+    resolveAAAA resolver domain port = do
         r_e <- lookupAAAA resolver domain port
         case r_e of
              Left e  -> do
@@ -211,8 +218,10 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
     resolveA :: Resolver m
              -> Async m [Socket.SockAddr]
+             -> DNS.Domain
+             -> Socket.PortNumber
              -> m [Socket.SockAddr]
-    resolveA resolver aid_ipv6 = do
+    resolveA resolver aid_ipv6 domain port = do
         r_e <- lookupA resolver domain port
         case r_e of
              Left e  -> do
