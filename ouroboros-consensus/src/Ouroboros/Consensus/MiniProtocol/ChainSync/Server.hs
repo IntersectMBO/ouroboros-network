@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -118,7 +117,7 @@ chainSyncServerForReader tracer chainDB rdr =
         tip <- atomically $ ChainDB.getCurrentTip chainDB
         traceWith tracer $
           TraceChainSyncServerRead tip (point <$> update)
-        return $ Left $ sendNext tip (withoutPoint <$> update)
+        Left <$> sendNext tip (withoutPoint <$> update)
       Nothing     -> return $ Right $ do
         -- Reader is at the head, we have to block and wait for the chain to
         -- change.
@@ -126,14 +125,18 @@ chainSyncServerForReader tracer chainDB rdr =
         tip    <- atomically $ ChainDB.getCurrentTip chainDB
         traceWith tracer $
           TraceChainSyncServerReadBlocked tip (point <$> update)
-        return $ sendNext tip (withoutPoint <$> update)
+        sendNext tip (withoutPoint <$> update)
 
     sendNext :: Tip blk
              -> ChainUpdate blk b
-             -> ServerStNext b (Point blk) (Tip blk) m ()
+             -> m (ServerStNext b (Point blk) (Tip blk) m ())
     sendNext tip update = case update of
-      AddBlock hdr -> SendMsgRollForward  hdr tip idle'
-      RollBack pt  -> SendMsgRollBackward pt tip idle'
+      AddBlock hdr -> do
+        traceWith tracer TraceChainSyncRollForward
+        return $ SendMsgRollForward hdr tip idle'
+      RollBack pt  -> do
+        traceWith tracer TraceChainSyncRollBackward
+        return $ SendMsgRollBackward pt tip idle'
 
     handleFindIntersect :: [Point blk]
                         -> m (ServerStIntersect b (Point blk) (Tip blk) m ())
@@ -141,9 +144,13 @@ chainSyncServerForReader tracer chainDB rdr =
       -- TODO guard number of points
       changed <- ChainDB.readerForward rdr points
       tip     <- atomically $ ChainDB.getCurrentTip chainDB
-      return $ case changed of
-        Just pt -> SendMsgIntersectFound    pt tip idle'
-        Nothing -> SendMsgIntersectNotFound    tip idle'
+      case changed of
+        Just pt -> do
+          traceWith tracer TraceChainSyncIntersectFound
+          return $ SendMsgIntersectFound pt tip idle'
+        Nothing -> do
+          traceWith tracer TraceChainSyncIntersectNotFound
+          return $ SendMsgIntersectNotFound tip idle'
 
 {-------------------------------------------------------------------------------
   Trace events
@@ -156,4 +163,8 @@ chainSyncServerForReader tracer chainDB rdr =
 data TraceChainSyncServerEvent blk
   = TraceChainSyncServerRead        (Tip blk) (ChainUpdate blk (Point blk))
   | TraceChainSyncServerReadBlocked (Tip blk) (ChainUpdate blk (Point blk))
+  | TraceChainSyncRollForward
+  | TraceChainSyncRollBackward
+  | TraceChainSyncIntersectFound
+  | TraceChainSyncIntersectNotFound
   deriving (Eq, Show)
