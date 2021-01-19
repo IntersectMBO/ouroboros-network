@@ -10,6 +10,16 @@ import           Network.TypedProtocol.ReqResp.Client
 
 import           Network.TypedProtocol.Pipelined
 
+-- | An example request\/response client which ignores received responses.
+--
+reqRespClient :: Monad m
+              => [req]
+              -> ReqRespClient req resp m ()
+reqRespClient = go
+  where
+    go []         = SendMsgDone (pure ())
+    go (req:reqs) = SendMsgReq req (\_resp -> return (go reqs))
+
 
 -- | A request\/response server instance that computes a 'Data.List.mapAccumL'
 -- over the stream of requests.
@@ -38,7 +48,6 @@ reqRespClientMap = go []
     go resps (req:reqs) =
       SendMsgReq req $ \resp ->
       return (go (resp:resps) reqs)
-
 
 --
 -- Pipelined example
