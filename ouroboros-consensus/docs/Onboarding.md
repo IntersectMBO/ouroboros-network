@@ -7,6 +7,112 @@ Please open PRs to add particularly useful content in this file. Though we would
 like the file to remain as approachable as possible, therefore small and
 narrowly-scoped.
 
+The HR will run separate "on-boarding" that will help you to get to know
+the company better. The purpose of this document is to make you feel comfortable
+and productive in the Consensus team.
+
+Welcome, we are thrilled to have you here :)!
+
+## The team
+
+Currently the team consists of:
+
+* [Nicolas Frisby](https://github.com/nfrisby)
+* [Pawel Szulc](https://github.com/EncodePanda)
+* [Edsko de Vries](https://github.com/edsko) (8 hours a week)
+
+## Quick-start
+
+### Join our slack channels
+
+Please join our internal slack channel `#ouroboros-prototyping` and say "hi" to the rest of the team.
+
+It is worth also joining:
+
+* `#haskell` - collective mind of all IOHK's Haskellers
+* `#consensus` - public channel where users of our layer will ask questions
+
+### Clone the repository
+
+If you have not done this already please clone
+[this repo](https://github.com/input-output-hk/ouroboros-network/). You don't have
+to fork it. Ask for appropriate rights to the repository on `#ouroboros-prototyping`
+
+### Create your first PR!
+
+* Create new branch - convention is `/github_nickname/name_of_the_branch`
+* Modify `ouroboros-consensus/docs/Onboarding.md` by adding yourself to the `## The team` section
+* Commit, push and make a PR
+* Find some one to review it by the end of the day
+* Merge it! - note that we use `bors` to merge our PRs
+
+### Build the project
+
+> note: there might be value to move the content of this section to a README.md and
+> only reference it from here
+
+There are multiple ways to build this project. By far the most straight-forward
+approach is to use Nix.
+
+#### Pre-requirements
+
+##### 1. Nix
+
+You have a [Nix](https://nixos.org/download.html) installed on your system. You can
+verify it by running:
+
+```
+$> nix-env --version
+nix-env (Nix) 2.3.10
+```
+
+##### 2. cachix
+
+> note that this step is not mandatory but highly recommended, without it you
+> you will have to "compile the whole world" (including few GHC versions) before
+> you will be able to build, test and run our project
+
+* Install cachix
+
+```
+nix-env -iA cachix -f https://cachix.org/api/v1/install
+```
+
+* Configure cachix
+
+Open your `~/.confg/nix/nix.conf` and add/modify following entries
+
+```
+substituters = https://cache.nixos.org/ https://ouroboros-network.cachix.org https://hydra.iohk.io/ https://iohk.cachix.org/
+trusted-substituters = https://cache.nixos.org/ https://ouroboros-network.cachix.org https://hydra.iohk.io/ https://iohk.cachix.org/
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ouroboros-network.cachix.org-1:YnmfwRhnjzcIiyzuHX5tWfTD08PqFySl6ySldfgTUIY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo=
+```
+
+#### Build & test it
+
+Enter nix shell from project's root folder
+
+```
+$> nix-shell
+```
+
+Build all
+
+```
+[nix-shell] > cabal build all
+```
+
+and test all
+
+```
+[nix-shell] > cabal test all
+```
+
+### Congrats!
+
+Congratulations! You are all set. Now, draw the rest of the owl.
+
+
 ## Very High-Level Motivation
 
 At a very high level, a net of Cardano nodes should exhibit the following
