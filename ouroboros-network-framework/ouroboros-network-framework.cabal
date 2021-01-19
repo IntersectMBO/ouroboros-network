@@ -195,3 +195,33 @@ executable demo-ping-pong
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+
+executable demo-connection-manager
+  hs-source-dirs:      demo test
+  main-is:             connection-manager.hs
+  build-depends:       base,
+                       bytestring,
+                       cborg,
+                       network,
+                       optparse-applicative,
+                       random,
+                       serialise,
+
+                       contra-tracer,
+
+                       io-classes,
+                       network-mux,
+                       ouroboros-network-framework,
+                       typed-protocols,
+                       typed-protocols-examples
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wno-unticked-promoted-constructors
