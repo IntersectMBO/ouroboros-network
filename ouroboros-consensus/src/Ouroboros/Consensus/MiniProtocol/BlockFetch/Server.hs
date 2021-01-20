@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE EmptyDataDeriving         #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -111,7 +112,7 @@ blockFetchServer tracer chainDB _version registry = senderSide
 
     sendBlocks :: Int -> ChainDB.Iterator m blk (WithPoint blk (Serialised blk))
                -> m (BlockFetchSendBlocks (Serialised blk) (Point blk) m ())
-    sendBlocks blockCount it = do
+    sendBlocks !blockCount it = do
       next <- ChainDB.iteratorNext it
       case next of
         IteratorResult blk     ->
