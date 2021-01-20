@@ -2,21 +2,21 @@
 {-# LANGUAGE EmptyDataDeriving         #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UndecidableInstances      #-}
+
 module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
   ( blockFetchServer
     -- * Trace events
-  , TraceBlockFetchServerEvent
+  , TraceBlockFetchServerEvent(..)
     -- * Exceptions
   , BlockFetchServerException
   ) where
 
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (Serialised (..))
@@ -76,7 +76,7 @@ blockFetchServer
     -> NodeToNodeVersion
     -> ResourceRegistry m
     -> BlockFetchServer (Serialised blk) (Point blk) m ()
-blockFetchServer _tracer chainDB _version registry = senderSide
+blockFetchServer tracer chainDB _version registry = senderSide
   where
     senderSide :: BlockFetchServer (Serialised blk) (Point blk) m ()
     senderSide = BlockFetchServer receiveReq' ()
@@ -107,17 +107,18 @@ blockFetchServer _tracer chainDB _version registry = senderSide
         -- When we got an iterator, it will stream at least one block since
         -- its bounds are inclusive, so we don't have to check whether the
         -- iterator is empty.
-        Right it -> SendMsgStartBatch $ sendBlocks it
+        Right it -> SendMsgStartBatch $ sendBlocks 0 it
 
-    sendBlocks :: ChainDB.Iterator m blk (WithPoint blk (Serialised blk))
+    sendBlocks :: Int -> ChainDB.Iterator m blk (WithPoint blk (Serialised blk))
                -> m (BlockFetchSendBlocks (Serialised blk) (Point blk) m ())
-    sendBlocks it = do
+    sendBlocks blockCount it = do
       next <- ChainDB.iteratorNext it
       case next of
         IteratorResult blk     ->
-          return $ SendMsgBlock (withoutPoint blk) (sendBlocks it)
+          return $ SendMsgBlock (withoutPoint blk) (sendBlocks (blockCount + 1) it)
         IteratorExhausted      -> do
           ChainDB.iteratorClose it
+          traceWith tracer (TraceBlockFetchServerBlockCount blockCount)
           return $ SendMsgBatchDone $ return senderSide
         IteratorBlockGCed pt -> do
           ChainDB.iteratorClose it
@@ -129,7 +130,5 @@ blockFetchServer _tracer chainDB _version registry = senderSide
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Block Fetch Server.
-data TraceBlockFetchServerEvent blk
-   -- TODO no events yet. Tracing the messages send/received over the network
-   -- might be all we need?
+newtype TraceBlockFetchServerEvent blk = TraceBlockFetchServerBlockCount Int
   deriving (Eq, Show)

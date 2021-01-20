@@ -31,7 +31,7 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
@@ -63,7 +63,11 @@ data TxSubmissionMempoolWriter txid tx idx m =
        mempoolAddTxs :: [tx] -> m [txid]
     }
 
-data TraceTxSubmissionInbound txid tx = TraceTxSubmissionInbound --TODO
+data TraceTxSubmissionInbound txid tx
+  = TraceTxSubmissions
+    { traceTxsCollected :: !Int
+    , traceTxsWritten :: !Int
+    }
   deriving Show
 
 data TxSubmissionProtocolError =
@@ -163,7 +167,7 @@ txSubmissionInbound
   -> TxSubmissionMempoolWriter txid tx idx m
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
+txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
     TxSubmissionServerPipelined $
       continueWithStateM (serverIdle Zero) initialServerState
   where
@@ -265,6 +269,7 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
         let st' = st {
           requestedTxIdsInFlight = requestedTxIdsInFlight st - reqNo
         }
+
         mpSnapshot <- atomically mempoolGetSnapshot
         continueWithStateM
           (serverIdle n)
@@ -324,6 +329,12 @@ txSubmissionInbound _tracer maxUnacked mpReader mpWriter _version =
             bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <>
                                (Map.fromList (zip live (repeat Nothing)))
 
+        writtenTxids <- mempoolAddTxs txsReady
+
+        traceWith tracer $ TraceTxSubmissions
+          { traceTxsWritten = length writtenTxids
+          , traceTxsCollected = length txs
+          }
 
         _writtenTxids <- mempoolAddTxs txsReady
 
