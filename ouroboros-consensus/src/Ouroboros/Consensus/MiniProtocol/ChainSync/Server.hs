@@ -132,10 +132,10 @@ chainSyncServerForReader tracer chainDB rdr =
              -> m (ServerStNext b (Point blk) (Tip blk) m ())
     sendNext tip update = case update of
       AddBlock hdr -> do
-        traceWith tracer TraceChainSyncRollForward
+        traceWith tracer (TraceChainSyncRollForward tip)
         return $ SendMsgRollForward hdr tip idle'
       RollBack pt  -> do
-        traceWith tracer TraceChainSyncRollBackward
+        traceWith tracer (TraceChainSyncRollBackward tip)
         return $ SendMsgRollBackward pt tip idle'
 
     handleFindIntersect :: [Point blk]
@@ -146,10 +146,10 @@ chainSyncServerForReader tracer chainDB rdr =
       tip     <- atomically $ ChainDB.getCurrentTip chainDB
       case changed of
         Just pt -> do
-          traceWith tracer TraceChainSyncIntersectFound
+          traceWith tracer (TraceChainSyncIntersectFound tip)
           return $ SendMsgIntersectFound pt tip idle'
         Nothing -> do
-          traceWith tracer TraceChainSyncIntersectNotFound
+          traceWith tracer (TraceChainSyncIntersectNotFound tip)
           return $ SendMsgIntersectNotFound tip idle'
 
 {-------------------------------------------------------------------------------
@@ -163,8 +163,8 @@ chainSyncServerForReader tracer chainDB rdr =
 data TraceChainSyncServerEvent blk
   = TraceChainSyncServerRead        (Tip blk) (ChainUpdate blk (Point blk))
   | TraceChainSyncServerReadBlocked (Tip blk) (ChainUpdate blk (Point blk))
-  | TraceChainSyncRollForward
-  | TraceChainSyncRollBackward
-  | TraceChainSyncIntersectFound
-  | TraceChainSyncIntersectNotFound
+  | TraceChainSyncRollForward       (Tip blk)
+  | TraceChainSyncRollBackward      (Tip blk)
+  | TraceChainSyncIntersectFound    (Tip blk)
+  | TraceChainSyncIntersectNotFound (Tip blk)
   deriving (Eq, Show)
