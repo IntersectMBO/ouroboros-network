@@ -545,7 +545,7 @@ pattern QueryAnytimeAllegra q = QueryAnytime q (EraIndex (S (S (Z (K ())))))
 pattern QueryAnytimeMary
   :: QueryAnytime result
   -> CardanoQuery c result
-pattern QueryAnytimeMary q = QueryAnytime q (EraIndex (S (S (Z (K ())))))
+pattern QueryAnytimeMary q = QueryAnytime q (EraIndex (S (S (S (Z (K ()))))))
 
 {-# COMPLETE QueryIfCurrentByron
            , QueryIfCurrentShelley
