@@ -52,7 +52,7 @@ The API consists of three layers:
 ## Demo applications
 
 * [demo-chain-sync](https://github.com/input-output-hk/ouroboros-network/wiki/Ouroboros-Network-Demo)
-* [cardano-ping](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/cardano-ping.hs)
+* [cardano-ping](https://github.com/input-output-hk/ouroboros-network/wiki/cardano-ping)
 * [mux-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/mux-demo.hs)
 * [demo-ping-pong](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network-framework/demo/ping-pong.hs)
 * [named-pipe-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/Win32-network/demo/named-pipe-demo.hs) (Windows only)
