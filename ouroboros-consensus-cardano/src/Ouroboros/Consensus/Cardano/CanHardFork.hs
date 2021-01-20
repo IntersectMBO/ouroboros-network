@@ -202,8 +202,8 @@ byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion state =
 -------------------------------------------------------------------------------}
 
 shelleyTransition ::
-     forall era.
-     PartialLedgerConfig (ShelleyBlock era)
+     forall era. ShelleyBasedEra era
+  => PartialLedgerConfig (ShelleyBlock era)
   -> Word16   -- ^ Next era's major protocol version
   -> LedgerState (ShelleyBlock era)
   -> Maybe EpochNo

@@ -333,7 +333,9 @@ querySupportedVersion = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getProposedPPUpdates :: SL.NewEpochState era -> SL.ProposedPPUpdates era
+getProposedPPUpdates ::
+     ShelleyBasedEra era
+  => SL.NewEpochState era -> SL.ProposedPPUpdates era
 getProposedPPUpdates = SL.proposals . SL._ppups
                      . SL._utxoState . SL.esLState . SL.nesEs
 

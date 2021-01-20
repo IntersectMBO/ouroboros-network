@@ -96,8 +96,8 @@ data UpdateState c = UpdateState {
   deriving (Show, Eq)
 
 protocolUpdates ::
-       forall era.
-       SL.ShelleyGenesis era
+       forall era. ShelleyBasedEra era
+    => SL.ShelleyGenesis era
     -> LedgerState (ShelleyBlock era)
     -> [ProtocolUpdate era]
 protocolUpdates genesis st = [
@@ -155,7 +155,7 @@ data ShelleyLedgerUpdate era =
 instance Condense (ShelleyLedgerUpdate era) where
   condense = show
 
-instance InspectLedger (ShelleyBlock era) where
+instance ShelleyBasedEra era => InspectLedger (ShelleyBlock era) where
   type LedgerWarning (ShelleyBlock era) = Void
   type LedgerUpdate  (ShelleyBlock era) = ShelleyLedgerUpdate era
 
