@@ -284,12 +284,12 @@ reupdateChainDepState ::
 
 Re-applying previously-validated blocks happens when we are replaying blocks
 from the immutable database when initialising the in-memory ledger state
-(\cref{ledgerdb:initialisation}). It is also useful during chain selection
-(\cref{chainsel}): depending on the consensus protocol, we may end up switching
-relatively frequently between short-lived forks; when this happens, skipping
-expensive checks can improve the performance of the node. \todo{How does this
-relate to the best case == worst case thing? Or to the asymptotic
-attacker/defender costs?}
+(\cref{ledgerdb:on-disk:initialisation}). It is also useful during chain
+selection (\cref{chainsel}): depending on the consensus protocol, we may end up
+switching relatively frequently between short-lived forks; when this happens,
+skipping expensive checks can improve the performance of the node. \todo{How
+  does this relate to the best case == worst case thing? Or to the asymptotic
+  attacker/defender costs?}
 
 \subsection{Leader selection}
 \label{consensus:class:leaderselection}
