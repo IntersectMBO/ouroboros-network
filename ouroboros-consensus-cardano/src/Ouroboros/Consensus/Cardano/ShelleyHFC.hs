@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.ShelleyHFC (
     ShelleyBlockHFC
@@ -15,6 +16,10 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+
+import qualified Cardano.Ledger.Core as LC
+import           Control.State.Transition (State)
+import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
@@ -34,7 +39,8 @@ type ShelleyBlockHFC era = HardForkBlock '[ShelleyBlock era]
   NoHardForks instance
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
+instance (ShelleyBasedEra era, State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+      => NoHardForks (ShelleyBlock era) where
   getEraParams =
         shelleyEraParamsNeverHardForks
       . shelleyLedgerGenesis
@@ -52,7 +58,7 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
 -- | Forward to the ShelleyBlock instance. Only supports
 -- 'HardForkNodeToNodeDisabled', which is compatible with nodes running with
 -- 'ShelleyBlock'.
-instance ShelleyBasedEra era
+instance (ShelleyBasedEra era, State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
       => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
   supportedNodeToNodeVersions _ =
       Map.map HardForkNodeToNodeDisabled $
@@ -69,4 +75,5 @@ instance ShelleyBasedEra era
 -- | Use the default implementations. This means the serialisation of blocks
 -- includes an era wrapper. Each block should do this from the start to be
 -- prepared for future hard forks without having to do any bit twiddling.
-instance ShelleyBasedEra era => SerialiseHFC '[ShelleyBlock era]
+instance (ShelleyBasedEra era, State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+      => SerialiseHFC '[ShelleyBlock era]

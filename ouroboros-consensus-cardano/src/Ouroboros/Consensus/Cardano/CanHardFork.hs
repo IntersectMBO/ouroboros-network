@@ -72,9 +72,11 @@ import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
 import           Cardano.Ledger.Allegra.Translation ()
+import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Mary.Translation ()
+import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -202,8 +204,8 @@ byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion state =
 -------------------------------------------------------------------------------}
 
 shelleyTransition ::
-     forall era.
-     PartialLedgerConfig (ShelleyBlock era)
+     forall era. State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+  => PartialLedgerConfig (ShelleyBlock era)
   -> Word16   -- ^ Next era's major protocol version
   -> LedgerState (ShelleyBlock era)
   -> Maybe EpochNo
@@ -298,7 +300,8 @@ instance HasPartialLedgerConfig ByronBlock where
   SingleEraBlock Shelley
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => SingleEraBlock (ShelleyBlock era) where
+instance (ShelleyBasedEra era, State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+   => SingleEraBlock (ShelleyBlock era) where
   singleEraTransition pcfg _eraParams _eraStart ledgerState =
       case shelleyTriggerHardFork pcfg of
         TriggerHardForkNever                         -> Nothing

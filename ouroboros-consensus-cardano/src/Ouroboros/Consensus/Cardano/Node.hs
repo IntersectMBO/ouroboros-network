@@ -72,7 +72,9 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
+import qualified Cardano.Ledger.Core as LC
 import qualified Cardano.Ledger.Era as SL
+import           Control.State.Transition (State)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
@@ -90,7 +92,8 @@ import           Ouroboros.Consensus.Cardano.ShelleyBased
 -------------------------------------------------------------------------------}
 
 instance SerialiseConstraintsHFC ByronBlock
-instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
+instance (ShelleyBasedEra era, State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+  => SerialiseConstraintsHFC (ShelleyBlock era)
 
 -- | Important: we need to maintain binary compatibility with Byron blocks, as
 -- they are already stored on disk.

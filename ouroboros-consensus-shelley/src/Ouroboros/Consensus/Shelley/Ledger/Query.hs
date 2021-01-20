@@ -46,6 +46,8 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
+import qualified Cardano.Ledger.Core as LC
+import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (RewardAccounts)
 import qualified Shelley.Spec.Ledger.RewardProvenance as SL (RewardProvenance)
@@ -162,7 +164,10 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
 
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
-instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
+instance
+  ( ShelleyBasedEra era
+  , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+  ) => QueryLedger (ShelleyBlock era) where
   answerQuery cfg query ext =
       case query of
         GetLedgerTip ->
@@ -333,7 +338,8 @@ querySupportedVersion = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getProposedPPUpdates :: SL.NewEpochState era -> SL.ProposedPPUpdates era
+getProposedPPUpdates :: (State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+   => SL.NewEpochState era -> SL.ProposedPPUpdates era
 getProposedPPUpdates = SL.proposals . SL._ppups
                      . SL._utxoState . SL.esLState . SL.nesEs
 

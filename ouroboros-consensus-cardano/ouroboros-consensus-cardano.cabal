@@ -51,6 +51,7 @@ library
                      , cardano-prelude
                      , cardano-slotting
                      , shelley-spec-ledger
+                     , small-steps
                      , cardano-ledger-shelley-ma
 
                      , ouroboros-network

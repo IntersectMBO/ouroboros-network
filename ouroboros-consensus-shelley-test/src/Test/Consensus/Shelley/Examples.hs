@@ -37,7 +37,7 @@ module Test.Consensus.Shelley.Examples (
 
 import qualified Data.ByteString as Strict
 import           Data.Coerce (coerce)
-import           Data.Default.Class (def)
+import           Data.Default.Class (Default (def))
 import           Data.Functor.Identity (Identity (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -103,12 +103,14 @@ import           Test.Shelley.Spec.Ledger.Orphans ()
 import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
+import qualified Cardano.Ledger.Core as LC
 import qualified Cardano.Ledger.Mary.Value as MA
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import qualified Cardano.Ledger.ShelleyMA as MA
 import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
+import           Control.State.Transition (State)
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -207,6 +209,8 @@ examples ::
        ~ SL.LedgerPredicateFailure era
      ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
        ~ SL.DelegsPredicateFailure era
+     , State (LC.EraRule "PPUP" era)
+       ~ SL.PPUPState era
      )
   => Core.Value era
   -> Core.TxBody era
@@ -540,7 +544,7 @@ exampleChainDepState = TPraosState (NotOrigin 1) (mkPrtclState 1)
 -- | This is probably not a valid ledger. We don't care, we are only
 -- interested in serialisation, not validation.
 exampleNewEpochState ::
-     forall era. ShelleyBasedEra era
+     forall era. (ShelleyBasedEra era, Default (State (LC.EraRule "PPUP" era)))
   => Core.Value era
   -> SL.NewEpochState era
 exampleNewEpochState value = SL.NewEpochState {
@@ -596,7 +600,10 @@ exampleNewEpochState value = SL.NewEpochState {
     nonMyopic = def
 
 exampleLedgerState ::
-     forall era. ShelleyBasedEra era
+     forall era.
+     ( ShelleyBasedEra era
+     , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+     )
   => Core.Value era
   -> LedgerState (ShelleyBlock era)
 exampleLedgerState value = ShelleyLedgerState {
@@ -613,7 +620,7 @@ exampleHeaderState :: ShelleyBasedEra era => HeaderState (ShelleyBlock era)
 exampleHeaderState = genesisHeaderState exampleChainDepState
 
 exampleExtLedgerState ::
-     ShelleyBasedEra era
+     (ShelleyBasedEra era, State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
   => Core.Value era
   -> ExtLedgerState (ShelleyBlock era)
 exampleExtLedgerState value = ExtLedgerState {

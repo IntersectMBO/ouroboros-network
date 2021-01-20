@@ -20,7 +20,7 @@ import           Cardano.Crypto.KES (MockKES)
 
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto (..))
-import           Control.State.Transition.Extended (PredicateFailure)
+import           Control.State.Transition.Extended (PredicateFailure, State)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.Tx as SL (ValidateScript)
 
@@ -66,4 +66,5 @@ type CanMock era =
   , Arbitrary (Core.TxOut era)
   , Arbitrary (Core.Value era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
+  , Arbitrary (State (Core.EraRule "PPUP" era))
   )

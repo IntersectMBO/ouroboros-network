@@ -27,6 +27,8 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Cardano.Ledger.Core as LC
+import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes (strictMaybeToMaybe)
 import qualified Shelley.Spec.Ledger.PParams as SL (PParamsUpdate)
@@ -96,8 +98,8 @@ data UpdateState c = UpdateState {
   deriving (Show, Eq)
 
 protocolUpdates ::
-       forall era.
-       SL.ShelleyGenesis era
+       forall era. (State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+    => SL.ShelleyGenesis era
     -> LedgerState (ShelleyBlock era)
     -> [ProtocolUpdate era]
 protocolUpdates genesis st = [
@@ -155,7 +157,8 @@ data ShelleyLedgerUpdate era =
 instance Condense (ShelleyLedgerUpdate era) where
   condense = show
 
-instance InspectLedger (ShelleyBlock era) where
+instance State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+  => InspectLedger (ShelleyBlock era) where
   type LedgerWarning (ShelleyBlock era) = Void
   type LedgerUpdate  (ShelleyBlock era) = ShelleyLedgerUpdate era
 

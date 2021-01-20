@@ -51,6 +51,7 @@ library
 
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
+                     , small-steps
 
                      , ouroboros-network
                      , ouroboros-consensus
@@ -126,4 +127,3 @@ test-suite test
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
-

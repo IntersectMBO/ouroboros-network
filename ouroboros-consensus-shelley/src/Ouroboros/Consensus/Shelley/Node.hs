@@ -66,8 +66,10 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Cardano.Ledger.Core as LC
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
+import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
@@ -254,7 +256,11 @@ protocolInfoShelley protocolParamsShelleyBased
     protocolInfoShelleyBased protocolParamsShelleyBased protVer
 
 protocolInfoShelleyBased ::
-     forall m era. (IOLike m, ShelleyBasedEra era)
+     forall m era.
+     ( IOLike m
+     , ShelleyBasedEra era
+     , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+     )
   => ProtocolParamsShelleyBased era
   -> SL.ProtVer
   -> ProtocolInfo m (ShelleyBlock era)
@@ -404,7 +410,8 @@ instance ShelleyBasedEra era => NodeInitStorage (ShelleyBlock era) where
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
+instance (ShelleyBasedEra era, State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+  => RunNode (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
   Register genesis staking

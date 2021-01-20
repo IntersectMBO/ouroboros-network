@@ -43,7 +43,9 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import qualified Ouroboros.Consensus.HardFork.History as History
 
+import qualified Cardano.Ledger.Core as LC
 import qualified Cardano.Ledger.Era as SL
+import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -130,11 +132,17 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslationContext era2 ~ ()
   )
 
-instance ShelleyBasedHardForkConstraints era1 era2
+instance ( ShelleyBasedHardForkConstraints era1 era2
+         , State (LC.EraRule "PPUP" era1) ~ SL.PPUPState era1
+         , State (LC.EraRule "PPUP" era2) ~ SL.PPUPState era2
+         )
       => SerialiseHFC (ShelleyBasedHardForkEras era1 era2)
    -- use defaults
 
-instance ShelleyBasedHardForkConstraints era1 era2
+instance ( ShelleyBasedHardForkConstraints era1 era2
+         , State (LC.EraRule "PPUP" era1) ~ SL.PPUPState era1
+         , State (LC.EraRule "PPUP" era2) ~ SL.PPUPState era2
+         )
       => CanHardFork (ShelleyBasedHardForkEras era1 era2) where
   hardForkEraTranslation = EraTranslation {
         translateLedgerState   = PCons translateLedgerState                PNil
@@ -171,7 +179,10 @@ instance ShelleyBasedHardForkConstraints era1 era2
       translateTx =
           fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
-instance ShelleyBasedHardForkConstraints era1 era2
+instance ( ShelleyBasedHardForkConstraints era1 era2
+         , State (LC.EraRule "PPUP" era1) ~ SL.PPUPState era1
+         , State (LC.EraRule "PPUP" era2) ~ SL.PPUPState era2
+         )
       => SupportedNetworkProtocolVersion (ShelleyBasedHardForkBlock era1 era2) where
   supportedNodeToNodeVersions _ = Map.fromList $
       [ (maxBound, ShelleyBasedHardForkNodeToNodeVersion1)
@@ -186,7 +197,12 @@ instance ShelleyBasedHardForkConstraints era1 era2
 -------------------------------------------------------------------------------}
 
 protocolInfoShelleyBasedHardFork ::
-     forall m era1 era2. (IOLike m, ShelleyBasedHardForkConstraints era1 era2)
+     forall m era1 era2.
+     ( IOLike m
+     , ShelleyBasedHardForkConstraints era1 era2
+     , State (LC.EraRule "PPUP" era1) ~ SL.PPUPState era1
+     , State (LC.EraRule "PPUP" era2) ~ SL.PPUPState era2
+     )
   => ProtocolParamsShelleyBased era1
   -> SL.ProtVer
   -> SL.ProtVer
@@ -272,6 +288,8 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
 instance ( TxGen (ShelleyBlock era1)
          , TxGen (ShelleyBlock era2)
          , ShelleyBasedHardForkConstraints era1 era2
+         , State (LC.EraRule "PPUP" era1) ~ SL.PPUPState era1
+         , State (LC.EraRule "PPUP" era2) ~ SL.PPUPState era2
          ) => TxGen (ShelleyBasedHardForkBlock era1 era2) where
   type TxGenExtra (ShelleyBasedHardForkBlock era1 era2) =
     NP WrapTxGenExtra (ShelleyBasedHardForkEras era1 era2)
