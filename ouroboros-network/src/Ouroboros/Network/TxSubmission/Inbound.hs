@@ -64,9 +64,14 @@ data TxSubmissionMempoolWriter txid tx idx m =
     }
 
 data TraceTxSubmissionInbound txid tx
-  = TraceTxSubmissions
-    { traceTxsCollected :: !Int
-    , traceTxsWritten :: !Int
+  -- | Transactions just about to be inserted.
+  = TraceTxSubmissionCollected
+    { ttsiTxsCollected :: !Int
+    }
+  -- | Just processed transaction pass/fail breakdown.
+  | TraceTxSubmissionProcessed
+    { ttsiTxsAccepted :: !Int
+    , ttsiTxsRejected :: !Int
     }
   deriving Show
 
@@ -329,14 +334,18 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
             bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <>
                                (Map.fromList (zip live (repeat Nothing)))
 
-        writtenTxids <- mempoolAddTxs txsReady
+        let !collected = length txs
+        traceWith tracer $
+          TraceTxSubmissionCollected collected
 
-        traceWith tracer $ TraceTxSubmissions
-          { traceTxsWritten = length writtenTxids
-          , traceTxsCollected = length txs
+        txidsAccepted <- mempoolAddTxs txsReady
+
+        let !accepted = length txidsAccepted
+        traceWith tracer $
+          TraceTxSubmissionProcessed
+          { ttsiTxsAccepted = accepted
+          , ttsiTxsRejected = collected - accepted
           }
-
-        _writtenTxids <- mempoolAddTxs txsReady
 
         continueWithStateM (serverIdle n) st {
           bufferedTxs         = bufferedTxs3,
