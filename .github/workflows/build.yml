@@ -14,8 +14,8 @@ jobs:
       fail-fast: false
       matrix:
         subset: [network, consensus]
-        ghc: ["8.6.5", "8.10.2"]
-        os: [ubuntu-latest, windows-latest]
+        ghc: ["8.6.5", "8.10.3"]
+        os: [ubuntu-20.04, windows-latest]
         exclude:
           - os: windows-latest
             subset: consensus
@@ -75,7 +75,7 @@ jobs:
       run: brew install libsodium
 
     - name: Install build environment
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-20.04'
       run: |
         sudo apt-get update
         sudo apt-get -y install libsodium23 libsodium-dev
