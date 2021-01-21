@@ -48,8 +48,10 @@ import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import           Ouroboros.Network.Server2.ControlChannel
 
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
@@ -345,6 +347,9 @@ withConnectionManager
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
+    -> InResponderMode muxMode (ControlChannel m (NewConnection peerAddr handle))
+    -- ^ On outbound duplex connections we need to notify the server about
+    -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
     -- outside of scope of this callback.  Once it returns all resources
@@ -367,6 +372,7 @@ withConnectionManager ConnectionManagerArguments {
                           connectionHandler
                         }
                       classifyHandleError
+                      inboundGovernorControlChannel
                       k = do
     (stateVar ::  StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m))
       <- atomically $  do
@@ -1108,6 +1114,10 @@ withConnectionManager ConnectionManagerArguments {
                         Duplex -> do
                           let connState' = OutboundDupState connId connThread handle Ticking
                           writeTVar connVar connState'
+                          case inboundGovernorControlChannel of
+                            InResponderMode controlChannel ->
+                              newOutboundConnection controlChannel connId dataFlow handle
+                            NotInResponderMode -> return ()
                           return (mkTransition connState connState')
                     traceWith
                       trTracer
