@@ -44,10 +44,15 @@ library
                        Ouroboros.Network.ConnectionHandler
                        Ouroboros.Network.ConnectionManager.Types
                        Ouroboros.Network.ConnectionManager.Core
+                       Ouroboros.Network.InboundGovernor
+                       Ouroboros.Network.InboundGovernor.Event
+                       Ouroboros.Network.InboundGovernor.State
+                       Ouroboros.Network.InboundGovernor.ControlChannel
                        Ouroboros.Network.RethrowPolicy
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.RateLimiting
+                       Ouroboros.Network.Server2
                        Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
 
@@ -71,6 +76,7 @@ library
                      , hashable
                      , mtl
                      , nothunks
+                     , random
                      , stm
                      , text
                      , time
