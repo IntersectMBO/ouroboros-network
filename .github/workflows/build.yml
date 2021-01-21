@@ -86,17 +86,18 @@ jobs:
     - name: Select optimal cabal version
       run: |
         case "$OS" in
-          Windows_NT)   echo "CABAL_VERSION=3.4.0.1-rc3"  >> $GITHUB_ENV;;
+          Windows_NT)   echo "CABAL_VERSION=3.4.0.0-rc5"  >> $GITHUB_ENV;;
           *)            echo "CABAL_VERSION=3.4.0.0-rc4"  >> $GITHUB_ENV;;
         esac
 
-    - uses: haskell/actions/setup@v1
+    - name: Install Haskell
+      uses: haskell/actions/setup@v1
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: ${{ env.CABAL_VERSION }}
 
-    - name: Haskell versions
+    - name: Show Haskell tool versions
       run: |
         ghc --version
         cabal --version
@@ -108,20 +109,19 @@ jobs:
         echo "TMPDIR=$RUNNER_TEMP"  >> $GITHUB_ENV
         echo "TMP=$RUNNER_TEMP"     >> $GITHUB_ENV
 
-    # Cache cabal-store
-    - name: cache cabal store
+    - name: Cache cabal store
       uses: actions/cache@v2
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cabal-store-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
 
-    - name: update Hackage index
+    - name: Update Hackage index
       run: cabal v2-update
 
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
 
-    - name: Use cabal.project.local.windows
+    - name: Use cabal.project.local.ci.windows
       run: |
         cat ./cabal.project.local.ci.windows >> ./cabal.project.local
 
@@ -136,7 +136,6 @@ jobs:
       run: |
         cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
 
-    # Build dependencies
     - name: Build dependencies
       run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
 
@@ -148,98 +147,16 @@ jobs:
           cat "$x"
         done
 
-    #
-    # Build & Test network packages
-    #
+    - name: Build projects [build]
+      run: cabal --builddir="$CABAL_BUILDDIR" build all
 
-    - name: Win32-network [build]
-      if: matrix.os == 'windows-latest'
-      run: cabal --builddir="$CABAL_BUILDDIR" build Win32-network
-
-    # ntp-client
-    - name: ntp-client [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ntp-client
-
-    - name: io-sim-classes [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build io-sim-classes
-
-    - name: io-sim [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build io-sim
-
-    - name: typed-protocols [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols
-
-    - name: typed-protocols-examples [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build typed-protocols-examples
-
-    - name: network-mux [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build network-mux
-
-    - name: ouroboros-network-framework [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network-framework
-
-    - name: ouroboros-network [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-network
-
-    - name: ouroboros-consensus [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus
-
-    - name: ouroboros-consensus-mock [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-mock
-
-    - name: ouroboros-consensus-test [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-test
-
-    - name: ouroboros-consensus-mock-test [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-mock-test
-
-    - name: ouroboros-consensus-byron [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-byron
-
-    - name: ouroboros-consensus-byronspec [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-byronspec
-
-    - name: ouroboros-consensus-byron-test [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-byron-test
-
-    - name: ouroboros-consensus-shelley [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-shelley
-
-    - name: ouroboros-consensus-shelley-test [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-shelley-test
-
-    - name: ouroboros-consensus-cardano [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-cardano
-
-    - name: ouroboros-consensus-cardano-test [build]
-      if: matrix.subset == 'consensus'
-      run: cabal --builddir="$CABAL_BUILDDIR" build ouroboros-consensus-cardano-test
-
-    #
-    # Test network packages
-    #
+    # Test Win32 specific packages
 
     - name: Win32-network [test]
       if: matrix.os == 'windows-latest'
       run: cabal --builddir="$CABAL_BUILDDIR" run Win32-network:test
+
+    # Test network packages
 
     - name: ntp-client [test]
       if: matrix.subset == 'network'
@@ -267,53 +184,7 @@ jobs:
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
 
     - name: ouroboros-network [test]
+      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test
 
-
-    # - name: ouroboros-consensus [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus
-
-    # - name: ouroboros-consensus-mock [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock
-
-    # - name: ouroboros-consensus-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-test
-
-    # - name: ouroboros-consensus-mock-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-mock-test
-
-    # - name: ouroboros-consensus-byron [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron
-
-    # - name: ouroboros-consensus-byronspec [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byronspec
-
-    # - name: ouroboros-consensus-byron-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-byron-test
-
-    # - name: ouroboros-consensus-shelley [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley
-
-    # - name: ouroboros-consensus-shelley-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-shelley-test
-
-    # - name: ouroboros-consensus-cardano [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano
-
-    # - name: ouroboros-consensus-cardano-test [test]
-    #   if: matrix.subset == 'consensus'
-    #   run: cabal --builddir="$CABAL_BUILDDIR" test ouroboros-consensus-cardano-test
-
-    # TODO: we need to install the cddl tool
-    # - name: ouroboros-network [cddl]
-    #   run: cabal --builddir="$CABAL_BUILDDIR" run test-cddl
+    # Consensus tests take too long on GitHub's Azure machines
