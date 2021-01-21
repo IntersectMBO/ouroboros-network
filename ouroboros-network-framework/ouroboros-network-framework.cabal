@@ -49,6 +49,8 @@ library
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.RateLimiting
+                       Ouroboros.Network.Server2
+                       Ouroboros.Network.Server2.ControlChannel
                        Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
 
@@ -72,6 +74,7 @@ library
                      , hashable
                      , mtl
                      , nothunks
+                     , random
                      , stm
                      , text
                      , time
