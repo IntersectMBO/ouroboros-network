@@ -62,6 +62,7 @@ import           Network.Mux.Trace (MuxTrace)
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.Linger (StructLinger (..))
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting
@@ -289,6 +290,9 @@ socketSnocket ioManager = Snocket {
           Socket.setSocketOption sd Socket.ReusePort 1
 #endif
           Socket.setSocketOption sd Socket.NoDelay 1
+          Socket.setSockOpt sd Socket.Linger 
+                              (StructLinger { sl_onoff  = 1,
+                                              sl_linger = 0 })
         when (fml == Socket.AF_INET6)
           -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
           -- it is enabled by default on some systems. Disabled here since we run a separate
