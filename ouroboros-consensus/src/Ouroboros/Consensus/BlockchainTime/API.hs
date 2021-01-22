@@ -19,7 +19,7 @@ import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (onEachChange)
+import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
 
 {-------------------------------------------------------------------------------
   API
@@ -67,9 +67,14 @@ onKnownSlotChange :: forall m. (IOLike m, HasCallStack)
                   -> String            -- ^ Label for the thread
                   -> (SlotNo -> m ())  -- ^ Action to execute
                   -> m (m ())
-onKnownSlotChange registry btime label =
+onKnownSlotChange registry btime label notify =
       fmap cancelThread
-    . onEachChange registry label id Nothing getCurrentSlot'
+    $ forkLinkedWatcher registry label Watcher {
+          wFingerprint = id
+        , wInitial     = Nothing
+        , wNotify      = notify
+        , wReader      = getCurrentSlot'
+        }
   where
     getCurrentSlot' :: STM m SlotNo
     getCurrentSlot' = do

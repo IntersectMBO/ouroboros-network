@@ -93,13 +93,12 @@ onEachTick :: (IOLike m, HasCallStack)
            -> m (m ())
 onEachTick registry clock threadLabel action =
     cancelThread <$>
-      onEachChange
-        registry
-        threadLabel
-        id
-        Nothing
-        (getCurrentTick clock)
-        action
+      forkLinkedWatcher registry threadLabel Watcher {
+            wFingerprint = id
+          , wInitial     = Nothing
+          , wNotify      = action
+          , wReader      = getCurrentTick clock
+          }
 
 -- | Execute action once at the specified tick
 onTick :: (IOLike m, HasCallStack)
