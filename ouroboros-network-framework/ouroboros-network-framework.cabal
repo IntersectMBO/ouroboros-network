@@ -114,6 +114,7 @@ test-suite test
   hs-source-dirs:      test
   other-modules:       Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
+                       Test.Ouroboros.Network.Server2
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
                        Test.Ouroboros.Network.RateLimiting
@@ -133,6 +134,7 @@ test-suite test
                      , tasty
                      , tasty-quickcheck
 
+                     , cardano-prelude
                      , contra-tracer
 
                      , io-sim
