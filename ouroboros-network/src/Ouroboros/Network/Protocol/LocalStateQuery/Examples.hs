@@ -41,7 +41,7 @@ localStateQueryClient = LocalStateQueryClient . pure . goIdle []
       -> ClientStAcquiring block point query m
                            [(Maybe point, Either AcquireFailure result)]
     goAcquiring acc pt q ptqss' = ClientStAcquiring {
-        recvMsgAcquired = goQuery q $ \r -> goAcquired ((pt, Right r):acc) ptqss'
+        recvMsgAcquired = pure $ goQuery q $ \r -> goAcquired ((pt, Right r):acc) ptqss'
       , recvMsgFailure  = \failure -> pure $ goIdle ((pt, Left failure):acc) ptqss'
       }
 
