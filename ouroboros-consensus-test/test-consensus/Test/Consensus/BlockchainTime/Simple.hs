@@ -294,16 +294,18 @@ testOverrideDelay :: forall m. (IOLike m, MonadTime m, MonadDelay (OverrideDelay
                   -> Int  -- ^ Number of slots to collect
                   -> OverrideDelay m [SlotNo]
 testOverrideDelay systemStart slotLength maxClockRewind numSlots = do
-    withRegistry $ \registry -> do
-      time <- simpleBlockchainTime
-                registry
-                (defaultSystemTime systemStart nullTracer)
-                slotLength
-                maxClockRewind
+    bracketWithPrivateRegistry
+      (\registry -> simpleBlockchainTime
+                      registry
+                      (defaultSystemTime systemStart nullTracer)
+                      slotLength
+                      maxClockRewind)
+      (\_btime   -> pure ())
+      $ \btime   -> do
       slotsVar <- uncheckedNewTVarM []
       withWatcher
         "testOverrideDelay"
-        ( knownSlotWatcher time $ \slotNo -> do
+        ( knownSlotWatcher btime $ \slotNo -> do
             atomically $ modifyTVar slotsVar (slotNo :)
         ) $ do
         -- Wait to collect the required number of slots

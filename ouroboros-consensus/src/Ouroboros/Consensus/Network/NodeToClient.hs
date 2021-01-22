@@ -359,17 +359,16 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
       -> m ((), Maybe bCS)
     aChainSyncServer them channel = do
       labelThisThread "LocalChainSyncServer"
-      withRegistry $ \registry ->
-        bracket
-          (chainSyncBlockServerFollower (getChainDB kernel) registry)
-          ChainDB.followerClose
-          (\flr -> runPeer
+      bracketWithPrivateRegistry
+        (chainSyncBlockServerFollower (getChainDB kernel))
+        ChainDB.followerClose
+        $ \flr ->
+          runPeer
             (contramap (TraceLabelPeer them) tChainSyncTracer)
             cChainSyncCodec
             channel
             $ chainSyncServerPeer
             $ hChainSyncServer flr
-          )
 
     aTxSubmissionServer
       :: localPeer
