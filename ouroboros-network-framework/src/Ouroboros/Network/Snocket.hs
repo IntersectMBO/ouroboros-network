@@ -62,6 +62,7 @@ import           Network.Mux.Trace (MuxTrace)
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.Linger (StructLinger (..))
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting
@@ -300,6 +301,14 @@ socketSnocket ioManager = Snocket {
           Socket.setSocketOption sd Socket.ReusePort 1
 #endif
           Socket.setSocketOption sd Socket.NoDelay 1
+          -- it is safe to set 'SO_LINGER' option (which implicates that every
+          -- close will reset the connection), since our protocols are robust.
+          -- In particualar if invalid data will arive (which includes the the
+          -- rare case of a late packet from a previous connection), we will
+          -- abandon (and close) the connection.
+          Socket.setSockOpt sd Socket.Linger
+                              (StructLinger { sl_onoff  = 1,
+                                              sl_linger = 0 })
         when (fml == Socket.AF_INET6)
           -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
           -- it is enabled by default on some systems. Disabled here since we run a separate
