@@ -16,7 +16,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , TraceEvent (..)
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
-  , TraceReaderEvent (..)
+  , TraceFollowerEvent (..)
   , TraceCopyToImmutableDBEvent (..)
   , TraceGCEvent (..)
   , TraceValidationEvent (..)
@@ -61,10 +61,10 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Args as Args
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Background as Background
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel as ChainSel
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Follower as Follower
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator as Iterator
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Reader as Reader
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -154,9 +154,9 @@ openDBInternal args launchBgTasks = do
     atomically $ LgrDB.setCurrent lgrDB ledger
     varChain           <- newTVarIO chain
     varIterators       <- newTVarIO Map.empty
-    varReaders         <- newTVarIO Map.empty
+    varFollowers       <- newTVarIO Map.empty
     varNextIteratorKey <- newTVarIO (IteratorKey 0)
-    varNextReaderKey   <- newTVarIO (ReaderKey   0)
+    varNextFollowerKey <- newTVarIO (FollowerKey   0)
     varCopyLock        <- newMVar  ()
     varKillBgThreads   <- newTVarIO $ return ()
     blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
@@ -166,11 +166,11 @@ openDBInternal args launchBgTasks = do
                   , cdbLgrDB           = lgrDB
                   , cdbChain           = varChain
                   , cdbIterators       = varIterators
-                  , cdbReaders         = varReaders
+                  , cdbFollowers       = varFollowers
                   , cdbTopLevelConfig  = cfg
                   , cdbInvalid         = varInvalid
                   , cdbNextIteratorKey = varNextIteratorKey
-                  , cdbNextReaderKey   = varNextReaderKey
+                  , cdbNextFollowerKey = varNextFollowerKey
                   , cdbCopyLock        = varCopyLock
                   , cdbTracer          = tracer
                   , cdbTraceLedger     = Args.cdbTraceLedger args
@@ -197,7 +197,7 @@ openDBInternal args launchBgTasks = do
           , getIsValid            = getEnvSTM  h Query.getIsValid
           , getMaxSlotNo          = getEnvSTM  h Query.getMaxSlotNo
           , stream                = Iterator.stream  h
-          , newReader             = Reader.newReader h
+          , newFollower           = Follower.newFollower h
           , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
           , closeDB               = closeDB h
           , isOpen                = isOpen  h
@@ -244,7 +244,7 @@ closeDB (CDBHandle varState) = do
     -- Only when the ChainDB was open
     whenJust mbOpenEnv $ \cdb@CDB{..} -> do
 
-      Reader.closeAllReaders     cdb
+      Follower.closeAllFollowers cdb
       Iterator.closeAllIterators cdb
 
       killBgThreads <- atomically $ readTVar cdbKillBgThreads

@@ -29,12 +29,12 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , Internal (..)
     -- * Iterator-related
   , IteratorKey (..)
-    -- * Reader-related
-  , ReaderKey (..)
-  , ReaderHandle (..)
-  , ReaderState (..)
-  , ReaderRollState (..)
-  , readerRollStatePoint
+    -- * Follower-related
+  , FollowerKey (..)
+  , FollowerHandle (..)
+  , FollowerState (..)
+  , FollowerRollState (..)
+  , followerRollStatePoint
     -- * Invalid blocks
   , InvalidBlocks
   , InvalidBlockInfo (..)
@@ -50,7 +50,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , TraceEvent (..)
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
-  , TraceReaderEvent (..)
+  , TraceFollowerEvent (..)
   , TraceCopyToImmutableDBEvent (..)
   , TraceGCEvent (..)
   , TraceValidationEvent (..)
@@ -102,7 +102,7 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 class ( ImmutableDbSerialiseConstraints blk
       , LgrDbSerialiseConstraints blk
       , VolatileDbSerialiseConstraints blk
-        -- Needed for Reader
+        -- Needed for Follower
       , EncodeDiskDep (NestedCtxt Header) blk
       ) => SerialiseDiskConstraints blk
 
@@ -201,12 +201,12 @@ data ChainDbEnv m blk = CDB
     -- ChainDB: the open file handles used by iterators can be closed, and the
     -- iterators themselves are closed so that it is impossible to use an
     -- iterator after closing the ChainDB itself.
-  , cdbReaders         :: !(StrictTVar m (Map ReaderKey (ReaderHandle m blk)))
-    -- ^ The readers.
+  , cdbFollowers       :: !(StrictTVar m (Map FollowerKey (FollowerHandle m blk)))
+    -- ^ The followers.
     --
-    -- A reader is open iff its 'ReaderKey' is this 'Map'.
+    -- A follower is open iff its 'FollowerKey' is this 'Map'.
     --
-    -- INVARIANT: the 'readerPoint' of each reader is 'withinFragmentBounds'
+    -- INVARIANT: the 'followerPoint' of each follower is 'withinFragmentBounds'
     -- of the current chain fragment (retrieved 'cdbGetCurrentChain', not by
     -- reading 'cdbChain' directly).
   , cdbTopLevelConfig  :: !(TopLevelConfig blk)
@@ -216,7 +216,7 @@ data ChainDbEnv m blk = CDB
     -- The 'Fingerprint' changes every time a hash is added to the map, but
     -- not when hashes are garbage-collected from the map.
   , cdbNextIteratorKey :: !(StrictTVar m IteratorKey)
-  , cdbNextReaderKey   :: !(StrictTVar m ReaderKey)
+  , cdbNextFollowerKey :: !(StrictTVar m FollowerKey)
   , cdbCopyLock        :: !(StrictMVar m ())
     -- ^ Lock used to ensure that 'copyToImmutableDB' is not executed more than
     -- once concurrently.
@@ -306,89 +306,89 @@ newtype IteratorKey = IteratorKey Word
   deriving newtype (Eq, Ord, Enum, NoThunks)
 
 {-------------------------------------------------------------------------------
-  Reader-related
+  Follower-related
 -------------------------------------------------------------------------------}
 
--- Note: these things are not in the Reader module, because 'TraceEvent'
+-- Note: these things are not in the Follower module, because 'TraceEvent'
 -- depends on them, 'ChainDbEnv.cdbTracer' depends on 'TraceEvent', and most
--- modules depend on 'ChainDbEnv'. Also, 'ChainDbEnv.cdbReaders' depends on
--- 'ReaderState'.
+-- modules depend on 'ChainDbEnv'. Also, 'ChainDbEnv.cdbFollowers' depends on
+-- 'FollowerState'.
 
--- | We use this internally to track reader in a map ('cdbReaders') in the
--- ChainDB state so that we can remove them from the map when the reader is
+-- | We use this internally to track follower in a map ('cdbFollowers') in the
+-- ChainDB state so that we can remove them from the map when the follower is
 -- closed.
 --
--- We store them in the map so that the ChainDB can close all open readers
--- when it is closed itself and to update the readers in case we switch to a
+-- We store them in the map so that the ChainDB can close all open followers
+-- when it is closed itself and to update the followers in case we switch to a
 -- different chain.
-newtype ReaderKey = ReaderKey Word
+newtype FollowerKey = FollowerKey Word
   deriving stock   (Show)
   deriving newtype (Eq, Ord, Enum, NoThunks)
 
--- | Internal handle to a 'Reader' without an explicit @b@ (@blk@, @'Header'
--- blk@, etc.) parameter so 'Reader's with different' @b@s can be stored
--- together in 'cdbReaders'.
-data ReaderHandle m blk = ReaderHandle
-  { rhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
-    -- ^ When we have switched to a fork, all open 'Reader's must be notified.
-  , rhClose      :: m ()
-    -- ^ When closing the ChainDB, we must also close all open 'Reader's, as
+-- | Internal handle to a 'Follower' without an explicit @b@ (@blk@, @'Header'
+-- blk@, etc.) parameter so 'Follower's with different' @b@s can be stored
+-- together in 'cdbFollowers'.
+data FollowerHandle m blk = FollowerHandle
+  { fhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
+    -- ^ When we have switched to a fork, all open 'Follower's must be notified.
+  , fhClose      :: m ()
+    -- ^ When closing the ChainDB, we must also close all open 'Follower's, as
     -- they might be holding on to resources.
     --
-    -- Call 'rhClose' will release the resources used by the 'Reader'.
+    -- Call 'fhClose' will release the resources used by the 'Follower'.
     --
-    -- NOTE the 'Reader' is not removed from 'cdbReaders'. (That is done by
-    -- 'closeAllReaders').
+    -- NOTE the 'Follower' is not removed from 'cdbFollowers'. (That is done by
+    -- 'closeAllFollowers').
   }
-  deriving NoThunks via OnlyCheckWhnfNamed "ReaderHandle" (ReaderHandle m blk)
+  deriving NoThunks via OnlyCheckWhnfNamed "FollowerHandle" (FollowerHandle m blk)
 
 -- | @b@ corresponds to the 'BlockComponent' that is being read.
-data ReaderState m blk b
-  = ReaderInit
-    -- ^ The 'Reader' is in its initial state. Its 'ReaderRollState' is
+data FollowerState m blk b
+  = FollowerInit
+    -- ^ The 'Follower' is in its initial state. Its 'FollowerRollState' is
     -- @'RollBackTo' 'genesisPoint'@.
     --
-    -- This is equivalent to having a 'ReaderInImmutableDB' with the same
-    -- 'ReaderRollState' and an iterator streaming after genesis. Opening such
+    -- This is equivalent to having a 'FollowerInImmutableDB' with the same
+    -- 'FollowerRollState' and an iterator streaming after genesis. Opening such
     -- an iterator has a cost (index files will have to be read). However, in
-    -- most cases, right after opening a Reader, the user of the Reader will try
+    -- most cases, right after opening a Follower, the user of the Follower will try
     -- to move it forward, moving it from genesis to a more recent point on the
     -- chain. So we incur the cost of opening the iterator while not even using
     -- it.
     --
     -- Therefore, we have this extra initial state, that avoids this cost.
-    -- When the user doesn't move the Reader forward, an iterator is opened.
-  | ReaderInImmutableDB
-      !(ReaderRollState blk)
+    -- When the user doesn't move the Follower forward, an iterator is opened.
+  | FollowerInImmutableDB
+      !(FollowerRollState blk)
       !(ImmutableDB.Iterator m blk (Point blk, b))
-    -- ^ The 'Reader' is reading from the ImmutableDB.
+    -- ^ The 'Follower' is reading from the ImmutableDB.
     --
     -- Note that the iterator includes 'Point blk' in addition to @b@, as it
     -- is needed to keep track of where the iterator is.
     --
-    -- INVARIANT: for all @ReaderInImmutableDB rollState immIt@: the predecessor
+    -- INVARIANT: for all @FollowerInImmutableDB rollState immIt@: the predecessor
     -- of the next block streamed by @immIt@ must be the block identified by
-    -- @readerRollStatePoint rollState@. In other words: the iterator is
-    -- positioned /on/ @readerRollStatePoint rollState@.
-  | ReaderInMem !(ReaderRollState blk)
-    -- ^ The 'Reader' is reading from the in-memory current chain fragment.
+    -- @followerRollStatePoint rollState@. In other words: the iterator is
+    -- positioned /on/ @followerRollStatePoint rollState@.
+  | FollowerInMem !(FollowerRollState blk)
+    -- ^ The 'Follower' is reading from the in-memory current chain fragment.
   deriving (Generic, NoThunks)
 
--- | Similar to 'Ouroboros.Network.MockChain.ProducerState.ReaderState'.
-data ReaderRollState blk
+-- | Similar to 'Ouroboros.Network.MockChain.ProducerState.FollowerState'.
+data FollowerRollState blk
   = RollBackTo      !(Point blk)
     -- ^ We don't know at which point the user is, but the next message we'll
     -- send is to roll back to this point.
   | RollForwardFrom !(Point blk)
-    -- ^ We know that the reader is at this point and the next message we'll
+    -- ^ We know that the follower is at this point and the next message we'll
     -- send is to roll forward to the point /after/ this point on our chain.
   deriving (Eq, Show, Generic, NoThunks)
 
--- | Get the point the 'ReaderRollState' should roll back to or roll forward
+-- | Get the point the 'FollowerRollState' should roll back to or roll forward
 -- from.
-readerRollStatePoint :: ReaderRollState blk -> Point blk
-readerRollStatePoint (RollBackTo      pt) = pt
-readerRollStatePoint (RollForwardFrom pt) = pt
+followerRollStatePoint :: FollowerRollState blk -> Point blk
+followerRollStatePoint (RollBackTo      pt) = pt
+followerRollStatePoint (RollForwardFrom pt) = pt
 
 {-------------------------------------------------------------------------------
   Invalid blocks
@@ -479,7 +479,7 @@ getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
 -- | Trace type for the various events of the ChainDB.
 data TraceEvent blk
   = TraceAddBlockEvent          (TraceAddBlockEvent           blk)
-  | TraceReaderEvent            (TraceReaderEvent             blk)
+  | TraceFollowerEvent          (TraceFollowerEvent           blk)
   | TraceCopyToImmutableDBEvent (TraceCopyToImmutableDBEvent  blk)
   | TraceGCEvent                (TraceGCEvent                 blk)
   | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
@@ -686,26 +686,26 @@ deriving instance
   ) => Show (TraceInitChainSelEvent blk)
 
 
-data TraceReaderEvent blk =
-    -- | A new reader was created.
-    NewReader
+data TraceFollowerEvent blk =
+    -- | A new follower was created.
+    NewFollower
 
-    -- | The reader was in the 'ReaderInMem' state but its point is no longer on
+    -- | The follower was in the 'FollowerInMem' state but its point is no longer on
     -- the in-memory chain fragment, so it has to switch to the
-    -- 'ReaderInImmutableDB' state.
-  | ReaderNoLongerInMem (ReaderRollState blk)
+    -- 'FollowerInImmutableDB' state.
+  | FollowerNoLongerInMem (FollowerRollState blk)
 
-    -- | The reader was in the 'ReaderInImmutableDB' state and is switched to
-    -- the 'ReaderInMem' state.
-  | ReaderSwitchToMem
-      (Point blk)          -- ^ Point at which the reader is
+    -- | The follower was in the 'FollowerInImmutableDB' state and is switched to
+    -- the 'FollowerInMem' state.
+  | FollowerSwitchToMem
+      (Point blk)          -- ^ Point at which the follower is
       (WithOrigin SlotNo)  -- ^ Slot number at the tip of the ImmutableDB
 
-    -- | The reader is in the 'ReaderInImmutableDB' state but the iterator is
+    -- | The follower is in the 'FollowerInImmutableDB' state but the iterator is
     -- exhausted while the ImmutableDB has grown, so we open a new iterator to
     -- stream these blocks too.
-  | ReaderNewImmIterator
-      (Point blk)          -- ^ Point at which the reader is
+  | FollowerNewImmIterator
+      (Point blk)          -- ^ Point at which the follower is
       (WithOrigin SlotNo)  -- ^ Slot number at the tip of the ImmutableDB
   deriving (Generic, Eq, Show)
 

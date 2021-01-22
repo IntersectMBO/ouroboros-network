@@ -270,7 +270,7 @@ model based test of the chain DB.
 
 The model for the chain DB (`Test.Ouroboros.Storage.ChainDB.Model`) contains
 a quite a bit of info, but that is primarily because it needs to support
-stateful APIs such as readers (that follow the tip of the chain) and
+stateful APIs such as followers (that follow the tip of the chain) and
 iterators (which stream a chunk of the chain). The main part of the model is
 it's model of the volatile DB and the immutable DB, which is again satisfyingly
 simple: the volatile DB is modelled simply as a set of blocks, and the
@@ -290,7 +290,7 @@ These are the main tests for the chain DB. Commands include
 * Add a block with a `SlotNo` that is ahead of the wall-clock.
 * Get the current chain and/or ledger state
 * Create a new iterator and use it to stream blocks
-* Create a new reader and use it to follow the chain
+* Create a new follower and use it to follow the chain
 * (Limited) disk corruption (the chain DB relies on the immutable DB and
   volatile DB for the storage proper and _they_ have extensive disk corruption
   tests, so we don't need to repeat that here).

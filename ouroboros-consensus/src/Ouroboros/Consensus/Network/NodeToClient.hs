@@ -87,7 +87,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 -- | Protocol handlers for node-to-client (local) communication
 data Handlers m peer blk = Handlers {
       hChainSyncServer
-        :: ChainDB.Reader m blk (ChainDB.WithPoint blk (Serialised blk))
+        :: ChainDB.Follower m blk (ChainDB.WithPoint blk (Serialised blk))
         -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
 
     , hTxSubmissionServer
@@ -361,14 +361,14 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
       labelThisThread "LocalChainSyncServer"
       withRegistry $ \registry ->
         bracket
-          (chainSyncBlockServerReader (getChainDB kernel) registry)
-          ChainDB.readerClose
-          (\rdr -> runPeer
+          (chainSyncBlockServerFollower (getChainDB kernel) registry)
+          ChainDB.followerClose
+          (\flr -> runPeer
             (contramap (TraceLabelPeer them) tChainSyncTracer)
             cChainSyncCodec
             channel
             $ chainSyncServerPeer
-            $ hChainSyncServer rdr
+            $ hChainSyncServer flr
           )
 
     aTxSubmissionServer

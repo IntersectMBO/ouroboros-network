@@ -37,55 +37,54 @@ tests =
     , testProperty "ChainProducerStateForkTest's shrinker"
                    (withMaxSuccess 25 prop_shrink_ChainProducerStateForkTest)
     ]
-  , testProperty "check initial reader state" prop_init_lookup
-  , testProperty "check second reader state"  prop_init_next_lookup
-  , testProperty "check reader state after updateReader" prop_update_lookup
-  , testProperty "check reader state after updateReader2" prop_update_next_lookup
+  , testProperty "check initial follower state" prop_init_lookup
+  , testProperty "check second follower state"  prop_init_next_lookup
+  , testProperty "check follower state after updateFollower" prop_update_lookup
+  , testProperty "check follower state after updateFollower2" prop_update_next_lookup
   , testProperty "producer syncronise (1)" prop_producer_sync1
   , testProperty "producer syncronise (2)" prop_producer_sync2
   , testProperty "switch fork" prop_switchFork
   ]
 
-
 --
 -- Properties
 --
 
--- | Check that readers start in the expected state, at the right point and
+-- | Check that followers start in the expected state, at the right point and
 -- in the rollback state.
 --
 prop_init_lookup :: ChainProducerStateTest -> Bool
 prop_init_lookup (ChainProducerStateTest c _ p) =
-    let (c', rid) = initReader p c in
-    lookupReader c' rid == ReaderState p ReaderBackTo
+    let (c', rid) = initFollower p c in
+    lookupFollower c' rid == FollowerState p FollowerBackTo
 
--- | As above but check that when we move the reader on by one, from the
+-- | As above but check that when we move the follower on by one, from the
 -- rollback state, they stay at the same point but are now in the forward state.
 --
 prop_init_next_lookup :: ChainProducerStateTest -> Bool
 prop_init_next_lookup (ChainProducerStateTest c _ p) =
-    let (c', rid)     = initReader p c
-        Just (u, c'') = readerInstruction rid c'
+    let (c', rid)     = initFollower p c
+        Just (u, c'') = followerInstruction rid c'
     in u == RollBack p
-    && lookupReader c'' rid == ReaderState p ReaderForwardFrom
+    && lookupFollower c'' rid == FollowerState p FollowerForwardFrom
 
--- | Check that after moving the reader point that the reader is in the
+-- | Check that after moving the follower point that the follower is in the
 -- expected state, at the right point and in the rollback state.
 --
 prop_update_lookup :: ChainProducerStateTest -> Bool
 prop_update_lookup (ChainProducerStateTest c rid p) =
-    let c' = updateReader rid p c in
-    lookupReader c' rid == ReaderState p ReaderBackTo
+    let c' = updateFollower rid p c in
+    lookupFollower c' rid == FollowerState p FollowerBackTo
 
--- | As above but check that when we move the reader on by one, from the
+-- | As above but check that when we move the follower on by one, from the
 -- rollback state, they stay at the same point but are now in the forward state.
 --
 prop_update_next_lookup :: ChainProducerStateTest -> Bool
 prop_update_next_lookup (ChainProducerStateTest c rid p) =
-    let c'            = updateReader rid p c
-        Just (u, c'') = readerInstruction rid c'
+    let c'            = updateFollower rid p c
+        Just (u, c'') = followerInstruction rid c'
     in u == RollBack p
-    && lookupReader c'' rid == ReaderState p ReaderForwardFrom
+    && lookupFollower c'' rid == FollowerState p FollowerForwardFrom
 
 -- | This says that if we take a chain producer and apply a bunch of updates
 -- and initialise a consumer to the producer's initial chain, then by
@@ -98,16 +97,16 @@ prop_update_next_lookup (ChainProducerStateTest c rid p) =
 prop_producer_sync1 :: TestBlockChainAndUpdates -> Bool
 prop_producer_sync1 (TestBlockChainAndUpdates c us) =
     let producer0        = initChainProducerState c
-        (producer1, rid) = initReader (Chain.headPoint c) producer0
+        (producer1, rid) = initFollower (Chain.headPoint c) producer0
         Just producer    = applyChainUpdates us producer1
 
         consumer0        = c
-        consumerUpdates  = iterateReaderUntilDone rid producer
+        consumerUpdates  = iterateFollowerUntilDone rid producer
         Just consumer    = Chain.applyChainUpdates consumerUpdates consumer0
      in
         consumer == producerChain producer
   where
-    iterateReaderUntilDone rid = unfoldr (readerInstruction rid)
+    iterateFollowerUntilDone rid = unfoldr (followerInstruction rid)
 
 -- | A variation on 'prop_producer_sync1' where we take an arbitrary
 -- interleaving of applying changes to the producer and doing syncronisation
@@ -116,7 +115,7 @@ prop_producer_sync1 (TestBlockChainAndUpdates c us) =
 prop_producer_sync2 :: TestBlockChainAndUpdates -> [Bool] -> Bool
 prop_producer_sync2 (TestBlockChainAndUpdates chain0 us0) choices =
     let producer0        = initChainProducerState chain0
-        (producer1, rid) = initReader (Chain.headPoint chain0) producer0
+        (producer1, rid) = initFollower (Chain.headPoint chain0) producer0
 
         consumer0        = chain0
         (producer,
@@ -133,14 +132,14 @@ prop_producer_sync2 (TestBlockChainAndUpdates chain0 us0) choices =
 
     -- apply update to consumer
     go rid p c (True:bs) us =
-      case readerInstruction rid p of
+      case followerInstruction rid p of
         Nothing      -> go rid p  c  bs us
         Just (u, p') -> go rid p' c' bs us
           where Just c' = Chain.applyChainUpdate u c
 
     -- producer is not changing, just run consumer
     go rid p c [] _ =
-      case readerInstruction rid p of
+      case followerInstruction rid p of
         Nothing      -> (p, c)
         Just (u, p') -> go rid p' c' [] []
           where Just c' = Chain.applyChainUpdate u c
@@ -151,24 +150,24 @@ prop_switchFork (ChainProducerStateForkTest cps f) =
   in
       invChainProducerState cps'
       && all
-        (uncurry readerInv)
-        (zip (readerStates cps) (readerStates cps'))
+        (uncurry followerInv)
+        (zip (followerStates cps) (followerStates cps'))
   where
-    readerInv :: HasHeader block
-              => ReaderState block -> ReaderState block -> Bool
-    readerInv r r'
+    followerInv :: HasHeader block
+                => FollowerState block -> FollowerState block -> Bool
+    followerInv fs fs'
       -- points only move backward
-       = pointSlot (readerPoint r') <= pointSlot (readerPoint r)
-      -- if reader's point moves back, `readerNext` is changed to `ReaderBackTo`
-      && ((pointSlot (readerPoint r') < pointSlot (readerPoint r)) `implies` (readerNext r' == ReaderBackTo))
-      -- if reader's point is not changed, also next instruction is not changed
-      && ((readerPoint r' == readerPoint r) `implies` (readerNext r' == readerNext r))
+       = pointSlot (followerPoint fs') <= pointSlot (followerPoint fs)
+      -- if follower's point moves back, `followerNext` is changed to `FollowerBackTo`
+      && ((pointSlot (followerPoint fs') < pointSlot (followerPoint fs)) `implies` (followerNext fs' == FollowerBackTo))
+      -- if follower's point is not changed, also next instruction is not changed
+      && ((followerPoint fs' == followerPoint fs) `implies` (followerNext fs' == followerNext fs))
 
     implies :: Bool -> Bool -> Bool
     implies a b = not a || b
 
-    readerStates :: ChainProducerState block -> [ReaderState block]
-    readerStates = map snd . Map.toAscList . chainReaders
+    followerStates :: ChainProducerState block -> [FollowerState block]
+    followerStates = map snd . Map.toAscList . chainFollowers
 
 --
 -- Generators
@@ -176,31 +175,31 @@ prop_switchFork (ChainProducerStateForkTest cps f) =
 
 data ChainProducerStateTest
     = ChainProducerStateTest
-        (ChainProducerState Block) -- ^ producer state with a single reader
-        ReaderId                   -- ^ reader's id
-        (Point Block)              -- ^ intersection point of the reader
+        (ChainProducerState Block) -- ^ producer state with a single follower
+        FollowerId                 -- ^ follower's id
+        (Point Block)              -- ^ intersection point of the follower
   deriving Show
 
-genReaderState :: Int   -- ^ length of the chain
-               -> Chain Block
-               -> Gen (ReaderState Block)
-genReaderState n c = do
-    readerPoint <- frequency
+genFollowerState :: Int   -- ^ length of the chain
+                 -> Chain Block
+                 -> Gen (FollowerState Block)
+genFollowerState n c = do
+    followerPoint <- frequency
       [ (2, return (headPoint c))
       , (2, return (mkRollbackPoint c n))
       , (8, mkRollbackPoint c <$> choose (1, fromIntegral n - 1))
       ]
-    readerNext <- oneof
-      [ return ReaderForwardFrom
-      , return ReaderBackTo
+    followerNext <- oneof
+      [ return FollowerForwardFrom
+      , return FollowerBackTo
       ]
-    return $ ReaderState{readerPoint, readerNext}
+    return $ FollowerState{followerPoint, followerNext}
 
 instance Arbitrary ChainProducerStateTest where
   arbitrary = do
     TestBlockChain c <- arbitrary
     let n = Chain.length c
-    rs <- Map.fromList . zip [0..] <$> listOf1 (genReaderState n c)
+    rs <- Map.fromList . zip [0..] <$> listOf1 (genFollowerState n c)
     rid <- choose (0, length rs - 1)
     p <- if n == 0
          then return genesisPoint
@@ -217,11 +216,11 @@ instance Arbitrary ChainProducerStateForkTest where
   arbitrary = do
     TestChainFork _ c f <- arbitrary
     let l = Chain.length c
-    rs <- Map.fromList . zip [0..] <$> listOf (genReaderState l c)
+    rs <- Map.fromList . zip [0..] <$> listOf (genFollowerState l c)
     return $ ChainProducerStateForkTest (ChainProducerState c rs (length rs)) f
 
   shrink (ChainProducerStateForkTest (ChainProducerState c rs nr) f)
-    -- shrink readers
+    -- shrink followers
      = [ ChainProducerStateForkTest (ChainProducerState c rs' nr) f
        | rs' <- map Map.fromList . shrinkList (const []) . Map.toList $ rs
        ]
@@ -229,16 +228,16 @@ instance Arbitrary ChainProducerStateForkTest where
     ++ [ ChainProducerStateForkTest (ChainProducerState c rs nr) f'
        | TestBlockChain f' <- shrink (TestBlockChain f)
        ]
-    -- shrink chain and fix up readers
-    ++ [ ChainProducerStateForkTest (ChainProducerState c' (fixupReaderPointer c' <$> rs) nr) f
+    -- shrink chain and fix up followers
+    ++ [ ChainProducerStateForkTest (ChainProducerState c' (fixupFollowerPointer c' <$> rs) nr) f
        | TestBlockChain c' <- shrink (TestBlockChain c)
        ]
     where
-      fixupReaderPointer :: Chain Block -> ReaderState Block -> ReaderState Block
-      fixupReaderPointer c' r@ReaderState{readerPoint} =
-        if pointOnChain readerPoint c'
-          then r
-          else r { readerPoint = headPoint c' }
+      fixupFollowerPointer :: Chain Block -> FollowerState Block -> FollowerState Block
+      fixupFollowerPointer c' fs@FollowerState{followerPoint} =
+        if pointOnChain followerPoint c'
+          then fs
+          else fs { followerPoint = headPoint c' }
 
 prop_arbitrary_ChainProducerStateForkTest :: ChainProducerStateForkTest -> Bool
 prop_arbitrary_ChainProducerStateForkTest (ChainProducerStateForkTest c f) =
