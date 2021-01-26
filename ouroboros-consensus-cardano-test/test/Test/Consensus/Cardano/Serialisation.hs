@@ -12,10 +12,9 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
-
-import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node ()

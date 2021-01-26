@@ -45,6 +45,8 @@ library
                        Ouroboros.Consensus.Shelley.Protocol.Crypto
                        Ouroboros.Consensus.Shelley.Protocol.HotKey
                        Ouroboros.Consensus.Shelley.Protocol.Util
+                       Ouroboros.Consensus.Shelley.ShelleyBased
+                       Ouroboros.Consensus.Shelley.ShelleyHFC
 
   build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11

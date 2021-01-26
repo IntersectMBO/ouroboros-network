@@ -107,6 +107,7 @@ library
                        Ouroboros.Consensus.HardFork.History.Qry
                        Ouroboros.Consensus.HardFork.History.Summary
                        Ouroboros.Consensus.HardFork.History.Util
+                       Ouroboros.Consensus.HardFork.Simple
                        Ouroboros.Consensus.HeaderStateHistory
                        Ouroboros.Consensus.HeaderValidation
                        Ouroboros.Consensus.Ledger.Abstract
