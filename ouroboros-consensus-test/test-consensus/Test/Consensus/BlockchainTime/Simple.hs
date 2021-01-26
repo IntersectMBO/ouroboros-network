@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (withWatcher)
 import           Ouroboros.Consensus.Util.Time
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -293,24 +294,23 @@ testOverrideDelay :: forall m. (IOLike m, MonadTime m, MonadDelay (OverrideDelay
                   -> Int  -- ^ Number of slots to collect
                   -> OverrideDelay m [SlotNo]
 testOverrideDelay systemStart slotLength maxClockRewind numSlots = do
-    result <- withRegistry $ \registry -> do
+    withRegistry $ \registry -> do
       time <- simpleBlockchainTime
                 registry
                 (defaultSystemTime systemStart nullTracer)
                 slotLength
                 maxClockRewind
       slotsVar <- uncheckedNewTVarM []
-      cancelCollection <-
-        onKnownSlotChange registry time "testOverrideDelay" $ \slotNo ->
-          atomically $ modifyTVar slotsVar (slotNo :)
-      -- Wait to collect the required number of slots
-      slots <- atomically $ do
-        slots <- readTVar slotsVar
-        when (length slots < numSlots) $ retry
-        return slots
-      cancelCollection
-      return $ reverse slots
-    return result
+      withWatcher
+        "testOverrideDelay"
+        ( knownSlotWatcher time $ \slotNo -> do
+            atomically $ modifyTVar slotsVar (slotNo :)
+        ) $ do
+        -- Wait to collect the required number of slots
+        atomically $ do
+          slots <- readTVar slotsVar
+          when (length slots < numSlots) $ retry
+          return $ reverse slots
 
 {-------------------------------------------------------------------------------
   Test-programmable time

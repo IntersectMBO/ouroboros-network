@@ -9,17 +9,15 @@
 module Ouroboros.Consensus.BlockchainTime.API (
     BlockchainTime(..)
   , CurrentSlot(..)
-  , onKnownSlotChange
+  , knownSlotWatcher
   ) where
 
 import           GHC.Generics (Generic)
-import           GHC.Stack
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
+import           Ouroboros.Consensus.Util.STM (Watcher (..))
 
 {-------------------------------------------------------------------------------
   API
@@ -54,27 +52,22 @@ data CurrentSlot =
   Derived functionality
 -------------------------------------------------------------------------------}
 
--- | Spawn a thread to run an action each time the slot changes
+-- | Watches for changes in the current slot
 --
 -- The action will not be called until the current slot becomes known
 -- (if the tip of our ledger is too far away from the current wallclock time,
--- we may not know what the current 'SlotId' is).
---
--- Returns a handle to kill the thread.
-onKnownSlotChange :: forall m. (IOLike m, HasCallStack)
-                  => ResourceRegistry m
-                  -> BlockchainTime m
-                  -> String            -- ^ Label for the thread
-                  -> (SlotNo -> m ())  -- ^ Action to execute
-                  -> m (m ())
-onKnownSlotChange registry btime label notify =
-      fmap cancelThread
-    $ forkLinkedWatcher registry label Watcher {
-          wFingerprint = id
-        , wInitial     = Nothing
-        , wNotify      = notify
-        , wReader      = getCurrentSlot'
-        }
+-- we may not know what the current 'SlotNo' is).
+knownSlotWatcher :: forall m. IOLike m
+                 => BlockchainTime m
+                 -> (SlotNo -> m ())  -- ^ Action to execute
+                 -> Watcher m SlotNo SlotNo
+knownSlotWatcher btime notify =
+    Watcher {
+        wFingerprint = id
+      , wInitial     = Nothing
+      , wNotify      = notify
+      , wReader      = getCurrentSlot'
+      }
   where
     getCurrentSlot' :: STM m SlotNo
     getCurrentSlot' = do
