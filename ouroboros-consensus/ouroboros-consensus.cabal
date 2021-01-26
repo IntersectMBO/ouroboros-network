@@ -54,6 +54,7 @@ library
                        Ouroboros.Consensus.Fragment.InFuture
                        Ouroboros.Consensus.Fragment.Validated
                        Ouroboros.Consensus.Fragment.ValidatedDiff
+                       Ouroboros.Consensus.HardFork
                        Ouroboros.Consensus.HardFork.Abstract
                        Ouroboros.Consensus.HardFork.Combinator
                        Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -144,6 +145,7 @@ library
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Serialisation
                        Ouroboros.Consensus.Node.Tracers
+                       Ouroboros.Consensus.Protocol
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.LeaderSchedule

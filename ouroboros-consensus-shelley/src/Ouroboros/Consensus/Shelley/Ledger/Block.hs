@@ -56,6 +56,8 @@ import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
 
+import           Ouroboros.Consensus.HardFork.Combinator
+
 {-------------------------------------------------------------------------------
   Header hash
 -------------------------------------------------------------------------------}

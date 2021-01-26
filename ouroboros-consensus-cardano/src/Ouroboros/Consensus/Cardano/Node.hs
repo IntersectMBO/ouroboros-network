@@ -79,18 +79,18 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol (TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
+import           Ouroboros.Consensus.Shelley.ShelleyBased
+import           Ouroboros.Consensus.Cardano.ShelleyBased
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
-import           Ouroboros.Consensus.Cardano.ShelleyBased
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
 -------------------------------------------------------------------------------}
 
 instance SerialiseConstraintsHFC ByronBlock
-instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
 
 -- | Important: we need to maintain binary compatibility with Byron blocks, as
 -- they are already stored on disk.
