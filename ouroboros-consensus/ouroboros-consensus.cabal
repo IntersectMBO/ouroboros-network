@@ -135,6 +135,7 @@ library
                        Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
+                       Ouroboros.Consensus.Node.Counters
                        Ouroboros.Consensus.Node.InitStorage
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
