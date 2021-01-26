@@ -52,6 +52,7 @@ library
                      , cardano-slotting
                      , shelley-spec-ledger
                      , cardano-ledger-shelley-ma
+                     , cardano-ledger-example-shelley
 
                      , ouroboros-network
                      , ouroboros-consensus
