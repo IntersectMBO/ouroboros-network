@@ -62,7 +62,7 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
-                     WithFingerprint (..))
+                     WithFingerprint (..), forkLinkedWatcher)
 
 import           Test.Util.LogicalClock (LogicalClock, NumTicks (..), Tick (..))
 import qualified Test.Util.LogicalClock as LogicalClock
@@ -305,7 +305,12 @@ runChainSync securityParam (ClientUpdates clientUpdates)
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- uncheckedNewTVarM 0
-    void $ LogicalClock.onEachTick registry clock "scheduled updates" $ \tick -> do
+    let forkLinkedTickWatcher :: (Tick -> m ()) -> m ()
+        forkLinkedTickWatcher =
+              void
+            . forkLinkedWatcher registry "scheduled updates"
+            . LogicalClock.tickWatcher clock
+    forkLinkedTickWatcher $ \tick -> do
       -- Stop updating the client and server chains when the chain sync client
       -- has thrown an exception or has gracefully terminated, so that at the
       -- end, we can read the chains in the states they were in when the

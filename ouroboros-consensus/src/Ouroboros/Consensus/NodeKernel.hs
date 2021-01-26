@@ -349,8 +349,10 @@ forkBlockForging
     -> BlockForging m blk
     -> m ()
 forkBlockForging maxTxCapacityOverride IS{..} blockForging =
-    void $ onKnownSlotChange registry btime threadLabel $
-        withEarlyExit_ . go
+      void
+    $ forkLinkedWatcher registry threadLabel
+    $ knownSlotWatcher btime
+    $ withEarlyExit_ . go
   where
     threadLabel :: String
     threadLabel =

@@ -16,7 +16,7 @@ module Test.Util.LogicalClock (
   , new
   , sufficientTimeFor
     -- * Scheduling actions
-  , onEachTick
+  , tickWatcher
   , onTick
   , blockUntilTick
   ) where
@@ -83,23 +83,16 @@ tickDelay = 0.5
 -------------------------------------------------------------------------------}
 
 -- | Execute action on every clock tick
---
--- Returns a handle to cancel the thread.
-onEachTick :: (IOLike m, HasCallStack)
-           => ResourceRegistry m
-           -> LogicalClock m
-           -> String
-           -> (Tick -> m ())
-           -> m (m ())
-onEachTick registry clock threadLabel action =
-    cancelThread <$>
-      onEachChange
-        registry
-        threadLabel
-        id
-        Nothing
-        (getCurrentTick clock)
-        action
+tickWatcher :: LogicalClock m
+            -> (Tick -> m ())
+            -> Watcher m Tick Tick
+tickWatcher clock action =
+    Watcher {
+        wFingerprint = id
+      , wInitial     = Nothing
+      , wNotify      = action
+      , wReader      = getCurrentTick clock
+      }
 
 -- | Execute action once at the specified tick
 onTick :: (IOLike m, HasCallStack)

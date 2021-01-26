@@ -73,9 +73,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (WithFingerprint (..),
-                     onEachChange)
+import           Ouroboros.Consensus.Util.STM (Fingerprint, Watcher (..),
+                     WithFingerprint (..), withWatcher)
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
@@ -129,22 +128,26 @@ bracketChainSyncClient
     -> m a
 bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
                        peer body =
-    withRegistry $ \registry ->
-      bracket register unregister $ \varCandidate -> do
-        rejectInvalidBlocks
-          tracer
-          registry
-          getIsInvalidBlock
-          (readTVar varCandidate)
-        body varCandidate
+    bracket newCandidateVar releaseCandidateVar
+      $ \varCandidate ->
+      withWatcher
+        "ChainSync.Client.rejectInvalidBlocks"
+        (invalidBlockWatcher varCandidate)
+        $ body varCandidate
   where
-    register = do
+    newCandidateVar = do
       varCandidate <- newTVarIO $ AF.Empty AF.AnchorGenesis
       atomically $ modifyTVar varCandidates $ Map.insert peer varCandidate
       return varCandidate
 
-    unregister _ = do
+    releaseCandidateVar _ = do
       atomically $ modifyTVar varCandidates $ Map.delete peer
+
+    invalidBlockWatcher varCandidate =
+      invalidBlockRejector
+        tracer
+        getIsInvalidBlock
+        (readTVar varCandidate)
 
 -- Our task: after connecting to an upstream node, try to maintain an
 -- up-to-date header-only fragment representing their chain. We maintain
@@ -960,32 +963,30 @@ attemptRollback rollBackPoint (frag, state) = do
 -- node could have rolled back such that its candidate chain no longer
 -- contains the invalid block, in which case we do not disconnect from it.
 --
--- This function spawns a background thread using the given 'ResourceRegistry'.
---
 -- The cost of this check is \( O(cand * check) \) where /cand/ is the size of
 -- the candidate fragment and /check/ is the cost of checking whether a block
 -- is invalid (typically \( O(\log(invalid)) \) where /invalid/ is the number
 -- of invalid blocks).
-rejectInvalidBlocks
+invalidBlockRejector
     :: forall m blk.
        ( IOLike m
        , BlockSupportsProtocol blk
        , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
-    -> ResourceRegistry m
     -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
        -- ^ Get the invalid block checker
     -> STM m (AnchoredFragment (Header blk))
-    -> m ()
-rejectInvalidBlocks tracer registry getIsInvalidBlock getCandidate =
-    void $ onEachChange
-      registry
-      "ChainSync.Client.rejectInvalidBlocks"
-      getFingerprint
-      Nothing
-      getIsInvalidBlock
-      (checkInvalid . forgetFingerprint)
+    -> Watcher m
+         (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+         Fingerprint
+invalidBlockRejector tracer getIsInvalidBlock getCandidate =
+    Watcher {
+        wFingerprint = getFingerprint
+      , wInitial     = Nothing
+      , wNotify      = checkInvalid . forgetFingerprint
+      , wReader      = getIsInvalidBlock
+      }
   where
     checkInvalid :: (HeaderHash blk -> Maybe (InvalidBlockReason blk)) -> m ()
     checkInvalid isInvalidBlock = do

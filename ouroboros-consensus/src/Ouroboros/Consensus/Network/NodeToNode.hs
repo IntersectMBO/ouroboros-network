@@ -487,12 +487,12 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       -> m ((), Maybe bCS)
     aChainSyncServer version them channel = do
       labelThisThread "ChainSyncServer"
-      withRegistry $ \registry -> do
-        chainSyncTimeout <- genChainSyncTimeout
-        bracket
-          (chainSyncHeaderServerFollower (getChainDB kernel) registry)
-          ChainDB.followerClose
-          (\flr -> runPeerWithLimits
+      chainSyncTimeout <- genChainSyncTimeout
+      bracketWithPrivateRegistry
+        (chainSyncHeaderServerFollower (getChainDB kernel))
+        ChainDB.followerClose
+        $ \flr ->
+          runPeerWithLimits
             (contramap (TraceLabelPeer them) tChainSyncSerialisedTracer)
             cChainSyncCodecSerialised
             (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
@@ -500,7 +500,6 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
             channel
             $ chainSyncServerPeer
             $ hChainSyncServer flr version
-          )
 
     aBlockFetchClient
       :: NodeToNodeVersion
