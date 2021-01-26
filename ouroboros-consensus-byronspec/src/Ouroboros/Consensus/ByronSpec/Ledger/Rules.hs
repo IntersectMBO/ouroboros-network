@@ -35,6 +35,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Rules (
 import           Control.Monad
 import           Control.Monad.Trans.Except
 import           Data.Functor.Identity
+import           Data.Proxy
 import qualified Data.Set as Set
 
 import qualified Byron.Spec.Chain.STS.Rule.BBody as Spec
@@ -142,11 +143,12 @@ data RuleContext sts = RuleContext {
     }
 
 applySTS :: forall sts. (Spec.STS sts, Spec.BaseM sts ~ Identity)
-         => Spec.Environment sts
+         => Proxy sts
+         -> Spec.Environment sts
          -> Spec.Signal sts
          -> Spec.State sts
          -> Except [[Spec.PredicateFailure sts]] (Spec.State sts)
-applySTS env signal state = except $
+applySTS _ env signal state = except $
     Spec.applySTS @sts $ Spec.TRC (env, state, signal)
 
 type LiftedRule sts = Spec.Signal sts
@@ -159,7 +161,7 @@ liftRule :: forall sts. (Spec.STS sts, Spec.BaseM sts ~ Identity)
          => RuleContext sts -> LiftedRule sts
 liftRule RuleContext{..} signal st =
     withExcept (map (map liftFailure)) $
-      modRuleState (applySTS @sts (getRuleEnv st) signal) st
+      modRuleState (applySTS (Proxy @sts) (getRuleEnv st) signal) st
 
 {-------------------------------------------------------------------------------
   Instances of 'RuleContext'

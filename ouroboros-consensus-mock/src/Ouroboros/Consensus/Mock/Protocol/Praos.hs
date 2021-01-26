@@ -144,11 +144,11 @@ evolveKey ::
      PraosCrypto c
   => SlotNo
   -> HotKey c
-  -> (HotKey c, UpdateInfo (HotKey c) (HotKey c) HotKeyEvolutionError)
+  -> (HotKey c, UpdateInfo (HotKey c) HotKeyEvolutionError)
 evolveKey slotNo hotKey = case hotKey of
     HotKey keyPeriod oldKey
       | keyPeriod >= targetPeriod
-      -> (hotKey, Unchanged hotKey)
+      -> (hotKey, Updated hotKey)
       | otherwise
       -> case updateKES () oldKey keyPeriod of
            Nothing     ->
@@ -246,7 +246,6 @@ data PraosParams = PraosParams {
       praosLeaderF       :: !Double
     , praosSecurityParam :: !SecurityParam
     , praosSlotsPerEpoch :: !Word64
-    , praosLifetimeKES   :: !Natural
     }
   deriving (Generic, NoThunks)
 
@@ -492,7 +491,7 @@ instance PraosCrypto PraosStandardCrypto where
   type PraosHash PraosStandardCrypto = SHA256
 
 instance PraosCrypto PraosMockCrypto where
-  type PraosKES  PraosMockCrypto = MockKES 1000
+  type PraosKES  PraosMockCrypto = MockKES 10000
   type PraosVRF  PraosMockCrypto = MockVRF
   type PraosHash PraosMockCrypto = MD5
 

@@ -133,11 +133,11 @@ hardForkUpdateForgeState blockForging
          xs ~ '[blk]
       => ForgeStateUpdateInfo blk
       -> ForgeStateUpdateInfo (HardForkBlock '[blk])
-    injectSingle forgeStateUpdateInfo = ForgeStateUpdateInfo $
-        case getForgeStateUpdateInfo forgeStateUpdateInfo of
-          Updated      info -> Updated      $ injInfo        index info
-          Unchanged    info -> Unchanged    $ injInfo        index info
-          UpdateFailed err  -> UpdateFailed $ injUpdateError index err
+    injectSingle forgeStateUpdateInfo =
+        case forgeStateUpdateInfo of
+          ForgeStateUpdated      info -> ForgeStateUpdated      $ injInfo        index info
+          ForgeStateUpdateFailed err  -> ForgeStateUpdateFailed $ injUpdateError index err
+          ForgeStateUpdateSuppressed  -> ForgeStateUpdateSuppressed
       where
         index :: Index '[blk] blk
         index = IZ
@@ -187,14 +187,13 @@ hardForkUpdateForgeState blockForging
             -> (Maybe :.: ForgeStateUpdateInfo) blk
             -> K (ForgeStateUpdateInfo (HardForkBlock xs)) blk
         inj index (Comp mForgeStateUpdateInfo) =
-            K $ ForgeStateUpdateInfo $
-              case mForgeStateUpdateInfo of
-                Nothing -> Unchanged $ CurrentEraLacksBlockForging $ eraIndexFromIndex index
+            K $ case mForgeStateUpdateInfo of
+                Nothing -> ForgeStateUpdated $ CurrentEraLacksBlockForging $ eraIndexFromIndex index
                 Just forgeStateUpdateInfo ->
-                  case getForgeStateUpdateInfo forgeStateUpdateInfo of
-                    Updated      info -> Updated      $ injInfo        index info
-                    Unchanged    info -> Unchanged    $ injInfo        index info
-                    UpdateFailed err  -> UpdateFailed $ injUpdateError index err
+                  case forgeStateUpdateInfo of
+                    ForgeStateUpdated      info -> ForgeStateUpdated      $ injInfo        index info
+                    ForgeStateUpdateFailed err  -> ForgeStateUpdateFailed $ injUpdateError index err
+                    ForgeStateUpdateSuppressed  -> ForgeStateUpdateSuppressed
 
 -- | PRECONDITION: the ticked 'ChainDepState', the 'HardForkIsLeader', and the
 -- 'HardForkStateInfo' are all from the same era, and we must have a

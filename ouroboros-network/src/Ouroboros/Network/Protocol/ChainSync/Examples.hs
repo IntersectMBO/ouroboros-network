@@ -22,7 +22,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain (..),
                      ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
-                     ReaderId)
+                     FollowerId)
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
@@ -144,9 +144,9 @@ chainSyncServerExample :: forall blk header m a.
                        -> StrictTVar m (ChainProducerState header)
                        -> ChainSyncServer header (Point blk) (Tip blk) m a
 chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
-    idle <$> newReader
+    idle <$> newFollower
   where
-    idle :: ReaderId -> ServerStIdle header (Point blk) (Tip blk) m a
+    idle :: FollowerId -> ServerStIdle header (Point blk) (Tip blk) m a
     idle r =
       ServerStIdle {
         recvMsgRequestNext   = handleRequestNext r,
@@ -154,10 +154,10 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
         recvMsgDoneClient    = pure recvMsgDoneClient
       }
 
-    idle' :: ReaderId -> ChainSyncServer header (Point blk) (Tip blk) m a
+    idle' :: FollowerId -> ChainSyncServer header (Point blk) (Tip blk) m a
     idle' = ChainSyncServer . pure . idle
 
-    handleRequestNext :: ReaderId
+    handleRequestNext :: FollowerId
                       -> m (Either (ServerStNext header (Point blk) (Tip blk) m a)
                                 (m (ServerStNext header (Point blk) (Tip blk) m a)))
     handleRequestNext r = do
@@ -165,16 +165,16 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
       case mupdate of
         Just update -> return (Left  (sendNext r update))
         Nothing     -> return (Right (sendNext r <$> readChainUpdate r))
-                       -- Reader is at the head, have to block and wait for
+                       -- Follower is at the head, have to block and wait for
                        -- the producer's state to change.
 
-    sendNext :: ReaderId
+    sendNext :: FollowerId
              -> (Tip blk, ChainUpdate header header)
              -> ServerStNext header (Point blk) (Tip blk) m a
     sendNext r (tip, AddBlock b) = SendMsgRollForward  b             tip (idle' r)
     sendNext r (tip, RollBack p) = SendMsgRollBackward (castPoint p) tip (idle' r)
 
-    handleFindIntersect :: ReaderId
+    handleFindIntersect :: FollowerId
                         -> [Point blk]
                         -> m (ServerStIntersect header (Point blk) (Tip blk) m a)
     handleFindIntersect r points = do
@@ -185,14 +185,14 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
         (Just pt, tip) -> return $ SendMsgIntersectFound     pt tip (idle' r)
         (Nothing, tip) -> return $ SendMsgIntersectNotFound     tip (idle' r)
 
-    newReader :: m ReaderId
-    newReader = atomically $ do
+    newFollower :: m FollowerId
+    newFollower = atomically $ do
       cps <- readTVar chainvar
-      let (cps', rid) = ChainProducerState.initReader genesisPoint cps
+      let (cps', rid) = ChainProducerState.initFollower genesisPoint cps
       writeTVar chainvar cps'
       return rid
 
-    improveReadPoint :: ReaderId
+    improveReadPoint :: FollowerId
                      -> [Point blk]
                      -> m (Maybe (Point blk), Tip blk)
     improveReadPoint rid points =
@@ -202,28 +202,28 @@ chainSyncServerExample recvMsgDoneClient chainvar = ChainSyncServer $
           Nothing     -> let chain = ChainProducerState.chainState cps
                          in return (Nothing, castTip (Chain.headTip chain))
           Just ipoint -> do
-            let !cps' = ChainProducerState.updateReader rid ipoint cps
+            let !cps' = ChainProducerState.updateFollower rid ipoint cps
             writeTVar chainvar cps'
             let chain = ChainProducerState.chainState cps'
             return (Just (castPoint ipoint), castTip (Chain.headTip chain))
 
-    tryReadChainUpdate :: ReaderId
+    tryReadChainUpdate :: FollowerId
                        -> m (Maybe (Tip blk, ChainUpdate header header))
     tryReadChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
-        case ChainProducerState.readerInstruction rid cps of
+        case ChainProducerState.followerInstruction rid cps of
           Nothing -> return Nothing
           Just (u, cps') -> do
             writeTVar chainvar cps'
             let chain = ChainProducerState.chainState cps'
             return $ Just (castTip (Chain.headTip chain), u)
 
-    readChainUpdate :: ReaderId -> m (Tip blk, ChainUpdate header header)
+    readChainUpdate :: FollowerId -> m (Tip blk, ChainUpdate header header)
     readChainUpdate rid =
       atomically $ do
         cps <- readTVar chainvar
-        case ChainProducerState.readerInstruction rid cps of
+        case ChainProducerState.followerInstruction rid cps of
           Nothing        -> retry
           Just (u, cps') -> do
             writeTVar chainvar cps'

@@ -17,26 +17,26 @@ import           Data.Maybe (fromMaybe)
 
 
 
--- A @'ChainState'@ plus an associated set of readers/consumers of the chain.
+-- A @'ChainState'@ plus an associated set of followers/consumers of the chain.
 
 data ChainProducerState block = ChainProducerState {
-       chainState   :: Chain block,
-       chainReaders :: ReaderStates block,
-       nextReaderId :: ReaderId
+       chainState     :: Chain block,
+       chainFollowers :: FollowerStates block,
+       nextFollowerId :: FollowerId
      }
   deriving (Eq, Show)
 
--- | Readers are represented here as a relation.
+-- | Followers are represented here as a relation.
 --
-type ReaderStates block = Map ReaderId (ReaderState block)
+type FollowerStates block = Map FollowerId (FollowerState block)
 
-type ReaderId     = Int
+type FollowerId = Int
 -- |
 -- Producer keeps track of consumer chain.  The only information for a producer
 -- to know is
---  * @'readerPoint'@: (some) intersection point of consumer's chain and
+--  * @'followerPoint'@: (some) intersection point of consumer's chain and
 --    producer's chain;
---  * @'readerNext'@: information what to do on next instruction: either roll
+--  * @'followerNext'@: information what to do on next instruction: either roll
 --    forward from the intersection point or roll back to it.
 --
 -- The second piece of information is needed to distinguish the following two
@@ -47,39 +47,39 @@ type ReaderId     = Int
 --
 -- Since consumer is following the producer chain, the producer has this
 -- information at its end.  If producer updates its chain to use another fork it
--- may happen that the reader pointer is not on the new chain.  In this case the
+-- may happen that the follower pointer is not on the new chain.  In this case the
 -- producer will set @'RollBackTo'@ and find intersection of the two chains for
--- @'readerPoint'@.  And upon consumer's request will replay with
--- @'MsgRollBackward' 'readerPoint'@.  After sending this message, the  producer
+-- @'followerPoint'@.  And upon consumer's request will replay with
+-- @'MsgRollBackward' 'followerPoint'@.  After sending this message, the  producer
 -- assumes that the the consumer is following the protocol (i.e. will rollback
--- its chain) and will reset the @'readerNext'@ field to @'ReaderForwardFrom'@.
--- The second case: when the @'readerNext'@ is @'ReaderForwardFrom'@, then when
+-- its chain) and will reset the @'followerNext'@ field to @'FollowerForwardFrom'@.
+-- The second case: when the @'followerNext'@ is @'FollowerForwardFrom'@, then when
 -- sending next instruction the producer will either:
 --
 --   * take the next block (or header) on its chain imediatelly folowing the
---     @'readerPoint'@, updtate @'readerPoint'@ to the point of the new value
+--     @'followerPoint'@, updtate @'followerPoint'@ to the point of the new value
 --     and send @'MsgRollForward'@ with the new block (or header).
 --   * if there is no block, which means that the consumer side and producer
 --     side are synchornized, the producer will send @'MsgAwaitResponse'@ and
 --     will wait until its chain is updated: either by a fork or by a new block.
 --
--- In this implementation a map from @'ReaderId'@ to @'ReaderState'@ is shared
+-- In this implementation a map from @'FollowerId'@ to @'FollowerState'@ is shared
 -- between all producers running on a single node; hence the unique identifier
--- @'ReaderId'@ for each reader: this is an implementation detail.
-data ReaderState block = ReaderState {
+-- @'FollowerId'@ for each follower: this is an implementation detail.
+data FollowerState block = FollowerState {
        -- | Where the chain of the consumer and producer intersect. If the
        -- consumer is on the chain then this is the consumer's chain head,
        -- but if the consumer's chain is off the producer's chain then this is
        -- the point the consumer will need to rollback to.
-       readerPoint :: Point block,
+       followerPoint :: Point block,
 
-       -- | Where the will go next, roll back to the reader point, or roll
-       -- forward from the reader point.
-       readerNext  :: ReaderNext
+       -- | Where the will go next, roll back to the follower point, or roll
+       -- forward from the follower point.
+       followerNext  :: FollowerNext
      }
   deriving (Eq, Show)
 
-data ReaderNext = ReaderBackTo | ReaderForwardFrom
+data FollowerNext = FollowerBackTo | FollowerForwardFrom
   deriving (Eq, Show)
 
 --
@@ -87,14 +87,14 @@ data ReaderNext = ReaderBackTo | ReaderForwardFrom
 --
 
 invChainProducerState :: HasFullHeader block => ChainProducerState block -> Bool
-invChainProducerState (ChainProducerState c rs nrid) =
+invChainProducerState (ChainProducerState c cflrst cfid) =
     Chain.valid c
- && invReaderStates c rs
- && all (< nrid) (Map.keys rs)
+ && invFollowerStates c cflrst
+ && all (< cfid) (Map.keys cflrst)
 
-invReaderStates :: HasHeader block => Chain block -> ReaderStates block -> Bool
-invReaderStates c rs =
-    and [ pointOnChain readerPoint c | ReaderState{readerPoint} <- Map.elems rs ]
+invFollowerStates :: HasHeader block => Chain block -> FollowerStates block -> Bool
+invFollowerStates c flrst =
+    and [ pointOnChain followerPoint c | FollowerState{followerPoint} <- Map.elems flrst ]
 
 --
 -- Operations
@@ -102,20 +102,20 @@ invReaderStates c rs =
 
 
 -- | Initialise @'ChainProducerState'@ with a given @'Chain'@ and empty list of
--- readers.
+-- followers.
 --
 initChainProducerState :: Chain block -> ChainProducerState block
 initChainProducerState c = ChainProducerState c Map.empty 0
 
--- | Get the recorded state of a chain consumer. The 'ReaderId' is assumed to
+-- | Get the recorded state of a chain consumer. The 'FollowerId' is assumed to
 -- exist.
 --
-lookupReader :: ChainProducerState block -> ReaderId -> ReaderState block
-lookupReader (ChainProducerState _ rs _) rid = rs Map.! rid
+lookupFollower :: ChainProducerState block -> FollowerId -> FollowerState block
+lookupFollower (ChainProducerState _ cflrst _) fid = cflrst Map.! fid
 
--- | Return 'True' when a reader with the given 'ReaderId' exists.
-readerExists :: ReaderId -> ChainProducerState block -> Bool
-readerExists rid (ChainProducerState _ rs _) = rid `Map.member` rs
+-- | Return 'True' when a follower with the given 'FollowerId' exists.
+followerExists :: FollowerId -> ChainProducerState block -> Bool
+followerExists fid (ChainProducerState _ cflrst _) = fid `Map.member` cflrst
 
 -- | Extract @'Chain'@ from @'ChainProducerState'@.
 --
@@ -129,118 +129,118 @@ findFirstPoint :: HasHeader block
 findFirstPoint ps = Chain.findFirstPoint ps . producerChain
 
 
--- | Add a new reader with the given intersection point and return the new
--- 'ReaderId'.
+-- | Add a new follower with the given intersection point and return the new
+-- 'FollowerId'.
 --
-initReader :: HasHeader block
-           => Point block
-           -> ChainProducerState block
-           -> (ChainProducerState block, ReaderId)
-initReader point (ChainProducerState c rs nrid) =
+initFollower :: HasHeader block
+             => Point block
+             -> ChainProducerState block
+             -> (ChainProducerState block, FollowerId)
+initFollower point (ChainProducerState c cflrst cfid) =
     assert (pointOnChain point c) $
-    (ChainProducerState c (Map.insert nrid r rs) (succ nrid), nrid)
+    (ChainProducerState c (Map.insert cfid flrst cflrst) (succ cfid), cfid)
   where
-    r = ReaderState {
-          readerPoint = point,
-          readerNext  = ReaderBackTo
+    flrst = FollowerState {
+          followerPoint = point,
+          followerNext  = FollowerBackTo
         }
 
 
--- | Delete an existing reader. The 'ReaderId' is assumed to exist.
+-- | Delete an existing follower. The 'FollowerId' is assumed to exist.
 --
-deleteReader :: ReaderId -> ChainProducerState block -> ChainProducerState block
-deleteReader rid (ChainProducerState c rs nrid) =
-    assert (rid `Map.member` rs) $
-    ChainProducerState c (Map.delete rid rs) nrid
+deleteFollower :: FollowerId -> ChainProducerState block -> ChainProducerState block
+deleteFollower fid (ChainProducerState c cflrst cfid) =
+    assert (fid `Map.member` cflrst) $
+    ChainProducerState c (Map.delete fid cflrst) cfid
 
 
--- | Change the intersection point of a reader. This also puts it into
--- the 'ReaderBackTo' state.
+-- | Change the intersection point of a follower. This also puts it into
+-- the 'FollowerBackTo' state.
 --
-updateReader :: HasHeader block
-             => ReaderId
-             -> Point block    -- ^ new reader intersection point
-             -> ChainProducerState block
-             -> ChainProducerState block
-updateReader rid point (ChainProducerState c rs nrid) =
+updateFollower :: HasHeader block
+               => FollowerId
+               -> Point block    -- ^ new follower intersection point
+               -> ChainProducerState block
+               -> ChainProducerState block
+updateFollower fid point (ChainProducerState c cflrst cnfid) =
     assert (pointOnChain point c) $
-    ChainProducerState c (Map.adjust update rid rs) nrid
+    ChainProducerState c (Map.adjust update fid cflrst) cnfid
   where
-    update r = r { readerPoint = point, readerNext  = ReaderBackTo }
+    update flrst = flrst { followerPoint = point, followerNext  = FollowerBackTo }
 
--- | Switch chains and update readers; if a reader point falls out of the chain,
+-- | Switch chains and update followers; if a follower point falls out of the chain,
 -- replace it with the intersection of both chains and put it in the
--- `ReaderBackTo` state, otherwise preserve reader state.
+-- `FollowerBackTo` state, otherwise preserve follower state.
 --
 switchFork :: HasHeader block
            => Chain block
            -> ChainProducerState block
            -> ChainProducerState block
-switchFork c (ChainProducerState c' rs nrid) =
-    ChainProducerState c (update <$> rs) nrid
+switchFork c (ChainProducerState c' cflrst cfid) =
+    ChainProducerState c (update <$> cflrst) cfid
   where
     ipoint = fromMaybe genesisPoint $ Chain.intersectChains c c'
 
-    update r@ReaderState{readerPoint} =
-      if pointOnChain readerPoint c
-        then r
-        else r { readerPoint = ipoint, readerNext = ReaderBackTo }
+    update flrst@FollowerState{followerPoint} =
+      if pointOnChain followerPoint c
+        then flrst
+        else flrst { followerPoint = ipoint, followerNext = FollowerBackTo }
 
 
--- | What a reader needs to do next. Should they move on to the next block or
+-- | What a follower needs to do next. Should they move on to the next block or
 -- do they need to roll back to a previous point on their chain. It also updates
--- the producer's state assuming that the reader follows its instruction.
+-- the producer's state assuming that the follower follows its instruction.
 --
-readerInstruction :: HasHeader block
-                  => ReaderId
+followerInstruction :: HasHeader block
+                  => FollowerId
                   -> ChainProducerState block
                   -> Maybe (ChainUpdate block block, ChainProducerState block)
-readerInstruction rid cps@(ChainProducerState c rs nrid) =
-    let ReaderState {readerPoint, readerNext} = lookupReader cps rid in
-    case readerNext of
-      ReaderForwardFrom ->
-          assert (pointOnChain readerPoint c) $
-          case Chain.successorBlock readerPoint c of
-            -- There is no successor block because the reader is at the head
+followerInstruction fid cps@(ChainProducerState c cflrst cfid) =
+    let FollowerState {followerPoint, followerNext} = lookupFollower cps fid in
+    case followerNext of
+      FollowerForwardFrom ->
+          assert (pointOnChain followerPoint c) $
+          case Chain.successorBlock followerPoint c of
+            -- There is no successor block because the follower is at the head
             Nothing -> Nothing
 
             Just b -> Just (AddBlock b, cps')
               where
-                cps' = ChainProducerState c (Map.adjust setPoint rid rs) nrid
-                setPoint r = r { readerPoint = blockPoint b }
+                cps' = ChainProducerState c (Map.adjust setPoint fid cflrst) cfid
+                setPoint flrst = flrst { followerPoint = blockPoint b }
 
-      ReaderBackTo -> Just (RollBack readerPoint, cps')
+      FollowerBackTo -> Just (RollBack followerPoint, cps')
         where
-          cps' = ChainProducerState c (Map.adjust setForwardFrom rid rs) nrid
-          setForwardFrom r = r { readerNext = ReaderForwardFrom }
+          cps' = ChainProducerState c (Map.adjust setForwardFrom fid cflrst) cfid
+          setForwardFrom flrst = flrst { followerNext = FollowerForwardFrom }
 
 
--- | Add a block to the chain. It does not require any reader's state changes.
+-- | Add a block to the chain. It does not require any follower's state changes.
 --
 addBlock :: HasHeader block
          => block
          -> ChainProducerState block
          -> ChainProducerState block
-addBlock b (ChainProducerState c rs nrid) =
-    ChainProducerState (Chain.addBlock b c) rs nrid
+addBlock b (ChainProducerState c cflrst cfid) =
+    ChainProducerState (Chain.addBlock b c) cflrst cfid
 
 
--- | Rollback producer chain. It requires to update reader states, since some
--- @'readerPoint'@s may not be on the new chain; in this case find intersection
--- of the two chains and set @'readerNext'@ to @'ReaderBackTo'@.
+-- | Rollback producer chain. It requires to update follower states, since some
+-- @'followerPoint'@s may not be on the new chain; in this case find intersection
+-- of the two chains and set @'followerNext'@ to @'FollowerBackTo'@.
 rollback :: (HasHeader block, HeaderHash block ~ HeaderHash block')
          => Point block'
          -> ChainProducerState block
          -> Maybe (ChainProducerState block)
-rollback p (ChainProducerState c rs nrid) = do
+rollback p (ChainProducerState c cflrst cfid) = do
     c' <- Chain.rollback (castPoint p) c
-    return $ ChainProducerState c' (rollbackReader <$> rs) nrid
+    return $ ChainProducerState c' (rollbackFollower <$> cflrst) cfid
   where
-    rollbackReader r@ReaderState { readerPoint = p' }
+    rollbackFollower flrst@FollowerState { followerPoint = p' }
       | Chain.pointIsAfter p' (castPoint p) c
-      = r { readerPoint = castPoint p, readerNext = ReaderBackTo }
+      = flrst { followerPoint = castPoint p, followerNext = FollowerBackTo }
       | otherwise
-      = r
+      = flrst
 
 -- | Convenient function which combines both @'addBlock'@ and @'rollback'@.
 --

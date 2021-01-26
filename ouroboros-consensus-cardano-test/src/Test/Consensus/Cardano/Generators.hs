@@ -11,6 +11,14 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- | 'Arbitrary' instances intended for serialisation roundtrip tests for
+-- 'CardanoBlock' and its related types.
+--
+-- Because the generated values are only used in serialisation roundtrip tests,
+-- they don't need to be valid blocks, transactions, etc.
+--
+-- We combine the Byron and Shelley-based instances defined elsewhere into
+-- Cardano instances by picking randomly from one of the eras.
 module Test.Consensus.Cardano.Generators (
     module Test.Consensus.Byron.Generators
   ) where

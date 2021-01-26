@@ -20,7 +20,6 @@
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelleyBased
   , protocolInfoShelley
-  , protocolInfoMary
   , ProtocolParamsShelleyBased (..)
   , ProtocolParamsShelley (..)
   , ProtocolParamsAllegra (..)
@@ -42,7 +41,6 @@ module Ouroboros.Consensus.Shelley.Node (
   ) where
 
 import           Data.Bifunctor (first)
-import           Data.Foldable (toList)
 import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -68,6 +66,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
@@ -169,7 +168,7 @@ shelleySharedBlockForging
           forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
         , canBeLeader      = canBeLeader
         , updateForgeState = \_ curSlot _ ->
-                                 ForgeStateUpdateInfo <$>
+                                 forgeStateUpdateInfoFromUpdateInfo <$>
                                    HotKey.evolve hotKey (slotToPeriod curSlot)
         , checkCanForge    = \cfg curSlot _tickedChainDepState ->
                                  tpraosCheckCanForge
@@ -217,7 +216,7 @@ validateGenesis = first errsToString . SL.validateGenesis
 --
 -- The @era@ parameter determines from which era the genesis config will be
 -- used.
-data ProtocolParamsShelleyBased era f = ProtocolParamsShelleyBased {
+data ProtocolParamsShelleyBased era = ProtocolParamsShelleyBased {
       shelleyBasedGenesis           :: SL.ShelleyGenesis era
       -- | The initial nonce, typically derived from the hash of Genesis
       -- config JSON file.
@@ -225,7 +224,7 @@ data ProtocolParamsShelleyBased era f = ProtocolParamsShelleyBased {
       -- WARNING: chains using different values of this parameter will be
       -- mutually incompatible.
     , shelleyBasedInitialNonce      :: SL.Nonce
-    , shelleyBasedLeaderCredentials :: f (TPraosLeaderCredentials (EraCrypto era))
+    , shelleyBasedLeaderCredentials :: [TPraosLeaderCredentials (EraCrypto era)]
     }
 
 -- | Parameters needed to run Shelley
@@ -244,8 +243,8 @@ data ProtocolParamsMary = ProtocolParamsMary {
     }
 
 protocolInfoShelley ::
-     forall m c f. (IOLike m, ShelleyBasedEra (ShelleyEra c), Foldable f)
-  => ProtocolParamsShelleyBased (ShelleyEra c) f
+     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c))
+  => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
 protocolInfoShelley protocolParamsShelleyBased
@@ -254,20 +253,9 @@ protocolInfoShelley protocolParamsShelleyBased
                       } =
     protocolInfoShelleyBased protocolParamsShelleyBased protVer
 
-protocolInfoMary ::
-     forall m c f. (IOLike m, ShelleyBasedEra (MaryEra c), Foldable f)
-  => ProtocolParamsShelleyBased (MaryEra c) f
-  -> ProtocolParamsMary
-  -> ProtocolInfo m (ShelleyBlock (MaryEra c))
-protocolInfoMary protocolParamsShelleyBased
-                 ProtocolParamsMary {
-                     maryProtVer = protVer
-                   } =
-    protocolInfoShelleyBased protocolParamsShelleyBased protVer
-
 protocolInfoShelleyBased ::
-     forall m era f. (IOLike m, ShelleyBasedEra era, Foldable f)
-  => ProtocolParamsShelleyBased era f
+     forall m era. (IOLike m, ShelleyBasedEra era)
+  => ProtocolParamsShelleyBased era
   -> SL.ProtVer
   -> ProtocolInfo m (ShelleyBlock era)
 protocolInfoShelleyBased ProtocolParamsShelleyBased {
@@ -280,7 +268,8 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging = sequence $ shelleyBlockForging tpraosParams <$> toList credentialss
+      , pInfoBlockForging =
+          traverse (shelleyBlockForging tpraosParams) credentialss
       }
   where
     maxMajorProtVer :: MaxMajorProtVer
@@ -315,7 +304,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
         mkShelleyBlockConfig
           protVer
           genesis
-          (tpraosBlockIssuerVKey <$> toList credentialss)
+          (tpraosBlockIssuerVKey <$> credentialss)
 
     storageConfig :: StorageConfig (ShelleyBlock era)
     storageConfig = ShelleyStorageConfig {
@@ -510,7 +499,10 @@ registerGenesisStaking staking nes = nes {
 --
 -- TODO move to @cardano-ledger-specs@.
 registerInitialFunds ::
-     forall era. (ShelleyBasedEra era, HasCallStack)
+     forall era.
+     ( ShelleyBasedEra era
+     , HasCallStack
+     )
   => Map (SL.Addr (EraCrypto era)) SL.Coin
   -> SL.NewEpochState era
   -> SL.NewEpochState era
@@ -533,7 +525,7 @@ registerInitialFunds initialFunds nes = nes {
           (txIn, txOut)
         | (addr, amount) <- Map.toList initialFunds
         ,  let txIn  = SL.initialFundsPseudoTxIn addr
-               txOut = SL.TxOut addr (inject amount)
+               txOut = SL.makeTxOut (Proxy @era) addr (inject amount)
         ]
 
     utxo' = mergeUtxoNoOverlap utxo initialFundsUtxo

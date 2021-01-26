@@ -51,3 +51,24 @@ haddocks/
 
 # Visual Studio Code
 /.vscode
+
+
+# This project doesn't currently use hlint.  To avoid spurious warnings
+# generate an hlint config to suppress all hlint warnings:
+#
+#   hlint . --ignore-glob='dist-newstyle/**' --default > .hlint.yaml
+#
+# The hlint config is listed here to prevent accidental checkin.
+/.hlint.yaml
+
+# Documentation
+/docs/**/*.aux
+/docs/**/*.bbl
+/docs/**/*.blg
+/docs/**/*.fdb_latexmk
+/docs/**/*.fls
+/docs/**/*.log
+/docs/**/*.out
+/docs/**/*.pdf
+/docs/**/*.synctex.gz
+/docs/**/*.toc

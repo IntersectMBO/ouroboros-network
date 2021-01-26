@@ -19,18 +19,20 @@
 We have two documents which describe various levels of the networking layer of
 the Cardano Shelley implementation:
 
-* [Introduction to the design of Data Diffusion and Networking of Cardano Shelley](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.docs.x86_64-linux/latest/download/1)
+* [Introduction to the design of Data Diffusion and Networking of Cardano Shelley](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.network-docs.x86_64-linux/latest/download/1)
 
   This document explains the technical requirements and key constraints for the networking
   layer of the _Cardano Shelley_ implementation of _Ouroboros Praos_.  This is
   a design document.
 
-* [The Shelley Networking Protocol](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.docs.x86_64-linux/latest/download/2)
-  
+* [The Shelley Networking Protocol](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.network-docs.x86_64-linux/latest/download/2)
+
   This document is a technical specification of the networking protocol.  It
   includes serialisation formats, necessary details of multiplexer and
   technical specifications of mini-protocols used by either _node-to-node_ and
-  _node-to-client_ flavors of the protocol. 
+  _node-to-client_ flavours of the protocol.
+
+* [Haddock documentation](https://input-output-hk.github.io/ouroboros-network/)
 
 ## Ouroboros-Network API
 
@@ -42,109 +44,39 @@ The API consists of three layers:
 
 • versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use `simpleSingletonVersion` if your application does not depend on negotiated version data.  However, `Ouroboros.Network.NodeToNode` and `Ouroboros.Network.NodeToClient` expose `V1` api which hides versioning from the caller.
 
-## Demo application
+## Demo applications
 
-You can run a demo application, check
-[chain-sync-demo](https://github.com/input-output-hk/ouroboros-network/wiki/Ouroboros-Network-Demo)
-wiki page.
+* [demo-chain-sync](https://github.com/input-output-hk/ouroboros-network/wiki/Ouroboros-Network-Demo)
+* [cardano-ping](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/cardano-ping.hs)
+* [mux-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/mux-demo.hs)
+* [demo-ping-pong](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network-framework/demo/ping-pong.hs)
+* [named-pipe-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/Win32-network/demo/named-pipe-demo.hs) (Windows only)
+* [demo-ntp-client](https://github.com/input-output-hk/ouroboros-network/blob/master/ntp-client/demo/Main.hs)
 
-## Tests
+<details>
+<summary>Instructions</summary>
+To run a demo type:
 
-### Typed Protocols test suite
 ```
-cabal new-run pkg:typed-protocols:tests
+cabal run <DEMO_NAME> --
 ```
-or with `nix`
-```
-nix-build -A haskellPackages.typed-protocols.checks
-```
-### IOSim test suite
-```
-cabal new-run pkg:io-sim:tests
-```
-or with `nix`
-```
-nix-build -A haskellPackages.io-sim.checks
-```
-### Ouroboros-Network test suite
-```
-cabal new-run pkg:ouroboros-network:tests
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-network.checks
-```
-### Ouroboros-Consensus test suite
-```
-cabal new-run pkg:ouroboros-consensus:tests
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus.checks
-```
+
+After `--` you will need to pass arguments, when a demo is run without
+arguments it will specify what arguments it needs.
+</details>
 
 # Ouroboros-Consensus
 
 Consensus layer of the family Ouroboros blockchain protocols.
 
-## Tests
+## Ouroboros-Consensus Documentation
 
-### Consensus test suite
-```
-cabal new-run ouroboros-consensus-test:test-consensus
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-test.checks.test-consensus
-```
-### Storage test suite
-```
-cabal new-run ouroboros-consensus-test:test-storage
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-test.checks.test-storage
-```
-### Test infrastructure test suite
-```
-cabal new-run ouroboros-consensus-test:test-infra
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-test.checks.test-infra
-```
-### Mock test suite
-```
-cabal new-run ouroboros-consensus-mock-test:test
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-mock-test.checks.test
-```
-### Byron test suite
-```
-cabal new-run ouroboros-consensus-byron-test:test
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-byron-test.checks.test
-```
-### Shelley test suite
-```
-cabal new-run ouroboros-consensus-shelley-test:test
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-shelley-test.checks.test
-```
-### Cardano test suite
-```
-cabal new-run ouroboros-consensus-cardano-test:test
-```
-or with `nix`
-```
-nix-build -A haskellPackages.ouroboros-consensus-cardano-test.checks.test
-```
+The `ouroboros-consensus/docs` folder contains documentation about the consensus
+layer.
+
+* [The Cardano Consensus and Storage Layer](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.consensus-docs.x86_64-linux/latest/download/1)
+
+  This technical report explains the design of the consensus and storage layer.
 
 ## Formatting
 

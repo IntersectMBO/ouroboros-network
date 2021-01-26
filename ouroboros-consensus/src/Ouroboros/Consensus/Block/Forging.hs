@@ -14,12 +14,12 @@ module Ouroboros.Consensus.Block.Forging (
   , ForgeStateUpdateError
   , ForgeStateUpdateInfo(..)
   , castForgeStateUpdateInfo
+  , forgeStateUpdateInfoFromUpdateInfo
   , BlockForging(..)
   , ShouldForge(..)
   , checkShouldForge
     -- * 'UpdateInfo'
   , UpdateInfo (..)
-  , castUpdateInfo
   ) where
 
 import           Control.Tracer (Tracer, traceWith)
@@ -51,12 +51,14 @@ type family ForgeStateUpdateError blk :: Type
 -- | The result of 'updateForgeState'.
 --
 -- Note: the forge state itself is implicit and not reflected in the types.
-newtype ForgeStateUpdateInfo blk = ForgeStateUpdateInfo {
-      getForgeStateUpdateInfo :: UpdateInfo
-                                   (ForgeStateInfo        blk)
-                                   (ForgeStateInfo        blk)
-                                   (ForgeStateUpdateError blk)
-    }
+data ForgeStateUpdateInfo blk =
+    ForgeStateUpdated          (ForgeStateInfo        blk)
+    -- ^ NB The update might have not changed the forge state.
+  | ForgeStateUpdateFailed     (ForgeStateUpdateError blk)
+  | ForgeStateUpdateSuppressed
+    -- ^ A node was prevented from forging for an artificial reason, such as
+    -- testing, benchmarking, etc. It's /artificial/ in that this constructor
+    -- should never occur in a production deployment.
 
 deriving instance (Show (ForgeStateInfo blk), Show (ForgeStateUpdateError blk))
                => Show (ForgeStateUpdateInfo blk)
@@ -66,10 +68,10 @@ castForgeStateUpdateInfo ::
      , ForgeStateUpdateError blk ~ ForgeStateUpdateError blk'
      )
   => ForgeStateUpdateInfo blk -> ForgeStateUpdateInfo blk'
-castForgeStateUpdateInfo =
-      ForgeStateUpdateInfo
-    . castUpdateInfo
-    . getForgeStateUpdateInfo
+castForgeStateUpdateInfo = \case
+    ForgeStateUpdated x        -> ForgeStateUpdated x
+    ForgeStateUpdateFailed x   -> ForgeStateUpdateFailed x
+    ForgeStateUpdateSuppressed -> ForgeStateUpdateSuppressed
 
 -- | Stateful wrapper around block production
 --
@@ -95,8 +97,7 @@ data BlockForging m blk = BlockForging {
       -- When the node can be a leader, this will be called at the start of
       -- each slot, right before calling 'checkCanForge'.
       --
-      -- When 'Updated' or 'Unchanged' is returned, we trace the
-      -- 'ForgeStateInfo'.
+      -- When 'Updated' is returned, we trace the 'ForgeStateInfo'.
       --
       -- When 'UpdateFailed' is returned, we trace the 'ForgeStateUpdateError'
       -- and don't call 'checkCanForge'.
@@ -183,33 +184,34 @@ checkShouldForge BlockForging{..}
                  forgeStateInfoTracer
                  cfg
                  slot
-                 tickedChainDepState = do
-    eForgeStateInfo <-
-      updateForgeState cfg slot tickedChainDepState >>= \updateInfo ->
-        case getForgeStateUpdateInfo updateInfo of
-          Updated info -> do
-            traceWith forgeStateInfoTracer info
-            return $ Right info
-          Unchanged info -> do
-            traceWith forgeStateInfoTracer info
-            return $ Right info
-          UpdateFailed err ->
-            return $ Left err
+                 tickedChainDepState =
+    updateForgeState cfg slot tickedChainDepState >>= \updateInfo ->
+      case updateInfo of
+        ForgeStateUpdated      info -> handleUpdated info
+        ForgeStateUpdateFailed err  -> return $ ForgeStateUpdateError err
+        ForgeStateUpdateSuppressed  -> return NotLeader
+  where
+    mbIsLeader :: Maybe (IsLeader (BlockProtocol blk))
+    mbIsLeader =
+        -- WARNING: It is critical that we do not depend on the 'BlockForging'
+        -- record for the implementation of 'checkIsLeader'. Doing so would
+        -- make composing multiple 'BlockForging' values responsible for also
+        -- composing the 'checkIsLeader' checks, but that should be the
+        -- responsibility of the 'ConsensusProtocol' instance for the
+        -- composition of those blocks.
+        checkIsLeader
+          (configConsensus cfg)
+          canBeLeader
+          slot
+          tickedChainDepState
 
-    return $
-      case eForgeStateInfo of
-        Left  err            -> ForgeStateUpdateError err
-        Right forgeStateInfo ->
-          -- WARNING: It is critical that we do not depend on the 'BlockForging'
-          -- record for the implementation of 'checkIsLeader'. Doing so would
-          -- make composing multiple 'BlockForging' values responsible for also
-          -- composing the 'checkIsLeader' checks, but that should be the
-          -- responsibility of the 'ConsensusProtocol' instance for the
-          -- composition of those blocks.
-          case checkIsLeader (configConsensus cfg) canBeLeader slot tickedChainDepState of
-            Nothing       -> NotLeader
-            Just isLeader ->
-              case checkCanForge cfg slot tickedChainDepState isLeader forgeStateInfo of
+    handleUpdated :: ForgeStateInfo blk -> m (ShouldForge blk)
+    handleUpdated info = do
+        traceWith forgeStateInfoTracer info
+        return $ case mbIsLeader of
+          Nothing       -> NotLeader
+          Just isLeader ->
+              case checkCanForge cfg slot tickedChainDepState isLeader info of
                 Left cannotForge -> CannotForge cannotForge
                 Right ()         -> ShouldForge isLeader
 
@@ -218,20 +220,16 @@ checkShouldForge BlockForging{..}
 -------------------------------------------------------------------------------}
 
 -- | The result of updating something, e.g., the forge state.
-data UpdateInfo updated unchanged failed =
-    Updated      updated
-  | Unchanged    unchanged
+data UpdateInfo updated failed =
+    -- | NOTE: The update may have induced no change.
+    Updated updated
   | UpdateFailed failed
   deriving (Show)
 
-castUpdateInfo ::
-     ( updated   ~ updated'
-     , unchanged ~ unchanged'
-     , failed    ~ failed'
-     )
-  => UpdateInfo updated  unchanged  failed
-  -> UpdateInfo updated' unchanged' failed'
-castUpdateInfo = \case
-    Updated      updated   -> Updated      updated
-    Unchanged    unchanged -> Unchanged    unchanged
-    UpdateFailed failed    -> UpdateFailed failed
+-- | Embed 'UpdateInfo' into 'ForgeStateUpdateInfo'
+forgeStateUpdateInfoFromUpdateInfo ::
+     UpdateInfo (ForgeStateInfo blk) (ForgeStateUpdateError blk)
+  -> ForgeStateUpdateInfo blk
+forgeStateUpdateInfoFromUpdateInfo = \case
+    Updated      info -> ForgeStateUpdated      info
+    UpdateFailed err  -> ForgeStateUpdateFailed err

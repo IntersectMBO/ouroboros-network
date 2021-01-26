@@ -1,5 +1,8 @@
+{-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE OverloadedStrings       #-}
+{-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
@@ -18,12 +21,15 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardCrypto
   ) where
 
+import           Data.Default.Class (Default)
 import           Data.Text (Text)
 
 import           Cardano.Ledger.Allegra (AllegraEra)
+import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Era (Crypto)
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
+import           Control.State.Transition (State)
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
@@ -68,7 +74,15 @@ type EraCrypto era = Crypto era
 -- By having the same name as the class defined in ledger, we can, if this class
 -- becomes redundant, switch to the ledger-defined one without having to update
 -- all the code using it. We can just export the right one from this module.
-class SL.ShelleyBasedEra era => ShelleyBasedEra era where
+--
+-- TODO Currently we include some constraints on the update state which are
+-- needed to determine the hard fork point. In the future this should be
+-- replaced with an appropriate API - see
+-- https://github.com/input-output-hk/ouroboros-network/issues/2890
+class ( SL.ShelleyBasedEra era
+      , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+      , Default (State (LC.EraRule "PPUP" era))
+      ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.
   shelleyBasedEraName :: proxy era -> Text

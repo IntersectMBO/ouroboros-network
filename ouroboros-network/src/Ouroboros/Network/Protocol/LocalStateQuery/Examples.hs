@@ -20,36 +20,36 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 localStateQueryClient
   :: forall block point query result m.
      Applicative m
-  => [(point, query result)]
+  => [(Maybe point, query result)]
   -> LocalStateQueryClient block point query m
-                           [(point, Either AcquireFailure result)]
+                           [(Maybe point, Either AcquireFailure result)]
 localStateQueryClient = LocalStateQueryClient . pure . goIdle []
   where
     goIdle
-      :: [(point, Either AcquireFailure result)]  -- ^ Accumulator
-      -> [(point, query result)]  -- ^ Remainder
+      :: [(Maybe point, Either AcquireFailure result)]  -- ^ Accumulator
+      -> [(Maybe point, query result)]                  -- ^ Remainder
       -> ClientStIdle block point query m
-                      [(point, Either AcquireFailure result)]
+                      [(Maybe point, Either AcquireFailure result)]
     goIdle acc []              = SendMsgDone $ reverse acc
     goIdle acc ((pt, q):ptqs') = SendMsgAcquire pt $ goAcquiring acc pt q ptqs'
 
     goAcquiring
-      :: [(point, Either AcquireFailure result)]  -- ^ Accumulator
-      -> point
+      :: [(Maybe point, Either AcquireFailure result)]  -- ^ Accumulator
+      -> Maybe point
       -> query result
-      -> [(point, query result)]  -- ^ Remainder
+      -> [(Maybe point, query result)]                  -- ^ Remainder
       -> ClientStAcquiring block point query m
-                           [(point, Either AcquireFailure result)]
+                           [(Maybe point, Either AcquireFailure result)]
     goAcquiring acc pt q ptqss' = ClientStAcquiring {
         recvMsgAcquired = goQuery q $ \r -> goAcquired ((pt, Right r):acc) ptqss'
       , recvMsgFailure  = \failure -> pure $ goIdle ((pt, Left failure):acc) ptqss'
       }
 
     goAcquired
-      :: [(point, Either AcquireFailure result)]
-      -> [(point, query result)]   -- ^ Remainder
+      :: [(Maybe point, Either AcquireFailure result)]
+      -> [(Maybe point, query result)]   -- ^ Remainder
       -> ClientStAcquired block point query m
-                          [(point, Either AcquireFailure result)]
+                          [(Maybe point, Either AcquireFailure result)]
     goAcquired acc [] = SendMsgRelease $ pure $ SendMsgDone $ reverse acc
     goAcquired acc ((pt, qs):ptqss') = SendMsgReAcquire pt $
       goAcquiring acc pt qs ptqss'
@@ -71,7 +71,7 @@ localStateQueryClient = LocalStateQueryClient . pure . goIdle []
 --
 localStateQueryServer
   :: forall block point query m state. Applicative m
-  => (point -> Either AcquireFailure state)
+  => (Maybe point -> Either AcquireFailure state)
   -> (forall result. state -> query result -> result)
   -> LocalStateQueryServer block point query m ()
 localStateQueryServer acquire answer =
@@ -83,7 +83,7 @@ localStateQueryServer acquire answer =
       , recvMsgDone    = pure ()
       }
 
-    goAcquiring :: point -> m (ServerStAcquiring block point query m ())
+    goAcquiring :: Maybe point -> m (ServerStAcquiring block point query m ())
     goAcquiring pt = pure $ case acquire pt of
       Left failure -> SendMsgFailure failure goIdle
       Right state  -> SendMsgAcquired $ goAcquired state

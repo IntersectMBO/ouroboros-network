@@ -188,11 +188,11 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Background
                        Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                        Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
+                       Ouroboros.Consensus.Storage.ChainDB.Impl.Follower
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
                        Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Query
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Reader
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Init
                        Ouroboros.Consensus.Storage.Common

@@ -776,7 +776,7 @@ Messages of the protocol:
 \item [\ReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
       The list contains pairs of transactions ids and the corresponding size of the transaction in bytes.
-      In the blocking case the reply is guarantied to contain at least one transaction.
+      In the blocking case the reply is guaranteed to contain at least one transaction.
       In the non-blocking case, the reply may contain an empty list.
 \item [\RequestTxs{} {\boldmath ($\langle ids \rangle$)}]
       The server requests transactions by sending a list of transaction-ids.
@@ -805,14 +805,14 @@ and, at the same time, it must rule out
 asymmetric resource attacks from the transaction consumer against the transaction provider.
 
 The protocol is based on two pull-based operations.
-The transaction consumer can ask for a number of transaction ids and it can uses these
+The transaction consumer can ask for a number of transaction ids and it can use these
 transaction ids to request a batch of transactions.
 The transaction consumer has flexibility in the number of transaction ids it requests,
 whether to actually download the transaction body of a given id
 and flexibility in how it batches the download of transactions.
 The transaction consumer can also switch between requesting transaction ids and downloading
 transaction bodies at any time.
-It must however observer several constraints that are necessary for a memory efficient implementation
+It must however observe several constraints that are necessary for a memory efficient implementation
 of the transaction provider.
 
 Conceptually, the provider maintains a limited size FIFO of outstanding transactions per consumer.
@@ -820,8 +820,8 @@ Conceptually, the provider maintains a limited size FIFO of outstanding transact
 The maximum FIFO size is a protocol parameter.
 The protocol guarantees that, at any time, the consumer and producer agree on the current size of
 that FIFO and on the outstanding transaction ids.
-The consumer can use a variety of heuristics for requesting transaction ids and transaction.
-One possible implementation for a consumer is to maintain a FIDO which mirrors the producers FIDO
+The consumer can use a variety of heuristics for requesting transaction ids and transactions.
+One possible implementation for a consumer is to maintain a FIFO which mirrors the producers FIFO
 but only contains the transaction ids (and the size of the transaction) and not the full transactions.
 
 After the consumer requests new transaction ids, the provider replies with a list of transaction ids and
@@ -962,7 +962,7 @@ version.
 The handshake mini protocol runs before the MUX/DEMUX itself is initialised.
 Each message is transmitted within a single MUX segment, i.e. with a proper
 segment header, but, as the MUX/DEMUX is not yet running the messages must not
-be split into multiple segments.  These MUX segments are useing a reserved
+be split into multiple segments.  These MUX segments are using a reserved
 protocol id $0$ (\texttt{Muxcontrol}).
 
 \section{Pipelining of Mini Protocols}

@@ -27,7 +27,8 @@ packages: ./typed-protocols
 constraints:
   ip < 1.5,
   hedgehog >= 1.0,
-  bimap >= 0.4.0
+  bimap >= 0.4.0,
+  ListLike >= 4.7.3
 
 package Win32-network
   tests: True
@@ -100,7 +101,7 @@ package cardano-crypto-class
 package cardano-crypto-wrapper
   tests: False
 
-package cardano-prelude
+package cardano-prelude-test
   tests: False
 
 package contra-tracer
@@ -112,7 +113,22 @@ package byron-spec-chain
 package byron-spec-ledger
   tests: False
 
+package cardano-ledger
+  tests: False
+
+package cardano-ledger-shelley-ma-test
+  tests: False
+
+package cardano-ledger-test
+  tests: False
+
 package goblins
+  tests: False
+
+package shelley-spec-ledger-test
+  tests: False
+
+package shelley-spec-non-integral
   tests: False
 
 package small-steps

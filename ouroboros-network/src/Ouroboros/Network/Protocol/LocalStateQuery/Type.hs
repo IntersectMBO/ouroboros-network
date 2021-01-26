@@ -80,8 +80,12 @@ instance Protocol (LocalStateQuery block point query) where
     -- the server's chain (within K of the tip) be made available to query,
     -- and waits for confirmation or failure.
     --
+    -- From 'NodeToClient_V8' onwards if the point is not specified, current tip
+    -- will be acquired.  For previous versions of the protocol 'point' must be
+    -- given.
+    --
     MsgAcquire
-      :: point
+      :: Maybe point
       -> Message (LocalStateQuery block point query) StIdle StAcquiring
 
     -- | The server can confirm that it has the state at the requested point.
@@ -125,8 +129,12 @@ instance Protocol (LocalStateQuery block point query) where
     -- Note that failure to re-acquire is equivalent to 'MsgRelease',
     -- rather than keeping the exiting acquired state.
     --
+    -- From 'NodeToClient_V8' onwards if the point is not specified, current tip
+    -- will be acquired.  For previous versions of the protocol 'point' must be
+    -- given.
+    --
     MsgReAcquire
-      :: point
+      :: Maybe point
       -> Message (LocalStateQuery block point query) StAcquired StAcquiring
 
     -- | The client can terminate the protocol.

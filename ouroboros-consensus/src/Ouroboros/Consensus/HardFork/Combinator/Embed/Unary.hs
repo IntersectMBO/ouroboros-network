@@ -389,31 +389,27 @@ instance Isomorphic ProtocolClientInfo where
 instance Isomorphic ForgeStateUpdateInfo where
   project :: forall blk. NoHardForks blk
           => ForgeStateUpdateInfo (HardForkBlock '[blk]) -> ForgeStateUpdateInfo blk
-  project (ForgeStateUpdateInfo forgeStateUpdateInfo) = ForgeStateUpdateInfo $
+  project forgeStateUpdateInfo =
       case forgeStateUpdateInfo of
-        Updated forgeStateInfo ->
-          Updated
+        ForgeStateUpdated forgeStateInfo ->
+          ForgeStateUpdated
             (project' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
-        Unchanged forgeStateInfo ->
-          Unchanged
-            (project' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
-        UpdateFailed forgeStateUpdateError ->
-          UpdateFailed
+        ForgeStateUpdateFailed forgeStateUpdateError ->
+          ForgeStateUpdateFailed
             (project' (Proxy @(WrapForgeStateUpdateError blk)) forgeStateUpdateError)
+        ForgeStateUpdateSuppressed -> ForgeStateUpdateSuppressed
 
   inject :: forall blk. NoHardForks blk
          => ForgeStateUpdateInfo blk -> ForgeStateUpdateInfo (HardForkBlock '[blk])
-  inject (ForgeStateUpdateInfo forgeStateUpdateInfo) = ForgeStateUpdateInfo $
+  inject forgeStateUpdateInfo =
       case forgeStateUpdateInfo of
-        Updated forgeStateInfo ->
-          Updated
+        ForgeStateUpdated forgeStateInfo ->
+          ForgeStateUpdated
             (inject' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
-        Unchanged forgeStateInfo ->
-          Unchanged
-            (inject' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
-        UpdateFailed forgeStateUpdateError ->
-          UpdateFailed
+        ForgeStateUpdateFailed forgeStateUpdateError ->
+          ForgeStateUpdateFailed
             (inject' (Proxy @(WrapForgeStateUpdateError blk)) forgeStateUpdateError)
+        ForgeStateUpdateSuppressed -> ForgeStateUpdateSuppressed
 
 instance Functor m => Isomorphic (BlockForging m) where
   project :: forall blk. NoHardForks blk

@@ -19,7 +19,6 @@ module Test.ThreadNet.ShelleyAllegra (
   ) where
 
 import           Control.Monad (replicateM)
-import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
@@ -268,8 +267,9 @@ prop_simple_shelleyAllegra_convergence TestSetup
                     ProtocolParamsShelleyBased {
                         shelleyBasedGenesis           = genesisShelley
                       , shelleyBasedInitialNonce      = setupInitialNonce
-                      , shelleyBasedLeaderCredentials = Identity $
-                          Shelley.mkLeaderCredentials (coreNodes !! fromIntegral nid)
+                      , shelleyBasedLeaderCredentials =
+                          [Shelley.mkLeaderCredentials
+                            (coreNodes !! fromIntegral nid)]
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)

@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 module Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
   ( localStateQueryServer
   ) where
@@ -16,12 +17,14 @@ import           Ouroboros.Consensus.Util.IOLike
 localStateQueryServer ::
      forall m blk. (IOLike m, QueryLedger blk)
   => ExtLedgerCfg blk
+  -> STM m (Point blk)
+     -- ^ Get tip point
   -> (Point blk -> STM m (Maybe (ExtLedgerState blk)))
      -- ^ Get a past ledger
   -> STM m (Point blk)
      -- ^ Get the immutable point
   -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
-localStateQueryServer cfg getPastLedger getImmutablePoint =
+localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
     LocalStateQueryServer $ return idle
   where
     idle :: ServerStIdle blk (Point blk) (Query blk) m ()
@@ -30,11 +33,12 @@ localStateQueryServer cfg getPastLedger getImmutablePoint =
         , recvMsgDone    = return ()
         }
 
-    handleAcquire :: Point blk
+    handleAcquire :: Maybe (Point blk)
                   -> m (ServerStAcquiring blk (Point blk) (Query blk) m ())
-    handleAcquire pt = do
-        (mPastLedger, immutablePoint) <-
-          atomically $ (,) <$> getPastLedger pt <*> getImmutablePoint
+    handleAcquire mpt = do
+        (pt, mPastLedger, immutablePoint) <- atomically $ do
+          pt <- maybe getTipPoint pure mpt
+          (pt,,) <$> getPastLedger pt <*> getImmutablePoint
 
         return $ case mPastLedger of
           Just pastLedger

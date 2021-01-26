@@ -52,7 +52,7 @@ localStateQueryClientNull =
 --  * a termination messge
 --
 data ClientStIdle block point query (m :: Type -> Type) a where
-  SendMsgAcquire :: point
+  SendMsgAcquire :: Maybe point
                  -> ClientStAcquiring block point query m a
                  -> ClientStIdle      block point query m a
 
@@ -85,7 +85,7 @@ data ClientStAcquired block point query m a where
                    -> ClientStQuerying block point query m a result
                    -> ClientStAcquired block point query m a
 
-  SendMsgReAcquire :: point
+  SendMsgReAcquire :: Maybe point
                    -> ClientStAcquiring block point query m a
                    -> ClientStAcquired  block point query m a
 
@@ -123,7 +123,7 @@ mapLocalStateQueryClient fpoint fquery fresult =
     goIdle :: ClientStIdle block  point  query  m a
            -> ClientStIdle block' point' query' m a
     goIdle (SendMsgAcquire pt k) =
-      SendMsgAcquire (fpoint pt) (goAcquiring k)
+      SendMsgAcquire (fpoint <$> pt) (goAcquiring k)
 
     goIdle (SendMsgDone a) = SendMsgDone a
 
@@ -139,7 +139,7 @@ mapLocalStateQueryClient fpoint fquery fresult =
                -> ClientStAcquired block' point' query' m a
     goAcquired (SendMsgQuery     q  k) = case fquery q of
                                            Some q' -> SendMsgQuery q' (goQuerying q q' k)
-    goAcquired (SendMsgReAcquire pt k) = SendMsgReAcquire (fpoint pt) (goAcquiring k)
+    goAcquired (SendMsgReAcquire pt k) = SendMsgReAcquire (fpoint <$> pt) (goAcquiring k)
     goAcquired (SendMsgRelease      k) = SendMsgRelease (fmap goIdle k)
 
     goQuerying :: forall result result'.

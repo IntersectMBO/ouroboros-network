@@ -326,11 +326,13 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> BlockNodeToClientVersion blk
+      -> NodeToClientVersion
       -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
-    mkNodeToClientApps nodeKernelArgs nodeKernel version =
+    mkNodeToClientApps nodeKernelArgs nodeKernel blockVersion networkVersion =
         NTC.mkApps
+          nodeKernel
           rnTraceNTC
-          (NTC.defaultCodecs codecConfig version)
+          (NTC.defaultCodecs codecConfig blockVersion networkVersion)
           (NTC.mkHandlers nodeKernelArgs nodeKernel)
 
     mkDiffusionApplications
@@ -339,6 +341,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ByteString ()
          )
       -> (   BlockNodeToClientVersion blk
+          -> NodeToClientVersion
           -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
          )
       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
@@ -366,7 +369,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
               simpleSingletonVersions
                 version
                 llrnVersionDataNTC
-                (NTC.responder version $ ntcApps blockVersion)
+                (NTC.responder version $ ntcApps blockVersion version)
             | (version, blockVersion) <- Map.toList llrnNodeToClientVersions
             ]
         , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
@@ -574,6 +577,7 @@ stdChainSyncTimeout = do
     mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
     return NTN.ChainSyncTimeout
       { canAwaitTimeout  = shortWait
+      , intersectTimeout = shortWait
       , mustReplyTimeout
       }
   where

@@ -1,1 +1,1 @@
-(import ../nix {}).docs
+(import ../nix {}).network-docs

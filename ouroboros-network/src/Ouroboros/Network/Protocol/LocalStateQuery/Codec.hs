@@ -34,14 +34,16 @@ codecLocalStateQuery
      ( MonadST m
      , ShowQuery query
      )
-  => (point -> CBOR.Encoding)
+  => Bool -- allow @Maybe 'Point'@ in 'MsgAcquire' and 'MsgReAcquire'.
+  -> (point -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s point)
   -> (forall result . query result -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s (Some query))
   -> (forall result . query result -> result -> CBOR.Encoding)
   -> (forall result . query result -> forall s . CBOR.Decoder s result)
   -> Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure m ByteString
-codecLocalStateQuery encodePoint  decodePoint
+codecLocalStateQuery canAcquireTip
+                     encodePoint  decodePoint
                      encodeQuery  decodeQuery
                      encodeResult decodeResult =
     mkCodecCborLazyBS encode decode
@@ -64,10 +66,19 @@ codecLocalStateQuery encodePoint  decodePoint
               PeerHasAgency pr st
            -> Message (LocalStateQuery block point query) st st'
            -> CBOR.Encoding
-    encode (ClientAgency TokIdle) (MsgAcquire pt) =
+    encode (ClientAgency TokIdle) (MsgAcquire (Just pt)) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 0
      <> encodePoint pt
+
+    encode (ClientAgency TokIdle) (MsgAcquire Nothing) | canAcquireTip =
+        CBOR.encodeListLen 1
+     <> CBOR.encodeWord 8
+
+    encode (ClientAgency TokIdle) (MsgAcquire Nothing) =
+      error $ "encodeFailure: local state query: using acquire without a "
+           ++ "Point must be conditional on negotiating v8 of the "
+           ++ "node-to-client protocol"
 
     encode (ServerAgency TokAcquiring) MsgAcquired =
         CBOR.encodeListLen 1
@@ -92,10 +103,17 @@ codecLocalStateQuery encodePoint  decodePoint
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 5
 
-    encode (ClientAgency TokAcquired) (MsgReAcquire pt) =
+    encode (ClientAgency TokAcquired) (MsgReAcquire (Just pt)) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 6
      <> encodePoint pt
+
+    encode (ClientAgency TokAcquired) (MsgReAcquire Nothing) | canAcquireTip =
+        CBOR.encodeListLen 1
+     <> CBOR.encodeWord 9
+
+    encode (ClientAgency TokAcquired) (MsgReAcquire Nothing) =
+      error "encodeFailure: this version does not support re-acquiring tip"
 
     encode (ClientAgency TokIdle) MsgDone =
         CBOR.encodeListLen 1
@@ -110,7 +128,10 @@ codecLocalStateQuery encodePoint  decodePoint
       case (stok, len, key) of
         (ClientAgency TokIdle, 2, 0) -> do
           pt <- decodePoint
-          return (SomeMessage (MsgAcquire pt))
+          return (SomeMessage (MsgAcquire (Just pt)))
+
+        (ClientAgency TokIdle, 1, 8) | canAcquireTip -> do
+          return (SomeMessage (MsgAcquire Nothing))
 
         (ServerAgency TokAcquiring, 1, 1) ->
           return (SomeMessage MsgAcquired)
@@ -132,7 +153,10 @@ codecLocalStateQuery encodePoint  decodePoint
 
         (ClientAgency TokAcquired, 2, 6) -> do
           pt <- decodePoint
-          return (SomeMessage (MsgReAcquire pt))
+          return (SomeMessage (MsgReAcquire (Just pt)))
+
+        (ClientAgency TokAcquired, 1, 9) | canAcquireTip -> do
+          return (SomeMessage (MsgReAcquire Nothing))
 
         (ClientAgency TokIdle, 1, 7) ->
           return (SomeMessage MsgDone)

@@ -56,6 +56,7 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
 --   (See @input-output-hk/ouroboros-network#2245@.)
 data ChainSyncTimeout = ChainSyncTimeout
   { canAwaitTimeout  :: Maybe DiffTime
+  , intersectTimeout :: Maybe DiffTime
   , mustReplyTimeout :: Maybe DiffTime
   }
 
@@ -64,7 +65,7 @@ data ChainSyncTimeout = ChainSyncTimeout
 -- > 'TokIdle'               'waitForever' (ie never times out)
 -- > 'TokNext TokCanAwait'   the given 'canAwaitTimeout'
 -- > 'TokNext TokMustReply'  the given 'mustReplyTimeout'
--- > 'TokIntersect'          'shortWait'
+-- > 'TokIntersect'          the given 'intersectTimeout'
 timeLimitsChainSync :: forall header point tip.
                        ChainSyncTimeout
                     -> ProtocolTimeLimits (ChainSync header point tip)
@@ -72,6 +73,7 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
   where
     ChainSyncTimeout
       { canAwaitTimeout
+      , intersectTimeout
       , mustReplyTimeout
       } = csTimeouts
 
@@ -80,7 +82,7 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
     stateToLimit (ClientAgency TokIdle)                = waitForever
     stateToLimit (ServerAgency (TokNext TokCanAwait))  = canAwaitTimeout
     stateToLimit (ServerAgency (TokNext TokMustReply)) = mustReplyTimeout
-    stateToLimit (ServerAgency TokIntersect)           = shortWait
+    stateToLimit (ServerAgency TokIntersect)           = intersectTimeout
 
 -- | Codec for chain sync that encodes/decodes headers
 --
