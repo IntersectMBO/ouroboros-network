@@ -171,7 +171,7 @@ jobs:
     # issue: #1818
     - name: ourobors-network-framework [test]
       if: matrix.subset == 'network'
-      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
+      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
 
     - name: ouroboros-network [test]
       if: matrix.subset == 'network'

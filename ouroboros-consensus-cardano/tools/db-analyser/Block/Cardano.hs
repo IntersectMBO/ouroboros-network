@@ -111,6 +111,9 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
       ProtocolParamsMary {
           maryProtVer    = ProtVer 4 0
         }
+      ProtocolParamsAlonzo {
+          alonzoProtVer    = ProtVer 5 0
+        }
       ProtocolParamsTransition {
           transitionTrigger = TriggerHardForkAtVersion 2
         }
@@ -119,6 +122,9 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
         }
       ProtocolParamsTransition {
           transitionTrigger = TriggerHardForkAtVersion 4
+        }
+      ProtocolParamsTransition {
+          transitionTrigger = TriggerHardForkAtVersion 5
         }
 
 castHeaderHash ::

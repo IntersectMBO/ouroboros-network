@@ -38,6 +38,7 @@ library
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
+                     , cardano-ledger-alonzo
                      , cardano-prelude
                      , cardano-slotting
                      , cborg

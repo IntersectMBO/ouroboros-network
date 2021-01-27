@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Cardano (
   , ProtocolParamsShelley(..)
   , ProtocolParamsAllegra(..)
   , ProtocolParamsMary(..)
+  , ProtocolParamsAlonzo(..)
   , ProtocolParamsTransition(..)
   , module X
   ) where
@@ -42,4 +43,5 @@ type ProtocolCardano = HardForkProtocol '[ ByronBlock
                                          , ShelleyBlock StandardShelley
                                          , ShelleyBlock StandardAllegra
                                          , ShelleyBlock StandardMary
+                                         , ShelleyBlock StandardAlonzo
                                          ]

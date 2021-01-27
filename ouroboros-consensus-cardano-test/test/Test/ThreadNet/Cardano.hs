@@ -509,12 +509,18 @@ mkProtocolCardanoAndHardForkTxs
         ProtocolParamsMary {
             maryProtVer    = SL.ProtVer maryMajorVersion    0
           }
+        ProtocolParamsAlonzo {
+            alonzoProtVer    = SL.ProtVer alonzoMajorVersion    0
+          }
         protocolParamsByronShelley
         ProtocolParamsTransition {
             transitionTrigger = TriggerHardForkAtVersion allegraMajorVersion
           }
         ProtocolParamsTransition {
             transitionTrigger = TriggerHardForkAtVersion maryMajorVersion
+          }
+        ProtocolParamsTransition {
+            transitionTrigger = TriggerHardForkAtVersion alonzoMajorVersion
           }
 
     -- Byron
@@ -565,6 +571,11 @@ allegraMajorVersion = shelleyMajorVersion + 1
 -- See 'byronMajorVersion'
 maryMajorVersion :: Num a => a
 maryMajorVersion = allegraMajorVersion + 1
+
+-- | The major protocol version of Alonzo in this test
+--
+alonzoMajorVersion :: Num a => a
+alonzoMajorVersion = maryMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --

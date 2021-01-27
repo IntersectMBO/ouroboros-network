@@ -30,7 +30,7 @@ let
     tools = {
       stylish-haskell = "0.12.2.0";
       ghcid = "0.8.7";
-      cabal = "3.2.0.0";
+      cabal = "3.4.0.0";
       # todo: add back the build tools which are actually necessary
       # ghcide = "0.2.0";
       # hlint = "...";
@@ -38,7 +38,7 @@ let
 
     # Prevents cabal from choosing alternate plans, so that
     # *all* dependencies are provided by Nix.
-    exactDeps = true;
+    exactDeps = false;
 
     inherit withHoogle;
   };
