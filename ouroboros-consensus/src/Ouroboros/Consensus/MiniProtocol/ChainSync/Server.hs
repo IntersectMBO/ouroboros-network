@@ -59,9 +59,7 @@ chainSyncHeadersServer
     -> NodeToNodeVersion
     -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB flr _version =
-    ChainSyncServer $
-      let ChainSyncServer server = chainSyncServerForFollower tracer chainDB flr in
-      server
+    chainSyncServerForFollower tracer chainDB flr
 
 -- | Chain Sync Server for blocks for a given a 'ChainDB'.
 --
@@ -75,9 +73,7 @@ chainSyncBlocksServer
     -> Follower m blk (WithPoint blk (Serialised blk))
     -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
 chainSyncBlocksServer tracer chainDB flr =
-    ChainSyncServer $
-      let ChainSyncServer server = chainSyncServerForFollower tracer chainDB flr in
-      server
+    chainSyncServerForFollower tracer chainDB flr
 
 -- | A chain sync server.
 --
