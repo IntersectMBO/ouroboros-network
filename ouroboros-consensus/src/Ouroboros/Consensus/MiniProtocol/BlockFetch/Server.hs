@@ -20,13 +20,13 @@ import           Control.Tracer (Tracer, traceWith)
 import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (Serialised (..))
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 

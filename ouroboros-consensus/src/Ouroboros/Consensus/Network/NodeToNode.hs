@@ -113,8 +113,8 @@ data Handlers m peer blk = Handlers {
         -- closure include these and not need to be explicit about them here.
 
     , hChainSyncServer
-        :: ChainDB.Follower m blk (ChainDB.WithPoint blk (SerialisedHeader blk))
-        -> NodeToNodeVersion
+        :: NodeToNodeVersion
+        -> ChainDB.Follower m blk (ChainDB.WithPoint blk (SerialisedHeader blk))
         -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 
     -- TODO block fetch client does not have GADT view of the handlers.
@@ -177,7 +177,7 @@ mkHandlers
             (Node.chainSyncClientTracer tracers)
             getTopLevelConfig
             (defaultChainDbView getChainDB)
-      , hChainSyncServer =
+      , hChainSyncServer = \_version ->
           chainSyncHeadersServer
             (Node.chainSyncServerHeaderTracer tracers)
             getChainDB
@@ -499,7 +499,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
             (timeLimitsChainSync chainSyncTimeout)
             channel
             $ chainSyncServerPeer
-            $ hChainSyncServer flr version
+            $ hChainSyncServer version flr
 
     aBlockFetchClient
       :: NodeToNodeVersion
