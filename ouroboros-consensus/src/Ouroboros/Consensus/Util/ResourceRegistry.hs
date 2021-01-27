@@ -56,6 +56,8 @@ import           Control.Monad
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
 import           Data.Bifunctor
+import           Data.Bimap (Bimap)
+import qualified Data.Bimap as Bimap
 import           Data.Either (partitionEithers)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -64,6 +66,7 @@ import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Tuple (swap)
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeapNamed (..), OnlyCheckWhnfNamed (..),
                      allNoThunks)
@@ -296,7 +299,36 @@ deriving instance IOLike m => NoThunks (ResourceRegistry m)
   Internal: registry state
 -------------------------------------------------------------------------------}
 
+-- | The age of a resource
+--
+-- Age here is represented by an meaningless number. The one and only property
+-- that matters is that the age of resource A that was successfully allocated
+-- before resource B was (in the same registry) will be greater than the age of
+-- resource B.
+--
+-- For the current implementation, that property will be true unless the
+-- registry lives long enough to have contained 2^64 separately allocated
+-- resources.
+--
+-- This data is not exposed by the 'ResourceRegistry' interface.
+newtype Age = Age Word64
+  deriving stock   (Show)
+  deriving newtype (Eq, Ord)
+  deriving NoThunks via InspectHeapNamed "Age" Age
+
+-- | The age of the first resource successfully allocated in a fresh registry
+ageOfFirstResource :: Age
+ageOfFirstResource = Age maxBound
+
+-- | Map the age of the latest resource to be successfully allocated to the age
+-- of the next resource to be successfully allocated in the same registry
+nextYoungerAge :: Age -> Age
+nextYoungerAge (Age n) = Age (n - 1)
+
 -- | Internal registry state
+--
+-- INVARIANT: We record exactly the ages of currently allocated resources,
+-- @'Bimap.keys' . 'registryAges' = 'Map.keys' . 'registryResources'@.
 data RegistryState m = RegistryState {
       -- | Forked threads
       registryThreads   :: !(KnownThreads m)
@@ -307,12 +339,25 @@ data RegistryState m = RegistryState {
       -- | Next available resource key
     , registryNextKey   :: !ResourceId
 
+      -- | The age of each currently allocated resource
+      --
+      -- We use a 'Bimap' so we can maintain the keys in sorted order by age,
+      -- which is necessary when closing the registry.
+    , registryAges      :: !(Bimap ResourceId Age)
+
+      -- | The age of the next resource
+    , registryNextAge   :: !Age
+
       -- | Does the registry still accept new allocations?
       --
       -- See 'RegistryClosedException' for discussion.
     , registryStatus    :: !RegistryStatus
     }
   deriving (Generic, NoThunks)
+
+-- | The currently allocated keys in youngest-to-oldest order
+getYoungestToOldest :: RegistryState m -> [ResourceId]
+getYoungestToOldest = map snd . Bimap.toAscListR . registryAges
 
 -- | Threads known to the registry
 --
@@ -350,9 +395,7 @@ resourceKeyId (ResourceKey _rr rid) = rid
 
 -- | Resource ID
 --
--- Resources allocated later have a "larger" key (in terms of the 'Ord'
--- instance) than resources allocated earlier. We take advantage of this when we
--- close the registry to release "younger" resources before "older" resources.
+-- This uniquifying data is not exposed by the 'ResourceRegistry' interface.
 newtype ResourceId = ResourceId Int
   deriving stock   (Show, Eq, Ord)
   deriving newtype (Enum, NoThunks)
@@ -411,14 +454,26 @@ insertResource :: ResourceId
 insertResource key r = unlessClosed $ do
     modify $ \st -> st {
         registryResources = Map.insert key r (registryResources st)
+      , registryAges      = Bimap.insert
+                              key
+                              (registryNextAge st)
+                              (registryAges st)
+      , registryNextAge   = nextYoungerAge (registryNextAge st)
       }
 
 -- | Remove resource from the registry (if it exists)
 removeResource :: ResourceId -> State (RegistryState m) (Maybe (Resource m))
 removeResource key = state $ \st ->
-      second (\x -> st {registryResources = x})
-    . Map.updateLookupWithKey (\_ _ -> Nothing) key
-    $ registryResources st
+    let (mbResource, resources') = Map.updateLookupWithKey
+                                     (\_ _ -> Nothing)
+                                     key
+                                     (registryResources st)
+
+        st' = st {
+            registryResources = resources'
+          , registryAges      = Bimap.delete key (registryAges st)
+          }
+    in  (mbResource, st')
 
 -- | Insert thread into the set of known threads
 insertThread :: IOLike m => ThreadId m -> State (RegistryState m) ()
@@ -438,12 +493,14 @@ removeThread tid =
 
 -- | Close the registry
 --
--- Returns the keys currently registered if the registry is not already closed.
+-- Returns the keys currently allocated if the registry is not already closed.
+--
+-- POSTCONDITION: They are returned in youngest-to-oldest order.
 close :: PrettyCallStack
-      -> State (RegistryState m) (Either PrettyCallStack (Set ResourceId))
+      -> State (RegistryState m) (Either PrettyCallStack [ResourceId])
 close closeCallStack = unlessClosed $ do
     modify $ \st -> st {registryStatus = RegistryClosed closeCallStack}
-    gets $ Map.keysSet . registryResources
+    gets getYoungestToOldest
 
 -- | Convenience function for updating the registry state
 updateState :: forall m a. IOLike m
@@ -506,6 +563,8 @@ unsafeNewRegistry = do
           registryThreads   = KnownThreads Set.empty
         , registryResources = Map.empty
         , registryNextKey   = ResourceId 1
+        , registryAges      = Bimap.empty
+        , registryNextAge   = ageOfFirstResource
         , registryStatus    = RegistryOpen
         }
 
@@ -559,22 +618,21 @@ closeRegistry rr = mask_ $ do
 -- Returns the contexts of the resources that were actually released.
 releaseResources :: IOLike m
                  => ResourceRegistry m
-                 -> Set ResourceId
+                 -> [ResourceId]
+                    -- ^ PRECONDITION: The currently allocated keys,
+                    -- youngest-to-oldest
                  -> (ResourceKey m -> m (Maybe (Context m)))
                     -- ^ How to release the resource, e.g., 'release' or
                     -- 'unsafeRelease'.
                  ->  m [Context m]
-releaseResources rr keys releaser = do
+releaseResources rr sortedKeys releaser = do
     (exs, mbContexts) <- fmap partitionEithers $
-      forM (newToOld keys) $ try . releaser . ResourceKey rr
+      forM sortedKeys $ try . releaser . ResourceKey rr
 
     case prioritize exs of
       Nothing -> return (catMaybes mbContexts)
       Just e  -> throwIO e
   where
-    newToOld :: Set ResourceId -> [ResourceId]
-    newToOld = Set.toDescList -- depends on 'Ord' instance
-
     prioritize :: [SomeException] -> Maybe SomeException
     prioritize =
           (\(asyncEx, otherEx) -> listToMaybe asyncEx <|> listToMaybe otherEx)
@@ -972,8 +1030,7 @@ releaseAllHelper :: IOLike m
                     -- ^ How to release a resource
                  -> m [Context m]
 releaseAllHelper rr context releaser = mask_ $ do
-    mKeys   <- updateState rr $ unlessClosed $
-      gets $ Map.keysSet . registryResources
+    mKeys <- updateState rr $ unlessClosed $ gets getYoungestToOldest
     case mKeys of
       Left closed -> throwRegistryClosed rr context closed
       Right keys  -> releaseResources rr keys releaser
