@@ -141,11 +141,3 @@ The following artifacts influence and/or describe the Consensus implementation.
         https://www.youtube.com/watch?v=wNZq6VPLIXg)
 
       * https://iohk.io/en/blog/posts/2020/05/28/the-abstract-nature-of-the-consensus-layer/
-
-## More Guidance
-
-See
-https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Contributing.md
-and as usual the
-https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/README.md
-file.
