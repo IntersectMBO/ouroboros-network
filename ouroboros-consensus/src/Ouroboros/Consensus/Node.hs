@@ -86,6 +86,7 @@ import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.Counters
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
@@ -116,8 +117,11 @@ import           Ouroboros.Consensus.Storage.VolatileDB
 
 -- | Arguments expected from any invocation of 'runWith'
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
+      -- | Consensus counters
+      rnCountConsensus :: Counters m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+
       -- | Consensus tracers
-      rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+    , rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
       -- | Protocol tracers for node-to-node communication
     , rnTraceNTN :: NTN.Tracers m (ConnectionId addrNTN) blk DeserialiseFailure
@@ -284,6 +288,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
             llrnKeepAliveRng
             cfg
             blockForging
+            rnCountConsensus
             rnTraceConsensus
             btime
             chainDB
@@ -479,6 +484,7 @@ mkNodeKernelArgs
   -> StdGen
   -> TopLevelConfig blk
   -> m [BlockForging m blk]
+  -> Counters m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> BlockchainTime m
   -> ChainDB m blk
@@ -489,13 +495,15 @@ mkNodeKernelArgs
   keepAliveRng
   cfg
   initBlockForging
+  counters
   tracers
   btime
   chainDB
   = do
     blockForging <- initBlockForging
     return NodeKernelArgs
-      { tracers
+      { counters
+      , tracers
       , registry
       , cfg
       , btime

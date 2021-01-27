@@ -83,6 +83,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+import qualified Ouroboros.Consensus.Node.Counters as Node
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -167,7 +168,7 @@ mkHandlers
   -> Handlers       m remotePeer           blk
 mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
-      NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
+      NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers, getCounters} =
     Handlers {
         hChainSyncClient =
           chainSyncClient
@@ -197,7 +198,7 @@ mkHandlers
             controlMessageSTM
       , hTxSubmissionServer = \version peer ->
           txSubmissionInbound
-            (contramap (TraceLabelPeer peer) (Node.txInboundTracer tracers))
+            (contramap (TraceLabelPeer peer) (Node.txInboundCounter getCounters))
             (txSubmissionMaxUnacked miniProtocolParameters)
             (getMempoolReader getMempool)
             (getMempoolWriter getMempool)

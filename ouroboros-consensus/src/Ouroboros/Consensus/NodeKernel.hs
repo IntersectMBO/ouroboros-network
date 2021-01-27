@@ -64,6 +64,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Node.Counters
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -102,6 +103,9 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
 
       -- | The node's tracers
     , getTracers             :: Tracers m remotePeer localPeer blk
+
+      -- | The node's counters
+    , getCounters            :: Counters m remotePeer localPeer blk
     }
 
 -- | The maximum transaction capacity of a block is computed by taking the max
@@ -121,7 +125,8 @@ data MaxTxCapacityOverride
 
 -- | Arguments required when initializing a node
 data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
-      tracers                 :: Tracers m remotePeer localPeer blk
+      counters                :: Counters m remotePeer localPeer blk
+    , tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
     , btime                   :: BlockchainTime m
@@ -146,7 +151,7 @@ initNodeKernel
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
-initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverride
+initNodeKernel args@NodeKernelArgs { registry, cfg, counters, tracers, maxTxCapacityOverride
                                    , blockForging, chainDB, initChainDB
                                    , blockFetchConfiguration
                                    } = do
@@ -177,6 +182,7 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
       , getFetchClientRegistry = fetchClientRegistry
       , getNodeCandidates      = varCandidates
       , getTracers             = tracers
+      , getCounters            = counters
       }
 
 {-------------------------------------------------------------------------------

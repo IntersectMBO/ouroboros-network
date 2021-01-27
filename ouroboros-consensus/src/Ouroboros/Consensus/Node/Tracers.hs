@@ -23,8 +23,6 @@ import           Data.Time (UTCTime)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
-import           Ouroboros.Network.TxSubmission.Inbound
-                     (TraceTxSubmissionInbound)
 import           Ouroboros.Network.TxSubmission.Outbound
                      (TraceTxSubmissionOutbound)
 
@@ -55,7 +53,6 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])]
   , blockFetchClientTracer        :: f (TraceLabelPeer remotePeer (TraceFetchClientState (Header blk)))
   , blockFetchServerTracer        :: f (TraceBlockFetchServerEvent blk)
-  , txInboundTracer               :: f (TraceLabelPeer remotePeer (TraceTxSubmissionInbound  (GenTxId blk) (GenTx blk)))
   , txOutboundTracer              :: f (TraceLabelPeer remotePeer (TraceTxSubmissionOutbound (GenTxId blk) (GenTx blk)))
   , localTxSubmissionServerTracer :: f (TraceLocalTxSubmissionServerEvent blk)
   , mempoolTracer                 :: f (TraceEventMempool blk)
@@ -74,7 +71,6 @@ instance (forall a. Semigroup (f a))
       , blockFetchDecisionTracer      = f blockFetchDecisionTracer
       , blockFetchClientTracer        = f blockFetchClientTracer
       , blockFetchServerTracer        = f blockFetchServerTracer
-      , txInboundTracer               = f txInboundTracer
       , txOutboundTracer              = f txOutboundTracer
       , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
       , mempoolTracer                 = f mempoolTracer
@@ -101,7 +97,6 @@ nullTracers = Tracers
     , blockFetchDecisionTracer      = nullTracer
     , blockFetchClientTracer        = nullTracer
     , blockFetchServerTracer        = nullTracer
-    , txInboundTracer               = nullTracer
     , txOutboundTracer              = nullTracer
     , localTxSubmissionServerTracer = nullTracer
     , mempoolTracer                 = nullTracer
@@ -130,7 +125,6 @@ showTracers tr = Tracers
     , blockFetchDecisionTracer      = showTracing tr
     , blockFetchClientTracer        = showTracing tr
     , blockFetchServerTracer        = showTracing tr
-    , txInboundTracer               = showTracing tr
     , txOutboundTracer              = showTracing tr
     , localTxSubmissionServerTracer = showTracing tr
     , mempoolTracer                 = showTracing tr

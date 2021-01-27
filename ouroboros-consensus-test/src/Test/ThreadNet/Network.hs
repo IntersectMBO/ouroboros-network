@@ -83,6 +83,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.Counters
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -928,6 +929,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
           -- traces the node's local events other than those from the -- ChainDB
           tracers = instrumentationTracers <> nullDebugTracers
+      let counters = nullDebugCounters
 
       let -- use a backoff delay of exactly one slot length (which the
           -- 'OracularClock' always knows) for the following reasons
@@ -966,7 +968,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
       let kaRng = case seed of
                     Seed s -> mkStdGen s
       let nodeKernelArgs = NodeKernelArgs
-            { tracers
+            { counters
+            , tracers
             , registry
             , cfg                     = pInfoConfig
             , btime
@@ -1546,6 +1549,13 @@ nullDebugTracers ::
      )
   => Tracers m peer Void blk
 nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
+
+nullDebugCounters ::
+     ( Monad m
+     , Show peer
+     )
+  => Counters m peer Void blk
+nullDebugCounters = nullCounters `asTypeOf` showCounters debugTracer
 
 -- | Occurs throughout in positions that might be useful for debugging.
 nullDebugProtocolTracers ::
