@@ -146,6 +146,4 @@ The following artifacts influence and/or describe the Consensus implementation.
 
 See
 https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Contributing.md
-and as usual the
-https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/README.md
-file.
+for all of our advice about approaching this repository.
