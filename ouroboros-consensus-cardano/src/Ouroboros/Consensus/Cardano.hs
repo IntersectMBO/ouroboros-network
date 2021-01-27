@@ -74,6 +74,7 @@ type ProtocolCardano = HardForkProtocol '[ ByronBlock
                                          , ShelleyBlock StandardShelley
                                          , ShelleyBlock StandardAllegra
                                          , ShelleyBlock StandardMary
+                                         , ShelleyBlock StandardAlonzo
                                          ]
 
 {-------------------------------------------------------------------------------

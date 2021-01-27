@@ -17,6 +17,7 @@ module Test.Consensus.Shelley.Examples (
   , examplesShelley
   , examplesAllegra
   , examplesMary
+  , examplesAlonzo
     -- * Era-specific examples
   , exampleCoin
     -- * Individual examples
@@ -298,6 +299,13 @@ examplesMary =
       exampleTxBodyMary
       exampleAuxiliaryDataMA
 
+examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
+examplesAlonzo =
+    examples
+      exampleMultiAssetValue
+      exampleTxBodyAlonzo
+      exampleAuxiliaryDataMA
+
 {-------------------------------------------------------------------------------
   Era-specific individual examples
 -------------------------------------------------------------------------------}
@@ -362,6 +370,9 @@ exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
 
 exampleTxBodyMary :: Core.TxBody StandardMary
 exampleTxBodyMary = exampleTxBodyMA exampleMultiAssetValue
+
+exampleTxBodyAlonzo :: Core.TxBody StandardAlonzo
+exampleTxBodyAlonzo = exampleTxBodyMA exampleMultiAssetValue
 
 exampleScriptMA :: Crypto c => Core.Script (MA.ShelleyMAEra ma c)
 exampleScriptMA =

@@ -79,6 +79,7 @@ import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 
+
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
 
@@ -366,9 +367,11 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
           PCons translateLedgerStateByronToShelleyWrapper
         $ PCons translateLedgerStateShelleyToAllegraWrapper
         $ PCons translateLedgerStateAllegraToMaryWrapper
+        $ PCons translateLedgerStateMaryToAlonzoWrapper
         $ PNil
     , translateChainDepState =
           PCons translateChainDepStateByronToShelleyWrapper
+        $ PCons translateChainDepStateAcrossShelley
         $ PCons translateChainDepStateAcrossShelley
         $ PCons translateChainDepStateAcrossShelley
         $ PNil
@@ -376,22 +379,30 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
           PCons translateLedgerViewByronToShelleyWrapper
         $ PCons translateLedgerViewAcrossShelley
         $ PCons translateLedgerViewAcrossShelley
+        $ PCons translateLedgerViewAcrossShelley
         $ PNil
     }
   hardForkChainSel =
         -- Byron <-> Shelley, ...
-        TCons (CompareBlockNo :* CompareBlockNo :* CompareBlockNo :* Nil)
+        TCons (   CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* Nil)
         -- Shelley <-> Allegra, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* Nil)
+      $ TCons (SelectSameProtocol :* SelectSameProtocol :* SelectSameProtocol :* Nil)
         -- Allegra <-> Mary, ...
-      $ TCons (SelectSameProtocol :* Nil)
+      $ TCons (SelectSameProtocol :* SelectSameProtocol :* Nil)
         -- Mary <-> ...
+      $ TCons (SelectSameProtocol :* Nil)
+        -- Alonzo <-> ...
       $ TCons Nil
       $ TNil
   hardForkInjectTxs =
         PCons (ignoringBoth cannotInjectTx)
       $ PCons (ignoringBoth translateTxShelleyToAllegraWrapper)
       $ PCons (ignoringBoth translateTxAllegraToMaryWrapper)
+      $ PCons (ignoringBoth translateTxMaryToAlonzoWrapper)
       $ PNil
 
 {-------------------------------------------------------------------------------
@@ -702,6 +713,14 @@ translateLedgerStateAllegraToMaryWrapper =
       Translate $ \_epochNo ->
         unComp . SL.translateEra' () . Comp
 
+translateLedgerStateMaryToAlonzoWrapper ::
+    RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (AlonzoEra c))
+translateLedgerStateMaryToAlonzoWrapper = undefined
+
 translateTxAllegraToMaryWrapper ::
      PraosCrypto c
   => InjectTx
@@ -709,3 +728,9 @@ translateTxAllegraToMaryWrapper ::
        (ShelleyBlock (MaryEra c))
 translateTxAllegraToMaryWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+
+translateTxMaryToAlonzoWrapper ::
+     InjectTx
+       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (AlonzoEra c))
+translateTxMaryToAlonzoWrapper = undefined

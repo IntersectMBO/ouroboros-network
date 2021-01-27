@@ -48,17 +48,19 @@ testCodecCfg =
     ShelleyCodecConfig
     ShelleyCodecConfig
     ShelleyCodecConfig
+    ShelleyCodecConfig
 
 dictNestedHdr
   :: forall a.
      NestedCtxt_ (CardanoBlock MockCryptoCompatByron) Header a
   -> Dict (Eq a, Show a)
 dictNestedHdr = \case
-    NCZ (CtxtByronBoundary {})        -> Dict
-    NCZ (CtxtByronRegular  {})        -> Dict
-    NCS (NCZ CtxtShelley)             -> Dict
-    NCS (NCS (NCZ CtxtShelley))       -> Dict
-    NCS (NCS (NCS (NCZ CtxtShelley))) -> Dict
+    NCZ (CtxtByronBoundary {})              -> Dict
+    NCZ (CtxtByronRegular  {})              -> Dict
+    NCS (NCZ CtxtShelley)                   -> Dict
+    NCS (NCS (NCZ CtxtShelley))             -> Dict
+    NCS (NCS (NCS (NCZ CtxtShelley)))       -> Dict
+    NCS (NCS (NCS (NCS (NCZ CtxtShelley)))) -> Dict
 
 {-------------------------------------------------------------------------------
   BinaryBlockInfo
