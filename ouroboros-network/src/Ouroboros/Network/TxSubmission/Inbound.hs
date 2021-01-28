@@ -13,6 +13,7 @@ module Ouroboros.Network.TxSubmission.Inbound (
     TxSubmissionMempoolWriter(..),
     TraceTxSubmissionInbound(..),
     TxSubmissionProtocolError(..),
+    ProcessedTxCount(..),
   ) where
 
 import           Data.Foldable (foldl', toList)
