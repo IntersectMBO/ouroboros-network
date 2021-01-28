@@ -1,4 +1,5 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Infrastructure required to run a node
 --
@@ -16,6 +17,8 @@ module Ouroboros.Consensus.Node.Run (
     -- * RunNode
   , RunNode
   ) where
+
+import           Data.SOP (SListI)
 
 import           Ouroboros.Network.Block (Serialised)
 
@@ -99,6 +102,7 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy                (Header blk)
       , ShowProxy                 (Query blk)
       , ShowProxy           (TxId (GenTx blk))
+      , SListI          (HardForkIndices blk)
       ) => RunNode blk
   -- This class is intentionally empty. It is not necessarily compositional - ie
   -- the instance for 'HardForkBlock' might do more than merely delegate to the

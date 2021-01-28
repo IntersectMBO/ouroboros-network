@@ -408,7 +408,7 @@ runQueryPure q = either throw id . runQuery q
 --
 -- The 'Summary' should be considered internal.
 newtype Interpreter xs = Interpreter (Summary xs)
-  deriving (Eq)
+  deriving (Eq, NoThunks)
 
 deriving instance SListI xs => Serialise (Interpreter xs)
 

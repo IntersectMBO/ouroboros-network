@@ -4,7 +4,6 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 
 -- | Intended for qualified import
 module Ouroboros.Consensus.Network.NodeToClient (
@@ -16,6 +15,7 @@ module Ouroboros.Consensus.Network.NodeToClient (
   , Codecs
   , DefaultCodecs
   , ClientCodecs
+  , WithInterClient
   , defaultCodecs
   , clientCodecs
   , identityCodecs
@@ -35,8 +35,10 @@ module Ouroboros.Consensus.Network.NodeToClient (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.Serialise as Serialise
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
+import           Data.SOP (SListI)
 import           Data.Void (Void)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -61,6 +63,10 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.HardFork.History.Follower
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -88,7 +94,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 data Handlers m peer blk = Handlers {
       hChainSyncServer
         :: ChainDB.Follower m blk (ChainDB.WithPoint blk (Serialised blk))
-        -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
+        -> HistoryFollower m blk
+        -> ChainSyncServer (WithInterDefault blk) (Point blk) (Tip blk) m ()
 
     , hTxSubmissionServer
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
@@ -130,10 +137,10 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
 -------------------------------------------------------------------------------}
 
 -- | Node-to-client protocol codecs needed to run 'Handlers'.
-data Codecs' blk serialisedBlk e m bCS bTX bSQ = Codecs {
-      cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Point blk) (Tip blk))  e m bCS
-    , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) e m bTX
-    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Point blk) (Query blk))    e m bSQ
+data Codecs' blk b e m bCS bTX bSQ = Codecs {
+      cChainSyncCodec    :: Codec (ChainSync (WithInterpreter blk b) (Point blk) (Tip blk)) e m bCS
+    , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))          e m bTX
+    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Point blk) (Query blk))             e m bSQ
     }
 
 type Codecs blk e m bCS bTX bSQ =
@@ -163,6 +170,7 @@ defaultCodecs :: forall m blk.
                  ( MonadST m
                  , SerialiseNodeToClientConstraints blk
                  , ShowQuery (Query blk)
+                 , SListI (HardForkIndices blk)
                  )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
@@ -171,8 +179,8 @@ defaultCodecs :: forall m blk.
 defaultCodecs ccfg version networkVersion = Codecs {
       cChainSyncCodec =
         codecChainSync
-          enc
-          dec
+          encInter
+          decInter
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
           (encodeTip   (encodeRawHash p))
@@ -204,6 +212,23 @@ defaultCodecs ccfg version networkVersion = Codecs {
 
     dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
     dec = decodeNodeToClient ccfg version
+
+    encInter :: WithInterDefault blk -> Encoding
+    encInter (WithInterpreter blk meta)
+      | networkVersion >= NodeToClientV_9 =
+          enc blk <> Serialise.encode meta
+      | otherwise =
+          enc blk
+
+    decInter :: forall s. Decoder s (WithInterDefault blk)
+    decInter
+      | networkVersion >= NodeToClientV_9 = do
+          blk <- dec
+          mInter <- Serialise.decode
+          return $ WithInterpreter blk mInter
+      | otherwise = do
+          blk <- dec
+          return $ WithInterpreter blk Nothing
 
 -- | Protocol codecs for the node-to-client protocols which serialise
 -- / deserialise blocks in /chain-sync/ protocol.
@@ -212,6 +237,7 @@ clientCodecs :: forall m blk.
                 ( MonadST m
                 , SerialiseNodeToClientConstraints blk
                 , ShowQuery (Query blk)
+                , SListI (HardForkIndices blk)
                 )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk
@@ -220,8 +246,8 @@ clientCodecs :: forall m blk.
 clientCodecs ccfg version networkVersion = Codecs {
       cChainSyncCodec =
         codecChainSync
-          enc
-          dec
+          encInter
+          decInter
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
           (encodeTip   (encodeRawHash p))
@@ -254,10 +280,27 @@ clientCodecs ccfg version networkVersion = Codecs {
     dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
     dec = decodeNodeToClient ccfg version
 
+    encInter :: WithInterClient blk -> Encoding
+    encInter (WithInterpreter blk meta)
+      | networkVersion >= NodeToClientV_9 =
+          enc blk <> Serialise.encode meta
+      | otherwise =
+          enc blk
+
+    decInter :: forall s. Decoder s (WithInterClient blk)
+    decInter
+      | networkVersion >= NodeToClientV_9 = do
+          blk <- dec
+          mInter <- Serialise.decode
+          return $ WithInterpreter blk mInter
+      | otherwise = do
+          blk <- dec
+          return $ WithInterpreter blk Nothing
+
 -- | Identity codecs used in tests.
 identityCodecs :: (Monad m, QueryLedger blk)
                => Codecs blk CodecFailure m
-                    (AnyMessage (ChainSync (Serialised blk) (Point blk) (Tip blk)))
+                    (AnyMessage (ChainSync (WithInterDefault blk) (Point blk) (Tip blk)))
                     (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
                     (AnyMessage (LocalStateQuery blk (Point blk) (Query blk)))
 identityCodecs = Codecs {
@@ -275,7 +318,7 @@ type Tracers m peer blk e =
      Tracers'  peer blk e (Tracer m)
 
 data Tracers' peer blk e f = Tracers {
-      tChainSyncTracer    :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Point blk) (Tip blk))))
+      tChainSyncTracer    :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (WithInterDefault blk) (Point blk) (Tip blk))))
     , tTxSubmissionTracer :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
     , tStateQueryTracer   :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Point blk) (Query blk))))
     }
@@ -344,6 +387,8 @@ mkApps
      , ShowProxy (Query blk)
      , ShowProxy (GenTx blk)
      , ShowQuery (Query blk)
+     , HasHardForkHistory blk
+     , IsLedger (LedgerState blk)
      )
   => NodeKernel m remotePeer localPeer blk
   -> Tracers m localPeer blk e
@@ -362,13 +407,15 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
       bracketWithPrivateRegistry
         (chainSyncBlockServerFollower (getChainDB kernel))
         ChainDB.followerClose
-        $ \flr ->
+        $ \flr -> do
+          let cfg = topLevelConfigLedger $ getTopLevelConfig kernel
+          hflr <- newHistoryFollower cfg (getChainDB kernel)
           runPeer
             (contramap (TraceLabelPeer them) tChainSyncTracer)
             cChainSyncCodec
             channel
             $ chainSyncServerPeer
-            $ hChainSyncServer flr
+            $ hChainSyncServer flr hflr
 
     aTxSubmissionServer
       :: localPeer

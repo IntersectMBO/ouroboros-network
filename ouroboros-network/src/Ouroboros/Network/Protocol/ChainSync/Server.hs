@@ -92,8 +92,8 @@ data ServerStIntersect header point tip m a where
 -- | Interpret a 'ChainSyncServer' action sequence as a 'Peer' on the server
 -- side of the 'ChainSyncProtocol'.
 --
-chainSyncServerPeer
-  :: forall header point tip m a.
+chainSyncServerPeer ::
+     forall header point tip m a.
      Monad m
   => ChainSyncServer header point tip m a
   -> Peer (ChainSync header point tip) AsServer StIdle m a

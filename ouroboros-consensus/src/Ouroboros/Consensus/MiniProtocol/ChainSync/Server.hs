@@ -26,20 +26,21 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.History.Follower
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 
-chainSyncHeaderServerFollower
-    :: ChainDB m blk
-    -> ResourceRegistry m
-    -> m (Follower m blk (WithPoint blk (SerialisedHeader blk)))
+chainSyncHeaderServerFollower ::
+     ChainDB m blk
+  -> ResourceRegistry m
+  -> m (Follower m blk (WithPoint blk (SerialisedHeader blk)))
 chainSyncHeaderServerFollower chainDB registry = ChainDB.newFollower chainDB registry getSerialisedHeaderWithPoint
 
-chainSyncBlockServerFollower
-    :: ChainDB m blk
-    -> ResourceRegistry m
-    -> m (Follower m blk (WithPoint blk (Serialised blk)))
+chainSyncBlockServerFollower ::
+     ChainDB m blk
+  -> ResourceRegistry m
+  -> m (Follower m blk (WithPoint blk (Serialised blk)))
 chainSyncBlockServerFollower chainDB registry = ChainDB.newFollower chainDB registry getSerialisedBlockWithPoint
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
@@ -47,31 +48,29 @@ chainSyncBlockServerFollower chainDB registry = ChainDB.newFollower chainDB regi
 -- The node-to-node protocol uses the chain sync mini-protocol with chain
 -- headers (and fetches blocks separately with the block fetch mini-protocol).
 --
-chainSyncHeadersServer
-    :: forall m blk.
-       ( IOLike m
-       , HasHeader (Header blk)
-       )
-    => Tracer m (TraceChainSyncServerEvent blk)
-    -> ChainDB m blk
-    -> Follower m blk (WithPoint blk (SerialisedHeader blk))
-    -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
+chainSyncHeadersServer ::
+     forall m blk. (IOLike m, HasHeader (Header blk))
+  => Tracer m (TraceChainSyncServerEvent blk)
+  -> ChainDB m blk
+  -> Follower m blk (WithPoint blk (SerialisedHeader blk))
+  -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
 chainSyncHeadersServer tracer chainDB flr =
-    chainSyncServerForFollower tracer chainDB flr
+    chainSyncServerForFollowerNoMeta tracer chainDB flr
 
 -- | Chain Sync Server for blocks for a given a 'ChainDB'.
 --
 -- The local node-to-client protocol uses the chain sync mini-protocol with
 -- chains of full blocks (rather than a header \/ body split).
 --
-chainSyncBlocksServer
-    :: forall m blk. (IOLike m, HasHeader (Header blk))
-    => Tracer m (TraceChainSyncServerEvent blk)
-    -> ChainDB m blk
-    -> Follower m blk (WithPoint blk (Serialised blk))
-    -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
-chainSyncBlocksServer tracer chainDB flr =
-    chainSyncServerForFollower tracer chainDB flr
+chainSyncBlocksServer ::
+     forall m blk. (IOLike m, HasHeader (Header blk))
+  => Tracer m (TraceChainSyncServerEvent blk)
+  -> ChainDB m blk
+  -> Follower m blk (WithPoint blk (Serialised blk))
+  -> HistoryFollower m blk
+  -> ChainSyncServer (WithInterDefault blk) (Point blk) (Tip blk) m ()
+chainSyncBlocksServer tracer chainDB flr hflr =
+    chainSyncServerForFollower tracer chainDB flr (getInterpreter hflr) mkWithInterpreter
 
 -- | A chain sync server.
 --
@@ -83,29 +82,28 @@ chainSyncBlocksServer tracer chainDB flr =
 -- All the hard work is done by the 'Follower's provided by the 'ChainDB'.
 --
 chainSyncServerForFollower ::
-     forall m blk b.
-     ( IOLike m
-     , HasHeader (Header blk)
-     )
+     forall m blk b meta bmeta. (IOLike m, HasHeader (Header blk))
   => Tracer m (TraceChainSyncServerEvent blk)
   -> ChainDB m blk
   -> Follower  m blk (WithPoint blk b)
-  -> ChainSyncServer b (Point blk) (Tip blk) m ()
-chainSyncServerForFollower tracer chainDB flr =
+  -> (Point blk -> STM m meta)
+  -> (b -> meta -> bmeta)
+  -> ChainSyncServer bmeta (Point blk) (Tip blk) m ()
+chainSyncServerForFollower tracer chainDB flr getMeta combine =
     idle'
   where
-    idle :: ServerStIdle b (Point blk) (Tip blk) m ()
+    idle :: ServerStIdle bmeta (Point blk) (Tip blk) m ()
     idle = ServerStIdle {
         recvMsgRequestNext   = handleRequestNext,
         recvMsgFindIntersect = handleFindIntersect,
         recvMsgDoneClient    = pure ()
       }
 
-    idle' :: ChainSyncServer b (Point blk) (Tip blk) m ()
+    idle' :: ChainSyncServer bmeta (Point blk) (Tip blk) m ()
     idle' = ChainSyncServer $ return idle
 
-    handleRequestNext :: m (Either (ServerStNext b (Point blk) (Tip blk) m ())
-                                (m (ServerStNext b (Point blk) (Tip blk) m ())))
+    handleRequestNext :: m (Either (ServerStNext bmeta (Point blk) (Tip blk) m ())
+                                (m (ServerStNext bmeta (Point blk) (Tip blk) m ())))
     handleRequestNext = ChainDB.followerInstruction flr >>= \case
       Just update -> do
         tip <- atomically $ ChainDB.getCurrentTip chainDB
@@ -123,15 +121,16 @@ chainSyncServerForFollower tracer chainDB flr =
 
     sendNext :: Tip blk
              -> ChainUpdate blk (WithPoint blk b)
-             -> m (ServerStNext b (Point blk) (Tip blk) m ())
+             -> m (ServerStNext bmeta (Point blk) (Tip blk) m ())
     sendNext tip update = case update of
       AddBlock hdr -> do
         traceWith tracer (TraceChainSyncRollForward (point hdr))
-        return $ SendMsgRollForward (withoutPoint hdr) tip idle'
+        meta <- atomically $ getMeta (point hdr)
+        return $ SendMsgRollForward (combine (withoutPoint hdr) meta) tip idle'
       RollBack pt  -> return $ SendMsgRollBackward pt tip idle'
 
     handleFindIntersect :: [Point blk]
-                        -> m (ServerStIntersect b (Point blk) (Tip blk) m ())
+                        -> m (ServerStIntersect bmeta (Point blk) (Tip blk) m ())
     handleFindIntersect points = do
       -- TODO guard number of points
       changed <- ChainDB.followerForward flr points
@@ -139,6 +138,15 @@ chainSyncServerForFollower tracer chainDB flr =
       case changed of
         Just pt -> return $ SendMsgIntersectFound pt tip idle'
         Nothing -> return $ SendMsgIntersectNotFound tip idle'
+
+chainSyncServerForFollowerNoMeta ::
+     forall m blk b. (IOLike m, HasHeader (Header blk))
+  => Tracer m (TraceChainSyncServerEvent blk)
+  -> ChainDB m blk
+  -> Follower m blk (WithPoint blk b)
+  -> ChainSyncServer b (Point blk) (Tip blk) m ()
+chainSyncServerForFollowerNoMeta tracer chainDB rdr =
+    chainSyncServerForFollower tracer chainDB rdr (\_ -> return ()) (\b _ -> b)
 
 {-------------------------------------------------------------------------------
   Trace events
