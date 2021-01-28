@@ -104,6 +104,7 @@ library
                        Ouroboros.Consensus.HardFork.History.Caching
                        Ouroboros.Consensus.HardFork.History.EpochInfo
                        Ouroboros.Consensus.HardFork.History.EraParams
+                       Ouroboros.Consensus.HardFork.History.Follower
                        Ouroboros.Consensus.HardFork.History.Qry
                        Ouroboros.Consensus.HardFork.History.Summary
                        Ouroboros.Consensus.HardFork.History.Util
