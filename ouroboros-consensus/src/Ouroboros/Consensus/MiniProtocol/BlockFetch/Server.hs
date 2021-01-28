@@ -2,21 +2,21 @@
 {-# LANGUAGE EmptyDataDeriving         #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UndecidableInstances      #-}
+
 module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
   ( blockFetchServer
     -- * Trace events
-  , TraceBlockFetchServerEvent
+  , TraceBlockFetchServerEvent(..)
     -- * Exceptions
   , BlockFetchServerException
   ) where
 
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, traceWith)
 import           Data.Typeable (Typeable)
 
 import           Ouroboros.Network.Block (Serialised (..))
@@ -76,7 +76,7 @@ blockFetchServer
     -> NodeToNodeVersion
     -> ResourceRegistry m
     -> BlockFetchServer (Serialised blk) (Point blk) m ()
-blockFetchServer _tracer chainDB _version registry = senderSide
+blockFetchServer tracer chainDB _version registry = senderSide
   where
     senderSide :: BlockFetchServer (Serialised blk) (Point blk) m ()
     senderSide = BlockFetchServer receiveReq' ()
@@ -114,7 +114,8 @@ blockFetchServer _tracer chainDB _version registry = senderSide
     sendBlocks it = do
       next <- ChainDB.iteratorNext it
       case next of
-        IteratorResult blk     ->
+        IteratorResult blk     -> do
+          traceWith tracer TraceBlockFetchServerSendBlock
           return $ SendMsgBlock (withoutPoint blk) (sendBlocks it)
         IteratorExhausted      -> do
           ChainDB.iteratorClose it
@@ -129,7 +130,7 @@ blockFetchServer _tracer chainDB _version registry = senderSide
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Block Fetch Server.
-data TraceBlockFetchServerEvent blk
-   -- TODO no events yet. Tracing the messages send/received over the network
-   -- might be all we need?
+data TraceBlockFetchServerEvent blk =
+    -- | The server sent a block to the peer.
+    TraceBlockFetchServerSendBlock
   deriving (Eq, Show)

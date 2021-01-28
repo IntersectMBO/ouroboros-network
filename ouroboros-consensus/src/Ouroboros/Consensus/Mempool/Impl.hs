@@ -44,7 +44,7 @@ import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (onEachChange)
+import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
 
 {-------------------------------------------------------------------------------
   Top-level API
@@ -280,13 +280,15 @@ forkSyncStateOnTipPointChange :: forall m blk. (
                               -> MempoolEnv m blk
                               -> m ()
 forkSyncStateOnTipPointChange registry menv =
-    void $ onEachChange
+    void $ forkLinkedWatcher
       registry
       "Mempool.syncStateOnTipPointChange"
-      id
-      Nothing
-      getCurrentTip
-      action
+      Watcher {
+          wFingerprint = id
+        , wInitial     = Nothing
+        , wNotify      = action
+        , wReader      = getCurrentTip
+        }
   where
     action :: Point blk -> m ()
     action _tipPoint = void $ implSyncWithLedger menv

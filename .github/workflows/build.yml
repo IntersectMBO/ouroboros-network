@@ -21,7 +21,24 @@ jobs:
             subset: consensus
 
     steps:
-    - uses: actions/checkout@v2
+    - name: Select optimal cabal version
+      run: |
+        case "$OS" in
+          Windows_NT)   echo "CABAL_VERSION=3.4.0.0-rc5"  >> $GITHUB_ENV;;
+          *)            echo "CABAL_VERSION=3.4.0.0-rc4"  >> $GITHUB_ENV;;
+        esac
+
+    - name: Install Haskell
+      uses: haskell/actions/setup@v1
+      id: setup-haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: ${{ env.CABAL_VERSION }}
+
+    - name: Show Haskell tool versions
+      run: |
+        ghc --version
+        cabal --version
 
     - name: Select build directory
       run: |
@@ -83,31 +100,14 @@ jobs:
         sudo apt-get -y remove --purge software-properties-common
         sudo apt-get -y autoremove
 
-    - name: Select optimal cabal version
-      run: |
-        case "$OS" in
-          Windows_NT)   echo "CABAL_VERSION=3.4.0.0-rc5"  >> $GITHUB_ENV;;
-          *)            echo "CABAL_VERSION=3.4.0.0-rc4"  >> $GITHUB_ENV;;
-        esac
-
-    - name: Install Haskell
-      uses: haskell/actions/setup@v1
-      id: setup-haskell
-      with:
-        ghc-version: ${{ matrix.ghc }}
-        cabal-version: ${{ env.CABAL_VERSION }}
-
-    - name: Show Haskell tool versions
-      run: |
-        ghc --version
-        cabal --version
-
     - name: Set up temp directory
       env:
         RUNNER_TEMP: ${{ runner.temp }}
       run: |
         echo "TMPDIR=$RUNNER_TEMP"  >> $GITHUB_ENV
         echo "TMP=$RUNNER_TEMP"     >> $GITHUB_ENV
+
+    - uses: actions/checkout@v2
 
     - name: Cache cabal store
       uses: actions/cache@v2
@@ -116,7 +116,7 @@ jobs:
         key: cabal-store-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
 
     - name: Update Hackage index
-      run: cabal v2-update
+      run: cabal update
 
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests

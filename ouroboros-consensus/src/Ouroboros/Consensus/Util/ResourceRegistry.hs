@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , ResourceRegistryThreadException
     -- * Creating and releasing the registry itself
   , withRegistry
+  , bracketWithPrivateRegistry
   , registryThread
     -- * Allocating and releasing regular resources
   , ResourceKey
@@ -586,6 +587,51 @@ releaseResources rr keys releaser = do
 -- See documentation of 'ResourceRegistry' for a detailed discussion.
 withRegistry :: (IOLike m, HasCallStack) => (ResourceRegistry m -> m a) -> m a
 withRegistry = bracket unsafeNewRegistry closeRegistry
+
+-- | Create a new private registry for use by a bracketed resource
+--
+-- Use this combinator as a more specific and easier-to-maintain alternative to
+-- the following.
+--
+-- > 'withRegistry' $ \rr ->
+-- >   'bracket' (newFoo rr) closeFoo $ \foo ->
+-- >     (... rr does not occur in this scope ...)
+--
+-- NB The scoped body can use `withRegistry` if it also needs its own, separate
+-- registry.
+--
+-- Use this combinator to emphasize that the registry is private to (ie only
+-- used by and/or via) the bracketed resource and that it thus has nearly the
+-- same lifetime. This combinator ensures the following specific invariants
+-- regarding lifetimes and order of releases.
+--
+-- o The registry itself is older than the bracketed resource.
+--
+-- o The only registered resources older than the bracketed resource were
+--   allocated in the registry by the function that allocated the bracketed
+--   resource.
+--
+-- o Because of the older resources, the bracketed resource is itself also
+--   registered in the registry; that's the only way we can be sure to release
+--   all resources in the right order.
+--
+-- NB Because the registry is private to the resource, the @a@ type could save
+-- the handle to @registry@ and safely close the registry if the scoped body
+-- calls @closeA@ before the bracket ends. Though we have not used the type
+-- system to guarantee that the interface of the @a@ type cannot leak the
+-- registry to the body, this combinator does its part to keep the registry
+-- private to the bracketed resource.
+--
+-- See documentation of 'ResourceRegistry' for a more general discussion.
+bracketWithPrivateRegistry :: (IOLike m, HasCallStack)
+                           => (ResourceRegistry m -> m a)
+                           -> (a -> m ())  -- ^ Release the resource
+                           -> (a -> m r)
+                           -> m r
+bracketWithPrivateRegistry newA closeA body =
+    withRegistry $ \registry -> do
+      (_key, a) <- allocate registry (\_key -> newA registry) closeA
+      body a
 
 {-------------------------------------------------------------------------------
   Temporary registry
