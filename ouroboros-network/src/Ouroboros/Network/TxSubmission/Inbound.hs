@@ -34,10 +34,11 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer, traceWith)
+import           Control.Tracer (traceWith)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
+import           Ouroboros.Network.Counter (Counter)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -172,7 +173,7 @@ txSubmissionInbound
      , MonadSTM m
      , MonadThrow m
      )
-  => Tracer m (TraceTxSubmissionInbound txid tx)
+  => Counter m (TraceTxSubmissionInbound txid tx)
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
