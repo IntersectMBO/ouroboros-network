@@ -75,6 +75,7 @@ type ProtocolCardano = HardForkProtocol '[ ByronBlock
                                          , ShelleyBlock StandardAllegra
                                          , ShelleyBlock StandardMary
                                          ]
+type ProtocolPivo    = HardForkProtocol '[ ShelleyBlock StandardPivo ]
 
 {-------------------------------------------------------------------------------
   Abstract over the various protocols
@@ -92,6 +93,12 @@ data Protocol (m :: Type -> Type) blk p where
     :: ProtocolParamsShelleyBased StandardShelley
     -> ProtocolParamsShelley
     -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
+
+  ProtocolPivo
+    :: ProtocolParamsShelleyBased StandardPivo
+    -- ^ These are parameters common to all Shelley based eras.
+    -> ProtocolParamsPivo
+    -> Protocol m (ShelleyBlockHFC StandardPivo) ProtocolPivo
 
   -- | Run the protocols of /the/ Cardano block
   --
@@ -118,6 +125,7 @@ verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
 verifyProtocol ProtocolByron{}   = Refl
 verifyProtocol ProtocolShelley{} = Refl
 verifyProtocol ProtocolCardano{} = Refl
+verifyProtocol ProtocolPivo{}    = Refl
 
 {-------------------------------------------------------------------------------
   Data required to run a protocol
@@ -131,6 +139,9 @@ protocolInfo (ProtocolByron params) =
 
 protocolInfo (ProtocolShelley paramsShelleyBased paramsShelley) =
     inject $ protocolInfoShelley paramsShelleyBased paramsShelley
+
+protocolInfo (ProtocolPivo paramsShelleyBased paramsPivo) =
+   inject $ protocolInfoPivo paramsShelleyBased paramsPivo
 
 protocolInfo (ProtocolCardano
                paramsByron
@@ -158,6 +169,7 @@ protocolInfo (ProtocolCardano
 runProtocol :: Protocol m blk p -> Dict (RunNode blk)
 runProtocol ProtocolByron{}   = Dict
 runProtocol ProtocolShelley{} = Dict
+runProtocol ProtocolPivo{}    = Dict
 runProtocol ProtocolCardano{} = Dict
 
 {-------------------------------------------------------------------------------

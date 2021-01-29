@@ -9,10 +9,12 @@ module Ouroboros.Consensus.Shelley.Eras (
     ShelleyEra
   , AllegraEra
   , MaryEra
+  , PivoEra
     -- * Eras instantiated with standard crypto
   , StandardShelley
   , StandardAllegra
   , StandardMary
+  , StandardPivo
     -- * Shelley-based era
   , ShelleyBasedEra (..)
     -- * Type synonyms for convenience
@@ -29,6 +31,7 @@ import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Era (Crypto)
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
+import           Cardano.Ledger.Pivo (PivoEra)
 import           Control.State.Transition (State)
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
@@ -46,6 +49,8 @@ type StandardAllegra = AllegraEra StandardCrypto
 
 -- | The Mary era with standard crypto
 type StandardMary = MaryEra StandardCrypto
+
+type StandardPivo = PivoEra StandardCrypto
 
 {-------------------------------------------------------------------------------
   Type synonyms for convenience
@@ -80,7 +85,6 @@ type EraCrypto era = Crypto era
 -- replaced with an appropriate API - see
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
 class ( SL.ShelleyBasedEra era
-      , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
       , Default (State (LC.EraRule "PPUP" era))
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
@@ -95,3 +99,6 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
 
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
+
+instance SL.PraosCrypto c => ShelleyBasedEra (PivoEra c) where
+  shelleyBasedEraName _ = "Pivo"

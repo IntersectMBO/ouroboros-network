@@ -1,7 +1,10 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.ShelleyHFC (
     ShelleyBlockHFC
@@ -34,7 +37,10 @@ type ShelleyBlockHFC era = HardForkBlock '[ShelleyBlock era]
   NoHardForks instance
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
+instance
+  ( ShelleyBasedEra era
+  , SingleEraBlock (ShelleyBlock era)
+  ) => NoHardForks (ShelleyBlock era) where
   getEraParams =
         shelleyEraParamsNeverHardForks
       . shelleyLedgerGenesis
@@ -52,8 +58,10 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
 -- | Forward to the ShelleyBlock instance. Only supports
 -- 'HardForkNodeToNodeDisabled', which is compatible with nodes running with
 -- 'ShelleyBlock'.
-instance ShelleyBasedEra era
-      => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
+instance
+  ( ShelleyBasedEra era
+  , SingleEraBlock (ShelleyBlock era)
+  ) => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
   supportedNodeToNodeVersions _ =
       Map.map HardForkNodeToNodeDisabled $
       supportedNodeToNodeVersions (Proxy @(ShelleyBlock era))
@@ -69,4 +77,7 @@ instance ShelleyBasedEra era
 -- | Use the default implementations. This means the serialisation of blocks
 -- includes an era wrapper. Each block should do this from the start to be
 -- prepared for future hard forks without having to do any bit twiddling.
-instance ShelleyBasedEra era => SerialiseHFC '[ShelleyBlock era]
+instance
+  ( ShelleyBasedEra era
+  , SingleEraBlock (ShelleyBlock era)
+  ) => SerialiseHFC '[ShelleyBlock era]

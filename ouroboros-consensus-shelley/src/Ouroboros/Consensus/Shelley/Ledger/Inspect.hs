@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -31,7 +33,10 @@ import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes (strictMaybeToMaybe)
 import qualified Shelley.Spec.Ledger.PParams as SL (PParamsUpdate)
 
-import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
+import qualified Control.State.Transition as Transition
+import qualified Cardano.Ledger.Core as LC
+
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra, AllegraEra, MaryEra, PivoEra)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 
@@ -96,7 +101,8 @@ data UpdateState c = UpdateState {
   deriving (Show, Eq)
 
 protocolUpdates ::
-       forall era. ShelleyBasedEra era
+    forall era
+    . (Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
     => SL.ShelleyGenesis era
     -> LedgerState (ShelleyBlock era)
     -> [ProtocolUpdate era]
@@ -155,17 +161,51 @@ data ShelleyLedgerUpdate era =
 instance Condense (ShelleyLedgerUpdate era) where
   condense = show
 
-instance ShelleyBasedEra era => InspectLedger (ShelleyBlock era) where
-  type LedgerWarning (ShelleyBlock era) = Void
-  type LedgerUpdate  (ShelleyBlock era) = ShelleyLedgerUpdate era
+instance
+  ( ShelleyBasedEra (ShelleyEra c)
+  ) => InspectLedger (ShelleyBlock (ShelleyEra c)) where
+  type LedgerWarning (ShelleyBlock (ShelleyEra c)) = Void
+  type LedgerUpdate  (ShelleyBlock (ShelleyEra c)) = ShelleyLedgerUpdate (ShelleyEra c)
 
-  inspectLedger tlc before after = do
-      guard $ updatesBefore /= updatesAfter
-      return $ LedgerUpdate $ ShelleyUpdatedProtocolUpdates updatesAfter
-    where
-      genesis :: SL.ShelleyGenesis era
-      genesis = shelleyLedgerGenesis (configLedger tlc)
+  inspectLedger  = inspectLedgerPPUPState
 
-      updatesBefore, updatesAfter :: [ProtocolUpdate era]
-      updatesBefore = protocolUpdates genesis before
-      updatesAfter  = protocolUpdates genesis after
+instance
+  ( ShelleyBasedEra (AllegraEra c)
+  ) => InspectLedger (ShelleyBlock (AllegraEra c)) where
+  type LedgerWarning (ShelleyBlock (AllegraEra c)) = Void
+  type LedgerUpdate  (ShelleyBlock (AllegraEra c)) = ShelleyLedgerUpdate (AllegraEra c)
+
+  inspectLedger = inspectLedgerPPUPState
+
+instance
+  ( ShelleyBasedEra (MaryEra c)
+  ) => InspectLedger (ShelleyBlock (MaryEra c)) where
+  type LedgerWarning (ShelleyBlock (MaryEra c)) = Void
+  type LedgerUpdate  (ShelleyBlock (MaryEra c)) = ShelleyLedgerUpdate (MaryEra c)
+
+  inspectLedger  = inspectLedgerPPUPState
+
+instance InspectLedger (ShelleyBlock (PivoEra c)) where
+  -- todo: what is the impact on the protocol of setting defining
+  -- 'inspectLedger' like this?
+  inspectLedger _tlc _before _after = []
+
+inspectLedgerPPUPState
+  :: forall era
+   . ( Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+     , LedgerUpdate (ShelleyBlock era) ~ ShelleyLedgerUpdate era
+     )
+  => TopLevelConfig (ShelleyBlock era)
+  -> LedgerState (ShelleyBlock era)
+  -> LedgerState (ShelleyBlock era)
+  -> [LedgerEvent (ShelleyBlock era)]
+inspectLedgerPPUPState tlc before after = do
+  guard $ updatesBefore /= updatesAfter
+  return $ LedgerUpdate $ ShelleyUpdatedProtocolUpdates updatesAfter
+  where
+    genesis :: SL.ShelleyGenesis era
+    genesis = shelleyLedgerGenesis (configLedger tlc)
+
+    updatesBefore, updatesAfter :: [ProtocolUpdate era]
+    updatesBefore = protocolUpdates genesis before
+    updatesAfter  = protocolUpdates genesis after

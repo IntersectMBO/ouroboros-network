@@ -14,16 +14,19 @@
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE UndecidableSuperClasses  #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Shelley.Node (
     protocolInfoShelleyBased
   , protocolInfoShelley
+  , protocolInfoPivo
   , ProtocolParamsShelleyBased (..)
   , ProtocolParamsShelley (..)
   , ProtocolParamsAllegra (..)
   , ProtocolParamsMary (..)
+  , ProtocolParamsPivo (..)
   , protocolClientInfoShelley
   , SL.ShelleyGenesis (..)
   , SL.ShelleyGenesisStaking (..)
@@ -72,6 +75,12 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
+import qualified Cardano.Ledger.Era as Era (Era)
+import qualified Cardano.Ledger.Shelley.Constraints as Shelley.Constraints
+
+import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
+import           Ouroboros.Consensus.Ledger.Query (QueryLedger)
+
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
@@ -118,7 +127,7 @@ type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionErro
 -- In case the same credentials should be shared across multiple Shelley-based
 -- eras, use 'shelleySharedBlockForging'.
 shelleyBlockForging ::
-     forall m era. (ShelleyBasedEra era, IOLike m)
+    forall m era. (ShelleyBasedEra era, IOLike m)
   => TPraosParams
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
@@ -199,7 +208,7 @@ shelleySharedBlockForging
 -- | Check the validity of the genesis config. To be used in conjunction with
 -- 'assertWithMsg'.
 validateGenesis ::
-     ShelleyBasedEra era
+  (Era.Era era)
   => SL.ShelleyGenesis era -> Either String ()
 validateGenesis = first errsToString . SL.validateGenesis
   where
@@ -242,6 +251,10 @@ data ProtocolParamsMary = ProtocolParamsMary {
       maryProtVer :: SL.ProtVer
     }
 
+data ProtocolParamsPivo = ProtocolParamsPivo {
+      pivoProtVer :: SL.ProtVer
+    }
+
 protocolInfoShelley ::
      forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c))
   => ProtocolParamsShelleyBased (ShelleyEra c)
@@ -253,8 +266,23 @@ protocolInfoShelley protocolParamsShelleyBased
                       } =
     protocolInfoShelleyBased protocolParamsShelleyBased protVer
 
+protocolInfoPivo ::
+ forall m c. (IOLike m, ShelleyBasedEra (PivoEra c))
+  => ProtocolParamsShelleyBased (PivoEra c)
+  -> ProtocolParamsPivo
+  -> ProtocolInfo m (ShelleyBlock (PivoEra c))
+protocolInfoPivo protocolParamsShelleyBased
+                    ProtocolParamsPivo {
+                         pivoProtVer = protVer
+                      } =
+    protocolInfoShelleyBased protocolParamsShelleyBased protVer
+
 protocolInfoShelleyBased ::
-     forall m era. (IOLike m, ShelleyBasedEra era)
+  forall m era
+  . ( IOLike m
+    , Shelley.Constraints.UsesValue era
+    , ShelleyBasedEra era
+    )
   => ProtocolParamsShelleyBased era
   -> SL.ProtVer
   -> ProtocolInfo m (ShelleyBlock era)
@@ -404,7 +432,10 @@ instance ShelleyBasedEra era => NodeInitStorage (ShelleyBlock era) where
   RunNode instance
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
+instance ( ShelleyBasedEra era
+         , QueryLedger (ShelleyBlock era)
+         , InspectLedger (ShelleyBlock era)
+         ) => RunNode (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
   Register genesis staking
@@ -421,7 +452,10 @@ instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
 --
 -- TODO adapt and reuse @registerGenesisStaking@ from @cardano-ledger-specs@.
 registerGenesisStaking ::
-     forall era. ShelleyBasedEra era
+  forall era
+  . ( Shelley.Constraints.UsesValue era
+    , Shelley.Constraints.UsesTxOut era
+    )
   => SL.ShelleyGenesisStaking (EraCrypto era)
   -> SL.NewEpochState era
   -> SL.NewEpochState era

@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -32,6 +33,9 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 
 import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Crypto as Ledger (Crypto)
+import qualified Cardano.Ledger.Era as Era (Crypto)
+
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -62,7 +66,7 @@ deriving instance ShelleyBasedEra era => Show     (BlockConfig (ShelleyBlock era
 deriving instance ShelleyBasedEra era => NoThunks (BlockConfig (ShelleyBlock era))
 
 mkShelleyBlockConfig ::
-     ShelleyBasedEra era
+  (Ledger.Crypto (Era.Crypto era))
   => SL.ProtVer
   -> SL.ShelleyGenesis era
   -> [SL.VKey 'SL.BlockIssuer (EraCrypto era)]

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -46,6 +47,9 @@ import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators
                      (genPParams)
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
+import qualified Control.State.Transition as Transition
+import qualified Cardano.Ledger.Core as LC
+
 {-------------------------------------------------------------------------------
   Generators
 
@@ -83,7 +87,9 @@ instance CanMock era => Arbitrary (SomeSecond Query (ShelleyBlock era)) where
     , pure $ SomeSecond DebugNewEpochState
     ]
 
-instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
+instance ( CanMock era
+         , Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+         ) => Arbitrary (SomeResult (ShelleyBlock era)) where
   arbitrary = oneof
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
@@ -123,7 +129,9 @@ instance CanMock era => Arbitrary (ShelleyTip era) where
 instance Arbitrary ShelleyTransition where
   arbitrary = ShelleyTransitionInfo <$> arbitrary
 
-instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era)) where
+instance ( CanMock era
+         , Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+         ) => Arbitrary (LedgerState (ShelleyBlock era)) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary

@@ -53,6 +53,8 @@ library
                      , shelley-spec-ledger
                      , cardano-ledger-shelley-ma
 
+                     , small-steps
+
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-byron

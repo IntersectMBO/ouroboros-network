@@ -71,6 +71,9 @@ import qualified Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
+import qualified Control.State.Transition as Transition
+import qualified Cardano.Ledger.Core as LC
+
 import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
@@ -201,8 +204,9 @@ byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion state =
   Figure out the transition point for Shelley
 -------------------------------------------------------------------------------}
 
-shelleyTransition ::
-     forall era. ShelleyBasedEra era
+shelleyTransition
+  ::  forall era
+   . (Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
   => PartialLedgerConfig (ShelleyBlock era)
   -> Word16   -- ^ Next era's major protocol version
   -> LedgerState (ShelleyBlock era)
@@ -298,20 +302,47 @@ instance HasPartialLedgerConfig ByronBlock where
   SingleEraBlock Shelley
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => SingleEraBlock (ShelleyBlock era) where
-  singleEraTransition pcfg _eraParams _eraStart ledgerState =
-      case shelleyTriggerHardFork pcfg of
-        TriggerHardForkNever                         -> Nothing
-        TriggerHardForkAtEpoch   epoch               -> Just epoch
-        TriggerHardForkAtVersion shelleyMajorVersion ->
-            shelleyTransition
-              pcfg
-              shelleyMajorVersion
-              ledgerState
+instance PraosCrypto c => SingleEraBlock (ShelleyBlock (ShelleyEra c)) where
+  singleEraTransition = singleEraTransitionPPUPState
+  singleEraInfo = singleEraInfo' @(ShelleyEra c)
 
-  singleEraInfo _ = SingleEraInfo {
-      singleEraName = shelleyBasedEraName (Proxy @era)
-    }
+instance PraosCrypto c => SingleEraBlock (ShelleyBlock (AllegraEra c)) where
+  singleEraTransition = singleEraTransitionPPUPState
+  singleEraInfo = singleEraInfo' @(AllegraEra c)
+
+instance PraosCrypto c => SingleEraBlock (ShelleyBlock (MaryEra c)) where
+  singleEraTransition = singleEraTransitionPPUPState
+  singleEraInfo = singleEraInfo' @(MaryEra c)
+
+instance PraosCrypto c => SingleEraBlock (ShelleyBlock (PivoEra c)) where
+  singleEraTransition _pcfg _eraParams _eraStart _ledgerState = Nothing
+  singleEraInfo = singleEraInfo' @(PivoEra c)
+
+
+-- | Single era transition function used by the eras that share the same update
+-- state type as Shelley.
+singleEraTransitionPPUPState
+  :: (Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era)
+  => ShelleyPartialLedgerConfig era
+  -> eraParams -> eraStart -> LedgerState (ShelleyBlock era) -> Maybe EpochNo
+singleEraTransitionPPUPState pcfg _eraParams _eraStart ledgerState =
+    case shelleyTriggerHardFork pcfg of
+      TriggerHardForkNever                         -> Nothing
+      TriggerHardForkAtEpoch   epoch               -> Just epoch
+      TriggerHardForkAtVersion shelleyMajorVersion ->
+          shelleyTransition
+            pcfg
+            shelleyMajorVersion
+            ledgerState
+
+singleEraInfo'
+  :: forall era proxy
+  . (ShelleyBasedEra era)
+  => proxy (ShelleyBlock era) -> SingleEraInfo (ShelleyBlock era)
+singleEraInfo' _ =
+  SingleEraInfo {
+    singleEraName = shelleyBasedEraName (Proxy @era)
+  }
 
 instance PraosCrypto c => HasPartialConsensusConfig (TPraos c) where
   type PartialConsensusConfig (TPraos c) = TPraosParams
