@@ -128,9 +128,12 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
 
   , SL.TranslationContext era2 ~ ()
+
+  , SingleEraBlock (ShelleyBlock era1)
+  , SingleEraBlock (ShelleyBlock era2)
   )
 
-instance ShelleyBasedHardForkConstraints era1 era2
+instance (ShelleyBasedHardForkConstraints era1 era2)
       => SerialiseHFC (ShelleyBasedHardForkEras era1 era2)
    -- use defaults
 

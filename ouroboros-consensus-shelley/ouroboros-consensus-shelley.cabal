@@ -67,6 +67,7 @@ library
                      , shelley-spec-ledger
                      , shelley-spec-non-integral
                      , small-steps
+                     , cardano-ledger-pivo
 
                      , ouroboros-network
                      , ouroboros-consensus

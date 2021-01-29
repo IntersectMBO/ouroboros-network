@@ -46,11 +46,14 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
+import qualified Control.State.Transition as Transition
+import qualified Cardano.Ledger.Core as LC
+
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (RewardAccounts)
 import qualified Shelley.Spec.Ledger.RewardProvenance as SL (RewardProvenance)
 
-import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra, AllegraEra, MaryEra, PivoEra)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
@@ -162,41 +165,50 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
 
 instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
 
-instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
+instance SL.PraosCrypto c => QueryLedger (ShelleyBlock (ShelleyEra c)) where
+  answerQuery = answerQueryPPUPState
+
+instance SL.PraosCrypto c => QueryLedger (ShelleyBlock (AllegraEra c)) where
+  answerQuery = answerQueryPPUPState
+
+instance SL.PraosCrypto c => QueryLedger (ShelleyBlock (MaryEra c)) where
+  answerQuery = answerQueryPPUPState
+
+instance SL.PraosCrypto c => QueryLedger (ShelleyBlock (PivoEra c)) where
   answerQuery cfg query ext =
-      case query of
-        GetLedgerTip ->
-          shelleyLedgerTipPoint lst
-        GetEpochNo ->
-          SL.nesEL st
-        GetNonMyopicMemberRewards creds ->
-          NonMyopicMemberRewards $
-            SL.getNonMyopicMemberRewards globals st creds
-        GetCurrentPParams ->
-          getPParams st
-        GetProposedPParamsUpdates ->
-          getProposedPPUpdates st
-        GetStakeDistribution ->
-          SL.poolsByTotalStakeFraction globals st
-        GetFilteredUTxO addrs ->
-          SL.getFilteredUTxO st addrs
-        GetUTxO ->
-          SL.getUTxO st
-        DebugEpochState ->
-          getEpochState st
-        GetCBOR query' ->
-          mkSerialised (encodeShelleyResult query') $
-            answerQuery cfg query' ext
-        GetFilteredDelegationsAndRewardAccounts creds ->
-          getFilteredDelegationsAndRewardAccounts st creds
-        GetGenesisConfig ->
-          shelleyLedgerCompactGenesis lcfg
-        DebugNewEpochState ->
-          st
-        DebugChainDepState ->
-          tpraosStateChainDepState (headerStateChainDep hst)
-        GetRewardProvenance ->
-          snd $ SL.getRewardInfo globals st
+    case query of
+      GetLedgerTip ->
+        shelleyLedgerTipPoint lst
+      GetEpochNo ->
+        SL.nesEL st
+      GetNonMyopicMemberRewards creds ->
+        NonMyopicMemberRewards $
+          SL.getNonMyopicMemberRewards globals st creds
+      GetCurrentPParams ->
+        getPParams st
+      GetProposedPParamsUpdates ->
+        error "Pivo era does not support this query."
+      GetStakeDistribution ->
+        SL.poolsByTotalStakeFraction globals st
+      GetFilteredUTxO addrs ->
+        SL.getFilteredUTxO st addrs
+      GetUTxO ->
+        SL.getUTxO st
+      DebugEpochState ->
+        getEpochState st
+      GetCBOR query' ->
+        mkSerialised (encodeShelleyResult query') $
+          answerQuery cfg query' ext
+      GetFilteredDelegationsAndRewardAccounts creds ->
+        getFilteredDelegationsAndRewardAccounts st creds
+      GetGenesisConfig ->
+        shelleyLedgerCompactGenesis lcfg
+      DebugNewEpochState ->
+        st
+      DebugChainDepState ->
+        tpraosStateChainDepState (headerStateChainDep hst)
+      GetRewardProvenance ->
+        snd $ SL.getRewardInfo globals st
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -210,6 +222,67 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
       lst = ledgerState ext
       hst = headerState ext
       st  = shelleyLedgerState lst
+
+
+
+-- (Ouroboros.Consensus.Ledger.Basics.LedgerCfg
+--                                      (LedgerState blk)
+--                                    ~ ShelleyLedgerConfig era) =>
+answerQueryPPUPState
+  :: ( ShelleyBasedEra era
+     , Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+     )
+  => ExtLedgerCfg (ShelleyBlock era)
+  -> Query (ShelleyBlock era) a
+  -> ExtLedgerState (ShelleyBlock era)
+  -> a
+answerQueryPPUPState cfg query ext =
+  case query of
+    GetLedgerTip ->
+      shelleyLedgerTipPoint lst
+    GetEpochNo ->
+      SL.nesEL st
+    GetNonMyopicMemberRewards creds ->
+      NonMyopicMemberRewards $
+        SL.getNonMyopicMemberRewards globals st creds
+    GetCurrentPParams ->
+      getPParams st
+    GetProposedPParamsUpdates ->
+      getProposedPPUpdates st
+    GetStakeDistribution ->
+      SL.poolsByTotalStakeFraction globals st
+    GetFilteredUTxO addrs ->
+      SL.getFilteredUTxO st addrs
+    GetUTxO ->
+      SL.getUTxO st
+    DebugEpochState ->
+      getEpochState st
+    GetCBOR query' ->
+      mkSerialised (encodeShelleyResult query') $
+        answerQueryPPUPState cfg query' ext
+    GetFilteredDelegationsAndRewardAccounts creds ->
+      getFilteredDelegationsAndRewardAccounts st creds
+    GetGenesisConfig ->
+      shelleyLedgerCompactGenesis lcfg
+    DebugNewEpochState ->
+      st
+    DebugChainDepState ->
+      tpraosStateChainDepState (headerStateChainDep hst)
+    GetRewardProvenance ->
+      snd $ SL.getRewardInfo globals st
+  where
+    lcfg    = configLedger $ getExtLedgerCfg cfg
+    globals = shelleyLedgerGlobals lcfg
+    -- NOTE: we are not pattern matching on @ext@ but using the accessors
+    -- here. The reason for that is that that pattern match blows up the
+    -- compile time (in particular the time spent desugaring, which is when
+    -- the compiler looks at pattern matches) to 2m30s! We don't really
+    -- understand why, but our guess is that it has to do with the combination
+    -- of the strictness of 'ExtLedgerState', the fact that @LedgerState@ is a
+    -- data family, and the 'ShelleyBasedEra' constraint.
+    lst = ledgerState ext
+    hst = headerState ext
+    st  = shelleyLedgerState lst
 
 instance SameDepIndex (Query (ShelleyBlock era)) where
   sameDepIndex GetLedgerTip GetLedgerTip
@@ -333,8 +406,9 @@ querySupportedVersion = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getProposedPPUpdates ::
-     ShelleyBasedEra era
+getProposedPPUpdates
+  :: ( Transition.State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
+     )
   => SL.NewEpochState era -> SL.ProposedPPUpdates era
 getProposedPPUpdates = SL.proposals . SL._ppups
                      . SL._utxoState . SL.esLState . SL.nesEs
