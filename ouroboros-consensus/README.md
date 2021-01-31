@@ -1,5 +1,8 @@
 # Consensus
 
+If you're beginning to contribute to the Consensus Layer, start with
+[Contributing.md][consensus-contributing].
+
 This package contains:
 
 * `src`: the implementation of the Ouroboros consensus protocols and required
@@ -23,3 +26,5 @@ Related packages:
 
 * `../ouroboros-consensus-cardano`: the consensus instantiated to the ledgers
   the `cardano-node` currently supports.
+
+[consensus-contributing]: https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Contributing.md

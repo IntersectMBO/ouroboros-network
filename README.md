@@ -71,8 +71,9 @@ Consensus layer of the family Ouroboros blockchain protocols.
 
 ## Ouroboros-Consensus Documentation
 
-The `ouroboros-consensus/docs` folder contains documentation about the consensus
-layer.
+The `ouroboros-consensus/docs` folder contains documentation about the
+consensus layer. Start with the
+[README.md](https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Contributing.md).
 
 * [The Cardano Consensus and Storage Layer](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.consensus-docs.x86_64-linux/latest/download/1)
 
