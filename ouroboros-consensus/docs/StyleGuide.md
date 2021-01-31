@@ -21,6 +21,22 @@ work on (if this means splitting some modules up, that is fine). However, please
 do try to be consistent; inconsistent style is not a preference, that's just
 sloppiness.
 
+## Enforcement
+
+As part of each PR review, we also check for consistency with the content of
+this document. We find that the rules herein become familiar and intuitive after
+some use: eventually it'll just be a document you refer to only occasionally.
+But we don't expect the first several PRs to perfectly adhere to these rules. So
+please make an effort, but don't worry too much: our highest priority is to see
+your PR's content! We'll help tidy up any deviations.
+
+For maintenance work in particular, it suffices to focus only on the PR's diff.
+Our goal in that case is just to avoid obvious deviations from the module's
+existing style choices. Specifically, it's OK to inspect only the diff itself
+along with its context -- eg whatever is available in the GitHub PR interface.
+As long that rendering doesn't show that the PR spoils something like
+intentional alignment for example, then the PR has no style problems.
+
 ## Guiding principles
 
 We value the following principles in the consensus team:
