@@ -29,6 +29,7 @@ library
 
                        Test.ThreadNet.TxGen.Allegra
                        Test.ThreadNet.TxGen.Cardano
+                       Test.ThreadNet.TxGen.Mary
 
   build-depends:       base
                      , bytestring
@@ -82,6 +83,7 @@ test-suite test
                        Test.Consensus.Cardano.Serialisation
                        Test.ThreadNet.Cardano
                        Test.ThreadNet.ShelleyAllegra
+                       Test.ThreadNet.AllegraMary
 
   build-depends:       base
                      , bytestring

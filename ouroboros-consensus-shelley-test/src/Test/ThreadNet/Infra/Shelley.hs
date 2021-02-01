@@ -27,6 +27,7 @@ module Test.ThreadNet.Infra.Shelley (
   , mkLeaderCredentials
   , mkProtocolShelley
   , mkSetDecentralizationParamTxs
+  , mkAllegraSetDecentralizationParamTxs
   , mkVerKey
   , mkKeyPair
   , networkId
@@ -36,6 +37,7 @@ module Test.ThreadNet.Infra.Shelley (
 
 import           Control.Monad.Except (throwError)
 import qualified Data.ByteString as BS
+import           Data.Coerce (coerce)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Ratio (denominator, numerator)
@@ -67,11 +69,16 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
+import qualified Cardano.Ledger.Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, KES, VRF)
+import qualified Cardano.Ledger.Era
+import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
                      unitIntervalFromRational)
-import qualified Shelley.Spec.Ledger.Keys as SL (signedDSIGN)
+import           Shelley.Spec.Ledger.Hashing (EraIndependentTxBody,
+                     HashAnnotated (..))
+import qualified Shelley.Spec.Ledger.Keys
 import qualified Shelley.Spec.Ledger.OCert as SL (OCertSignable (..))
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
@@ -171,7 +178,7 @@ genCoreNode startKESPeriod = do
     vrfKey <- genKeyVRF   <$> genSeed (seedSizeVRF   (Proxy @(VRF   c)))
     kesKey <- genKeyKES   <$> genSeed (seedSizeKES   (Proxy @(KES   c)))
     let kesPub = deriveVerKeyKES kesKey
-        sigma = SL.signedDSIGN
+        sigma  = Shelley.Spec.Ledger.Keys.signedDSIGN
           @c
           delKey
           (SL.OCertSignable kesPub certificateIssueNumber startKESPeriod)
@@ -529,3 +536,125 @@ mkKeyHashVrf = SL.hashVerKeyVRF . deriveVerKeyVRF
 
 networkId :: SL.Network
 networkId = SL.Testnet
+
+{-------------------------------------------------------------------------------
+  Temporary Workaround
+-------------------------------------------------------------------------------}
+
+-- | TODO This is a copy-paste-edit of 'mkSetDecentralizationParamTxs'
+--
+-- Our current plan is to replace all of this infrastructure with the ThreadNet
+-- rewrite; so we're minimizing the work and maintenance here for now.
+mkAllegraSetDecentralizationParamTxs ::
+     forall era.
+     ( ShelleyBasedEra era
+     , Cardano.Ledger.Core.TxBody era ~ MA.TxBody era
+     , Cardano.Ledger.Core.Value  era ~ SL.Coin
+     )
+  => [CoreNode (Cardano.Ledger.Era.Crypto era)]
+  -> ProtVer   -- ^ The proposed protocol version
+  -> SlotNo   -- ^ The TTL
+  -> DecentralizationParam   -- ^ The new value
+  -> [GenTx (ShelleyBlock era)]
+mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
+    (:[]) $
+    mkShelleyTx $
+    SL.Tx
+      { _body       = body
+      , _witnessSet = witnessSet
+      , _metadata   = SL.SNothing
+      }
+  where
+    -- The funds touched by this transaction assume it's the first transaction
+    -- executed.
+    scheduledEpoch :: EpochNo
+    scheduledEpoch = EpochNo 0
+
+    witnessSet :: SL.WitnessSet era
+    witnessSet = SL.WitnessSet signatures mempty mempty
+
+    -- Every node signs the transaction body, since it includes a " vote " from
+    -- every node.
+    signatures :: Set (SL.WitVKey 'SL.Witness (Cardano.Ledger.Era.Crypto era))
+    signatures =
+        SL.makeWitnessesVKey
+          (eraIndTxBodyHash' body)
+          [ SL.KeyPair (SL.VKey vk) sk
+          | cn <- coreNodes
+          , let sk = cnDelegateKey cn
+          , let vk = deriveVerKeyDSIGN sk
+          ]
+
+    -- Nothing but the parameter update and the obligatory touching of an
+    -- input.
+    body :: MA.TxBody era
+    body = MA.TxBody
+        inputs
+        outputs
+        certs
+        wdrls
+        txfee
+        vldt
+        update'
+        adHash
+        mint
+      where
+        inputs   = Set.singleton (fst touchCoins)
+        outputs  = Seq.singleton (snd touchCoins)
+        certs    = Seq.empty
+        wdrls    = SL.Wdrl Map.empty
+        txfee    = SL.Coin 0
+        vldt     = MA.ValidityInterval {
+              invalidBefore    = SL.SNothing
+            , invalidHereafter = SL.SJust ttl
+            }
+        update'  = SL.SJust update
+        adHash   = SL.SNothing
+        mint     = SL.Coin 0
+
+    -- Every Shelley transaction requires one input.
+    --
+    -- We use the input of the first node, but we just put it all right back.
+    --
+    -- ASSUMPTION: This transaction runs in the first slot.
+    touchCoins :: (SL.TxIn (Cardano.Ledger.Era.Crypto era), SL.TxOut era)
+    touchCoins = case coreNodes of
+        []   -> error "no nodes!"
+        cn:_ ->
+            ( SL.initialFundsPseudoTxIn addr
+            , SL.TxOut addr coin
+            )
+          where
+            addr = SL.Addr networkId
+                (mkCredential (cnDelegateKey cn))
+                (SL.StakeRefBase (mkCredential (cnStakingKey cn)))
+            coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+
+    -- One replicant of the parameter update per each node.
+    update :: SL.Update era
+    update =
+        flip SL.Update scheduledEpoch $ SL.ProposedPPUpdates $
+        Map.fromList $
+        [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
+          , SL.emptyPParamsUpdate
+              { SL._d =
+                  SL.SJust $
+                  SL.unitIntervalFromRational $
+                  decentralizationParamToRational dNew
+              , SL._protocolVersion =
+                  SL.SJust pVer
+              }
+          )
+        | cn <- coreNodes
+        ]
+
+eraIndTxBodyHash' ::
+     forall era body.
+     ( HashAnnotated body era
+     , HashIndex body ~ EraIndependentTxBody
+     )
+  => body
+  -> Shelley.Spec.Ledger.Keys.Hash
+       (Cardano.Ledger.Era.Crypto era)
+       EraIndependentTxBody
+eraIndTxBodyHash' = coerce . hashAnnotated
