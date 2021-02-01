@@ -271,7 +271,7 @@ propChainSyncPipelinedMaxConnectST cps choices (Positive omax) =
         (\ser cli ->
             void $ connectPipelined
               choices
-              (chainSyncClientPeerPipelined cli)
+              (chainSyncClientPeerPipelined nullTracer cli)
               (chainSyncServerPeer ser)
         )
         (ChainSyncExamples.chainSyncClientPipelinedMax omax)
@@ -288,7 +288,7 @@ propChainSyncPipelinedMinConnectST cps choices (Positive omax) =
         (\ser cli ->
             void $ connectPipelined
               choices
-              (chainSyncClientPeerPipelined cli)
+              (chainSyncClientPeerPipelined nullTracer cli)
               (chainSyncServerPeer ser)
         )
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
@@ -304,7 +304,7 @@ propChainSyncPipelinedMaxConnectIO cps choices (Positive omax) =
         (\ser cli ->
             void $ connectPipelined
               choices
-              (chainSyncClientPeerPipelined cli)
+              (chainSyncClientPeerPipelined nullTracer cli)
               (chainSyncServerPeer ser)
         )
         (ChainSyncExamples.chainSyncClientPipelinedMax omax)
@@ -320,7 +320,7 @@ propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
         (\ser cli ->
             void $ connectPipelined
               choices
-              (chainSyncClientPeerPipelined cli)
+              (chainSyncClientPeerPipelined nullTracer cli)
               (chainSyncServerPeer ser)
         )
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
@@ -624,7 +624,7 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ forkIO (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))
-  void $ forkIO (void $ runPipelinedPeer nullTracer codec clientChan (chainSyncClientPeerPipelined client))
+  void $ forkIO (void $ runPipelinedPeer nullTracer codec clientChan (chainSyncClientPeerPipelined nullTracer client))
 
   atomically $ do
     done <- readTVar doneVar

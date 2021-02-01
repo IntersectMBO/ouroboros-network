@@ -12,18 +12,87 @@ module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
   , ClientStNext (..)
   , ClientPipelinedStIntersect (..)
   , ChainSyncInstruction (..)
+  , TraceChainsyncClientObservation (..)
+  , TraceChainSyncClientReqRsp
+  , TraceChainSyncClientTag (..)
 
   , chainSyncClientPeerPipelined
   , chainSyncClientPeerSender
   , mapChainSyncClientPipelined
+  , peerReqRspTracer
   ) where
 
+import Data.Functor (void)
 import Data.Kind (Type)
-
+import Control.Monad.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime
+import Control.Tracer (Tracer (..), traceWith)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
 
 import Ouroboros.Network.Protocol.ChainSync.Type
+import Ouroboros.Network.Util.TaggedObserve
+
+
+-- | TraceChainsyncClientObservation indicates which request-response exchange
+-- we're observing, either 'MsgFindIntersect' or a non-pipelined 'MsgRequestNext'.
+--
+data TraceChainsyncClientObservation = IntersectObservation ObserveIndicator
+                                     | NextObservation ObserveIndicator
+                                     deriving Show
+
+
+data TraceChainSyncClientTag peer = IntersectTag peer
+                                  | NextTag peer
+                                  deriving Show
+
+
+-- | 'TraceChainSyncClientReqRsp' traces the start, end and duration of
+-- 'TraceChainSyncClientTag':ed observations.
+type TraceChainSyncClientReqRsp peer =
+    TaggedObservable (TraceChainSyncClientTag peer) Time Time DiffTime
+
+
+-- | Transform a request response tracer into a tracer
+-- that trace the start end end of observations.
+peerReqRspTracer
+    :: forall m peer.
+       ( MonadSTM m
+       , MonadMonotonicTime m
+       )
+    => Tracer m (TraceChainSyncClientReqRsp peer)
+    -> peer
+    -> m (Tracer m TraceChainsyncClientObservation)
+peerReqRspTracer tracer peer = do
+    intersectState <- newTMVarIO Nothing
+    nextState <- newTMVarIO Nothing
+
+    return $ transform $ matchTaggedObservations
+        (\case
+            (IntersectTag _) -> atomically $ swapTMVar intersectState Nothing
+            (NextTag _)      -> atomically $ swapTMVar nextState Nothing
+        )
+        (\case
+            (IntersectTag _) -> void . atomically . swapTMVar intersectState . Just
+            (NextTag _)      -> void . atomically . swapTMVar nextState . Just
+        )
+        (flip diffTime)
+        tracer
+
+  where
+    transform :: Tracer m (TraceChainSyncClientReqRsp peer)
+              -> Tracer m TraceChainsyncClientObservation
+    transform tr = Tracer $ \observeIndicator -> do
+      now <- getMonotonicTime
+      case observeIndicator of
+        IntersectObservation ObserveBefore ->
+            traceWith tr $ TOStart (IntersectTag peer) now
+        IntersectObservation ObserveAfter  ->
+            traceWith tr $ TOEnd   (IntersectTag peer) now Nothing
+        NextObservation      ObserveBefore ->
+            traceWith tr $ TOStart (NextTag peer) now
+        NextObservation      ObserveAfter  ->
+            traceWith tr $ TOEnd   (NextTag peer) now Nothing
 
 
 -- | Pipelined chain sync client.  It can only pipeline 'MsgRequestNext'
@@ -179,63 +248,70 @@ data ChainSyncInstruction header point tip
 chainSyncClientPeerPipelined
     :: forall header point tip m a.
        Monad m
-    => ChainSyncClientPipelined header point tip m a
+    => Tracer m TraceChainsyncClientObservation
+    -> ChainSyncClientPipelined header point tip m a
     -> PeerPipelined (ChainSync header point tip) AsClient StIdle m a
 
-chainSyncClientPeerPipelined (ChainSyncClientPipelined mclient) =
-    PeerPipelined $ SenderEffect $ chainSyncClientPeerSender Zero <$> mclient
+chainSyncClientPeerPipelined tracer (ChainSyncClientPipelined mclient) =
+    PeerPipelined $ SenderEffect $ chainSyncClientPeerSender tracer Zero <$> mclient
 
 
 chainSyncClientPeerSender
     :: forall n header point tip m a.
        Monad m
-    => Nat n
+    => Tracer m TraceChainsyncClientObservation
+    -> Nat n
     -> ClientPipelinedStIdle n header point tip m a
     -> PeerSender (ChainSync header point tip)
                   AsClient StIdle n
                   (ChainSyncInstruction header point tip)
                   m a
 
-chainSyncClientPeerSender n@Zero (SendMsgRequestNext stNext stAwait) =
-
-    SenderYield
+chainSyncClientPeerSender tracer
+                   n@Zero
+                   (SendMsgRequestNext stNext stAwait) = SenderEffect $ do
+    traceWith tracer $ NextObservation ObserveBefore
+    return $ SenderYield
       (ClientAgency TokIdle)
       MsgRequestNext
       (SenderAwait
         (ServerAgency (TokNext TokCanAwait))
           $ \case
             MsgRollForward header tip ->
-              SenderEffect $
-                  chainSyncClientPeerSender n
+              SenderEffect $ do
+                  traceWith tracer $ NextObservation ObserveAfter
+                  chainSyncClientPeerSender tracer n
                     <$> recvMsgRollForward header tip
                 where
                   ClientStNext {recvMsgRollForward} = stNext
 
             MsgRollBackward pRollback tip ->
-              SenderEffect $
-                  chainSyncClientPeerSender n
+              SenderEffect $ do
+                  traceWith tracer $ NextObservation ObserveAfter
+                  chainSyncClientPeerSender tracer n
                     <$> recvMsgRollBackward pRollback tip
                 where
                   ClientStNext {recvMsgRollBackward} = stNext
 
-            MsgAwaitReply ->
-              SenderAwait
+            MsgAwaitReply -> SenderEffect $ do
+              traceWith tracer $ NextObservation ObserveAfter
+              return $ SenderAwait
                 (ServerAgency (TokNext TokMustReply))
                 $ \case
                   MsgRollForward header tip ->
                     SenderEffect $ do
                       ClientStNext {recvMsgRollForward} <- stAwait
-                      chainSyncClientPeerSender n
+                      chainSyncClientPeerSender tracer n
                         <$> recvMsgRollForward header tip
 
                   MsgRollBackward pRollback tip ->
                     SenderEffect $ do
                       ClientStNext {recvMsgRollBackward} <- stAwait
-                      chainSyncClientPeerSender n
+                      chainSyncClientPeerSender tracer n
                         <$> recvMsgRollBackward pRollback tip)
 
 
-chainSyncClientPeerSender n (SendMsgRequestNextPipelined next) =
+chainSyncClientPeerSender tracer n (SendMsgRequestNextPipelined next) =
 
     -- pipeline 'MsgRequestNext', the receiver will await for an instruction.
     SenderPipeline
@@ -255,30 +331,33 @@ chainSyncClientPeerSender n (SendMsgRequestNextPipelined next) =
               MsgRollForward  header    tip -> ReceiverDone (RollForward header tip)
               MsgRollBackward pRollback tip -> ReceiverDone (RollBackward pRollback tip))
 
-      (chainSyncClientPeerSender (Succ n) next)
+      (chainSyncClientPeerSender tracer (Succ n) next)
 
-chainSyncClientPeerSender n (SendMsgFindIntersect points
+chainSyncClientPeerSender tracer n (SendMsgFindIntersect points
                               ClientPipelinedStIntersect
                                 { recvMsgIntersectFound
                                 , recvMsgIntersectNotFound
-                                }) =
+                                }) = SenderEffect $ do
+    traceWith tracer $ IntersectObservation ObserveBefore
 
     -- non pipelined 'MsgFindIntersect'
-    SenderYield
+    return $ SenderYield
       (ClientAgency TokIdle)
       (MsgFindIntersect points)
       (SenderAwait (ServerAgency TokIntersect)
         -- await for the response and recurse
         $ \case
           MsgIntersectFound pIntersect tip ->
-            SenderEffect $
-              chainSyncClientPeerSender n <$> recvMsgIntersectFound pIntersect tip
+            SenderEffect $ do
+              traceWith tracer $ IntersectObservation ObserveAfter
+              chainSyncClientPeerSender tracer n <$> recvMsgIntersectFound pIntersect tip
           MsgIntersectNotFound tip ->
-            SenderEffect $
-              chainSyncClientPeerSender n <$> recvMsgIntersectNotFound tip
+            SenderEffect $ do
+              traceWith tracer $ IntersectObservation ObserveAfter
+              chainSyncClientPeerSender tracer n <$> recvMsgIntersectNotFound tip
           )
 
-chainSyncClientPeerSender n@(Succ n')
+chainSyncClientPeerSender tracer n@(Succ n')
                           (CollectResponse mStIdle
                             ClientStNext
                               { recvMsgRollForward
@@ -286,15 +365,15 @@ chainSyncClientPeerSender n@(Succ n')
                               }) =
 
     SenderCollect
-      (SenderEffect . fmap (chainSyncClientPeerSender n) <$> mStIdle)
-      (\instr -> SenderEffect $ chainSyncClientPeerSender n' <$> collect instr)
+      (SenderEffect . fmap (chainSyncClientPeerSender tracer n) <$> mStIdle)
+      (\instr -> SenderEffect $ chainSyncClientPeerSender tracer n' <$> collect instr)
     where
       collect (RollForward header point) =
         recvMsgRollForward header point
       collect (RollBackward pRollback tip) =
         recvMsgRollBackward pRollback tip
 
-chainSyncClientPeerSender Zero (SendMsgDone a) =
+chainSyncClientPeerSender _tracer Zero (SendMsgDone a) =
     SenderYield
       (ClientAgency TokIdle)
       MsgDone

@@ -23,6 +23,8 @@ import           Data.Time (UTCTime)
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
 import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
+import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
+                     (TraceChainSyncClientReqRsp)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound)
 import           Ouroboros.Network.TxSubmission.Outbound
@@ -50,6 +52,7 @@ import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 
 data Tracers' remotePeer localPeer blk f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
+  , chainSyncReqRspTracer         :: f (TraceChainSyncClientReqRsp remotePeer)
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk)
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
   , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])]
@@ -69,6 +72,7 @@ instance (forall a. Semigroup (f a))
       => Semigroup (Tracers' remotePeer localPeer blk f) where
   l <> r = Tracers
       { chainSyncClientTracer         = f chainSyncClientTracer
+      , chainSyncReqRspTracer         = f chainSyncReqRspTracer
       , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
       , chainSyncServerBlockTracer    = f chainSyncServerBlockTracer
       , blockFetchDecisionTracer      = f blockFetchDecisionTracer
@@ -96,6 +100,7 @@ type Tracers m remotePeer localPeer blk =
 nullTracers :: Monad m => Tracers m remotePeer localPeer blk
 nullTracers = Tracers
     { chainSyncClientTracer         = nullTracer
+    , chainSyncReqRspTracer         = nullTracer
     , chainSyncServerHeaderTracer   = nullTracer
     , chainSyncServerBlockTracer    = nullTracer
     , blockFetchDecisionTracer      = nullTracer
@@ -125,6 +130,7 @@ showTracers :: ( Show blk
             => Tracer m String -> Tracers m remotePeer localPeer blk
 showTracers tr = Tracers
     { chainSyncClientTracer         = showTracing tr
+    , chainSyncReqRspTracer         = showTracing tr
     , chainSyncServerHeaderTracer   = showTracing tr
     , chainSyncServerBlockTracer    = showTracing tr
     , blockFetchDecisionTracer      = showTracing tr

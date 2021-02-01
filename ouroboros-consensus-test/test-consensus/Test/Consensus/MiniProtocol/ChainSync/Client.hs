@@ -359,7 +359,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                Map.insert serverId varCandidate
              (result, _) <-
                runPipelinedPeer protocolTracer codecChainSyncId clientChannel $
-                 chainSyncClientPeerPipelined $ client varCandidate
+                 chainSyncClientPeerPipelined nullTracer $ client varCandidate
              atomically $ writeTVar varClientResult (Just (Right result))
              return ()
         `catch` \(ex :: ChainSyncClientException) -> do
