@@ -3,8 +3,8 @@
 The content in this file should help orient a new contributor to the Consensus
 Layer: its fundamental purpose and its neighboring components.
 
-Please open PRs to add particularly useful content here. Though we would like
-the file to remain as approachable as possible, therefore small and
+Please open PRs to add particularly useful content in this file. Though we would
+like the file to remain as approachable as possible, therefore small and
 narrowly-scoped.
 
 ## Very High-Level Motivation
@@ -15,7 +15,7 @@ concrete behaviors.
   * The net should diffuse transactions throughout the net as rapidly as
     possible.
 
-  * The net should diffuse blocks through the net as rapidly as possible.
+  * The net should diffuse blocks throughout the net as rapidly as possible.
 
   * Whenever the Ouroboros protocol specifies that (a stake pool operating) a
     particular node should lead, that node should extend the best chain it has
@@ -35,8 +35,8 @@ more than half of the net's stake -- the honest nodes will all continually reach
 _consensus_ regarding the selection of a single best chain and that that chain
 grows over time.
 
-The Consensus Layer defines with the core Consensus components and logic,
-notably the Ouroboros protocol.
+The Consensus Layer defines the core Consensus components and logic, notably the
+Ouroboros protocol.
 
 ## The Neighbors of Consensus
 
@@ -141,11 +141,3 @@ The following artifacts influence and/or describe the Consensus implementation.
         https://www.youtube.com/watch?v=wNZq6VPLIXg)
 
       * https://iohk.io/en/blog/posts/2020/05/28/the-abstract-nature-of-the-consensus-layer/
-
-## More Guidance
-
-See
-https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Contributing.md
-and as usual the
-https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/README.md
-file.
