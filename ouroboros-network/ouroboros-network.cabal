@@ -257,7 +257,6 @@ test-suite test
                        Test.AnchoredFragment
                        Test.Chain
                        Test.LedgerPeers
-                       Test.Ouroboros.Network.Utils
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.MockNode
@@ -389,3 +388,5 @@ executable demo-chain-sync
   ghc-options:         -Wall
                        -threaded
                        -rtsopts
+
+
