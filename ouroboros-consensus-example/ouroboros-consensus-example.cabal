@@ -89,13 +89,15 @@ executable db-analyser
                      , optparse-applicative
                      , shelley-spec-ledger
                      , text
-
                      , ouroboros-consensus
+                     , ouroboros-consensus-byron
+                     , ouroboros-consensus-cardano
                      , ouroboros-consensus-example
                      , ouroboros-consensus-shelley
                      , ouroboros-network
   other-modules:
                        Analysis
+                     , Block.Byron
                      , Block.Cardano
                      , Block.Shelley
                      , HasAnalysis
