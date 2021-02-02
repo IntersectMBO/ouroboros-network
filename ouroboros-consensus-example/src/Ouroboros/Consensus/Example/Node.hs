@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Cardano.Node (
+module Ouroboros.Consensus.Example.Node (
     protocolInfoCardano
   , ProtocolParamsTransition (..)
   , ProtocolParamsAllegra (..)
@@ -66,12 +66,6 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
-import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
-import           Ouroboros.Consensus.Byron.Node
-
 import qualified Cardano.Ledger.Era as SL
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
@@ -89,81 +83,37 @@ import           Ouroboros.Consensus.Cardano.ShelleyBased
   SerialiseHFC
 -------------------------------------------------------------------------------}
 
-instance SerialiseConstraintsHFC ByronBlock
-instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
+instance ShelleyBasedEra era => SerialiseConstraintsHFC (ExampleBlock era)
 
--- | Important: we need to maintain binary compatibility with Byron blocks, as
--- they are already stored on disk.
---
--- We also want to be able to efficiently detect (without having to peek far
--- ahead) whether we're dealing with a Byron or Shelley block, so that we can
--- invoke the right decoder. We plan to have a few more hard forks after
--- Shelley (Goguen, Basho, Voltaire), so we want a future-proof envelope for
--- distinguishing the different block types, i.e., a byte indicating the era.
---
--- Byron does not provide such an envelope. However, a Byron block is a CBOR
--- 2-tuple with the first element being a tag ('Word': 0 = EBB; 1 = regular
--- block) and the second being the payload. We can easily extend this encoding
--- format with support for Shelley, Goguen, etc.
---
--- We encode a 'CardanoBlock' as the same CBOR 2-tuple as a Byron block, but
--- we use the tags after 1 for the hard forks after Byron:
---
--- 0. Byron EBB
--- 1. Byron regular block
--- 2. Shelley block
--- 3. Allegra block
--- 4. Mary block
--- 5. Goguen block
--- 6. etc.
---
--- For more details, see:
--- <https://github.com/input-output-hk/ouroboros-network/pull/1175#issuecomment-558147194>
-instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
-  encodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley ccfgAllegra ccfgMary) = \case
-      -- We are backwards compatible with Byron and thus use the exact same
-      -- encoding.
-      BlockByron   blockByron   ->                encodeDisk ccfgByron blockByron
+instance ExampleHardForkConstraints c => SerialiseHFC (ExampleEras c) where
+  encodeDiskHfcBlock (ExampleCodecConfig ccfgShelley ccfgExample) = \case
       -- For Shelley and later eras, we need to prepend the hard fork envelope.
       BlockShelley blockShelley -> prependTag 2 $ encodeDisk ccfgShelley blockShelley
-      BlockAllegra blockAllegra -> prependTag 3 $ encodeDisk ccfgAllegra blockAllegra
-      BlockMary    blockMary    -> prependTag 4 $ encodeDisk ccfgMary    blockMary
-  decodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley ccfgAllegra ccfgMary) = do
-      enforceSize "CardanoBlock" 2
+      BlockExample blockExample -> prependTag 99 $ encodeDisk ccfgExample blockExample
+  decodeDiskHfcBlock (ExampleCodecConfig ccfgShelley ccfgExample) = do
+      enforceSize "ExampleBlock" 2
       CBOR.decodeWord >>= \case
-        0 -> fmap BlockByron   <$> Byron.decodeByronBoundaryBlock epochSlots
-        1 -> fmap BlockByron   <$> Byron.decodeByronRegularBlock  epochSlots
         -- We don't have to drop the first two bytes from the 'ByteString'
         -- passed to the decoder as slicing already takes care of this.
         2 -> fmap BlockShelley <$> decodeDisk ccfgShelley
-        3 -> fmap BlockAllegra <$> decodeDisk ccfgAllegra
-        4 -> fmap BlockMary    <$> decodeDisk ccfgMary
-        t -> cborError $ DecoderErrorUnknownTag "CardanoBlock" (fromIntegral t)
-    where
-      epochSlots = Byron.getByronEpochSlots ccfgByron
+        99 -> fmap BlockExample <$> decodeDisk ccfgExample
+        t -> cborError $ DecoderErrorUnknownTag "ExampleBlock" (fromIntegral t)
 
   reconstructHfcPrefixLen _ = PrefixLen 2
 
   reconstructHfcNestedCtxt _ prefix blockSize =
       case Short.index prefix 1 of
-        0 -> SomeSecond $ NestedCtxt (NCZ (Byron.CtxtByronBoundary blockSize))
-        1 -> SomeSecond $ NestedCtxt (NCZ (Byron.CtxtByronRegular  blockSize))
-        2 -> SomeSecond $ NestedCtxt (NCS (NCZ Shelley.CtxtShelley))
-        3 -> SomeSecond $ NestedCtxt (NCS (NCS (NCZ Shelley.CtxtShelley)))
-        4 -> SomeSecond $ NestedCtxt (NCS (NCS (NCS (NCZ Shelley.CtxtShelley))))
-        _ -> error $ "CardanoBlock: invalid prefix " <> show prefix
+        2 -> SomeSecond $ NestedCtxt (NCZ Shelley.CtxtShelley)
+        99 -> SomeSecond $ NestedCtxt (NCS (NCZ Shelley.CtxtShelley))
+        _ -> error $ "ExampleBlock: invalid prefix " <> show prefix
 
   getHfcBinaryBlockInfo = \case
-      BlockByron   blockByron   ->
-        getBinaryBlockInfo blockByron
       -- For Shelley and the later eras, we need to account for the two extra
       -- bytes of the envelope.
       BlockShelley blockShelley ->
         shiftHeaderOffset 2 $ getBinaryBlockInfo blockShelley
-      BlockAllegra blockAllegra ->
-        shiftHeaderOffset 2 $ getBinaryBlockInfo blockAllegra
-      BlockMary blockMary ->
-        shiftHeaderOffset 2 $ getBinaryBlockInfo blockMary
+      BlockMary blockExample ->
+        shiftHeaderOffset 2 $ getBinaryBlockInfo blockExample
     where
       shiftHeaderOffset :: Word16 -> BinaryBlockInfo -> BinaryBlockInfo
       shiftHeaderOffset shift binfo = binfo {
@@ -171,12 +121,10 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
           }
 
   estimateHfcBlockSize = \case
-      HeaderByron   headerByron   -> estimateBlockSize headerByron
       -- For Shelley and later eras, we add two extra bytes, see the
       -- 'SerialiseHFC' instance.
       HeaderShelley headerShelley -> estimateBlockSize headerShelley + 2
-      HeaderAllegra headerAllegra -> estimateBlockSize headerAllegra + 2
-      HeaderMary    headerMary    -> estimateBlockSize headerMary    + 2
+      HeaderExample headerExample -> estimateBlockSize headerExample + 2
 
 -- | Prepend the given tag by creating a CBOR 2-tuple with the tag as the
 -- first element and the given 'Encoding' as the second.
@@ -191,129 +139,28 @@ prependTag tag payload = mconcat [
   SupportedNetworkProtocolVersion instance
 -------------------------------------------------------------------------------}
 
--- Note: we don't support all combinations, so we don't declare them as
--- COMPLETE
-
--- | We support only Byron V1 with the hard fork disabled, as no other
--- versions have been released before the hard fork
-pattern CardanoNodeToNodeVersion1 :: BlockNodeToNodeVersion (CardanoBlock c)
-pattern CardanoNodeToNodeVersion1 =
-    HardForkNodeToNodeDisabled ByronNodeToNodeVersion1
-
--- | The hard fork enabled with the latest Byron version and the Shelley era
--- enabled.
-pattern CardanoNodeToNodeVersion2 :: BlockNodeToNodeVersion (CardanoBlock c)
-pattern CardanoNodeToNodeVersion2 =
-    HardForkNodeToNodeEnabled
-      HardForkSpecificNodeToNodeVersion1
-      (  EraNodeToNodeEnabled ByronNodeToNodeVersion2
-      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
-      :* EraNodeToNodeDisabled
-      :* EraNodeToNodeDisabled
-      :* Nil
-      )
-
--- | The hard fork enabled with the latest Byron version, the Shelley and
--- Allegra eras enabled.
-pattern CardanoNodeToNodeVersion3 :: BlockNodeToNodeVersion (CardanoBlock c)
-pattern CardanoNodeToNodeVersion3 =
-    HardForkNodeToNodeEnabled
-      HardForkSpecificNodeToNodeVersion1
-      (  EraNodeToNodeEnabled ByronNodeToNodeVersion2
-      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
-      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
-      :* EraNodeToNodeDisabled
-      :* Nil
-      )
-
--- | The hard fork enabled with the latest Byron version, the Shelley, Allegra,
--- and Mary eras enabled.
-pattern CardanoNodeToNodeVersion4 :: BlockNodeToNodeVersion (CardanoBlock c)
-pattern CardanoNodeToNodeVersion4 =
-    HardForkNodeToNodeEnabled
-      HardForkSpecificNodeToNodeVersion1
-      (  EraNodeToNodeEnabled ByronNodeToNodeVersion2
-      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
-      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
-      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
-      :* Nil
-      )
-
--- | We support the sole Byron version with the hard fork disabled.
-pattern CardanoNodeToClientVersion1 :: BlockNodeToClientVersion (CardanoBlock c)
-pattern CardanoNodeToClientVersion1 =
-    HardForkNodeToClientDisabled ByronNodeToClientVersion1
-
 -- | The hard fork enabled and the Shelley era enabled.
-pattern CardanoNodeToClientVersion2 :: BlockNodeToClientVersion (CardanoBlock c)
-pattern CardanoNodeToClientVersion2 =
+pattern ExampleNodeToClientVersion1 :: BlockNodeToClientVersion (ExampleBlock c)
+pattern ExampleNodeToClientVersion1 =
     HardForkNodeToClientEnabled
-      HardForkSpecificNodeToClientVersion1
-      (  EraNodeToClientEnabled ByronNodeToClientVersion1
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion1
-      :* EraNodeToClientDisabled
+      HardForkSpecificNodeToClientVersion3
+      (  EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* EraNodeToClientDisabled
       :* Nil
       )
 
--- | The hard fork enabled and the Shelley era enabled, but using
--- 'ShelleyNodeToClientVersion2' and 'HardForkSpecificNodeToClientVersion2'.
-pattern CardanoNodeToClientVersion3 :: BlockNodeToClientVersion (CardanoBlock c)
-pattern CardanoNodeToClientVersion3 =
+-- | The hard fork enabled with the Shelley era and Example era enabled.
+pattern ExampleNodeToClientVersion2 :: BlockNodeToClientVersion (ExampleBlock c)
+pattern ExampleNodeToClientVersion2 =
     HardForkNodeToClientEnabled
-      HardForkSpecificNodeToClientVersion2
-      (  EraNodeToClientEnabled ByronNodeToClientVersion1
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
-      :* EraNodeToClientDisabled
-      :* EraNodeToClientDisabled
-      :* Nil
-      )
-
--- | The hard fork enabled, and the Shelley and Allegra eras enabled.
---
--- We don't bother with 'ShelleyNodeToClientVersion1' and
--- 'HardForkSpecificNodeToClientVersion1'.
-pattern CardanoNodeToClientVersion4 :: BlockNodeToClientVersion (CardanoBlock c)
-pattern CardanoNodeToClientVersion4 =
-    HardForkNodeToClientEnabled
-      HardForkSpecificNodeToClientVersion2
-      (  EraNodeToClientEnabled ByronNodeToClientVersion1
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
-      :* EraNodeToClientDisabled
-      :* Nil
-      )
-
--- | The hard fork enabled, and the Shelley, Allegra, and Mary eras enabled.
---
--- We don't bother with 'ShelleyNodeToClientVersion1'.
-pattern CardanoNodeToClientVersion5 :: BlockNodeToClientVersion (CardanoBlock c)
-pattern CardanoNodeToClientVersion5 =
-    HardForkNodeToClientEnabled
-      HardForkSpecificNodeToClientVersion2
-      (  EraNodeToClientEnabled ByronNodeToClientVersion1
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
-      :* Nil
-      )
-
--- | The hard fork enabled, and the Shelley, Allegra, and Mary eras enabled, but
--- using 'ShelleyNodeToClientVersion3' for the Shelley-based eras , which
--- enables new queries.
-pattern CardanoNodeToClientVersion6 :: BlockNodeToClientVersion (CardanoBlock c)
-pattern CardanoNodeToClientVersion6 =
-    HardForkNodeToClientEnabled
-      HardForkSpecificNodeToClientVersion2
-      (  EraNodeToClientEnabled ByronNodeToClientVersion1
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      HardForkSpecificNodeToClientVersion3
+      (  EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* Nil
       )
 
-instance CardanoHardForkConstraints c
-      => SupportedNetworkProtocolVersion (CardanoBlock c) where
+instance ExampleHardForkConstraints c
+      => SupportedNetworkProtocolVersion (ExampleBlock c) where
   supportedNodeToNodeVersions _ = Map.fromList $
       [ (NodeToNodeV_1, CardanoNodeToNodeVersion1)
       , (NodeToNodeV_2, CardanoNodeToNodeVersion2)
@@ -355,26 +202,14 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
 -- for mainnet (check against @'SL.gNetworkId' 'shelleyBasedGenesis'@).
 protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
-  => ProtocolParamsByron
-  -> ProtocolParamsShelleyBased (ShelleyEra c)
+  => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
-  -> ProtocolParamsAllegra
-  -> ProtocolParamsMary
-  -> ProtocolParamsTransition
-       ByronBlock
-       (ShelleyBlock (ShelleyEra c))
+  -> ProtocolParamsExample
   -> ProtocolParamsTransition
        (ShelleyBlock (ShelleyEra c))
-       (ShelleyBlock (AllegraEra c))
-  -> ProtocolParamsTransition
-       (ShelleyBlock (AllegraEra c))
-       (ShelleyBlock (MaryEra c))
-  -> ProtocolInfo m (CardanoBlock c)
-protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
-                        byronGenesis           = genesisByron
-                      , byronLeaderCredentials = mCredsByron
-                      }
-                    ProtocolParamsShelleyBased {
+       (ShelleyBlock (ExampleEra c))
+  -> ProtocolInfo m (ExampleBlock c)
+protocolInfoCardano ProtocolParamsShelleyBased {
                         shelleyBasedGenesis           = genesisShelley
                       , shelleyBasedInitialNonce      = initialNonceShelley
                       , shelleyBasedLeaderCredentials = credssShelleyBased
@@ -382,20 +217,11 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                     ProtocolParamsShelley {
                         shelleyProtVer = protVerShelley
                       }
-                    ProtocolParamsAllegra {
-                        allegraProtVer = protVerAllegra
-                      }
-                    ProtocolParamsMary {
-                        maryProtVer = protVerMary
+                    ProtocolParamsExample {
+                        allegraProtVer = protVerExample
                       }
                     ProtocolParamsTransition {
-                        transitionTrigger = triggerHardForkByronShelley
-                      }
-                    ProtocolParamsTransition {
-                        transitionTrigger = triggerHardForkShelleyAllegra
-                      }
-                    ProtocolParamsTransition {
-                        transitionTrigger = triggerHardForkAllegraMary
+                        transitionTrigger = triggerHardForkShelleyExample
                       }
   | SL.Mainnet <- SL.sgNetworkId genesisShelley
   , length credssShelleyBased > 1

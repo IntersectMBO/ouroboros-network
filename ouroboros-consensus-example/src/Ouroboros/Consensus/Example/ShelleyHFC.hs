@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Cardano.ShelleyHFC (
+module Ouroboros.Consensus.Example.ShelleyHFC (
     ShelleyBlockHFC
   ) where
 
@@ -20,8 +20,8 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
-import           Ouroboros.Consensus.Cardano.CanHardFork
-import           Ouroboros.Consensus.Cardano.Node ()
+import           Ouroboros.Consensus.Example.CanHardFork
+import           Ouroboros.Consensus.Example.Node ()
 
 {-------------------------------------------------------------------------------
   Synonym for convenience

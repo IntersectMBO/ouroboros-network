@@ -6,8 +6,8 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
-module Ouroboros.Consensus.Cardano.ShelleyBased (
-    -- * Injection from Shelley-based eras into the Cardano eras
+module Ouroboros.Consensus.Example.ShelleyBased (
+    -- * Injection from Shelley-based eras into the Example eras
     InjectShelley
   , injectShelleyNP
   , injectShelleyOptNP
@@ -25,33 +25,33 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto)
 
-import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Example.Block
 
 {-------------------------------------------------------------------------------
-  Injection from Shelley-based eras into the Cardano eras
+  Injection from Shelley-based eras into the Example eras
 -------------------------------------------------------------------------------}
 
--- | Witness the relation between the Cardano eras and the Shelley-based eras.
-class    cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
-instance cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
+-- | Witness the relation between the Example eras and the Shelley-based eras.
+class    exampleEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra exampleEra
+instance exampleEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra exampleEra
 
 injectShelleyNP ::
-     AllZip InjectShelley shelleyEras cardanoEras
-  => (   forall shelleyEra cardanoEra.
-         InjectShelley shelleyEra cardanoEra
-      => f shelleyEra -> g cardanoEra
+     AllZip InjectShelley shelleyEras exampleEras
+  => (   forall shelleyEra exampleEra.
+         InjectShelley shelleyEra exampleEra
+      => f shelleyEra -> g exampleEra
      )
-  -> NP f shelleyEras -> NP g cardanoEras
+  -> NP f shelleyEras -> NP g exampleEras
 injectShelleyNP _ Nil       = Nil
 injectShelleyNP f (x :* xs) = f x :* injectShelleyNP f xs
 
 injectShelleyOptNP ::
-     AllZip InjectShelley shelleyEras cardanoEras
-  => (   forall shelleyEra cardanoEra.
-         InjectShelley shelleyEra cardanoEra
-      => f shelleyEra -> g cardanoEra
+     AllZip InjectShelley shelleyEras exampleEras
+  => (   forall shelleyEra exampleEra.
+         InjectShelley shelleyEra exampleEra
+      => f shelleyEra -> g exampleEra
      )
-  -> OptNP empty f shelleyEras -> OptNP empty g cardanoEras
+  -> OptNP empty f shelleyEras -> OptNP empty g exampleEras
 injectShelleyOptNP _ OptNil         = OptNil
 injectShelleyOptNP f (OptSkip   xs) = OptSkip (injectShelleyOptNP f xs)
 injectShelleyOptNP f (OptCons x xs) = OptCons (f x) (injectShelleyOptNP f xs)
@@ -74,13 +74,13 @@ overShelleyBasedLedgerState ::
       => LedgerState (ShelleyBlock era)
       -> LedgerState (ShelleyBlock era)
      )
-  -> LedgerState (CardanoBlock c)
-  -> LedgerState (CardanoBlock c)
+  -> LedgerState (ExampleBlock c)
+  -> LedgerState (ExampleBlock c)
 overShelleyBasedLedgerState f (HardForkLedgerState st) =
     HardForkLedgerState $ hap fs st
   where
     fs :: NP (LedgerState -.-> LedgerState)
-             (CardanoEras c)
+             (ExampleEras c)
     fs = fn id
         :* injectShelleyNP
              reassoc

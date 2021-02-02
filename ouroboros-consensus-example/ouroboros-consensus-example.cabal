@@ -27,6 +27,7 @@ library
   exposed-modules:
                        Ouroboros.Consensus.Example
                        Ouroboros.Consensus.Example.Block
+                       Ouroboros.Consensus.Example.Eras
                        Ouroboros.Consensus.Example.ShelleyHFC
                        Ouroboros.Consensus.Example.Condense
                        Ouroboros.Consensus.Example.CanHardFork
@@ -52,10 +53,10 @@ library
                      , shelley-spec-ledger
                      , cardano-ledger-shelley-ma
                      , cardano-ledger-example-shelley
-
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-shelley
+                     , ouroboros-consensus-cardano
 
   default-language:    Haskell2010
   ghc-options:         -Wall

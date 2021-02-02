@@ -4,18 +4,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Ouroboros.Consensus.Cardano (
+module Ouroboros.Consensus.Example (
     -- * The block type of the Cardano block chain
-    CardanoBlock
+    ExampleBlock
     -- * Supported protocols
-  , ProtocolByron
-  , ProtocolShelley
-  , ProtocolCardano
+  , ProtocolExample
     -- * Abstract over the various protocols
-  , ProtocolParamsByron(..)
   , ProtocolParamsShelley(..)
-  , ProtocolParamsAllegra(..)
-  , ProtocolParamsMary(..)
+  , ProtocolParamsExample(..)
   , ProtocolParamsTransition(..)
   , Protocol(..)
   , verifyProtocol
@@ -48,16 +44,12 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
 
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node as X
-
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
 
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.ByronHFC
-import           Ouroboros.Consensus.Cardano.Node
-import           Ouroboros.Consensus.Cardano.ShelleyHFC
+import           Ouroboros.Consensus.Example.Block
+import           Ouroboros.Consensus.Example.Node
+import           Ouroboros.Consensus.Example.ShelleyHFC
 
 {-------------------------------------------------------------------------------
   Supported protocols
@@ -68,12 +60,8 @@ import           Ouroboros.Consensus.Cardano.ShelleyHFC
   breaking any assumptions made in @cardano-node@.
 -------------------------------------------------------------------------------}
 
-type ProtocolByron   = HardForkProtocol '[ ByronBlock ]
-type ProtocolShelley = HardForkProtocol '[ ShelleyBlock StandardShelley ]
-type ProtocolCardano = HardForkProtocol '[ ByronBlock
-                                         , ShelleyBlock StandardShelley
-                                         , ShelleyBlock StandardAllegra
-                                         , ShelleyBlock StandardMary
+type ProtocolExample = HardForkProtocol '[ ShelleyBlock StandardShelley
+                                         , ShelleyBlock StandardExample
                                          ]
 
 {-------------------------------------------------------------------------------
@@ -82,42 +70,21 @@ type ProtocolCardano = HardForkProtocol '[ ByronBlock
 
 -- | Consensus protocol to use
 data Protocol (m :: Type -> Type) blk p where
-  -- | Run PBFT against the Byron ledger
-  ProtocolByron
-    :: ProtocolParamsByron
-    -> Protocol m ByronBlockHFC ProtocolByron
-
-  -- | Run TPraos against the Shelley ledger
-  ProtocolShelley
-    :: ProtocolParamsShelleyBased StandardShelley
-    -> ProtocolParamsShelley
-    -> Protocol m (ShelleyBlockHFC StandardShelley) ProtocolShelley
-
-  -- | Run the protocols of /the/ Cardano block
+  -- | Run the protocols of /the/ Example block
   --
   -- WARNING: only a single set of Shelley credentials is allowed when used for
   -- mainnet. Testnets allow multiple Shelley credentials.
-  ProtocolCardano
-    :: ProtocolParamsByron
-    -> ProtocolParamsShelleyBased StandardShelley
+  ProtocolExample
+    :: ProtocolParamsShelleyBased StandardShelley
     -> ProtocolParamsShelley
-    -> ProtocolParamsAllegra
-    -> ProtocolParamsMary
-    -> ProtocolParamsTransition
-         ByronBlock
-         (ShelleyBlock StandardShelley)
+    -> ProtocolParamsExample
     -> ProtocolParamsTransition
          (ShelleyBlock StandardShelley)
-         (ShelleyBlock StandardAllegra)
-    -> ProtocolParamsTransition
-         (ShelleyBlock StandardAllegra)
-         (ShelleyBlock StandardMary)
-    -> Protocol m (CardanoBlock StandardCrypto) ProtocolCardano
+         (ShelleyBlock StandardExample)
+    -> Protocol m (ExampleBlock StandardCrypto) ProtocolExample
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
-verifyProtocol ProtocolByron{}   = Refl
-verifyProtocol ProtocolShelley{} = Refl
-verifyProtocol ProtocolCardano{} = Refl
+verifyProtocol ProtocolExample{} = Refl
 
 {-------------------------------------------------------------------------------
   Data required to run a protocol
@@ -126,39 +93,23 @@ verifyProtocol ProtocolCardano{} = Refl
 -- | Data required to run the selected protocol
 protocolInfo :: forall m blk p. IOLike m
              => Protocol m blk p -> ProtocolInfo m blk
-protocolInfo (ProtocolByron params) =
-    inject $ protocolInfoByron params
-
-protocolInfo (ProtocolShelley paramsShelleyBased paramsShelley) =
-    inject $ protocolInfoShelley paramsShelleyBased paramsShelley
-
-protocolInfo (ProtocolCardano
-               paramsByron
+protocolInfo (ProtocolExample
                paramsShelleyBased
                paramsShelley
-               paramsAllegra
-               paramsMary
-               paramsByronShelley
-               paramsShelleyAllegra
-               paramsAllegraMary) =
-    protocolInfoCardano
-      paramsByron
+               paramsExample
+               paramsShelleyExample) =
+    protocolInfoExample
       paramsShelleyBased
       paramsShelley
-      paramsAllegra
-      paramsMary
-      paramsByronShelley
-      paramsShelleyAllegra
-      paramsAllegraMary
+      paramsExample
+      paramsShelleyExample
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols
 -------------------------------------------------------------------------------}
 
 runProtocol :: Protocol m blk p -> Dict (RunNode blk)
-runProtocol ProtocolByron{}   = Dict
-runProtocol ProtocolShelley{} = Dict
-runProtocol ProtocolCardano{} = Dict
+runProtocol ProtocolExample{} = Dict
 
 {-------------------------------------------------------------------------------
   Client support for the protocols: what you need as a client of the node
@@ -170,42 +121,21 @@ runProtocol ProtocolCardano{} = Dict
 -- requirements than to run a node.
 --
 data ProtocolClient blk p where
-  ProtocolClientByron
+  ProtocolClientExample
     :: EpochSlots
     -> ProtocolClient
-         ByronBlockHFC
-         ProtocolByron
-
-  ProtocolClientShelley
-    :: ProtocolClient
-         (ShelleyBlockHFC StandardShelley)
-         ProtocolShelley
-
-  ProtocolClientCardano
-    :: EpochSlots
-    -> ProtocolClient
-         (CardanoBlock StandardCrypto)
-         ProtocolCardano
+         (ExampleBlock StandardCrypto)
+         ProtocolExample
 
 -- | Sanity check that we have the right type combinations
 verifyProtocolClient :: ProtocolClient blk p -> (p :~: BlockProtocol blk)
-verifyProtocolClient ProtocolClientByron{}   = Refl
-verifyProtocolClient ProtocolClientShelley{} = Refl
-verifyProtocolClient ProtocolClientCardano{} = Refl
+verifyProtocolClient ProtocolClientExample{} = Refl
 
 -- | Sanity check that we have the right class instances available
 runProtocolClient :: ProtocolClient blk p -> Dict (RunNode blk)
-runProtocolClient ProtocolClientByron{}   = Dict
-runProtocolClient ProtocolClientShelley{} = Dict
-runProtocolClient ProtocolClientCardano{} = Dict
+runProtocolClient ProtocolClientExample{} = Dict
 
 -- | Data required by clients of a node running the specified protocol.
 protocolClientInfo :: ProtocolClient blk p -> ProtocolClientInfo blk
-protocolClientInfo (ProtocolClientByron epochSlots) =
-    inject $ protocolClientInfoByron epochSlots
-
-protocolClientInfo ProtocolClientShelley =
-    inject $ protocolClientInfoShelley
-
-protocolClientInfo (ProtocolClientCardano epochSlots) =
-    protocolClientInfoCardano epochSlots
+protocolClientInfo (ProtocolClientExample epochSlots) =
+    protocolClientInfoExample epochSlots
