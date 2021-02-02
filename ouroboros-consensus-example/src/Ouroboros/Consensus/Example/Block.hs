@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Example.Block (
     -- XXX
     module Ouroboros.Consensus.Example.Eras
   , ExampleEras
+  , ShelleyBasedExampleEras
     -- * Block
   , ExampleBlock
     -- Note: by exporting the pattern synonyms as part of the matching data
@@ -135,6 +136,11 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 type ExampleEras c =
   '[ ShelleyBlock (ShelleyEra c)
    , ShelleyBlock (ExampleEra c)
+   ]
+
+type ShelleyBasedExampleEras c =
+  '[ ShelleyEra c
+   , ExampleEra c
    ]
 
 {-------------------------------------------------------------------------------

@@ -11,25 +11,18 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Example.Node (
-    protocolInfoCardano
+    protocolInfoExample
   , ProtocolParamsTransition (..)
-  , ProtocolParamsAllegra (..)
-  , ProtocolParamsMary (..)
-  , protocolClientInfoCardano
-  , CardanoHardForkConstraints
+  , ProtocolParamsExample (..)
+  , protocolClientInfoExample
+  , ExampleHardForkConstraints
   , MaxMajorProtVer (..)
   , TriggerHardFork (..)
     -- * SupportedNetworkProtocolVersion
-  , pattern CardanoNodeToNodeVersion1
-  , pattern CardanoNodeToNodeVersion2
-  , pattern CardanoNodeToNodeVersion3
-  , pattern CardanoNodeToNodeVersion4
-  , pattern CardanoNodeToClientVersion1
-  , pattern CardanoNodeToClientVersion2
-  , pattern CardanoNodeToClientVersion3
-  , pattern CardanoNodeToClientVersion4
-  , pattern CardanoNodeToClientVersion5
-  , pattern CardanoNodeToClientVersion6
+  , pattern ExampleNodeToNodeVersion1
+  , pattern ExampleNodeToNodeVersion2
+  , pattern ExampleNodeToClientVersion1
+  , pattern ExampleNodeToClientVersion2
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -67,6 +60,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
 import qualified Cardano.Ledger.Era as SL
+import           Cardano.Ledger.Val (coin, (<->))
+import qualified Cardano.Ledger.Val as Val
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
@@ -75,15 +70,15 @@ import           Ouroboros.Consensus.Shelley.Protocol (TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 import qualified Shelley.Spec.Ledger.API as SL
 
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.CanHardFork
-import           Ouroboros.Consensus.Cardano.ShelleyBased
+import           Ouroboros.Consensus.Example.Block
+import           Ouroboros.Consensus.Example.CanHardFork
+import           Ouroboros.Consensus.Example.ShelleyBased
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => SerialiseConstraintsHFC (ExampleBlock era)
+instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
 
 instance ExampleHardForkConstraints c => SerialiseHFC (ExampleEras c) where
   encodeDiskHfcBlock (ExampleCodecConfig ccfgShelley ccfgExample) = \case
@@ -112,7 +107,7 @@ instance ExampleHardForkConstraints c => SerialiseHFC (ExampleEras c) where
       -- bytes of the envelope.
       BlockShelley blockShelley ->
         shiftHeaderOffset 2 $ getBinaryBlockInfo blockShelley
-      BlockMary blockExample ->
+      BlockExample blockExample ->
         shiftHeaderOffset 2 $ getBinaryBlockInfo blockExample
     where
       shiftHeaderOffset :: Word16 -> BinaryBlockInfo -> BinaryBlockInfo
@@ -139,21 +134,41 @@ prependTag tag payload = mconcat [
   SupportedNetworkProtocolVersion instance
 -------------------------------------------------------------------------------}
 
--- | The hard fork enabled and the Shelley era enabled.
+-- | The hard fork enabled with the Shelley and Example eras enabled.
+pattern ExampleNodeToNodeVersion1 :: BlockNodeToNodeVersion (ExampleBlock c)
+pattern ExampleNodeToNodeVersion1 =
+    HardForkNodeToNodeEnabled
+      HardForkSpecificNodeToNodeVersion1
+      (  EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeDisabled
+      :* Nil
+      )
+
+-- | The hard fork enabled with the Shelley and Example eras enabled.
+pattern ExampleNodeToNodeVersion2 :: BlockNodeToNodeVersion (ExampleBlock c)
+pattern ExampleNodeToNodeVersion2 =
+    HardForkNodeToNodeEnabled
+      HardForkSpecificNodeToNodeVersion1
+      (  EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* Nil
+      )
+
+-- | The hard fork enabled, and the Shelley era enabled using 'ShelleyNodeToClientVersion3' protocol.
 pattern ExampleNodeToClientVersion1 :: BlockNodeToClientVersion (ExampleBlock c)
 pattern ExampleNodeToClientVersion1 =
     HardForkNodeToClientEnabled
-      HardForkSpecificNodeToClientVersion3
+      HardForkSpecificNodeToClientVersion2
       (  EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* EraNodeToClientDisabled
       :* Nil
       )
 
--- | The hard fork enabled with the Shelley era and Example era enabled.
+-- | The hard fork enabled, and the Shelley and Example eras enabled using 'ShelleyNodeToClientVersion3' protocol.
 pattern ExampleNodeToClientVersion2 :: BlockNodeToClientVersion (ExampleBlock c)
 pattern ExampleNodeToClientVersion2 =
     HardForkNodeToClientEnabled
-      HardForkSpecificNodeToClientVersion3
+      HardForkSpecificNodeToClientVersion2
       (  EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* Nil
@@ -162,22 +177,13 @@ pattern ExampleNodeToClientVersion2 =
 instance ExampleHardForkConstraints c
       => SupportedNetworkProtocolVersion (ExampleBlock c) where
   supportedNodeToNodeVersions _ = Map.fromList $
-      [ (NodeToNodeV_1, CardanoNodeToNodeVersion1)
-      , (NodeToNodeV_2, CardanoNodeToNodeVersion2)
-      , (NodeToNodeV_3, CardanoNodeToNodeVersion2)
-      , (NodeToNodeV_4, CardanoNodeToNodeVersion3)
-      , (NodeToNodeV_5, CardanoNodeToNodeVersion4)
+      [ (NodeToNodeV_3, ExampleNodeToNodeVersion1)
+      , (NodeToNodeV_3, ExampleNodeToNodeVersion2)
       ]
 
   supportedNodeToClientVersions _ = Map.fromList $
-      [ (NodeToClientV_1, CardanoNodeToClientVersion1)
-      , (NodeToClientV_2, CardanoNodeToClientVersion1)
-      , (NodeToClientV_3, CardanoNodeToClientVersion2)
-      , (NodeToClientV_4, CardanoNodeToClientVersion3)
-      , (NodeToClientV_5, CardanoNodeToClientVersion4)
-      , (NodeToClientV_6, CardanoNodeToClientVersion5)
-      , (NodeToClientV_7, CardanoNodeToClientVersion6)
-      , (NodeToClientV_8, CardanoNodeToClientVersion6)
+      [ (NodeToClientV_4, ExampleNodeToClientVersion1)
+      , (NodeToClientV_4, ExampleNodeToClientVersion2)
       ]
 
 {-------------------------------------------------------------------------------
@@ -192,7 +198,12 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
       transitionTrigger    :: TriggerHardFork
     }
 
--- | Create a 'ProtocolInfo' for 'CardanoBlock'
+-- | Parameters needed to run Shelley
+data ProtocolParamsExample = ProtocolParamsExample {
+      exampleProtVer :: SL.ProtVer
+    }
+
+-- | Create a 'ProtocolInfo' for 'ExampleBlock'
 --
 -- NOTE: the initial staking and funds in the 'ShelleyGenesis' are ignored,
 -- /unless/ configured to skip the Byron era and hard fork to Shelley or a later
@@ -200,8 +211,8 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
 --
 -- PRECONDITION: only a single set of Shelley credentials is allowed when used
 -- for mainnet (check against @'SL.gNetworkId' 'shelleyBasedGenesis'@).
-protocolInfoCardano ::
-     forall c m. (IOLike m, CardanoHardForkConstraints c)
+protocolInfoExample ::
+     forall c m. (IOLike m, ExampleHardForkConstraints c)
   => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
   -> ProtocolParamsExample
@@ -209,7 +220,7 @@ protocolInfoCardano ::
        (ShelleyBlock (ShelleyEra c))
        (ShelleyBlock (ExampleEra c))
   -> ProtocolInfo m (ExampleBlock c)
-protocolInfoCardano ProtocolParamsShelleyBased {
+protocolInfoExample ProtocolParamsShelleyBased {
                         shelleyBasedGenesis           = genesisShelley
                       , shelleyBasedInitialNonce      = initialNonceShelley
                       , shelleyBasedLeaderCredentials = credssShelleyBased
@@ -218,7 +229,7 @@ protocolInfoCardano ProtocolParamsShelleyBased {
                         shelleyProtVer = protVerShelley
                       }
                     ProtocolParamsExample {
-                        allegraProtVer = protVerExample
+                        exampleProtVer = protVerExample
                       }
                     ProtocolParamsTransition {
                         transitionTrigger = triggerHardForkShelleyExample
@@ -230,36 +241,14 @@ protocolInfoCardano ProtocolParamsShelleyBased {
   = assertWithMsg (validateGenesis genesisShelley) $
     ProtocolInfo {
         pInfoConfig       = cfg
-      , pInfoInitLedger   = initExtLedgerStateCardano
+      , pInfoInitLedger   = initExtLedgerStateExample
       , pInfoBlockForging = blockForging
       }
   where
     -- The major protocol version of the last era is the maximum major protocol
     -- version we support.
     maxMajorProtVer :: MaxMajorProtVer
-    maxMajorProtVer = MaxMajorProtVer (pvMajor protVerMary)
-
-    -- Byron
-    ProtocolInfo {
-        pInfoConfig = topLevelConfigByron@TopLevelConfig {
-            topLevelConfigProtocol = consensusConfigByron
-          , topLevelConfigLedger   = ledgerConfigByron
-          , topLevelConfigBlock    = blockConfigByron
-          }
-      , pInfoInitLedger = initExtLedgerStateByron
-      } = protocolInfoByron @m protocolParamsByron
-
-    partialConsensusConfigByron :: PartialConsensusConfig (BlockProtocol ByronBlock)
-    partialConsensusConfigByron = consensusConfigByron
-
-    partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
-    partialLedgerConfigByron = ByronPartialLedgerConfig {
-          byronLedgerConfig    = ledgerConfigByron
-        , byronTriggerHardFork = triggerHardForkByronShelley
-        }
-
-    kByron :: SecurityParam
-    kByron = Byron.genesisSecurityParam genesisByron
+    maxMajorProtVer = MaxMajorProtVer (pvMajor protVerExample)
 
     -- Shelley
 
@@ -286,109 +275,74 @@ protocolInfoCardano ProtocolParamsShelleyBased {
         mkPartialLedgerConfigShelley
           genesisShelley
           maxMajorProtVer
-          triggerHardForkShelleyAllegra
+          triggerHardForkShelleyExample
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley
 
     -- Allegra
 
-    genesisAllegra :: ShelleyGenesis (AllegraEra c)
-    genesisAllegra = SL.translateEra' () genesisShelley
+    genesisExample :: ShelleyGenesis (ExampleEra c)
+    genesisExample = SL.translateEra' () genesisShelley
 
-    blockConfigAllegra :: BlockConfig (ShelleyBlock (AllegraEra c))
-    blockConfigAllegra =
+    blockConfigExample :: BlockConfig (ShelleyBlock (ExampleEra c))
+    blockConfigExample =
         Shelley.mkShelleyBlockConfig
-          protVerAllegra
-          genesisAllegra
+          protVerExample
+          genesisExample
           (tpraosBlockIssuerVKey <$> credssShelleyBased)
 
-    partialConsensusConfigAllegra ::
-         PartialConsensusConfig (BlockProtocol (ShelleyBlock (AllegraEra c)))
-    partialConsensusConfigAllegra = tpraosParams
+    partialConsensusConfigExample ::
+         PartialConsensusConfig (BlockProtocol (ShelleyBlock (ExampleEra c)))
+    partialConsensusConfigExample = tpraosParams
 
-    partialLedgerConfigAllegra :: PartialLedgerConfig (ShelleyBlock (AllegraEra c))
-    partialLedgerConfigAllegra =
+    partialLedgerConfigExample :: PartialLedgerConfig (ShelleyBlock (ExampleEra c))
+    partialLedgerConfigExample =
         mkPartialLedgerConfigShelley
-          genesisAllegra
-          maxMajorProtVer
-          triggerHardForkAllegraMary
-
-    -- Mary
-
-    genesisMary :: ShelleyGenesis (MaryEra c)
-    genesisMary = SL.translateEra' () genesisAllegra
-
-    blockConfigMary :: BlockConfig (ShelleyBlock (MaryEra c))
-    blockConfigMary =
-        Shelley.mkShelleyBlockConfig
-          protVerMary
-          genesisMary
-          (tpraosBlockIssuerVKey <$> credssShelleyBased)
-
-    partialConsensusConfigMary ::
-         PartialConsensusConfig (BlockProtocol (ShelleyBlock (MaryEra c)))
-    partialConsensusConfigMary = tpraosParams
-
-    partialLedgerConfigMary :: PartialLedgerConfig (ShelleyBlock (MaryEra c))
-    partialLedgerConfigMary =
-        mkPartialLedgerConfigShelley
-          genesisMary
+          genesisExample
           maxMajorProtVer
           TriggerHardForkNever
-
+    --
     -- Cardano
 
     k :: SecurityParam
-    k = assert (kByron == kShelley) kByron
+    k = kShelley
 
-    shape :: History.Shape (CardanoEras c)
+    shape :: History.Shape (ExampleEras c)
     shape = History.Shape $ Exactly $
-           K (Byron.byronEraParams     genesisByron)
-        :* K (Shelley.shelleyEraParams genesisShelley)
-        :* K (Shelley.shelleyEraParams genesisAllegra)
-        :* K (Shelley.shelleyEraParams genesisMary)
+           K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisExample)
         :* Nil
 
-    cfg :: TopLevelConfig (CardanoBlock c)
+    cfg :: TopLevelConfig (ExampleBlock c)
     cfg = TopLevelConfig {
         topLevelConfigProtocol = HardForkConsensusConfig {
             hardForkConsensusConfigK      = k
           , hardForkConsensusConfigShape  = shape
           , hardForkConsensusConfigPerEra = PerEraConsensusConfig
-              (  WrapPartialConsensusConfig partialConsensusConfigByron
-              :* WrapPartialConsensusConfig partialConsensusConfigShelley
-              :* WrapPartialConsensusConfig partialConsensusConfigAllegra
-              :* WrapPartialConsensusConfig partialConsensusConfigMary
+              (  WrapPartialConsensusConfig partialConsensusConfigShelley
+              :* WrapPartialConsensusConfig partialConsensusConfigExample
               :* Nil
               )
           }
       , topLevelConfigLedger = HardForkLedgerConfig {
             hardForkLedgerConfigShape  = shape
           , hardForkLedgerConfigPerEra = PerEraLedgerConfig
-              (  WrapPartialLedgerConfig partialLedgerConfigByron
-              :* WrapPartialLedgerConfig partialLedgerConfigShelley
-              :* WrapPartialLedgerConfig partialLedgerConfigAllegra
-              :* WrapPartialLedgerConfig partialLedgerConfigMary
+              (  WrapPartialLedgerConfig partialLedgerConfigShelley
+              :* WrapPartialLedgerConfig partialLedgerConfigExample
               :* Nil
               )
           }
       , topLevelConfigBlock =
-          CardanoBlockConfig
-            blockConfigByron
+          ExampleBlockConfig
             blockConfigShelley
-            blockConfigAllegra
-            blockConfigMary
+            blockConfigExample
       , topLevelConfigCodec =
-          CardanoCodecConfig
-            (configCodec topLevelConfigByron)
-            Shelley.ShelleyCodecConfig
+          ExampleCodecConfig
             Shelley.ShelleyCodecConfig
             Shelley.ShelleyCodecConfig
       , topLevelConfigStorage =
-          CardanoStorageConfig
-            (configStorage topLevelConfigByron)
-            (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
+          ExampleStorageConfig
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
       }
@@ -396,16 +350,56 @@ protocolInfoCardano ProtocolParamsShelleyBased {
     -- When the initial ledger state is not in the Byron era, register the
     -- initial staking and initial funds (if provided in the genesis config) in
     -- the ledger state.
-    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c)
-    initExtLedgerStateCardano = ExtLedgerState {
+    initExtLedgerStateExample :: ExtLedgerState (ExampleBlock c)
+    initExtLedgerStateExample = ExtLedgerState {
           headerState = initHeaderState
         , ledgerState = overShelleyBasedLedgerState register initLedgerState
         }
       where
-        initHeaderState :: HeaderState (CardanoBlock c)
-        initLedgerState :: LedgerState (CardanoBlock c)
+        initHeaderState :: HeaderState (ExampleBlock c)
+        initLedgerState :: LedgerState (ExampleBlock c)
         ExtLedgerState initLedgerState initHeaderState =
-          injectInitialExtLedgerState cfg initExtLedgerStateByron
+          injectInitialExtLedgerState cfg $ ExtLedgerState {
+            ledgerState = Shelley.ShelleyLedgerState {
+              Shelley.shelleyLedgerTip        = Origin
+            , Shelley.shelleyLedgerState      = SL.chainNes initShelleyState
+            , Shelley.shelleyLedgerTransition = Shelley.ShelleyTransitionInfo {Shelley.shelleyAfterVoting = 0}
+            }
+          , headerState = genesisHeaderState initChainDepState
+          }
+
+        initChainDepState :: Shelley.TPraosState c
+        initChainDepState = Shelley.TPraosState Origin $
+          SL.ChainDepState {
+              SL.csProtocol = SL.PrtclState
+                (SL.chainOCertIssue     initShelleyState)
+                (SL.chainEvolvingNonce  initShelleyState)
+                (SL.chainCandidateNonce initShelleyState)
+            , SL.csTickn = SL.TicknState
+                (SL.chainEpochNonce     initShelleyState)
+                (SL.chainPrevEpochNonce initShelleyState)
+            , SL.csLabNonce =
+                (SL.chainPrevEpochNonce initShelleyState)
+            }
+
+        initShelleyState :: SL.ChainState (ShelleyEra c)
+        initShelleyState =
+            overNewEpochState
+              (registerGenesisStaking (SL.sgStaking genesisShelley)) $
+              SL.initialShelleyState
+                Origin
+                0
+                (SL.genesisUTxO genesisShelley)
+                (coin $ Val.inject (SL.word64ToCoin (SL.sgMaxLovelaceSupply genesisShelley))
+                    <-> SL.balance (SL.genesisUTxO genesisShelley))
+                (SL.sgGenDelegs genesisShelley)
+                (SL.sgProtocolParams genesisShelley)
+                initialNonceShelley
+
+        overNewEpochState ::
+             (SL.NewEpochState era -> SL.NewEpochState era)
+          -> (SL.ChainState    era -> SL.ChainState    era)
+        overNewEpochState f cs = cs { SL.chainNes = f (SL.chainNes cs) }
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
@@ -438,52 +432,31 @@ protocolInfoCardano ProtocolParamsShelleyBased {
     -- credentials. If there are multiple Shelley credentials, we merge the
     -- Byron credentials with the first Shelley one but still have separate
     -- threads for the remaining Shelley ones.
-    blockForging :: m [BlockForging m (CardanoBlock c)]
+    blockForging :: m [BlockForging m (ExampleBlock c)]
     blockForging = do
-        shelleyBased <- blockForgingShelleyBased
-        let blockForgings :: [OptNP 'False (BlockForging m) (CardanoEras c)]
-            blockForgings = case (mBlockForgingByron, shelleyBased) of
-              (Nothing,    shelleys)         -> shelleys
-              (Just byron, [])               -> [byron]
-              (Just byron, shelley:shelleys) ->
-                  OptNP.zipWith merge byron shelley : shelleys
-                where
-                  -- When merging Byron with Shelley-based eras, we should never
-                  -- merge two from the same era.
-                  merge (These1 _ _) = error "forgings of the same era"
-                  merge (This1 x)    = x
-                  merge (That1 y)    = y
+        shelleyBased :: [ OptNP 'False (BlockForging m) (ExampleEras c) ] <- blockForgingShelleyBased
+        return $ hardForkBlockForging "Example" <$> shelleyBased
 
-        return $ hardForkBlockForging "Cardano" <$> blockForgings
-
-    mBlockForgingByron :: Maybe (OptNP 'False (BlockForging m) (CardanoEras c))
-    mBlockForgingByron = do
-        creds <- mCredsByron
-        return $ byronBlockForging creds `OptNP.at` IZ
-
-    blockForgingShelleyBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
+    blockForgingShelleyBased :: m [OptNP 'False (BlockForging m) (ExampleEras c)]
     blockForgingShelleyBased = do
         shelleyBased <-
           traverse
-            (shelleySharedBlockForging (Proxy @(ShelleyBasedEras c)) tpraosParams)
+            (shelleySharedBlockForging (Proxy @(ShelleyBasedExampleEras c)) tpraosParams)
             credssShelleyBased
         return $ reassoc <$> shelleyBased
       where
         reassoc ::
-             NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)
-          -> OptNP 'False (BlockForging m) (CardanoEras c)
-        reassoc = OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+             NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedExampleEras c)
+          -> OptNP 'False (BlockForging m) (ExampleEras c)
+        reassoc = injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
 
-protocolClientInfoCardano
+protocolClientInfoExample
   :: forall c.
-     -- Byron
      EpochSlots
-  -> ProtocolClientInfo (CardanoBlock c)
-protocolClientInfoCardano epochSlots = ProtocolClientInfo {
+  -> ProtocolClientInfo (ExampleBlock c)
+protocolClientInfoExample epochSlots = ProtocolClientInfo {
       pClientInfoCodecConfig =
-        CardanoCodecConfig
-          (pClientInfoCodecConfig (protocolClientInfoByron epochSlots))
-          (pClientInfoCodecConfig protocolClientInfoShelley)
+        ExampleCodecConfig
           (pClientInfoCodecConfig protocolClientInfoShelley)
           (pClientInfoCodecConfig protocolClientInfoShelley)
     }

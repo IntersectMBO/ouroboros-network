@@ -42,14 +42,12 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
 
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
 
 import           Ouroboros.Consensus.Example.Block
 import           Ouroboros.Consensus.Example.Node
-import           Ouroboros.Consensus.Example.ShelleyHFC
 
 {-------------------------------------------------------------------------------
   Supported protocols
