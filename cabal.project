@@ -16,7 +16,6 @@ packages: ./typed-protocols
           ./ouroboros-consensus-example
           ./ouroboros-consensus-mock
           ./ouroboros-consensus-mock-test
-          ./ouroboros-consensus-mock-test
           ./ouroboros-consensus-shelley
           ./ouroboros-consensus-shelley-test
           ./ouroboros-consensus-test
