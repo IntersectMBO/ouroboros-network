@@ -88,6 +88,7 @@ data DiffusionInitializationTracer
   | UnsupportedLocalSystemdSocket !SockAddr
   | UnsupportedReadySocketCase
   | DiffusionErrored SomeException
+  | DiffusionDebug String
     deriving Show
 
 data DiffusionTracers = DiffusionTracers {
@@ -205,16 +206,20 @@ runDataDiffusion tracers
 
     void $
       -- clean state thread
-      Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
+      Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread -> do
+        traceWith dtDiffusionInitializationTracer $ DiffusionDebug "withAsync 1"
 
         -- clean local state thread
-        Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
+        Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread -> do
+          traceWith dtDiffusionInitializationTracer $ DiffusionDebug "withAsync 2"
 
           -- fork server for local clients
-          Async.withAsync (runLocalServer iocp networkLocalState) $ \localServerThread ->
+          Async.withAsync (runLocalServer iocp networkLocalState) $ \localServerThread -> do
+              traceWith dtDiffusionInitializationTracer $ DiffusionDebug "withAsync 3"
 
               -- fork ip subscription
-              Async.withAsync (runIpSubscriptionWorker snocket networkState lias) $ \ipSubThread ->
+              Async.withAsync (runIpSubscriptionWorker snocket networkState lias) $ \ipSubThread -> do
+                traceWith dtDiffusionInitializationTracer $ DiffusionDebug "withAsync 4"
 
                 -- fork dns subscriptions
                 withAsyncs (runDnsSubscriptionWorker snocket networkState lias <$> daDnsProducers) $ \dnsSubThreads ->
@@ -331,14 +336,16 @@ runDataDiffusion tracers
     runLocalServer :: IOManager
                    -> NetworkMutableState LocalAddress
                    -> IO ()
-    runLocalServer iocp networkLocalState =
+    runLocalServer iocp networkLocalState = do
+      traceWith dtDiffusionInitializationTracer $ DiffusionDebug "runLocalServer"
       bracket
         localServerInit
         localServerCleanup
         localServerBody
       where
         localServerInit :: IO (LocalSocket, LocalSnocket)
-        localServerInit =
+        localServerInit = do
+          traceWith dtDiffusionInitializationTracer $ DiffusionDebug "localServerInit 1"
           case daLocalAddress of
 #if defined(mingw32_HOST_OS)
                -- Windows uses named pipes so can't take advantage of existing sockets
@@ -347,6 +354,7 @@ runDataDiffusion tracers
                    throwIO UnsupportedReadySocket
 #else
                Left sd -> do
+                   traceWith dtDiffusionInitializationTracer $ DiffusionDebug "localServerInit 1a"
                    a <- Socket.getSocketName sd
                    case a of
                         (Socket.SockAddrUnix path) -> do
@@ -357,6 +365,7 @@ runDataDiffusion tracers
                           throwIO UnsupportedLocalSocketType
 #endif
                Right addr -> do
+                   traceWith dtDiffusionInitializationTracer $ DiffusionDebug "localServerInit 1b"
                    let sn = Snocket.localSnocket iocp addr
                    traceWith dtDiffusionInitializationTracer $ CreateSystemdSocketForSnocketPath addr
                    sd <- Snocket.open sn (Snocket.addrFamily sn $ Snocket.localAddressFromPath addr)
