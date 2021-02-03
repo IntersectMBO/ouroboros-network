@@ -12,6 +12,7 @@ import           Ouroboros.Consensus.Shelley.Ledger
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
+import           Ouroboros.Consensus.Example (ExampleBlock)
 
 {-------------------------------------------------------------------------------
   Condense
@@ -24,3 +25,5 @@ instance CondenseConstraints ByronBlock
 instance ShelleyBasedEra era => CondenseConstraints (ShelleyBlock era)
 
 instance CardanoHardForkConstraints c => CondenseConstraints (CardanoBlock c)
+
+instance ExampleHardForkConstraints c => CondenseConstraints (ExampleBlock c)

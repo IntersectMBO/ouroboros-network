@@ -40,6 +40,7 @@ import           Cardano.Chain.Slotting (EpochSlots)
 import           Cardano.Prelude (cborError)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
@@ -71,7 +72,6 @@ import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Example.Block
-import           Ouroboros.Consensus.Example.CanHardFork
 import           Ouroboros.Consensus.Example.ShelleyBased
 
 {-------------------------------------------------------------------------------
