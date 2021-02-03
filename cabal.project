@@ -13,7 +13,6 @@ packages: ./typed-protocols
           ./ouroboros-consensus-byronspec
           ./ouroboros-consensus-cardano
           ./ouroboros-consensus-cardano-test
-          ./ouroboros-consensus-example
           ./ouroboros-consensus-mock
           ./ouroboros-consensus-mock-test
           ./ouroboros-consensus-shelley
