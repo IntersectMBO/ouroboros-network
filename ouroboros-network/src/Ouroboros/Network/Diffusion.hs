@@ -192,6 +192,8 @@ runDataDiffusion tracers
                                     }
                  applications@DiffusionApplications { daErrorPolicies } =
   traceException . withIOManager $ \iocp -> do
+    traceWith dtDiffusionInitializationTracer $ DiffusionDebug "runDataDiffusion 1"
+
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
@@ -200,9 +202,16 @@ runDataDiffusion tracers
 
     -- networking mutable state
     networkState <- newNetworkMutableState
+
+    traceWith dtDiffusionInitializationTracer $ DiffusionDebug "runDataDiffusion 2"
+
     networkLocalState <- newNetworkMutableState
 
+    traceWith dtDiffusionInitializationTracer $ DiffusionDebug "runDataDiffusion 3"
+
     lias <- getInitiatorLocalAddresses snocket
+
+    traceWith dtDiffusionInitializationTracer $ DiffusionDebug "runDataDiffusion 4"
 
     void $
       -- clean state thread

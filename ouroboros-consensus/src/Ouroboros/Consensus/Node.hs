@@ -53,7 +53,7 @@ module Ouroboros.Consensus.Node
 
 import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad (when)
-import           Control.Tracer (Tracer, contramap)
+import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
@@ -114,9 +114,13 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
+newtype DebugMessage = DebugMessage String
+
 -- | Arguments expected from any invocation of 'runWith'
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
-      -- | Consensus tracers
+      rnTraceDebug :: Tracer m DebugMessage
+
+    , -- | Consensus tracers
       rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
       -- | Protocol tracers for node-to-node communication
@@ -225,6 +229,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
     llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
     withRegistry $ \registry -> do
+      traceWith rnTraceDebug $ DebugMessage "runWith 1"
 
       let systemStart :: SystemStart
           systemStart = getSystemStart (configBlock cfg)
@@ -240,6 +245,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                        llrnMaxClockSkew
                        systemTime
 
+      traceWith rnTraceDebug $ DebugMessage "runWith 2"
+
       let customiseChainDbArgs' args
             | lastShutDownWasClean
             = llrnCustomiseChainDbArgs args
@@ -254,11 +261,15 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 , ChainDB.cdbVolatileDbValidation  = ValidateAll
                 }
 
+      traceWith rnTraceDebug $ DebugMessage "runWith 3"
+
       (_, chainDB) <- allocate registry
         (\_ -> openChainDB
           registry inFuture cfg initLedger
           llrnChainDbArgsDefaults customiseChainDbArgs')
         ChainDB.closeDB
+
+      traceWith rnTraceDebug $ DebugMessage "runWith 4"
 
       btime <-
         hardForkBlockchainTime $
@@ -276,6 +287,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           , hfbtMaxClockRewind = secondsToNominalDiffTime 20
           }
 
+      traceWith rnTraceDebug $ DebugMessage "runWith 5"
+
       nodeKernelArgs <-
           fmap (nodeKernelArgsEnforceInvariants . llrnCustomiseNodeKernelArgs) $
           mkNodeKernelArgs
@@ -287,8 +300,16 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
             rnTraceConsensus
             btime
             chainDB
+
+      traceWith rnTraceDebug $ DebugMessage "runWith 6"
+
       nodeKernel <- initNodeKernel nodeKernelArgs
+
+      traceWith rnTraceDebug $ DebugMessage "runWith 7"
+
       rnNodeKernelHook registry nodeKernel
+
+      traceWith rnTraceDebug $ DebugMessage "runWith 8"
 
       let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel
           ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
@@ -297,6 +318,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                                     ntnApps
                                     ntcApps
                                     nodeKernel
+
+      traceWith rnTraceDebug $ DebugMessage "runWith 9"
 
       llrnRunDataDiffusion registry diffusionApplications
   where
