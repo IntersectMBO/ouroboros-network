@@ -54,6 +54,8 @@ import           Ouroboros.Consensus.Byron.Node as X
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
 
+import qualified Ouroboros.Consensus.Example as Example
+
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.ByronHFC
 import           Ouroboros.Consensus.Cardano.Node
@@ -113,6 +115,19 @@ data Protocol (m :: Type -> Type) blk p where
          (ShelleyBlock StandardAllegra)
          (ShelleyBlock StandardMary)
     -> Protocol m (CardanoBlock StandardCrypto) ProtocolCardano
+
+  -- | Run the protocols of /the/ Example block
+  --
+  -- WARNING: only a single set of Shelley credentials is allowed when used for
+  -- mainnet. Testnets allow multiple Shelley credentials.
+  ProtocolExample
+    :: ProtocolParamsShelleyBased StandardShelley
+    -> ProtocolParamsShelley
+    -> Example.ProtocolParamsExample
+    -> ProtocolParamsTransition
+         (ShelleyBlock StandardShelley)
+         (ShelleyBlock StandardExample)
+    -> Protocol m (Example.ExampleBlock StandardCrypto) Example.ProtocolExample
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
 verifyProtocol ProtocolByron{}   = Refl

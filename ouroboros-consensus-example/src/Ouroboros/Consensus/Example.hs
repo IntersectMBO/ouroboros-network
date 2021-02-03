@@ -68,18 +68,6 @@ type ProtocolExample = HardForkProtocol '[ ShelleyBlock StandardShelley
 
 -- | Consensus protocol to use
 data Protocol (m :: Type -> Type) blk p where
-  -- | Run the protocols of /the/ Example block
-  --
-  -- WARNING: only a single set of Shelley credentials is allowed when used for
-  -- mainnet. Testnets allow multiple Shelley credentials.
-  ProtocolExample
-    :: ProtocolParamsShelleyBased StandardShelley
-    -> ProtocolParamsShelley
-    -> ProtocolParamsExample
-    -> ProtocolParamsTransition
-         (ShelleyBlock StandardShelley)
-         (ShelleyBlock StandardExample)
-    -> Protocol m (ExampleBlock StandardCrypto) ProtocolExample
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
 verifyProtocol ProtocolExample{} = Refl

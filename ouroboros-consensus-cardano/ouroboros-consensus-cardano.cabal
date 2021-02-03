@@ -58,6 +58,7 @@ library
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-shelley
+                     , ouroboros-consensus-example
 
   default-language:    Haskell2010
   ghc-options:         -Wall
