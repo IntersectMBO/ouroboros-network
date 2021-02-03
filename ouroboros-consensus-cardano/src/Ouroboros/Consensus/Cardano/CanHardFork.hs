@@ -72,6 +72,10 @@ import qualified Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
+import           Cardano.Ledger.Example
+import           Cardano.Ledger.Example.Translation
+import           Ouroboros.Consensus.Example.Block
+
 import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
@@ -709,4 +713,63 @@ translateTxAllegraToMaryWrapper ::
        (ShelleyBlock (AllegraEra c))
        (ShelleyBlock (MaryEra c))
 translateTxAllegraToMaryWrapper = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+
+type ExampleHardForkConstraints c =
+  ( PraosCrypto c
+  , ShelleyBasedEra (ShelleyEra c)
+  , ShelleyBasedEra (ExampleEra c)
+    -- These equalities allow the transition from Byron to Shelley, since
+    -- @shelley-spec-ledger@ requires Ed25519 for Byron bootstrap addresses and
+    -- the current Byron-to-Shelley translation requires a 224-bit hash for
+    -- address and a 256-bit hash for header hashes.
+  , HASH     c ~ Blake2b_256
+  , ADDRHASH c ~ Blake2b_224
+  , DSIGN    c ~ Ed25519DSIGN
+  )
+
+instance ExampleHardForkConstraints c => CanHardFork (ExampleEras c) where
+  hardForkEraTranslation = EraTranslation {
+      translateLedgerState   =
+          PCons translateLedgerStateShelleyToExampleWrapper
+        $ PNil
+    , translateChainDepState =
+          PCons translateChainDepStateAcrossShelley
+        $ PNil
+    , translateLedgerView    =
+          PCons translateLedgerViewAcrossShelley
+        $ PNil
+    }
+  hardForkChainSel =
+        -- Shelley <-> Example, ...
+        TCons (SelectSameProtocol :* Nil)
+        -- Example <-> ...
+      $ TCons Nil
+      $ TNil
+  hardForkInjectTxs =
+        PCons (ignoringBoth translateTxShelleyToExampleWrapper)
+      $ PNil
+
+{-------------------------------------------------------------------------------
+  Translation from Shelley to Example
+-------------------------------------------------------------------------------}
+
+translateLedgerStateShelleyToExampleWrapper ::
+     PraosCrypto c
+  => RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (ExampleEra c))
+translateLedgerStateShelleyToExampleWrapper =
+    ignoringBoth $
+      Translate $ \_epochNo ->
+        unComp . SL.translateEra' () . Comp
+
+translateTxShelleyToExampleWrapper ::
+     PraosCrypto c
+  => InjectTx
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (ExampleEra c))
+translateTxShelleyToExampleWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp

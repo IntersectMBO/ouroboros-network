@@ -30,7 +30,6 @@ library
                        Ouroboros.Consensus.Example.Eras
                        Ouroboros.Consensus.Example.ShelleyHFC
                        Ouroboros.Consensus.Example.Condense
-                       Ouroboros.Consensus.Example.CanHardFork
                        Ouroboros.Consensus.Example.Node
                        Ouroboros.Consensus.Example.ShelleyBased
 
