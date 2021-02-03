@@ -1,10 +1,12 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+
 -- | Run the whole Node
 --
 -- Intended for qualified import.
@@ -44,6 +46,7 @@ module Ouroboros.Consensus.Node
   , DnsSubscriptionTarget (..)
   , ConnectionId (..)
   , ChainDB.RelativeMountPoint (..)
+  , DebugMessage(..)
     -- * Internal helpers
   , openChainDB
   , mkChainDbArgs
@@ -114,7 +117,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
-newtype DebugMessage = DebugMessage String
+import           Data.Text (Text)
+
+newtype DebugMessage = DebugMessage Text
 
 -- | Arguments expected from any invocation of 'runWith'
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
