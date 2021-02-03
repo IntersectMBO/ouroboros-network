@@ -77,9 +77,12 @@ data Mux (mode :: MuxMode) m =
      }
 
 
-miniProtocolStateMap :: Mux mode m -> Map (MiniProtocolNum, MiniProtocolDir)
-                                          (StrictTVar m MiniProtocolStatus)
-miniProtocolStateMap = fmap miniProtocolStatusVar . muxMiniProtocols
+miniProtocolStateMap :: MonadSTM m
+                     => Mux mode m
+                     -> Map (MiniProtocolNum, MiniProtocolDir)
+                            (STM m MiniProtocolStatus)
+miniProtocolStateMap = fmap (readTVar . miniProtocolStatusVar)
+                     . muxMiniProtocols
 
 -- | Await until mux stopped.
 --
