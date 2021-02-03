@@ -104,10 +104,10 @@ pipelineDecisionMax :: Word32 -> Nat n -> WithOrigin BlockNo -> WithOrigin Block
                     -> PipelineDecision n
 pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
     case n of
-      Zero   -- We are at most one block away from the server's tip. We use
+      Zero   -- We are insync with the server's tip. We use
              -- equality so that this does not get triggered when we are ahead
              -- of the producer, and it will send us 'MsgRollBackward'.
-             | cliTipBlockNo `bnoPlus` 1 == srvTipBlockNo
+             | cliTipBlockNo == srvTipBlockNo
              -> Request
 
              | otherwise
@@ -143,10 +143,10 @@ pipelineDecisionMin :: Word32 -> Nat n -> WithOrigin BlockNo -> WithOrigin Block
                     -> PipelineDecision n
 pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
     case n of
-      Zero   -- We are at most one block away from the server's tip. We use
+      Zero   -- We are insync with the server's tip. We use
              -- equality so that this does not get triggered when we are ahead
              -- of the producer, and it will send us 'MsgRollBackward'.
-             | cliTipBlockNo `bnoPlus` 1 == srvTipBlockNo
+             | cliTipBlockNo == srvTipBlockNo
              -> Request
 
              | otherwise
@@ -179,7 +179,7 @@ pipelineDecisionLowHighMark lowMark highMark =
     goZero :: Nat Z -> WithOrigin BlockNo -> WithOrigin BlockNo
            -> (PipelineDecision Z, MkPipelineDecision)
     goZero Zero clientTipBlockNo serverTipBlockNo
-      | clientTipBlockNo `bnoPlus` 1 == serverTipBlockNo
+      | clientTipBlockNo == serverTipBlockNo
       = (Request, goLow)
 
       | otherwise
