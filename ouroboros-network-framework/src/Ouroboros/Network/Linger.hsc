@@ -14,6 +14,7 @@ import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
 
+-- TODO: to be removed once a new version of `network` library is released.
 data StructLinger = StructLinger {
     -- | Set the linger option on.
     sl_onoff  :: CInt,
