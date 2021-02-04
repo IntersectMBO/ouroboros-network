@@ -119,7 +119,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB
 
 import           Data.Text (Text)
 
-newtype DebugMessage = DebugMessage Text
+newtype DebugMessage = DebugMessage { unDebugMessage :: Text } deriving (Eq, Show)
 
 -- | Arguments expected from any invocation of 'runWith'
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
