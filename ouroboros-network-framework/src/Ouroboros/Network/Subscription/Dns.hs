@@ -187,9 +187,13 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
       :: [Socket.SockAddr]
       -> [Socket.SockAddr]
       -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
-    targetCycle [] [] = return Nothing
-    targetCycle [] ipvB = targetCycle ipvB []
-    targetCycle (addr : addrs) ipvB = targetCons addr $ targetCycle ipvB addrs
+    targetCycle as bs = go (as `interleave` bs)
+      where
+        go []       = return Nothing
+        go (x : xs) = targetCons x (go xs)
+
+        interleave []       ys = ys
+        interleave (x : xs) ys = x : interleave ys xs
 
     resolveAAAA :: Resolver m
                 -> m [Socket.SockAddr]
