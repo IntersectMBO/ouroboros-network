@@ -2,18 +2,13 @@
 
 module Ouroboros.Network.Linger
   ( StructLinger (..)
-  , reset
   ) where
-
-import           Control.Monad (when)
 
 import           Foreign.C (CInt)
 import           Foreign.Storable (Storable (..))
 
-import           Network.Socket (Socket)
-import qualified Network.Socket as Socket
 
-
+-- TODO: to be removed once a new version of `network` library is released.
 data StructLinger = StructLinger {
     -- | Set the linger option on.
     sl_onoff  :: CInt,
@@ -35,16 +30,3 @@ instance Storable StructLinger where
     poke p (StructLinger onoff linger) = do
         (#poke struct linger, l_onoff)  p onoff
         (#poke struct linger, l_linger) p linger
-
-
--- | Reset a TCP connection, by setting 'RST' header on a 'TCP' @FIN@ packet
--- when closing a socket.
---
-reset :: Socket -> IO ()
-reset sock = do
-    when (Socket.isSupportedSocketOption Socket.Linger) $
-      Socket.setSockOpt sock
-                        Socket.Linger
-                        (StructLinger { sl_onoff  = 1,
-                                        sl_linger = 0 })
-    Socket.close sock
