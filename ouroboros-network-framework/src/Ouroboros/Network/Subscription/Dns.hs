@@ -39,6 +39,7 @@ import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
+import           Data.Maybe (isJust)
 
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.Ip
@@ -115,10 +116,6 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
 
          Right rs -> do
              withResolverFn rs $ \resolver -> do
-                 ipv6Rsps <- newEmptyTMVarIO
-                 ipv4Rsps <- newEmptyTMVarIO
-                 gotIpv6Rsp <- newTVarIO False
-
                  -- Though the DNS lib does have its own timeouts, these do not work
                  -- on Windows reliably so as a workaround we add an extra layer
                  -- of timeout on the outside.
@@ -126,132 +123,101 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
                  --       On windows the aid_ipv6 and aid_ipv4 threads are leaked incase
                  --       of an exception in the main thread.
                  res <- timeout 20 $ do
-                          aid_ipv6 <- async $ resolveAAAA resolver gotIpv6Rsp ipv6Rsps
-                          aid_ipv4 <- async $ resolveA resolver gotIpv6Rsp ipv4Rsps
+                          aid_ipv6 <- async $ resolveAAAA resolver
+                          aid_ipv4 <- async $ resolveA resolver aid_ipv6
                           rd_e <- waitEitherCatch aid_ipv6 aid_ipv4
-                          handleResult ipv6Rsps ipv4Rsps rd_e
+                          case rd_e of
+                            Left r -> do
+                              traceWith tracer DnsTraceLookupIPv6First
+                              handleThreadResult r $ threadTargetCycle aid_ipv4
+                            Right r -> do
+                              traceWith tracer DnsTraceLookupIPv4First
+                              handleThreadResult r $ threadTargetCycle aid_ipv6
                  case res of
                    Nothing -> do
                      -- TODO: the thread timedout, we should trace it
                      return (SubscriptionTarget $ pure Nothing)
                    Just st ->
-                     return st
+                     return (SubscriptionTarget $ pure st)
   where
-    handleResult :: StrictTMVar m [Socket.SockAddr]
-                 -> StrictTMVar m [Socket.SockAddr]
-                 -> Either
-                      (Either SomeException (Maybe DNS.DNSError))
-                      (Either SomeException (Maybe DNS.DNSError))
-                 -> m (SubscriptionTarget m Socket.SockAddr)
+    -- Creates a subscription target from an optional first socket and a tail
+    targetCons
+      :: Socket.SockAddr
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    targetCons addr next = do
+      b <- runBeforeConnect peerStatesVar beforeConnect addr
+      if b
+        then return $ Just (addr, SubscriptionTarget next)
+        else next
 
-    handleResult _ ipv4Rsps (Left (Left e_ipv6)) = do
-        -- AAAA lookup finished first, but with an error.
-        traceWith tracer $ DnsTraceLookupException e_ipv6
-        return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Left [])
+    -- Takes the result of a thread, returning an optional first socket in the subscription target result,
+    -- then calls the given function to get the tail
+    handleThreadResult
+      :: Either SomeException [Socket.SockAddr]
+      -> ([Socket.SockAddr] -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr)))
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    handleThreadResult (Left e) cont = do
+      traceWith tracer $ DnsTraceLookupException e
+      cont []
+    handleThreadResult (Right []) cont = cont []
+    handleThreadResult (Right (addr:addrs)) cont = targetCons addr $ cont addrs
 
-    handleResult ipv6Rsps ipv4Rsps (Left (Right _)) = do
-        -- Try to use IPv6 result first.
-        traceWith tracer DnsTraceLookupIPv6First
-        ipv6Res <- atomically $ takeTMVar ipv6Rsps
-        return $ SubscriptionTarget $ listTargets (Left ipv6Res) (Right ipv4Rsps)
+    -- Called when a thread is still running, and the other finished already
+    -- Cycles between trying to get a result from the running thread, and the results of the finished thread
+    -- If results of the finished thread are exhausted, wait until the running thread completes
+    threadTargetCycle
+      :: Async m [Socket.SockAddr]
+      -> [Socket.SockAddr]
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    threadTargetCycle asyn [] = do
+      result <- waitCatch asyn
+      handleThreadResult result $ targetCycle []
+    threadTargetCycle asyn a@(addr : addrs) = do
+      result <- poll asyn
+      case result of
+        -- The running thread finished, handle the result, then cycle over all results
+        Just r -> handleThreadResult r $ targetCycle a
+        -- The running thread is still going, emit an address of the finished thread, then check again
+        Nothing -> targetCons addr $ threadTargetCycle asyn addrs
 
-    handleResult ipv6Rsps _ (Right (Left e_ipv4)) = do
-        -- A lookup finished first, but with an error.
-        traceWith tracer $ DnsTraceLookupException e_ipv4
-        return $ SubscriptionTarget $ listTargets (Right ipv6Rsps) (Left [])
+    -- Called when both threads exited and we know the results of both.
+    -- Returns a subscription target that cycles between the results until both results are exhausted
+    targetCycle
+      :: [Socket.SockAddr]
+      -> [Socket.SockAddr]
+      -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
+    targetCycle as bs = go (as `interleave` bs)
+      where
+        go []       = return Nothing
+        go (x : xs) = targetCons x (go xs)
 
-    handleResult ipv6Rsps ipv4Rsps (Right (Right _)) = do
-        -- Try to use IPv4 result first.
-        traceWith tracer DnsTraceLookupIPv4First
-        return $ SubscriptionTarget $ listTargets (Right ipv4Rsps) (Right ipv6Rsps)
-
-
-    -- | Returns a series of SockAddr, where the address family will alternate
-    -- between IPv4 and IPv6 as soon as the corresponding lookup call has
-    -- completed.
-    --
-    listTargets :: Either [Socket.SockAddr] (StrictTMVar m [Socket.SockAddr])
-                -> Either [Socket.SockAddr] (StrictTMVar m [Socket.SockAddr])
-                -> m (Maybe (Socket.SockAddr, SubscriptionTarget m Socket.SockAddr))
-
-    -- No result left to try
-    listTargets (Left []) (Left []) = return Nothing
-
-    -- No results left to try for one family
-    listTargets (Left []) ipvB = listTargets ipvB (Left [])
-
-    -- Result for one address family
-    listTargets (Left (addr : addrs)) ipvB = do
-        b <- runBeforeConnect peerStatesVar beforeConnect addr
-        if b
-          then pure $ Just (addr, SubscriptionTarget (listTargets ipvB (Left addrs)))
-          else listTargets ipvB (Left addrs)
-
-    -- No result for either family yet.
-    listTargets (Right addrsVarA) (Right addrsVarB) = do
-        -- TODO: can be implemented with orElse once support for it is added to MonadSTM.
-        addrsRes <- atomically $ do
-            a_m <- tryReadTMVar addrsVarA
-            b_m <- tryReadTMVar addrsVarB
-            case (a_m, b_m) of
-                 (Nothing, Nothing) -> retry
-                 (Just a, _)        -> return $ Left a
-                 (_, Just b)        -> return $ Right b
-        let (addrs, nextAddrs) = case addrsRes of
-                                      Left a  -> (a, Right addrsVarB)
-                                      Right a -> (a, Right addrsVarA)
-        if null addrs
-           then listTargets (Right addrsVarB) (Left [])
-           else do
-             let addr = head addrs
-             b <- runBeforeConnect peerStatesVar beforeConnect addr
-             if b
-               then return $ Just (head addrs, SubscriptionTarget (listTargets nextAddrs (Left $ tail addrs)))
-               else listTargets nextAddrs (Left $ tail addrs)
-
-    -- Wait on the result for one family.
-    listTargets (Right addrsVar) (Left []) = do
-        addrs <- atomically $ takeTMVar addrsVar
-        listTargets (Left addrs) (Left [])
-
-    -- Peek at the result for one family.
-    listTargets (Right addrsVar) (Left a) = do
-        addrs_m <- atomically $ tryTakeTMVar addrsVar
-        case addrs_m of
-             Just addrs -> listTargets (Left addrs) (Left a)
-             Nothing    -> listTargets (Left a) (Right addrsVar)
+        interleave []       ys = ys
+        interleave (x : xs) ys = x : interleave ys xs
 
     resolveAAAA :: Resolver m
-                -> StrictTVar m Bool
-                -> StrictTMVar m [Socket.SockAddr]
-                -> m (Maybe DNS.DNSError)
-    resolveAAAA resolver gotIpv6RspVar rspsVar = do
+                -> m [Socket.SockAddr]
+    resolveAAAA resolver = do
         r_e <- lookupAAAA resolver domain
         case r_e of
              Left e  -> do
-                 atomically $ putTMVar rspsVar []
-                 atomically $ writeTVar gotIpv6RspVar True
                  traceWith tracer $ DnsTraceLookupAAAAError e
-                 return $ Just e
+                 return []
              Right r -> do
                  traceWith tracer $ DnsTraceLookupAAAAResult r
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
-                 atomically $ putTMVar rspsVar r
-                 atomically $ writeTVar gotIpv6RspVar True
-                 return Nothing
+                 return r
 
     resolveA :: Resolver m
-             -> StrictTVar m Bool
-             -> StrictTMVar m [Socket.SockAddr]
-             -> m (Maybe DNS.DNSError)
-    resolveA resolver gotIpv6RspVar rspsVar= do
+             -> Async m [Socket.SockAddr]
+             -> m [Socket.SockAddr]
+    resolveA resolver aid_ipv6 = do
         r_e <- lookupA resolver domain
         case r_e of
              Left e  -> do
-                 atomically $ putTMVar rspsVar []
                  traceWith tracer $ DnsTraceLookupAError e
-                 return $ Just e
+                 return []
              Right r -> do
                  traceWith tracer $ DnsTraceLookupAResult r
 
@@ -263,12 +229,11 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
                  timeoutVar <- registerDelay resolutionDelay
                  atomically $ do
                      timedOut   <- Lazy.readTVar timeoutVar
-                     gotIpv6Rsp <- readTVar gotIpv6RspVar
-                     check (timedOut || gotIpv6Rsp)
+                     ipv6Done <- pollSTM aid_ipv6
+                     check (timedOut || isJust ipv6Done)
 
                  -- XXX Addresses should be sorted here based on DeltaQueue.
-                 atomically $ putTMVar rspsVar r
-                 return Nothing
+                 return r
 
 
 dnsSubscriptionWorker'

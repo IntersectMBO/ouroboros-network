@@ -36,7 +36,7 @@ import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (traceWith)
 
-import           Network.TypedProtocol.Pipelined (N, Nat (..))
+import           Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
 import           Ouroboros.Network.Counter (Counter)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
@@ -80,6 +80,10 @@ data TraceTxSubmissionInbound txid tx =
     TraceTxSubmissionCollected !Int
     -- | Just processed transaction pass/fail breakdown.
   | TraceTxSubmissionProcessed !ProcessedTxCount
+    -- | Server received 'MsgDone'
+  | TraceTxInboundTerminated
+  | TraceTxInboundCanRequestMoreTxs Int
+  | TraceTxInboundCannotRequestMoreTxs Int
   deriving (Eq, Show)
 
 data TxSubmissionProtocolError =
@@ -200,13 +204,16 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
                   Nat n
                -> StatefulM (ServerState txid tx) n txid tx m
     serverIdle n = StatefulM $ \st -> case n of
-        Zero -> if canRequestMoreTxs st
-          then
+        Zero -> do
+          if canRequestMoreTxs st
+          then do
             -- There are no replies in flight, but we do know some more txs we
             -- can ask for, so lets ask for them and more txids.
+            traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
             pure $ continueWithState (serverReqTxs Zero) st
 
           else do
+            traceWith tracer (TraceTxInboundCannotRequestMoreTxs (natToInt n))
             -- There's no replies in flight, and we have no more txs we can
             -- ask for so the only remaining thing to do is to ask for more
             -- txids. Since this is the only thing to do now, we make this a
@@ -220,7 +227,8 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
               SendMsgRequestTxIdsBlocking
                 (numTxsToAcknowledge st)
                 numTxIdsToRequest
-                ()        -- Our result if the client terminates the protocol
+                -- Our result if the client terminates the protocol
+                (traceWith tracer TraceTxInboundTerminated)
                 ( collectAndContinueWithState (handleReply Zero) st {
                     numTxsToAcknowledge    = 0,
                     requestedTxIdsInFlight = numTxIdsToRequest
@@ -229,7 +237,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
                 . NonEmpty.toList)
 
         Succ n' -> if canRequestMoreTxs st
-          then
+          then do
             -- We have replies in flight and we should eagerly collect them if
             -- available, but there are transactions to request too so we
             -- should not block waiting for replies.
@@ -242,11 +250,13 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
             -- have no txs to ask for, since (with no other guard) this will
             -- put us into a busy-polling loop.
             --
+            traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
             pure $ CollectPipelined
               (Just (continueWithState (serverReqTxs (Succ n')) st))
               (collectAndContinueWithState (handleReply n') st)
 
-          else
+          else do
+            traceWith tracer (TraceTxInboundCannotRequestMoreTxs (natToInt n))
             -- In this case there is nothing else to do so we block until we
             -- collect a reply.
             pure $ CollectPipelined

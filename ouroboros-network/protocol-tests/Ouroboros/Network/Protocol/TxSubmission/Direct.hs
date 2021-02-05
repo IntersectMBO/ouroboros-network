@@ -3,6 +3,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.Protocol.TxSubmission.Direct (
     directPipelined
@@ -39,8 +40,7 @@ directPipelined (TxSubmissionServerPipelined mserver)
         SendMsgReplyTxIds (BlockingReply txids) client' -> do
           server' <- serverNext txids
           directSender q server' client'
-        SendMsgDone b ->
-          return (a, b)
+        SendMsgDone b -> (,b) <$> a
 
     directSender q (SendMsgRequestTxIdsPipelined ackNo reqNo serverNext)
                    ClientStIdle{recvMsgRequestTxIds} = do
