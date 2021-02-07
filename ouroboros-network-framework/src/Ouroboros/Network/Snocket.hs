@@ -253,7 +253,10 @@ socketSnocket ioManager = Snocket {
         Socket.bind sd addr
     , listen   = \s -> Socket.listen s 8
     , accept   = berkeleyAccept ioManager
-    , close    = Socket.close
+      -- TODO: 'Socket.close' is interruptible by asynchronous exceptions; it
+      -- should be fixed upstream, once that's done we can remove
+      -- `unitnerruptibleMask_'
+    , close    = uninterruptibleMask_ . Socket.close
     , toBearer = Mx.socketAsMuxBearer
     }
   where
@@ -345,6 +348,7 @@ localSnocket ioManager path = Snocket {
           Win32.Async.connectNamedPipe hpipe
           return (sock, localAddress, acceptNext)
 
+      -- Win32.closeHandle is not interrupible
     , close    = Win32.closeHandle . getLocalHandle
 
     , toBearer = \_sduTimeout tr -> namedPipeAsBearer tr . getLocalHandle
@@ -385,7 +389,7 @@ localSnocket ioManager _ =
                       . getLocalHandle
       , open          = openSocket
       , openToConnect = \_addr -> openSocket LocalFamily
-      , close         = Socket.close . getLocalHandle
+      , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
       , toBearer      = \df tr (LocalSocket sd) -> Mx.socketAsMuxBearer df tr sd
       }
   where
