@@ -234,8 +234,13 @@ miniProtocolJob tracer egressQueue
                            miniProtocolNum miniProtocolDirEnum
                            miniProtocolIngressQueue
       (result, remainder)  <- protocolAction chan
-      mpsJobExit w
+      traceWith tracer (MuxTraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
+        -- The Wanton w is the SDUs that are queued but not yet sent for this job.
+        -- Job threads will be prevented from exiting until all their SDUs have been
+        -- transmitted unless an exception/error is encountered. In that case all
+        -- jobs will be cancelled directly.
+        readTVar w >>= check . BL.null
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar (Right result)
           `orElse` (throwSTM (MuxError (MuxBlockedOnCompletionVar miniProtocolNum) ""))
@@ -249,17 +254,6 @@ miniProtocolJob tracer egressQueue
 
     miniProtocolDirEnum :: MiniProtocolDir
     miniProtocolDirEnum = protocolDirEnum miniProtocolDir
-
-    -- The Wanton w is the SDUs that are queued but not yet sent for this job.
-    -- Job threads will be prevented from exiting until all their SDUs have been
-    -- transmitted unless an exception/error is encounter. In that case all
-    -- jobs will be cancelled directly.
-    mpsJobExit :: IngressQueue m -> m ()
-    mpsJobExit w = do
-        traceWith tracer (MuxTraceTerminating miniProtocolNum miniProtocolDirEnum)
-        atomically $ do
-            buf <- readTVar w
-            check (BL.null buf)
 
 data ControlCmd mode m =
      CmdStartProtocolThread
