@@ -98,12 +98,13 @@ data Protocol (m :: Type -> Type) blk p where
   --
   -- WARNING: only a single set of Shelley credentials is allowed when used for
   -- mainnet. Testnets allow multiple Shelley credentials.
-  ProtocolCardano
-    :: ProtocolParamsByron
+  ProtocolCardano ::
+       ProtocolParamsByron
     -> ProtocolParamsShelleyBased StandardShelley
     -> ProtocolParamsShelley
     -> ProtocolParamsAllegra
     -> ProtocolParamsMary
+    -> ProtocolParamsAlonzo
     -> ProtocolParamsTransition
          ByronBlock
          (ShelleyBlock StandardShelley)
@@ -113,6 +114,9 @@ data Protocol (m :: Type -> Type) blk p where
     -> ProtocolParamsTransition
          (ShelleyBlock StandardAllegra)
          (ShelleyBlock StandardMary)
+    -> ProtocolParamsTransition
+         (ShelleyBlock StandardMary)
+         (ShelleyBlock StandardAlonzo)
     -> Protocol m (CardanoBlock StandardCrypto) ProtocolCardano
 
 verifyProtocol :: Protocol m blk p -> (p :~: BlockProtocol blk)
@@ -139,18 +143,22 @@ protocolInfo (ProtocolCardano
                paramsShelley
                paramsAllegra
                paramsMary
+               paramsAlonzo
                paramsByronShelley
                paramsShelleyAllegra
-               paramsAllegraMary) =
+               paramsAllegraMary
+               paramsMaryAlonzo) =
     protocolInfoCardano
       paramsByron
       paramsShelleyBased
       paramsShelley
       paramsAllegra
       paramsMary
+      paramsAlonzo
       paramsByronShelley
       paramsShelleyAllegra
       paramsAllegraMary
+      paramsMaryAlonzo
 
 {-------------------------------------------------------------------------------
   Evidence that we can run all the supported protocols

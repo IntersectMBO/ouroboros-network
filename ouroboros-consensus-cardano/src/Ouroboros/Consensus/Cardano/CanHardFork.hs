@@ -352,6 +352,7 @@ type CardanoHardForkConstraints c =
   , ShelleyBasedEra (ShelleyEra c)
   , ShelleyBasedEra (AllegraEra c)
   , ShelleyBasedEra (MaryEra    c)
+  , ShelleyBasedEra (AlonzoEra  c)
     -- These equalities allow the transition from Byron to Shelley, since
     -- @shelley-spec-ledger@ requires Ed25519 for Byron bootstrap addresses and
     -- the current Byron-to-Shelley translation requires a 224-bit hash for

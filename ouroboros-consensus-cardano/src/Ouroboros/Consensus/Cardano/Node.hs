@@ -375,6 +375,7 @@ protocolInfoCardano ::
   -> ProtocolParamsShelley
   -> ProtocolParamsAllegra
   -> ProtocolParamsMary
+  -> ProtocolParamsAlonzo
   -> ProtocolParamsTransition
        ByronBlock
        (ShelleyBlock (ShelleyEra c))
@@ -384,6 +385,9 @@ protocolInfoCardano ::
   -> ProtocolParamsTransition
        (ShelleyBlock (AllegraEra c))
        (ShelleyBlock (MaryEra c))
+  -> ProtocolParamsTransition
+       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (AlonzoEra c))
   -> ProtocolInfo m (CardanoBlock c)
 protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         byronGenesis           = genesisByron
@@ -403,6 +407,9 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                     ProtocolParamsMary {
                         maryProtVer = protVerMary
                       }
+                    ProtocolParamsAlonzo {
+                        alonzoProtVer = protVerAlonzo
+                      }
                     ProtocolParamsTransition {
                         transitionTrigger = triggerHardForkByronShelley
                       }
@@ -411,6 +418,9 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       }
                     ProtocolParamsTransition {
                         transitionTrigger = triggerHardForkAllegraMary
+                      }
+                    ProtocolParamsTransition {
+                        transitionTrigger = triggerHardForkMaryAlonzo
                       }
   | SL.Mainnet <- SL.sgNetworkId genesisShelley
   , length credssShelleyBased > 1
@@ -524,7 +534,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         mkPartialLedgerConfigShelley
           genesisMary
           maxMajorProtVer
-          TriggerHardForkNever
+          triggerHardForkMaryAlonzo
 
     -- Alonzo
 
@@ -534,7 +544,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockConfigAlonzo :: BlockConfig (ShelleyBlock (AlonzoEra c))
     blockConfigAlonzo =
         Shelley.mkShelleyBlockConfig
-          protVerMary
+          protVerAlonzo
           genesisAlonzo
           (tpraosBlockIssuerVKey <$> credssShelleyBased)
 

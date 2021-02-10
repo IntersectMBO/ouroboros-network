@@ -443,6 +443,9 @@ instance c ~ MockCryptoCompatByron
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (injAnytimeMary <$> arbitrary))
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> (injAnytimeAlonzo <$> arbitrary))
       , (1, fmap injHardFork <$> arbitrary)
       ]
     where
@@ -455,6 +458,7 @@ instance c ~ MockCryptoCompatByron
       injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley   query)
       injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra   query)
       injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary      query)
+      injAnytimeAlonzo  (Some      query)  = SomeSecond (QueryAnytimeAlonzo    query)
       injHardFork       (Some      query)  = SomeSecond (QueryHardFork         query)
 
 instance Arbitrary History.EraEnd where
@@ -537,6 +541,9 @@ instance c ~ MockCryptoCompatByron
               <*> genQueryAnytimeResultMary)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> genQueryAnytimeResultAlonzo)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryHardForkResult)
       ]
     where
@@ -582,6 +589,10 @@ instance c ~ MockCryptoCompatByron
       genQueryAnytimeResultMary :: Gen (SomeResult (CardanoBlock c))
       genQueryAnytimeResultMary =
           SomeResult (QueryAnytimeMary GetEraStart) <$> arbitrary
+
+      genQueryAnytimeResultAlonzo :: Gen (SomeResult (CardanoBlock c))
+      genQueryAnytimeResultAlonzo =
+          SomeResult (QueryAnytimeAlonzo GetEraStart) <$> arbitrary
 
       genQueryHardForkResult :: Gen (SomeResult (CardanoBlock c))
       genQueryHardForkResult = oneof
