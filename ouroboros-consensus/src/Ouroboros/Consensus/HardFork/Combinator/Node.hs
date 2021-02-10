@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolPa
                      ()
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage ()
+import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
 {-------------------------------------------------------------------------------

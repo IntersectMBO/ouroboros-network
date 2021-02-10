@@ -51,6 +51,9 @@ instance NodeInitStorage (SimpleBlock SimpleMockCrypto ext) where
 
   nodeCheckIntegrity _ _ = True
 
+instance BlockSupportsMetrics (SimpleBlock c ext) where
+  isSelfIssued = isSelfIssuedConstUnknown
+
 instance ( LedgerSupportsProtocol      (SimpleBlock SimpleMockCrypto ext)
          , Show (CannotForge           (SimpleBlock SimpleMockCrypto ext))
          , Show (ForgeStateInfo        (SimpleBlock SimpleMockCrypto ext))

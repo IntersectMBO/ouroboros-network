@@ -89,6 +89,7 @@ class ( LedgerSupportsProtocol           blk
       , SerialiseNodeToClientConstraints blk
       , LedgerSupportsPeerSelection      blk
       , NodeInitStorage                  blk
+      , BlockSupportsMetrics             blk
       , Show                (CannotForge blk)
       , Show             (ForgeStateInfo blk)
       , Show      (ForgeStateUpdateError blk)

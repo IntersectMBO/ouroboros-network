@@ -73,6 +73,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Node as X ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage as X
                      ()
 
+-- Instance for 'BlockSupportsMetrics'
+import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics as X ()
+
 -- Definition of InPairs (required to define translations)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as X
                      (InPairs (..))

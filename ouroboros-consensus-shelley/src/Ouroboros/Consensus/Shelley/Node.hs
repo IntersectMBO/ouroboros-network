@@ -368,6 +368,12 @@ instance ShelleyBasedEra era => NodeInitStorage (ShelleyBlock era) where
   RunNode instance
 -------------------------------------------------------------------------------}
 
+instance ShelleyBasedEra era => BlockSupportsMetrics (ShelleyBlock era) where
+  isSelfIssued cfg hdr =
+       case csvSelfIssued $ selectView cfg hdr of
+         SelfIssued    -> IsSelfIssued
+         NotSelfIssued -> IsNotSelfIssued
+
 instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
