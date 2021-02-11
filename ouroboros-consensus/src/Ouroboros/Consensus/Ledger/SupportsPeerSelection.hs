@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
   , RelayAddress (..)
   ) where
 
+import           Control.DeepSeq (NFData (..))
 import           Data.List.NonEmpty (NonEmpty)
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers
@@ -26,6 +27,10 @@ data StakePoolRelay =
     -- | One of the future relays
   | FutureRelay  RelayAddress
   deriving (Show, Eq)
+
+instance NFData StakePoolRelay where
+    rnf (CurrentRelay ra) = rnf ra
+    rnf (FutureRelay  ra) = rnf ra
 
 stakePoolRelayAddress :: StakePoolRelay -> RelayAddress
 stakePoolRelayAddress (CurrentRelay ra) = ra

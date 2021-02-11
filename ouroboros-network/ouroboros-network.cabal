@@ -159,6 +159,7 @@ library
                        bytestring        >=0.10 && <0.11,
                        cborg             >=0.2.1 && <0.3,
                        containers,
+                       deepseq,
                        directory,
                        dns,
                        fingertree        >=0.1.4.2 && <0.2,

@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -23,6 +24,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
     ) where
 
 
+import           Control.DeepSeq (NFData (..))
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
@@ -103,15 +105,27 @@ instance Show TraceLedgerPeers where
 
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
-data RelayAddress = RelayDomain DomainAddress
-                  | RelayAddress IP.IP Socket.PortNumber
+data RelayAddress = RelayDomain !DomainAddress
+                  | RelayAddress !IP.IP !Socket.PortNumber
                   deriving (Show, Eq, Ord)
+
+-- 'IP' nor 'IPv6' is strict, 'IPv4' is strict only because it's a newtype for
+-- a primitive type ('Word32').
+--
+instance NFData RelayAddress where
+  rnf (RelayDomain domain) = domain `seq` ()
+  rnf (RelayAddress ip !_port) =
+    case ip of
+      IP.IPv4 ipv4 -> rnf (IP.fromIPv4w ipv4)
+      IP.IPv6 ipv6 -> rnf (IP.fromIPv6w ipv6)
 
 -- | The relative stake of a stakepool in relation to the total amount staked.
 -- A value in the [0, 1] range.
 --
 newtype PoolStake = PoolStake { unPoolStake :: Rational }
   deriving (Eq, Fractional, Num, Ord, Show)
+  deriving newtype NFData
+
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
 -- relative stake of all preceding pools. A value in the range [0, 1].
