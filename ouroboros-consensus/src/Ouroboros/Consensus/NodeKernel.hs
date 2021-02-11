@@ -24,6 +24,9 @@ module Ouroboros.Consensus.NodeKernel (
   , initNodeKernel
   ) where
 
+
+import           Cardano.Prelude (forceElemsToWHNF)
+
 import           Control.Monad
 import           Control.Monad.Except
 import           Data.Bifunctor (second)
@@ -747,6 +750,7 @@ getPeersFromCurrentLedger kernel p = do
       guard (p immutableLedger)
       return
         $ map (second (fmap stakePoolRelayAddress))
+        $ forceElemsToWHNF
         $ getPeers immutableLedger
 
 -- | Like 'getPeersFromCurrentLedger' but with a \"after slot number X\"
