@@ -103,8 +103,8 @@ instance Show TraceLedgerPeers where
 
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
-data RelayAddress = RelayDomain DomainAddress
-                  | RelayAddress IP.IP Socket.PortNumber
+data RelayAddress = RelayDomain !DomainAddress
+                  | RelayAddress !IP.IP !Socket.PortNumber
                   deriving (Show, Eq, Ord)
 
 -- | The relative stake of a stakepool in relation to the total amount staked.
