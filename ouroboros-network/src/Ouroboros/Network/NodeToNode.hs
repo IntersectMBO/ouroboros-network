@@ -21,7 +21,6 @@ module Ouroboros.Network.NodeToNode (
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
-  , connectTo_V1
 
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
@@ -31,7 +30,6 @@ module Ouroboros.Network.NodeToNode (
   , newNetworkMutableStateSTM
   , cleanNetworkMutableState
   , withServer
-  , withServer_V1
 
   -- * Subscription Workers
   -- ** IP subscriptin worker
@@ -42,7 +40,6 @@ module Ouroboros.Network.NodeToNode (
   , SubscriptionParams (..)
   , IPSubscriptionParams
   , ipSubscriptionWorker
-  , ipSubscriptionWorker_V1
 
   -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
@@ -50,7 +47,6 @@ module Ouroboros.Network.NodeToNode (
   , NetworkDNSSubscriptionTracers (..)
   , nullNetworkDNSSubscriptionTracers
   , dnsSubscriptionWorker
-  , dnsSubscriptionWorker_V1
 
     -- ** Versions
   , Versions (..)
@@ -411,27 +407,6 @@ connectTo sn tr =
                   tr acceptableVersion
 
 
--- | Like 'connectTo' but specific to 'NodeToNodeV_1'.
---
-connectTo_V1
-  :: SocketSnocket
-  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
-  -> NodeToNodeVersionData
-  -> OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO a b
-  -> Maybe Socket.SockAddr
-  -> Socket.SockAddr
-  -> IO ()
-connectTo_V1 sn tracers versionData application localAddr remoteAddr =
-    connectTo
-      sn
-      tracers
-      (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          application)
-      localAddr
-      remoteAddr
-
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@.
 -- It forks a thread which runs an accept loop (server thread):
 --
@@ -464,27 +439,6 @@ withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolic
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
-
-
--- | Like 'withServer' but specific to 'NodeToNodeV_1'.
---
-withServer_V1
-  :: SocketSnocket
-  -> NetworkServerTracers Socket.SockAddr NodeToNodeVersion
-  -> NetworkMutableState Socket.SockAddr
-  -> AcceptedConnectionsLimit
-  -> Socket.Socket
-  -> NodeToNodeVersionData
-  -> OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO x y
-  -> ErrorPolicies
-  -> IO Void
-withServer_V1 sn tracers networkState acceptedConnectionsLimit sd versionData application =
-    withServer
-      sn tracers networkState acceptedConnectionsLimit sd
-      (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          application)
 
 
 -- | 'ipSubscriptionWorker' which starts given application versions on each
@@ -526,36 +480,6 @@ ipSubscriptionWorker
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           acceptableVersion
           versions)
-
-
--- | Like 'ipSubscriptionWorker' but specific to 'NodeToNodeV_1'.
---
-ipSubscriptionWorker_V1
-    :: forall mode x y.
-       ( HasInitiator mode ~ True )
-    => SocketSnocket
-    -> NetworkIPSubscriptionTracers Socket.SockAddr NodeToNodeVersion
-    -> NetworkMutableState Socket.SockAddr
-    -> IPSubscriptionParams ()
-    -> NodeToNodeVersionData
-    -> OuroborosApplication mode Socket.SockAddr BL.ByteString IO x y
-    -> IO Void
-ipSubscriptionWorker_V1
-  sn
-  tracers
-  networkState
-  subscriptionParams
-  versionData
-  application
-    = ipSubscriptionWorker
-        sn
-        tracers
-        networkState
-        subscriptionParams
-        (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          application)
 
 
 -- | 'dnsSubscriptionWorker' which starts given application versions on each
@@ -600,35 +524,6 @@ dnsSubscriptionWorker
         acceptableVersion
         versions)
 
-
--- | Like 'dnsSubscriptionWorker' but specific to 'NodeToNodeV_1'.
---
-dnsSubscriptionWorker_V1
-    :: forall mode x y.
-       ( HasInitiator mode ~ True )
-    => SocketSnocket
-    -> NetworkDNSSubscriptionTracers NodeToNodeVersion Socket.SockAddr
-    -> NetworkMutableState Socket.SockAddr
-    -> DnsSubscriptionParams ()
-    -> NodeToNodeVersionData
-    -> OuroborosApplication mode Socket.SockAddr BL.ByteString IO x y
-    -> IO Void
-dnsSubscriptionWorker_V1
-  sn
-  tracers
-  networkState
-  subscriptionParams
-  versionData
-  application =
-     dnsSubscriptionWorker
-      sn
-      tracers
-      networkState
-      subscriptionParams
-      (simpleSingletonVersions
-          NodeToNodeV_1
-          versionData
-          application)
 
 -- | A minimal error policy for remote peers, which only handles exceptions
 -- raised by `ouroboros-network`.
