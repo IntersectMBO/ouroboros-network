@@ -18,8 +18,6 @@ module Ouroboros.Network.NodeToClient (
 
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
-  , connectTo_V1
-  , connectTo_V2
   , connectTo
 
   , NetworkServerTracers (..)
@@ -28,8 +26,6 @@ module Ouroboros.Network.NodeToClient (
   , newNetworkMutableState
   , newNetworkMutableStateSTM
   , cleanNetworkMutableState
-  , withServer_V1
-  , withServer_V2
   , withServer
 
 
@@ -37,8 +33,6 @@ module Ouroboros.Network.NodeToClient (
   , NetworkSubscriptionTracers (..)
   , ClientSubscriptionParams (..)
   , ncSubscriptionWorker
-  , ncSubscriptionWorker_V1
-  , ncSubscriptionWorker_V2
 
   -- * Null Protocol Peers
   , chainSyncPeerNull
@@ -253,73 +247,8 @@ connectTo snocket tracers versions path =
                   Nothing
                   (localAddressFromPath path)
 
--- | A version of 'Ouroboros.Network.Socket.connectToNode' which connects using
--- the 'NodeToClientV_1' version of the protocol.
---
-connectTo_V1
-  :: LocalSnocket
-  -> NetworkConnectTracers LocalAddress NodeToClientVersion
-  -> NodeToClientVersionData
-  -- ^ Client version data sent during initial handshake protocol.  Client and
-  -- server must agree on it.
-  -> OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b
-  -- ^ 'OuroborosInitiatorApplication' which is run on an established connection
-  -- using a multiplexer after the initial handshake protocol suceeds.
-  -> FilePath
-  -- ^ path to unix socket or named pipe
-  -> IO ()
-connectTo_V1 snocket tracers versionData application =
-  connectTo
-    snocket
-    tracers
-    (simpleSingletonVersions
-      NodeToClientV_1
-      versionData
-      application)
 
-{-# DEPRECATED connectTo_V1 "Use connectTo_V2" #-}
-
-
--- | A version of 'Ouroboros.Network.Socket.connectToNode' which connects using
--- the 'NodeToClientV_1' version of the protocol.
---
-connectTo_V2
-  :: LocalSnocket
-  -> NetworkConnectTracers LocalAddress NodeToClientVersion
-  -> NodeToClientVersionData
-  -- ^ Client version data sent during initial handshake protocol.  Client and
-  -- server must agree on it.
-  -> OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b
-  -- ^ 'NodeToClientV_1' version of 'OuroborosInitiatorApplication' which is
-  -- run on an established connection using a multiplexer after the initial
-  -- handshake protocol suceeds.
-  -> OuroborosApplication InitiatorMode LocalAddress BL.ByteString IO a b
-  -- ^ 'NodeToClientV_2' version of 'OuroborosInitiatorApplication' which is
-  -- run on an established connection using a multiplexer after the initial
-  -- handshake protocol suceeds. 'NodeToClientV_2' supports 'LocalStateQuery'
-  -- mini-protocol.
-  -> FilePath
-  -- ^ path to unix socket or named pipe
-  -> IO ()
-connectTo_V2 snocket tracers versionData application_V1 application_V2 =
-    connectTo
-      snocket
-      tracers
-      (
-          simpleSingletonVersions
-            NodeToClientV_1
-            versionData
-            application_V1
-        <>
-          simpleSingletonVersions
-            NodeToClientV_2
-            versionData
-            application_V2
-      )
-
--- | A specialised version of 'Ouroboros.Network.Socket.withServerNode'; Use
--- 'withServer_V1' instead of you would like to use 'NodeToCLientV_1' version of
--- the protocols.
+-- | A specialised version of 'Ouroboros.Network.Socket.withServerNode'.
 --
 -- Comments to 'Ouroboros.Network.NodeToNode.withServer' apply here as well.
 --
@@ -346,69 +275,6 @@ withServer sn tracers networkState sd versions errPolicies =
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
-
--- | A specialised version of 'withServer' which can only communicate using
--- 'NodeToClientV_1' version of the protocol.
---
-withServer_V1
-  :: LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientVersion
-  -> NetworkMutableState LocalAddress
-  -> LocalSocket
-  -> NodeToClientVersionData
-  -- ^ Client version data sent during initial handshake protocol.  Client and
-  -- server must agree on it.
-  -> OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b
-  -- ^ applications which has the reponder side, i.e.
-  -- 'OuroborosResponderApplication' or
-  -- 'OuroborosInitiatorAndResponderApplication'.
-  -> ErrorPolicies
-  -> IO Void
-withServer_V1 sn tracers networkState sd versionData application =
-    withServer
-      sn tracers networkState sd
-      (simpleSingletonVersions
-        NodeToClientV_1
-        versionData
-        application)
-
-{-# DEPRECATED withServer_V1 "Use withServer_V2" #-}
-
-
--- | A specialised version of 'withServer' which can only communicate using
--- 'NodeToClientV_1' or 'NodeToClientV_2' version of the protocol.
---
-withServer_V2
-  :: LocalSnocket
-  -> NetworkServerTracers LocalAddress NodeToClientVersion
-  -> NetworkMutableState LocalAddress
-  -> LocalSocket
-  -> NodeToClientVersionData
-  -- ^ Client version data sent during initial handshake protocol.  Client and
-  -- server must agree on it.
-  -> OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b
-  -- ^ 'NodeToClientV_1' version of applications which has the reponder side,
-  -- i.e.  'OuroborosResponderApplication' or
-  -- 'OuroborosInitiatorAndResponderApplication'.
-  -> OuroborosApplication ResponderMode LocalAddress BL.ByteString IO a b
-  -- ^ 'NodeToClientV_2' version of 'OuroborosApplication', which supports
-  -- 'LocalStateQuery' mini-protocol.
-  -> ErrorPolicies
-  -> IO Void
-withServer_V2 sn tracers networkState sd versionData application_V1 application_V2 =
-    withServer
-      sn tracers networkState sd
-      (
-          simpleSingletonVersions
-            NodeToClientV_1
-            versionData
-            application_V1
-        <>
-          simpleSingletonVersions
-            NodeToClientV_2
-            versionData
-            application_V2
-      )
 
 type NetworkClientSubcriptionTracers
     = NetworkSubscriptionTracers Identity LocalAddress NodeToClientVersion
@@ -454,80 +320,6 @@ ncSubscriptionWorker
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           acceptableVersion
           versions)
-
-
--- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_1'.
---
-ncSubscriptionWorker_V1
-    :: forall mode x y.
-       ( HasInitiator mode ~ True )
-    => LocalSnocket
-    -> NetworkClientSubcriptionTracers
-    -> NetworkMutableState LocalAddress
-    -> ClientSubscriptionParams ()
-    -> NodeToClientVersionData
-    -> OuroborosApplication mode LocalAddress BL.ByteString IO x y
-    -> IO Void
-ncSubscriptionWorker_V1
-  sn
-  tracers
-  networkState
-  subscriptionParams
-  versionData
-  application
-    = ncSubscriptionWorker
-        sn
-        tracers
-        networkState
-        subscriptionParams
-        (simpleSingletonVersions
-          NodeToClientV_1
-          versionData
-          application)
-
-{-# DEPRECATED ncSubscriptionWorker_V1 "Use ncSubscriptionWorker_V2" #-}
-
-
--- | Like 'ncSubscriptionWorker' but specific to 'NodeToClientV_2'.
---
-ncSubscriptionWorker_V2
-    :: forall appType x y.
-       ( HasInitiator appType ~ True )
-    => LocalSnocket
-    -> NetworkClientSubcriptionTracers
-    -> NetworkMutableState LocalAddress
-    -> ClientSubscriptionParams ()
-    -> NodeToClientVersionData
-    -> OuroborosApplication appType LocalAddress BL.ByteString IO x y
-    -- ^ 'NodeToClientV_1' version of 'OuroborosApplication'
-    -> OuroborosApplication appType LocalAddress BL.ByteString IO x y
-    -- ^ 'NodeToClientV_2' version of 'OuroboorsApplication', which supports
-    -- 'LocalStateQuery' mini-protocol.
-    -> IO Void
-ncSubscriptionWorker_V2
-  sn
-  tracers
-  networkState
-  subscriptionParams
-  versionData
-  application_V1
-  application_V2
-    = ncSubscriptionWorker
-        sn
-        tracers
-        networkState
-        subscriptionParams
-        (
-            simpleSingletonVersions
-              NodeToClientV_1
-              versionData
-              application_V1
-          <>
-            simpleSingletonVersions
-              NodeToClientV_2
-              versionData
-              application_V2
-        )
 
 -- | 'ErrorPolicies' for client application.  Additional rules can be added by
 -- means of a 'Semigroup' instance of 'ErrorPolicies'.
