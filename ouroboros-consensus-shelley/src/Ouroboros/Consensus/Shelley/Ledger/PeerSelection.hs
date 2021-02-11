@@ -7,6 +7,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.PeerSelection () where
 
+import           Cardano.Prelude (forceElemsToWHNF)
+
 import           Data.Bifunctor (second)
 import           Data.Foldable (toList)
 import           Data.List (sortOn)
@@ -82,6 +84,7 @@ instance c ~ EraCrypto era
         -> Maybe (NonEmpty StakePoolRelay)
       pparamsRelayAddresses injStakePoolRelay =
             NE.nonEmpty
+          . forceElemsToWHNF
           . mapMaybe (fmap injStakePoolRelay . relayToRelayAddress)
           . toList
           . SL._poolRelays
