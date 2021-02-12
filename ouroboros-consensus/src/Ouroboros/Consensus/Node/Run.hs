@@ -99,3 +99,8 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy                 (Query blk)
       , ShowProxy           (TxId (GenTx blk))
       ) => RunNode blk
+  -- This class is intentionally empty. It is not necessarily compositional - ie
+  -- the instance for 'HardForkBlock' might do more than merely delegate to the
+  -- instance for each era - but we want as many of its super classes as
+  -- possible to rely on compositional instances when possible. Not putting any
+  -- methods here helps encourage that.
