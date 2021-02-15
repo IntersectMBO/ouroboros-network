@@ -325,16 +325,11 @@ initStartingWith tracer cfg streamAPI initDb = do
 {-------------------------------------------------------------------------------
   Write to disk
 -------------------------------------------------------------------------------}
-
--- | Take a snapshot of the /oldest ledger state/ in the ledger DB
+-- | Take snapshot of the 'LedgerState' that is provided as an argument to this
+-- function.
 --
--- We write the /oldest/ ledger state to disk because the intention is to only
--- write ledger states to disk that we know to be immutable. Primarily for
--- testing purposes, 'takeSnapshot' returns the block reference corresponding
--- to the snapshot that we wrote.
---
--- If a snapshot with the same number already exists on disk or if the tip is at
--- genesis, no snapshot is taken.
+-- If a snapshot with the same number already exists on disk or if the tip is
+-- at genesis, no snapshot is taken.
 --
 -- Note that an EBB can have the same slot number and thus snapshot number as
 -- the block after it. This doesn't matter. The one block difference in the
@@ -350,9 +345,10 @@ takeSnapshot ::
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
   -> (ExtLedgerState blk -> Encoding)
-  -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot tracer hasFS encLedger db =
-    case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
+  -> ExtLedgerState blk
+  -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot tracer hasFS encLedger snapshotCandidate =
+    case pointToWithOriginRealPoint (castPoint (getTip snapshotCandidate)) of
       Origin ->
         return Nothing
       NotOrigin tip -> do
@@ -362,12 +358,9 @@ takeSnapshot tracer hasFS encLedger db =
         if List.any ((== number) . dsNumber) snapshots then
           return Nothing
         else do
-          writeSnapshot hasFS encLedger snapshot oldest
+          writeSnapshot hasFS encLedger snapshot snapshotCandidate
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
-  where
-    oldest :: ExtLedgerState blk
-    oldest = ledgerDbAnchor db
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
 -- snapshots are stored on disk. The oldest snapshots are deleted.

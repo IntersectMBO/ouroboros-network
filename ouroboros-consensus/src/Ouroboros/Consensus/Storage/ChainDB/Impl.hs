@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE LambdaCase               #-}
@@ -205,7 +206,7 @@ openDBInternal args launchBgTasks = do
         testing = Internal
           { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB
           , intGarbageCollect          = getEnv1 h Background.garbageCollect
-          , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
+          , intUpdateLedgerSnapshots   = getEnv  h updateLedgerSnapshots
           , intAddBlockRunner          = getEnv  h Background.addBlockRunner
           , intKillBgThreads           = varKillBgThreads
           }
@@ -220,6 +221,10 @@ openDBInternal args launchBgTasks = do
   where
     tracer = Args.cdbTracer args
     (argsImmutableDb, argsVolatileDb, argsLgrDb, _) = Args.fromChainDbArgs args
+    updateLedgerSnapshots = \case
+      CDB{..} -> do
+        snapshotCandidate <- atomically $ LgrDB.oldestLedgerSnapshot <$> LgrDB.getCurrent cdbLgrDB
+        Background.updateLedgerSnapshots cdbLgrDB snapshotCandidate
 
 isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
 isOpen (CDBHandle varState) = readTVar varState <&> \case
