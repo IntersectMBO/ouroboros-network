@@ -49,6 +49,7 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Replace 'TxSubmision' with 'Txsubmission2' protocol.
+    -- * Enable @CardanoNodeToNodeVersion5@, i.e., Alonzo
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion

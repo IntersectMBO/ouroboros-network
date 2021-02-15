@@ -248,6 +248,20 @@ pattern CardanoNodeToNodeVersion4 =
       :* Nil
       )
 
+-- | The hard fork enabled with the latest Byron version, the Shelley, Allegra,
+-- Mary and Alonzo eras enabled.
+pattern CardanoNodeToNodeVersion5 :: BlockNodeToNodeVersion (CardanoBlock c)
+pattern CardanoNodeToNodeVersion5 =
+    HardForkNodeToNodeEnabled
+      HardForkSpecificNodeToNodeVersion1
+      (  EraNodeToNodeEnabled ByronNodeToNodeVersion2
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* Nil
+      )
+
 -- | We support the sole Byron version with the hard fork disabled.
 pattern CardanoNodeToClientVersion1 :: BlockNodeToClientVersion (CardanoBlock c)
 pattern CardanoNodeToClientVersion1 =
@@ -326,6 +340,19 @@ pattern CardanoNodeToClientVersion6 =
       :* Nil
       )
 
+-- | The hard fork enabled, and the Shelley, Allegra, Mary and Alonzo eras enabled
+pattern CardanoNodeToClientVersion7 :: BlockNodeToClientVersion (CardanoBlock c)
+pattern CardanoNodeToClientVersion7 =
+    HardForkNodeToClientEnabled
+      HardForkSpecificNodeToClientVersion2
+      (  EraNodeToClientEnabled ByronNodeToClientVersion1
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
+      :* Nil
+      )
+
 instance CardanoHardForkConstraints c
       => SupportedNetworkProtocolVersion (CardanoBlock c) where
   supportedNodeToNodeVersions _ = Map.fromList $
@@ -334,7 +361,7 @@ instance CardanoHardForkConstraints c
       , (NodeToNodeV_3, CardanoNodeToNodeVersion2)
       , (NodeToNodeV_4, CardanoNodeToNodeVersion3)
       , (NodeToNodeV_5, CardanoNodeToNodeVersion4)
-      , (NodeToNodeV_6, CardanoNodeToNodeVersion4)
+      , (NodeToNodeV_6, CardanoNodeToNodeVersion5)
       ]
 
   supportedNodeToClientVersions _ = Map.fromList $
@@ -346,6 +373,7 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_6, CardanoNodeToClientVersion5)
       , (NodeToClientV_7, CardanoNodeToClientVersion6)
       , (NodeToClientV_8, CardanoNodeToClientVersion6)
+      , (NodeToClientV_9, CardanoNodeToClientVersion7)
       ]
 
 {-------------------------------------------------------------------------------
