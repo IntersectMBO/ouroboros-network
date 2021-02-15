@@ -15,6 +15,7 @@ in pkgs.runCommand "ouroboros-consensus-docs" {
       enumitem
       latexmk
       scheme-small
+      siunitx
       todonotes
     ;
   })];
