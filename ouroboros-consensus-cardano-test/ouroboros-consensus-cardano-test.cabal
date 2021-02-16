@@ -37,7 +37,7 @@ library
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
-                     , cardano-ledger-test
+                     , cardano-ledger-byron-test
                      , cardano-prelude
                      , cardano-slotting
                      , cborg
@@ -91,7 +91,7 @@ test-suite test
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
-                     , cardano-ledger-test
+                     , cardano-ledger-byron-test
                      , cardano-slotting
                      , cborg
                      , containers

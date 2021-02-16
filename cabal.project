@@ -119,7 +119,7 @@ package cardano-ledger-byron
 package cardano-ledger-shelley-ma-test
   tests: False
 
-package cardano-ledger-test
+package cardano-ledger-byron-test
   tests: False
 
 package goblins
