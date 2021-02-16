@@ -10,7 +10,6 @@
 
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
-  , Application (..)
   , Version (..)
   , Accept (..)
   , Acceptable (..)
@@ -29,22 +28,15 @@ import           Data.Text (Text)
 import           GHC.Stack (HasCallStack)
 
 
--- Description of versions.
+-- | The version map supported by the local agent keyed on the version
+-- identifier.
 --
--- - Each particular version is a function from a pair of version data
---   (peculiar to that version, existentially-quantified) to some result
---   type (called `r` in this module).
--- - A version-numbering scheme, and the set of supported versions, is
---   defined simultaneously by a `Map` keyed on something, perhaps `Word32` in
---   a real-world instance. The `Sigma` GADT pairs the particular version data
---   with each version definition.
-
--- | The set of versions supported by the local agent are described by a map
--- keyed on the version identifier.
+-- Each 'Version' contains a function which takes negotiated version data and
+-- returns negotiated application (the 'r' type variable).
 --
--- If one needs to combine multiple versions the simplest way is to use
--- one of the combinators: 'foldMapVersions', 'combineVersions' or the
--- 'Semigroup' instance directly:
+-- If one needs to combine multiple versions the simplest way is to use one of
+-- the combinators: 'foldMapVersions', 'combineVersions' or the 'Semigroup'
+-- instance directly:
 --
 -- >
 -- > fold $ (simpleSingletonVersions ...)
@@ -93,15 +85,9 @@ data Accept vData
 class Acceptable v where
   acceptableVersion :: v -> v -> Accept v
 
--- | Takes a pair of version data: local then remote.
-newtype Application vData r = Application
-  { runApplication :: vData -> r
-  }
-  deriving Functor
-
 
 data Version vData r = Version
-  { versionApplication :: Application vData r
+  { versionApplication :: vData -> r
   , versionData        :: vData
   }
   deriving Functor
@@ -124,4 +110,4 @@ simpleSingletonVersions
 simpleSingletonVersions vNum vData r =
   Versions
     $ Map.singleton vNum
-      (Version (Application (\_ -> r)) vData)
+      (Version (\_ -> r) vData)
