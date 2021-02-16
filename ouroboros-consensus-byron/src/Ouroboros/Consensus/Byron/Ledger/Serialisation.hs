@@ -318,7 +318,7 @@ fakeByronBlockSizeHint = 2000
 -- Does /not/ have to backwards compatible with legacy (cardano-sl) nodes
 -- (which never send or store these headers), but should be inverse to
 -- 'decodeSizedHeader', and moreover uses 'fromCBORABlockOrBoundaryHdr' from
--- cardano-ledger, and so we don't have too much choice in this encoder.
+-- cardano-ledger-byron, and so we don't have too much choice in this encoder.
 encodeUnsizedHeader :: UnsizedHeader -> Encoding
 encodeUnsizedHeader (UnsizedHeader raw _ _) = CC.toCBORABlockOrBoundaryHdr raw
 

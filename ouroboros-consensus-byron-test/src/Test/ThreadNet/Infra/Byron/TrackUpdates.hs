@@ -197,7 +197,7 @@ mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result
                       confirmed = fromIntegral (Set.size votes') >= quorum
                       expired   = proposalSlot + ttl < s
                   in
-                  if  -- TODO cardano-ledger checks for quorum before it checks
+                  if  -- TODO cardano-ledger-byron checks for quorum before it checks
                       -- for expiry, so we do mimick that here. But is that
                       -- correct?
                     | confirmed -> continueWith $ Endorsing s Set.empty

@@ -593,7 +593,7 @@ tests = testGroup "Byron" $
             , setupSlotLength   = defaultSlotLength
             , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
             }
-    , testProperty "cardano-ledger checks for proposal confirmation before it checks for expiry" $
+    , testProperty "cardano-ledger-byron checks for proposal confirmation before it checks for expiry" $
           -- must check for quorum before checking for expiration
           let ncn = NumCoreNodes 5 in
           prop_simple_real_pbft_convergence TestSetup
@@ -672,7 +672,7 @@ tests = testGroup "Byron" $
           -- rejects them as invalid. When it then forges in s12, it only
           -- includes its own vote, which doesn't meet quota (3 = 5 * 0.6) and
           -- so the proposal then expires (TTL 10 slots, but only after an
-          -- endorsement; see Issue 749 in cardano-ledger).
+          -- endorsement; see Issue 749 in cardano-ledger-byron).
           --
           -- "Test.ThreadNet.Byron.TrackUpdates" does not otherwise
           -- correctly anticipate such races, so it makes no requirement for

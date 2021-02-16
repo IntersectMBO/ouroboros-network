@@ -52,7 +52,7 @@ library
                      , cardano-crypto
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
@@ -86,7 +86,7 @@ executable db-converter
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-slotting
                      , directory
                      , filepath

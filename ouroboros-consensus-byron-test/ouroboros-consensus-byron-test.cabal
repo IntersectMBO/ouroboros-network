@@ -39,7 +39,7 @@ library
                      , cardano-crypto-class
                      , cardano-crypto-test
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-ledger-test
                      , containers        >=0.5   && <0.7
                      , hedgehog-quickcheck
@@ -84,7 +84,7 @@ test-suite test
                      , cardano-crypto-class
                      , cardano-crypto-test
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-ledger-test
                      , cardano-slotting
                      , cborg

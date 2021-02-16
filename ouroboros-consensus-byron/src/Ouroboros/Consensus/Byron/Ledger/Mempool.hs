@@ -183,7 +183,7 @@ fromMempoolPayload = go
   Auxiliary: transaction IDs
 -------------------------------------------------------------------------------}
 
--- TODO: move to cardano-ledger (cardano-ledger#581)
+-- TODO: move to cardano-ledger-byron (cardano-ledger-byron#581)
 byronIdTx :: Utxo.ATxAux ByteString -> Utxo.TxId
 byronIdTx = hashDecoded . Utxo.aTaTx
 

@@ -36,7 +36,7 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-ledger-test
                      , cardano-prelude
                      , cardano-slotting
@@ -90,7 +90,7 @@ test-suite test
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-ledger-test
                      , cardano-slotting
                      , cborg
@@ -128,4 +128,3 @@ test-suite test
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
-
