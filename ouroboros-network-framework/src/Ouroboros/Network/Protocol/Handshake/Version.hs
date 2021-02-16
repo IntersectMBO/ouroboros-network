@@ -29,22 +29,15 @@ import           Data.Text (Text)
 import           GHC.Stack (HasCallStack)
 
 
--- Description of versions.
+-- | The version map supported by the local agent keyed on the version
+-- identifier.
 --
--- - Each particular version is a function from a pair of version data
---   (peculiar to that version, existentially-quantified) to some result
---   type (called `r` in this module).
--- - A version-numbering scheme, and the set of supported versions, is
---   defined simultaneously by a `Map` keyed on something, perhaps `Word32` in
---   a real-world instance. The `Sigma` GADT pairs the particular version data
---   with each version definition.
-
--- | The set of versions supported by the local agent are described by a map
--- keyed on the version identifier.
+-- Each 'Version' contains a function which takes negotiated version data and
+-- returns negotiated application (the 'r' type variable).
 --
--- If one needs to combine multiple versions the simplest way is to use
--- one of the combinators: 'foldMapVersions', 'combineVersions' or the
--- 'Semigroup' instance directly:
+-- If one needs to combine multiple versions the simplest way is to use one of
+-- the combinators: 'foldMapVersions', 'combineVersions' or the 'Semigroup'
+-- instance directly:
 --
 -- >
 -- > fold $ (simpleSingletonVersions ...)
