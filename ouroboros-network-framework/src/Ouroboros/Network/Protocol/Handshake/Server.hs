@@ -62,7 +62,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
                       Yield (ServerAgency TokConfirm)
                             (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
                             (Done TokDone $ Right $
-                              ( runApplication app agreedData
+                              ( app agreedData
                               , vNumber
                               , agreedData
                               ))

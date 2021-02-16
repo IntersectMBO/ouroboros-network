@@ -204,8 +204,8 @@ instance CoArbitrary VersionData where
 -- ProtocolVersion generators
 --
 
-application :: VersionData -> Application VersionData Bool
-application d = Application $ \d' ->
+application :: VersionData -> VersionData -> Bool
+application d = \d' ->
      (dataVersion0 d == dataVersion0 d')
      -- we take `&&` (see `acceptableVersions`
      -- below), which is like `*` in Z₂

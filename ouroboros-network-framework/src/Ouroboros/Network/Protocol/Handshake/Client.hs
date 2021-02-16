@@ -59,7 +59,7 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
               Right vData' ->
                 case acceptVersion vData vData' of
                   Accept agreedData ->
-                    Done TokDone $ Right $ ( runApplication app agreedData
+                    Done TokDone $ Right $ ( app agreedData
                                            , vNumber
                                            , agreedData
                                            )

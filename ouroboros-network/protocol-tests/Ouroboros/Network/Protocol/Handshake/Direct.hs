@@ -28,8 +28,8 @@ pureHandshake acceptVersion (Versions serverVersions) (Versions clientVersions) 
         (vNumber, _):_ -> 
           case (serverVersions Map.! vNumber, clientVersions Map.! vNumber) of
             ( version, version' ) ->
-                ( runApplication (versionApplication version)
+                ( versionApplication version
                     <$> acceptVersion (versionData version)  (versionData version')
-                , runApplication (versionApplication version')
+                , versionApplication version'
                     <$> acceptVersion (versionData version') (versionData version)
                 )

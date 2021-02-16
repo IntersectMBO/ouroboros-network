@@ -10,7 +10,6 @@
 
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
-  , Application (..)
   , Version (..)
   , Accept (..)
   , Acceptable (..)
@@ -86,15 +85,9 @@ data Accept vData
 class Acceptable v where
   acceptableVersion :: v -> v -> Accept v
 
--- | Takes a pair of version data: local then remote.
-newtype Application vData r = Application
-  { runApplication :: vData -> r
-  }
-  deriving Functor
-
 
 data Version vData r = Version
-  { versionApplication :: Application vData r
+  { versionApplication :: vData -> r
   , versionData        :: vData
   }
   deriving Functor
@@ -117,4 +110,4 @@ simpleSingletonVersions
 simpleSingletonVersions vNum vData r =
   Versions
     $ Map.singleton vNum
-      (Version (Application (\_ -> r)) vData)
+      (Version (\_ -> r) vData)
