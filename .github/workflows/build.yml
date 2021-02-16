@@ -121,9 +121,24 @@ jobs:
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
 
-    - name: Use cabal.project.local.ci.windows
+    - name: Record dependencies
       run: |
-        cat ./cabal.project.local.ci.windows >> ./cabal.project.local
+        cat ${{ env.PLAN_JSON }} | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
+
+    - uses: actions/cache@v2
+      name: Cache cabal store
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        restore-keys: |
+          cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+          cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-
+
+    - name: Set up cabal.project.local
+      run: |
+        if [ "$OS" == Windows_NT ]; then
+          cat ./cabal.project.local.ci.windows >> ./cabal.project.local
+        fi
 
         cat >> cabal.project.local <<EOF
         package cardano-crypto-praos
