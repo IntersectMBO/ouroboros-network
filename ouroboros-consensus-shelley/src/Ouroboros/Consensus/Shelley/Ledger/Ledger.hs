@@ -11,6 +11,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -49,6 +50,7 @@ import           Control.Monad.Except
 import           Data.Functor.Identity
 import           Data.Word
 import           GHC.Generics (Generic)
+import           GHC.Records
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
@@ -71,6 +73,7 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
 
+import qualified Cardano.Ledger.Core as Ledger.Core
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 
@@ -378,8 +381,8 @@ instance HasHardForkHistory (ShelleyBlock era) where
 
 instance ShelleyBasedEra era
       => CommonProtocolParams (ShelleyBlock era) where
-  maxHeaderSize = fromIntegral . SL._maxBHSize . getPParams . shelleyLedgerState
-  maxTxSize     = fromIntegral . SL._maxTxSize . getPParams . shelleyLedgerState
+  maxHeaderSize = fromIntegral . getField @"_maxBHSize" . getPParams . shelleyLedgerState
+  maxTxSize     = fromIntegral . getField @"_maxTxSize" . getPParams . shelleyLedgerState
 
 {-------------------------------------------------------------------------------
   ValidateEnvelope
@@ -401,7 +404,7 @@ instance ShelleyBasedEra era => ValidateEnvelope (ShelleyBlock era) where
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getPParams :: SL.NewEpochState era -> SL.PParams era
+getPParams :: SL.NewEpochState era -> Ledger.Core.PParams era
 getPParams = SL.esPp . SL.nesEs
 
 {-------------------------------------------------------------------------------

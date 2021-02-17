@@ -46,6 +46,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
+import qualified Cardano.Ledger.Core as LC
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (RewardAccounts)
 import qualified Shelley.Spec.Ledger.RewardProvenance as SL (RewardProvenance)
@@ -87,7 +88,7 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
     :: Set (Either SL.Coin (SL.Credential 'SL.Staking (EraCrypto era)))
     -> Query (ShelleyBlock era) (NonMyopicMemberRewards (EraCrypto era))
   GetCurrentPParams
-    :: Query (ShelleyBlock era) (SL.PParams era)
+    :: Query (ShelleyBlock era) (LC.PParams era)
   GetProposedPParamsUpdates
     :: Query (ShelleyBlock era) (SL.ProposedPPUpdates era)
   -- | This gets the stake distribution, but not in terms of _active_ stake

@@ -315,57 +315,21 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     initLedgerState :: LedgerState (ShelleyBlock era)
     initLedgerState = ShelleyLedgerState {
         shelleyLedgerTip        = Origin
-      , shelleyLedgerState      = SL.chainNes initShelleyState
+      , shelleyLedgerState      =
+          registerGenesisStaking (SL.sgStaking genesis) $
+            SL.initialState genesis ()
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
       }
 
     initChainDepState :: TPraosState (EraCrypto era)
     initChainDepState = TPraosState Origin $
-      SL.ChainDepState {
-          SL.csProtocol = SL.PrtclState
-            (SL.chainOCertIssue     initShelleyState)
-            (SL.chainEvolvingNonce  initShelleyState)
-            (SL.chainCandidateNonce initShelleyState)
-        , SL.csTickn = SL.TicknState
-            (SL.chainEpochNonce     initShelleyState)
-            (SL.chainPrevEpochNonce initShelleyState)
-        , SL.csLabNonce =
-            (SL.chainPrevEpochNonce initShelleyState)
-        }
-
-    initialEpochNo :: EpochNo
-    initialEpochNo = 0
-
-    -- We can just use 'SL.genesisUTxO' to compute the initial UTxO from the
-    -- initial funds. No need to combine the initial funds with an existing
-    -- UTxO, so no need for 'registerInitialFunds'.
-    initialUtxo :: SL.UTxO era
-    initialUtxo = SL.genesisUTxO genesis
-
-    initShelleyState :: SL.ChainState era
-    initShelleyState =
-        overNewEpochState
-          (registerGenesisStaking (SL.sgStaking genesis)) $
-          SL.initialShelleyState
-            Origin
-            initialEpochNo
-            initialUtxo
-            (coin $ inject (SL.word64ToCoin (SL.sgMaxLovelaceSupply genesis))
-                <-> SL.balance initialUtxo)
-            (SL.sgGenDelegs genesis)
-            (SL.sgProtocolParams genesis)
-            initialNonce
+      SL.initialChainDepState initialNonce (SL.sgGenDelegs genesis)
 
     initExtLedgerState :: ExtLedgerState (ShelleyBlock era)
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState
       }
-
-    overNewEpochState ::
-         (SL.NewEpochState era -> SL.NewEpochState era)
-      -> (SL.ChainState    era -> SL.ChainState    era)
-    overNewEpochState f cs = cs { SL.chainNes = f (SL.chainNes cs) }
 
 protocolClientInfoShelley :: ProtocolClientInfo (ShelleyBlock era)
 protocolClientInfoShelley =

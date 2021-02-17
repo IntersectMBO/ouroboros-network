@@ -42,8 +42,7 @@ import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
-import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators
-                     (genPParams)
+import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators ()
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 {-------------------------------------------------------------------------------
@@ -88,7 +87,7 @@ instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
     , SomeResult <$> (GetNonMyopicMemberRewards <$> arbitrary) <*> arbitrary
-    , SomeResult GetCurrentPParams <$> genPParams (Proxy @era)
+    , SomeResult GetCurrentPParams <$> arbitrary
     , SomeResult GetProposedPParamsUpdates <$> arbitrary
     , SomeResult GetStakeDistribution <$> arbitrary
     , SomeResult DebugEpochState <$> arbitrary

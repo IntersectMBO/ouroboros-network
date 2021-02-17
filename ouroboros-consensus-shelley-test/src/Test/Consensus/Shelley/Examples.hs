@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Util.Time
 import qualified Cardano.Ledger.AuxiliaryData as SL (AuxiliaryDataHash (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
+import qualified Cardano.Ledger.SafeHash as SL
 import qualified Control.State.Transition.Extended as SL (PredicateFailure)
 import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
@@ -84,11 +85,11 @@ import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
                      (IndividualPoolStake (..))
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL (BlocksMade (..),
                      emptySnapShots)
-import qualified Shelley.Spec.Ledger.Hashing as SL (hashAnnotated)
 import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
                      signedKES)
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
+import qualified Shelley.Spec.Ledger.Rewards as SL
 import qualified Shelley.Spec.Ledger.STS.Delegs as SL
                      (DelegsPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.STS.Ledger as SL
@@ -104,7 +105,8 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
 import qualified Cardano.Ledger.Mary.Value as MA
-import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
+import qualified Cardano.Ledger.Shelley.Constraints as SL (PParamsDelta,
+                     makeTxOut)
 import qualified Cardano.Ledger.ShelleyMA as MA
 import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
@@ -154,6 +156,11 @@ codecConfig = ShelleyCodecConfig
 
 mkDummyHash :: forall h a. HashAlgorithm h => Proxy h -> Int -> Hash.Hash h a
 mkDummyHash _ = coerce . SL.hashWithSerialiser @h toCBOR
+
+mkDummySafeHash :: forall c a. Crypto c => Proxy c -> Int -> SL.SafeHash c a
+mkDummySafeHash _ =
+      SL.unsafeMakeSafeHash
+    . mkDummyHash (Proxy @(HASH c))
 
 mkKeyHash :: forall c discriminator. Crypto c => Int -> SL.KeyHash discriminator c
 mkKeyHash = SL.KeyHash . mkDummyHash (Proxy @(ADDRHASH c))
@@ -207,6 +214,8 @@ examples ::
        ~ SL.LedgerPredicateFailure era
      ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
        ~ SL.DelegsPredicateFailure era
+     , Core.PParams era ~ SL.PParams era
+     , SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
      )
   => Core.Value era
   -> Core.TxBody era
@@ -322,10 +331,13 @@ exampleTxBodyShelley = SL.TxBody
     -- Dummy hash to decouple from the auxiliaryData in 'exampleTx'.
     auxiliaryDataHash :: SL.AuxiliaryDataHash StandardCrypto
     auxiliaryDataHash =
-        SL.AuxiliaryDataHash $ mkDummyHash (Proxy @(HASH StandardCrypto)) 30
+        SL.AuxiliaryDataHash $ mkDummySafeHash (Proxy @StandardCrypto) 30
 
 exampleTxBodyMA ::
-     forall era. ShelleyBasedEra era
+     forall era.
+     ( ShelleyBasedEra era
+     , SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
+     )
   => Core.Value era -> MA.TxBody era
 exampleTxBodyMA value = MA.TxBody
     exampleTxIns
@@ -343,7 +355,7 @@ exampleTxBodyMA value = MA.TxBody
     -- Dummy hash to decouple from the auxiliary data in 'exampleTx'.
     auxiliaryDataHash :: SL.AuxiliaryDataHash (EraCrypto era)
     auxiliaryDataHash =
-        SL.AuxiliaryDataHash $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 30
+        SL.AuxiliaryDataHash $ mkDummySafeHash (Proxy @(EraCrypto era)) 30
 
 exampleTxBodyAllegra :: Core.TxBody StandardAllegra
 exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
@@ -388,7 +400,7 @@ exampleAuxiliaryDataMA =
 
 exampleTxIns :: Crypto c => Set (SL.TxIn c)
 exampleTxIns = Set.fromList [
-      SL.TxIn (SL.TxId (mkDummyHash Proxy 1)) 0
+      SL.TxIn (SL.TxId (mkDummySafeHash Proxy 1)) 0
     ]
 
 exampleCerts :: Crypto c => StrictSeq (SL.DCert c)
@@ -413,7 +425,10 @@ examplePoolDistr = SL.PoolDistr $ Map.fromList [
                       (SL.hashVerKeyVRF (snd (SL.vrf (exampleKeys @c)))))
     ]
 
-exampleProposedPPUpdates :: ShelleyBasedEra era => SL.ProposedPPUpdates era
+exampleProposedPPUpdates ::
+  ( SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
+  , ShelleyBasedEra era
+  ) => SL.ProposedPPUpdates era
 exampleProposedPPUpdates = SL.ProposedPPUpdates $
     Map.singleton
       (mkKeyHash 1)
@@ -540,7 +555,10 @@ exampleChainDepState = TPraosState (NotOrigin 1) (mkPrtclState 1)
 -- | This is probably not a valid ledger. We don't care, we are only
 -- interested in serialisation, not validation.
 exampleNewEpochState ::
-     forall era. ShelleyBasedEra era
+     forall era.
+     ( ShelleyBasedEra era
+     , Core.PParams era ~ SL.PParams era
+     )
   => Core.Value era
   -> SL.NewEpochState era
 exampleNewEpochState value = SL.NewEpochState {
@@ -562,7 +580,7 @@ exampleNewEpochState value = SL.NewEpochState {
         , esLState       = SL.LedgerState {
               _utxoState = SL.UTxOState {
                   _utxo      = SL.UTxO $ Map.fromList [
-                      (SL.TxIn (SL.TxId (mkDummyHash Proxy 1)) 0,
+                      (SL.TxIn (SL.TxId (mkDummySafeHash Proxy 1)) 0,
                        SL.makeTxOut (Proxy @era) addr value)
                     ]
                 , _deposited = SL.Coin 1000
@@ -587,7 +605,13 @@ exampleNewEpochState value = SL.NewEpochState {
     rewardUpdate = SL.RewardUpdate {
           deltaT    = SL.DeltaCoin 10
         , deltaR    = SL.DeltaCoin (- 100)
-        , rs        = Map.singleton (keyToCredential exampleStakeKey) (SL.Coin 10)
+        , rs        = Map.singleton
+                        (keyToCredential exampleStakeKey) $
+                        Set.singleton $ SL.Reward {
+                            SL.rewardType   = SL.MemberReward
+                          , SL.rewardPool   = (SL._poolId examplePoolParams)
+                          , SL.rewardAmount = SL.Coin 10
+                          }
         , deltaF    = SL.DeltaCoin (- 3)
         , nonMyopic = nonMyopic
         }
@@ -596,7 +620,10 @@ exampleNewEpochState value = SL.NewEpochState {
     nonMyopic = def
 
 exampleLedgerState ::
-     forall era. ShelleyBasedEra era
+     forall era.
+     ( ShelleyBasedEra era
+     , Core.PParams era ~ SL.PParams era
+     )
   => Core.Value era
   -> LedgerState (ShelleyBlock era)
 exampleLedgerState value = ShelleyLedgerState {
@@ -613,7 +640,9 @@ exampleHeaderState :: ShelleyBasedEra era => HeaderState (ShelleyBlock era)
 exampleHeaderState = genesisHeaderState exampleChainDepState
 
 exampleExtLedgerState ::
-     ShelleyBasedEra era
+     ( ShelleyBasedEra era
+     , Core.PParams era ~ SL.PParams era
+     )
   => Core.Value era
   -> ExtLedgerState (ShelleyBlock era)
 exampleExtLedgerState value = ExtLedgerState {

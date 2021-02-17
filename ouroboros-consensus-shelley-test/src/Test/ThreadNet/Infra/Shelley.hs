@@ -70,20 +70,20 @@ import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
 import qualified Cardano.Ledger.Core
-import           Cardano.Ledger.Crypto (Crypto, DSIGN, KES, VRF)
+import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
 import qualified Cardano.Ledger.Era
+import           Cardano.Ledger.SafeHash (EraIndependentTxBody,
+                     HashAnnotated (..), SafeHash, hashAnnotated)
+import qualified Cardano.Ledger.Shelley.Constraints as SL
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
                      unitIntervalFromRational)
-import           Shelley.Spec.Ledger.Hashing (EraIndependentTxBody,
-                     HashAnnotated (..))
 import qualified Shelley.Spec.Ledger.Keys
 import qualified Shelley.Spec.Ledger.OCert as SL (OCertSignable (..))
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
-import qualified Shelley.Spec.Ledger.TxBody as SL (eraIndTxBodyHash)
 import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessesVKey)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
@@ -453,7 +453,7 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     signatures :: Set (SL.WitVKey 'SL.Witness c)
     signatures =
         SL.makeWitnessesVKey
-          (SL.eraIndTxBodyHash body)
+          (hashAnnotated body)
           [ SL.KeyPair (SL.VKey vk) sk
           | cn <- coreNodes
           , let sk = cnDelegateKey cn
@@ -550,6 +550,8 @@ mkAllegraSetDecentralizationParamTxs ::
      ( ShelleyBasedEra era
      , Cardano.Ledger.Core.TxBody era ~ MA.TxBody era
      , Cardano.Ledger.Core.Value  era ~ SL.Coin
+     , Cardano.Ledger.Core.PParams era ~ SL.PParams era
+     , SL.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
      )
   => [CoreNode (Cardano.Ledger.Era.Crypto era)]
   -> ProtVer   -- ^ The proposed protocol version
@@ -649,12 +651,12 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
         ]
 
 eraIndTxBodyHash' ::
-     forall era body.
-     ( HashAnnotated body era
-     , HashIndex body ~ EraIndependentTxBody
+     forall crypto body.
+     ( HashAlgorithm (Cardano.Ledger.Crypto.HASH crypto)
+     , HashAnnotated body EraIndependentTxBody crypto
      )
   => body
-  -> Shelley.Spec.Ledger.Keys.Hash
-       (Cardano.Ledger.Era.Crypto era)
+  -> SafeHash
+       crypto
        EraIndependentTxBody
 eraIndTxBodyHash' = coerce . hashAnnotated
