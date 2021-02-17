@@ -24,7 +24,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , decorateReplayTracer
     -- * Wrappers
   , getCurrent
-  , oldestLedgerSnapshot
   , setCurrent
   , currentPoint
   , takeSnapshot
@@ -294,14 +293,6 @@ currentPoint = castPoint
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 
--- | Returns /the oldest/ ledger state currently in LedgerDB. This is just
--- an alias to ledgerDbAnchor to give more semantic meaning
-oldestLedgerSnapshot :: LedgerDB' l -> ExtLedgerState l
-oldestLedgerSnapshot = LedgerDB.ledgerDbAnchor
-
--- | Take snapshot of the Ledger State that is provided as an argument to this
--- function. Primarily for testing purposes, 'takeSnapshot' returns the block
--- reference corresponding to the snapshot that we wrote.
 takeSnapshot ::
      forall m blk.
      ( IOLike m
@@ -309,16 +300,14 @@ takeSnapshot ::
      , HasHeader blk
      , IsLedger (LedgerState blk)
      )
-  => LgrDB m blk
-  -> ExtLedgerState blk
-  -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot LgrDB{ cfg, tracer, hasFS } snapshotCandidate =
-  wrapFailure (Proxy @blk) $ do
+  => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
+    ledgerDB <- atomically $ getCurrent lgrDB
     LedgerDB.takeSnapshot
       tracer
       hasFS
       encodeExtLedgerState'
-      snapshotCandidate
+      ledgerDB
   where
     ccfg = configCodec cfg
 

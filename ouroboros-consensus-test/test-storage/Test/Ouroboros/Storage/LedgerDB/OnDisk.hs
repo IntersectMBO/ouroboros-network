@@ -60,13 +60,13 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.IOLike
+
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Test.Util.Classify as C
 import qualified Test.Util.FS.Sim.MockFS as MockFS
@@ -595,13 +595,13 @@ runDB standalone@DB{..} cmd =
                 (map ApplyVal bs)
                 db
     go hasFS Snap = do
-        snapshotCandidate <- atomically $ LgrDB.oldestLedgerSnapshot . snd <$> readTVar dbState
+        (_, db) <- atomically $ readTVar dbState
         Snapped <$>
           takeSnapshot
             nullTracer
             hasFS
             S.encode
-            snapshotCandidate
+            db
     go hasFS Restore = do
         (initLog, db, _replayed) <-
           initLedgerDB
