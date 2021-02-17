@@ -371,8 +371,8 @@ publicRootPeersProvider tracer timeout resolvConf domains action = do
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ lookupAWithTTL timeout resolvConf resolver daDomain
-                  |  DomainAddress {daDomain} <- domains ]
+                  [ (,) domain <$> lookupAWithTTL timeout resolvConf resolver (daDomain domain)
+                  |  domain <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.
@@ -381,9 +381,9 @@ publicRootPeersProvider tracer timeout resolvConf domains action = do
               [ traceWith tracer $ case result of
                   Left  dnserr -> TracePublicRootFailure daDomain dnserr
                   Right ipttls -> TracePublicRootResult  daDomain ipttls
-              | (DomainAddress {daDomain}, result) <- zip domains results ]
+              | (DomainAddress {daDomain}, result) <- results ]
             let successes = [ (Socket.SockAddrInet daPortNumber (IP.toHostAddress ip), ipttl)
-                            | (Right ipttls, DomainAddress {daPortNumber}) <- (zip results domains)
+                            | (DomainAddress {daPortNumber}, Right ipttls) <- results
                             , (ip, ipttl) <- ipttls
                             ]
                 !ips      = Set.fromList  (map fst successes)
@@ -420,8 +420,8 @@ resolveDomainAddresses tracer timeout resolvConf domains = do
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ lookupAWithTTL timeout resolvConf resolver daDomain
-                  |  DomainAddress {daDomain} <- domains ]
+                  [ (,) domain <$> lookupAWithTTL timeout resolvConf resolver (daDomain domain)
+                  | domain <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.
@@ -430,8 +430,8 @@ resolveDomainAddresses tracer timeout resolvConf domains = do
               [ traceWith tracer $ case result of
                   Left  dnserr -> TracePublicRootFailure daDomain dnserr
                   Right ipttls -> TracePublicRootResult  daDomain ipttls
-              | (DomainAddress {daDomain}, result) <- zip domains results ]
-            return $ foldl' buildResult Map.empty $ zip domains results
+              | (DomainAddress {daDomain}, result) <- results ]
+            return $ foldl' buildResult Map.empty results
 
     buildResult :: Map DomainAddress (Set Socket.SockAddr)
                 -> (DomainAddress, Either DNS.DNSError [(IPv4, DNS.TTL)])
