@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,7 +15,10 @@ module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 
   , chainSyncClientPeerPipelined
   , chainSyncClientPeerSender
+  , mapChainSyncClientPipelined
   ) where
+
+import Data.Kind (Type)
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Pipelined
@@ -113,6 +117,47 @@ data ClientPipelinedStIntersect header point tip m a =
          :: tip
          -> m (ClientPipelinedStIdle Z header point tip m a)
      }
+
+-- | Transform a 'ChainSyncClientPipelined' by mapping over the tx header and
+-- the chain tip values.
+--
+-- Note the direction of the individual mapping functions corresponds to
+-- whether the types are used as protocol inputs or outputs (or both, as is
+-- the case for points).
+--
+mapChainSyncClientPipelined :: forall header header' point point' tip tip' (m :: Type -> Type) a.
+  Functor m
+  => (point -> point')
+  -> (point' -> point)
+  -> (header' -> header)
+  -> (tip' -> tip)
+  -> ChainSyncClientPipelined header point tip m a
+  -> ChainSyncClientPipelined header' point' tip' m a
+mapChainSyncClientPipelined toPoint' toPoint toHeader toTip (ChainSyncClientPipelined mInitialIdleClient)
+  = ChainSyncClientPipelined (goIdle <$> mInitialIdleClient)
+  where
+    goIdle :: ClientPipelinedStIdle n header point tip  m a
+           -> ClientPipelinedStIdle n header' point' tip'  m a
+    goIdle client = case client of
+      SendMsgRequestNext next mNext -> SendMsgRequestNext (goNext next) (goNext <$> mNext)
+      SendMsgRequestNextPipelined idle -> SendMsgRequestNextPipelined (goIdle idle)
+      SendMsgFindIntersect points inter -> SendMsgFindIntersect (toPoint' <$> points) (goIntersect inter)
+      CollectResponse idleMay next -> CollectResponse (fmap goIdle <$> idleMay) (goNext next)
+      SendMsgDone a -> SendMsgDone a
+
+    goNext :: ClientStNext n header point tip  m a
+           -> ClientStNext n header' point' tip'  m a
+    goNext ClientStNext{ recvMsgRollForward, recvMsgRollBackward } = ClientStNext
+      { recvMsgRollForward = \header' tip' -> goIdle <$> recvMsgRollForward (toHeader header') (toTip tip')
+      , recvMsgRollBackward = \point' tip' -> goIdle <$> recvMsgRollBackward (toPoint point') (toTip tip')
+      }
+
+    goIntersect :: ClientPipelinedStIntersect header point tip m a
+                -> ClientPipelinedStIntersect header' point' tip' m a
+    goIntersect ClientPipelinedStIntersect{ recvMsgIntersectFound, recvMsgIntersectNotFound } = ClientPipelinedStIntersect
+      { recvMsgIntersectFound = \point' tip' -> goIdle <$> recvMsgIntersectFound (toPoint point') (toTip tip')
+      , recvMsgIntersectNotFound = \tip' -> goIdle <$> recvMsgIntersectNotFound (toTip tip')
+      }
 
 
 --
