@@ -24,7 +24,7 @@ Ouroboros-Network
    protocols which to run ouroboros family of protocols, multiplexing
    layer.
 -  The `Byron Proxy`_ is a network protocol proxy between Byron and Shelley. It now lives
-   in a seaprate repository.
+   in a separate repository.
 
 Ouroboros-Network API
 ---------------------
@@ -38,7 +38,7 @@ The API consisists of three layers:
   it (e.g. ``Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer``)
 
 • callback ``ptcl -> channel -> m ()`` where ``ptcl`` is enumeration for each
-  mini-protoicol, this is either ``NodeToNodeProtocols`` or
+  mini-protocol, this is either ``NodeToNodeProtocols`` or
   ``NodeToClientProtocols``. The callback is wrapped in ``OuroborosApplication``
   GADT which allows to differentiate the initiator / responder (or client /
   server) callbacks.
@@ -47,7 +47,7 @@ The API consisists of three layers:
   version data (the tricky part here is that version data type can be different
   between different versions; there is a simple way of building this map using a
   semigroup). You can use ``simpleSingletonVersion`` if your application does
-  not depend on negotated version data. However,
+  not depend on negotiated version data. However,
   ``Ouroboros.Network.NodeToNode`` and ``Ouroboros.Network.NodeToClient`` expose
   ``V1`` api which hides versioning from the caller.
 
