@@ -193,6 +193,11 @@ data ProtocolClient blk p where
          (ShelleyBlockHFC StandardShelley)
          ProtocolShelley
 
+  ProtocolClientPivo
+    :: ProtocolClient
+         (ShelleyBlockHFC StandardPivo)
+         ProtocolPivo
+
   ProtocolClientCardano
     :: EpochSlots
     -> ProtocolClient
@@ -203,12 +208,14 @@ data ProtocolClient blk p where
 verifyProtocolClient :: ProtocolClient blk p -> (p :~: BlockProtocol blk)
 verifyProtocolClient ProtocolClientByron{}   = Refl
 verifyProtocolClient ProtocolClientShelley{} = Refl
+verifyProtocolClient ProtocolClientPivo{}    = Refl
 verifyProtocolClient ProtocolClientCardano{} = Refl
 
 -- | Sanity check that we have the right class instances available
 runProtocolClient :: ProtocolClient blk p -> Dict (RunNode blk)
 runProtocolClient ProtocolClientByron{}   = Dict
 runProtocolClient ProtocolClientShelley{} = Dict
+runProtocolClient ProtocolClientPivo{}    = Dict
 runProtocolClient ProtocolClientCardano{} = Dict
 
 -- | Data required by clients of a node running the specified protocol.
@@ -217,6 +224,9 @@ protocolClientInfo (ProtocolClientByron epochSlots) =
     inject $ protocolClientInfoByron epochSlots
 
 protocolClientInfo ProtocolClientShelley =
+    inject $ protocolClientInfoShelley
+
+protocolClientInfo ProtocolClientPivo =
     inject $ protocolClientInfoShelley
 
 protocolClientInfo (ProtocolClientCardano epochSlots) =
