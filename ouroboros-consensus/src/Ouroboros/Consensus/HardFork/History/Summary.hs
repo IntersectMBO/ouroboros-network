@@ -60,12 +60,13 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR, ToCBOR, enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Util.Counting
 
+import           Data.Typeable (Typeable)
 import           Ouroboros.Consensus.HardFork.History.EraParams
 import           Ouroboros.Consensus.HardFork.History.Util
 
@@ -255,6 +256,9 @@ summaryWithExactly = Summary . exactlyWeakenNonEmpty
 newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
   deriving (Show)
   deriving NoThunks via InspectHeapNamed "Shape" (Shape xs)
+
+deriving newtype instance (Typeable xs, ToCBOR (Exactly xs EraParams)) => ToCBOR (Shape xs)
+deriving newtype instance (Typeable xs, FromCBOR (Exactly xs EraParams)) => FromCBOR (Shape xs)
 
 -- | There is only one era
 singletonShape :: EraParams -> Shape '[x]

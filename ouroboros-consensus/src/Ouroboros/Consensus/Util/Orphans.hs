@@ -13,7 +13,6 @@
 
 module Ouroboros.Consensus.Util.Orphans () where
 
-import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))
 import           Control.Concurrent.STM (readTVarIO)
 import           Data.Bimap (Bimap)
@@ -38,6 +37,7 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 
+import           Cardano.Binary
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense
 

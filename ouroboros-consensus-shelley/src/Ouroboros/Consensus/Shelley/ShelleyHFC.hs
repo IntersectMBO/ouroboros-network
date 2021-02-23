@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC (
   , translateLedgerViewAcrossShelley
   ) where
 
+import           Cardano.Binary (ToCBOR(..), FromCBOR(..))
 import           Control.Monad (guard)
 import           Control.Monad.Except (throwError)
 import qualified Data.Map.Strict as Map
@@ -42,6 +43,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      toPureEpochInfo)
+import           Ouroboros.Consensus.HardFork.History.EpochInfo(dummyEpochInfo)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -55,6 +57,9 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Protocol
+
+import           Shelley.Spec.Ledger.BaseTypes (ActiveSlotCoeff)
+-- import           Ouroboros.Consensus.Cardano.CanHardFork ()
 
 {-------------------------------------------------------------------------------
   Synonym for convenience
@@ -85,7 +90,7 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
 -- | Forward to the ShelleyBlock instance. Only supports
 -- 'HardForkNodeToNodeDisabled', which is compatible with nodes running with
 -- 'ShelleyBlock'.
-instance ShelleyBasedEra era
+instance (ShelleyBasedEra era, FromCBOR (ShelleyPartialLedgerConfig era), ToCBOR (ShelleyPartialLedgerConfig era))
       => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
   supportedNodeToNodeVersions _ =
       Map.map HardForkNodeToNodeDisabled $
@@ -104,7 +109,7 @@ instance ShelleyBasedEra era
 -- | Use the default implementations. This means the serialisation of blocks
 -- includes an era wrapper. Each block should do this from the start to be
 -- prepared for future hard forks without having to do any bit twiddling.
-instance ShelleyBasedEra era => SerialiseHFC '[ShelleyBlock era]
+instance (ShelleyBasedEra era, FromCBOR (ShelleyPartialLedgerConfig era), ToCBOR (ShelleyPartialLedgerConfig era)) => SerialiseHFC '[ShelleyBlock era]
 instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
@@ -191,6 +196,75 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
     , shelleyTriggerHardFork :: !TriggerHardFork
     }
   deriving (Generic, NoThunks)
+
+instance SL.Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
+  fromCBOR =
+    ShelleyPartialLedgerConfig
+      <$> (ShelleyLedgerConfig
+        <$> fromCBOR
+        <*> (SL.Globals
+              -- Globals
+              --
+              -- Note: we can't serialise EpochInfo as it contains
+              -- lambdas, but that's ok because it's value is known
+              -- staticaly. It is always just `dummyEpochInfo` when inside
+              -- a ShelleyPartialLedgerConfi
+              dummyEpochInfo
+              <$> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR @ActiveSlotCoeff
+              <*> fromCBOR @SL.Network
+              <*> fromCBOR
+            )
+      )
+      <*> fromCBOR
+
+instance SL.Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
+  toCBOR
+    (ShelleyPartialLedgerConfig
+      (ShelleyLedgerConfig
+        myCompactGenesis
+        (SL.Globals
+          _epochInfo
+          slotsPerKESPeriod
+          stabilityWindow
+          randomnessStabilisationWindow
+          securityParameter
+          maxKESEvo
+          quorum
+          maxMajorPV
+          maxLovelaceSupply
+          activeSlotCoeff
+          networkId
+          systemStart
+        )
+      )
+      triggerHardFork
+    )
+      -- CompactGenesis
+      = toCBOR myCompactGenesis
+        -- Globals
+        --
+        -- Note: we don't serialise EpochInfo. See comment in `decode` above.
+        <> toCBOR slotsPerKESPeriod
+        <> toCBOR stabilityWindow
+        <> toCBOR randomnessStabilisationWindow
+        <> toCBOR securityParameter
+        <> toCBOR maxKESEvo
+        <> toCBOR quorum
+        <> toCBOR maxMajorPV
+        <> toCBOR maxLovelaceSupply
+        <> toCBOR activeSlotCoeff
+        <> toCBOR networkId
+        -- TriggerHardFork
+        <> toCBOR triggerHardFork
+        <> toCBOR systemStart
 
 instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
   type PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era

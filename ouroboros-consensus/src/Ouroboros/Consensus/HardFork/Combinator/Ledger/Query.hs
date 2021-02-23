@@ -45,7 +45,7 @@ import           Data.SOP.Strict
 import           Data.Type.Equality
 import           Data.Typeable (Typeable)
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -130,7 +130,7 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
             hardForkState
         QueryHardFork queryHardFork ->
           interpretQueryHardFork
-            lcfg
+            cfg
             queryHardFork
             st
     where
@@ -309,14 +309,19 @@ answerQueryAnytime HardForkLedgerConfig{..} =
 -------------------------------------------------------------------------------}
 
 data QueryHardFork xs result where
-  GetInterpreter :: QueryHardFork xs (History.Interpreter xs)
-  GetCurrentEra  :: QueryHardFork xs (EraIndex xs)
+  GetInterpreter  :: QueryHardFork xs (History.Interpreter xs)
+  GetCurrentEra   :: QueryHardFork xs (EraIndex xs)
+  GetLedgerCfg    :: QueryHardFork xs (HardForkLedgerConfig xs)
 
 deriving instance Show (QueryHardFork xs result)
 
 instance All SingleEraBlock xs => ShowQuery (QueryHardFork xs) where
-  showResult GetInterpreter = show
-  showResult GetCurrentEra  = show
+  showResult query = case query of
+    GetInterpreter -> show
+    GetCurrentEra  -> show
+    -- As the HardForkLedgerConfig is quite large and we want to avoid excessive
+    -- debug output, we truncate the contents of HardForkLedgerConfig here.
+    GetLedgerCfg   -> \HardForkLedgerConfig{} -> "HardForkLedgerConfig{..}"
 
 instance SameDepIndex (QueryHardFork xs) where
   sameDepIndex GetInterpreter GetInterpreter =
@@ -327,19 +332,24 @@ instance SameDepIndex (QueryHardFork xs) where
       Just Refl
   sameDepIndex GetCurrentEra _ =
       Nothing
+  sameDepIndex GetLedgerCfg GetLedgerCfg =
+      Just Refl
+  sameDepIndex GetLedgerCfg _ =
+      Nothing
 
 interpretQueryHardFork ::
      All SingleEraBlock xs
-  => HardForkLedgerConfig xs
+  => TopLevelConfig (HardForkBlock xs)
   -> QueryHardFork xs result
   -> LedgerState (HardForkBlock xs)
   -> result
 interpretQueryHardFork cfg query st =
     case query of
       GetInterpreter ->
-        History.mkInterpreter $ hardForkSummary cfg st
+        History.mkInterpreter $ hardForkSummary (configLedger cfg) st
       GetCurrentEra  ->
         eraIndexFromNS $ State.tip $ hardForkLedgerStatePerEra st
+      GetLedgerCfg -> configLedger cfg
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -365,18 +375,20 @@ decodeQueryAnytimeResult :: QueryAnytime result -> forall s. Decoder s result
 decodeQueryAnytimeResult GetEraStart = decode
 
 encodeQueryHardForkResult ::
-     SListI xs
+     (ToCBOR (LedgerConfig (HardForkBlock xs)), SListI xs)
   => QueryHardFork xs result -> result -> Encoding
 encodeQueryHardForkResult = \case
     GetInterpreter -> encode
     GetCurrentEra  -> encode
+    GetLedgerCfg   -> toCBOR
 
 decodeQueryHardForkResult ::
-     SListI xs
+     (FromCBOR (LedgerConfig (HardForkBlock xs)), SListI xs)
   => QueryHardFork xs result -> forall s. Decoder s result
 decodeQueryHardForkResult = \case
     GetInterpreter -> decode
     GetCurrentEra  -> decode
+    GetLedgerCfg   -> fromCBOR
 
 {-------------------------------------------------------------------------------
   Auxiliary

@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DerivingStrategies       #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
@@ -27,6 +28,7 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , translateChainDepStateAcrossShelley
   ) where
 
+
 import           Control.Monad
 import           Control.Monad.Except (runExcept, throwError)
 import qualified Data.Map.Strict as Map
@@ -48,7 +50,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      addSlots)
-import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
@@ -78,7 +79,10 @@ import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Mary.Translation ()
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Cardano.Binary
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Orphans ()
+import           Ouroboros.Consensus.HardFork.Simple
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -229,7 +233,30 @@ data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
       byronLedgerConfig    :: !(LedgerConfig ByronBlock)
     , byronTriggerHardFork :: !TriggerHardFork
     }
-  deriving (Generic, NoThunks)
+  deriving stock Generic
+  deriving anyclass (NoThunks)
+
+-- instance Serialise ByronPartialLedgerConfig where
+--   encode = toCBOR
+--   decode = fromCBOR
+
+instance ToCBOR ByronPartialLedgerConfig where
+  toCBOR
+    (ByronPartialLedgerConfig
+      byronLedgerConfig
+      byronTriggerHardFork
+    ) = mconcat [
+            encodeListLen 2
+          , toCBOR @(LedgerConfig ByronBlock) byronLedgerConfig
+          , toCBOR @TriggerHardFork byronTriggerHardFork
+          ]
+
+instance FromCBOR ByronPartialLedgerConfig where
+  fromCBOR = do
+    enforceSize "ByronPartialLedgerConfig" 2
+    ByronPartialLedgerConfig
+      <$> fromCBOR @(LedgerConfig ByronBlock)
+      <*> fromCBOR @TriggerHardFork
 
 instance HasPartialLedgerConfig ByronBlock where
 

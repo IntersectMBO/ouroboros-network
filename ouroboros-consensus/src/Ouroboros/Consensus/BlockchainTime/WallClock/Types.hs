@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeApplications           #-}
 
+{-# LANGUAGE ScopedTypeVariables        #-}
 module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
     -- * System time
     SystemStart (..)
@@ -25,10 +27,14 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
   , SlotLength
   ) where
 
+import           Cardano.Slotting.Time
 import           Data.Time.Clock (NominalDiffTime)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
+import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Cardano.Slotting.Time
+{-------------------------------------------------------------------------------
+  Relative time
+-------------------------------------------------------------------------------}
 
 addRelTime :: NominalDiffTime -> RelativeTime -> RelativeTime
 addRelTime = addRelativeTime

@@ -81,7 +81,7 @@ import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Word
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR, ToCBOR, enforceSize)
 
 import           Ouroboros.Network.Block (Serialised)
 
@@ -262,6 +262,8 @@ pSHFC = Proxy
 --    currently provide any provisions to resolve these.
 class ( CanHardFork xs
       , All SerialiseConstraintsHFC xs
+      , ToCBOR (HardForkLedgerConfig xs)
+      , FromCBOR (HardForkLedgerConfig xs)
         -- Required for HasNetworkProtocolVersion
       , All (Compose Show EraNodeToNodeVersion)   xs
       , All (Compose Eq   EraNodeToNodeVersion)   xs
