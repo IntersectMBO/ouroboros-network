@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DerivingStrategies       #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
@@ -26,12 +27,13 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , translateChainDepStateAcrossShelley
   ) where
 
+
 import           Control.Monad
 import           Control.Monad.Except (Except, runExcept, throwError)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict ((:.:) (..), NP (..), unComp)
+import           Data.SOP.Strict (NP (..), unComp, (:.:) (..))
 import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -47,7 +49,7 @@ import qualified Cardano.Chain.Update as CC.Update
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
-                     addSlots)
+                     addSlots, dummyEpochInfo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
@@ -73,11 +75,15 @@ import           Ouroboros.Consensus.Shelley.Protocol
 
 import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
+import           Cardano.Ledger.Era (Era)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Mary.Translation ()
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Cardano.Binary
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Orphans ()
+import           Shelley.Spec.Ledger.BaseTypes (ActiveSlotCoeff)
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -277,6 +283,20 @@ data TriggerHardFork =
   | TriggerHardForkNever
   deriving (Show, Generic, NoThunks)
 
+instance ToCBOR TriggerHardFork where
+  toCBOR triggerHardFork = case triggerHardFork of
+    TriggerHardForkAtVersion v -> encodeTag 0 <> toCBOR v
+    TriggerHardForkAtEpoch e   -> encodeTag 1 <> toCBOR e
+    TriggerHardForkNever       -> encodeTag 2
+
+instance FromCBOR TriggerHardFork where
+  fromCBOR = do
+    decodeTag >>= \case
+      0   -> TriggerHardForkAtVersion <$> fromCBOR @Word16
+      1   -> TriggerHardForkAtEpoch <$> fromCBOR @EpochNo
+      2   -> return TriggerHardForkNever
+      tag -> fail $ "TriggerHardFork: unknown tag " ++ show tag
+
 -- | When Byron is part of the hard-fork combinator, we use the partial ledger
 -- config. Standalone Byron uses the regular ledger config. This means that
 -- the partial ledger config is the perfect place to store the trigger
@@ -286,7 +306,30 @@ data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
       byronLedgerConfig    :: !(LedgerConfig ByronBlock)
     , byronTriggerHardFork :: !TriggerHardFork
     }
-  deriving (Generic, NoThunks)
+  deriving stock Generic
+  deriving anyclass (NoThunks)
+
+-- instance Serialise ByronPartialLedgerConfig where
+--   encode = toCBOR
+--   decode = fromCBOR
+
+instance ToCBOR ByronPartialLedgerConfig where
+  toCBOR
+    (ByronPartialLedgerConfig
+      byronLedgerConfig
+      byronTriggerHardFork
+    ) = mconcat [
+            encodeListLen 2
+          , toCBOR @(LedgerConfig ByronBlock) byronLedgerConfig
+          , toCBOR @TriggerHardFork byronTriggerHardFork
+          ]
+
+instance FromCBOR ByronPartialLedgerConfig where
+  fromCBOR = do
+    enforceSize "ByronPartialLedgerConfig" 2
+    ByronPartialLedgerConfig
+      <$> fromCBOR @(LedgerConfig ByronBlock)
+      <*> fromCBOR @TriggerHardFork
 
 instance HasPartialLedgerConfig ByronBlock where
 
@@ -330,6 +373,72 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
     , shelleyTriggerHardFork :: !TriggerHardFork
     }
   deriving (Generic, NoThunks)
+
+instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
+  fromCBOR =
+    ShelleyPartialLedgerConfig
+      <$> (ShelleyLedgerConfig
+        <$> fromCBOR
+        <*> (SL.Globals
+              -- Globals
+              --
+              -- Note: we can't serialise EpochInfo as it contains
+              -- lambdas, but that's ok because it's value is known
+              -- staticaly. It is always just `dummyEpochInfo` when inside
+              -- a ShelleyPartialLedgerConfi
+              dummyEpochInfo
+              <$> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR
+              <*> fromCBOR @ActiveSlotCoeff
+              <*> fromCBOR @SL.Network
+            )
+      )
+      <*> fromCBOR
+
+instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
+  toCBOR
+    (ShelleyPartialLedgerConfig
+      (ShelleyLedgerConfig
+        myCompactGenesis
+        (SL.Globals
+          _epochInfo
+          slotsPerKESPeriod
+          stabilityWindow
+          randomnessStabilisationWindow
+          securityParameter
+          maxKESEvo
+          quorum
+          maxMajorPV
+          maxLovelaceSupply
+          activeSlotCoeff
+          networkId
+        )
+      )
+      triggerHardFork
+    )
+      -- CompactGenesis
+      = toCBOR myCompactGenesis
+        -- Globals
+        --
+        -- Note: we don't serialise EpochInfo. See comment in `decode` above.
+        <> toCBOR slotsPerKESPeriod
+        <> toCBOR stabilityWindow
+        <> toCBOR randomnessStabilisationWindow
+        <> toCBOR securityParameter
+        <> toCBOR maxKESEvo
+        <> toCBOR quorum
+        <> toCBOR maxMajorPV
+        <> toCBOR maxLovelaceSupply
+        <> toCBOR activeSlotCoeff
+        <> toCBOR networkId
+        -- TriggerHardFork
+        <> toCBOR triggerHardFork
 
 instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
   type PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era

@@ -45,8 +45,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk
-                     ()
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk ()
 
 instance SerialiseHFC xs => SerialiseNodeToClientConstraints (HardForkBlock xs)
 
@@ -189,6 +188,10 @@ encodeQueryHardFork vHfc = \case
         Enc.encodeListLen 1
       , Enc.encodeWord8 1
       ]
+    Some GetLedgerCfg -> mconcat [
+        Enc.encodeListLen 1
+      , Enc.encodeWord8 2
+      ]
 
 decodeQueryHardFork :: Decoder s (Some (QueryHardFork xs))
 decodeQueryHardFork = do
@@ -197,6 +200,7 @@ decodeQueryHardFork = do
     case tag of
       0 -> return $ Some GetInterpreter
       1 -> return $ Some GetCurrentEra
+      2 -> return $ Some GetLedgerCfg
       _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
 
 instance SerialiseHFC xs

@@ -23,7 +23,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
@@ -229,14 +229,19 @@ decodeSafeBeforeEpoch = do
       _      -> fail $ "SafeBeforeEpoch: invalid size and tag " <> show (size, tag)
 
 instance Serialise EraParams where
-  encode EraParams{..} = mconcat [
+  encode = toCBOR
+  decode = fromCBOR
+
+instance ToCBOR EraParams where
+  toCBOR EraParams{..} = mconcat [
         encodeListLen 3
       , encode (unEpochSize eraEpochSize)
       , encode eraSlotLength
       , encode eraSafeZone
       ]
 
-  decode = do
+instance FromCBOR EraParams where
+  fromCBOR = do
       enforceSize "EraParams" 3
       eraEpochSize  <- EpochSize <$> decode
       eraSlotLength <- decode

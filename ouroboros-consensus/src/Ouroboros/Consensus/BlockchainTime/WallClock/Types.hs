@@ -2,7 +2,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeApplications           #-}
 
+{-# LANGUAGE ScopedTypeVariables        #-}
 module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
     -- * System time
     SystemStart(..)
@@ -25,6 +27,7 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
   , slotLengthToMillisec
   ) where
 
+import           Cardano.Binary
 import           Codec.Serialise
 import           Control.Exception (assert)
 import           Data.Fixed
@@ -32,6 +35,7 @@ import           Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeap (..), NoThunks,
                      OnlyCheckWhnfNamed (..))
+import           Ouroboros.Consensus.Util.Orphans ()
 import           Quiet
 
 {-------------------------------------------------------------------------------
@@ -42,7 +46,8 @@ import           Quiet
 --
 -- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Eq, Generic)
+  deriving stock (Eq, Generic)
+  deriving newtype (FromCBOR, ToCBOR)
   deriving NoThunks via InspectHeap SystemStart
   deriving Show via Quiet SystemStart
 
