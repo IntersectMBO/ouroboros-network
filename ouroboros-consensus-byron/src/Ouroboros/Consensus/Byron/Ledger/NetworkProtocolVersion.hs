@@ -41,3 +41,5 @@ instance SupportedNetworkProtocolVersion ByronBlock where
       , (NodeToClientV_2, ByronNodeToClientVersion1)
         -- V_3 enables the hard fork, not supported by Byron-only.
       ]
+
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault

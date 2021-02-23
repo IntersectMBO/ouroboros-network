@@ -181,6 +181,8 @@ instance ShelleyBasedHardForkConstraints era1 era2
       [ (maxBound, ShelleyBasedHardForkNodeToClientVersion1)
       ]
 
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 {-------------------------------------------------------------------------------
   Protocol info
 -------------------------------------------------------------------------------}

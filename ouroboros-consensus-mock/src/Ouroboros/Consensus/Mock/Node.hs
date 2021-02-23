@@ -45,6 +45,8 @@ instance SupportedNetworkProtocolVersion (SimpleBlock SimpleMockCrypto ext) wher
   supportedNodeToNodeVersions   _ = Map.singleton maxBound ()
   supportedNodeToClientVersions _ = Map.singleton maxBound ()
 
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 instance NodeInitStorage (SimpleBlock SimpleMockCrypto ext) where
   nodeImmutableDbChunkInfo (SimpleStorageConfig secParam) = simpleChunkInfo $
       EpochSize $ 10 * maxRollbacks secParam

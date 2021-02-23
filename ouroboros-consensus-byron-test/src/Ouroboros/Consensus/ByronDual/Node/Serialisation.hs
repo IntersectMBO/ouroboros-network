@@ -48,6 +48,8 @@ instance SupportedNetworkProtocolVersion DualByronBlock where
   supportedNodeToNodeVersions     _ = supportedNodeToNodeVersions     pb
   supportedNodeToClientVersions   _ = supportedNodeToClientVersions   pb
 
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk
 -------------------------------------------------------------------------------}
