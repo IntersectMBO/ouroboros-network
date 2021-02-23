@@ -1,8 +1,10 @@
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DerivingStrategies        #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
@@ -200,8 +202,7 @@ newtype instance Ticked (PBftLedgerView c) = TickedPBftLedgerView {
       tickedPBftDelegates :: Bimap (PBftVerKeyHash c) (PBftVerKeyHash c)
     }
 
-deriving instance PBftCrypto c => NoThunks (PBftLedgerView c)
-  -- use generic instance
+deriving anyclass instance PBftCrypto c => NoThunks (PBftLedgerView c)
 
 deriving instance Eq (PBftVerKeyHash c) => Eq (PBftLedgerView c)
 deriving instance Show (PBftVerKeyHash c) => Show (PBftLedgerView c)
@@ -226,7 +227,9 @@ data PBft c
 newtype PBftSignatureThreshold = PBftSignatureThreshold {
       getPBftSignatureThreshold :: Double
     }
-  deriving (Eq, Show, Generic, NoThunks)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NoThunks)
+  -- deriving newtype (Serialise)
 
 -- | Protocol parameters
 data PBftParams = PBftParams {
@@ -248,7 +251,9 @@ data PBftParams = PBftParams {
       -- parameter to the ambient security parameter @k@.
     , pbftSignatureThreshold :: !PBftSignatureThreshold
     }
-  deriving (Generic, NoThunks, Show)
+  deriving stock (Generic, Show)
+  deriving anyclass (NoThunks)
+  -- deriving anyclass (NoThunks, Serialise)
 
 -- | If we are a core node (i.e. a block producing node) we know which core
 -- node we are, and we have the operational key pair and delegation certificate.
@@ -275,7 +280,9 @@ instance PBftCrypto c => NoThunks (PBftIsLeader c)
 newtype instance ConsensusConfig (PBft c) = PBftConfig {
       pbftParams :: PBftParams
     }
-  deriving (Generic, NoThunks)
+  deriving stock (Generic)
+  deriving anyclass (NoThunks)
+  -- deriving anyclass (NoThunks, Serialise)
 
 -- Ticking has no effect on the PBFtState, but we do need the ticked ledger view
 data instance Ticked (PBftState c) = TickedPBftState {

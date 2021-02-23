@@ -1,14 +1,19 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds          #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DerivingVia              #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE PackageImports     #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
@@ -47,7 +52,7 @@ import qualified Cardano.Chain.Update as CC.Update
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
-                     addSlots)
+                     addSlots, dummyEpochInfo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
@@ -78,6 +83,11 @@ import           Cardano.Ledger.Mary.Translation ()
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
+
+
+import Codec.Serialise (Serialise(..))
+import Cardano.Ledger.Era (Era)
+import Ouroboros.Consensus.Cardano.Orphans ()
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -275,7 +285,7 @@ data TriggerHardFork =
   | TriggerHardForkAtEpoch !EpochNo
     -- | Never trigger a hard fork
   | TriggerHardForkNever
-  deriving (Show, Generic, NoThunks)
+  deriving (Show, Generic, NoThunks, Serialise)
 
 -- | When Byron is part of the hard-fork combinator, we use the partial ledger
 -- config. Standalone Byron uses the regular ledger config. This means that
@@ -286,7 +296,8 @@ data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
       byronLedgerConfig    :: !(LedgerConfig ByronBlock)
     , byronTriggerHardFork :: !TriggerHardFork
     }
-  deriving (Generic, NoThunks)
+  deriving stock Generic
+  deriving anyclass (NoThunks, Serialise)
 
 instance HasPartialLedgerConfig ByronBlock where
 
@@ -330,6 +341,70 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
     , shelleyTriggerHardFork :: !TriggerHardFork
     }
   deriving (Generic, NoThunks)
+
+instance Era era => Serialise (ShelleyPartialLedgerConfig era) where
+  decode =
+    ShelleyPartialLedgerConfig
+      <$> (ShelleyLedgerConfig
+              <$> decode
+              <*> (SL.Globals
+                    -- Globals
+                    --
+                    -- Note: we can't serialise EpochInfo as it contains
+                    -- lambdas, but that's ok because it's value is known
+                    -- staticaly. It is always just `dummyEpochInfo` when inside
+                    -- a ShelleyPartialLedgerConfi
+                    dummyEpochInfo
+                    <$> decode
+                    <*> decode
+                    <*> decode
+                    <*> decode
+                    <*> decode
+                    <*> decode
+                    <*> decode
+                    <*> decode
+                    <*> decode
+                    <*> decode
+                  )
+      )
+      <*> decode
+  encode
+    (ShelleyPartialLedgerConfig
+      (ShelleyLedgerConfig
+        myCompactGenesis
+        (SL.Globals
+          _epochInfo
+          slotsPerKESPeriod
+          stabilityWindow
+          randomnessStabilisationWindow
+          securityParameter
+          maxKESEvo
+          quorum
+          maxMajorPV
+          maxLovelaceSupply
+          activeSlotCoeff
+          networkId
+        )
+      )
+      triggerHardFork
+    )
+      -- CompactGenesis
+      = encode myCompactGenesis
+        -- Globals
+        --
+        -- Note: we don't serialise EpochInfo. See comment in `decode` above.
+        <> encode slotsPerKESPeriod
+        <> encode stabilityWindow
+        <> encode randomnessStabilisationWindow
+        <> encode securityParameter
+        <> encode maxKESEvo
+        <> encode quorum
+        <> encode maxMajorPV
+        <> encode maxLovelaceSupply
+        <> encode activeSlotCoeff
+        <> encode networkId
+        -- TriggerHardFork
+        <> encode triggerHardFork
 
 instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
   type PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era

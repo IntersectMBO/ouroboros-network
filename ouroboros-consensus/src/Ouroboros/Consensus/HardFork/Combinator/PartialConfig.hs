@@ -1,4 +1,5 @@
 {-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -16,6 +17,7 @@ module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
   , Identity(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Functor.Identity
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks)
@@ -78,6 +80,8 @@ class ( UpdateLedger blk
 
 newtype WrapPartialLedgerConfig    blk = WrapPartialLedgerConfig    { unwrapPartialLedgerConfig    :: PartialLedgerConfig                   blk  }
 newtype WrapPartialConsensusConfig blk = WrapPartialConsensusConfig { unwrapPartialConsensusConfig :: PartialConsensusConfig (BlockProtocol blk) }
+
+deriving newtype instance Serialise (PartialLedgerConfig blk)  => Serialise (WrapPartialLedgerConfig    blk)
 
 deriving instance NoThunks (PartialLedgerConfig                   blk)  => NoThunks (WrapPartialLedgerConfig    blk)
 deriving instance NoThunks (PartialConsensusConfig (BlockProtocol blk)) => NoThunks (WrapPartialConsensusConfig blk)

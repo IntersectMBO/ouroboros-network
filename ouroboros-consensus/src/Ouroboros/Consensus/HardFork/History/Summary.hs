@@ -256,6 +256,8 @@ newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
   deriving (Show)
   deriving NoThunks via InspectHeapNamed "Shape" (Shape xs)
 
+deriving newtype instance Serialise (Exactly xs EraParams) => Serialise (Shape xs)
+
 -- | There is only one era
 singletonShape :: EraParams -> Shape '[x]
 singletonShape params = Shape (exactlyOne params)

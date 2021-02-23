@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Hard fork protocol, block, and ledger state
@@ -54,6 +55,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
 
+import           Codec.Serialise (Serialise (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -142,8 +144,12 @@ data HardForkLedgerConfig xs = HardForkLedgerConfig {
     }
   deriving (Generic)
 
-instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
+deriving anyclass instance
+  ( SListI xs
+  , Serialise (PerEraLedgerConfig xs)
+  ) => Serialise (HardForkLedgerConfig xs)
 
+instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
 type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig xs
 
 {-------------------------------------------------------------------------------

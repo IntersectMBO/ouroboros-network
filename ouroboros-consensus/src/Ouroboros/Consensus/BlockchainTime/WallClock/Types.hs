@@ -42,7 +42,7 @@ import           Quiet
 --
 -- Slots are counted from the system start.
 newtype SystemStart = SystemStart { getSystemStart :: UTCTime }
-  deriving (Eq, Generic)
+  deriving (Eq, Generic, Serialise)
   deriving NoThunks via InspectHeap SystemStart
   deriving Show via Quiet SystemStart
 
