@@ -616,7 +616,7 @@ stdRunDataDiffusion = runDataDiffusion
 data StdRunNodeArgs m blk = StdRunNodeArgs
   { srnBfcMaxConcurrencyBulkSync :: Maybe Word
   , srnBfcMaxConcurrencyDeadline :: Maybe Word
-  , srcChainDbValidateOverride   :: Bool
+  , srnChainDbValidateOverride   :: Bool
     -- ^ If @True@, validate the ChainDB on init no matter what
   , srnDatabasePath              :: FilePath
     -- ^ Location of the DBs
@@ -681,7 +681,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       -> ChainDbArgs Defaults IO blk
     updateChainDbDefaults =
         (\x -> x { ChainDB.cdbTracer = srnTraceChainDB }) .
-        (if not srcChainDbValidateOverride then id else \x -> x
+        (if not srnChainDbValidateOverride then id else \x -> x
           { ChainDB.cdbImmutableDbValidation = ValidateAllChunks
           , ChainDB.cdbVolatileDbValidation  = ValidateAll
           })
