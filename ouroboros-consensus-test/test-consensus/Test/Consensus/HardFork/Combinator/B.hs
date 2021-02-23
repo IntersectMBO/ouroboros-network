@@ -88,6 +88,8 @@ data instance ConsensusConfig ProtocolB = CfgB {
       cfgB_k           :: SecurityParam
     , cfgB_leadInSlots :: Set SlotNo
     }
+  deriving stock Generic
+  deriving anyclass Serialise
   deriving NoThunks via OnlyCheckWhnfNamed "CfgB" (ConsensusConfig ProtocolB)
 
 instance ConsensusProtocol ProtocolB where

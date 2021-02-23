@@ -130,7 +130,7 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
             hardForkState
         QueryHardFork queryHardFork ->
           interpretQueryHardFork
-            lcfg
+            cfg
             queryHardFork
             st
     where
@@ -309,14 +309,19 @@ answerQueryAnytime HardForkLedgerConfig{..} =
 -------------------------------------------------------------------------------}
 
 data QueryHardFork xs result where
-  GetInterpreter :: QueryHardFork xs (History.Interpreter xs)
-  GetCurrentEra  :: QueryHardFork xs (EraIndex xs)
+  GetInterpreter  :: QueryHardFork xs (History.Interpreter xs)
+  GetCurrentEra   :: QueryHardFork xs (EraIndex xs)
+  GetLedgerCfg    :: QueryHardFork xs (HardForkLedgerConfig xs)
+  GetConsensusCfg :: QueryHardFork xs (ConsensusConfig (HardForkProtocol xs))
 
 deriving instance Show (QueryHardFork xs result)
 
 instance All SingleEraBlock xs => ShowQuery (QueryHardFork xs) where
-  showResult GetInterpreter = show
-  showResult GetCurrentEra  = show
+  showResult query = case query of
+    GetInterpreter  -> show
+    GetCurrentEra   -> show
+    GetLedgerCfg    -> const "TODO show `HardForkLedgerConfig xs`"
+    GetConsensusCfg -> const "TODO show `ConsensusConfig (HardForkProtocol xs)`"
 
 instance SameDepIndex (QueryHardFork xs) where
   sameDepIndex GetInterpreter GetInterpreter =
@@ -327,19 +332,29 @@ instance SameDepIndex (QueryHardFork xs) where
       Just Refl
   sameDepIndex GetCurrentEra _ =
       Nothing
+  sameDepIndex GetLedgerCfg GetLedgerCfg =
+      Just Refl
+  sameDepIndex GetLedgerCfg _ =
+      Nothing
+  sameDepIndex GetConsensusCfg GetConsensusCfg =
+      Just Refl
+  sameDepIndex GetConsensusCfg _ =
+      Nothing
 
 interpretQueryHardFork ::
      All SingleEraBlock xs
-  => HardForkLedgerConfig xs
+  => TopLevelConfig (HardForkBlock xs)
   -> QueryHardFork xs result
   -> LedgerState (HardForkBlock xs)
   -> result
 interpretQueryHardFork cfg query st =
     case query of
       GetInterpreter ->
-        History.mkInterpreter $ hardForkSummary cfg st
+        History.mkInterpreter $ hardForkSummary (configLedger cfg) st
       GetCurrentEra  ->
         eraIndexFromNS $ State.tip $ hardForkLedgerStatePerEra st
+      GetLedgerCfg -> configLedger cfg
+      GetConsensusCfg -> configConsensus cfg
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -365,18 +380,28 @@ decodeQueryAnytimeResult :: QueryAnytime result -> forall s. Decoder s result
 decodeQueryAnytimeResult GetEraStart = decode
 
 encodeQueryHardForkResult ::
-     SListI xs
+     ( Serialise (ConsensusConfig (HardForkProtocol xs))
+     , Serialise (LedgerConfig (HardForkBlock xs))
+     , SListI xs
+     )
   => QueryHardFork xs result -> result -> Encoding
 encodeQueryHardForkResult = \case
     GetInterpreter -> encode
     GetCurrentEra  -> encode
+    GetLedgerCfg   -> encode
+    GetConsensusCfg -> encode
 
 decodeQueryHardForkResult ::
-     SListI xs
+     ( Serialise (ConsensusConfig (HardForkProtocol xs))
+     , Serialise (LedgerConfig (HardForkBlock xs))
+     , SListI xs
+     )
   => QueryHardFork xs result -> forall s. Decoder s result
 decodeQueryHardForkResult = \case
     GetInterpreter -> decode
     GetCurrentEra  -> decode
+    GetLedgerCfg   -> decode
+    GetConsensusCfg -> decode
 
 {-------------------------------------------------------------------------------
   Auxiliary

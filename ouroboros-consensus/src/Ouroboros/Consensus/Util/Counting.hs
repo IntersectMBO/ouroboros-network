@@ -14,6 +14,7 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns        #-}
 
 -- | Type-level counting
@@ -52,6 +53,7 @@ module Ouroboros.Consensus.Util.Counting (
   , nonEmptyMapTwo
   ) where
 
+import           Codec.Serialise (Serialise(..))
 import           Control.Applicative
 import qualified Data.Foldable as Foldable
 import           Data.Kind (Type)
@@ -65,6 +67,13 @@ import           Ouroboros.Consensus.Util.SOP
 -------------------------------------------------------------------------------}
 
 newtype Exactly xs a = Exactly { getExactly :: NP (K a) xs }
+
+-- TODO This could be a deriving newtype instance, but the constraints will be a bit more complicated.
+instance (Serialise a, SListI xs) => Serialise (Exactly xs a) where
+  encode (Exactly xs) = case xs of
+    Nil -> mempty
+    K x :* xs' -> encode x <> encode (Exactly xs')
+  decode = Exactly <$> (htraverse' (\_ -> K <$> decode) (hpure Proxy))
 
 -- | At most one value for each type level index
 data AtMost :: [Type] -> Type -> Type where

@@ -1,7 +1,9 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -26,6 +28,7 @@ module Ouroboros.Consensus.Ledger.Extended (
   , Ticked(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
@@ -95,6 +98,8 @@ newtype ExtLedgerCfg blk = ExtLedgerCfg {
       getExtLedgerCfg :: TopLevelConfig blk
     }
   deriving (Generic)
+
+deriving newtype instance Serialise (TopLevelConfig blk) => Serialise (ExtLedgerCfg blk)
 
 instance ( ConsensusProtocol (BlockProtocol blk)
          , NoThunks (BlockConfig   blk)

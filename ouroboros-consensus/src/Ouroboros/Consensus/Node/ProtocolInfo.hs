@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -10,6 +11,7 @@ module Ouroboros.Consensus.Node.ProtocolInfo (
   , ProtocolClientInfo(..)
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Word
 import           NoThunks.Class (NoThunks)
 
@@ -24,6 +26,7 @@ import           Ouroboros.Consensus.NodeId
 
 newtype NumCoreNodes = NumCoreNodes Word64
   deriving (Show, NoThunks)
+  deriving newtype (Serialise)
 
 enumCoreNodes :: NumCoreNodes -> [CoreNodeId]
 enumCoreNodes (NumCoreNodes 0)        = []

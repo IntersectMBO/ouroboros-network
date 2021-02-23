@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Config (
   , module Ouroboros.Consensus.Config.SecurityParam
   ) where
 
+import           Codec.Serialise (Serialise)
 import           Data.Coerce
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -51,6 +52,15 @@ instance ( ConsensusProtocol (BlockProtocol blk)
          , NoThunks (CodecConfig   blk)
          , NoThunks (StorageConfig blk)
          ) => NoThunks (TopLevelConfig blk)
+
+instance
+  ( Serialise (ConsensusConfig (BlockProtocol blk))
+  , Serialise (LedgerCfg (LedgerState blk))
+  , Serialise (BlockConfig blk)
+  , Serialise (CodecConfig blk)
+  , Serialise (StorageConfig blk)
+  )
+  => Serialise (TopLevelConfig blk)
 
 mkTopLevelConfig ::
      ConsensusConfig (BlockProtocol blk)

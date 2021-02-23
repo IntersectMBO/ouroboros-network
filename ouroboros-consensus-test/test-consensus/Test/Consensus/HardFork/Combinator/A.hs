@@ -100,6 +100,8 @@ data instance ConsensusConfig ProtocolA = CfgA {
       cfgA_k           :: SecurityParam
     , cfgA_leadInSlots :: Set SlotNo
     }
+  deriving stock Generic
+  deriving anyclass Serialise
   deriving NoThunks via OnlyCheckWhnfNamed "CfgA" (ConsensusConfig ProtocolA)
 
 instance ConsensusProtocol ProtocolA where
@@ -196,6 +198,8 @@ data PartialLedgerConfigA = LCfgA {
     , lcfgA_systemStart :: SystemStart
     , lcfgA_forgeTxs    :: Map SlotNo [GenTx BlockA]
     }
+  deriving stock Generic
+  deriving anyclass Serialise
   deriving NoThunks via OnlyCheckWhnfNamed "LCfgA" PartialLedgerConfigA
 
 type instance LedgerCfg (LedgerState BlockA) =

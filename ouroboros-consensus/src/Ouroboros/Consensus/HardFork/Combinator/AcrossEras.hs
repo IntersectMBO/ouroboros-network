@@ -95,6 +95,9 @@ newtype PerEraConsensusConfig xs = PerEraConsensusConfig { getPerEraConsensusCon
 newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig    :: NP WrapPartialLedgerConfig    xs }
 newtype PerEraStorageConfig   xs = PerEraStorageConfig   { getPerEraStorageConfig   :: NP StorageConfig              xs }
 
+deriving newtype instance Serialise (NP WrapPartialConsensusConfig xs) => Serialise (PerEraConsensusConfig xs)
+deriving newtype instance Serialise (NP WrapPartialLedgerConfig    xs) => Serialise (PerEraLedgerConfig    xs)
+
 {-------------------------------------------------------------------------------
   Values for /some/ eras
 

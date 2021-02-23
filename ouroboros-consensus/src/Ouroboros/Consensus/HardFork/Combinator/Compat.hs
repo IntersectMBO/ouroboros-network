@@ -115,6 +115,9 @@ singleEraCompatQuery epochSize slotLen f = go
     goHardFork :: QueryHardFork '[era] result -> m result
     goHardFork GetInterpreter = return $ Qry.mkInterpreter summary
     goHardFork GetCurrentEra  = return $ eraIndexZero
+    goHardFork GetLedgerCfg = undefined
+    goHardFork GetConsensusCfg = undefined
+    -- TODO ^^^ Pattern match(es) are non-exhaustive
 
     summary :: Summary '[era]
     summary = neverForksSummary epochSize slotLen

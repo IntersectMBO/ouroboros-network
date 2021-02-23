@@ -35,6 +35,7 @@ module Data.SOP.Strict (
   , module Data.SOP.Constraint
   ) where
 
+import           Codec.Serialise (Serialise(..))
 import           Data.Coerce
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks (..), allNoThunks)
@@ -59,6 +60,14 @@ type instance AllN       NP c = All c
 type instance AllZipN    NP c = AllZip c
 type instance Prod       NP   = NP
 type instance SListIN    NP   = SListI
+
+instance (All (Compose Serialise k) xs) => Serialise (NP k xs) where
+  encode xs = case xs of
+    Nil -> mempty
+    (x :* xs') -> encode x <> encode xs'
+  decode = hsequence' (hcpure
+      (Proxy @(Compose Serialise k))
+      (Comp decode))
 
 hd :: NP f (x ': xs) -> f x
 hd (x :* _) = x

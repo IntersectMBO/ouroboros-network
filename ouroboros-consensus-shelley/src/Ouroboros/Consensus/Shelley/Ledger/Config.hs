@@ -32,9 +32,13 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 
 import qualified Shelley.Spec.Ledger.API as SL
+import Shelley.Spec.Ledger.Genesis ()
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
+import Codec.Serialise (Serialise)
+import Ouroboros.Consensus.Util (SerialiseViaAesonJSON(..))
+import Cardano.Ledger.Era
 
 {-------------------------------------------------------------------------------
   Additional node configuration
@@ -118,6 +122,9 @@ newtype CompactGenesis era = CompactGenesis {
   deriving newtype (FromCBOR, ToCBOR)
 
 deriving anyclass instance ShelleyBasedEra era => NoThunks (CompactGenesis era)
+
+deriving via (SerialiseViaAesonJSON (SL.ShelleyGenesis era)) instance
+  Era era => Serialise (CompactGenesis era)
 
 -- | Compacts the given 'SL.ShelleyGenesis'.
 compactGenesis :: SL.ShelleyGenesis era -> CompactGenesis era
