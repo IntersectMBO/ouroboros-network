@@ -143,7 +143,7 @@ getMempoolWriter :: forall txid m.
                     , Eq txid
                     )
                  => Mempool m txid
-                 -> TxSubmissionMempoolWriter txid (Tx txid) Int m 
+                 -> TxSubmissionMempoolWriter txid (Tx txid) Int m
 getMempoolWriter (Mempool mempool) =
     TxSubmissionMempoolWriter {
         txId = getTxId,

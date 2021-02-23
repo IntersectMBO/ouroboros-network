@@ -26,7 +26,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -56,12 +55,9 @@ chainSyncHeadersServer
     => Tracer m (TraceChainSyncServerEvent blk)
     -> ChainDB m blk
     -> Follower m blk (WithPoint blk (SerialisedHeader blk))
-    -> NodeToNodeVersion
     -> ChainSyncServer (SerialisedHeader blk) (Point blk) (Tip blk) m ()
-chainSyncHeadersServer tracer chainDB flr _version =
-    ChainSyncServer $
-      let ChainSyncServer server = chainSyncServerForFollower tracer chainDB flr in
-      server
+chainSyncHeadersServer tracer chainDB flr =
+    chainSyncServerForFollower tracer chainDB flr
 
 -- | Chain Sync Server for blocks for a given a 'ChainDB'.
 --
@@ -75,9 +71,7 @@ chainSyncBlocksServer
     -> Follower m blk (WithPoint blk (Serialised blk))
     -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
 chainSyncBlocksServer tracer chainDB flr =
-    ChainSyncServer $
-      let ChainSyncServer server = chainSyncServerForFollower tracer chainDB flr in
-      server
+    chainSyncServerForFollower tracer chainDB flr
 
 -- | A chain sync server.
 --
