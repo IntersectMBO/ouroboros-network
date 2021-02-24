@@ -40,13 +40,7 @@ import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 
--- | Temporary workaround
--- Currently AlonzoEra from 'cardano-ledger-alonzo' is not ready to be used
--- We use this type alias to temporarily work around this issue.
--- Once 'AlonzoEra' from 'cardano-ledger-alonzo' is ready we will remove
--- this workaround and replace it with the proper one from
--- the 'import Cardano.Ledger.Alonzo (AlonzoEra)''
-type AlonzoEra c = MaryEra c
+import           Ouroboros.Consensus.Shelley.ALONZOSTUB
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -124,3 +118,6 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
 
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
+
+instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
+  shelleyBasedEraName _ = "Alonzo"

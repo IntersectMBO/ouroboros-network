@@ -300,11 +300,11 @@ examplesMary =
       exampleAuxiliaryDataMA
 
 examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
-examplesAlonzo =
+examplesAlonzo = undefined {-
     examples
       exampleMultiAssetValue
       exampleTxBodyAlonzo
-      exampleAuxiliaryDataMA
+      exampleAuxiliaryDataMA -}
 
 {-------------------------------------------------------------------------------
   Era-specific individual examples
@@ -371,8 +371,8 @@ exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
 exampleTxBodyMary :: Core.TxBody StandardMary
 exampleTxBodyMary = exampleTxBodyMA exampleMultiAssetValue
 
-exampleTxBodyAlonzo :: Core.TxBody StandardAlonzo
-exampleTxBodyAlonzo = exampleTxBodyMA exampleMultiAssetValue
+_exampleTxBodyAlonzo :: Core.TxBody StandardAlonzo
+_exampleTxBodyAlonzo = undefined -- exampleTxBodyMA exampleMultiAssetValue
 
 exampleScriptMA :: Crypto c => Core.Script (MA.ShelleyMAEra ma c)
 exampleScriptMA =
