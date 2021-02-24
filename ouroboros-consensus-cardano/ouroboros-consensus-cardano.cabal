@@ -28,11 +28,12 @@ library
                        Ouroboros.Consensus.Cardano
                        Ouroboros.Consensus.Cardano.Block
                        Ouroboros.Consensus.Cardano.ByronHFC
-                       Ouroboros.Consensus.Cardano.ShelleyHFC
                        Ouroboros.Consensus.Cardano.Condense
                        Ouroboros.Consensus.Cardano.CanHardFork
                        Ouroboros.Consensus.Cardano.Node
+                       Ouroboros.Consensus.Cardano.Orphans
                        Ouroboros.Consensus.Cardano.ShelleyBased
+                       Ouroboros.Consensus.Cardano.ShelleyHFC
 
   build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11

@@ -73,8 +73,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise
-import           Control.Exception (Exception)
-import           Control.Exception (throw)
+import           Control.Exception (Exception, throw)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
@@ -82,7 +81,7 @@ import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Word
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR, ToCBOR, enforceSize)
 
 import           Ouroboros.Network.Block (Serialised)
 
@@ -151,6 +150,9 @@ data HardForkSpecificNodeToClientVersion =
 
     -- | Enable the 'GetCurrentEra' query in 'QueryHardFork'.
   | HardForkSpecificNodeToClientVersion2
+
+    -- | Enable the 'GetLedgerConfig' query in 'QueryHardFork'.
+  | HardForkSpecificNodeToClientVersion3
   deriving (Eq, Ord, Show, Enum, Bounded)
 
 data HardForkNodeToNodeVersion xs where
@@ -263,6 +265,8 @@ pSHFC = Proxy
 --    currently provide any provisions to resolve these.
 class ( CanHardFork xs
       , All SerialiseConstraintsHFC xs
+      , ToCBOR (HardForkLedgerConfig xs)
+      , FromCBOR (HardForkLedgerConfig xs)
         -- Required for HasNetworkProtocolVersion
       , All (Compose Show EraNodeToNodeVersion)   xs
       , All (Compose Eq   EraNodeToNodeVersion)   xs

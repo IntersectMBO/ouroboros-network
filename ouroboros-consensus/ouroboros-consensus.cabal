@@ -313,7 +313,6 @@ library
                      , ouroboros-network-framework
                      , ouroboros-network
 
-
   if os(windows)
      build-depends:    Win32 >= 2.6.2.0
   else

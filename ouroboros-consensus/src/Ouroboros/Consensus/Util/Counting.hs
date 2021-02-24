@@ -1,20 +1,21 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveFoldable      #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveFoldable       #-}
+{-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE EmptyCase            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE KindSignatures       #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns         #-}
 
 -- | Type-level counting
 --
@@ -58,6 +59,8 @@ import           Data.Kind (Type)
 import           Data.SOP.Dict
 import           Data.SOP.Strict
 
+import           Cardano.Binary
+import           Data.Typeable (Typeable)
 import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
@@ -65,6 +68,14 @@ import           Ouroboros.Consensus.Util.SOP
 -------------------------------------------------------------------------------}
 
 newtype Exactly xs a = Exactly { getExactly :: NP (K a) xs }
+
+-- NOTE: This could be a deriving newtype instance, but the constraints will be
+-- a bit more complicated.
+instance (Typeable xs, ToCBOR a, SListI xs) => ToCBOR (Exactly xs a) where
+  toCBOR (Exactly xs) = hcfoldMap (Proxy @Top) (toCBOR . unK) xs
+
+instance (Typeable xs, FromCBOR a, SListI xs) => FromCBOR (Exactly xs a) where
+  fromCBOR = Exactly <$> htraverse' (\(K ()) -> K <$> fromCBOR) (hpure (K ()))
 
 -- | At most one value for each type level index
 data AtMost :: [Type] -> Type -> Type where

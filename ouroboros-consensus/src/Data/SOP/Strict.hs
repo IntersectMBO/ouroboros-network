@@ -39,6 +39,8 @@ import           Data.Coerce
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks (..), allNoThunks)
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Prelude (Typeable)
 import           Data.SOP hiding (Injection, NP (..), NS (..), hd, injections,
                      shiftInjection, tl, unZ)
 import           Data.SOP.Classes (Same)
@@ -59,6 +61,14 @@ type instance AllN       NP c = All c
 type instance AllZipN    NP c = AllZip c
 type instance Prod       NP   = NP
 type instance SListIN    NP   = SListI
+
+instance (Typeable (NP f xs), All (Compose ToCBOR f) xs) => ToCBOR (NP f xs) where
+  toCBOR xsTop = hcfoldMap (Proxy @(Compose ToCBOR f)) toCBOR xsTop
+
+instance (Typeable (NP f xs), All (Compose FromCBOR f) xs) => FromCBOR (NP f xs) where
+  fromCBOR = hsequence' (hcpure
+    (Proxy @(Compose FromCBOR f))
+    (Comp fromCBOR))
 
 hd :: NP f (x ': xs) -> f x
 hd (x :* _) = x

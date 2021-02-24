@@ -13,7 +13,6 @@
 
 module Ouroboros.Consensus.Util.Orphans () where
 
-import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))
 import           Control.Concurrent.STM (readTVarIO)
 import           Data.Bimap (Bimap)
@@ -21,10 +20,14 @@ import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as PSQ
 import           Data.SOP.Strict
+import           Data.Time
+import           Data.Time.Calendar.OrdinalDate
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..),
                      allNoThunks, noThunksInKeysAndValues)
 
 import           Control.Tracer (Tracer)
+
+import           Cardano.Binary
 
 import           Control.Monad.Class.MonadTime (Time (..))
 
@@ -67,6 +70,25 @@ instance Serialise (Hash h a) where
 instance Serialise (VerKeyDSIGN MockDSIGN) where
   encode = encodeVerKeyDSIGN
   decode = decodeVerKeyDSIGN
+
+-- TODO put this next to From/ToCBOR class
+instance ToCBOR UTCTime where
+  toCBOR (UTCTime day timeOfDay)
+    = toCBOR year
+    <> toCBOR dayOfYear
+    <> toCBOR timeOfDayPico
+    where
+      (year :: Integer, dayOfYear :: Int) = toOrdinalDate day
+
+      timeOfDayPico :: Integer
+      timeOfDayPico = diffTimeToPicoseconds timeOfDay
+
+instance FromCBOR UTCTime where
+  fromCBOR = do
+    year <- fromCBOR @Integer
+    dayOfYear <- fromCBOR @Int
+    timeOfDayPico <- fromCBOR @Integer
+    return (UTCTime (fromOrdinalDate year dayOfYear) (picosecondsToDiffTime timeOfDayPico))
 
 {-------------------------------------------------------------------------------
   NoThunks

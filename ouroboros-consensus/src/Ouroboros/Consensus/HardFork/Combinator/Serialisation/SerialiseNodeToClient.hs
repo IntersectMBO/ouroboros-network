@@ -45,8 +45,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk
-                     ()
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk ()
 
 instance SerialiseHFC xs => SerialiseNodeToClientConstraints (HardForkBlock xs)
 
@@ -177,18 +176,30 @@ encodeQueryHardFork ::
      HardForkSpecificNodeToClientVersion
   -> Some (QueryHardFork xs)
   -> Encoding
-encodeQueryHardFork vHfc = \case
-    Some GetInterpreter -> mconcat [
-        Enc.encodeListLen 1
-      , Enc.encodeWord8 0
-      ]
+encodeQueryHardFork vHfc query
+  = case query of
+    Some GetInterpreter
+      | vHfc >= HardForkSpecificNodeToClientVersion1
+      -> mconcat [
+          Enc.encodeListLen 1
+        , Enc.encodeWord8 0
+        ]
     Some GetCurrentEra
-      | vHfc < HardForkSpecificNodeToClientVersion2 ->
-        throw HardForkEncoderQueryWrongVersion
-      | otherwise -> mconcat [
-        Enc.encodeListLen 1
-      , Enc.encodeWord8 1
-      ]
+      | vHfc >= HardForkSpecificNodeToClientVersion2
+      -> mconcat [
+          Enc.encodeListLen 1
+        , Enc.encodeWord8 1
+        ]
+    Some GetLedgerConfig
+      | vHfc >= HardForkSpecificNodeToClientVersion3
+      -> mconcat [
+          Enc.encodeListLen 1
+        , Enc.encodeWord8 2
+        ]
+    -- WARNING: when adding a new query, a new
+    -- @HardForkSpecificNodeToClientVersionX@ must be added. See #2973 for a
+    -- template on how to do this.
+    _ -> throw HardForkEncoderQueryWrongVersion
 
 decodeQueryHardFork :: Decoder s (Some (QueryHardFork xs))
 decodeQueryHardFork = do
@@ -197,6 +208,7 @@ decodeQueryHardFork = do
     case tag of
       0 -> return $ Some GetInterpreter
       1 -> return $ Some GetCurrentEra
+      2 -> return $ Some GetLedgerConfig
       _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
 
 instance SerialiseHFC xs
