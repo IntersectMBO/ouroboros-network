@@ -62,8 +62,6 @@ library
                      , text              >=1.2   && <1.3
                      , transformers
 
-                       -- cardano-ledger-specs
-                     , cardano-ledger-alonzo
                      , cardano-ledger-shelley-ma
                      , shelley-spec-ledger
                      , shelley-spec-non-integral

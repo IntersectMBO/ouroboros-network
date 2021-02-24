@@ -171,7 +171,6 @@ source-repository-package
   tag: a4eaf8819515003e287c8960817d2599cfdda1c6
   --sha256: 0ayq5xaxdf6c5y524c3gz3052dcclqf93kiwf1zhpmq6q960l45y
   subdir:
-    alonzo/impl
     byron/chain/executable-spec
     byron/crypto
     byron/crypto/test
