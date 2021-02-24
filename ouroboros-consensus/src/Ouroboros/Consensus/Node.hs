@@ -114,7 +114,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
--- | Arguments expected from any invocation of 'runWith'
+-- | Arguments expected from any invocation of 'runWith', whether by deployed
+-- code, tests, etc.
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
       -- | Consensus tracers
       rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
@@ -138,10 +139,12 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
 
     }
 
--- | Arguments that a non-testing invocation of 'runWith' would not need to
--- directly specify, but invocations from tests usually do.
+-- | Arguments that usually only tests /directly/ specify.
 --
--- See 'run' and 'stdLowLevelRunNodeArgsIO'.
+-- A non-testing invocation probably wouldn't explicitly provide these values to
+-- 'runWith'. The @cardano-node@, for example, instead calls the 'run'
+-- abbreviation, which uses 'stdLowLevelRunNodeArgsIO' to indirectly specify
+-- these low-level values from the higher-level 'StdRunNodeArgs'.
 data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = LowLevelRunNodeArgs {
 
       -- | How to manage the clean-shutdown marker on disk
@@ -606,7 +609,10 @@ stdRunDataDiffusion ::
   -> IO ()
 stdRunDataDiffusion = runDataDiffusion
 
--- | Arguments needed even from a standard non-testing invocation.
+-- | Higher-level arguments that can determine the 'LowLevelRunNodeArgs' under
+-- some usual assumptions for realistic use cases such as in @cardano-node@.
+--
+-- See 'stdLowLevelRunNodeArgsIO'.
 data StdRunNodeArgs m blk = StdRunNodeArgs
   { srnBfcMaxConcurrencyBulkSync :: Maybe Word
   , srnBfcMaxConcurrencyDeadline :: Maybe Word
