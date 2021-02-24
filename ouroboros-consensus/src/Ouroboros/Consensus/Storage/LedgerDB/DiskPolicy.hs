@@ -11,14 +11,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
 
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Word
-
-import           Ouroboros.Consensus.Config.SecurityParam
-
 import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
 
-import           Cardano.Slotting.Slot (SlotNo)
-
 import           Control.Monad.Class.MonadTime
+
+import           Ouroboros.Consensus.Config.SecurityParam
 
 -- | On-disk policy
 --
@@ -48,7 +45,7 @@ data DiskPolicy = DiskPolicy {
 
       -- | Should we write a snapshot of the ledger state to disk?
       --
-      -- This function is passed three bits of information:
+      -- This function is passed two bits of information:
       --
       -- * The time since the last snapshot, or 'Nothing' if none was taken yet.
       --   Note that 'Nothing' merely means no snapshot had been taking yet
@@ -63,17 +60,8 @@ data DiskPolicy = DiskPolicy {
       --   policy to decide to take a snapshot /on node startup/ if a lot of
       --   blocks had to be replayed.
       --
-      -- * Slot number - a slot that corresponds to a a tip of ledger state.
-      --   In other words: if you take a tip of a ledger state - that we are
-      --   considering to take a snapshot of - this value represents a slot
-      --   number in which that tip was forged.
-      --
       -- See also 'defaultDiskPolicy'
-    , onDiskShouldTakeSnapshot ::
-           Maybe DiffTime
-        -> Word64
-        -> SlotNo
-        -> Bool
+    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
@@ -97,14 +85,10 @@ defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
     onDiskNumSnapshots :: Word
     onDiskNumSnapshots = 2
 
-    onDiskShouldTakeSnapshot ::
-           Maybe DiffTime
-        -> Word64
-        -> SlotNo
-        -> Bool
-    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast _slotNo =
+    onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
+    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
            timeSinceLast >= secondsToDiffTime (fromIntegral (k * 2))
         || (   blocksSinceLast >= 50_000
             && timeSinceLast > 6 * secondsToDiffTime 60)
-    onDiskShouldTakeSnapshot Nothing blocksSinceLast _slotNo =
+    onDiskShouldTakeSnapshot Nothing blocksSinceLast =
            blocksSinceLast >= k
