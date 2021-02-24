@@ -1,6 +1,10 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Inspect (
@@ -19,6 +23,7 @@ import           Data.Ord (comparing)
 import           Data.Tuple (swap)
 import           Data.Void
 import           Data.Word (Word64)
+import           GHC.Records
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -27,9 +32,9 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Cardano.Ledger.Shelley.Constraints as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes (strictMaybeToMaybe)
-import qualified Shelley.Spec.Ledger.PParams as SL (PParamsUpdate)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -39,7 +44,8 @@ data ProtocolUpdate era = ProtocolUpdate {
       protocolUpdateProposal :: UpdateProposal era
     , protocolUpdateState    :: UpdateState (EraCrypto era)
     }
-  deriving (Show, Eq)
+deriving instance Eq (SL.PParamsDelta era) => Eq (ProtocolUpdate era)
+deriving instance Show (SL.PParamsDelta era) => Show (ProtocolUpdate era)
 
 -- | Update proposal
 --
@@ -48,7 +54,7 @@ data UpdateProposal era = UpdateProposal {
       -- | The protocol parameters changed by this update proposal
       --
       -- An update is /identified/ by how it updates the protocol parameters.
-      proposalParams  :: SL.PParamsUpdate era
+      proposalParams  :: SL.PParamsDelta era
 
       -- | New version (if changed by this proposal)
       --
@@ -64,7 +70,9 @@ data UpdateProposal era = UpdateProposal {
       -- | The 'EpochNo' the proposal becomes active in, if it is adopted
     , proposalEpoch   :: EpochNo
     }
-  deriving (Show, Eq)
+
+deriving instance Eq (SL.PParamsDelta era) => Eq (UpdateProposal era)
+deriving instance Show (SL.PParamsDelta era) => Show (UpdateProposal era)
 
 -- | Proposal state
 --
@@ -106,7 +114,7 @@ protocolUpdates genesis st = [
               proposalParams  = proposal
             , proposalEpoch   = succ currentEpoch
             , proposalVersion = strictMaybeToMaybe $
-                                  SL._protocolVersion proposal
+                                  getField @"_protocolVersion" proposal
             }
         , protocolUpdateState = UpdateState {
               proposalVotes         = votes
@@ -116,14 +124,14 @@ protocolUpdates genesis st = [
     | (proposal, votes) <- proposalsInv
     ]
   where
-    proposalsInv :: [(SL.PParamsUpdate era, [SL.KeyHash 'SL.Genesis (EraCrypto era)])]
+    proposalsInv :: [(SL.PParamsDelta era, [SL.KeyHash 'SL.Genesis (EraCrypto era)])]
     proposalsInv =
           groupSplit id
         . sortBy (comparing fst)
         $ map swap (Map.toList proposals)
 
     -- Updated proposed within the proposal window
-    proposals :: Map (SL.KeyHash 'SL.Genesis (EraCrypto era)) (SL.PParamsUpdate era)
+    proposals :: Map (SL.KeyHash 'SL.Genesis (EraCrypto era)) (SL.PParamsDelta era)
     SL.ProposedPPUpdates proposals =
           SL.proposals
         . SL._ppups
@@ -150,9 +158,11 @@ protocolUpdates genesis st = [
 
 data ShelleyLedgerUpdate era =
     ShelleyUpdatedProtocolUpdates [ProtocolUpdate era]
-  deriving (Show, Eq)
 
-instance Condense (ShelleyLedgerUpdate era) where
+deriving instance Eq (SL.PParamsDelta era) => Eq (ShelleyLedgerUpdate era)
+deriving instance Show (SL.PParamsDelta era) => Show (ShelleyLedgerUpdate era)
+
+instance Show (SL.PParamsDelta era) => Condense (ShelleyLedgerUpdate era) where
   condense = show
 
 instance ShelleyBasedEra era => InspectLedger (ShelleyBlock era) where

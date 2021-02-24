@@ -37,6 +37,7 @@ import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
+import qualified Cardano.Ledger.SafeHash as SL
 import           Cardano.Ledger.Val ((<->))
 import qualified Shelley.Spec.Ledger.Address as SL (BootstrapAddress (..))
 import qualified Shelley.Spec.Ledger.Address.Bootstrap as SL
@@ -44,8 +45,6 @@ import qualified Shelley.Spec.Ledger.Address.Bootstrap as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
-import qualified Shelley.Spec.Ledger.TxBody as SL (EraIndependentTxBody,
-                     eraIndTxBodyHash)
 import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessVKey)
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
@@ -186,13 +185,13 @@ migrateUTxO migrationInfo curSlot lcfg lst
           , SL._wdrls    = SL.Wdrl Map.empty
           }
 
-        bodyHash :: SL.Hash c SL.EraIndependentTxBody
-        bodyHash = SL.eraIndTxBodyHash body
+        bodyHash :: SL.SafeHash c SL.EraIndependentTxBody
+        bodyHash = SL.hashAnnotated body
 
         -- Witness the use of bootstrap address's utxo.
         byronWit :: SL.BootstrapWitness c
         byronWit =
-            SL.makeBootstrapWitness bodyHash byronSK $
+            SL.makeBootstrapWitness (SL.extractHash bodyHash) byronSK $
             Byron.addrAttributes byronAddr
 
         -- Witness the stake delegation.

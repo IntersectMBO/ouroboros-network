@@ -4,7 +4,7 @@
 , config ? {}
 # allows to override dependencies of the project without modifications,
 # eg. to test build against local checkout of nixpkgs and iohk-nix:
-# nix build -f default.nix cardano-ledger --arg sourcesOverride '{
+# nix build -f default.nix cardano-ledger-byron --arg sourcesOverride '{
 #   iohk-nix = ../iohk-nix;
 # }'
 , sourcesOverride ? {}

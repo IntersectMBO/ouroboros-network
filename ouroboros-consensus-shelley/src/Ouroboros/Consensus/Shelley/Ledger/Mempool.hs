@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -10,6 +11,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -30,6 +32,7 @@ import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           GHC.Records
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
@@ -103,14 +106,14 @@ instance ShelleyBasedEra era
   maxTxCapacity TickedShelleyLedgerState { tickedShelleyLedgerState = shelleyState } =
       fromIntegral maxBlockBodySize - fixedBlockBodyOverhead
     where
-      SL.PParams { _maxBBSize = maxBlockBodySize } = getPParams shelleyState
+      maxBlockBodySize = getField @"_maxBBSize" $ getPParams shelleyState
 
   txInBlockSize (ShelleyTx _ tx) = txSize + perTxOverhead
     where
       txSize = fromIntegral . Lazy.length . SL.txFullBytes $ tx
 
-mkShelleyTx :: ShelleyBasedEra era => SL.Tx era -> GenTx (ShelleyBlock era)
-mkShelleyTx tx = ShelleyTx (SL.txid (SL._body tx)) tx
+mkShelleyTx :: forall era. ShelleyBasedEra era => SL.Tx era -> GenTx (ShelleyBlock era)
+mkShelleyTx tx = ShelleyTx (SL.txid @era (SL._body tx)) tx
 
 newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (SL.TxId (EraCrypto era))
   deriving newtype (Eq, Ord, NoThunks)

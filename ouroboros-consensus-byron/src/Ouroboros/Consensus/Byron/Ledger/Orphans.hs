@@ -135,7 +135,7 @@ instance Condense Cardano.Crypto.VerificationKey where
   NoThunks
 -------------------------------------------------------------------------------}
 
--- TODO <https://github.com/input-output-hk/cardano-ledger/issues/685>
+-- TODO <https://github.com/input-output-hk/cardano-ledger-byron/issues/685>
 --
 -- Cardano.Chain.Delegation.Validation.Registration.TooLarge is not exported,
 -- but occurs somewhere in CC.ChainValidationError, so we use

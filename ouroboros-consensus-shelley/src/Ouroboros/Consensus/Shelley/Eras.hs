@@ -23,6 +23,8 @@ module Ouroboros.Consensus.Shelley.Eras (
 
 import           Data.Default.Class (Default)
 import           Data.Text (Text)
+import           GHC.Records
+import           Numeric.Natural (Natural)
 
 import           Cardano.Ledger.Allegra (AllegraEra)
 import qualified Cardano.Ledger.Core as LC
@@ -31,8 +33,10 @@ import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Control.State.Transition (State)
 
+import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
+import qualified Shelley.Spec.Ledger.BaseTypes as SL
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -79,9 +83,21 @@ type EraCrypto era = Crypto era
 -- needed to determine the hard fork point. In the future this should be
 -- replaced with an appropriate API - see
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
+--
+-- TODO Currently we include the constraint @SL.AdditionalGenesisConfig era ~
+-- ()@. When we fork to Alonzo we will need additional genesis config
+-- information.
 class ( SL.ShelleyBasedEra era
       , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
       , Default (State (LC.EraRule "PPUP" era))
+      , HasField "_maxBHSize" (LC.PParams era) Natural
+      , HasField "_maxTxSize" (LC.PParams era) Natural
+      , HasField "_a0" (LC.PParams era) Rational
+      , HasField "_nOpt" (LC.PParams era) Natural
+      , HasField "_rho" (LC.PParams era) SL.UnitInterval
+      , HasField "_tau" (LC.PParams era) SL.UnitInterval
+      , HasField "_protocolVersion" (SL.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
+      , SL.AdditionalGenesisConfig era ~ ()
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.

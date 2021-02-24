@@ -36,7 +36,7 @@ library
   build-depends:       base              >=4.9   && <4.15
                      , bimap             >=0.3   && <0.5
                      , cardano-binary
-                     , cardano-ledger-test
+                     , cardano-ledger-byron-test
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3

@@ -1,11 +1,11 @@
 module Ouroboros.Consensus.Byron.Ledger.Conversions (
-    -- * From @cardano-ledger@ to @ouroboros-consensus@
+    -- * From @cardano-ledger-byron@ to @ouroboros-consensus@
     fromByronSlotNo
   , fromByronBlockNo
   , fromByronBlockCount
   , fromByronEpochSlots
   , fromByronSlotLength
-    -- * From @ouroboros-consensus@ to @cardano-ledger@
+    -- * From @ouroboros-consensus@ to @cardano-ledger-byron@
   , toByronSlotNo
   , toByronBlockCount
   , toByronSlotLength
@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
 {-------------------------------------------------------------------------------
-  From @cardano-ledger@ to @ouroboros-consensus@
+  From @cardano-ledger-byron@ to @ouroboros-consensus@
 -------------------------------------------------------------------------------}
 
 fromByronSlotNo :: CC.SlotNumber -> SlotNo
@@ -51,7 +51,7 @@ fromByronSlotLength = slotLengthFromMillisec
                     . (fromIntegral :: Natural -> Integer)
 
 {-------------------------------------------------------------------------------
-  From @ouroboros-consensus@ to @cardano-ledger@
+  From @ouroboros-consensus@ to @cardano-ledger-byron@
 -------------------------------------------------------------------------------}
 
 toByronSlotNo :: SlotNo -> CC.SlotNumber

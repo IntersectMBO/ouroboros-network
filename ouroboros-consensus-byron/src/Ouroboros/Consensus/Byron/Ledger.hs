@@ -3,7 +3,7 @@ module Ouroboros.Consensus.Byron.Ledger (
   ) where
 
 -- Modules Aux, Conversions and Orphans are not re-exported, as they deal with
--- wrapping cardano-ledger; this should not be needed elsewhere in consensus.
+-- wrapping cardano-ledger-byron; this should not be needed elsewhere in consensus.
 
 import           Ouroboros.Consensus.Byron.Ledger.Block as X
 import           Ouroboros.Consensus.Byron.Ledger.Config as X

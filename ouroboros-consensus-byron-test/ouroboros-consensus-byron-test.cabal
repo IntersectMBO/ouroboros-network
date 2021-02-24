@@ -39,8 +39,8 @@ library
                      , cardano-crypto-class
                      , cardano-crypto-test
                      , cardano-crypto-wrapper
-                     , cardano-ledger
-                     , cardano-ledger-test
+                     , cardano-ledger-byron
+                     , cardano-ledger-byron-test
                      , containers        >=0.5   && <0.7
                      , hedgehog-quickcheck
                      , mtl               >=2.2   && <2.3
@@ -84,8 +84,8 @@ test-suite test
                      , cardano-crypto-class
                      , cardano-crypto-test
                      , cardano-crypto-wrapper
-                     , cardano-ledger
-                     , cardano-ledger-test
+                     , cardano-ledger-byron
+                     , cardano-ledger-byron-test
                      , cardano-slotting
                      , cborg
                      , containers

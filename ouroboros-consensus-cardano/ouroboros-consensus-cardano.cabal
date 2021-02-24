@@ -47,7 +47,7 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-prelude
                      , cardano-slotting
                      , shelley-spec-ledger
@@ -78,7 +78,7 @@ executable db-analyser
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
-                     , cardano-ledger
+                     , cardano-ledger-byron
                      , cardano-ledger-shelley-ma
                      , cardano-prelude
                      , containers

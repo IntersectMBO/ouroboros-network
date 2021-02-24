@@ -325,7 +325,7 @@ encodedTipSize encodedHeaderHashSize tipProxy =
     1
   + encodedPointSize encodedHeaderHashSize (fst . toLegacyTip <$> tipProxy)
   -- TODO: remove 'unBlockNo' when 'BlockNo' 'ToCBOR' instance will implement
-  -- 'encodedSizeExpr', also include a test in `cardano-ledger`.
+  -- 'encodedSizeExpr', also include a test in `cardano-ledger-byron`.
   + szGreedy (unBlockNo . snd . toLegacyTip <$> tipProxy)
 
 decodeTip :: (forall s. Decoder s (HeaderHash blk))
