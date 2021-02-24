@@ -45,6 +45,12 @@ import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators ()
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
+import qualified Cardano.Ledger.Crypto as CL
+import Test.Shelley.Spec.Ledger.Generator.EraGen
+import Test.Shelley.Spec.Ledger.Generator.ScriptClass
+import Test.Shelley.Spec.Ledger.Utils
+import Ouroboros.Consensus.Shelley.ALONZOSTUB
+
 {-------------------------------------------------------------------------------
   Generators
 
@@ -182,3 +188,24 @@ instance CanMock era
       query@(SomeSecond q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q
       return $ WithVersion version query
+
+instance Split (Stub c s) where
+  vsplit = undefined
+instance CL.Crypto c => EraGen (AlonzoEra c) where
+  genGenesisValue = undefined
+  genEraTxBody = undefined
+  genEraAuxiliaryData = undefined
+  updateEraTxBody = undefined
+instance Arbitrary (Stub c s) where
+  arbitrary = undefined
+instance CL.Crypto c => ScriptClass (AlonzoEra c) where
+  basescript = undefined
+  isKey = undefined
+  quantify = undefined
+  unQuantify = undefined
+instance Arbitrary (AlonzoTxBody c) where
+  arbitrary = undefined
+instance Arbitrary (AlonzoTxOut c) where
+  arbitrary = undefined
+instance Arbitrary AlonzoPParams where
+  arbitrary = undefined
