@@ -313,6 +313,8 @@ library
                      , ouroboros-network-framework
                      , ouroboros-network
 
+                     , canonical-json
+                     , aeson
 
   if os(windows)
      build-depends:    Win32 >= 2.6.2.0
