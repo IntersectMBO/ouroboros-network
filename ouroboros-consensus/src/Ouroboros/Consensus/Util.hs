@@ -1,11 +1,14 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE KindSignatures       #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE PackageImports       #-}
+{-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
@@ -64,6 +67,8 @@ module Ouroboros.Consensus.Util (
     -- * Miscellaneous
   , eitherToMaybe
   , fib
+  , SerialiseViaAesonJSON(..)
+  , SerialiseViaCanonicalJSON(..)
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
@@ -85,6 +90,10 @@ import           Data.Word (Word64)
 import           GHC.Stack
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Codec.Serialise (Serialise(..))
+import qualified "canonical-json" Text.JSON.Canonical as CJSON
+import qualified Data.Aeson as Aeson
+import Cardano.Prelude (SchemaError)
 
 {-------------------------------------------------------------------------------
   Type-level utility
@@ -386,3 +395,40 @@ fib n = round $ phi ** fromIntegral n / sq5
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Left _)  = Nothing
 eitherToMaybe (Right x) = Just x
+
+-- | DerivingVia newtype wrapper to derive @Serialise@ instances via JSON
+-- encoding (using the aeson package).
+newtype SerialiseViaAesonJSON a = SerialiseViaAesonJSON a
+
+instance
+  ( Aeson.ToJSON a
+  , Aeson.FromJSON a
+  ) =>  Serialise (SerialiseViaAesonJSON a) where
+  encode (SerialiseViaAesonJSON a) = encode $ Aeson.encode a
+  decode = do
+    bs :: Lazy.ByteString <- decode
+    return
+      $ SerialiseViaAesonJSON
+      $ maybe (error "SerialiseViaAesonJSON: Failed to decode") id
+      $ Aeson.decode bs
+
+
+-- | DerivingVia newtype wrapper to derive @Serialise@ instances via JSON
+-- encoding (using the canonical-json package).
+newtype SerialiseViaCanonicalJSON a = SerialiseViaCanonicalJSON a
+
+instance
+  ( CJSON.ToJSON Identity a
+  , CJSON.FromJSON (Either SchemaError) a
+  ) =>  Serialise (SerialiseViaCanonicalJSON a) where
+  encode (SerialiseViaCanonicalJSON a) = runIdentity $ do
+    json <- CJSON.toJSON a
+    return . encode $ CJSON.renderCanonicalJSON json
+
+  decode = do
+    bs :: Lazy.ByteString <- decode
+    return
+      $ SerialiseViaCanonicalJSON
+      $ either error (either (error . show) id  . CJSON.fromJSON @(Either SchemaError) @a)
+      $ CJSON.parseCanonicalJSON bs
+
