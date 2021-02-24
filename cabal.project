@@ -168,8 +168,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: c9ceae911154402d2feb709128c35262c3bbd910
-  --sha256: 1zna1ybis18qyr3wdnwk0zaffvhi7rnbaxwyzr0nf2f6mbxbhyn0
+  tag: 5754c4967c72a97e9a51f8c6e568d753192eb03f
+  --sha256: 11n6w46rsrdm68pf53fp02ykrfvynqyx2blx35qhydk30f2wwi1k
   subdir:
     byron/chain/executable-spec
     byron/crypto
@@ -197,6 +197,19 @@ source-repository-package
   location: https://github.com/input-output-hk/cardano-crypto/
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/decentralized-software-updates
+  tag: d93aa72b9a3ea503e505b4d54a9fc47859d7dd01
+  --sha256: 1v7s1w6r3k9g9ipkdk21rccz0n4mn8sx2zqd553508x00rn1fq7m
+  subdir: executable-spec
+
+source-repository-package
+  type: git
+  location: https://github.com/nomeata/haskell-successors
+  tag: a19dc93508e822e11be991df58b5755a3e12e793
+  --sha256: 04rj7l4rd3nbdk0j51jv75iz0x56jb0ny1332lxaxsiak3a8niy6
 
 -- The r0 revision of this quickcheck-state-machine-0.7 on Hackage adds a lower
 -- bound on the text package: >=1.2.4.0. However, 1.2.4.0 doesn't support GHC
