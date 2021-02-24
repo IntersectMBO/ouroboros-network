@@ -32,6 +32,7 @@ import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 
 import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
+import           Ouroboros.Consensus.Shelley.ALONZOSTUB
 
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
