@@ -7,6 +7,7 @@
 module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
     DiskPolicy (..)
   , defaultDiskPolicy
+  , RequestedSnapshotInterval(..)
   ) where
 
 import           Data.Time.Clock (secondsToDiffTime)
@@ -16,6 +17,16 @@ import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
 import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Consensus.Config.SecurityParam
+
+-- | Length of time, requested by the user, that has to pass after which
+-- a snapshot is taken. It can be:
+--
+-- 1. either explicitly provided by user in seconds
+-- 2. or default value can be requested - DiskPolicy specify what that is
+-- exactly, see `defaultDiskPolicy` as an example
+data RequestedSnapshotInterval =
+    DefaultSnapshotInterval
+  | RequestedSnapshotInterval DiffTime
 
 -- | On-disk policy
 --
@@ -65,30 +76,48 @@ data DiskPolicy = DiskPolicy {
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
--- | Default on-disk policy
+-- | Default on-disk policy suitable to use with cardano-node
 --
--- We want to take a snapshot every 50k blocks or roughly every hour (72
--- minutes actually) when @k = 2160@ (for other values of @k@ we scale
--- proportionally), but not more rapidly than 10 per hour (which is important
--- for bulk sync).
---
--- If users never leave their wallet running for long, however, this would mean
--- that we /never/ take snapshots after syncing (until we get to 50k blocks).
--- So, on startup, we take a snapshot as soon as there are @k@ blocks replayed.
--- This means that even if users frequently shut down their wallet, we still
--- take a snapshot roughly every @k@ blocks. It does mean the possibility of
--- an extra unnecessary snapshot during syncing (if the node is restarted), but
--- that is not a big deal.
-defaultDiskPolicy :: SecurityParam -> DiskPolicy
-defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
+defaultDiskPolicy :: SecurityParam -> RequestedSnapshotInterval -> DiskPolicy
+defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
   where
     onDiskNumSnapshots :: Word
     onDiskNumSnapshots = 2
 
-    onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
+    onDiskShouldTakeSnapshot ::
+         Maybe DiffTime
+      -> Word64
+      -> Bool
     onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
-           timeSinceLast >= secondsToDiffTime (fromIntegral (k * 2))
-        || (   blocksSinceLast >= 50_000
-            && timeSinceLast > 6 * secondsToDiffTime 60)
-    onDiskShouldTakeSnapshot Nothing blocksSinceLast =
-           blocksSinceLast >= k
+         timeSinceLast >= snapshotInterval
+      || substantialAmountOfBlocksWereProcessed blocksSinceLast timeSinceLast
+
+   -- | If users never leave their wallet running for long. This would mean
+   -- that under some circumstances we would never take a snapshot
+   -- So, on startup (when the 'time since the last snapshot' is `Nothing`),
+   -- we take a snapshot as soon as there are @k@ blocks replayed.
+   -- This means that even if users frequently shut down their wallet, we still
+   -- take a snapshot roughly every @k@ blocks. It does mean the possibility of
+   -- an extra unnecessary snapshot during syncing (if the node is restarted), but
+   -- that is not a big deal.
+    onDiskShouldTakeSnapshot Nothing blocksSinceLast = blocksSinceLast >= k
+
+    -- | We want to create a snapshot after a substantial amount of blocks were
+    -- processed (hard-coded to 50k blocks). Given the fact that during bootstrap
+    -- a fresh node will see a lot of blocks over a short period of time, we want
+    -- to limit this condition to happen not more often then a fixed amount of
+    -- time (here hard-coded to 6 minutes)
+    substantialAmountOfBlocksWereProcessed blocksSinceLast timeSinceLast =
+      let minBlocksBeforeSnapshot      = 50_000
+          minTimeBeforeSnapshot        = 6 * secondsToDiffTime 60
+      in    blocksSinceLast >= minBlocksBeforeSnapshot
+         && timeSinceLast   >= minTimeBeforeSnapshot
+
+    -- | Requested snapshot interval can be explicitly provided by the
+    -- caller (RequestedSnapshotInterval) or the caller might request the default
+    -- snapshot interval (DefaultSnapshotInterval). If the latter then the
+    -- snapshot interval is defaulted to k * 2 seconds - when @k = 2160@ the interval
+    -- defaults to 72 minutes.
+    snapshotInterval = case requestedInterval of
+      (RequestedSnapshotInterval value) -> value
+      DefaultSnapshotInterval           -> secondsToDiffTime $ fromIntegral $ k * 2

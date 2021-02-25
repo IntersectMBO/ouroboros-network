@@ -40,7 +40,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (defaultDiskPolicy)
+                     (RequestedSnapshotInterval (..), defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbPast, ledgerDbTip, ledgerDbWithAnchor)
 
@@ -210,7 +210,7 @@ initLgrDB k chain = do
     args = LgrDbArgs
       { lgrTopLevelConfig       = cfg
       , lgrHasFS                = SomeHasFS (error "lgrHasFS" :: HasFS m ())
-      , lgrDiskPolicy           = defaultDiskPolicy k
+      , lgrDiskPolicy           = defaultDiskPolicy k DefaultSnapshotInterval
       , lgrGenesis              = return testInitExtLedger
       , lgrTracer               = nullTracer
       , lgrTraceLedger          = nullTracer
