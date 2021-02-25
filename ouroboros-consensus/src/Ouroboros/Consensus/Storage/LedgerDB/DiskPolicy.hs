@@ -7,6 +7,7 @@
 module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
     DiskPolicy(..)
   , defaultDiskPolicy
+  , RequestedInterval(..)
   ) where
 
 import           Data.Time.Clock (secondsToDiffTime)
@@ -16,6 +17,11 @@ import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
 import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Consensus.Config.SecurityParam
+
+
+newtype RequestedInterval = RequestedInterval
+  { unRequestedInterval :: Word64
+  }
 
 -- | On-disk policy
 --
@@ -60,8 +66,11 @@ data DiskPolicy = DiskPolicy {
       --   policy to decide to take a snapshot /on node startup/ if a lot of
       --   blocks had to be replayed.
       --
+      -- * How often snapshot should be taken, regardless of number of blocks
+      --   processed
+      --
       -- See also 'defaultDiskPolicy'
-    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
+    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Maybe RequestedInterval -> Bool
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
@@ -85,10 +94,19 @@ defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
     onDiskNumSnapshots :: Word
     onDiskNumSnapshots = 2
 
-    onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
-    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
-           timeSinceLast >= secondsToDiffTime (fromIntegral (k * 2))
-        || (   blocksSinceLast >= 50_000
-            && timeSinceLast > 6 * secondsToDiffTime 60)
-    onDiskShouldTakeSnapshot Nothing blocksSinceLast =
-           blocksSinceLast >= k
+    onDiskShouldTakeSnapshot ::
+         Maybe DiffTime
+      -> Word64
+      -> Maybe RequestedInterval
+      -> Bool
+    onDiskShouldTakeSnapshot Nothing blocksSinceLast _ = blocksSinceLast >= k
+    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast maybeRequestedInterval =
+      let snapshotIntervalSeconds      =
+            maybe (k * 2) unRequestedInterval maybeRequestedInterval
+          snapshotInterval             =
+            secondsToDiffTime (fromIntegral snapshotIntervalSeconds)
+          itsBeen50kBlocks             = blocksSinceLast >= 50_000
+          itsBeen6MinSinceLastSnapshot = timeSinceLast > 6 * secondsToDiffTime 60
+      in
+           timeSinceLast >= snapshotInterval
+        || itsBeen50kBlocks && itsBeen6MinSinceLastSnapshot
