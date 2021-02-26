@@ -122,7 +122,7 @@ data DiffusionArguments = DiffusionArguments {
       -- ^ IPv4 socket ready to accept connections or diffusion addresses
     , daIPv6Address  :: Maybe (Either Socket.Socket AddrInfo)
       -- ^ IPV4 socket ready to accept connections or diffusion addresses
-    , daLocalAddress :: Either Socket.Socket FilePath
+    , daLocalAddress :: Maybe (Either Socket.Socket FilePath)
       -- ^ AF_UNIX socket ready to accept connections or address for local clients
     , daIpProducers   :: IPSubscriptionTarget
       -- ^ ip subscription addresses
@@ -204,18 +204,24 @@ runDataDiffusion tracers
 
     lias <- getInitiatorLocalAddresses snocket
 
-    let dnsSubActions = runDnsSubscriptionWorker snocket networkState lias <$> daDnsProducers
+    let
+        dnsSubActions = runDnsSubscriptionWorker snocket networkState lias
+          <$> daDnsProducers
+
         serverActions = case daDiffusionMode of
-          InitiatorAndResponderDiffusionMode -> runServer snocket networkState . fmap Socket.addrAddress <$> addresses
+          InitiatorAndResponderDiffusionMode ->
+            runServer snocket networkState . fmap Socket.addrAddress
+              <$> addresses
           InitiatorOnlyDiffusionMode -> []
+
+        localServerAction = runLocalServer iocp networkLocalState
+          <$> maybeToList daLocalAddress
 
         actions =
           [ -- clean state thread
             cleanNetworkMutableState networkState
           , -- clean local state thread
             cleanNetworkMutableState networkLocalState
-          , -- fork server for local clients 
-            runLocalServer iocp networkLocalState
           , -- fork ip subscription
             runIpSubscriptionWorker snocket networkState lias
           ]
@@ -223,6 +229,8 @@ runDataDiffusion tracers
           ++ dnsSubActions
           -- fork servers for remote peers
           ++ serverActions
+          -- fork server for local clients
+          ++ localServerAction
 
     -- Runs all threads in parallel, using Async.Concurrently's Alternative instance
     Async.runConcurrently $ asum $ Async.Concurrently <$> actions
@@ -319,8 +327,9 @@ runDataDiffusion tracers
 
     runLocalServer :: IOManager
                    -> NetworkMutableState LocalAddress
+                   -> Either Socket.Socket FilePath
                    -> IO ()
-    runLocalServer iocp networkLocalState =
+    runLocalServer iocp networkLocalState localAddress =
       bracket
         localServerInit
         localServerCleanup
@@ -328,7 +337,7 @@ runDataDiffusion tracers
       where
         localServerInit :: IO (LocalSocket, LocalSnocket)
         localServerInit =
-          case daLocalAddress of
+          case localAddress of
 #if defined(mingw32_HOST_OS)
                -- Windows uses named pipes so can't take advantage of existing sockets
                Left _ -> do
@@ -358,7 +367,7 @@ runDataDiffusion tracers
 
         localServerBody :: (LocalSocket, LocalSnocket) -> IO ()
         localServerBody (sd, sn) = do
-          case daLocalAddress of
+          case localAddress of
                -- If a socket was provided it should be ready to accept
                Left _ -> pure ()
                Right path -> do
