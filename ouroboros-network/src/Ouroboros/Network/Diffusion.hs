@@ -27,6 +27,7 @@ import           Control.Exception
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
+import           Data.Foldable (asum)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 
@@ -203,40 +204,28 @@ runDataDiffusion tracers
 
     lias <- getInitiatorLocalAddresses snocket
 
-    void $
-      -- clean state thread
-      Async.withAsync (cleanNetworkMutableState networkState) $ \cleanNetworkStateThread ->
+    let dnsSubActions = runDnsSubscriptionWorker snocket networkState lias <$> daDnsProducers
+        serverActions = case daDiffusionMode of
+          InitiatorAndResponderDiffusionMode -> runServer snocket networkState . fmap Socket.addrAddress <$> addresses
+          InitiatorOnlyDiffusionMode -> []
 
-        -- clean local state thread
-        Async.withAsync (cleanNetworkMutableState networkLocalState) $ \cleanLocalNetworkStateThread ->
+        actions =
+          [ -- clean state thread
+            cleanNetworkMutableState networkState
+          , -- clean local state thread
+            cleanNetworkMutableState networkLocalState
+          , -- fork server for local clients 
+            runLocalServer iocp networkLocalState
+          , -- fork ip subscription
+            runIpSubscriptionWorker snocket networkState lias
+          ]
+          -- fork dns subscriptions
+          ++ dnsSubActions
+          -- fork servers for remote peers
+          ++ serverActions
 
-          -- fork server for local clients
-          Async.withAsync (runLocalServer iocp networkLocalState) $ \localServerThread ->
-
-              -- fork ip subscription
-              Async.withAsync (runIpSubscriptionWorker snocket networkState lias) $ \ipSubThread ->
-
-                -- fork dns subscriptions
-                withAsyncs (runDnsSubscriptionWorker snocket networkState lias <$> daDnsProducers) $ \dnsSubThreads ->
-
-                  case daDiffusionMode of
-                    InitiatorAndResponderDiffusionMode ->
-                      -- fork servers for remote peers
-                      withAsyncs (runServer snocket networkState . fmap Socket.addrAddress <$> addresses) $ \serverThreads -> do
-                        void $ Async.waitAnyCancel $
-                            [ cleanNetworkStateThread
-                            , cleanLocalNetworkStateThread
-                            , localServerThread
-                            , ipSubThread
-                            ] ++ dnsSubThreads ++ serverThreads
-
-                    InitiatorOnlyDiffusionMode ->
-                      void $ Async.waitAnyCancel $
-                            [ cleanNetworkStateThread
-                            , cleanLocalNetworkStateThread
-                            , localServerThread
-                            , ipSubThread
-                            ] ++ dnsSubThreads
+    -- Runs all threads in parallel, using Async.Concurrently's Alternative instance
+    Async.runConcurrently $ asum $ Async.Concurrently <$> actions
 
   where
     traceException :: IO a -> IO a
@@ -480,16 +469,3 @@ runDataDiffusion tracers
         , spSubscriptionTarget     = dnsProducer
         }
       (daInitiatorApplication applications)
-
-
---
--- Auxilary functions
---
-
--- | Structural fold using 'Async.withAsync'.
---
-withAsyncs :: [IO a] -> ([Async.Async a] -> IO b) -> IO b
-withAsyncs as0 k = go [] as0
-  where
-    go threads []       = k threads
-    go threads (a : as) = Async.withAsync a $ \thread -> go (thread : threads) as
