@@ -411,6 +411,9 @@ instance NodeInitStorage BlockA where
   -- Pick some chunk size
   nodeImmutableDbChunkInfo _ = simpleChunkInfo 10
 
+instance BlockSupportsMetrics BlockA where
+  isSelfIssued = isSelfIssuedConstUnknown
+
 instance SingleEraBlock BlockA where
   singleEraInfo _ = SingleEraInfo "A"
 

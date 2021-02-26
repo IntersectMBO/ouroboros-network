@@ -281,4 +281,7 @@ instance NodeInitStorage ByronBlock where
   RunNode instance
 -------------------------------------------------------------------------------}
 
+instance BlockSupportsMetrics ByronBlock where
+  isSelfIssued = isSelfIssuedConstUnknown
+
 instance RunNode ByronBlock

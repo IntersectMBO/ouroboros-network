@@ -251,4 +251,7 @@ instance NodeInitStorage DualByronBlock where
   RunNode instance
 -------------------------------------------------------------------------------}
 
+instance BlockSupportsMetrics DualByronBlock where
+  isSelfIssued = isSelfIssuedConstUnknown
+
 instance RunNode DualByronBlock

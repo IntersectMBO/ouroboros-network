@@ -79,8 +79,7 @@ instance ShelleyBasedEra era => BlockSupportsProtocol (ShelleyBlock era) where
           -- When we are running with multiple sets of credentials, which should
           -- only happen when benchmarking, do a hash lookup, as the number of
           -- keys can grow to 100-250.
-          _ | SL.hashKey (SL.bheaderVk hdrBody)
-                `Map.member` shelleyBlockIssuerVKeys cfg
+          _ | SL.hashKey (SL.bheaderVk hdrBody) `Map.member` issuerVKeys
             -> SelfIssued
             | otherwise
             -> NotSelfIssued
