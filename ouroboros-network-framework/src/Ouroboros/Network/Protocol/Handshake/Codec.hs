@@ -41,6 +41,7 @@ import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
 
+import           Ouroboros.Network.Protocol.Limits
 import           Ouroboros.Network.Protocol.Handshake.Type
 
 -- | Codec for version data ('vData' in code) exchanged by the handshake
@@ -86,15 +87,13 @@ byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
 
 -- | Time limits.
 --
--- We use a bearer which has `10s` timeout on sending or receiving a single
--- `MuxSDU`.  Handshake messages must fit into a single `MuxSDU`, thus we don't
--- set another timeout here.
 timeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBOR.Term)
 timeLimitsHandshake = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
                     PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit _ = Nothing
+    stateToLimit (ClientAgency TokPropose) = shortWait
+    stateToLimit (ServerAgency TokConfirm) = shortWait
 
 
 -- |
