@@ -39,6 +39,8 @@ diffTime (Time t) (Time t') = t - t'
 addTime :: DiffTime -> Time -> Time
 addTime d (Time t) = Time (d + t)
 
+infixr 9 `addTime`
+
 
 class Monad m => MonadMonotonicTime m where
   -- | Time in a monotonic clock, with high precision. The epoch for this
