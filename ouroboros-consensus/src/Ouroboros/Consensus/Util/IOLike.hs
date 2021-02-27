@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Util.IOLike (
     IOLike(..)
@@ -80,7 +81,7 @@ class ( MonadAsync              m
   -- | Securely forget a KES signing key.
   --
   -- No-op for the IOSim, but 'KES.forgetSignKeyKES' for IO.
-  forgetSignKeyKES :: KESAlgorithm v => SignKeyKES v -> m ()
+  forgetSignKeyKES :: (KESAlgorithm v, KES.SignKeyAccessKES v ~ IO) => SignKeyKES v -> m ()
 
 instance IOLike IO where
   forgetSignKeyKES = KES.forgetSignKeyKES

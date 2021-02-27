@@ -36,6 +36,7 @@ import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
                      pattern SignKeyMockKES, SignedKES (..), SimpleKES,
                      SingleKES, SumKES, VerKeyKES, pattern VerKeyMockKES,
                      pattern VerKeySingleKES, pattern VerKeySumKES)
+import           Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
 
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
@@ -172,6 +173,9 @@ instance Condense a => Condense (WithOrigin a) where
 {-------------------------------------------------------------------------------
   Orphans for cardano-crypto-classes
 -------------------------------------------------------------------------------}
+
+instance Condense (PinnedSizedBytes n) where
+  condense = condense . psbToByteString
 
 instance Condense (SigDSIGN v) => Condense (SignedDSIGN v a) where
   condense (SignedDSIGN sig) = condense sig
