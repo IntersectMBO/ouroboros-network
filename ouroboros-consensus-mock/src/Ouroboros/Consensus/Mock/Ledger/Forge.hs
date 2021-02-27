@@ -4,10 +4,12 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE RankNTypes            #-}
 
 module Ouroboros.Consensus.Mock.Ledger.Forge (
     ForgeExt (..)
   , forgeSimple
+  , hoistForgeExt
   ) where
 
 import           Cardano.Binary (toCBOR)
@@ -21,6 +23,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Construct the protocol specific part of the block
@@ -31,25 +34,29 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- Note: this is a newtype and not a type class to allow for things in the
 -- closure. For example, if Praos had to use a stateful KES key, it could
 -- refer to it in its closure.
-newtype ForgeExt c ext = ForgeExt {
+newtype ForgeExt c ext m = ForgeExt {
       forgeExt :: TopLevelConfig                (SimpleBlock c ext)
                -> IsLeader       (BlockProtocol (SimpleBlock c ext))
                -> SimpleBlock' c ext ()
-               -> SimpleBlock c ext
+               -> m (SimpleBlock c ext)
     }
 
-forgeSimple :: forall c ext.
+hoistForgeExt :: (forall a. m a -> n a) -> ForgeExt c ext m -> ForgeExt c ext n
+hoistForgeExt hoist (ForgeExt f) = ForgeExt (\t l s -> hoist (f t l s))
+
+forgeSimple :: forall c ext m.
                ( SimpleCrypto c
                , MockProtocolSpecific c ext
+               , Monad m
                )
-            => ForgeExt c ext
+            => ForgeExt c ext m
             -> TopLevelConfig (SimpleBlock c ext)
             -> BlockNo                               -- ^ Current block number
             -> SlotNo                                -- ^ Current slot number
             -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
-            -> SimpleBlock c ext
+            -> m (SimpleBlock c ext)
 forgeSimple ForgeExt { forgeExt } cfg curBlock curSlot tickedLedger txs proof =
     forgeExt cfg proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()

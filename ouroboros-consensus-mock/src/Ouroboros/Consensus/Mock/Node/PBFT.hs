@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies      #-}
@@ -27,7 +28,7 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 
 type MockPBftBlock = SimplePBftBlock SimpleMockCrypto PBftMockCrypto
 
-protocolInfoMockPBFT :: Monad m
+protocolInfoMockPBFT :: (Monad m)
                      => PBftParams
                      -> HardFork.EraParams
                      -> CoreNodeId
@@ -81,6 +82,7 @@ pbftBlockForging ::
      , Signable (PBftDSIGN c') (SignedSimplePBft c c')
      , ContextDSIGN (PBftDSIGN c') ~ ()
      , Monad m
+     -- , Cardano.Crypto.KES.Class.KESSignAlgorithm m (PraosKES c)
      )
   => PBftCanBeLeader c'
   -> BlockForging m (SimplePBftBlock c c')
@@ -96,13 +98,12 @@ pbftBlockForging canBeLeader = BlockForging {
                                slot
                                tickedPBftState
     , forgeBlock       = \cfg slot bno lst txs proof ->
-        return
-          $ forgeSimple
-              forgePBftExt
-              cfg
-              slot
-              bno
-              lst
-              (map txForgetValidated txs)
-              proof
+          forgeSimple
+            forgePBftExt
+            cfg
+            slot
+            bno
+            lst
+            (map txForgetValidated txs)
+            proof
     }

@@ -2,12 +2,14 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -120,24 +122,24 @@ type instance ForgeStateInfo (SimpleBftBlock c c') = ()
 
 type instance ForgeStateUpdateError (SimpleBftBlock c c') = Void
 
-forgeBftExt :: forall c c'.
+forgeBftExt :: forall c c' m.
                ( SimpleCrypto c
                , BftCrypto c'
                , Signable (BftDSIGN c') (SignedSimpleBft c c')
+               , Monad m
                )
-            => ForgeExt c (SimpleBftExt c c')
-forgeBftExt = ForgeExt $ \cfg _ SimpleBlock{..} ->
+            => ForgeExt c (SimpleBftExt c c') m
+forgeBftExt = ForgeExt $ \cfg _ SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
-        ext :: SimpleBftExt c c'
-        ext = SimpleBftExt $
+        ext :: SimpleBftExt c c' = SimpleBftExt $
           forgeBftFields (configConsensus cfg) $
             SignedSimpleBft {
                 signedSimpleBft = simpleHeaderStd
               }
-    in SimpleBlock {
-         simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-       , simpleBody   = simpleBody
-       }
+    return $ SimpleBlock {
+                 simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+               , simpleBody   = simpleBody
+               }
 
 {-------------------------------------------------------------------------------
   Serialisation

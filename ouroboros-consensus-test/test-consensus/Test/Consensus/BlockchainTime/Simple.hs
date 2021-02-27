@@ -374,7 +374,6 @@ instance MonadDelay (OverrideDelay IO) where
   threadDelay d = OverrideDelay $ ReaderT $ \_schedule -> threadDelay d
 
 instance (IOLike m, MonadDelay (OverrideDelay m)) => IOLike (OverrideDelay m) where
-  forgetSignKeyKES = OverrideDelay . lift . forgetSignKeyKES
 
 overrideDelay :: UTCTime
               -> Schedule

@@ -78,7 +78,7 @@ simpleBlockForging ::
      , Monad m
      )
   => CanBeLeader (BlockProtocol (SimpleBlock c ext))
-  -> ForgeExt c ext
+  -> ForgeExt c ext m
   -> BlockForging m (SimpleBlock c ext)
 simpleBlockForging canBeLeader forgeExt = BlockForging {
       forgeLabel       = "simpleBlockForging"
@@ -86,15 +86,14 @@ simpleBlockForging canBeLeader forgeExt = BlockForging {
     , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
     , checkCanForge    = \_ _ _ _ _ -> return ()
     , forgeBlock       = \cfg bno slot lst txs proof ->
-        return
-          $ forgeSimple
-              forgeExt
-              cfg
-              bno
-              slot
-              lst
-              (map txForgetValidated txs)
-              proof
+          forgeSimple
+            forgeExt
+            cfg
+            bno
+            slot
+            lst
+            (map txForgetValidated txs)
+            proof
     }
   where
     _ = keepRedundantConstraint (Proxy @(ForgeStateUpdateError (SimpleBlock c ext) ~ Void))

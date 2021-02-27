@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Ouroboros.Consensus.Mock.Node.BFT (
     MockBftBlock
   , protocolInfoBft
@@ -19,7 +20,7 @@ import           Ouroboros.Consensus.Protocol.BFT
 
 type MockBftBlock = SimpleBftBlock SimpleMockCrypto BftMockCrypto
 
-protocolInfoBft :: Monad m
+protocolInfoBft :: (Monad m)
                 => NumCoreNodes
                 -> CoreNodeId
                 -> SecurityParam

@@ -100,6 +100,7 @@ prop_simple_bft_convergence TestSetup
       , version      = newestVersion (Proxy @MockBftBlock)
       }
 
+    testOutput :: TestOutput MockBftBlock
     testOutput =
         runTestNetwork testConfig testConfigB TestConfigMB
             { nodeInfo = \nid ->

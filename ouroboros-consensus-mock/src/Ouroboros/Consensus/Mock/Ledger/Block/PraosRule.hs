@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -123,14 +124,15 @@ type instance ForgeStateInfo (SimplePraosRuleBlock c) = ()
 
 type instance ForgeStateUpdateError (SimplePraosRuleBlock c) = Void
 
-forgePraosRuleExt :: SimpleCrypto c => ForgeExt c SimplePraosRuleExt
-forgePraosRuleExt = ForgeExt $ \cfg _ SimpleBlock{..} ->
+forgePraosRuleExt :: (SimpleCrypto c, Monad m)
+                  => ForgeExt c SimplePraosRuleExt m
+forgePraosRuleExt = ForgeExt $ \cfg _ SimpleBlock{..} -> do
     let ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
-        SimpleHeader{..} = simpleHeader
-    in SimpleBlock {
-        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-      , simpleBody   = simpleBody
-      }
+    let SimpleHeader{..} = simpleHeader
+    return $ SimpleBlock {
+                simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+              , simpleBody   = simpleBody
+              }
 
 {-------------------------------------------------------------------------------
   Serialisation

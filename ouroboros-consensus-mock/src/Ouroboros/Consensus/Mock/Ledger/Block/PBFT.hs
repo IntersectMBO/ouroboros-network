@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -30,6 +31,7 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Util
+import qualified Cardano.Crypto.KES
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
@@ -38,6 +40,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
+import           Ouroboros.Consensus.Mock.Protocol.Praos (PraosKES)
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Protocol.Signed
@@ -138,25 +141,26 @@ type instance ForgeStateInfo (SimplePBftBlock c c') = ()
 
 type instance ForgeStateUpdateError (SimplePBftBlock c c') = Void
 
-forgePBftExt :: forall c c'.
+forgePBftExt :: forall c c' m.
                 ( SimpleCrypto c
                 , PBftCrypto c'
                 , Signable (PBftDSIGN c') (SignedSimplePBft c c')
                 , ContextDSIGN (PBftDSIGN c') ~ ()
+                , Monad m
+                -- , Cardano.Crypto.KES.KESSignAlgorithm m (PraosKES c)
                 )
-             => ForgeExt c (SimplePBftExt c c')
-forgePBftExt = ForgeExt $ \_cfg isLeader SimpleBlock{..} ->
+             => ForgeExt c (SimplePBftExt c c') m
+forgePBftExt = ForgeExt $ \_cfg isLeader SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
-        ext :: SimplePBftExt c c'
-        ext = SimplePBftExt $
+        ext :: SimplePBftExt c c' = SimplePBftExt $
           forgePBftFields
             (const ())
             isLeader
             SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
-    in SimpleBlock {
-        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-      , simpleBody   = simpleBody
-      }
+    return $ SimpleBlock {
+                simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+              , simpleBody   = simpleBody
+              }
 
 {-------------------------------------------------------------------------------
   Serialisation

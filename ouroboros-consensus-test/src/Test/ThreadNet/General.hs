@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE QuantifiedConstraints     #-}
 
 module Test.ThreadNet.General (
     PropGeneralArgs (..)
@@ -211,27 +212,30 @@ runTestNetwork ::
   -> TestConfigB blk
   -> (forall m. IOLike m => TestConfigMB m blk)
   -> TestOutput blk
-runTestNetwork TestConfig
-  { numCoreNodes
-  , numSlots
-  , nodeTopology
-  , initSeed
-  } TestConfigB
-  { forgeEbbEnv
-  , future
-  , messageDelay
-  , nodeJoinPlan
-  , nodeRestarts
-  , txGenExtra
-  , version = (networkVersion, blockVersion)
-  }
-    mkTestConfigMB
+runTestNetwork
+  TestConfig
+    { numCoreNodes
+    , numSlots
+    , nodeTopology
+    , initSeed
+    }
+  TestConfigB
+    { forgeEbbEnv
+    , future
+    , messageDelay
+    , nodeJoinPlan
+    , nodeRestarts
+    , txGenExtra
+    , version = (networkVersion, blockVersion)
+    }
+  mkTestConfigMB
   = runSimOrThrow $ do
     setCurrentTime dawnOfTime
     let TestConfigMB
           { nodeInfo
           , mkRekeyM
-          } = mkTestConfigMB
+          } =
+          mkTestConfigMB
     let systemTime =
             BTime.defaultSystemTime
               (BTime.SystemStart dawnOfTime)
