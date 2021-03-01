@@ -111,7 +111,7 @@ data RelayAddress = RelayDomain DomainAddress
 -- A value in the [0, 1] range.
 --
 newtype PoolStake = PoolStake { unPoolStake :: Rational }
-  deriving (Eq, Fractional, Num, Ord, Show)
+  deriving (Eq, Fractional, Num, Real, Ord, Show)
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
 -- relative stake of all preceding pools. A value in the range [0, 1].
