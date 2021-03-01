@@ -16,11 +16,13 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word
 
 import           Cardano.Crypto.Hash (hashWithSerialiser)
+import           Cardano.Crypto.KES.Class (SignKeyAccessKES)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Construct the protocol specific part of the block
@@ -35,7 +37,7 @@ newtype ForgeExt c ext = ForgeExt {
       forgeExt :: TopLevelConfig                (SimpleBlock c ext)
                -> IsLeader       (BlockProtocol (SimpleBlock c ext))
                -> SimpleBlock' c ext ()
-               -> SimpleBlock c ext
+               -> SignKeyAccessKES (PraosKES c) (SimpleBlock c ext)
     }
 
 forgeSimple :: forall c ext.
@@ -49,7 +51,7 @@ forgeSimple :: forall c ext.
             -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
-            -> SimpleBlock c ext
+            -> SignKeyAccessKES (PraosKES c) (SimpleBlock c ext)
 forgeSimple ForgeExt { forgeExt } cfg curBlock curSlot tickedLedger txs proof =
     forgeExt cfg proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()

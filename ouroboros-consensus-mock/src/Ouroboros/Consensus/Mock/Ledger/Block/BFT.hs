@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -29,6 +30,7 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Util
+import           Cardano.Crypto.KES.Class (SignKeyAccessKES)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -39,6 +41,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Mock.Protocol.Praos (PraosKES)
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.Serialisation
@@ -124,20 +127,20 @@ forgeBftExt :: forall c c'.
                ( SimpleCrypto c
                , BftCrypto c'
                , Signable (BftDSIGN c') (SignedSimpleBft c c')
+               , Monad (SignKeyAccessKES (PraosKES c))
                )
             => ForgeExt c (SimpleBftExt c c')
-forgeBftExt = ForgeExt $ \cfg _ SimpleBlock{..} ->
+forgeBftExt = ForgeExt $ \cfg _ SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
-        ext :: SimpleBftExt c c'
-        ext = SimpleBftExt $
+        ext :: SimpleBftExt c c' = SimpleBftExt $
           forgeBftFields (configConsensus cfg) $
             SignedSimpleBft {
                 signedSimpleBft = simpleHeaderStd
               }
-    in SimpleBlock {
-         simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-       , simpleBody   = simpleBody
-       }
+    return $ SimpleBlock {
+                 simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+               , simpleBody   = simpleBody
+               }
 
 {-------------------------------------------------------------------------------
   Serialisation

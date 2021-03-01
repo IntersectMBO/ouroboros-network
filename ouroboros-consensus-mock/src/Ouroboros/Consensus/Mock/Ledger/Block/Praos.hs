@@ -154,23 +154,23 @@ forgePraosExt :: forall c c'.
                  ( SimpleCrypto c
                  , PraosCrypto c'
                  , Signable (PraosKES c') (SignedSimplePraos c c')
+                 , c ~ c'
                  )
               => HotKey c'
               -> ForgeExt c (SimplePraosExt c c')
-forgePraosExt hotKey = ForgeExt $ \_cfg isLeader SimpleBlock{..} ->
+forgePraosExt hotKey = ForgeExt $ \_cfg isLeader SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
 
-        ext :: SimplePraosExt c c'
-        ext = SimplePraosExt $
-          forgePraosFields isLeader hotKey $ \praosExtraFields ->
-            SignedSimplePraos {
-                signedSimplePraos = simpleHeaderStd
-              , signedPraosFields = praosExtraFields
+    ext :: SimplePraosExt c c' <- fmap SimplePraosExt $
+              forgePraosFields isLeader hotKey $ \praosExtraFields ->
+                SignedSimplePraos {
+                    signedSimplePraos = simpleHeaderStd
+                  , signedPraosFields = praosExtraFields
+                  }
+    return $ SimpleBlock {
+                simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+              , simpleBody   = simpleBody
               }
-    in SimpleBlock {
-        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-      , simpleBody   = simpleBody
-      }
 
 {-------------------------------------------------------------------------------
   Serialisation

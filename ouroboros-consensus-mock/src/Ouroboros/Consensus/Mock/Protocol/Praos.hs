@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE LambdaCase    #-}
 
 -- | Proof of concept implementation of Praos
 module Ouroboros.Consensus.Mock.Protocol.Praos (
@@ -129,7 +130,7 @@ data HotKey c =
 
 instance PraosCrypto c => NoThunks (HotKey c)
 
-deriving instance PraosCrypto c => Show (HotKey c)
+deriving instance (Show (SignKeyKES (PraosKES c)), PraosCrypto c) => Show (HotKey c)
 
 -- | The 'HotKey' could not be evolved to the given 'Period'.
 newtype HotKeyEvolutionError = HotKeyEvolutionError Period
@@ -144,19 +145,19 @@ evolveKey ::
      PraosCrypto c
   => SlotNo
   -> HotKey c
-  -> (HotKey c, UpdateInfo (HotKey c) HotKeyEvolutionError)
+  -> SignKeyAccessKES (PraosKES c) (HotKey c, UpdateInfo (HotKey c) HotKeyEvolutionError)
 evolveKey slotNo hotKey = case hotKey of
     HotKey keyPeriod oldKey
       | keyPeriod >= targetPeriod
-      -> (hotKey, Updated hotKey)
+      -> return (hotKey, Updated hotKey)
       | otherwise
-      -> case updateKES () oldKey keyPeriod of
+      -> updateKES () oldKey keyPeriod >>= \case
            Nothing     ->
-             (HotKeyPoisoned, UpdateFailed $ HotKeyEvolutionError targetPeriod)
+             return (HotKeyPoisoned, UpdateFailed $ HotKeyEvolutionError targetPeriod)
            Just newKey ->
              evolveKey slotNo (HotKey (keyPeriod + 1) newKey)
     HotKeyPoisoned ->
-      (HotKeyPoisoned, UpdateFailed $ HotKeyEvolutionError targetPeriod)
+      return (HotKeyPoisoned, UpdateFailed $ HotKeyEvolutionError targetPeriod)
   where
    targetPeriod :: Period
    targetPeriod = fromIntegral $ unSlotNo slotNo
@@ -168,11 +169,13 @@ forgePraosFields :: ( PraosCrypto c
                  => PraosProof c
                  -> HotKey c
                  -> (PraosExtraFields c -> toSign)
-                 -> PraosFields c toSign
-forgePraosFields PraosProof{..} hotKey mkToSign =
+                 -> SignKeyAccessKES (PraosKES c) (PraosFields c toSign)
+forgePraosFields PraosProof{..} hotKey mkToSign = do
     case hotKey of
-      HotKey kesPeriod key -> PraosFields {
-          praosSignature   = signedKES () kesPeriod (mkToSign signedFields) key
+      HotKey kesPeriod key -> do
+        sig <- signedKES () kesPeriod (mkToSign signedFields) key
+        return $ PraosFields {
+          praosSignature   = sig
         , praosExtraFields = signedFields
         }
       HotKeyPoisoned -> error "trying to sign with a poisoned key"
