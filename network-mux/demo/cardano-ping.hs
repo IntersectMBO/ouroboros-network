@@ -146,6 +146,9 @@ data NodeToNodeVersion = NodeToNodeVersionV1 Word32
                        | NodeToNodeVersionV2 Word32
                        | NodeToNodeVersionV3 Word32
                        | NodeToNodeVersionV4 Word32 Bool
+                       | NodeToNodeVersionV5 Word32 Bool
+                       | NodeToNodeVersionV6 Word32 Bool
+                       | NodeToNodeVersionV7 Word32 Bool
                        deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: Word16 -> CBOR.Encoding
@@ -177,10 +180,17 @@ handshakeReqEnc versions =
     encodeVersion (NodeToNodeVersionV3 magic) =
           CBOR.encodeWord 3
        <> CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToNodeVersionV4 magic mode) =
-          CBOR.encodeWord 4
+    encodeVersion (NodeToNodeVersionV4 magic mode) = encodeWithMode 4 magic mode
+    encodeVersion (NodeToNodeVersionV5 magic mode) = encodeWithMode 5 magic mode
+    encodeVersion (NodeToNodeVersionV6 magic mode) = encodeWithMode 6 magic mode
+    encodeVersion (NodeToNodeVersionV7 magic mode) = encodeWithMode 7 magic mode
+
+
+    encodeWithMode :: Word -> Word32 -> Bool -> CBOR.Encoding
+    encodeWithMode vn magic mode =
+          CBOR.encodeWord vn
        <> CBOR.encodeListLen 2
-       <> CBOR.encodeInt (fromIntegral magic )
+       <> CBOR.encodeInt (fromIntegral magic)
        <> CBOR.encodeBool mode
 
 handshakeReq :: [NodeToNodeVersion] -> ByteString
@@ -231,18 +241,25 @@ handshakeDec = do
 
          k -> return $ Left $ UnknownKey k
   where
+    decodeVersion :: CBOR.Decoder s (Either HandshakeFailure NodeToNodeVersion)
     decodeVersion = do
         version <- CBOR.decodeWord
         case version of
              1 -> Right . NodeToNodeVersionV1 <$> CBOR.decodeWord32
              2 -> Right . NodeToNodeVersionV2 <$> CBOR.decodeWord32
              3 -> Right . NodeToNodeVersionV3 <$> CBOR.decodeWord32
-             4 -> do
-                 _ <- CBOR.decodeListLen
-                 magic <- CBOR.decodeWord32
-                 Right . NodeToNodeVersionV4 magic <$> CBOR.decodeBool
+             4 -> decodeWithMode NodeToNodeVersionV4
+             5 -> decodeWithMode NodeToNodeVersionV5
+             6 -> decodeWithMode NodeToNodeVersionV6
+             7 -> decodeWithMode NodeToNodeVersionV7
              v -> return $ Left $ UnknownVersionInRsp v
 
+    decodeWithMode :: (Word32 -> Bool -> NodeToNodeVersion)
+                   -> CBOR.Decoder s (Either HandshakeFailure NodeToNodeVersion)
+    decodeWithMode vnFun = do
+        _ <- CBOR.decodeListLen
+        magic <- CBOR.decodeWord32
+        Right . vnFun magic <$> CBOR.decodeBool
 
 wrap :: MiniProtocolNum -> MiniProtocolDir -> BL.ByteString -> MuxSDU
 wrap ptclNum ptclDir blob = MuxSDU {
@@ -332,6 +349,9 @@ pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
                                   , NodeToNodeVersionV2 magic
                                   , NodeToNodeVersionV3 magic
                                   , NodeToNodeVersionV4 magic False
+                                  , NodeToNodeVersionV5 magic False
+                                  , NodeToNodeVersionV6 magic False
+                                  , NodeToNodeVersionV7 magic False
                     ])
         (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
         unless quiet $ printf "%s handshake rtt: %s\n" peerStr (show $ diffTime t1_e t1_s)
