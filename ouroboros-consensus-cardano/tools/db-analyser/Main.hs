@@ -168,7 +168,7 @@ analyse CmdLine {..} args =
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
           k          = configSecurityParam cfg
-          diskPolicy = defaultDiskPolicy k
+          diskPolicy = defaultDiskPolicy k Nothing
           args' =
             Node.mkChainDbArgs
               registry InFuture.dontCheck cfg initLedger chunkInfo $

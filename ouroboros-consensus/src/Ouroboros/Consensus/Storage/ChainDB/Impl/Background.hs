@@ -245,7 +245,7 @@ copyAndSnapshotRunner
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m Void
 copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
-    if onDiskShouldTakeSnapshot Nothing replayed Nothing then do
+    if onDiskShouldTakeSnapshot Nothing replayed then do
       updateLedgerSnapshots cdb
       now <- getMonotonicTime
       loop (Just now) 0
@@ -273,7 +273,7 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
       let distance' = distance + numToWrite
           elapsed   = (\prev -> now `diffTime` prev) <$> mPrevSnapshot
 
-      if onDiskShouldTakeSnapshot elapsed distance' Nothing then do
+      if onDiskShouldTakeSnapshot elapsed distance' then do
         updateLedgerSnapshots cdb
         loop (Just now) 0
       else

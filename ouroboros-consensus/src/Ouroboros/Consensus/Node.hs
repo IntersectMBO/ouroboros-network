@@ -110,7 +110,7 @@ import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
                      ValidationPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (defaultDiskPolicy)
+                     (RequestedInterval, defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
@@ -614,6 +614,7 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
   , srnBfcMaxConcurrencyDeadline :: Maybe Word
   , srcChainDbValidateOverride   :: Bool
     -- ^ If @True@, validate the ChainDB on init no matter what
+  , srnRequestedInterval         :: Maybe RequestedInterval
   , srnDatabasePath              :: FilePath
     -- ^ Location of the DBs
   , srnDiffusionArguments        :: DiffusionArguments
@@ -670,7 +671,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       let
         cfg = pInfoConfig rnProtocolInfo
         k   = configSecurityParam cfg
-      in defaultDiskPolicy k
+      in defaultDiskPolicy k srnRequestedInterval
 
     mkHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
     mkHasFS = stdMkChainDbHasFS srnDatabasePath

@@ -66,11 +66,8 @@ data DiskPolicy = DiskPolicy {
       --   policy to decide to take a snapshot /on node startup/ if a lot of
       --   blocks had to be replayed.
       --
-      -- * How often snapshot should be taken, regardless of number of blocks
-      --   processed
-      --
       -- See also 'defaultDiskPolicy'
-    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Maybe RequestedInterval -> Bool
+    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
@@ -88,8 +85,8 @@ data DiskPolicy = DiskPolicy {
 -- take a snapshot roughly every @k@ blocks. It does mean the possibility of
 -- an extra unnecessary snapshot during syncing (if the node is restarted), but
 -- that is not a big deal.
-defaultDiskPolicy :: SecurityParam -> DiskPolicy
-defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
+defaultDiskPolicy :: SecurityParam -> Maybe RequestedInterval -> DiskPolicy
+defaultDiskPolicy (SecurityParam k) maybeRequestedInterval = DiskPolicy {..}
   where
     onDiskNumSnapshots :: Word
     onDiskNumSnapshots = 2
@@ -97,10 +94,9 @@ defaultDiskPolicy (SecurityParam k) = DiskPolicy {..}
     onDiskShouldTakeSnapshot ::
          Maybe DiffTime
       -> Word64
-      -> Maybe RequestedInterval
       -> Bool
-    onDiskShouldTakeSnapshot Nothing blocksSinceLast _ = blocksSinceLast >= k
-    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast maybeRequestedInterval =
+    onDiskShouldTakeSnapshot Nothing blocksSinceLast = blocksSinceLast >= k
+    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
       let snapshotIntervalSeconds      =
             maybe (k * 2) unRequestedInterval maybeRequestedInterval
           snapshotInterval             =

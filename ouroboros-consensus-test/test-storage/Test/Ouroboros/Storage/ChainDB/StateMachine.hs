@@ -1580,7 +1580,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbImmutableDbValidation  = ValidateAllChunks
     , cdbVolatileDbValidation   = VolatileDB.ValidateAll
     , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-    , cdbDiskPolicy             = defaultDiskPolicy (configSecurityParam cfg)
+    , cdbDiskPolicy             = defaultDiskPolicy (configSecurityParam cfg) Nothing
 
       -- Integration
     , cdbTopLevelConfig         = cfg
