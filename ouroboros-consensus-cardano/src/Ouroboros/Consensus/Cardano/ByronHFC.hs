@@ -60,6 +60,8 @@ instance SupportedNetworkProtocolVersion ByronBlockHFC where
       Map.map HardForkNodeToClientDisabled $
       supportedNodeToClientVersions (Proxy @ByronBlock)
 
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 {-------------------------------------------------------------------------------
   SerialiseHFC instance
 -------------------------------------------------------------------------------}

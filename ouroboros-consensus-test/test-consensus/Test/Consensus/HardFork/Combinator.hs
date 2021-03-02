@@ -399,6 +399,8 @@ instance SupportedNetworkProtocolVersion TestBlock where
   supportedNodeToNodeVersions   _ = Map.singleton maxBound versionN2N
   supportedNodeToClientVersions _ = Map.singleton maxBound versionN2C
 
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 instance SerialiseHFC '[BlockA, BlockB]
   -- Use defaults
 

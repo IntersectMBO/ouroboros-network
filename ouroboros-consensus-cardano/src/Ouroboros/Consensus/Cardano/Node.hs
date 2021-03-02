@@ -334,6 +334,8 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_8, CardanoNodeToClientVersion6)
       ]
 
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 {-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}

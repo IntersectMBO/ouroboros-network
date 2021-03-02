@@ -614,15 +614,19 @@ stdRunDataDiffusion = runDataDiffusion
 --
 -- See 'stdLowLevelRunNodeArgsIO'.
 data StdRunNodeArgs m blk = StdRunNodeArgs
-  { srnBfcMaxConcurrencyBulkSync :: Maybe Word
-  , srnBfcMaxConcurrencyDeadline :: Maybe Word
-  , srcChainDbValidateOverride   :: Bool
+  { srnBfcMaxConcurrencyBulkSync   :: Maybe Word
+  , srnBfcMaxConcurrencyDeadline   :: Maybe Word
+  , srnChainDbValidateOverride     :: Bool
     -- ^ If @True@, validate the ChainDB on init no matter what
-  , srnDatabasePath              :: FilePath
+  , srnDatabasePath                :: FilePath
     -- ^ Location of the DBs
-  , srnDiffusionArguments        :: DiffusionArguments
-  , srnDiffusionTracers          :: DiffusionTracers
-  , srnTraceChainDB              :: Tracer m (ChainDB.TraceEvent blk)
+  , srnDiffusionArguments          :: DiffusionArguments
+  , srnDiffusionTracers            :: DiffusionTracers
+  , srnEnableInDevelopmentVersions :: Bool
+    -- ^ If @False@, then the node will limit the negotiated NTN and NTC
+    -- versions to the latest " official " release (as chosen by Network and
+    -- Consensus Team, with input from Node Team)
+  , srnTraceChainDB                :: Tracer m (ChainDB.TraceEvent blk)
     -- ^ ChainDB Tracer
   }
 
@@ -661,9 +665,13 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
             networkMagic
             (daDiffusionMode srnDiffusionArguments)
       , llrnNodeToNodeVersions =
-          supportedNodeToNodeVersions (Proxy @blk)
+          limitToLatestReleasedVersion
+            fst
+            (supportedNodeToNodeVersions (Proxy @blk))
       , llrnNodeToClientVersions =
-          supportedNodeToClientVersions (Proxy @blk)
+          limitToLatestReleasedVersion
+            snd
+            (supportedNodeToClientVersions (Proxy @blk))
       , llrnWithCheckedDB =
           stdWithCheckedDB (Proxy @blk) srnDatabasePath networkMagic
       , llrnMaxClockSkew =
@@ -681,7 +689,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       -> ChainDbArgs Defaults IO blk
     updateChainDbDefaults =
         (\x -> x { ChainDB.cdbTracer = srnTraceChainDB }) .
-        (if not srcChainDbValidateOverride then id else \x -> x
+        (if not srnChainDbValidateOverride then id else \x -> x
           { ChainDB.cdbImmutableDbValidation = ValidateAllChunks
           , ChainDB.cdbVolatileDbValidation  = ValidateAll
           })
@@ -696,6 +704,19 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
         . maybe id
             (\mc bfc -> bfc { bfcMaxConcurrencyBulkSync = mc })
             srnBfcMaxConcurrencyBulkSync
+
+    -- Limit the node version unless srnEnableInDevelopmentVersions is set
+    limitToLatestReleasedVersion :: forall k v.
+         Ord k
+      => ((Maybe NodeToNodeVersion, Maybe NodeToClientVersion) -> Maybe k)
+      -> Map k v
+      -> Map k v
+    limitToLatestReleasedVersion prj =
+        if not srnEnableInDevelopmentVersions then id
+        else
+        case prj $ latestReleasedNodeVersion (Proxy @blk) of
+          Nothing      -> id
+          Just version -> Map.takeWhileAntitone (<= version)
 
 {-------------------------------------------------------------------------------
   Miscellany

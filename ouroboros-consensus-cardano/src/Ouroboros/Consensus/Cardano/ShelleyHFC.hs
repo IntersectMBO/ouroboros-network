@@ -62,6 +62,8 @@ instance ShelleyBasedEra era
       Map.map HardForkNodeToClientDisabled $
       supportedNodeToClientVersions (Proxy @(ShelleyBlock era))
 
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
+
 {-------------------------------------------------------------------------------
   SerialiseHFC instance
 -------------------------------------------------------------------------------}

@@ -50,3 +50,5 @@ instance SupportedNetworkProtocolVersion (ShelleyBlock era) where
         -- V_4 to enable 'ShelleyNodeToClientVersion3'.
       , (NodeToClientV_4, ShelleyNodeToClientVersion3)
       ]
+
+  latestReleasedNodeVersion = latestReleasedNodeVersionDefault
