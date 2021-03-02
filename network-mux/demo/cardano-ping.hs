@@ -29,7 +29,7 @@ import           Data.Text (unpack)
 import           Network.Socket ( AddrInfo)
 import qualified Network.Socket as Socket
 import           Text.Printf
-import           System.Environment (getArgs)
+import           System.Environment (getArgs, getProgName)
 import           System.Exit
 import           System.Console.GetOpt
 import           System.IO (hFlush, hPutStr, stderr, stdout)
@@ -47,11 +47,12 @@ handshakeNum = MiniProtocolNum 0
 keepaliveNum :: MiniProtocolNum
 keepaliveNum = MiniProtocolNum 8
 
-data Flag = CountF String | HostF String | PortF String | MagicF String | QuietF | JsonF deriving Show
+data Flag = CountF String | HelpF | HostF String | PortF String | MagicF String | QuietF | JsonF deriving Show
 
 optionDescriptions :: [OptDescr Flag]
 optionDescriptions = [
     Option "c" ["count"]  (ReqArg CountF "count")  "number of pings to send",
+    Option "" ["help"]  (NoArg HelpF)  "print help",
     Option "h" ["host"]  (ReqArg HostF "host")  "hostname/ip, e.g relay.iohk.example",
     Option "m" ["magic"] (ReqArg MagicF "magic") ("magic, defaults to " ++ show mainnetMagic),
     Option "j" ["json"]  (NoArg JsonF ) "json output flag",
@@ -66,6 +67,7 @@ data Options = Options {
     , magic    :: Word32
     , json     :: Bool
     , quiet    :: Bool
+    , help     :: Bool
     } deriving Show
 
 defaultOpts :: Options
@@ -76,10 +78,12 @@ defaultOpts = Options {
     , json     = False
     , quiet    = False
     , magic    = mainnetMagic
+    , help     = False
     }
 
 buildOptions ::  Flag -> Options -> Options
 buildOptions (CountF c)   opt = opt { maxCount = Prelude.read c }
+buildOptions HelpF        opt = opt { help = True }
 buildOptions (HostF host) opt = opt { host = Just host }
 buildOptions (PortF port) opt = opt { port = port }
 buildOptions (MagicF m)   opt = opt { magic = Prelude.read m }
@@ -114,6 +118,11 @@ main = do
     let (flags, _, _ ) = getOpt RequireOrder optionDescriptions args
         options = foldr buildOptions defaultOpts flags
         hints = Socket.defaultHints { Socket.addrSocketType = Socket.Stream }
+
+    when (help options) $ do
+        progName <- getProgName
+        putStrLn $ usageInfo progName optionDescriptions
+        exitSuccess
 
     msgQueue <- newEmptyTMVarIO
 
