@@ -348,6 +348,12 @@ instance Era era => Serialise (ShelleyPartialLedgerConfig era) where
       <$> (ShelleyLedgerConfig
               <$> decode
               <*> (SL.Globals
+                    -- Globals
+                    --
+                    -- Note: we can't serialise EpochInfo as it contains
+                    -- lambdas, but that's ok because it's value is known
+                    -- staticaly. It is always just `dummyEpochInfo` when inside
+                    -- a ShelleyPartialLedgerConfi
                     dummyEpochInfo
                     <$> decode
                     <*> decode
@@ -386,9 +392,7 @@ instance Era era => Serialise (ShelleyPartialLedgerConfig era) where
       = encode myCompactGenesis
         -- Globals
         --
-        -- Note: we can't serialise EpochInfo as it contains lambdas, but that's ok
-        -- because it's value is known staticaly. It is always just `dummyEpochInfo`
-        -- when inside a ShelleyPartialLedgerConfig.
+        -- Note: we don't serialise EpochInfo. See comment in `decode` above.
         <> encode slotsPerKESPeriod
         <> encode stabilityWindow
         <> encode randomnessStabilisationWindow

@@ -18,11 +18,8 @@ module Ouroboros.Consensus.Byron.Ledger.Config (
   , mkByronCodecConfig
     -- * Storage config
   , StorageConfig(..)
-    -- * Compact genesis config
-  , compactGenesisConfig
   ) where
 
-import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
@@ -94,21 +91,3 @@ newtype instance StorageConfig ByronBlock = ByronStorageConfig {
       getByronBlockConfig :: BlockConfig ByronBlock
     }
   deriving (Generic, NoThunks)
-
-{-------------------------------------------------------------------------------
-  Compact genesis config
--------------------------------------------------------------------------------}
-
--- | Byron's genesis config contains the AVVM balances, of which there are +14k
--- in mainnet's genesis config. These balances are only used to create the
--- initial ledger state, there is no reason to keep them in memory afterwards.
---
--- This function empties the 'gdAvvmDistr' field in the genesis config. As we
--- keep Byron's genesis config in memory (even in later eras), this can save us
--- a bit of memory.
-compactGenesisConfig :: CC.Genesis.Config -> CC.Genesis.Config
-compactGenesisConfig cfg = cfg {
-      CC.Genesis.configGenesisData = (CC.Genesis.configGenesisData cfg) {
-          CC.Genesis.gdAvvmDistr = CC.Genesis.GenesisAvvmBalances Map.empty
-        }
-    }

@@ -386,9 +386,9 @@ encodeQueryHardForkResult ::
      )
   => QueryHardFork xs result -> result -> Encoding
 encodeQueryHardForkResult = \case
-    GetInterpreter -> encode
-    GetCurrentEra  -> encode
-    GetLedgerCfg   -> encode
+    GetInterpreter  -> encode
+    GetCurrentEra   -> encode
+    GetLedgerCfg    -> encode
     GetConsensusCfg -> encode
 
 decodeQueryHardForkResult ::
@@ -398,9 +398,9 @@ decodeQueryHardForkResult ::
      )
   => QueryHardFork xs result -> forall s. Decoder s result
 decodeQueryHardForkResult = \case
-    GetInterpreter -> decode
-    GetCurrentEra  -> decode
-    GetLedgerCfg   -> decode
+    GetInterpreter  -> decode
+    GetCurrentEra   -> decode
+    GetLedgerCfg    -> decode
     GetConsensusCfg -> decode
 
 {-------------------------------------------------------------------------------
