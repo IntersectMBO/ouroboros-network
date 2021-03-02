@@ -24,7 +24,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (defaultDiskPolicy)
+                     (RequestedInterval (..), defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
@@ -168,7 +168,7 @@ analyse CmdLine {..} args =
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
           k          = configSecurityParam cfg
-          diskPolicy = defaultDiskPolicy k Nothing
+          diskPolicy = defaultDiskPolicy k DefaultRequestInterval
           args' =
             Node.mkChainDbArgs
               registry InFuture.dontCheck cfg initLedger chunkInfo $

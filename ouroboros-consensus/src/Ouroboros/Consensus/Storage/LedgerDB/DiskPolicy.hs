@@ -19,9 +19,9 @@ import           Control.Monad.Class.MonadTime
 import           Ouroboros.Consensus.Config.SecurityParam
 
 
-newtype RequestedInterval = RequestedInterval
-  { unRequestedInterval :: Word64
-  }
+data RequestedInterval =
+    DefaultRequestInterval
+  | RequestedInterval Word64
 
 -- | On-disk policy
 --
@@ -85,8 +85,8 @@ data DiskPolicy = DiskPolicy {
 -- take a snapshot roughly every @k@ blocks. It does mean the possibility of
 -- an extra unnecessary snapshot during syncing (if the node is restarted), but
 -- that is not a big deal.
-defaultDiskPolicy :: SecurityParam -> Maybe RequestedInterval -> DiskPolicy
-defaultDiskPolicy (SecurityParam k) maybeRequestedInterval = DiskPolicy {..}
+defaultDiskPolicy :: SecurityParam -> RequestedInterval -> DiskPolicy
+defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
   where
     onDiskNumSnapshots :: Word
     onDiskNumSnapshots = 2
@@ -97,12 +97,13 @@ defaultDiskPolicy (SecurityParam k) maybeRequestedInterval = DiskPolicy {..}
       -> Bool
     onDiskShouldTakeSnapshot Nothing blocksSinceLast = blocksSinceLast >= k
     onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
-      let snapshotIntervalSeconds      =
-            maybe (k * 2) unRequestedInterval maybeRequestedInterval
-          snapshotInterval             =
-            secondsToDiffTime (fromIntegral snapshotIntervalSeconds)
+      let snapshotIntervalSeconds      = fromIntegral $ interval requestedInterval
+          snapshotInterval             = secondsToDiffTime snapshotIntervalSeconds
           itsBeen50kBlocks             = blocksSinceLast >= 50_000
           itsBeen6MinSinceLastSnapshot = timeSinceLast > 6 * secondsToDiffTime 60
       in
            timeSinceLast >= snapshotInterval
         || itsBeen50kBlocks && itsBeen6MinSinceLastSnapshot
+
+    interval (RequestedInterval value) = value
+    interval DefaultRequestInterval    = k * 2
