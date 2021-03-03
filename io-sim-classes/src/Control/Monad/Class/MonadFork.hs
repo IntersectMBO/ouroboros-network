@@ -34,6 +34,7 @@ class MonadThread m => MonadFork m where
   forkIO           :: m () -> m (ThreadId m)
   forkIOWithUnmask :: ((forall a. m a -> m a) -> m ()) -> m (ThreadId m)
   throwTo          :: Exception e => ThreadId m -> e -> m ()
+  yield            :: m ()
 
   killThread       :: ThreadId m -> m ()
   killThread tid = throwTo tid ThreadKilled
@@ -56,6 +57,7 @@ instance MonadFork IO where
   forkIO           = IO.forkIO
   forkIOWithUnmask = IO.forkIOWithUnmask
   throwTo          = IO.throwTo
+  yield            = IO.yield
   killThread       = IO.killThread
 
 instance MonadThread m => MonadThread (ReaderT e m) where
@@ -70,6 +72,7 @@ instance MonadFork m => MonadFork (ReaderT e m) where
                            restore' (ReaderT f) = ReaderT $ restore . f
                        in runReaderT (k restore') e
   throwTo e t = lift (throwTo e t)
+  yield       = lift yield
 
 -- | Apply the label to the current thread
 labelThisThread :: MonadThread m => String -> m ()
