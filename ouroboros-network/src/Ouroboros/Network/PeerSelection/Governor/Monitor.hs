@@ -25,6 +25,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Types
@@ -97,14 +98,13 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
             st@PeerSelectionState {
               activePeers,
               establishedPeers,
-              establishedStatus,
               inProgressDemoteHot,
               inProgressDemoteWarm,
               inProgressPromoteWarm
             } =
     Guarded Nothing $ do
-      monitorStatus <- traverse monitorPeerConnection establishedPeers
-      let demotions = asynchronousDemotions establishedStatus
+      monitorStatus <- traverse monitorPeerConnection (EstablishedPeers.allPeers establishedPeers)
+      let demotions = asynchronousDemotions (EstablishedPeers.establishedStatus establishedPeers)
                                             monitorStatus
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition (==PeerWarm) demotions
@@ -112,15 +112,14 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
         let activePeers'       = activePeers
                                   Set.\\ Map.keysSet demotions
 
-            establishedPeers'  = establishedPeers
-                                  Map.\\ demotedToCold
-
-            -- Note that we do not use monitorStatus which
+            -- Note that we do not use establishedStatus' which
             -- has the synchronous ones that are supposed to be
             -- handled elsewhere. We just update the async ones:
-            establishedStatus' = demotedToWarm
-                                  <> establishedStatus
-                                  Map.\\ demotedToCold
+            establishedPeers'  = EstablishedPeers.updateStatuses
+                                  demotedToWarm
+                               . EstablishedPeers.deletePeers
+                                  (Map.keysSet demotedToCold)
+                               $ establishedPeers
 
             -- Asynchronous transition to cold peer can only be
             -- a result of a failure.
@@ -133,9 +132,12 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
                                $ (Map.keysSet demotedToCold)
 
         in assert
-            (let establishedPeersSet' = Map.keysSet establishedPeers'
+            (let establishedPeersSet' =
+                   Map.keysSet (EstablishedPeers.allPeers establishedPeers')
              in activePeers' `Set.isSubsetOf` establishedPeersSet'
-             && Map.keysSet establishedStatus' == establishedPeersSet')
+             &&    Map.keysSet
+                     (EstablishedPeers.establishedStatus establishedPeers')
+                == establishedPeersSet')
 
             Decision {
               decisionTrace = TraceDemoteAsynchronous demotions,
@@ -143,7 +145,6 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
               decisionState = st {
                                 activePeers       = activePeers',
                                 establishedPeers  = establishedPeers',
-                                establishedStatus = establishedStatus',
                                 knownPeers        = knownPeers',
 
                                 -- When promoting a warm peer, it might happen
@@ -240,7 +241,7 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
           selectedToDemote' :: Map peeraddr peerconn
 
           selectedToDemote  = activePeers `Set.intersection` removedSet
-          selectedToDemote' = establishedPeers
+          selectedToDemote' = EstablishedPeers.allPeers establishedPeers
                                `Map.restrictKeys` selectedToDemote
       return $ \_now ->
 

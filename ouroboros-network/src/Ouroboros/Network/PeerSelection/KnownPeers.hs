@@ -29,7 +29,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     -- ** Tracking when we can (re)connect
     minConnectTime,
     setConnectTime,
-    availableToConnect,
+    availableToConnect
   ) where
 
 import qualified Data.List as List
