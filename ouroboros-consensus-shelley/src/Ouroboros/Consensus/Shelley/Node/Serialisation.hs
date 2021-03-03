@@ -49,9 +49,9 @@ instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (Lazy.ByteString -
   decodeDisk _ = decodeShelleyHeader
 
 instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era)) where
-  encodeDisk _ = encodeShelleyLedgerState
+  encodeDisk _ = wrapCBORinCBOR encodeShelleyLedgerState
 instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era)) where
-  decodeDisk _ = decodeShelleyLedgerState
+  decodeDisk _ = unwrapCBORinCBOR decodeShelleyLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
 instance (ShelleyBasedEra era, EraCrypto era ~ c) => EncodeDisk (ShelleyBlock era) (TPraosState c) where

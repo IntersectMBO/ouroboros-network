@@ -34,7 +34,8 @@ import           Data.Set (Set)
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (Annotator (..), FromCBOR (..),
+                     FullByteString (Full), ToCBOR (..))
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      encodePoint, mkSerialised)
@@ -58,6 +59,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                      (ShelleyNodeToClientVersion (..))
 import           Ouroboros.Consensus.Shelley.Protocol (TPraosState (..))
+import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 {-------------------------------------------------------------------------------
   QueryLedger
@@ -430,16 +432,16 @@ encodeShelleyResult query = case query of
     GetLedgerTip                               -> encodePoint encode
     GetEpochNo                                 -> encode
     GetNonMyopicMemberRewards {}               -> encode
-    GetCurrentPParams                          -> toCBOR
-    GetProposedPParamsUpdates                  -> toCBOR
+    GetCurrentPParams                          -> wrapCBORinCBOR toCBOR
+    GetProposedPParamsUpdates                  -> wrapCBORinCBOR toCBOR
     GetStakeDistribution                       -> toCBOR
     GetFilteredUTxO {}                         -> toCBOR
     GetUTxO                                    -> toCBOR
-    DebugEpochState                            -> toCBOR
+    DebugEpochState                            -> wrapCBORinCBOR toCBOR
     GetCBOR {}                                 -> encode
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
     GetGenesisConfig                           -> toCBOR
-    DebugNewEpochState                         -> toCBOR
+    DebugNewEpochState                         -> wrapCBORinCBOR toCBOR
     DebugChainDepState                         -> toCBOR
     GetRewardProvenance                        -> toCBOR
 
@@ -451,15 +453,19 @@ decodeShelleyResult query = case query of
     GetLedgerTip                               -> decodePoint decode
     GetEpochNo                                 -> decode
     GetNonMyopicMemberRewards {}               -> decode
-    GetCurrentPParams                          -> fromCBOR
-    GetProposedPParamsUpdates                  -> fromCBOR
+    GetCurrentPParams                          -> unwrapCBORinCBORAnnotator fromCBOR
+    GetProposedPParamsUpdates                  -> unwrapCBORinCBORAnnotator fromCBOR
     GetStakeDistribution                       -> fromCBOR
     GetFilteredUTxO {}                         -> fromCBOR
     GetUTxO                                    -> fromCBOR
-    DebugEpochState                            -> fromCBOR
+    DebugEpochState                            -> unwrapCBORinCBORAnnotator fromCBOR
     GetCBOR {}                                 -> decode
     GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
     GetGenesisConfig                           -> fromCBOR
-    DebugNewEpochState                         -> fromCBOR
+    DebugNewEpochState                         -> unwrapCBORinCBORAnnotator fromCBOR
     DebugChainDepState                         -> fromCBOR
     GetRewardProvenance                        -> fromCBOR
+    where
+       unwrapCBORinCBORAnnotator ::
+         forall a r. (forall t. Decoder t (Annotator a)) -> Decoder r a
+       unwrapCBORinCBORAnnotator d = unwrapCBORinCBOR $ (. Full) . runAnnotator <$> d
