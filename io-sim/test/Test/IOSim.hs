@@ -82,6 +82,11 @@ tests =
     [ testProperty "Reference vs IO"    prop_stm_referenceIO
     , testProperty "Reference vs Sim"   prop_stm_referenceSim
     ]
+  , testGroup "yield"
+    [ testProperty "order"         unit_yield_order
+    , testProperty "threadDelay 1" unit_yield_and_delay_1
+    , testProperty "threadDelay 2" unit_yield_and_delay_2
+    ]
   ]
 
 
@@ -688,9 +693,6 @@ unit_async_10 =
           )
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
-  where
-    yield :: IOSim s ()
-    yield = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_11 =
@@ -723,9 +725,6 @@ unit_async_11 =
           )
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
-  where
-    yield :: IOSim s ()
-    yield = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_12 =
@@ -851,6 +850,58 @@ prop_stm_referenceM (SomeTerm _tyrep t) = do
     r2 <- execAtomically t
     return (r1 === r2)
 
+
+--
+-- yield tests
+--
+
+-- | Check that 'yield' switches the order of execution of threads.
+--
+unit_yield_order :: Property
+unit_yield_order =
+    runSimTraceSay
+      (do _ <- forkIO $ do
+            yield
+            say "child-1"
+          _ <- forkIO $ do
+            say "child-2"
+          -- wait for both threads
+          threadDelay 2
+      )
+  ===
+    ["child-2", "child-1"]
+
+unit_yield_and_delay_1 :: Property
+unit_yield_and_delay_1 =
+    runSimTraceSay
+      (do _ <- forkIO $ do
+            yield
+            threadDelay 1
+            say "child-1"
+          _ <- forkIO $ do
+            threadDelay 1
+            say "child-2"
+          -- wait for both threads
+          threadDelay 2
+      )
+  ===
+    ["child-2", "child-1"]
+
+unit_yield_and_delay_2 :: Property
+unit_yield_and_delay_2 =
+    runSimTraceSay
+      (do _ <- forkIO $ do
+            threadDelay 1
+            yield
+            say "child-1"
+          _ <- forkIO $ do
+            threadDelay 2
+            say "child-2"
+          -- wait for both threads
+          threadDelay 3
+      )
+  ===
+    ["child-1", "child-2"]
 
 
 --

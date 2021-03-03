@@ -125,6 +125,7 @@ data SimA s a where
   Evaluate     :: a -> (a -> SimA s b) -> SimA s b
 
   Fork         :: IOSim s () -> (ThreadId -> SimA s b) -> SimA s b
+  Yield        :: SimA s b -> SimA s b
   GetThreadId  :: (ThreadId -> SimA s b) -> SimA s b
   LabelThread  :: ThreadId -> String -> SimA s b -> SimA s b
 
@@ -330,6 +331,7 @@ instance MonadFork (IOSim s) where
   forkIO task        = IOSim $ \k -> Fork task k
   forkIOWithUnmask f = forkIO (f unblock)
   throwTo tid e      = IOSim $ \k -> ThrowTo (toException e) tid (k ())
+  yield              = IOSim $ \k -> Yield (k ())
 
 instance MonadSay (STMSim s) where
   say msg = STM $ \k -> SayStm msg (k ())
@@ -601,6 +603,7 @@ data TraceEvent
   | EventThreadForked    ThreadId
   | EventThreadFinished                  -- terminated normally
   | EventThreadUnhandled SomeException   -- terminated due to unhandled exception
+  | EventThreadYield
 
   | EventTxCommitted   [Labelled TVarId] -- tx wrote to these
                        [TVarId]          -- and created these
@@ -886,6 +889,11 @@ schedule thread@Thread{
                                          , nextTid  = succ nextTid }
       return (Trace time tid tlbl (EventThreadForked tid') trace)
 
+    Yield k -> do
+      let thread' = thread { threadControl = ThreadControl k ctl }
+      trace <- deschedule YieldThread thread' simstate
+      return (Trace time tid tlbl EventThreadYield trace)
+
     Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
         StmTxCommitted x written nextVid' -> do
@@ -902,7 +910,7 @@ schedule thread@Thread{
               -- For testing, we should have a more sophisticated policy to show
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
-          trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
+          trace <- deschedule YieldThread thread' simstate' { nextVid  = nextVid' }
           return $
             Trace time tid tlbl (EventTxCommitted vids [nextVid..pred nextVid']) $
             traceMany
@@ -1007,10 +1015,10 @@ threadInterruptible thread =
         | otherwise            -> False
       MaskedUninterruptible    -> False
 
-data Deschedule = Yield | Interruptable | Blocked | Terminated
+data Deschedule = YieldThread | Interruptable | Blocked | Terminated
 
 deschedule :: Deschedule -> Thread s a -> SimState s a -> ST s (Trace a)
-deschedule Yield thread simstate@SimState{runqueue, threads} =
+deschedule YieldThread thread simstate@SimState{runqueue, threads} =
 
     -- We don't interrupt runnable threads to provide fairness anywhere else.
     -- We do it here by putting the thread to the back of the runqueue, behind
