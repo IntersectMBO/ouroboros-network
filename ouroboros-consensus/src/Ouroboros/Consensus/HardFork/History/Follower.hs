@@ -16,13 +16,13 @@ module Ouroboros.Consensus.HardFork.History.Follower (
   ) where
 
 import           Control.Monad.Class.MonadSTM.Strict hiding (newTVarIO)
-import           Data.Either (isRight)
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
 import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.HardFork.History.Caching
 import           Ouroboros.Consensus.HardFork.History.Qry
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
@@ -86,34 +86,30 @@ newHistoryFollower ::
   -> ChainDB m blk
   -> m (HistoryFollower m blk)
 newHistoryFollower cfg chainDB = do
-    varState <- newTVarIO Nothing
+    withCachedSummary <- runWithCachedSummary getLatestSummary
     return $ HistoryFollower {
         getInterpreter =
-          getInterpreterImpl cfg (ledgerState <$> getCurrentLedger chainDB) varState
+          getInterpreterImpl withCachedSummary
       }
+    where
+      getLatestSummary = hardForkSummary cfg . ledgerState <$> getCurrentLedger chainDB
 
 getInterpreterImpl ::
-     (IOLike m, HasHardForkHistory blk)
-  => LedgerConfig blk
-  -> STM m (LedgerState blk)
-  -> StrictTVar m (Maybe (Interpreter (HardForkIndices blk)))
+     IOLike m
+  => RunWithCachedSummary (HardForkIndices blk) m
   -> Point blk
   -> STM m (Maybe (Interpreter (HardForkIndices blk)))
-getInterpreterImpl cfg getState varInterpreter point = do
-    minter <- readTVar varInterpreter
-    case (minter, pointSlot point) of
-      (Just inter, At slot) | isSlotInHorizon slot inter -> return Nothing
-      _ -> do
-        st <- getState
-        let inter = History.mkInterpreter $ hardForkSummary cfg st
-        writeTVar varInterpreter $ Just inter
-        return $ Just inter
-
--- | Run a sanity query to check if the slot is still in the Horizon.
-isSlotInHorizon :: SlotNo -> Interpreter xs -> Bool
-isSlotInHorizon slotNo inter = isRight $ interpretQuery inter query
+getInterpreterImpl withCachedSummary point = do
+    mSummary <- snd <$> (cachedRunQuery withCachedSummary $ sanityQuery (pointSlot point))
+    return $ History.mkInterpreter <$> mSummary
   where
-    query = (,) <$> slotToWallclock slotNo <*> slotToEpoch' slotNo
+    -- Check if we can serve this slot.
+    sanityQuery :: WithOrigin SlotNo -> Qry ()
+    sanityQuery (At slotNo) = do
+      _ <- slotToWallclock slotNo
+      _ <- slotToEpoch' slotNo
+      return ()
+    sanityQuery _ = return ()
 
 {-------------------------------------------------------------------------------
   Client History Follower

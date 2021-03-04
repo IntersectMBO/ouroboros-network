@@ -161,7 +161,7 @@ getCurrentSlot' :: forall m xs. IOLike m
                 -> m (CurrentSlot, RelativeTime, NominalDiffTime)
 getCurrentSlot' tracer SystemTime{..} run getBackoffDelay = do
     now   <- systemTimeCurrent
-    mSlot <- atomically $ HF.cachedRunQuery run $ HF.wallclockToSlot now
+    mSlot <- fst <$> (atomically $ HF.cachedRunQuery run $ HF.wallclockToSlot now)
     case mSlot of
       Left ex -> do
         -- give up for now and backoff; see 'BackoffDelay'

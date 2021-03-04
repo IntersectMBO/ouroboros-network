@@ -27,11 +27,12 @@ data RunWithCachedSummary (xs :: [Type]) m = RunWithCachedSummary {
       --
       -- If the query fails with a 'PastHorizonException', it will update its
       -- internal state (compute a new summary) and try again. If that /still/
-      -- fails, the 'PastHorizonException' is returned.
+      -- fails, the 'PastHorizonException' is returned. If the internal state
+      -- (the summary) was updated it will also return.
       --
       -- See also 'cachedRunQueryThrow'.
       cachedRunQuery :: forall a. Qry a
-                     -> STM m (Either PastHorizonException a)
+                     -> STM m (Either PastHorizonException a, Maybe (Summary xs))
     }
 
 -- | Wrapper around 'cachedRunQuery' which throws the 'PastHorizonException'
@@ -40,7 +41,7 @@ data RunWithCachedSummary (xs :: [Type]) m = RunWithCachedSummary {
 -- the horizon (and it would be a bug if they were).
 cachedRunQueryThrow :: (MonadSTM m, MonadThrow (STM m))
                     => RunWithCachedSummary xs m -> Qry a -> STM m a
-cachedRunQueryThrow run qry = either throwIO return =<< cachedRunQuery run qry
+cachedRunQueryThrow run qry = either throwIO return =<< (fst <$> cachedRunQuery run qry)
 
 -- | Construct 'RunWithCachedSummary' given action that computes the summary
 --
@@ -55,12 +56,12 @@ runWithCachedSummary getLatestSummary = do
     return $ RunWithCachedSummary { cachedRunQuery = go var }
   where
     go :: StrictTVar m (Summary xs)
-       -> Qry a -> STM m (Either PastHorizonException a)
+       -> Qry a -> STM m (Either PastHorizonException a, Maybe (Summary xs))
     go var q = do
         summary <- readTVar var
         case runQuery q summary of
-          Right a             -> return (Right a)
+          Right a             -> return (Right a, Nothing)
           Left  PastHorizon{} -> do
             summary' <- getLatestSummary
             writeTVar var summary'
-            return $ runQuery q summary'
+            return (runQuery q summary', Just summary')
