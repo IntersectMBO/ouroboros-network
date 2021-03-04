@@ -72,10 +72,12 @@ data DiskPolicy = DiskPolicy {
 
 -- | Default on-disk policy
 --
--- We want to take a snapshot every 50k blocks or roughly every hour (72
--- minutes actually) when @k = 2160@ (for other values of @k@ we scale
--- proportionally), but not more rapidly than 10 per hour (which is important
--- for bulk sync).
+-- We want to take a snapshot every 50k blocks or roughly every requested interval.
+-- Requested snapshot interval can be explicitly provided by the
+-- caller (RequestedSnapshotInterval) or the caller might request the default
+-- snapshot interval (DefaultSnapshotInterval). If the latter then the
+-- snapshot interval is defaulted to k * 2 seconds - when @k = 2160@ the interval
+-- defaults to 72 minutes.
 --
 -- If users never leave their wallet running for long, however, this would mean
 -- that we /never/ take snapshots after syncing (until we get to 50k blocks).
