@@ -703,7 +703,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbImmutableDbValidation  = ImmutableDB.ValidateAllChunks
         , cdbVolatileDbValidation   = VolatileDB.ValidateAll
         , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-        , cdbDiskPolicy             = LgrDB.defaultDiskPolicy (configSecurityParam cfg) LgrDB.DefaultRequestInterval
+        , cdbDiskPolicy             = LgrDB.defaultDiskPolicy (configSecurityParam cfg) LgrDB.DefaultSnapshotInterval
           -- Integration
         , cdbTopLevelConfig         = cfg
         , cdbChunkInfo              = ImmutableDB.simpleChunkInfo epochSize0
