@@ -183,11 +183,11 @@ protocolInfoByron ProtocolParamsByron {
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PBftConfig {
-                pbftParams = byronPBftParams compactedGenesisConfig mSigThresh
+                pbftParams = byronPBftParams genesisConfig mSigThresh
               }
-          , topLevelConfigLedger  = compactedGenesisConfig
+          , topLevelConfigLedger  = genesisConfig
           , topLevelConfigBlock   = blockConfig
-          , topLevelConfigCodec   = mkByronCodecConfig compactedGenesisConfig
+          , topLevelConfigCodec   = mkByronCodecConfig genesisConfig
           , topLevelConfigStorage = ByronStorageConfig blockConfig
           }
       , pInfoInitLedger = ExtLedgerState {
@@ -201,9 +201,7 @@ protocolInfoByron ProtocolParamsByron {
           return $ byronBlockForging <$> maybeToList mLeaderCreds
       }
   where
-    compactedGenesisConfig = compactGenesisConfig genesisConfig
-
-    blockConfig = mkByronConfig compactedGenesisConfig pVer sVer
+    blockConfig = mkByronConfig genesisConfig pVer sVer
 
 protocolClientInfoByron :: EpochSlots -> ProtocolClientInfo ByronBlock
 protocolClientInfoByron epochSlots =
