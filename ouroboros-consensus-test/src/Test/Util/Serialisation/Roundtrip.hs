@@ -22,6 +22,7 @@ module Test.Util.Serialisation.Roundtrip (
   , roundtrip_envelopes
   , roundtrip_ConvertRawHash
   , prop_hashSize
+  , prop_estimateBlockSize
   , WithVersion (..)
   , SomeResult (..)
   ) where
