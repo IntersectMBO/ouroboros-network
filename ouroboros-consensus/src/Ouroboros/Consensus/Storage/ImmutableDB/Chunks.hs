@@ -10,5 +10,4 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal as X
                      (ChunkInfo (..), ChunkNo, ChunkSize (..),
                      chunkInfoSupportsEBBs, chunksBetween, compareRelativeSlot,
                      countChunks, firstChunkNo, getChunkSize, mkRelativeSlot,
-                     nextChunkNo, prevChunkNo, simpleChunkInfo,
-                     singleChunkInfo)
+                     nextChunkNo, prevChunkNo, simpleChunkInfo, singleChunkInfo)

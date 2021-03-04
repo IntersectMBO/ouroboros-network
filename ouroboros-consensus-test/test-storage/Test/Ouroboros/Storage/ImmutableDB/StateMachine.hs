@@ -39,9 +39,9 @@ import           Data.Maybe (listToMaybe)
 import           Data.TreeDiff (Expr (App), defaultExprViaShow)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
-import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
+import qualified Generics.SOP as SOP
 import           NoThunks.Class (AllowThunk (..))
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)

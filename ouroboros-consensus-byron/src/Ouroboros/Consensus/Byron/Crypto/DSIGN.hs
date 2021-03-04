@@ -34,9 +34,8 @@ import           Cardano.Binary
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature (..),
-                     SigningKey (..), VerificationKey (..),
-                     deterministicKeyGen, signRaw, toVerification,
-                     verifySignatureRaw)
+                     SigningKey (..), VerificationKey (..), deterministicKeyGen,
+                     signRaw, toVerification, verifySignatureRaw)
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.Seed (SeedBytesExhausted (..), getBytesFromSeed)
 import qualified Cardano.Crypto.Signing as Crypto

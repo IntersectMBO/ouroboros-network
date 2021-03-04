@@ -410,7 +410,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       forM vertexInfos0 $ \(coreNodeId, vertexStatusVar, readNodeInfo) -> do
         readTVar vertexStatusVar >>= \case
           VDown ch ldgr -> pure (coreNodeId, readNodeInfo, ch, ldgr)
-          _        -> retry
+          _             -> retry
 
     mkTestOutput vertexInfos
   where

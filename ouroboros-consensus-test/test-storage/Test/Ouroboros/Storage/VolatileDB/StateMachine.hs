@@ -30,9 +30,9 @@ import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
-import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
+import qualified Generics.SOP as SOP
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
 

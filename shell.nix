@@ -9,6 +9,7 @@
 }:
 with pkgs;
 let
+  stylish-haskell = import ./nix/stylish-haskell.nix { inherit pkgs; };
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
   # NOTE: due to some cabal limitation,
@@ -22,12 +23,12 @@ let
 
     # These programs will be available inside the nix-shell.
     buildInputs = [
+      stylish-haskell
       niv
       pkgconfig
     ];
 
     tools = {
-      stylish-haskell = "0.11.0.0";
       ghcid = "0.8.7";
       cabal = "3.2.0.0";
       # todo: add back the build tools which are actually necessary

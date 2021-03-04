@@ -40,7 +40,7 @@ closeHandleOS :: HandleOS osHandle -> (osHandle -> IO ()) -> IO ()
 closeHandleOS (HandleOS _ hVar) close =
   modifyMVar hVar $ \case
     Nothing -> return (Nothing, ())
-    Just h -> close h >> return (Nothing, ())
+    Just h  -> close h >> return (Nothing, ())
 
 {-------------------------------------------------------------------------------
   Exceptions
