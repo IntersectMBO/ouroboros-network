@@ -9,12 +9,13 @@
 --
 -- > import Ouroboros.Consensus.Fragment.InFuture (CheckInFuture(..), ClockSkew(..))
 -- > import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-module Ouroboros.Consensus.Fragment.InFuture (
-    CheckInFuture(..)
-  , InFuture(..)
+module Ouroboros.Consensus.Fragment.InFuture
+  ( CheckInFuture (..)
+  , InFuture (..)
   , reference
     -- * Clock skew
-  , ClockSkew -- opaque
+  , ClockSkew
+    -- opaque
   , clockSkewInSeconds
   , defaultClockSkew
     -- * Testing

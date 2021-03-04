@@ -8,8 +8,8 @@
 -- | Hot key
 --
 -- Intended for qualified import
-module Ouroboros.Consensus.Shelley.Protocol.HotKey (
-    -- * KES Info
+module Ouroboros.Consensus.Shelley.Protocol.HotKey
+  ( -- * KES Info
     KESEvolution
   , KESInfo (..)
   , kesAbsolutePeriod
@@ -17,11 +17,11 @@ module Ouroboros.Consensus.Shelley.Protocol.HotKey (
   , KESStatus (..)
   , kesStatus
     -- * Hot Key
+  , HotKey (..)
   , KESEvolutionError (..)
   , KESEvolutionInfo
-  , HotKey (..)
-  , sign
   , mkHotKey
+  , sign
   ) where
 
 import           Data.Word (Word64)

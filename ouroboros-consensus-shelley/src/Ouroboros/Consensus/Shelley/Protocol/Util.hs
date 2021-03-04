@@ -2,9 +2,9 @@
 --
 -- In particular, various things we need for integration with the @delegation@
 -- package from cardano-ledger-specs.
-module Ouroboros.Consensus.Shelley.Protocol.Util (
-    isNewEpoch
-  , firstSlotOfEpochOfSlot
+module Ouroboros.Consensus.Shelley.Protocol.Util
+  ( firstSlotOfEpochOfSlot
+  , isNewEpoch
   ) where
 
 import           Cardano.Slotting.EpochInfo

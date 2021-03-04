@@ -5,11 +5,11 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Consensus.Byron.Generators (
-    k
+module Test.Consensus.Byron.Generators
+  ( RegularBlock (..)
   , epochSlots
+  , k
   , protocolMagicId
-  , RegularBlock (..)
   ) where
 
 import           Control.Monad (replicateM)

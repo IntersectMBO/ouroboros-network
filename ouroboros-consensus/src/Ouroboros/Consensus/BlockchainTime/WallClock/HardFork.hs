@@ -3,8 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
-    BackoffDelay (..)
+module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
+  ( BackoffDelay (..)
   , HardForkBlockchainTimeArgs (..)
   , hardForkBlockchainTime
   ) where

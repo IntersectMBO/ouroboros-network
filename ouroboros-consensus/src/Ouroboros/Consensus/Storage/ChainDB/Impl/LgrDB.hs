@@ -11,38 +11,39 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 -- | Thin wrapper around the LedgerDB
-module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
-    LgrDB -- opaque
+module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
+  ( LgrDB
+    -- opaque
   , LedgerDB'
   , LgrDbSerialiseConstraints
     -- * Initialization
-  , LgrDbArgs(..)
+  , LgrDbArgs (..)
   , defaultArgs
   , openDB
     -- * 'TraceReplayEvent' decorator
   , TraceLedgerReplayEvent
   , decorateReplayTracer
     -- * Wrappers
-  , getCurrent
-  , setCurrent
   , currentPoint
+  , getCurrent
+  , getDiskPolicy
+  , setCurrent
   , takeSnapshot
   , trimSnapshots
-  , getDiskPolicy
     -- * Validation
+  , ValidateResult (..)
   , validate
-  , ValidateResult(..)
     -- * Previously applied blocks
-  , getPrevApplied
   , garbageCollectPrevApplied
+  , getPrevApplied
     -- * Re-exports
-  , ExceededRollback(..)
-  , LedgerDB.AnnLedgerError(..)
   , DiskPolicy (..)
   , DiskSnapshot
+  , ExceededRollback (..)
+  , LedgerDB.AnnLedgerError (..)
+  , LedgerDB.ledgerDbCurrent
   , TraceEvent (..)
   , TraceReplayEvent (..)
-  , LedgerDB.ledgerDbCurrent
     -- * Exported for testing purposes
   , mkLgrDB
   ) where

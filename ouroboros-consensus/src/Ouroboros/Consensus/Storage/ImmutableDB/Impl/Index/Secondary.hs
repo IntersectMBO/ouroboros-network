@@ -10,16 +10,16 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
-  ( Entry (..)
-  , entrySize
-  , BlockOffset (..)
+  ( BlockOffset (..)
+  , BlockSize (..)
+  , Entry (..)
   , HeaderOffset (..)
   , HeaderSize (..)
-  , BlockSize (..)
-  , readEntry
-  , readEntries
-  , readAllEntries
   , appendEntry
+  , entrySize
+  , readAllEntries
+  , readEntries
+  , readEntry
   , truncateToEntry
   , writeAllEntries
   ) where

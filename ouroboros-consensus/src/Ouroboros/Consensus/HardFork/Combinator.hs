@@ -1,8 +1,8 @@
 -- | The hard fork combinator
 --
 -- Intended for unqualified import
-module Ouroboros.Consensus.HardFork.Combinator (
-    module X
+module Ouroboros.Consensus.HardFork.Combinator
+  ( module X
   ) where
 
 -- Defines 'SingleEraInfo' and 'LedgerEraInfo'

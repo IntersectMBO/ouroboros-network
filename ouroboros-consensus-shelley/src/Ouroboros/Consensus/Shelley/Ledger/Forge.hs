@@ -11,8 +11,8 @@
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 
-module Ouroboros.Consensus.Shelley.Ledger.Forge (
-    forgeShelleyBlock
+module Ouroboros.Consensus.Shelley.Ledger.Forge
+  ( forgeShelleyBlock
   ) where
 
 import           Control.Exception

@@ -9,11 +9,12 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Ouroboros.Consensus.Util.EarlyExit (
-    WithEarlyExit -- opaque
+module Ouroboros.Consensus.Util.EarlyExit
+  ( WithEarlyExit
+    -- opaque
+  , exitEarly
   , withEarlyExit
   , withEarlyExit_
-  , exitEarly
     -- * Re-exports
   , lift
   ) where

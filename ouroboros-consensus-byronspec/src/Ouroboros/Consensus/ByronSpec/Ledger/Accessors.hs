@@ -3,20 +3,20 @@
 {-# LANGUAGE TupleSections   #-}
 
 -- | Working with the Byron spec chain state
-module Ouroboros.Consensus.ByronSpec.Ledger.Accessors (
-    -- * ChainState getters
+module Ouroboros.Consensus.ByronSpec.Ledger.Accessors
+  ( -- * ChainState getters
     GetChainState
-  , getChainStateSlot
-  , getChainStateHash
-  , getChainStateUtxoState
   , getChainStateDIState
+  , getChainStateHash
+  , getChainStateSlot
   , getChainStateUPIState
+  , getChainStateUtxoState
     -- * ChainState modifiers
   , ModChainState
-  , modChainStateSlot
-  , modChainStateUtxoState
   , modChainStateDIState
+  , modChainStateSlot
   , modChainStateUPIState
+  , modChainStateUtxoState
     -- * Auxiliary
   , getDIStateDSState
   , modDIStateDSState

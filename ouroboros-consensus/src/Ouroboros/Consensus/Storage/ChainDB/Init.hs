@@ -3,8 +3,8 @@
 --
 -- > import Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 -- > import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
-module Ouroboros.Consensus.Storage.ChainDB.Init (
-    InitChainDB(..)
+module Ouroboros.Consensus.Storage.ChainDB.Init
+  ( InitChainDB (..)
   , fromFull
   , map
   ) where

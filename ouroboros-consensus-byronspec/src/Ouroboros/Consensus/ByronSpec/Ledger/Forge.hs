@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Ouroboros.Consensus.ByronSpec.Ledger.Forge (
-    forgeByronSpecBlock
+module Ouroboros.Consensus.ByronSpec.Ledger.Forge
+  ( forgeByronSpecBlock
   ) where
 
 import qualified Byron.Spec.Chain.STS.Block as Spec

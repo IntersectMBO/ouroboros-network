@@ -9,26 +9,26 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 
-module Ouroboros.Consensus.Storage.VolatileDB.Impl.State (
-    -- * Tracing
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.State
+  ( -- * Tracing
     TraceEvent (..)
     -- * State types
+  , BlockOffset (..)
+  , BlockSize (..)
   , FileId
+  , InternalState (..)
+  , OpenState (..)
   , ReverseIndex
   , SuccessorsIndex
-  , BlockSize (..)
-  , BlockOffset (..)
   , VolatileDBEnv (..)
-  , InternalState (..)
   , dbIsOpen
-  , OpenState (..)
     -- * State helpers
   , ModifyOpenState
   , appendOpenState
-  , writeOpenState
-  , withOpenState
-  , mkOpenState
   , closeOpenHandles
+  , mkOpenState
+  , withOpenState
+  , writeOpenState
   ) where
 
 import           Control.Monad

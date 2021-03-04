@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-module Ouroboros.Consensus.Block.SupportsProtocol (
-    BlockSupportsProtocol(..)
+module Ouroboros.Consensus.Block.SupportsProtocol
+  ( BlockSupportsProtocol (..)
   ) where
 
 import           NoThunks.Class (NoThunks)

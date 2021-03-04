@@ -6,8 +6,8 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
-module Ouroboros.Consensus.Cardano.ShelleyBased (
-    -- * Injection from Shelley-based eras into the Cardano eras
+module Ouroboros.Consensus.Cardano.ShelleyBased
+  ( -- * Injection from Shelley-based eras into the Cardano eras
     InjectShelley
   , injectShelleyNP
   , injectShelleyOptNP

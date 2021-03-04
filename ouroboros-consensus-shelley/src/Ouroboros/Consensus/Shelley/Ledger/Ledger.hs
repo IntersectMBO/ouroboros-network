@@ -16,29 +16,29 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Shelley.Ledger.Ledger (
-    ShelleyLedgerError (..)
+module Ouroboros.Consensus.Shelley.Ledger.Ledger
+  ( LedgerState (..)
   , ShelleyBasedEra
+  , ShelleyLedgerError (..)
   , ShelleyTip (..)
-  , shelleyTipToPoint
+  , ShelleyTransition (..)
+  , Ticked (..)
   , shelleyLedgerTipPoint
-  , ShelleyTransition(..)
-  , LedgerState (..)
-  , Ticked(..)
+  , shelleyTipToPoint
     -- * Ledger config
   , ShelleyLedgerConfig (..)
-  , shelleyLedgerGenesis
   , mkShelleyLedgerConfig
   , shelleyEraParams
   , shelleyEraParamsNeverHardForks
+  , shelleyLedgerGenesis
     -- * Auxiliary
   , getPParams
     -- * Serialisation
-  , encodeShelleyAnnTip
   , decodeShelleyAnnTip
   , decodeShelleyLedgerState
-  , encodeShelleyLedgerState
+  , encodeShelleyAnnTip
   , encodeShelleyHeaderState
+  , encodeShelleyLedgerState
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

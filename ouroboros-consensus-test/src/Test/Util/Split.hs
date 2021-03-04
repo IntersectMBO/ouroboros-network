@@ -1,10 +1,10 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Util.Split (
-    spanLeft,
-    spanLeft',
-    splitAtJust,
+module Test.Util.Split
+  ( spanLeft
+  , spanLeft'
+  , splitAtJust
   ) where
 
 import           Data.Bifunctor (first)

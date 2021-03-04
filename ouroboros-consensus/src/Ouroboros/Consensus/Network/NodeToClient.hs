@@ -7,17 +7,17 @@
 {-# LANGUAGE TypeApplications      #-}
 
 -- | Intended for qualified import
-module Ouroboros.Consensus.Network.NodeToClient (
-    -- * Handlers
+module Ouroboros.Consensus.Network.NodeToClient
+  ( -- * Handlers
     Handlers (..)
   , mkHandlers
     -- * Codecs
-  , Codecs' (..)
-  , Codecs
-  , DefaultCodecs
   , ClientCodecs
-  , defaultCodecs
+  , Codecs
+  , Codecs' (..)
+  , DefaultCodecs
   , clientCodecs
+  , defaultCodecs
   , identityCodecs
     -- * ClientCodecs
     -- * Tracers

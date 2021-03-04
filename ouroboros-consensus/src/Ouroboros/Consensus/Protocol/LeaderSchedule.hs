@@ -5,11 +5,11 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE TypeFamilies       #-}
 
-module Ouroboros.Consensus.Protocol.LeaderSchedule (
-    LeaderSchedule (..)
-  , leaderScheduleFor
+module Ouroboros.Consensus.Protocol.LeaderSchedule
+  ( ConsensusConfig (..)
+  , LeaderSchedule (..)
   , WithLeaderSchedule
-  , ConsensusConfig (..)
+  , leaderScheduleFor
   ) where
 
 import           Data.Map.Strict (Map)

@@ -2,13 +2,13 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-module Ouroboros.Consensus.Protocol.Abstract (
-    -- * Abstract definition of the Ouroboros protocol
-    ConsensusProtocol(..)
+module Ouroboros.Consensus.Protocol.Abstract
+  ( -- * Abstract definition of the Ouroboros protocol
+    ConsensusConfig
+  , ConsensusProtocol (..)
   , preferCandidate
-  , ConsensusConfig
     -- * Convenience re-exports
-  , SecurityParam(..)
+  , SecurityParam (..)
   ) where
 
 import           Control.Monad.Except

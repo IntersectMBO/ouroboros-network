@@ -12,10 +12,10 @@
 {-# LANGUAGE UndecidableInstances   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Protocol.PBFT.Crypto (
-    PBftCrypto(..)
+module Ouroboros.Consensus.Protocol.PBFT.Crypto
+  ( PBftCrypto (..)
   , PBftMockCrypto
-  , PBftMockVerKeyHash(..)
+  , PBftMockVerKeyHash (..)
   ) where
 
 import           Codec.Serialise (Serialise)

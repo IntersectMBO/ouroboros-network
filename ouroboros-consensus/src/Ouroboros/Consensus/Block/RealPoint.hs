@@ -7,19 +7,19 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.Block.RealPoint (
-    -- * Non-genesis points
-    RealPoint(..)
-  , encodeRealPoint
+module Ouroboros.Consensus.Block.RealPoint
+  ( -- * Non-genesis points
+    RealPoint (..)
   , decodeRealPoint
+  , encodeRealPoint
     -- * Derived
-  , realPointSlot
-  , realPointHash
   , blockRealPoint
   , headerRealPoint
+  , pointToWithOriginRealPoint
+  , realPointHash
+  , realPointSlot
   , realPointToPoint
   , withOriginRealPointToPoint
-  , pointToWithOriginRealPoint
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

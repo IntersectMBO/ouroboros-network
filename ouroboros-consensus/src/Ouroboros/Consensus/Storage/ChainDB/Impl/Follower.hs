@@ -9,9 +9,9 @@
 
 -- | Followers
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Follower
-  ( newFollower
+  ( closeAllFollowers
+  , newFollower
   , switchFork
-  , closeAllFollowers
   ) where
 
 import           Codec.CBOR.Write (toLazyByteString)

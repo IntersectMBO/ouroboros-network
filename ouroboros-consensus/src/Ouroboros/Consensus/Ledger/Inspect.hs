@@ -5,11 +5,11 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Consensus.Ledger.Inspect (
-    LedgerEvent(..)
+module Ouroboros.Consensus.Ledger.Inspect
+  ( InspectLedger (..)
+  , LedgerEvent (..)
   , castLedgerEvent
   , partitionLedgerEvents
-  , InspectLedger(..)
   ) where
 
 import           Data.Either

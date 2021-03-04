@@ -12,21 +12,21 @@
 --
 -- > import Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
-    -- * InPairs
-    InPairs(..)
+module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
+  ( -- * InPairs
+    InPairs (..)
     -- * Convenience constructors
   , mk1
   , mk2
   , mk3
     -- * SOP-like operators
-  , hmap
   , hcmap
-  , hpure
   , hcpure
+  , hmap
+  , hpure
     -- * Requiring
-  , Requiring(..)
-  , RequiringBoth(..)
+  , Requiring (..)
+  , RequiringBoth (..)
   , ignoring
   , ignoringBoth
   , requiring

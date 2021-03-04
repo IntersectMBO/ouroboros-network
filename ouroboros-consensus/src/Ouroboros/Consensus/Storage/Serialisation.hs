@@ -28,35 +28,35 @@
 -- have the precise bytestring that we can pass in as the annotation). If we
 -- coupled the encoder to the decoder, we wouldn't be able to cleanly model
 -- this use case. Moreover, sometimes we only need a single direction.
-module Ouroboros.Consensus.Storage.Serialisation (
-    -- * Serialisation to/from disk storage
-    EncodeDisk (..)
-  , DecodeDisk (..)
+module Ouroboros.Consensus.Storage.Serialisation
+  ( -- * Serialisation to/from disk storage
+    DecodeDisk (..)
+  , EncodeDisk (..)
     -- * Support for dependent pairs
-  , EncodeDiskDepIx(..)
-  , EncodeDiskDep(..)
-  , DecodeDiskDepIx(..)
-  , DecodeDiskDep(..)
+  , DecodeDiskDep (..)
+  , DecodeDiskDepIx (..)
+  , EncodeDiskDep (..)
+  , EncodeDiskDepIx (..)
     -- * Serialised header
-  , SerialisedHeader(..)
-  , serialisedHeaderToPair
-  , serialisedHeaderFromPair
+  , SerialisedHeader (..)
   , castSerialisedHeader
-  , encodeTrivialSerialisedHeader
   , decodeTrivialSerialisedHeader
+  , encodeTrivialSerialisedHeader
+  , serialisedHeaderFromPair
+  , serialisedHeaderToPair
     -- * Reconstruct nested type
-  , ReconstructNestedCtxt (..)
   , PrefixLen (..)
+  , ReconstructNestedCtxt (..)
   , addPrefixLen
   , takePrefix
     -- * Binary block info
-  , HasBinaryBlockInfo (..)
   , BinaryBlockInfo (..)
+  , HasBinaryBlockInfo (..)
     -- * Re-exported for convenience
   , SizeInBytes
     -- * Exported for the benefit of tests
-  , encodeDepPair
   , decodeDepPair
+  , encodeDepPair
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

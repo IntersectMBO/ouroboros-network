@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Cardano.MockCrypto (
-    MockCryptoCompatByron
+module Test.Consensus.Cardano.MockCrypto
+  ( MockCryptoCompatByron
   ) where
 
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)

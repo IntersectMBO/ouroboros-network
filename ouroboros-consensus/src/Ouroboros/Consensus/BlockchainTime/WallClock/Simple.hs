@@ -2,8 +2,8 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.BlockchainTime.WallClock.Simple (
-    simpleBlockchainTime
+module Ouroboros.Consensus.BlockchainTime.WallClock.Simple
+  ( simpleBlockchainTime
     -- * Low-level API (exported primarily for testing)
   , getWallClockSlot
   , waitUntilNextSlot

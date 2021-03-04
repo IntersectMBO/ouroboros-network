@@ -21,19 +21,19 @@
 -- an unexplained thunk in 'KnownIntersectionState' and thus a space leak. See
 -- #1356.
 
-module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
-    Consensus
-  , chainSyncClient
-  , bracketChainSyncClient
-  , ChainSyncClientResult (..)
+module Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+  ( ChainDbView (..)
   , ChainSyncClientException (..)
-  , ChainDbView (..)
-  , defaultChainDbView
+  , ChainSyncClientResult (..)
+  , Consensus
   , Our (..)
   , Their (..)
+  , bracketChainSyncClient
+  , chainSyncClient
+  , defaultChainDbView
     -- * Trace events
-  , TraceChainSyncClientEvent (..)
   , InvalidBlockReason
+  , TraceChainSyncClientEvent (..)
   ) where
 
 import           Control.Monad

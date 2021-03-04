@@ -4,8 +4,8 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Mock.Node.Praos (
-    MockPraosBlock
+module Ouroboros.Consensus.Mock.Node.Praos
+  ( MockPraosBlock
   , protocolInfoPraos
   ) where
 

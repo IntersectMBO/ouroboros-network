@@ -1,6 +1,6 @@
 -- | Serialisation support for the HFC
-module Ouroboros.Consensus.HardFork.Combinator.Serialisation (
-    module X
+module Ouroboros.Consensus.HardFork.Combinator.Serialisation
+  ( module X
   ) where
 
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common as X

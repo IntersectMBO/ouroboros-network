@@ -3,11 +3,11 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Ouroboros.Consensus.Node.ProtocolInfo (
-    NumCoreNodes(..)
+module Ouroboros.Consensus.Node.ProtocolInfo
+  ( NumCoreNodes (..)
+  , ProtocolClientInfo (..)
+  , ProtocolInfo (..)
   , enumCoreNodes
-  , ProtocolInfo(..)
-  , ProtocolClientInfo(..)
   ) where
 
 import           Data.Word

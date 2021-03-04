@@ -1,9 +1,9 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Support for protocols that include a signature
-module Ouroboros.Consensus.Protocol.Signed (
-    Signed
-  , SignedHeader(..)
+module Ouroboros.Consensus.Protocol.Signed
+  ( Signed
+  , SignedHeader (..)
   ) where
 
 import           Data.Kind (Type)

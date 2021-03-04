@@ -12,8 +12,8 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Shelley.Generators (
-    SomeResult (..)
+module Test.Consensus.Shelley.Generators
+  ( SomeResult (..)
   ) where
 
 import           Ouroboros.Network.Block (mkSerialised)

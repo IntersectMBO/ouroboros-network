@@ -4,10 +4,10 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Ouroboros.Consensus.NodeId (
-    -- * Node IDs
-    NodeId (..)
-  , CoreNodeId (..)
+module Ouroboros.Consensus.NodeId
+  ( -- * Node IDs
+    CoreNodeId (..)
+  , NodeId (..)
   , fromCoreNodeId
   ) where
 

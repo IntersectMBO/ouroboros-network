@@ -6,33 +6,33 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
-module Test.Consensus.Shelley.Examples (
-    -- * Setup
-    testEpochInfo
-  , testShelleyGenesis
-  , codecConfig
-  , mkDummyHash
+module Test.Consensus.Shelley.Examples
+  ( -- * Setup
+    codecConfig
   , keyToCredential
+  , mkDummyHash
+  , testEpochInfo
+  , testShelleyGenesis
     -- * Examples
-  , examplesShelley
   , examplesAllegra
   , examplesMary
+  , examplesShelley
     -- * Era-specific examples
   , exampleCoin
     -- * Individual examples
-  , exampleBlock
-  , exampleHeaderHash
-  , exampleTx
   , exampleApplyTxErr
+  , exampleBlock
   , exampleChainDepState
-  , exampleLedgerState
-  , exampleHeaderState
   , exampleExtLedgerState
+  , exampleHeaderHash
+  , exampleHeaderState
+  , exampleLedgerState
+  , exampleTx
     -- * Keys
-  , examplePayKey
-  , exampleStakeKey
   , exampleKeys
+  , examplePayKey
   , examplePoolParams
+  , exampleStakeKey
   ) where
 
 import qualified Data.ByteString as Strict

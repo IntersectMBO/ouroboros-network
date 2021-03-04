@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds   #-}
 {-# LANGUAGE DerivingVia #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Translation (
-    -- * Translate from one era to the next
-    EraTranslation(..)
+module Ouroboros.Consensus.HardFork.Combinator.Translation
+  ( -- * Translate from one era to the next
+    EraTranslation (..)
   , trivialEraTranslation
   ) where
 

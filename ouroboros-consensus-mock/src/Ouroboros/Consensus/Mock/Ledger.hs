@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Mock.Ledger (
-    module X
+module Ouroboros.Consensus.Mock.Ledger
+  ( module X
   ) where
 
 import           Ouroboros.Consensus.Mock.Ledger.Address as X

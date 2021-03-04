@@ -6,9 +6,9 @@
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.ThreadNet.TxGen.Shelley (
-    ShelleyTxGenExtra(..)
-  , WhetherToGeneratePPUs(..)
+module Test.ThreadNet.TxGen.Shelley
+  ( ShelleyTxGenExtra (..)
+  , WhetherToGeneratePPUs (..)
   , genTx
   , mkGenEnv
   ) where

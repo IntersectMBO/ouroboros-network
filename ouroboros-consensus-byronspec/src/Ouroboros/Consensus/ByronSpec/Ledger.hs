@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.ByronSpec.Ledger (
-    module X
+module Ouroboros.Consensus.ByronSpec.Ledger
+  ( module X
   ) where
 
 -- Not all modules are re-exported, as some deal with wrapping

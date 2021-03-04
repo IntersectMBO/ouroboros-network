@@ -5,24 +5,24 @@
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.Mock.Ledger.UTxO (
-    -- * Basic definitions
-    Tx(Tx)
+module Ouroboros.Consensus.Mock.Ledger.UTxO
+  ( -- * Basic definitions
+    Addr
+  , Amount
+  , Expiry (..)
+  , Ix
+  , Tx (Tx)
   , TxId
   , TxIn
   , TxOut
-  , Addr
-  , Amount
-  , Ix
   , Utxo
-  , Expiry(..)
     -- * Computing UTxO
-  , HasMockTxs(..)
+  , HasMockTxs (..)
+  , UtxoError (..)
+  , confirmed
   , txIns
   , txOuts
-  , confirmed
   , updateUtxo
-  , UtxoError(..)
     -- * Genesis
   , genesisTx
   , genesisUtxo

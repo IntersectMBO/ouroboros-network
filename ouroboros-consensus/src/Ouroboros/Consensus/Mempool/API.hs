@@ -8,17 +8,17 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE UndecidableSuperClasses    #-}
 
-module Ouroboros.Consensus.Mempool.API (
-    Mempool(..)
-  , addTxs
-  , ForgeLedgerState(..)
-  , MempoolCapacityBytes (..)
-  , MempoolSnapshot(..)
+module Ouroboros.Consensus.Mempool.API
+  ( ForgeLedgerState (..)
+  , Mempool (..)
   , MempoolAddTxResult (..)
+  , MempoolCapacityBytes (..)
+  , MempoolSize (..)
+  , MempoolSnapshot (..)
+  , TraceEventMempool (..)
+  , addTxs
   , isMempoolTxAdded
   , isMempoolTxRejected
-  , MempoolSize (..)
-  , TraceEventMempool(..)
     -- * Re-exports
   , TxSizeInBytes
   ) where

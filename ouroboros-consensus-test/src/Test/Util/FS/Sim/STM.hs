@@ -2,10 +2,10 @@
 {-# LANGUAGE TypeApplications    #-}
 
 -- | 'HasFS' instance using 'MockFS' stored in an STM variable
-module Test.Util.FS.Sim.STM (
-      runSimFS
-    , simHasFS
-    ) where
+module Test.Util.FS.Sim.STM
+  ( runSimFS
+  , simHasFS
+  ) where
 
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike

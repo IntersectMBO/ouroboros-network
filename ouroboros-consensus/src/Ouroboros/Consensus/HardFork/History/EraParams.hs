@@ -7,10 +7,10 @@
 {-# LANGUAGE TypeApplications   #-}
 {-# LANGUAGE TypeOperators      #-}
 
-module Ouroboros.Consensus.HardFork.History.EraParams (
-    -- * API
-    EraParams(..)
-  , SafeZone(..)
+module Ouroboros.Consensus.HardFork.History.EraParams
+  ( -- * API
+    EraParams (..)
+  , SafeZone (..)
     -- * Defaults
   , defaultEraParams
   ) where

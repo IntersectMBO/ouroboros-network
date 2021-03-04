@@ -1,5 +1,5 @@
-module Test.ThreadNet.Util.Tests (
-    tests
+module Test.ThreadNet.Util.Tests
+  ( tests
   ) where
 
 import           Test.Tasty

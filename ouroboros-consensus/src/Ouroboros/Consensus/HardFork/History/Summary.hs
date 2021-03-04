@@ -16,29 +16,29 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Ouroboros.Consensus.HardFork.History.Summary (
-    -- * Bounds
-    Bound(..)
+module Ouroboros.Consensus.HardFork.History.Summary
+  ( -- * Bounds
+    Bound (..)
   , initBound
   , mkUpperBound
   , slotToEpochBound
     -- * Per-era summary
-  , EraSummary(..)
-  , EraEnd(..)
+  , EraEnd (..)
+  , EraSummary (..)
   , mkEraEnd
     -- * Overall summary
-  , Summary(..)
+  , Summary (..)
     -- ** Construction
-  , summaryWithExactly
   , neverForksSummary
+  , summaryWithExactly
     -- *** Summarize
-  , Shape(..)
-  , Transitions(..)
-  , singletonShape
-  , transitionsUnknown
-  , summarize
+  , Shape (..)
+  , Transitions (..)
   , invariantShape
   , invariantSummary
+  , singletonShape
+  , summarize
+  , transitionsUnknown
     -- ** Query
   , summaryBounds
   , summaryInit

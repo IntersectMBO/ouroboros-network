@@ -28,8 +28,8 @@
 --
 -- Leaving out the 'hasNoDefault' field from 'theArgs' will result in a type
 -- error.
-module Ouroboros.Consensus.Util.Args (
-    Defaults (..)
+module Ouroboros.Consensus.Util.Args
+  ( Defaults (..)
   , HKD
   , MapHKD (..)
     -- * Re-exported for convenience

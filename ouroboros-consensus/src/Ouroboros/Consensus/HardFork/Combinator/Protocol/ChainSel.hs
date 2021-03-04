@@ -7,10 +7,10 @@
 {-# LANGUAGE TypeApplications    #-}
 
 -- | Infrastructure for doing chain selection across eras
-module Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel (
-    AcrossEraSelection(..)
+module Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
+  ( AcrossEraSelection (..)
+  , WithBlockNo (..)
   , acrossEraSelection
-  , WithBlockNo(..)
   , mapWithBlockNo
   ) where
 

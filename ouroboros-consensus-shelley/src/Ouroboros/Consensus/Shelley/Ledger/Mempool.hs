@@ -17,12 +17,12 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Shelley mempool integration
-module Ouroboros.Consensus.Shelley.Ledger.Mempool (
-    SL.ApplyTxError (..)
-  , GenTx (..)
+module Ouroboros.Consensus.Shelley.Ledger.Mempool
+  ( GenTx (..)
+  , SL.ApplyTxError (..)
   , TxId (..)
-  , mkShelleyTx
   , fixedBlockBodyOverhead
+  , mkShelleyTx
   , perTxOverhead
   ) where
 

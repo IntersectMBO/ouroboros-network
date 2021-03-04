@@ -12,21 +12,21 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
-module Ouroboros.Consensus.Shelley.Ledger.Block (
-    ShelleyBasedEra
-  , ShelleyHash (..)
-  , ShelleyBlock (..)
-  , mkShelleyBlock
-  , GetHeader (..)
+module Ouroboros.Consensus.Shelley.Ledger.Block
+  ( GetHeader (..)
   , Header (..)
+  , NestedCtxt_ (..)
+  , ShelleyBasedEra
+  , ShelleyBlock (..)
+  , ShelleyHash (..)
+  , mkShelleyBlock
   , mkShelleyHeader
-  , NestedCtxt_(..)
     -- * Serialisation
-  , encodeShelleyBlock
   , decodeShelleyBlock
-  , shelleyBinaryBlockInfo
-  , encodeShelleyHeader
   , decodeShelleyHeader
+  , encodeShelleyBlock
+  , encodeShelleyHeader
+  , shelleyBinaryBlockInfo
     -- * Conversion
   , fromShelleyPrevHash
   , toShelleyPrevHash

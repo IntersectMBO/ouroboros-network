@@ -11,31 +11,31 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Ledger.Serialisation (
-    -- * Data family instances
-    NestedCtxt_(..)
-  , RawHeader
+module Ouroboros.Consensus.Byron.Ledger.Serialisation
+  ( -- * Data family instances
+    NestedCtxt_ (..)
   , RawBoundaryHeader
+  , RawHeader
     -- * Serialisation
   , byronBlockEncodingOverhead
-  , encodeByronBlock
   , decodeByronBlock
-  , decodeByronRegularBlock
   , decodeByronBoundaryBlock
-  , encodeByronRegularHeader
-  , decodeByronRegularHeader
-  , encodeByronBoundaryHeader
   , decodeByronBoundaryHeader
-  , encodeByronHeaderHash
   , decodeByronHeaderHash
+  , decodeByronRegularBlock
+  , decodeByronRegularHeader
+  , encodeByronBlock
+  , encodeByronBoundaryHeader
+  , encodeByronHeaderHash
+  , encodeByronRegularHeader
     -- * Support for on-disk format
   , byronBinaryBlockInfo
     -- * Unsized header
   , addV1Envelope
-  , dropV1Envelope
-  , fakeByronBlockSizeHint
-  , encodeUnsizedHeader
   , decodeUnsizedHeader
+  , dropV1Envelope
+  , encodeUnsizedHeader
+  , fakeByronBlockSizeHint
   ) where
 
 import           Control.Monad.Except

@@ -4,8 +4,8 @@
 {-# LANGUAGE TypeFamilies      #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Mock.Node.PBFT (
-    MockPBftBlock
+module Ouroboros.Consensus.Mock.Node.PBFT
+  ( MockPBftBlock
   , protocolInfoMockPBFT
   ) where
 

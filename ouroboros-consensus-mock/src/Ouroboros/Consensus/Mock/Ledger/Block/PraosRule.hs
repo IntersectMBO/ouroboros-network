@@ -11,11 +11,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Test the Praos chain selection rule (with explicit leader schedule)
-module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
-    SimplePraosRuleBlock
-  , SimplePraosRuleExt(..)
+module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule
+  ( PraosCryptoUnused
+  , SimplePraosRuleBlock
+  , SimplePraosRuleExt (..)
   , SimplePraosRuleHeader
-  , PraosCryptoUnused
   , forgePraosRuleExt
   ) where
 

@@ -4,11 +4,11 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-  ( chainSyncHeadersServer
+  ( Tip
+  , chainSyncBlockServerFollower
   , chainSyncBlocksServer
   , chainSyncHeaderServerFollower
-  , chainSyncBlockServerFollower
-  , Tip
+  , chainSyncHeadersServer
     -- * Trace events
   , TraceChainSyncServerEvent (..)
   ) where

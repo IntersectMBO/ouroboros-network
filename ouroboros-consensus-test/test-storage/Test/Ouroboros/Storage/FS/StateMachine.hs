@@ -17,9 +17,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Storage.FS.StateMachine (
-    tests
-  , showLabelledExamples
+module Test.Ouroboros.Storage.FS.StateMachine
+  ( showLabelledExamples
+  , tests
   ) where
 
 import qualified Control.Exception as E

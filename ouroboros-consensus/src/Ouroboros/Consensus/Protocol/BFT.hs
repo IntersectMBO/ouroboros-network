@@ -11,20 +11,20 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 
-module Ouroboros.Consensus.Protocol.BFT (
-    Bft
-  , BftFields(..)
-  , BftParams(..)
-  , BftValidationErr(..)
+module Ouroboros.Consensus.Protocol.BFT
+  ( Bft
+  , BftFields (..)
+  , BftParams (..)
+  , BftValidationErr (..)
   , forgeBftFields
     -- * Classes
-  , BftCrypto(..)
-  , BftStandardCrypto
+  , BftCrypto (..)
   , BftMockCrypto
-  , BftValidateView(..)
+  , BftStandardCrypto
+  , BftValidateView (..)
   , bftValidateView
     -- * Type instances
-  , ConsensusConfig(..)
+  , ConsensusConfig (..)
   ) where
 
 import           Control.Monad.Except

@@ -7,11 +7,11 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator (
-    streamImpl
-  , getSlotInfo
-  , CurrentChunkInfo (..)
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
+  ( CurrentChunkInfo (..)
   , extractBlockComponent
+  , getSlotInfo
+  , streamImpl
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

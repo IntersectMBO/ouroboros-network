@@ -8,20 +8,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | An abstract view over the filesystem.
-module Ouroboros.Consensus.Storage.FS.API (
-      HasFS(..)
-    , Handle(..)
-    , hGetExactly
-    , hGetExactlyAt
-    , hGetAll
-    , hGetAllAt
-    , hPut
-    , hPutAll
-    , hPutAllStrict
-    , withFile
-    , hClose'
-    , SomeHasFS(..)
-    ) where
+module Ouroboros.Consensus.Storage.FS.API
+  ( Handle (..)
+  , HasFS (..)
+  , SomeHasFS (..)
+  , hClose'
+  , hGetAll
+  , hGetAllAt
+  , hGetExactly
+  , hGetExactlyAt
+  , hPut
+  , hPutAll
+  , hPutAllStrict
+  , withFile
+  ) where
 
 import           Control.Monad (foldM)
 import qualified Data.ByteString as BS

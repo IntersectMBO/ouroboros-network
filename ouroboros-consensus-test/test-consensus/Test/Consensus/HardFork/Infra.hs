@@ -10,18 +10,18 @@
 {-# LANGUAGE TypeOperators       #-}
 
 -- | Infrastructure shared by the various 'HardFork' tests
-module Test.Consensus.HardFork.Infra (
-    -- * Generate HardFork shape
-    Era(..)
-  , Eras(..)
-  , eraIndices
+module Test.Consensus.HardFork.Infra
+  ( -- * Generate HardFork shape
+    Era (..)
+  , Eras (..)
   , chooseEras
+  , eraIndices
   , erasMapStateM
   , erasUnfoldAtMost
     -- * Era-specified generators
   , genEraParams
-  , genStartOfNextEra
   , genShape
+  , genStartOfNextEra
   , genSummary
   ) where
 

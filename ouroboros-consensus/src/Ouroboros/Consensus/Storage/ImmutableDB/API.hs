@@ -10,45 +10,45 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
-module Ouroboros.Consensus.Storage.ImmutableDB.API (
-    -- * API
+module Ouroboros.Consensus.Storage.ImmutableDB.API
+  ( -- * API
     ImmutableDB (..)
     -- * Iterator API
   , Iterator (..)
   , IteratorResult (..)
-  , traverseIterator
   , iteratorToList
+  , traverseIterator
     -- * Types
-  , Tip (..)
-  , tipToRealPoint
-  , tipToPoint
-  , tipToAnchor
-  , blockToTip
   , CompareTip (..)
+  , Tip (..)
+  , blockToTip
+  , tipToAnchor
+  , tipToPoint
+  , tipToRealPoint
     -- * Errors
-  , ImmutableDBError (..)
   , ApiMisuse (..)
-  , throwApiMisuse
-  , UnexpectedFailure (..)
-  , throwUnexpectedFailure
+  , ImmutableDBError (..)
   , MissingBlock (..)
+  , UnexpectedFailure (..)
   , missingBlockPoint
+  , throwApiMisuse
+  , throwUnexpectedFailure
     -- * Wrappers that preserve 'HasCallStack'
-  , closeDB
-  , getTip
-  , getBlockComponent
   , appendBlock
+  , closeDB
+  , getBlockComponent
+  , getTip
   , stream
     -- * Derived functionality
-  , withDB
   , getKnownBlockComponent
+  , getTipAnchor
+  , getTipPoint
+  , getTipSlot
+  , hasBlock
   , streamAfterKnownPoint
   , streamAfterPoint
   , streamAll
-  , hasBlock
-  , getTipPoint
-  , getTipAnchor
-  , getTipSlot
+  , withDB
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

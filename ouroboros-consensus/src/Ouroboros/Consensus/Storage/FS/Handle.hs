@@ -2,13 +2,13 @@
 
 -- | This is meant to be used for the implementation of HasFS
 -- instances and not directly by client code.
-module Ouroboros.Consensus.Storage.FS.Handle (
-      HandleOS (..)
-    , isOpenHandleOS
-    , closeHandleOS
-    , withOpenHandle
-    , isHandleClosedException
-    ) where
+module Ouroboros.Consensus.Storage.FS.Handle
+  ( HandleOS (..)
+  , closeHandleOS
+  , isHandleClosedException
+  , isOpenHandleOS
+  , withOpenHandle
+  ) where
 
 import           Control.Concurrent.MVar
 import           Control.Exception hiding (handle)

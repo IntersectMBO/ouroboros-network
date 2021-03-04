@@ -4,11 +4,11 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Ledger.Inspect (
-    ByronLedgerUpdate(..)
+module Ouroboros.Consensus.Byron.Ledger.Inspect
+  ( ByronLedgerUpdate (..)
     -- * Layer around the Byron protocol update inteface
-  , ProtocolUpdate(..)
-  , UpdateState(..)
+  , ProtocolUpdate (..)
+  , UpdateState (..)
   , protocolUpdates
   ) where
 

@@ -7,12 +7,12 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView (
-    -- * Hard fork
-    HardForkLedgerView_(..)
-  , HardForkLedgerView
+module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
+  ( -- * Hard fork
+    HardForkLedgerView
+  , HardForkLedgerView_ (..)
     -- * Type family instances
-  , Ticked(..)
+  , Ticked (..)
   ) where
 
 import           Data.SOP.Dict

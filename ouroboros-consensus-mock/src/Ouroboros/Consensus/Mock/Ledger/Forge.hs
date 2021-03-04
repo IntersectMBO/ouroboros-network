@@ -5,8 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Ouroboros.Consensus.Mock.Ledger.Forge (
-    ForgeExt (..)
+module Ouroboros.Consensus.Mock.Ledger.Forge
+  ( ForgeExt (..)
   , forgeSimple
   ) where
 

@@ -11,11 +11,11 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
-    SimplePraosBlock
+module Ouroboros.Consensus.Mock.Ledger.Block.Praos
+  ( SignedSimplePraos (..)
+  , SimplePraosBlock
+  , SimplePraosExt (..)
   , SimplePraosHeader
-  , SimplePraosExt(..)
-  , SignedSimplePraos(..)
   , forgePraosExt
   ) where
 

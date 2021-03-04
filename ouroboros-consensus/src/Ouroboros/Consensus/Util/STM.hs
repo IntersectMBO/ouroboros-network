@@ -7,20 +7,20 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-module Ouroboros.Consensus.Util.STM (
-    -- * 'Watcher'
+module Ouroboros.Consensus.Util.STM
+  ( -- * 'Watcher'
     Watcher (..)
   , forkLinkedWatcher
   , withWatcher
     -- * Misc
-  , blockUntilChanged
-  , runWhenJust
-  , blockUntilJust
-  , blockUntilAllJust
   , Fingerprint (..)
   , WithFingerprint (..)
+  , blockUntilAllJust
+  , blockUntilChanged
+  , blockUntilJust
+  , runWhenJust
     -- * Simulate various monad stacks in STM
-  , Sim(..)
+  , Sim (..)
   , simId
   , simStateT
   ) where

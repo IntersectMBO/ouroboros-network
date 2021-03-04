@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.BlockchainTime.WallClock.Default (
-    defaultSystemTime
+module Ouroboros.Consensus.BlockchainTime.WallClock.Default
+  ( defaultSystemTime
   ) where
 
 import           Control.Monad

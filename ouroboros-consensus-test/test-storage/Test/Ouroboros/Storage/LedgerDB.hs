@@ -1,5 +1,5 @@
-module Test.Ouroboros.Storage.LedgerDB (
-    tests
+module Test.Ouroboros.Storage.LedgerDB
+  ( tests
   ) where
 
 import           Test.Tasty

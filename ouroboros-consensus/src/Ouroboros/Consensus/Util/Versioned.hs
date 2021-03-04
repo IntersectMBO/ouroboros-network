@@ -7,15 +7,16 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 module Ouroboros.Consensus.Util.Versioned
-  ( Versioned (..)
-  , VersionNumber -- opaque
-  , VersionError (..)
+  ( VersionNumber
+  , Versioned (..)
+    -- opaque
   , VersionDecoder (..)
-  , encodeVersioned
-  , encodeVersion
-  , decodeVersioned
+  , VersionError (..)
   , decodeVersion
   , decodeVersionWithHook
+  , decodeVersioned
+  , encodeVersion
+  , encodeVersioned
   ) where
 
 import qualified Codec.CBOR.Decoding as Dec

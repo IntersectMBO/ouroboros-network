@@ -17,11 +17,11 @@
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE UndecidableInstances     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Cardano.CanHardFork (
-    TriggerHardFork (..)
-  , ByronPartialLedgerConfig (..)
-  , ShelleyPartialLedgerConfig (..)
+module Ouroboros.Consensus.Cardano.CanHardFork
+  ( ByronPartialLedgerConfig (..)
   , CardanoHardForkConstraints
+  , ShelleyPartialLedgerConfig (..)
+  , TriggerHardFork (..)
   , forecastAcrossShelley
   , translateChainDepStateAcrossShelley
   ) where

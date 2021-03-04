@@ -7,8 +7,8 @@
 {-# LANGUAGE TypeApplications      #-}
 
 -- | Intended for qualified import
-module Ouroboros.Consensus.Network.NodeToNode (
-    -- * Handlers
+module Ouroboros.Consensus.Network.NodeToNode
+  ( -- * Handlers
     Handlers (..)
   , mkHandlers
     -- * Codecs
@@ -21,9 +21,9 @@ module Ouroboros.Consensus.Network.NodeToNode (
   , nullTracers
   , showTracers
     -- * Applications
+  , Apps (..)
   , ClientApp
   , ServerApp
-  , Apps (..)
   , mkApps
     -- ** Projections
   , initiator

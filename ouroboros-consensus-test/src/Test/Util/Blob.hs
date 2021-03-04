@@ -1,7 +1,7 @@
 module Test.Util.Blob
   ( Blob (..)
-  , blobToBS
   , blobFromBS
+  , blobToBS
   ) where
 
 import           Data.ByteString (ByteString)

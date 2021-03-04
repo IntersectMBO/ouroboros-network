@@ -3,26 +3,27 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
-    -- * System time
-    SystemStart(..)
+module Ouroboros.Consensus.BlockchainTime.WallClock.Types
+  ( -- * System time
+    SystemStart (..)
     -- * Relative time
-  , RelativeTime(..)
+  , RelativeTime (..)
   , addRelTime
   , diffRelTime
-  , toRelativeTime
   , fromRelativeTime
+  , toRelativeTime
     -- * Get current time (as 'RelativeTime')
-  , SystemTime(..)
+  , SystemTime (..)
     -- * Slot length
-  , SlotLength -- Opaque
+  , SlotLength
+    -- Opaque
   , getSlotLength
   , mkSlotLength
     -- ** Conversions
-  , slotLengthFromSec
-  , slotLengthToSec
   , slotLengthFromMillisec
+  , slotLengthFromSec
   , slotLengthToMillisec
+  , slotLengthToSec
   ) where
 
 import           Codec.Serialise

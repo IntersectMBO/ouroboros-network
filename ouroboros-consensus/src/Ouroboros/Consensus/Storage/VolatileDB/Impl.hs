@@ -101,19 +101,19 @@
 -- means deleting all of its contents. In order to achieve this, it truncates
 -- the files containing blocks if some blocks fail to parse, are invalid, or are
 -- duplicated.
-module Ouroboros.Consensus.Storage.VolatileDB.Impl (
-    -- * Opening the database
-    openDB
-  , VolatileDbArgs (..)
-  , defaultArgs
+module Ouroboros.Consensus.Storage.VolatileDB.Impl
+  ( -- * Opening the database
+    VolatileDbArgs (..)
   , VolatileDbSerialiseConstraints
+  , defaultArgs
+  , openDB
     -- * Re-exported
-  , BlocksPerFile
-  , mkBlocksPerFile
   , BlockValidationPolicy (..)
+  , BlocksPerFile
   , ParseError (..)
   , TraceEvent (..)
   , extractBlockInfo
+  , mkBlocksPerFile
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

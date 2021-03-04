@@ -5,9 +5,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Ledger.HeaderValidation (
-    TipInfoIsEBB (..)
-  , ByronOtherHeaderEnvelopeError(..)
+module Ouroboros.Consensus.Byron.Ledger.HeaderValidation
+  ( ByronOtherHeaderEnvelopeError (..)
+  , TipInfoIsEBB (..)
   ) where
 
 import           Control.Monad.Except

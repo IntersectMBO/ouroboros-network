@@ -8,21 +8,21 @@
 -- > import Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 -- > import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 module Ouroboros.Consensus.Fragment.Diff
-  ( ChainDiff(..)
+  ( ChainDiff (..)
     -- * Queries
-  , getTip
   , getAnchorPoint
+  , getTip
   , rollbackExceedsSuffix
     -- * Constructors
-  , extend
   , diff
+  , extend
     -- * Application
   , apply
     -- * Manipulation
   , append
-  , truncate
-  , takeWhileOldest
   , mapM
+  , takeWhileOldest
+  , truncate
   ) where
 
 import           Prelude hiding (mapM, truncate)

@@ -9,10 +9,10 @@ module Test.ThreadNet.Util.NodeTopology
   , coreNodeIdNeighbors
   , edgesNodeTopology
   , genNodeTopology
-  , shrinkNodeTopology
   , mapNodeTopology
   , meshNodeTopology
   , minimumDegreeNodeTopology
+  , shrinkNodeTopology
   , unionNodeTopology
   ) where
 

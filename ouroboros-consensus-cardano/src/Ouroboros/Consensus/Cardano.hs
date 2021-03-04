@@ -4,29 +4,28 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Ouroboros.Consensus.Cardano (
-    -- * The block type of the Cardano block chain
+module Ouroboros.Consensus.Cardano
+  ( -- * The block type of the Cardano block chain
     CardanoBlock
     -- * Supported protocols
   , ProtocolByron
-  , ProtocolShelley
   , ProtocolCardano
+  , ProtocolShelley
     -- * Abstract over the various protocols
-  , ProtocolParamsByron(..)
-  , ProtocolParamsShelley(..)
-  , ProtocolParamsAllegra(..)
-  , ProtocolParamsMary(..)
-  , ProtocolParamsTransition(..)
-  , Protocol(..)
+  , Protocol (..)
+  , ProtocolParamsAllegra (..)
+  , ProtocolParamsByron (..)
+  , ProtocolParamsMary (..)
+  , ProtocolParamsShelley (..)
+  , ProtocolParamsTransition (..)
   , verifyProtocol
     -- * Data required to run a protocol
   , protocolInfo
     -- * Evidence that we can run all the supported protocols
-  , runProtocol
   , module X
-
+  , runProtocol
     -- * Client support for nodes running a protocol
-  , ProtocolClient(..)
+  , ProtocolClient (..)
   , protocolClientInfo
   , runProtocolClient
   , verifyProtocolClient

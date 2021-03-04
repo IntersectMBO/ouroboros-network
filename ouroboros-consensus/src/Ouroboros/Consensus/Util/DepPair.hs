@@ -6,20 +6,20 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 
-module Ouroboros.Consensus.Util.DepPair (
-    -- * Dependent pairs
-    GenDepPair(GenDepPair, DepPair)
-  , DepPair
+module Ouroboros.Consensus.Util.DepPair
+  ( -- * Dependent pairs
+    DepPair
+  , GenDepPair (GenDepPair, DepPair)
   , depPairFirst
     -- * Compare indices
-  , SameDepIndex(..)
+  , SameDepIndex (..)
     -- * Trivial dependency
-  , TrivialDependency(..)
+  , TrivialDependency (..)
   , fromTrivialDependency
   , toTrivialDependency
     -- * Convenience re-exports
-  , (:~:)(..)
-  , Proxy(..)
+  , Proxy (..)
+  , (:~:) (..)
   ) where
 
 import           Data.Kind (Type)

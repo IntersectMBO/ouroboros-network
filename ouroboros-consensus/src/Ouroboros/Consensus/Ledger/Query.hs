@@ -4,10 +4,10 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-module Ouroboros.Consensus.Ledger.Query (
-    Query
-  , QueryLedger(..)
-  , ShowQuery(..)
+module Ouroboros.Consensus.Ledger.Query
+  ( Query
+  , QueryLedger (..)
+  , ShowQuery (..)
   ) where
 
 import           Data.Kind (Type)

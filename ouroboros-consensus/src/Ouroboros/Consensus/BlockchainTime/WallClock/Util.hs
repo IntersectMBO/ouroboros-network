@@ -2,11 +2,11 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Support for defining 'BlockchainTime' instances
-module Ouroboros.Consensus.BlockchainTime.WallClock.Util (
-    -- * Tracing
-    TraceBlockchainTimeEvent(..)
+module Ouroboros.Consensus.BlockchainTime.WallClock.Util
+  ( -- * Tracing
+    TraceBlockchainTimeEvent (..)
     -- * Exceptions
-  , SystemClockMovedBackException(..)
+  , SystemClockMovedBackException (..)
   ) where
 
 import           Control.Exception (Exception)

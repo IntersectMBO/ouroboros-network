@@ -9,17 +9,17 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.ByronDual.Ledger (
-    -- * Shorthand
+module Ouroboros.Consensus.ByronDual.Ledger
+  ( -- * Shorthand
     DualByronBlock
   , DualByronBridge
     -- * Bridge
-  , ByronSpecBridge(..)
-  , SpecToImplIds(..)
-  , specToImplTx
-  , initByronSpecBridge
+  , ByronSpecBridge (..)
+  , SpecToImplIds (..)
   , bridgeToSpecKey
   , bridgeTransactionIds
+  , initByronSpecBridge
+  , specToImplTx
     -- * Block forging
   , forgeDualByronBlock
   ) where

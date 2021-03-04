@@ -7,11 +7,11 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
-module Ouroboros.Consensus.HardFork.Combinator.Forging (
-    HardForkCannotForge
-  , hardForkBlockForging
-  , HardForkForgeStateInfo(..)
+module Ouroboros.Consensus.HardFork.Combinator.Forging
+  ( HardForkCannotForge
+  , HardForkForgeStateInfo (..)
   , HardForkForgeStateUpdateError
+  , hardForkBlockForging
   ) where
 
 import           Data.Functor.Product

@@ -8,16 +8,16 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.Block.Forging (
-    CannotForge
+module Ouroboros.Consensus.Block.Forging
+  ( BlockForging (..)
+  , CannotForge
   , ForgeStateInfo
   , ForgeStateUpdateError
-  , ForgeStateUpdateInfo(..)
+  , ForgeStateUpdateInfo (..)
+  , ShouldForge (..)
   , castForgeStateUpdateInfo
-  , forgeStateUpdateInfoFromUpdateInfo
-  , BlockForging(..)
-  , ShouldForge(..)
   , checkShouldForge
+  , forgeStateUpdateInfoFromUpdateInfo
     -- * 'UpdateInfo'
   , UpdateInfo (..)
   ) where

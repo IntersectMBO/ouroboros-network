@@ -11,35 +11,36 @@
 --
 -- This module is not re-exported from the public Chunks API, since it's only
 -- relevant internally in the immutable DB.
-module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
-    -- * Relative slots
-    RelativeSlot -- Opaque
-  , maxRelativeSlot
-  , relativeSlotIsEBB
-  , nthBlockOrEBB
+module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+  ( -- * Relative slots
+    RelativeSlot
+    -- Opaque
+  , NextRelativeSlot (..)
   , firstBlockOrEBB
-  , NextRelativeSlot(..)
+  , maxRelativeSlot
   , nextRelativeSlot
+  , nthBlockOrEBB
+  , relativeSlotIsEBB
   , unsafeNextRelativeSlot
     -- * Chunks
   , chunkIndexOfSlot
     -- * Slots within a chunk
-  , ChunkSlot(..)
+  , ChunkSlot (..)
   , pattern ChunkSlot
     -- ** Translation /to/ 'ChunkSlot'
-  , chunkSlotForUnknownBlock
-  , chunkSlotForRegularBlock
-  , chunkSlotForBoundaryBlock
   , chunkSlotForBlockOrEBB
-  , chunkSlotForTip
+  , chunkSlotForBoundaryBlock
+  , chunkSlotForRegularBlock
   , chunkSlotForRelativeSlot
+  , chunkSlotForTip
+  , chunkSlotForUnknownBlock
     -- ** Translation /from/ 'ChunkSlot'
-  , chunkSlotToSlot
   , chunkSlotToBlockOrEBB
+  , chunkSlotToSlot
     -- ** Support for EBBs
-  , slotNoOfEBB
   , slotMightBeEBB
   , slotNoOfBlockOrEBB
+  , slotNoOfEBB
   ) where
 
 import           Control.Monad

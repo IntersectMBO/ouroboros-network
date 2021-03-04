@@ -5,16 +5,16 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.Config (
-    -- * The top-level node configuration
-    TopLevelConfig(..)
-  , mkTopLevelConfig
+module Ouroboros.Consensus.Config
+  ( -- * The top-level node configuration
+    TopLevelConfig (..)
   , castTopLevelConfig
+  , mkTopLevelConfig
     -- ** Derived extraction functions
-  , configConsensus
-  , configLedger
   , configBlock
   , configCodec
+  , configConsensus
+  , configLedger
   , configStorage
     -- ** Additional convenience functions
   , configSecurityParam

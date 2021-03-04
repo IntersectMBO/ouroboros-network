@@ -10,26 +10,26 @@
 -- Intended for qualified import
 --
 -- import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
-module Ouroboros.Consensus.ByronSpec.Ledger.Rules (
-    -- * Ledger
+module Ouroboros.Consensus.ByronSpec.Ledger.Rules
+  ( -- * Ledger
     applyChainTick
     -- * Lift STS transition rules to the chain level
   , liftCHAIN
   , liftSDELEG
-  , liftUTXOW
   , liftUPIREG
   , liftUPIVOTE
+  , liftUTXOW
     -- * STS initial rules
   , initStateCHAIN
     -- * Rule context (exported for the benefit of the tests
-  , RuleContext(..)
+  , RuleContext (..)
   , ctxtCHAIN
-  , ctxtEPOCH
   , ctxtDELEG
+  , ctxtEPOCH
   , ctxtSDELEG
-  , ctxtUTXOW
   , ctxtUPIREG
   , ctxtUPIVOTE
+  , ctxtUTXOW
   ) where
 
 import           Control.Monad

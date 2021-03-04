@@ -3,8 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Cardano.ShelleyHFC (
-    ShelleyBlockHFC
+module Ouroboros.Consensus.Cardano.ShelleyHFC
+  ( ShelleyBlockHFC
   ) where
 
 import qualified Data.Map.Strict as Map

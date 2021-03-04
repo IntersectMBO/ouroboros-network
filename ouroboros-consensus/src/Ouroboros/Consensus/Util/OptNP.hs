@@ -21,22 +21,22 @@
 --
 -- > import           Ouroboros.Consensus.Util.OptNP (OptNP (..), ViewOptNP (..))
 -- > import qualified Ouroboros.Consensus.Util.OptNP as OptNP
-module Ouroboros.Consensus.Util.OptNP (
-    OptNP(..)
-  , empty
-  , fromNonEmptyNP
-  , fromNP
-  , toNP
+module Ouroboros.Consensus.Util.OptNP
+  ( OptNP (..)
   , at
-  , singleton
+  , empty
+  , fromNP
+  , fromNonEmptyNP
   , fromSingleton
+  , singleton
+  , toNP
     -- * View
-  , ViewOptNP(..)
+  , ViewOptNP (..)
   , view
     -- * Combining
-  , zipWith
   , combine
   , combineWith
+  , zipWith
   ) where
 
 import           Prelude hiding (zipWith)

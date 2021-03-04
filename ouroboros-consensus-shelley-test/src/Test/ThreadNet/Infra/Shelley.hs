@@ -10,29 +10,29 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
-module Test.ThreadNet.Infra.Shelley (
-    CoreNode(..)
-  , CoreNodeKeyInfo(..)
-  , DecentralizationParam(..)
-  , KesConfig(..)
+module Test.ThreadNet.Infra.Shelley
+  ( CoreNode (..)
+  , CoreNodeKeyInfo (..)
+  , DecentralizationParam (..)
+  , KesConfig (..)
   , coreNodeKeys
   , genCoreNode
   , incrementMinorProtVer
+  , initialLovelacePerCoreNode
+  , mkAllegraSetDecentralizationParamTxs
   , mkCredential
   , mkEpochSize
   , mkGenesisConfig
   , mkKesConfig
   , mkKeyHash
   , mkKeyHashVrf
+  , mkKeyPair
   , mkLeaderCredentials
   , mkProtocolShelley
   , mkSetDecentralizationParamTxs
-  , mkAllegraSetDecentralizationParamTxs
   , mkVerKey
-  , mkKeyPair
   , networkId
   , tpraosSlotLength
-  , initialLovelacePerCoreNode
   ) where
 
 import           Control.Monad.Except (throwError)

@@ -8,12 +8,12 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.Mempool.Impl (
-    openMempool
+module Ouroboros.Consensus.Mempool.Impl
+  ( LedgerInterface (..)
   , MempoolCapacityBytesOverride (..)
-  , LedgerInterface (..)
-  , chainDBLedgerInterface
   , TicketNo
+  , chainDBLedgerInterface
+  , openMempool
     -- * For testing purposes
   , openMempoolWithoutSyncThread
   ) where

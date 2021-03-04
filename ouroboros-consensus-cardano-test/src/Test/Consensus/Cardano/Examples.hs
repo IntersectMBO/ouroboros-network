@@ -5,21 +5,21 @@
 {-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Cardano.Examples (
-    -- * Setup
+module Test.Consensus.Cardano.Examples
+  ( -- * Setup
     codecConfig
     -- * Examples
-  , examples
-  , exampleEraMismatchByron
-  , exampleEraMismatchShelley
   , exampleApplyTxErrWrongEraByron
   , exampleApplyTxErrWrongEraShelley
+  , exampleEraMismatchByron
+  , exampleEraMismatchShelley
+  , exampleQueryAnytimeShelley
   , exampleQueryEraMismatchByron
   , exampleQueryEraMismatchShelley
-  , exampleQueryAnytimeShelley
+  , exampleResultAnytimeShelley
   , exampleResultEraMismatchByron
   , exampleResultEraMismatchShelley
-  , exampleResultAnytimeShelley
+  , examples
   ) where
 
 import           Data.Coerce (Coercible)

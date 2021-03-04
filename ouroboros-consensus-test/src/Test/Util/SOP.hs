@@ -1,8 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.Util.SOP (
-    constrName
+module Test.Util.SOP
+  ( constrName
   , constrNames
   ) where
 

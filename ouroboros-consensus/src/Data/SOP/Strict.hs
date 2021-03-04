@@ -18,15 +18,15 @@
 -- | Strict variant of SOP
 --
 -- This does not currently attempt to be exhaustive.
-module Data.SOP.Strict (
-    -- * NP
-    NP(..)
+module Data.SOP.Strict
+  ( -- * NP
+    NP (..)
   , hd
   , tl
     -- * NS
-  , NS(..)
-  , unZ
+  , NS (..)
   , index_NS
+  , unZ
     -- * Injections
   , Injection
   , injections

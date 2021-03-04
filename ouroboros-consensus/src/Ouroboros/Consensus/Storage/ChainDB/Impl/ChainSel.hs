@@ -13,10 +13,10 @@
 -- | Operations involving chain selection: the initial chain selection and
 -- adding a block.
 module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
-  ( initialChainSelection
-  , addBlockAsync
+  ( addBlockAsync
   , addBlockSync
   , chainSelectionForBlock
+  , initialChainSelection
     -- * Exported for testing purposes
   , olderThanK
   ) where

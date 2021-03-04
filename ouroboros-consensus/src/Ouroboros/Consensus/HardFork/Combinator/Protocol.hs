@@ -13,17 +13,17 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Protocol (
-    -- * Re-exports to keep 'Protocol.State' an internal module
-    HardForkChainDepState
+module Ouroboros.Consensus.HardFork.Combinator.Protocol
+  ( -- * Re-exports to keep 'Protocol.State' an internal module
+    HardForkCanBeLeader
+  , HardForkChainDepState
   , HardForkIsLeader
-  , HardForkCanBeLeader
-  , HardForkValidationErr(..)
+  , HardForkValidationErr (..)
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
-  , HardForkLedgerView_(..)
   , HardForkLedgerView
+  , HardForkLedgerView_ (..)
     -- * Type family instances
-  , Ticked(..)
+  , Ticked (..)
   ) where
 
 import           Control.Monad.Except

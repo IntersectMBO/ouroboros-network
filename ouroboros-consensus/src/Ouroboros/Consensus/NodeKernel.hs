@@ -10,18 +10,18 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Ouroboros.Consensus.NodeKernel (
-    -- * Node kernel
-    NodeKernel (..)
-  , MaxTxCapacityOverride (..)
+module Ouroboros.Consensus.NodeKernel
+  ( -- * Node kernel
+    MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
+  , NodeKernel (..)
   , NodeKernelArgs (..)
   , TraceForgeEvent (..)
-  , initNodeKernel
   , getMempoolReader
   , getMempoolWriter
   , getPeersFromCurrentLedger
   , getPeersFromCurrentLedgerAfterSlot
+  , initNodeKernel
   ) where
 
 import           Control.Monad

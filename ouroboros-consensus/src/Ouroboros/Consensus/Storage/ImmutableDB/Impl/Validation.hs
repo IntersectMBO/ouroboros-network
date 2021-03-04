@@ -10,11 +10,11 @@
 {-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-  ( validateAndReopen
-  , ValidateEnv (..)
+  ( ValidateEnv (..)
+  , validateAndReopen
     -- * Exported for testing purposes
-  , reconstructPrimaryIndex
   , ShouldBeFinalised (..)
+  , reconstructPrimaryIndex
   ) where
 
 import           Control.Exception (assert)

@@ -15,10 +15,10 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Block (
-    -- * Type family instances
-    Header(..)
-  , NestedCtxt_(..)
+module Ouroboros.Consensus.HardFork.Combinator.Block
+  ( -- * Type family instances
+    Header (..)
+  , NestedCtxt_ (..)
     -- * AnnTip
   , distribAnnTip
   , undistribAnnTip

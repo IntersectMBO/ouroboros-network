@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Ouroboros.Consensus.Mock.Ledger.Address (
-    Addr
+module Ouroboros.Consensus.Mock.Ledger.Address
+  ( Addr
   , AddrDist
   , mkAddrDist
   ) where

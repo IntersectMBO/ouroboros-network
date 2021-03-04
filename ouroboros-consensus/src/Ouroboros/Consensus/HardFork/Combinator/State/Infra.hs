@@ -9,16 +9,16 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
-    -- * Initialization
+module Ouroboros.Consensus.HardFork.Combinator.State.Infra
+  ( -- * Initialization
     initHardForkState
     -- * Lifting 'Telescope' operations
-  , tip
+  , fromTZ
   , match
   , sequence
-  , fromTZ
+  , tip
     -- * Situated
-  , Situated(..)
+  , Situated (..)
   , situate
     -- * Aligning
   , align

@@ -4,11 +4,11 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.ThreadNet.Infra.Byron.TrackUpdates (
-  mkProtocolByronAndHardForkTxs,
-  ProtocolVersionUpdateLabel (..),
-  SoftwareVersionUpdateLabel (..),
-  mkUpdateLabels,
+module Test.ThreadNet.Infra.Byron.TrackUpdates
+  ( ProtocolVersionUpdateLabel (..)
+  , SoftwareVersionUpdateLabel (..)
+  , mkProtocolByronAndHardForkTxs
+  , mkUpdateLabels
   ) where
 
 import           Control.Exception (assert)

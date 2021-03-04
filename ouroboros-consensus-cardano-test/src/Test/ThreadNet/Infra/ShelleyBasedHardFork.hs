@@ -11,10 +11,10 @@
 
 -- | Test infrastructure to test hard-forking from one Shelley-based era to
 -- another, e.g., Shelley to Allegra.
-module Test.ThreadNet.Infra.ShelleyBasedHardFork (
-    -- * Blocks
-    ShelleyBasedHardForkEras
-  , ShelleyBasedHardForkBlock
+module Test.ThreadNet.Infra.ShelleyBasedHardFork
+  ( -- * Blocks
+    ShelleyBasedHardForkBlock
+  , ShelleyBasedHardForkEras
     -- * Transactions
   , pattern GenTxShelley1
   , pattern GenTxShelley2

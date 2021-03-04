@@ -1,6 +1,6 @@
 -- | The consensus layer's abstract view of blocks
-module Ouroboros.Consensus.Block (
-    module X
+module Ouroboros.Consensus.Block
+  ( module X
   ) where
 
 import           Ouroboros.Consensus.Block.Abstract as X

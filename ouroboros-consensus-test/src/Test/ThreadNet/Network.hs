@@ -14,23 +14,23 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Setup network
-module Test.ThreadNet.Network (
-    runThreadNetwork
-  , CalcMessageDelay (..)
+module Test.ThreadNet.Network
+  ( CalcMessageDelay (..)
   , ForgeEbbEnv (..)
   , RekeyM
-  , ThreadNetworkArgs (..)
   , TestNodeInitialization (..)
+  , ThreadNetworkArgs (..)
+  , TracingConstraints
   , noCalcMessageDelay
   , plainTestNodeInitialization
-  , TracingConstraints
+  , runThreadNetwork
     -- * Tracers
   , MiniProtocolFatalException (..)
   , MiniProtocolState (..)
     -- * Test Output
-  , TestOutput (..)
-  , NodeOutput (..)
   , NodeDBs (..)
+  , NodeOutput (..)
+  , TestOutput (..)
   ) where
 
 import           Codec.CBOR.Read (DeserialiseFailure)

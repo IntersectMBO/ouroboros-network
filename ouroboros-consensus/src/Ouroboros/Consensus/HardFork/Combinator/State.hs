@@ -14,17 +14,17 @@
 --
 -- > import Ouroboros.Consensus.HardFork.Combinator.State (HardForkState(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-module Ouroboros.Consensus.HardFork.Combinator.State (
-    module X
+module Ouroboros.Consensus.HardFork.Combinator.State
+  ( module X
     -- * Support for defining instances
   , getTip
     -- * Serialisation support
   , recover
     -- * EpochInfo
-  , mostRecentTransitionInfo
-  , reconstructSummaryLedger
   , epochInfoLedger
   , epochInfoPrecomputedTransitionInfo
+  , mostRecentTransitionInfo
+  , reconstructSummaryLedger
     -- * Ledger specific functionality
   , extendToSlot
   ) where

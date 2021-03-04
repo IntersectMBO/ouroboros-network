@@ -9,9 +9,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Mock.Node.Serialisation (
-    MockBlock
-  , NestedCtxt_(..)
+module Ouroboros.Consensus.Mock.Node.Serialisation
+  ( MockBlock
+  , NestedCtxt_ (..)
   ) where
 
 import           Codec.Serialise (Serialise, decode, encode, serialise)

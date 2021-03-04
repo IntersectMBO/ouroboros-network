@@ -2,8 +2,8 @@
 {-# LANGUAGE RecordWildCards  #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Test.ThreadNet.LeaderSchedule (
-    tests
+module Test.ThreadNet.LeaderSchedule
+  ( tests
   ) where
 
 import           Control.Monad (replicateM)

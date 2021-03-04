@@ -13,8 +13,8 @@
 -- within consensus.
 --
 -- NOTE: No guarantees are made about what these condense instances look like.
-module Ouroboros.Consensus.HardFork.Combinator.Condense (
-    CondenseConstraints
+module Ouroboros.Consensus.HardFork.Combinator.Condense
+  ( CondenseConstraints
   ) where
 
 import           Data.Coerce

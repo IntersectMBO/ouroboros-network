@@ -7,8 +7,8 @@
 
 module Ouroboros.Consensus.Node.Tracers
   ( -- * All tracers of a node bundled together
-    Tracers' (..)
-  , Tracers
+    Tracers
+  , Tracers' (..)
   , nullTracers
   , showTracers
     -- * Specific tracers

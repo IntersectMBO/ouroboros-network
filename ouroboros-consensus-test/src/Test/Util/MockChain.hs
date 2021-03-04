@@ -4,10 +4,10 @@
 --
 -- Intended for qualified import
 -- > import qualified Test.Util.MockChain as Chain
-module Test.Util.MockChain (
-    lastSlot
-  , commonPrefix
+module Test.Util.MockChain
+  ( commonPrefix
   , dropLastBlocks
+  , lastSlot
   ) where
 
 import           Data.Foldable (foldl')

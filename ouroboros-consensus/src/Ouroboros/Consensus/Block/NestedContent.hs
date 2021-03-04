@@ -11,13 +11,13 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Ouroboros.Consensus.Block.NestedContent (
-    -- * Block contents
+module Ouroboros.Consensus.Block.NestedContent
+  ( -- * Block contents
     HasNestedContent (..)
   , NestedCtxt_
   , curriedNest
     -- * Flip type arguments
-  , NestedCtxt(..)
+  , NestedCtxt (..)
   , castNestedCtxt
   , mapNestedCtxt
     -- * Existentials

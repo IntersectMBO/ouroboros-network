@@ -16,6 +16,27 @@ steps:
   #     # true.
   #     add_language_pragma: true
 
+  - module_header:
+  #     # How many spaces use for indentation in the module header.
+      indent: 2
+  #
+  #     # Should export lists be sorted?  Sorting is only performed within the
+  #     # export section, as delineated by Haddock comments.
+      sort: true
+  #
+  #     # See `separate_lists` for the `imports` step.
+      separate_lists: true
+  #
+  #     # When to break the "where".
+  #     # Possible values:
+  #     # - exports: only break when there is an explicit export list.
+  #     # - single: only break when the export list counts more than one export.
+  #     # - inline: only break when the export list is too long. This is
+  #     #   determined by the `columns` setting. Not applicable when the export
+  #     #   list contains comments as newlines will be required.
+  #     # - always: always break before the "where".
+      break_where: exports
+
   # Align the right hand side of some elements.  This is quite conservative
   # and only applies to statements where each element occupies a single
   # line.

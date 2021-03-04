@@ -6,8 +6,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.InjectTxs (
-    InjectTx(..)
+module Ouroboros.Consensus.HardFork.Combinator.InjectTxs
+  ( InjectTx (..)
   , cannotInjectTx
   , matchTx
   , matchTxNS

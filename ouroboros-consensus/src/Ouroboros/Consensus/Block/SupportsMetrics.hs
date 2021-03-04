@@ -1,6 +1,6 @@
 -- | See 'BlockSupportsMetrics'.
-module Ouroboros.Consensus.Block.SupportsMetrics (
-    BlockSupportsMetrics (..)
+module Ouroboros.Consensus.Block.SupportsMetrics
+  ( BlockSupportsMetrics (..)
   , WhetherSelfIssued (..)
   , isSelfIssuedConstUnknown
   ) where

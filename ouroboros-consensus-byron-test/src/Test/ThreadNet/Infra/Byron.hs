@@ -1,5 +1,5 @@
-module Test.ThreadNet.Infra.Byron (
-    module X
+module Test.ThreadNet.Infra.Byron
+  ( module X
   ) where
 
 import           Test.ThreadNet.Infra.Byron.Genesis as X

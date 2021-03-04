@@ -6,8 +6,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 
-module Ouroboros.Consensus.Ticked (
-    Ticked(..)
+module Ouroboros.Consensus.Ticked
+  ( Ticked (..)
   ) where
 
 import           Data.Kind (Type)

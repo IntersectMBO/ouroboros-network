@@ -8,17 +8,18 @@
 -- | Information about the files stored by the volatile DB
 --
 -- Intended for qualified import.
-module Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (
-    FileInfo      -- opaque
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo
+  ( FileInfo
+    -- opaque
     -- * Construction
-  , empty
   , addBlock
+  , empty
   , fromParsedBlockInfos
     -- * Queries
-  , maxSlotNo
-  , hashes
   , canGC
+  , hashes
   , isFull
+  , maxSlotNo
   , maxSlotNoInFiles
   ) where
 

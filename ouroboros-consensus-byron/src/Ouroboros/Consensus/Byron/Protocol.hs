@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
-module Ouroboros.Consensus.Byron.Protocol (
-    PBftByronCrypto
+module Ouroboros.Consensus.Byron.Protocol
+  ( PBftByronCrypto
   , genesisKeyCoreNodeId
   , nodeIdToGenesisKey
   ) where

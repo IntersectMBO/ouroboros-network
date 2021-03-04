@@ -2,11 +2,11 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.ThreadNet.Infra.Byron.ProtocolInfo (
-  theProposedProtocolVersion,
-  theProposedSoftwareVersion,
-  mkProtocolByron,
-  mkLeaderCredentials,
+module Test.ThreadNet.Infra.Byron.ProtocolInfo
+  ( mkLeaderCredentials
+  , mkProtocolByron
+  , theProposedProtocolVersion
+  , theProposedSoftwareVersion
   ) where
 
 import           Data.Foldable (find)

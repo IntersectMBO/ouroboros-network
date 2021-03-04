@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Mock.Node.BFT (
-    MockBftBlock
+module Ouroboros.Consensus.Mock.Node.BFT
+  ( MockBftBlock
   , protocolInfoBft
   ) where
 

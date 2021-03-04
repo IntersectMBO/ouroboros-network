@@ -5,34 +5,34 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | Newtypes around type families so that they can be partially applied
-module Ouroboros.Consensus.TypeFamilyWrappers (
-    -- * Block based
-    WrapApplyTxErr(..)
-  , WrapCannotForge(..)
-  , WrapEnvelopeErr(..)
-  , WrapForgeStateInfo(..)
-  , WrapForgeStateUpdateError(..)
-  , WrapGenTxId(..)
-  , WrapHeaderHash(..)
-  , WrapLedgerConfig(..)
-  , WrapLedgerErr(..)
-  , WrapLedgerUpdate(..)
-  , WrapLedgerWarning(..)
-  , WrapTipInfo(..)
+module Ouroboros.Consensus.TypeFamilyWrappers
+  ( -- * Block based
+    WrapApplyTxErr (..)
+  , WrapCannotForge (..)
+  , WrapEnvelopeErr (..)
+  , WrapForgeStateInfo (..)
+  , WrapForgeStateUpdateError (..)
+  , WrapGenTxId (..)
+  , WrapHeaderHash (..)
+  , WrapLedgerConfig (..)
+  , WrapLedgerErr (..)
+  , WrapLedgerUpdate (..)
+  , WrapLedgerWarning (..)
+  , WrapTipInfo (..)
     -- * Protocol based
-  , WrapCanBeLeader(..)
-  , WrapChainDepState(..)
-  , WrapConsensusConfig(..)
-  , WrapIsLeader(..)
-  , WrapLedgerView(..)
-  , WrapSelectView(..)
-  , WrapValidateView(..)
-  , WrapValidationErr(..)
+  , WrapCanBeLeader (..)
+  , WrapChainDepState (..)
+  , WrapConsensusConfig (..)
+  , WrapIsLeader (..)
+  , WrapLedgerView (..)
+  , WrapSelectView (..)
+  , WrapValidateView (..)
+  , WrapValidationErr (..)
     -- * Versioning
-  , WrapNodeToNodeVersion(..)
-  , WrapNodeToClientVersion(..)
+  , WrapNodeToClientVersion (..)
+  , WrapNodeToNodeVersion (..)
     -- * Type family instances
-  , Ticked(..)
+  , Ticked (..)
   ) where
 
 import           Codec.Serialise (Serialise)

@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Byron.Ledger (
-    module X
+module Ouroboros.Consensus.Byron.Ledger
+  ( module X
   ) where
 
 -- Modules Aux, Conversions and Orphans are not re-exported, as they deal with

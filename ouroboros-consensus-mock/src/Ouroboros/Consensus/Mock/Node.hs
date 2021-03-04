@@ -10,8 +10,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Mock.Node (
-    CodecConfig (..)
+module Ouroboros.Consensus.Mock.Node
+  ( CodecConfig (..)
   , simpleBlockForging
   ) where
 

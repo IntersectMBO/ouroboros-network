@@ -5,9 +5,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.ByronSpec.Ledger.Mempool (
-    -- * Type family instances
-    GenTx(..)
+module Ouroboros.Consensus.ByronSpec.Ledger.Mempool
+  ( -- * Type family instances
+    GenTx (..)
   ) where
 
 import           Codec.Serialise

@@ -9,21 +9,21 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.Util.Serialisation.Roundtrip (
-    -- * Basic test helpers
+module Test.Util.Serialisation.Roundtrip
+  ( -- * Basic test helpers
     roundtrip
   , roundtrip'
     -- * Test skeleton
   , Arbitrary'
-  , roundtrip_all
-  , roundtrip_SerialiseDisk
-  , roundtrip_SerialiseNodeToNode
-  , roundtrip_SerialiseNodeToClient
-  , roundtrip_envelopes
-  , roundtrip_ConvertRawHash
-  , prop_hashSize
-  , WithVersion (..)
   , SomeResult (..)
+  , WithVersion (..)
+  , prop_hashSize
+  , roundtrip_ConvertRawHash
+  , roundtrip_SerialiseDisk
+  , roundtrip_SerialiseNodeToClient
+  , roundtrip_SerialiseNodeToNode
+  , roundtrip_all
+  , roundtrip_envelopes
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

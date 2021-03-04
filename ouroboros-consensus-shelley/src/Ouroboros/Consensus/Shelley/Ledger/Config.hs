@@ -7,14 +7,15 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Shelley.Ledger.Config (
-    BlockConfig (..)
-  , mkShelleyBlockConfig
+module Ouroboros.Consensus.Shelley.Ledger.Config
+  ( BlockConfig (..)
   , CodecConfig (..)
+  , CompactGenesis
   , StorageConfig (..)
-  , CompactGenesis -- opaque
-  , getCompactGenesis
+  , mkShelleyBlockConfig
+    -- opaque
   , compactGenesis
+  , getCompactGenesis
   ) where
 
 import           Data.Map.Strict (Map)

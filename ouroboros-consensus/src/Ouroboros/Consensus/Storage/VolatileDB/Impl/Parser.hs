@@ -4,10 +4,10 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
-module Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser (
-    parseBlockFile
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser
+  ( ParseError (..)
   , ParsedBlockInfo (..)
-  , ParseError (..)
+  , parseBlockFile
     -- * Auxiliary
   , extractBlockInfo
   ) where

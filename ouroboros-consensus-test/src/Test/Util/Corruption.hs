@@ -4,8 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 module Test.Util.Corruption
   ( Corruption (..)
-  , detectCorruption
   , applyCorruption
+  , detectCorruption
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

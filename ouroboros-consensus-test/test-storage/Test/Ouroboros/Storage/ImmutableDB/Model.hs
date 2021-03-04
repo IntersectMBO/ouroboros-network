@@ -8,30 +8,30 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Model for the 'ImmutableDB'.
-module Test.Ouroboros.Storage.ImmutableDB.Model (
-    DBModel(..)
-  , InSlot(..)
-  , initDBModel
-  , dbmTipBlock
-  , dbmTip
-  , dbmBlocks
-  , dbmCurrentChunk
+module Test.Ouroboros.Storage.ImmutableDB.Model
+  ( DBModel (..)
+  , InSlot (..)
   , IteratorId
   , IteratorModel
+  , closeAllIterators
+  , dbmBlocks
+  , dbmCurrentChunk
+  , dbmTip
+  , dbmTipBlock
+  , initDBModel
   , simulateCorruptions
   , tips
-  , closeAllIterators
     -- * ImmutableDB implementation
-  , getTipModel
-  , reopenModel
+  , appendBlockModel
   , deleteAfterModel
   , getBlockComponentModel
-  , appendBlockModel
-  , streamModel
-  , streamAllModel
-  , iteratorNextModel
-  , iteratorHasNextModel
+  , getTipModel
   , iteratorCloseModel
+  , iteratorHasNextModel
+  , iteratorNextModel
+  , reopenModel
+  , streamAllModel
+  , streamModel
   ) where
 
 import qualified Codec.CBOR.Write as CBOR

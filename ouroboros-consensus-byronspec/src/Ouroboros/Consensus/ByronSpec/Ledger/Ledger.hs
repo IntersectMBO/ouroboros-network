@@ -8,12 +8,12 @@
 
 {-# OPTIONS -Wno-orphans #-}
 
-module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
-    ByronSpecLedgerError(..)
+module Ouroboros.Consensus.ByronSpec.Ledger.Ledger
+  ( ByronSpecLedgerError (..)
   , initByronSpecLedgerState
     -- * Type family instances
-  , LedgerState(..)
-  , Ticked(..)
+  , LedgerState (..)
+  , Ticked (..)
   ) where
 
 import           Codec.Serialise

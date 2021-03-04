@@ -5,8 +5,8 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 -- | Transaction generator for testing
-module Test.ThreadNet.TxGen (
-    TxGen (..)
+module Test.ThreadNet.TxGen
+  ( TxGen (..)
     -- * Implementation for HFC
   , WrapTxGenExtra (..)
   , testGenTxsHfc

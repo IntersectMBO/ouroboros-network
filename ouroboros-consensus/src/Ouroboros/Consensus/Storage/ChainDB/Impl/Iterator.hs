@@ -11,8 +11,8 @@
 
 -- | Iterators
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
-  ( stream
-  , closeAllIterators
+  ( closeAllIterators
+  , stream
     -- * Exported for testing purposes
   , IteratorEnv (..)
   , newIterator

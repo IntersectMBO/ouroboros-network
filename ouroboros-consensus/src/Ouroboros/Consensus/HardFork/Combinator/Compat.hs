@@ -6,12 +6,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Compat (
-    HardForkCompatQuery(..)
+module Ouroboros.Consensus.HardFork.Combinator.Compat
+  ( HardForkCompatQuery (..)
     -- * Convenience constructors
-  , compatIfCurrent
   , compatGetEraStart
   , compatGetInterpreter
+  , compatIfCurrent
     -- * Wrappers
   , forwardCompatQuery
   , singleEraCompatQuery

@@ -17,25 +17,25 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Consensus.HardFork.Combinator.A (
-    ProtocolA
-  , BlockA(..)
+module Test.Consensus.HardFork.Combinator.A
+  ( BlockA (..)
+  , ProtocolA
+  , blockForgingA
   , safeFromTipA
   , stabilityWindowA
-  , blockForgingA
     -- * Additional types
-  , PartialLedgerConfigA(..)
-  , TxPayloadA(..)
+  , PartialLedgerConfigA (..)
+  , TxPayloadA (..)
     -- * Type family instances
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
-  , ConsensusConfig(..)
-  , GenTx(..)
-  , Header(..)
-  , LedgerState(..)
-  , NestedCtxt_(..)
-  , TxId(..)
+  , BlockConfig (..)
+  , CodecConfig (..)
+  , ConsensusConfig (..)
+  , GenTx (..)
+  , Header (..)
+  , LedgerState (..)
+  , NestedCtxt_ (..)
+  , StorageConfig (..)
+  , TxId (..)
   ) where
 
 import           Codec.Serialise

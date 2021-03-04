@@ -17,15 +17,15 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Ledger (
-    HardForkLedgerError(..)
-  , HardForkLedgerWarning(..)
-  , HardForkLedgerUpdate(..)
-  , HardForkEnvelopeErr(..)
+module Ouroboros.Consensus.HardFork.Combinator.Ledger
+  ( HardForkEnvelopeErr (..)
+  , HardForkLedgerError (..)
+  , HardForkLedgerUpdate (..)
+  , HardForkLedgerWarning (..)
     -- * Type family instances
-  , Ticked(..)
+  , Ticked (..)
     -- * Low-level API (exported for the benefit of testing)
-  , AnnForecast(..)
+  , AnnForecast (..)
   , mkHardForkForecast
   ) where
 

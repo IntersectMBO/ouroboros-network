@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Test.ThreadNet.Infra.Byron.Genesis (
-    byronPBftParams
+module Test.ThreadNet.Infra.Byron.Genesis
+  ( byronPBftParams
   , generateGenesisConfig
   ) where
 

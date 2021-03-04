@@ -12,12 +12,12 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Util.Orphans.Arbitrary
-    ( genLimitedEpochSize
-    , genLimitedSlotNo
-    , genSmallEpochNo
-    , genSmallSlotNo
-    , SmallDiffTime (..)
-    ) where
+  ( SmallDiffTime (..)
+  , genLimitedEpochSize
+  , genLimitedSlotNo
+  , genSmallEpochNo
+  , genSmallSlotNo
+  ) where
 
 import           Data.Coerce (coerce)
 import           Data.SOP.Dict (Dict (..), all_NP, mapAll)

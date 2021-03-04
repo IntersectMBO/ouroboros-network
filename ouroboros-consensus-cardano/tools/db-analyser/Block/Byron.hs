@@ -5,8 +5,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Block.Byron (
-    Args (..)
+module Block.Byron
+  ( Args (..)
   , ByronBlockArgs
   , openGenesisByron
   ) where

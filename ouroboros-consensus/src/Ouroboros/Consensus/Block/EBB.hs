@@ -2,10 +2,10 @@
 {-# LANGUAGE DeriveGeneric  #-}
 
 -- | Generic infrastructure for working with EBBs
-module Ouroboros.Consensus.Block.EBB (
-    IsEBB (..)
-  , toIsEBB
+module Ouroboros.Consensus.Block.EBB
+  ( IsEBB (..)
   , fromIsEBB
+  , toIsEBB
   ) where
 
 import           Codec.Serialise (Serialise (..))

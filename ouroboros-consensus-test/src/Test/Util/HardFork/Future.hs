@@ -3,17 +3,17 @@
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Test.Util.HardFork.Future (
-  EraSize (..),
-  Future (..),
-  futureEpochInFirstEra,
-  futureFirstEpochSize,
-  futureFirstSlotLength,
-  futureSlotLengths,
-  futureSlotToEpoch,
-  futureSlotToTime,
-  futureTimeToSlot,
-  singleEraFuture,
+module Test.Util.HardFork.Future
+  ( EraSize (..)
+  , Future (..)
+  , futureEpochInFirstEra
+  , futureFirstEpochSize
+  , futureFirstSlotLength
+  , futureSlotLengths
+  , futureSlotToEpoch
+  , futureSlotToTime
+  , futureTimeToSlot
+  , singleEraFuture
   ) where
 
 import qualified Data.Fixed

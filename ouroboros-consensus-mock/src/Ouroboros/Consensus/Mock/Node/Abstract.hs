@@ -3,9 +3,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Mock.Node.Abstract (
-    CodecConfig(..)
-  , RunMockBlock(..)
+module Ouroboros.Consensus.Mock.Node.Abstract
+  ( CodecConfig (..)
+  , RunMockBlock (..)
   , constructMockNetworkMagic
   ) where
 

@@ -4,13 +4,14 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-module Ouroboros.Consensus.ByronSpec.Ledger.Block (
-    ByronSpecBlock(..)
-  , ByronSpecHeader -- type alias
-  , Header(..)
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
+module Ouroboros.Consensus.ByronSpec.Ledger.Block
+  ( ByronSpecBlock (..)
+  , ByronSpecHeader
+    -- type alias
+  , BlockConfig (..)
+  , CodecConfig (..)
+  , Header (..)
+  , StorageConfig (..)
   ) where
 
 import           Codec.Serialise

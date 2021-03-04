@@ -11,24 +11,24 @@
 --
 -- > import Test.Util.FS.Sim.FsTree (FsTree)
 -- > import Test.Util.FS.Sim.FsTree as FS
-module Test.Util.FS.Sim.FsTree (
-    -- * FsTree type and indexing functions
-    FsTree(..)
-  , FsTreeError(..)
+module Test.Util.FS.Sim.FsTree
+  ( -- * FsTree type and indexing functions
+    FsTree (..)
+  , FsTreeError (..)
   , example
     -- * Construction
   , empty
     -- * Indexing
-  , index
-  , getFile
   , getDir
+  , getFile
+  , index
     -- * File system operations
-  , openFile
-  , replace
   , createDirIfMissing
   , createDirWithParents
+  , openFile
   , removeFile
   , renameFile
+  , replace
     -- * Pretty-printing
   , pretty
   ) where

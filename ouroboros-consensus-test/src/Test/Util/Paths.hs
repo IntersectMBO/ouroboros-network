@@ -3,8 +3,8 @@
 --
 -- Copied from
 -- <https://github.com/input-output-hk/cardano-wallet/blob/master/lib/test-utils/src/Test/Utils/Paths.hs>
-module Test.Util.Paths (
-    getGoldenDir
+module Test.Util.Paths
+  ( getGoldenDir
   , getRelPath
   , inNixBuild
   ) where

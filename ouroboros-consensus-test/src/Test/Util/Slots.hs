@@ -2,8 +2,8 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Test.Util.Slots (
-  NumSlots (..),
+module Test.Util.Slots
+  ( NumSlots (..)
   ) where
 
 import           Data.Word (Word64)

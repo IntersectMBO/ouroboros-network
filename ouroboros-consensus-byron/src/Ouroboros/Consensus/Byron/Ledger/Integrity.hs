@@ -1,8 +1,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 module Ouroboros.Consensus.Byron.Ledger.Integrity
-  ( verifyHeaderSignature
+  ( verifyBlockIntegrity
   , verifyHeaderIntegrity
-  , verifyBlockIntegrity
+  , verifyHeaderSignature
   ) where
 
 import           Data.Either (isRight)

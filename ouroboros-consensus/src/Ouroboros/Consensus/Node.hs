@@ -14,41 +14,41 @@ module Ouroboros.Consensus.Node
   , runWith
     -- * Standard arguments
   , StdRunNodeArgs (..)
-  , stdLowLevelRunNodeArgsIO
   , stdBfcSaltIO
   , stdChainSyncTimeout
   , stdKeepAliveRngIO
+  , stdLowLevelRunNodeArgsIO
   , stdMkChainDbHasFS
   , stdRunDataDiffusion
   , stdVersionDataNTC
   , stdVersionDataNTN
   , stdWithCheckedDB
     -- * Exposed by 'run' et al
-  , DiffusionTracers (..)
-  , DiffusionArguments (..)
-  , LowLevelRunNodeArgs (..)
-  , RunNodeArgs (..)
-  , RunNode
-  , Tracers
-  , Tracers' (..)
+  , ChainDB.RelativeMountPoint (..)
   , ChainDB.TraceEvent (..)
-  , ProtocolInfo (..)
-  , LastShutDownWasClean (..)
   , ChainDbArgs (..)
+  , ConnectionId (..)
+  , DiffusionArguments (..)
+  , DiffusionTracers (..)
+  , DnsSubscriptionTarget (..)
   , HardForkBlockchainTimeArgs (..)
-  , NodeKernelArgs (..)
-  , NodeKernel (..)
+  , IPSubscriptionTarget (..)
+  , LastShutDownWasClean (..)
+  , LowLevelRunNodeArgs (..)
   , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
-  , IPSubscriptionTarget (..)
-  , DnsSubscriptionTarget (..)
-  , ConnectionId (..)
-  , ChainDB.RelativeMountPoint (..)
+  , NodeKernel (..)
+  , NodeKernelArgs (..)
+  , ProtocolInfo (..)
+  , RunNode
+  , RunNodeArgs (..)
+  , Tracers
+  , Tracers' (..)
     -- * Internal helpers
-  , openChainDB
   , mkChainDbArgs
   , mkNodeKernelArgs
   , nodeKernelArgsEnforceInvariants
+  , openChainDB
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)

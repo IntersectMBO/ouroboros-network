@@ -6,9 +6,9 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.BlockchainTime.API (
-    BlockchainTime(..)
-  , CurrentSlot(..)
+module Ouroboros.Consensus.BlockchainTime.API
+  ( BlockchainTime (..)
+  , CurrentSlot (..)
   , knownSlotWatcher
   ) where
 

@@ -2,8 +2,8 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies    #-}
 
-module Ouroboros.Consensus.HardFork.Abstract (
-    HasHardForkHistory(..)
+module Ouroboros.Consensus.HardFork.Abstract
+  ( HasHardForkHistory (..)
   , neverForksHardForkSummary
   ) where
 

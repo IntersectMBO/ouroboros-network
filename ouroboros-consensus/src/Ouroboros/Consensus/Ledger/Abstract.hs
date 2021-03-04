@@ -10,15 +10,15 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 -- | Interface to the ledger layer
-module Ouroboros.Consensus.Ledger.Abstract (
-    -- * Apply block
-    ApplyBlock(..)
+module Ouroboros.Consensus.Ledger.Abstract
+  ( -- * Apply block
+    ApplyBlock (..)
   , UpdateLedger
     -- ** Derived
-  , tickThenApply
-  , tickThenReapply
   , foldLedger
   , refoldLedger
+  , tickThenApply
+  , tickThenReapply
     -- ** Short-hand
   , ledgerTipHash
   , ledgerTipPoint

@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Util.Time (
-    -- Conversions
+module Ouroboros.Consensus.Util.Time
+  ( -- Conversions
     nominalDelay
   , secondsToNominalDiffTime
   ) where

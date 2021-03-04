@@ -6,11 +6,11 @@
 -- Intended for qualified import.
 --
 -- > import qualified Test.Util.Classify as C
-module Test.Util.Classify (
-    Predicate(..)
-  , predicate
-  , maximum
+module Test.Util.Classify
+  ( Predicate (..)
   , classify
+  , maximum
+  , predicate
     -- * Example
   , Tag
   , example

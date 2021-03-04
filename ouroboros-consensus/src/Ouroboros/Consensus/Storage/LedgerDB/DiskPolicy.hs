@@ -4,8 +4,8 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE RecordWildCards    #-}
 
-module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
-    DiskPolicy(..)
+module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+  ( DiskPolicy (..)
   , defaultDiskPolicy
   ) where
 

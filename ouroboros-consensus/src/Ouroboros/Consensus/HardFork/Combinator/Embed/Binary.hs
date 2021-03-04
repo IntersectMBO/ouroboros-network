@@ -3,8 +3,8 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Consensus.HardFork.Combinator.Embed.Binary (
-    protocolInfoBinary
+module Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
+  ( protocolInfoBinary
   ) where
 
 import           Control.Exception (assert)

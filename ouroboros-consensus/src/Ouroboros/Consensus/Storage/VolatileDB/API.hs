@@ -10,20 +10,20 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Consensus.Storage.VolatileDB.API (
-    -- * API
+module Ouroboros.Consensus.Storage.VolatileDB.API
+  ( -- * API
     VolatileDB (..)
     -- * Types
   , BlockInfo (..)
     -- * Errors
-  , VolatileDBError (..)
   , ApiMisuse (..)
   , UnexpectedFailure (..)
+  , VolatileDBError (..)
     -- * Derived functionality
-  , withDB
   , getIsMember
-  , getPredecessor
   , getKnownBlockComponent
+  , getPredecessor
+  , withDB
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

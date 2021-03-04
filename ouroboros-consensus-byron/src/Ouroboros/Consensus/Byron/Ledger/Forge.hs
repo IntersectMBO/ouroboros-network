@@ -7,8 +7,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Ledger.Forge (
-    forgeByronBlock
+module Ouroboros.Consensus.Byron.Ledger.Forge
+  ( forgeByronBlock
   , forgeRegularBlock
     -- * For testing purposes
   , forgeEBB

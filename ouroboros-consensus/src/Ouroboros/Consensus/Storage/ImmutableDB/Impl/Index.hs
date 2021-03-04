@@ -7,13 +7,13 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
   ( -- * Index
     Index (..)
-  , readOffset
   , readEntry
+  , readOffset
     -- * File-backed index
   , fileBackedIndex
     -- * Cached index
-  , cachedIndex
   , CacheConfig (..)
+  , cachedIndex
   ) where
 
 import           Control.Tracer (Tracer)

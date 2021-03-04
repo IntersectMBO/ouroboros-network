@@ -1,13 +1,13 @@
-module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
-    LedgerSupportsPeerSelection (..)
+module Ouroboros.Consensus.Ledger.SupportsPeerSelection
+  ( LedgerSupportsPeerSelection (..)
   , PoolStake (..)
   , StakePoolRelay (..)
   , stakePoolRelayAddress
     -- * Re-exports for convenience
-  , RelayAddress (..)
   , DomainAddress (..)
   , IP (..)
   , PortNumber
+  , RelayAddress (..)
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)

@@ -9,8 +9,8 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
-module Test.ThreadNet.General (
-    PropGeneralArgs (..)
+module Test.ThreadNet.General
+  ( PropGeneralArgs (..)
   , calcFinalIntersectionDepth
   , prop_general
   , prop_general_semisync

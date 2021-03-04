@@ -19,37 +19,37 @@
 -- | Type-level counting
 --
 -- Intended for unqualified import.
-module Ouroboros.Consensus.Util.Counting (
-    Exactly(.., ExactlyNil, ExactlyCons)
-  , AtMost(..)
-  , NonEmpty(..)
+module Ouroboros.Consensus.Util.Counting
+  ( AtMost (..)
+  , Exactly (ExactlyNil, ExactlyCons)
+  , NonEmpty (..)
     -- * Working with 'Exactly'
-  , exactlyOne
-  , exactlyTwo
   , exactlyHead
+  , exactlyOne
+  , exactlyReplicate
   , exactlyTail
-  , exactlyZip
-  , exactlyZipFoldable
+  , exactlyTwo
   , exactlyWeaken
   , exactlyWeakenNonEmpty
-  , exactlyReplicate
+  , exactlyZip
+  , exactlyZipFoldable
     -- * Working with 'AtMost'
-  , atMostOne
-  , atMostInit
   , atMostHead
+  , atMostInit
   , atMostLast
-  , atMostZipFoldable
   , atMostNonEmpty
+  , atMostOne
+  , atMostZipFoldable
     -- * Working with 'NonEmpty'
-  , nonEmptyHead
-  , nonEmptyLast
-  , nonEmptyInit
   , nonEmptyFromList
-  , nonEmptyToList
-  , nonEmptyWeaken
-  , nonEmptyStrictPrefixes
+  , nonEmptyHead
+  , nonEmptyInit
+  , nonEmptyLast
   , nonEmptyMapOne
   , nonEmptyMapTwo
+  , nonEmptyStrictPrefixes
+  , nonEmptyToList
+  , nonEmptyWeaken
   ) where
 
 import           Control.Applicative

@@ -1,5 +1,5 @@
-module Test.ThreadNet.Util.NodeToNodeVersion (
-    genVersion
+module Test.ThreadNet.Util.NodeToNodeVersion
+  ( genVersion
   , genVersionFiltered
   , newestVersion
   ) where

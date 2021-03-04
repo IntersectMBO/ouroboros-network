@@ -5,11 +5,11 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Shelley.MockCrypto (
-    MockCrypto
-  , MockShelley
-  , Block
+module Test.Consensus.Shelley.MockCrypto
+  ( Block
   , CanMock
+  , MockCrypto
+  , MockShelley
   ) where
 
 import           Test.QuickCheck (Arbitrary)

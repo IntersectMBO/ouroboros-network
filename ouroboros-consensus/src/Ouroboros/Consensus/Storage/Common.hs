@@ -8,8 +8,8 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Ouroboros.Consensus.Storage.Common (
-    -- * Indexing
+module Ouroboros.Consensus.Storage.Common
+  ( -- * Indexing
     tipIsGenesis
     -- * PrefixLen
   , PrefixLen (..)

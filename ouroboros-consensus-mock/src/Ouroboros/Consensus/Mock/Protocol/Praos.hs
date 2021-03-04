@@ -17,27 +17,27 @@
 {-# LANGUAGE UndecidableSuperClasses    #-}
 
 -- | Proof of concept implementation of Praos
-module Ouroboros.Consensus.Mock.Protocol.Praos (
-    Praos
-  , PraosFields(..)
-  , PraosExtraFields(..)
-  , PraosParams(..)
-  , PraosChainDepState(..)
-  , HotKey(..)
-  , forgePraosFields
-  , HotKeyEvolutionError(..)
+module Ouroboros.Consensus.Mock.Protocol.Praos
+  ( HotKey (..)
+  , HotKeyEvolutionError (..)
+  , Praos
+  , PraosChainDepState (..)
+  , PraosExtraFields (..)
+  , PraosFields (..)
+  , PraosParams (..)
   , evolveKey
+  , forgePraosFields
     -- * Tags
-  , PraosCrypto(..)
-  , PraosStandardCrypto
+  , PraosCrypto (..)
   , PraosMockCrypto
-  , PraosValidateView(..)
+  , PraosStandardCrypto
+  , PraosValidateView (..)
+  , PraosValidationError (..)
   , praosValidateView
-  , PraosValidationError(..)
     -- * Type instances
-  , ConsensusConfig(..)
-  , BlockInfo(..)
-  , Ticked(..)
+  , BlockInfo (..)
+  , ConsensusConfig (..)
+  , Ticked (..)
   ) where
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serializeEncoding')

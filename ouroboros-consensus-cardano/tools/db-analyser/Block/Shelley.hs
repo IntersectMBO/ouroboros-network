@@ -9,8 +9,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Block.Shelley (
-    Args (..)
+module Block.Shelley
+  ( Args (..)
   , ShelleyBlockArgs
   ) where
 

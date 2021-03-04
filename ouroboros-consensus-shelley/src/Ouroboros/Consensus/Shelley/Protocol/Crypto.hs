@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
-module Ouroboros.Consensus.Shelley.Protocol.Crypto (
-    PraosCrypto
+module Ouroboros.Consensus.Shelley.Protocol.Crypto
+  ( PraosCrypto
   , StandardCrypto
   ) where
 

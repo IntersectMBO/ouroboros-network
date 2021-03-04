@@ -1,6 +1,6 @@
 -- | Test the Praos chain selection rule but with explicit leader schedule
-module Ouroboros.Consensus.Mock.Node.PraosRule (
-    MockPraosRuleBlock
+module Ouroboros.Consensus.Mock.Node.PraosRule
+  ( MockPraosRuleBlock
   , protocolInfoPraosRule
   ) where
 

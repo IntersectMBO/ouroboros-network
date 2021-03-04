@@ -2,9 +2,9 @@
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 
-module Test.ThreadNet.Rekeying (
-  Rekeying (..),
-  fromRekeyingToRekeyM,
+module Test.ThreadNet.Rekeying
+  ( Rekeying (..)
+  , fromRekeyingToRekeyM
   ) where
 
 import           Data.Functor ((<&>))

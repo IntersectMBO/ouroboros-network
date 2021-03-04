@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-module Ouroboros.Consensus.Protocol.ModChainSel (
-    ModChainSel
+module Ouroboros.Consensus.Protocol.ModChainSel
+  ( ModChainSel
     -- * Type family instances
   , ConsensusConfig (..)
   ) where

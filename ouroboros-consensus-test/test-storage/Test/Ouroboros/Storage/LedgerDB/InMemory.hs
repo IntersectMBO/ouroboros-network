@@ -10,8 +10,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Storage.LedgerDB.InMemory (
-    tests
+module Test.Ouroboros.Storage.LedgerDB.InMemory
+  ( tests
   ) where
 
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..), fromFlatTerm,

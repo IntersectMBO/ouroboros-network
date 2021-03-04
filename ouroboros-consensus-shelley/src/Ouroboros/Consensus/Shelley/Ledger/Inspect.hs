@@ -7,12 +7,12 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Shelley.Ledger.Inspect (
-    ProtocolUpdate(..)
-  , UpdateProposal(..)
-  , UpdateState(..)
-  , protocolUpdates
+module Ouroboros.Consensus.Shelley.Ledger.Inspect
+  ( ProtocolUpdate (..)
   , ShelleyLedgerUpdate (..)
+  , UpdateProposal (..)
+  , UpdateState (..)
+  , protocolUpdates
   ) where
 
 import           Control.Monad

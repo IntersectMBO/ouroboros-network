@@ -11,30 +11,30 @@
 -- testing error handling.
 module Test.Util.FS.Sim.Error
   ( -- * Simulate Errors monad
-    runSimErrorFS
-  , mkSimErrorHasFS
+    mkSimErrorHasFS
+  , runSimErrorFS
   , withErrors
     -- * Streams
-  , Stream(..)
-  , mkStream
-  , null
-  , runStream
-  , always
-  , mkStreamGen
   , ErrorStream
   , ErrorStreamGetSome
   , ErrorStreamPutSome
+  , Stream (..)
+  , always
+  , mkStream
+  , mkStreamGen
+  , null
+  , runStream
     -- * Generating partial reads/writes
   , Partial (..)
   , hGetSomePartial
   , hPutSomePartial
     -- * Generating corruption for 'hPutSome'
-  , PutCorruption(..)
+  , PutCorruption (..)
   , corrupt
     -- * Error streams for 'HasFS'
-  , Errors(..)
-  , genErrors
+  , Errors (..)
   , allNull
+  , genErrors
   , simpleErrors
   ) where
 

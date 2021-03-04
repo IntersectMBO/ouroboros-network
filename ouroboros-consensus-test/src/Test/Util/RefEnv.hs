@@ -4,20 +4,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Test.Util.RefEnv (
-    RefEnv -- opaque
-  , toList
-  , fromList
-  , empty
-  , union
-  , lookup
-  , (!)
-  , keys
+module Test.Util.RefEnv
+  ( RefEnv
+    -- opaque
   , elems
-  , null
-  , singleton
+  , empty
   , filter
+  , fromList
+  , keys
+  , lookup
+  , null
   , reverseLookup
+  , singleton
+  , toList
+  , union
+  , (!)
   ) where
 
 import           Prelude hiding (filter, lookup, null)

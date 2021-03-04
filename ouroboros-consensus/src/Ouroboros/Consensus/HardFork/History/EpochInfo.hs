@@ -3,10 +3,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Derive 'EpochInfo'
-module Ouroboros.Consensus.HardFork.History.EpochInfo (
-    summaryToEpochInfo
+module Ouroboros.Consensus.HardFork.History.EpochInfo
+  ( dummyEpochInfo
   , snapshotEpochInfo
-  , dummyEpochInfo
+  , summaryToEpochInfo
   ) where
 
 import           Data.Functor.Identity

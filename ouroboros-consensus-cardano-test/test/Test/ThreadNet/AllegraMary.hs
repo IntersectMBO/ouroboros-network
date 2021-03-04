@@ -14,8 +14,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.ThreadNet.AllegraMary (
-    tests
+module Test.ThreadNet.AllegraMary
+  ( tests
   ) where
 
 import           Control.Monad (replicateM)

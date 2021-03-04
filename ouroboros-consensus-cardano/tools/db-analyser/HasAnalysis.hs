@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
-module HasAnalysis (
-    HasAnalysis (..)
+module HasAnalysis
+  ( HasAnalysis (..)
   , HasProtocolInfo (..)
   , SizeInBytes
   ) where

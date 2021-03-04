@@ -6,11 +6,12 @@
 -- > import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache (BlockCache)
 -- > import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 module Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
-  ( BlockCache -- opaque
-  , empty
-  , singleton
+  ( BlockCache
+    -- opaque
   , cacheBlock
+  , empty
   , lookup
+  , singleton
   ) where
 
 import           Prelude hiding (lookup)

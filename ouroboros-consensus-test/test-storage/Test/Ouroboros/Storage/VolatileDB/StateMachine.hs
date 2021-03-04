@@ -12,9 +12,9 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Ouroboros.Storage.VolatileDB.StateMachine
-    ( tests
-    , showLabelledExamples
-    ) where
+  ( showLabelledExamples
+  , tests
+  ) where
 
 import           Prelude hiding (elem)
 

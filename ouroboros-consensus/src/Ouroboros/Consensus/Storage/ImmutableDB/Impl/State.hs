@@ -15,16 +15,16 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
   ( -- * State types
     ImmutableDBEnv (..)
   , InternalState (..)
-  , dbIsOpen
   , OpenState (..)
+  , dbIsOpen
     -- * State helpers
-  , mkOpenState
-  , getOpenState
   , ModifyOpenState
+  , cleanUp
+  , closeOpenHandles
+  , getOpenState
+  , mkOpenState
   , modifyOpenState
   , withOpenState
-  , closeOpenHandles
-  , cleanUp
   ) where
 
 import           Control.Monad.State.Strict

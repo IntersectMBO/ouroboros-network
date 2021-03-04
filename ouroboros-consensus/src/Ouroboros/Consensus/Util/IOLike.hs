@@ -1,44 +1,45 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 
-module Ouroboros.Consensus.Util.IOLike (
-    IOLike(..)
+module Ouroboros.Consensus.Util.IOLike
+  ( IOLike (..)
     -- * Re-exports
     -- *** MonadThrow
-  , MonadThrow(..)
-  , MonadCatch(..)
-  , MonadMask(..)
-  , Exception(..)
+  , Exception (..)
+  , ExitCase (..)
+  , MonadCatch (..)
+  , MonadMask (..)
+  , MonadThrow (..)
   , SomeException
-  , ExitCase(..)
     -- *** MonadSTM
   , module Ouroboros.Consensus.Util.MonadSTM.NormalForm
     -- *** MonadFork
-  , MonadFork(..) -- TODO: Should we hide this in favour of MonadAsync?
+  , MonadFork (..)
+    -- TODO: Should we hide this in favour of MonadAsync?
+  , MonadThread (..)
   , labelThisThread
-  , MonadThread(..)
     -- *** MonadAsync
-  , MonadAsyncSTM(..)
-  , MonadAsync(..)
-  , ExceptionInLinkedThread(..)
+  , ExceptionInLinkedThread (..)
+  , MonadAsync (..)
+  , MonadAsyncSTM (..)
   , link
   , linkTo
     -- *** MonadST
-  , MonadST(..)
+  , MonadST (..)
     -- *** MonadTime
-  , MonadMonotonicTime(..)
-  , Time(..)
   , DiffTime
+  , MonadMonotonicTime (..)
+  , Time (..)
   , addTime
   , diffTime
     -- *** MonadDelay
-  , MonadDelay(..)
+  , MonadDelay (..)
     -- *** MonadEventlog
-  , MonadEventlog(..)
+  , MonadEventlog (..)
     -- *** MonadEvaluate
-  , MonadEvaluate(..)
+  , MonadEvaluate (..)
     -- *** NoThunks
-  , NoThunks(..)
+  , NoThunks (..)
   ) where
 
 import           NoThunks.Class (NoThunks (..))

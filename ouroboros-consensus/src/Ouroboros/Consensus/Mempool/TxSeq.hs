@@ -11,20 +11,19 @@
 --
 -- > import           Ouroboros.Consensus.Mempool.TxSeq (TxSeq (..))
 -- > import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
-module Ouroboros.Consensus.Mempool.TxSeq (
-    TicketNo(..)
-  , TxTicket(..)
-  , TxSeq(Empty, (:>), (:<))
+module Ouroboros.Consensus.Mempool.TxSeq
+  ( TicketNo (..)
+  , TxSeq (Empty, (:>), (:<))
+  , TxTicket (..)
   , fromList
-  , toList
-  , toTuples
   , lookupByTicketNo
   , splitAfterTicketNo
   , splitAfterTxSize
-  , zeroTicketNo
+  , toList
   , toMempoolSize
-
-  -- * Reference implementations for testing
+  , toTuples
+  , zeroTicketNo
+    -- * Reference implementations for testing
   , splitAfterTxSizeSpec
   ) where
 

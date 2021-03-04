@@ -18,18 +18,18 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Ledger.Query (
-    Query(..)
-  , QueryIfCurrent(..)
-  , HardForkQueryResult
-  , QueryAnytime(..)
-  , QueryHardFork(..)
+module Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
+  ( HardForkQueryResult
+  , Query (..)
+  , QueryAnytime (..)
+  , QueryHardFork (..)
+  , QueryIfCurrent (..)
+  , decodeQueryAnytimeResult
+  , decodeQueryHardForkResult
+  , encodeQueryAnytimeResult
+  , encodeQueryHardForkResult
   , getHardForkQuery
   , hardForkQueryInfo
-  , encodeQueryAnytimeResult
-  , decodeQueryAnytimeResult
-  , encodeQueryHardForkResult
-  , decodeQueryHardForkResult
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

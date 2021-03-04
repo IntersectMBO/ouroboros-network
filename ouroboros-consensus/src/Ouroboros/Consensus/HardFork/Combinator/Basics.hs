@@ -13,22 +13,22 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Basics (
-    -- * Hard fork protocol, block, and ledger state
-    HardForkProtocol
-  , HardForkBlock(..)
-  , LedgerState(..)
+module Ouroboros.Consensus.HardFork.Combinator.Basics
+  ( -- * Hard fork protocol, block, and ledger state
+    HardForkBlock (..)
+  , HardForkProtocol
+  , LedgerState (..)
     -- * Config
-  , ConsensusConfig(..)
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
-  , HardForkLedgerConfig(..)
+  , BlockConfig (..)
+  , CodecConfig (..)
+  , ConsensusConfig (..)
+  , HardForkLedgerConfig (..)
+  , StorageConfig (..)
     -- ** Functions on config
-  , completeLedgerConfig'
-  , completeLedgerConfig''
   , completeConsensusConfig'
   , completeConsensusConfig''
+  , completeLedgerConfig'
+  , completeLedgerConfig''
   , distribLedgerConfig
   , distribTopLevelConfig
     -- ** Convenience re-exports

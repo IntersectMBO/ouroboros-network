@@ -18,18 +18,18 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
   ( -- * Launch background tasks
     launchBgTasks
     -- * Copying blocks from the VolatileDB to the ImmutableDB
-  , copyToImmutableDB
   , copyAndSnapshotRunner
+  , copyToImmutableDB
   , updateLedgerSnapshots
-     -- * Executing garbage collection
+    -- * Executing garbage collection
   , garbageCollect
     -- * Scheduling garbage collections
-  , GcSchedule
   , GcParams (..)
-  , newGcSchedule
-  , scheduleGC
+  , GcSchedule
   , computeTimeForGC
   , gcScheduleRunner
+  , newGcSchedule
+  , scheduleGC
     -- ** Testing
   , ScheduledGc (..)
   , dumpGcSchedule

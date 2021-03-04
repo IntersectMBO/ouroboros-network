@@ -3,10 +3,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Analysis (
-    AnalysisName (..)
+module Analysis
+  ( AnalysisEnv (..)
+  , AnalysisName (..)
   , runAnalysis
-  , AnalysisEnv (..)
   ) where
 
 import           Control.Monad.Except

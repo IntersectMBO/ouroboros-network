@@ -5,10 +5,10 @@
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.Mock.Ledger.State (
-    -- * State of the mock ledger
-    MockState(..)
-  , MockError(..)
+module Ouroboros.Consensus.Mock.Ledger.State
+  ( -- * State of the mock ledger
+    MockError (..)
+  , MockState (..)
   , updateMockState
   , updateMockTip
   , updateMockUTxO

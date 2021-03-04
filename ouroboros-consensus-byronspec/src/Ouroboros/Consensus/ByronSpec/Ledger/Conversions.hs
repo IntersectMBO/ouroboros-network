@@ -1,8 +1,8 @@
 -- | Conversions from ouroboros-consensus types to the Byron spec types
 --
 -- Intended for unqualified import.
-module Ouroboros.Consensus.ByronSpec.Ledger.Conversions (
-    -- * Spec to consensus
+module Ouroboros.Consensus.ByronSpec.Ledger.Conversions
+  ( -- * Spec to consensus
     fromByronSpecPrevHash
   , fromByronSpecSlotNo
     -- * Consensus to spec

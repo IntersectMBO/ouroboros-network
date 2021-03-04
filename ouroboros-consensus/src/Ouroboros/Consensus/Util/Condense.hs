@@ -3,9 +3,9 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Consensus.Util.Condense (
-    Condense(..)
-  , Condense1(..)
+module Ouroboros.Consensus.Util.Condense
+  ( Condense (..)
+  , Condense1 (..)
   , condense1
   ) where
 

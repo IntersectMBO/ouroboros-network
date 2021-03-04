@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks (
-    NoHardForks(..)
+module Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks
+  ( NoHardForks (..)
   , noHardForksEpochInfo
   ) where
 

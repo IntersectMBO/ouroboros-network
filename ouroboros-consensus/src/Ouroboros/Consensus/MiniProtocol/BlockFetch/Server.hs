@@ -11,7 +11,7 @@
 module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
   ( blockFetchServer
     -- * Trace events
-  , TraceBlockFetchServerEvent(..)
+  , TraceBlockFetchServerEvent (..)
     -- * Exceptions
   , BlockFetchServerException
   ) where

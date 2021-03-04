@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Node.InitStorage (
-    NodeInitStorage (..)
+module Ouroboros.Consensus.Node.InitStorage
+  ( NodeInitStorage (..)
   ) where
 
 import           Ouroboros.Consensus.Block.Abstract

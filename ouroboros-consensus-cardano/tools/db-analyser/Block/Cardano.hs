@@ -8,8 +8,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Block.Cardano (
-    Args (..)
+module Block.Cardano
+  ( Args (..)
   , CardanoBlockArgs
   ) where
 

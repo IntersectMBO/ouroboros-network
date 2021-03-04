@@ -3,10 +3,10 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Info (
-    -- * Era info
-    SingleEraInfo(..)
-  , LedgerEraInfo(..)
+module Ouroboros.Consensus.HardFork.Combinator.Info
+  ( -- * Era info
+    LedgerEraInfo (..)
+  , SingleEraInfo (..)
   ) where
 
 import           Codec.Serialise (Serialise)

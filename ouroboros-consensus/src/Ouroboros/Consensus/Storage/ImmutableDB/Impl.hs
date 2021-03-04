@@ -82,21 +82,21 @@
 --
 --   * A \"primary index file\" that maps slots to offsets in the secondary
 --     index file.
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl (
-    -- * Opening the databse
-    openDB
-  , ImmutableDbArgs (..)
-  , defaultArgs
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl
+  ( -- * Opening the databse
+    ImmutableDbArgs (..)
   , ImmutableDbSerialiseConstraints
+  , defaultArgs
+  , openDB
     -- * Re-exported
-  , ValidationPolicy (..)
   , ChunkFileError (..)
-  , TraceEvent (..)
   , Index.CacheConfig (..)
+  , TraceEvent (..)
+  , ValidationPolicy (..)
     -- * Internals for testing purposes
-  , openDBInternal
   , Internal (..)
   , deleteAfter
+  , openDBInternal
   ) where
 
 import qualified Codec.CBOR.Write as CBOR

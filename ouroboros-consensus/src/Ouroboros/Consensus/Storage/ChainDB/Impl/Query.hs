@@ -9,20 +9,20 @@
 -- | Queries
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Query
   ( -- * Queries
-    getCurrentChain
+    getBlockComponent
+  , getCurrentChain
+  , getIsFetched
+  , getIsInvalidBlock
+  , getIsValid
   , getLedgerDB
+  , getMaxSlotNo
   , getTipBlock
   , getTipHeader
   , getTipPoint
-  , getBlockComponent
-  , getIsFetched
-  , getIsValid
-  , getIsInvalidBlock
-  , getMaxSlotNo
     -- * Low-level queries
+  , getAnyBlockComponent
   , getAnyKnownBlock
   , getAnyKnownBlockComponent
-  , getAnyBlockComponent
   ) where
 
 import qualified Data.Map.Strict as Map

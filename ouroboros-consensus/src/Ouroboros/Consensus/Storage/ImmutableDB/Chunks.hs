@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (
-    module X
+module Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+  ( module X
   ) where
 
 

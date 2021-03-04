@@ -1,5 +1,5 @@
-module Ouroboros.Consensus.Util.FileLock (
-    FileLock (..)
+module Ouroboros.Consensus.Util.FileLock
+  ( FileLock (..)
   , ioFileLock
   ) where
 

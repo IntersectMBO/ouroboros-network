@@ -12,28 +12,29 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
-    -- * Opening the database
-    initLedgerDB
-  , InitLog(..)
-  , InitFailure(..)
+module Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+  ( -- * Opening the database
+    InitFailure (..)
+  , InitLog (..)
+  , initLedgerDB
     -- ** Instantiate in-memory to @blk@
-  , LedgerDB'
   , AnnLedgerError'
+  , LedgerDB'
     -- ** Abstraction over the stream API
-  , NextBlock(..)
-  , StreamAPI(..)
+  , NextBlock (..)
+  , StreamAPI (..)
     -- * Write to disk
   , takeSnapshot
   , trimSnapshots
     -- * Low-level API (primarily exposed for testing)
-  , DiskSnapshot -- opaque
+  , DiskSnapshot
+    -- opaque
   , deleteSnapshot
   , snapshotToFileName
   , snapshotToPath
     -- * Trace events
-  , TraceEvent(..)
-  , TraceReplayEvent(..)
+  , TraceEvent (..)
+  , TraceReplayEvent (..)
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
