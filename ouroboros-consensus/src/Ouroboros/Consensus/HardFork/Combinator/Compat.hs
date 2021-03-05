@@ -102,8 +102,9 @@ singleEraCompatQuery ::
     -> (forall result. Query blk result -> m result)
     -- ^ Submit a query through the LocalStateQuery protocol.
     -> HardForkLedgerConfig '[era]
+    -> ConsensusConfig (HardForkProtocol '[era])
     -> (forall result. HardForkCompatQuery blk result -> m result)
-singleEraCompatQuery epochSize slotLen f ledgerConfig = go
+singleEraCompatQuery epochSize slotLen f ledgerConfig consensusConfig = go
   where
     go :: HardForkCompatQuery blk result -> m result
     go (CompatIfCurrent qry)    = f qry
@@ -114,9 +115,10 @@ singleEraCompatQuery epochSize slotLen f ledgerConfig = go
     goAnytime GetEraStart = return $ Just initBound
 
     goHardFork :: QueryHardFork '[era] result -> m result
-    goHardFork GetInterpreter = return $ Qry.mkInterpreter summary
-    goHardFork GetCurrentEra  = return $ eraIndexZero
-    goHardFork GetLedgerCfg   = return $ ledgerConfig
+    goHardFork GetInterpreter   = return $ Qry.mkInterpreter summary
+    goHardFork GetCurrentEra    = return $ eraIndexZero
+    goHardFork GetLedgerCfg     = return $ ledgerConfig
+    goHardFork GetSecurityParam = return $ hardForkConsensusConfigK consensusConfig
 
     summary :: Summary '[era]
     summary = neverForksSummary epochSize slotLen
