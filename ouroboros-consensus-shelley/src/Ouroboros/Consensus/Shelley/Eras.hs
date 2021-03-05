@@ -7,6 +7,7 @@
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
     ShelleyEra
+  , AlonzoEra
   , AllegraEra
   , MaryEra
     -- * Eras instantiated with standard crypto
@@ -27,6 +28,8 @@ import           GHC.Records
 import           Numeric.Natural (Natural)
 
 import           Cardano.Ledger.Allegra (AllegraEra)
+import           Cardano.Ledger.Alonzo (AlonzoEra)
+import qualified Cardano.Ledger.Alonzo.PParams
 import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Era (Crypto)
 import           Cardano.Ledger.Mary (MaryEra)
@@ -111,3 +114,6 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
 
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
+
+instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
+  shelleyBasedEraName _ = "Alonzo"

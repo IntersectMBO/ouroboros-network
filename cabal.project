@@ -1,4 +1,4 @@
-index-state: 2020-12-11T00:00:00Z
+index-state: 2021-02-15T00:00:00Z
 
 packages: ./typed-protocols
           ./typed-protocols-examples
@@ -28,7 +28,8 @@ constraints:
   ip < 1.5,
   hedgehog >= 1.0,
   bimap >= 0.4.0,
-  ListLike >= 4.7.3
+  ListLike >= 4.7.3,
+  witherable >= 0.4
 
 package Win32-network
   tests: True
@@ -168,9 +169,10 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: ba747792561bc6ba3e707aa1ffd70b2823aa8ac4
-  --sha256: 15xzjqw6h2rbg6rx5pc13394yi94zfgbpx36p3d7gp4li7mvvwfm
+  tag: 2881e4722422266c027b591ec5a8a89dbbeb3579
+  --sha256: 12z86rrnfpzvdynzvijnykgcvnqb2alsgmy02hh9vybjv44wdfrv
   subdir:
+    alonzo/impl
     byron/chain/executable-spec
     byron/crypto
     byron/crypto/test
@@ -197,6 +199,17 @@ source-repository-package
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
 
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/plutus
+  tag: ffc1768f5be7af66d8d745a31c9c6a77c5c55104
+  --sha256: 0qwj0xnvkrxsmfw883w3idfnhj073d5swcxl54zs7ay4fgwrm4c2
+  subdir:
+    plutus-ledger-api
+    plutus-tx
+    plutus-core
+    prettyprinter-configurable
+
 -- The r0 revision of this quickcheck-state-machine-0.7 on Hackage adds a lower
 -- bound on the text package: >=1.2.4.0. However, 1.2.4.0 doesn't support GHC
 -- 8.10, 1.2.4.1 will, but that hasn't been released yet. GHC 8.10 is bundled
@@ -204,3 +217,6 @@ source-repository-package
 -- an "older" version of text. See
 -- https://github.com/advancedtelematic/quickcheck-state-machine/issues/371
 allow-older: quickcheck-state-machine:text
+
+allow-newer:
+  size-based:template-haskell
