@@ -4,6 +4,8 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE TypeFamilies          #-}
+-- Eq instance of 'StrictTVar'
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- to preserve 'HasCallstack' constraint on 'checkInvariant'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -60,6 +62,7 @@ import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
                      readTMVar, readTVar, stateTVar, swapTMVar, takeTMVar,
                      tryPutTMVar, tryReadTMVar, tryTakeTMVar, writeTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
+import           Data.Function (on)
 import           GHC.Stack
 
 {-------------------------------------------------------------------------------
@@ -78,6 +81,9 @@ data StrictTVar m a = StrictTVar
      -- ^ Invariant checked whenever updating the 'StrictTVar'.
    , tvar      :: !(LazyTVar m a)
    }
+
+instance Eq (LazyTVar m a) => Eq (StrictTVar m a) where
+    (==) = on (==) tvar
 
 labelTVar :: MonadLabelledSTM m => StrictTVar m a -> String -> STM m ()
 labelTVar StrictTVar { tvar } = Lazy.labelTVar tvar
