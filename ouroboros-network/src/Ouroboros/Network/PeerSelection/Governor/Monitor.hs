@@ -162,6 +162,12 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
                                 inProgressPromoteWarm
                                                   = inProgressPromoteWarm
                                                       Set.\\ Map.keysSet demotedToCold
+
+                                -- Note that we do not need to adjust
+                                -- inProgressDemoteWarm or inProgressDemoteHot
+                                -- here since we define the async demotions
+                                -- to not include peers in those sets. Instead,
+                                -- those ones will complete synchronously.
                               }
           }
   where

@@ -46,7 +46,7 @@ import           Ouroboros.Network.PeerSelection.Types
 
 
 data EstablishedPeers peeraddr peerconn = EstablishedPeers {
-    -- | Peers which are either ready do become active or are active.
+    -- | Peers which are either ready to become active or are active.
     --
     allPeers          :: !(Map peeraddr peerconn),
 
