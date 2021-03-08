@@ -74,7 +74,7 @@ belowTarget actions
                              availableToPromote
                              numPeersToPromote
       let selectedToPromote' :: Map peeraddr peerconn
-          selectedToPromote' = EstablishedPeers.allPeers establishedPeers
+          selectedToPromote' = EstablishedPeers.toMap establishedPeers
                                  `Map.restrictKeys` selectedToPromote
       return $ \_now -> Decision {
         decisionTrace = TracePromoteWarmPeers
@@ -211,7 +211,7 @@ aboveTarget actions
                             availableToDemote
                             numPeersToDemote
       let selectedToDemote' :: Map peeraddr peerconn
-          selectedToDemote' = EstablishedPeers.allPeers establishedPeers
+          selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                 `Map.restrictKeys` selectedToDemote
 
       return $ \_now -> Decision {

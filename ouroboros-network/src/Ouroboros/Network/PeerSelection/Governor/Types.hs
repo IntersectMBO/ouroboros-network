@@ -327,8 +327,8 @@ assertPeerSelectionState PeerSelectionState{..} =
   where
     localRootPeersSet   = Map.keysSet localRootPeers
     knownPeersSet       = Map.keysSet (KnownPeers.toMap knownPeers)
+    establishedPeersSet = Map.keysSet (EstablishedPeers.toMap      establishedPeers)
     establishedReadySet = Map.keysSet (EstablishedPeers.readyPeers establishedPeers)
-    establishedPeersSet = Map.keysSet (EstablishedPeers.allPeers establishedPeers)
     activePeersSet      = activePeers
     coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet        = establishedPeersSet Set.\\ activePeersSet

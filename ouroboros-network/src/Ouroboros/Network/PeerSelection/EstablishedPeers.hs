@@ -6,7 +6,7 @@
 module Ouroboros.Network.PeerSelection.EstablishedPeers
   ( EstablishedPeers
   , empty
-  , allPeers
+  , toMap
   , readyPeers
   , establishedStatus
 
@@ -87,6 +87,9 @@ invariant EstablishedPeers { allPeers,
 
      -- there are no cold peers
   && all (/= PeerCold) establishedStatus
+-- | /O(1)/
+toMap :: EstablishedPeers peeraddr peerconn -> Map peeraddr peerconn
+toMap = allPeers
 
 
 -- | Map of established peers that are either active or ready to be promoted
@@ -122,7 +125,7 @@ sizeReady EstablishedPeers { allPeers, nextActivateTimes } =
 
 
 member :: Ord peeraddr => peeraddr -> EstablishedPeers peeraddr peerconn -> Bool
-member peeraddr = Map.member peeraddr . establishedStatus
+member peeraddr = Map.member peeraddr . allPeers
 
 
 -- | Insert a peer into 'EstablishedPeers'.

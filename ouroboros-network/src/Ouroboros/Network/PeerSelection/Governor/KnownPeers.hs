@@ -282,7 +282,7 @@ aboveTarget PeerSelectionPolicy {
         protectedRootPeers    = Map.keysSet localRootPeers
                              <> Set.drop numRootPeersCanForget publicRootPeers
         availableToForget     = KnownPeers.toMap knownPeers
-                                   Map.\\ EstablishedPeers.allPeers establishedPeers
+                                   Map.\\ EstablishedPeers.toMap establishedPeers
                                   `Map.withoutKeys` protectedRootPeers
                                   `Map.withoutKeys` inProgressPromoteCold
 

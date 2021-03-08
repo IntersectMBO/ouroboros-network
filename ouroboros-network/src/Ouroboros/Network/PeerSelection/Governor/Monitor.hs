@@ -108,7 +108,8 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
               inProgressPromoteWarm
             } =
     Guarded Nothing $ do
-      monitorStatus <- traverse monitorPeerConnection (EstablishedPeers.allPeers establishedPeers)
+      monitorStatus <- traverse monitorPeerConnection
+                                (EstablishedPeers.toMap establishedPeers)
       let demotions = asynchronousDemotions (EstablishedPeers.establishedStatus establishedPeers)
                                             monitorStatus
       check (not (Map.null demotions))
@@ -141,10 +142,10 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
 
         in assert
             (let establishedPeersSet' =
-                   Map.keysSet (EstablishedPeers.allPeers establishedPeers')
+                   Map.keysSet (EstablishedPeers.toMap establishedPeers')
              in activePeers' `Set.isSubsetOf` establishedPeersSet'
              &&    Map.keysSet
-                     (EstablishedPeers.establishedStatus establishedPeers')
+                     (EstablishedPeers.toMap establishedPeers')
                 == establishedPeersSet')
 
             Decision {
@@ -255,7 +256,7 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
           selectedToDemote' :: Map peeraddr peerconn
 
           selectedToDemote  = activePeers `Set.intersection` removedSet
-          selectedToDemote' = EstablishedPeers.allPeers establishedPeers
+          selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                `Map.restrictKeys` selectedToDemote
       return $ \_now ->
 

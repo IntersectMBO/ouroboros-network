@@ -67,7 +67,7 @@ belowTarget actions
       let availableToPromote :: Map peeraddr KnownPeerInfo
           availableToPromote = KnownPeers.toMap knownPeers
                                 `Map.restrictKeys` availableToConnect
-                                 Map.\\ EstablishedPeers.allPeers establishedPeers
+                                 Map.\\ EstablishedPeers.toMap establishedPeers
                                 `Map.withoutKeys` inProgressPromoteCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
@@ -232,7 +232,8 @@ aboveTarget actions
 
       let availableToDemote :: Map peeraddr KnownPeerInfo
           availableToDemote = KnownPeers.toMap knownPeers
-                               `Map.intersection` EstablishedPeers.allPeers establishedPeers
+                               `Map.intersection` EstablishedPeers.toMap
+                                                    establishedPeers
                                `Map.withoutKeys` activePeers
                                `Map.withoutKeys` inProgressDemoteWarm
                                `Map.withoutKeys` inProgressPromoteWarm
@@ -241,7 +242,7 @@ aboveTarget actions
                             availableToDemote
                             numPeersToDemote
       let selectedToDemote' :: Map peeraddr peerconn
-          selectedToDemote' = EstablishedPeers.allPeers establishedPeers
+          selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                 `Map.restrictKeys` selectedToDemote
 
       return $ \_now -> Decision {
