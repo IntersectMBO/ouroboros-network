@@ -617,8 +617,8 @@ _unit_bracketSyncWithFetchClient step = do
 -- make a proper calucation what should it be.  At the moment this test shows
 -- that the block fetch protocol can exit within some large time limit.
 --
-prop_terminate :: TestChainFork -> Delay -> Property
-prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Delay delay) =
+prop_terminate :: TestChainFork -> Positive SmallDelay -> Property
+prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Positive (SmallDelay delay)) =
     let tr = runSimTrace simulation
         trace :: [FetchRequestTrace]
         trace  = selectTraceEventsDynamic tr
