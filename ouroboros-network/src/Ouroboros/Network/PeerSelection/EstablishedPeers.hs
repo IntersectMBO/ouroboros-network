@@ -8,7 +8,6 @@ module Ouroboros.Network.PeerSelection.EstablishedPeers
   , empty
   , toMap
   , readyPeers
-  , establishedStatus
 
   , size
   , sizeReady
@@ -18,9 +17,6 @@ module Ouroboros.Network.PeerSelection.EstablishedPeers
   , insert
   , delete
   , deletePeers
-
-  , updateStatus
-  , updateStatuses
 
   , setCurrentTime
   , minActivateTime
@@ -42,16 +38,11 @@ import           Data.Set (Set)
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
-import           Ouroboros.Network.PeerSelection.Types
-
 
 data EstablishedPeers peeraddr peerconn = EstablishedPeers {
     -- | Peers which are either ready to become active or are active.
     --
     allPeers          :: !(Map peeraddr peerconn),
-
-    -- | 'PeerStatus' of all established peers.
-    establishedStatus :: !(Map peeraddr PeerStatus),
 
     -- | Peers which are not ready to become active.
     nextActivateTimes :: !(OrdPSQ peeraddr Time ())
@@ -60,33 +51,19 @@ data EstablishedPeers peeraddr peerconn = EstablishedPeers {
 
 
 empty :: EstablishedPeers peeraddr perconn
-empty = EstablishedPeers Map.empty Map.empty PSQ.empty
+empty = EstablishedPeers Map.empty PSQ.empty
 
 
 invariant :: Ord peeraddr
           => EstablishedPeers peeraddr peerconn
           -> Bool
-invariant EstablishedPeers { allPeers,
-                             establishedStatus,
-                             nextActivateTimes } =
+invariant EstablishedPeers { allPeers, nextActivateTimes } =
      -- nextActivateTimes is a subset of allPeers
      Set.fromList (PSQ.keys nextActivateTimes)
      `Set.isSubsetOf`
      Map.keysSet allPeers
 
-     -- allPeers has the same keys as
-     -- establishedStatus
-  &&    Map.keysSet allPeers
-     == Map.keysSet establishedStatus
 
-     -- there are only warm peers in 'nextActiveTimes'
-  && all (== PeerWarm)
-         (Map.filterWithKey
-           (\peeraddr _ -> PSQ.member peeraddr nextActivateTimes)
-           establishedStatus)
-
-     -- there are no cold peers
-  && all (/= PeerCold) establishedStatus
 -- | /O(1)/
 toMap :: EstablishedPeers peeraddr peerconn -> Map peeraddr peerconn
 toMap = allPeers
@@ -135,41 +112,15 @@ insert :: Ord peeraddr
        -> peerconn
        -> EstablishedPeers peeraddr peerconn
        -> EstablishedPeers peeraddr peerconn
-insert peeraddr peerconn ep@EstablishedPeers { allPeers, establishedStatus } =
-  ep { allPeers          = Map.insert peeraddr peerconn allPeers,
-       establishedStatus = Map.insert peeraddr PeerWarm establishedStatus }
-
-updateStatus :: Ord peeraddr
-             => peeraddr
-             -> PeerStatus
-             -- ^ keys must be a subset of keys of 'establishedStatus' map
-             -> EstablishedPeers peeraddr peerconn
-             -> EstablishedPeers peeraddr peerconn
-updateStatus peeraddr peerStatus ep@EstablishedPeers { establishedStatus } =
-    assert (Map.member peeraddr establishedStatus) $
-    ep { establishedStatus = Map.insert peeraddr peerStatus establishedStatus }
-
--- | Update 'establishedStatus' map.
---
-updateStatuses :: Ord peeraddr
-               => Map peeraddr PeerStatus
-               -- ^ keys must be a subset of keys of 'establishedStatus' map
-               -> EstablishedPeers peeraddr peerconn
-               -> EstablishedPeers peeraddr peerconn
-updateStatuses newStatuses ep@EstablishedPeers { establishedStatus } =
-    assert (Map.isSubmapOfBy (\_ _ -> True) newStatuses establishedStatus) $
-    ep { establishedStatus = newStatuses <> establishedStatus }
-
+insert peeraddr peerconn ep@EstablishedPeers { allPeers } =
+  ep { allPeers          = Map.insert peeraddr peerconn allPeers }
 
 delete :: Ord peeraddr
        => peeraddr
        -> EstablishedPeers peeraddr peerconn
        -> EstablishedPeers peeraddr peerconn
-delete peeraddr es@EstablishedPeers { allPeers,
-                                      establishedStatus,
-                                      nextActivateTimes } =
+delete peeraddr es@EstablishedPeers { allPeers, nextActivateTimes } =
     es { allPeers          = Map.delete peeraddr allPeers,
-         establishedStatus = Map.delete peeraddr establishedStatus,
          nextActivateTimes = PSQ.delete peeraddr nextActivateTimes }
 
 
@@ -180,11 +131,8 @@ deletePeers :: Ord peeraddr
             => Set peeraddr
             -> EstablishedPeers peeraddr peerconn
             -> EstablishedPeers peeraddr peerconn
-deletePeers peeraddrs es@EstablishedPeers { allPeers,
-                                            establishedStatus,
-                                            nextActivateTimes } =
+deletePeers peeraddrs es@EstablishedPeers { allPeers, nextActivateTimes } =
     es { allPeers          = foldl' (flip Map.delete) allPeers  peeraddrs,
-         establishedStatus = foldl' (flip Map.delete) establishedStatus peeraddrs,
          nextActivateTimes = foldl' (flip PSQ.delete) nextActivateTimes peeraddrs }
 
 

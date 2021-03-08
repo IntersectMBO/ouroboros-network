@@ -335,6 +335,18 @@ assertPeerSelectionState PeerSelectionState{..} =
     hotPeersSet         = activePeersSet
 
 
+-- | A view of the status of each established peer, for testing and debugging.
+--
+establishedPeersStatus :: Ord peeraddr
+                       => PeerSelectionState peeraddr peerconn
+                       -> Map peeraddr PeerStatus
+establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
+    -- map union-override, left to right
+    Map.fromSet (\_ -> PeerHot)  activePeers
+ <> Map.map     (\_ -> PeerWarm) (EstablishedPeers.toMap establishedPeers)
+
+
+
 ---------------------------
 -- Peer Selection Decisions
 --

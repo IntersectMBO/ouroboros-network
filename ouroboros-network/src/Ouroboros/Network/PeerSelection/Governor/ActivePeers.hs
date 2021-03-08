@@ -17,7 +17,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Concurrent.JobPool (Job(..))
 import           Control.Exception (SomeException, assert)
 
-import           Ouroboros.Network.PeerSelection.Types
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo(..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -155,9 +154,6 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                                                peeraddr,
           decisionState = st {
                             activePeers           = activePeers',
-                            establishedPeers      = EstablishedPeers.updateStatus
-                                                      peeraddr PeerHot
-                                                      (establishedPeers st),
                             inProgressPromoteWarm = Set.delete peeraddr
                                                       (inProgressPromoteWarm st)
                           },
@@ -281,8 +277,6 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                                              peeraddr,
           decisionState = st {
                             activePeers         = activePeers',
-                            establishedPeers    = EstablishedPeers.updateStatus peeraddr PeerWarm
-                                                    (establishedPeers st),
                             inProgressDemoteHot = Set.delete peeraddr
                                                     (inProgressDemoteHot st)
                           },

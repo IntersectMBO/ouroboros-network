@@ -99,7 +99,9 @@ connections :: forall m peeraddr peerconn.
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPeerConnection}}
+connections PeerSelectionActions{
+              peerStateActions = PeerStateActions {monitorPeerConnection}
+            }
             st@PeerSelectionState {
               activePeers,
               establishedPeers,
@@ -110,8 +112,7 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
     Guarded Nothing $ do
       monitorStatus <- traverse monitorPeerConnection
                                 (EstablishedPeers.toMap establishedPeers)
-      let demotions = asynchronousDemotions (EstablishedPeers.establishedStatus establishedPeers)
-                                            monitorStatus
+      let demotions = asynchronousDemotions monitorStatus
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition (==PeerWarm) demotions
       return $ \now ->
@@ -124,8 +125,6 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
             establishedPeers'  = EstablishedPeers.setActivateTime
                                   (Map.keysSet demotedToWarm)
                                   (activateDelay `addTime` now)
-                               . EstablishedPeers.updateStatuses
-                                  demotedToWarm
                                . EstablishedPeers.deletePeers
                                   (Map.keysSet demotedToCold)
                                $ establishedPeers
@@ -174,23 +173,31 @@ connections PeerSelectionActions{peerStateActions = PeerStateActions {monitorPee
   where
     -- Those demotions that occurred not as a result of action by the governor.
     -- They're further classified into demotions to warm, and demotions to cold.
-    asynchronousDemotions :: Map peeraddr PeerStatus
-                          -> Map peeraddr PeerStatus
-                          -> Map peeraddr PeerStatus
-    asynchronousDemotions old new =
-      Map.mapMaybeWithKey asyncDemotion
-        (Map.filter (uncurry (>))
-           (Map.intersectionWith (,) old new))
+    asynchronousDemotions :: Map peeraddr PeerStatus -> Map peeraddr PeerStatus
+    asynchronousDemotions = Map.mapMaybeWithKey asyncDemotion
 
     -- The asynchronous ones, those not directed by the governor, are:
     -- hot -> warm, warm -> cold and hot -> cold, other than the ones in the in
     -- relevant progress set.
-    asyncDemotion :: peeraddr -> (PeerStatus, PeerStatus) -> Maybe PeerStatus
-    asyncDemotion peeraddr (PeerHot, PeerWarm)
-      | peeraddr `Set.notMember` inProgressDemoteHot  = Just PeerWarm
-    asyncDemotion peeraddr (PeerWarm, PeerCold)
-      | peeraddr `Set.notMember` inProgressDemoteWarm = Just PeerCold
-    asyncDemotion _        (PeerHot, PeerCold)        = Just PeerCold
+    asyncDemotion :: peeraddr -> PeerStatus -> Maybe PeerStatus
+
+    -- a hot -> warm transition has occurred if it is now warm, and it was
+    -- hot, but not in the set we were deliberately demoting synchronously
+    asyncDemotion peeraddr PeerWarm
+      | peeraddr `Set.member`    activePeers
+      , peeraddr `Set.notMember` inProgressDemoteHot  = Just PeerWarm
+
+    -- a warm -> cold transition has occurred if it is now cold, and it was
+    -- warm, but not in the set we were deliberately demoting synchronously
+    asyncDemotion peeraddr PeerCold
+      | peeraddr `EstablishedPeers.member` establishedPeers
+      , peeraddr `Set.notMember` activePeers
+      , peeraddr `Set.notMember` inProgressDemoteWarm = Just PeerCold
+
+    -- a hot -> cold transition has occurred if it is now cold, and it was hot
+    asyncDemotion peeraddr PeerCold
+      | peeraddr `Set.member`    activePeers          = Just PeerCold
+
     asyncDemotion _        _                          = Nothing
 
 

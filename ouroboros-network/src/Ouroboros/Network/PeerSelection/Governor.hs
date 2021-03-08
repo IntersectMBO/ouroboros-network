@@ -29,6 +29,7 @@ module Ouroboros.Network.PeerSelection.Governor (
 
     -- * Internals exported for testing
     sanePeerSelectionTargets,
+    establishedPeersStatus,
     PeerSelectionState(..),
 ) where
 
