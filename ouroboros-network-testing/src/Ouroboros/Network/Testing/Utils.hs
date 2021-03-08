@@ -6,6 +6,8 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSay
 import           Control.Tracer (Tracer (..))
 
+import           Data.Ratio
+
 import           Test.QuickCheck
 
 import           Debug.Trace (traceShowM)
@@ -15,16 +17,29 @@ newtype Delay = Delay { getDelay :: DiffTime }
   deriving Show
 
 
+genDelayWithPrecision :: Integer -> Gen DiffTime
+genDelayWithPrecision precision = 
+    sized $ \n -> do
+      b <- chooseInteger (1, precision)
+      a <- chooseInteger (0, toInteger n * b)
+      return (fromRational (a % b))
+
 -- | This needs to be small, as we are using real time limits in block-fetch
 -- examples.
 --
 instance Arbitrary Delay where
-    arbitrary = do
-      Positive (delay :: Float) <- resize 5 arbitrary
-      return (Delay (realToFrac delay))
+    arbitrary = Delay <$> genDelayWithPrecision 10
     shrink (Delay delay) | delay >= 0.1 = [ Delay (delay - 0.1) ]
                          | otherwise    = []
 
+
+newtype SmallDelay = SmallDelay { getSmallDelay :: DiffTime }
+  deriving Show
+
+instance Arbitrary SmallDelay where
+    arbitrary = resize 5 $ SmallDelay . getDelay <$> arbitrary
+    shrink (SmallDelay delay) | delay >= 0.1 = [ SmallDelay (delay - 0.1) ]
+                              | otherwise    = []
 
 --
 -- Debugging tools
