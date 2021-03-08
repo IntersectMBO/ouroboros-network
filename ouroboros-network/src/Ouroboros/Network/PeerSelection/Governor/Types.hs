@@ -293,16 +293,14 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
     -- root peers might overlap).
   . assert (Map.isSubmapOfBy (\rootPeerAdvertise
-               KnownPeerInfo {knownPeerAdvertise, knownPeerSource} ->
-                   knownPeerSource == PeerSourceLocalRoot
-                && knownPeerAdvertise == rootPeerAdvertise)
+               KnownPeerInfo {knownPeerAdvertise} ->
+                 knownPeerAdvertise == rootPeerAdvertise)
              localRootPeers
              (KnownPeers.toMap knownPeers))
 
     -- The publicRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers.
-  . assert (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
-                 knownPeerSource == PeerSourcePublicRoot)
+  . assert (Map.isSubmapOfBy (\_ _ -> True)
              (Map.fromSet (const ()) publicRootPeers)
              (KnownPeers.toMap knownPeers))
 

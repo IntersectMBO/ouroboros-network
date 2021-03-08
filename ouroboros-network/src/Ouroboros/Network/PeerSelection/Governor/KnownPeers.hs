@@ -22,7 +22,6 @@ import           Control.Exception (Exception(..), SomeException, assert)
 
 import           Ouroboros.Network.PeerSelection.Types
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -144,7 +143,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
-                                             PeerSourceGossip
                                              (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
@@ -175,7 +173,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
-                                             PeerSourceGossip
                                              (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
@@ -221,7 +218,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
         decisionState = st {
                           --TODO: also update with the failures
                           knownPeers = KnownPeers.insert
-                                         PeerSourceGossip
                                          (const DoAdvertisePeer)
                                          (Set.fromList newPeers)
                                          (knownPeers st),
@@ -300,9 +296,7 @@ aboveTarget PeerSelectionPolicy {
             publicRootPeers' = publicRootPeers
                                  Set.\\ selectedToForget
         in assert
-            (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
-                     knownPeerSource == PeerSourcePublicRoot
-                  || knownPeerSource == PeerSourceLocalRoot)
+            (Map.isSubmapOfBy (\_ _ -> True)
                  (Map.fromSet (const ()) publicRootPeers')
                  (KnownPeers.toMap knownPeers'))
 

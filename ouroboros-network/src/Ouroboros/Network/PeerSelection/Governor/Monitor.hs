@@ -234,16 +234,14 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
           removed     = localRootPeers  Map.\\ localRootPeers'
           addedSet    = Map.keysSet added
           removedSet  = Map.keysSet removed
-          knownPeers' = KnownPeers.insert PeerSourceLocalRoot
-                                          (added Map.!)
+          knownPeers' = KnownPeers.insert (added Map.!)
                                           addedSet
 
                         -- We do not immediately remove old ones from the
                         -- known peers set because we may have established
                         -- connections, but we mark them so that policy
                         -- functions can prioritise them to forget:
-                      . KnownPeers.insert PeerSourceStaleRoot
-                                          (const DoNotAdvertisePeer)
+                      . KnownPeers.insert (const DoNotAdvertisePeer)
                                           removedSet
                       $ knownPeers
 
@@ -268,15 +266,13 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
       return $ \_now ->
 
           assert
-            (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
-                     knownPeerSource == PeerSourcePublicRoot)
+            (Map.isSubmapOfBy (\_ _ -> True)
                  (Map.fromSet (const ()) publicRootPeers')
                  (KnownPeers.toMap knownPeers'))
         . assert
             (Map.isSubmapOfBy (\rootPeerAdvertise
-                   KnownPeerInfo {knownPeerAdvertise, knownPeerSource} ->
-                       knownPeerSource == PeerSourceLocalRoot
-                    && knownPeerAdvertise == rootPeerAdvertise)
+                   KnownPeerInfo {knownPeerAdvertise} ->
+                     knownPeerAdvertise == rootPeerAdvertise)
                  localRootPeers'
                  (KnownPeers.toMap knownPeers'))
 

@@ -57,8 +57,6 @@ data KnownPeerInfo = KnownPeerInfo {
        -- | Should we advertise this peer when other nodes send us gossip requests?
        knownPeerAdvertise :: !PeerAdvertise,
 
-       knownPeerSource    :: !PeerSource,
-
        -- | The current number of consecutive connection attempt failures. This
        -- is reset as soon as there is a successful connection.
        --
@@ -158,12 +156,11 @@ toMap :: KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
 toMap = allPeers
 
 insert :: Ord peeraddr
-       => PeerSource
-       -> (peeraddr -> PeerAdvertise) -- ^ Usually @const DoAdvertisePeer@
+       => (peeraddr -> PeerAdvertise) -- ^ Usually @const DoAdvertisePeer@
        -> Set peeraddr
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
-insert peersource peeradvertise peeraddrs
+insert peeradvertise peeraddrs
        knownPeers@KnownPeers {
          allPeers,
          availableForGossip,
@@ -191,16 +188,12 @@ insert peersource peeradvertise peeraddrs
   where
     newPeerInfo peeraddr =
       KnownPeerInfo {
-        knownPeerSource    = peersource,
         knownPeerAdvertise = peeradvertise peeraddr,
         knownPeerFailCount = 0
       }
     mergePeerInfo old new =
       KnownPeerInfo {
-        knownPeerSource    = knownPeerSource old `min` knownPeerSource new,
-        knownPeerAdvertise = case knownPeerSource new of
-                               PeerSourceLocalRoot -> knownPeerAdvertise new
-                               _                   -> knownPeerAdvertise old,
+        knownPeerAdvertise = knownPeerAdvertise new,
         knownPeerFailCount = knownPeerFailCount old
       }
 

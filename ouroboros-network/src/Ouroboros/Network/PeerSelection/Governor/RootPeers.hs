@@ -15,7 +15,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Exception (SomeException, assert)
 
 import           Ouroboros.Network.PeerSelection.Types
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -115,7 +114,6 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
                                        Set.\\ publicRootPeers st
             publicRootPeers' = publicRootPeers st <> newPeers
             knownPeers'      = KnownPeers.insert
-                                 PeerSourcePublicRoot
                                  (const DoAdvertisePeer)
                                  newPeers
                                  (knownPeers st)
@@ -141,9 +139,7 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
             publicRootRetryTime = addTime publicRootRetryDiffTime now
 
          in assert
-             (Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
-                        knownPeerSource == PeerSourcePublicRoot
-                     || knownPeerSource == PeerSourceLocalRoot)
+             (Map.isSubmapOfBy (\_ _ -> True)
                   (Map.fromSet (const ()) publicRootPeers')
                   (KnownPeers.toMap knownPeers'))
 
