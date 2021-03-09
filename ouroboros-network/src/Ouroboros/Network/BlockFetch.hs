@@ -206,7 +206,24 @@ data BlockFetchConsensusInterface peer header block m =
        -- | Given a block header, validate the supposed corresponding block
        -- body.
        --
-       blockMatchesHeader      :: header -> block -> Bool
+       blockMatchesHeader      :: header -> block -> Bool,
+
+
+
+
+       -- TODO how can we avoid this
+       --
+       -- If passed an argument that is @<=@ the slot of any @header@ or
+       -- @block@, this function should succeed, because: BF gets all of its
+       -- headers from CS, CS only provides BF with validated headers, and a
+       -- header is only validatable if its slot was translate-able to a
+       -- wallclock time. The Consensus-side definition of this method The
+       -- Cross-Fork Conversion Lemma in the Consensus Report, since it depends
+       -- only on the current ledger.
+       --
+       -- If passed any other argument, it may fail with @Nothing@ if that
+       -- argument is too far ahead of the tip of our current chain.
+       slotToTime :: SlotNo -> STM m (Maybe UTCTime)
      }
 
 -- | Configuration for FetchDecisionPolicy.

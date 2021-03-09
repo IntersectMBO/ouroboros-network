@@ -56,7 +56,10 @@ import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
 import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Config.SupportsNode as SupportsNode
 import           Ouroboros.Consensus.Forecast
+import qualified Ouroboros.Consensus.HardFork.Abstract as History
+import qualified Ouroboros.Consensus.HardFork.History  as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -222,23 +225,46 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
     let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
-        blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
-        blockFetchInterface = initBlockFetchConsensusInterface
-          cfg chainDB getCandidates blockFetchSize btime
+    blockFetchInterface <-
+      initBlockFetchConsensusInterface
+        cfg
+        chainDB
+        getCandidates
+        blockFetchSize
+        btime
+    let _ = blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
 
     return IS {..}
 
 initBlockFetchConsensusInterface
-    :: forall m peer blk. (IOLike m, BlockSupportsProtocol blk)
+    :: forall m peer blk.
+       ( IOLike m
+       , BlockSupportsProtocol blk
+       , SupportsNode.ConfigSupportsNode blk
+       , History.HasHardForkHistory blk
+       , IsLedger (LedgerState blk)
+       )
     => TopLevelConfig blk
     -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> BlockchainTime m
-    -> BlockFetchConsensusInterface peer (Header blk) blk m
-initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime =
-    BlockFetchConsensusInterface {..}
+    -> m (BlockFetchConsensusInterface peer (Header blk) blk m)
+initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime = do
+    cache <-
+      History.runWithCachedSummary
+        (toSummary <$> ChainDB.getCurrentLedger chainDB)
+    let slotToTime sl =
+              fmap (either (const Nothing) (Just . toAbsolute))
+            $ History.cachedRunQuery
+                cache
+                (fst <$> History.slotToWallclock sl)
+    pure BlockFetchConsensusInterface {..}
   where
+    toSummary  = History.hardForkSummary (configLedger cfg) . ledgerState
+    toAbsolute =
+        fromRelativeTime (SupportsNode.getSystemStart (configBlock cfg))
+
     bcfg :: BlockConfig blk
     bcfg = configBlock cfg
 
