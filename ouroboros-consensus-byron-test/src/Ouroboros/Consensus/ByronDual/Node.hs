@@ -18,8 +18,8 @@ import           Data.Maybe (fromMaybe)
 
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.Delegation as Spec
-import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
 
 import qualified Test.Cardano.Chain.Elaboration.Block as Spec.Test
 import qualified Test.Cardano.Chain.Elaboration.Delegation as Spec.Test
@@ -29,9 +29,9 @@ import qualified Test.Cardano.Chain.UTxO.Model as Spec.Test
 
 import qualified Cardano.Chain.Block as Impl
 import qualified Cardano.Chain.Genesis as Impl
+import qualified Cardano.Chain.UTxO as Impl
 import qualified Cardano.Chain.Update as Impl
 import qualified Cardano.Chain.Update.Validation.Interface as Impl
-import qualified Cardano.Chain.UTxO as Impl
 
 import           Ouroboros.Consensus.HeaderValidation
 

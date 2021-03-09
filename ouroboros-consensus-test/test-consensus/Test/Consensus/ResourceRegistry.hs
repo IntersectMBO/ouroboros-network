@@ -28,8 +28,8 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.TreeDiff (defaultExprViaShow)
 import           Data.Typeable
-import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
+import qualified Generics.SOP as SOP
 
 import           Control.Monad.Class.MonadTimer
 

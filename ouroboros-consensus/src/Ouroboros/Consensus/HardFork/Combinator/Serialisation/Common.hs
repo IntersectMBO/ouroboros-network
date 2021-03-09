@@ -73,8 +73,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as Serialise
-import           Control.Exception (Exception)
-import           Control.Exception (throw)
+import           Control.Exception (Exception, throw)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short

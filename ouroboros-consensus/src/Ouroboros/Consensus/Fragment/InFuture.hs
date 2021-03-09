@@ -31,7 +31,7 @@ import           Control.Monad.Class.MonadSTM
 
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
-                     AnchoredSeq ((:>), Empty))
+                     AnchoredSeq (Empty, (:>)))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

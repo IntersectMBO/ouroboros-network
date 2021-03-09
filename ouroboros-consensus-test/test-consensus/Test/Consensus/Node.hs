@@ -29,11 +29,11 @@ import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
 
-import           Test.Util.FileLock
 import           Test.Util.FS.Sim.FsTree (FsTree (..))
 import           Test.Util.FS.Sim.MockFS (Files)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.STM (runSimFS)
+import           Test.Util.FileLock
 import           Test.Util.QuickCheck (ge)
 
 tests :: TestTree
