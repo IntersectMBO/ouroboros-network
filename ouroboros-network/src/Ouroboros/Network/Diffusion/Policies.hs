@@ -5,14 +5,16 @@
 -- Constants used in 'Ouroboros.Network.Diffusion'
 module Ouroboros.Network.Diffusion.Policies where
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
-import           Data.List (sortOn)
+import           Data.List (sortOn, unfoldr)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid (All (..), Any (..))
 import           Data.Ord (Down (..))
 import qualified Data.Set as Set
+import           Data.Word (Word32)
+import           System.Random
 
 import           Network.Socket (SockAddr)
 
@@ -38,9 +40,10 @@ closeConnectionTimeout :: DiffTime
 closeConnectionTimeout = 120
 
 
-simplePeerSelectionPolicy :: forall m. Applicative (STM m)
-                          => PeerSelectionPolicy SockAddr m
-simplePeerSelectionPolicy = PeerSelectionPolicy {
+simplePeerSelectionPolicy :: forall m. MonadSTM m
+                          => StrictTVar m StdGen
+                          -> PeerSelectionPolicy SockAddr m
+simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
       policyPickKnownPeersForGossip = simplePromotionPolicy,
       policyPickColdPeersToPromote  = simplePromotionPolicy,
       policyPickWarmPeersToPromote  = simplePromotionPolicy,
@@ -57,16 +60,28 @@ simplePeerSelectionPolicy = PeerSelectionPolicy {
     }
   where
     -- promotiong policy; in first place pick local roots, then public ones,
-    -- then order them with smallest fail count.
+    -- then order them with smallest fail count with a random value as a tie breaker.
     simplePromotionPolicy :: PickPolicy SockAddr m
-    simplePromotionPolicy available pickNum
-      = pure . Set.fromList
+    simplePromotionPolicy available pickNum = do
+      available' <- addRand available
+      return $ Set.fromList
              . map fst
              . take pickNum
-             . sortOn (\(_, KnownPeerInfo { knownPeerSource, knownPeerFailCount }) ->
-                          (knownPeerSource, knownPeerFailCount))
+             . sortOn (\(_, (KnownPeerInfo { knownPeerSource, knownPeerFailCount }, rn)) ->
+                          (knownPeerSource, knownPeerFailCount, rn))
              . Map.assocs
-             $ available
+             $ available'
+
+    -- Add a random number in order to prevent ordering based on SockAddr
+    addRand :: Map.Map SockAddr KnownPeerInfo -> STM m (Map.Map SockAddr (KnownPeerInfo, Word32))
+    addRand available = do
+      inRng <- readTVar rngVar
+
+      let (rng, rng') = split inRng
+          rns = take (Map.size available) $ unfoldr (Just . random)  rng :: [Word32]
+          available' = Map.fromList $ map (\(rn, (k, v)) -> (k, (v, rn))) $ zip rns (Map.toList available)
+      writeTVar rngVar rng'
+      return available'
 
     -- demotion policy; it demotes local root peers at last.
     --
@@ -87,14 +102,15 @@ simplePeerSelectionPolicy = PeerSelectionPolicy {
     -- the governor for promotion.
     --
     simpleDemotionPolicy :: PickPolicy SockAddr m
-    simpleDemotionPolicy available pickNum
-      = pure . Set.fromList
+    simpleDemotionPolicy available pickNum = do
+      available' <- addRand available
+      return $ Set.fromList
              . map fst
              . take pickNum
-             . sortOn (\(_, KnownPeerInfo { knownPeerSource, knownPeerFailCount }) ->
-                          (Down knownPeerSource, Down knownPeerFailCount))
+             . sortOn (\(_, (KnownPeerInfo { knownPeerSource, knownPeerFailCount }, rn)) ->
+                         (Down knownPeerSource, Down knownPeerFailCount, rn))
              . Map.assocs
-             $ available
+             $ available'
 
 
 -- | Make a disjunction of two predicates.  Disjunction is also known as @join@
