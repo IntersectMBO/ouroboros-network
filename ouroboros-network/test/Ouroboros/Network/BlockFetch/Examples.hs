@@ -276,7 +276,8 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
       compareCandidateChains,
 
       blockFetchSize         = \_ -> 2000,
-      blockMatchesHeader     = \_ _ -> True
+      blockMatchesHeader     = \_ _ -> True,
+      slotToTime             = \_ -> return Nothing
     }
   where
     plausibleCandidateChain cur candidate =

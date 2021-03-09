@@ -20,15 +20,17 @@ module Ouroboros.Network.BlockFetch.Client (
     BlockFetchProtocolFailure,
   ) where
 
-import           Control.Monad (unless)
+import           Control.Monad (join, unless)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Data.Set as Set
 
 import           Control.Tracer (traceWith)
 
+import           Cardano.Slotting.Slot (WithOrigin (..))
 import           Ouroboros.Network.Block
 
 import           Ouroboros.Network.Mux (ControlMessageSTM)
@@ -77,7 +79,7 @@ type BlockFetchClient header block m a =
 -- work in conjunction with our fetch logic.
 --
 blockFetchClient :: forall header block m.
-                    (MonadSTM m, MonadThrow m,
+                    (MonadSTM m, MonadThrow m, MonadTime m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => NodeToNodeVersion
@@ -90,7 +92,8 @@ blockFetchClient _version controlMessageSTM
                    fetchClientCtxPolicy    = FetchClientPolicy {
                                                blockFetchSize,
                                                blockMatchesHeader,
-                                               addFetchedBlock
+                                               addFetchedBlock,
+                                               slotToTime
                                              },
                    fetchClientCtxStateVars = stateVars
                  } =
@@ -262,6 +265,7 @@ blockFetchClient _version controlMessageSTM
 
 
           (MsgBlock block, header:headers') -> ReceiverEffect $ do
+            now <- getCurrentTime
             --TODO: consider how to enforce expected block size limit.
             -- They've lied and are sending us a massive amount of data.
             -- Resource consumption attack.
@@ -290,6 +294,12 @@ blockFetchClient _version controlMessageSTM
             -- Add the block to the chain DB, notifying of any new chains.
             addFetchedBlock (castPoint (blockPoint header)) block
 
+            let slotNo_m = case pointSlot $ blockPoint header  of
+                               Origin -> Nothing
+                               (At s) -> Just s
+            forgeTime_m <- join <$> traverse (atomically . slotToTime) slotNo_m
+            let blockDelay_m = diffUTCTime now <$> forgeTime_m
+
             -- Note that we add the block to the chain DB /before/ updating our
             -- current status and in-flight stats. Otherwise blocks will
             -- disappear from our in-flight set without yet appearing in the
@@ -298,7 +308,7 @@ blockFetchClient _version controlMessageSTM
 
             -- Update our in-flight stats and our current status
             completeBlockDownload tracer blockFetchSize inflightlimits
-                                  header stateVars
+                                  header blockDelay_m stateVars
 
             return (receiverStreaming inflightlimits range headers')
 

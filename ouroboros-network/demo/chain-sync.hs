@@ -317,7 +317,8 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               compareCandidateChains,
 
               blockFetchSize         = \_ -> 1000,
-              blockMatchesHeader     = \_ _ -> True
+              blockMatchesHeader     = \_ _ -> True,
+              slotToTime             = \_ -> return Nothing
             }
           where
             plausibleCandidateChain cur candidate =

@@ -258,7 +258,7 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
       Map.fromListWith (flip (++))
         [ (peer, [pt])
         | TraceFetchClientState
-            (TraceLabelPeer peer (CompletedBlockFetch pt _ _ _)) <- es
+            (TraceLabelPeer peer (CompletedBlockFetch pt _ _ _ _)) <- es
         ]
 
 
@@ -302,7 +302,7 @@ tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
       Set.fromList
         [ pt
         | TraceFetchClientState
-            (TraceLabelPeer _ (CompletedBlockFetch pt _ _ _)) <- es
+            (TraceLabelPeer _ (CompletedBlockFetch pt _ _ _ _)) <- es
         ]
 
 

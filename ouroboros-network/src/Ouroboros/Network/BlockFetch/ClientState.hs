@@ -35,6 +35,7 @@ import           Data.Semigroup (Last(..))
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
@@ -42,7 +43,7 @@ import           Ouroboros.Network.Mux (ControlMessageSTM, timeoutWithControlMes
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-                   ( HasHeader, MaxSlotNo (..), Point, blockPoint )
+                   ( HasHeader, MaxSlotNo (..), Point, SlotNo, blockPoint )
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange(..))
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerFetchInFlightLimits(..)
@@ -68,7 +69,8 @@ data FetchClientPolicy header block m =
      FetchClientPolicy {
        blockFetchSize     :: header -> SizeInBytes,
        blockMatchesHeader :: header -> block -> Bool,
-       addFetchedBlock    :: Point block -> block -> m ()
+       addFetchedBlock    :: Point block -> block -> m (),
+       slotToTime         :: SlotNo -> STM m (Maybe UTCTime)
      }
 
 -- | A set of variables shared between the block fetch logic thread and each
@@ -384,6 +386,7 @@ data TraceFetchClientState header =
          (PeerFetchInFlight header)
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
+         (Maybe NominalDiffTime)
 
        -- | Mark the successful end of receiving a streaming batch of blocks
        --
@@ -526,10 +529,11 @@ completeBlockDownload :: (MonadSTM m, HasHeader header)
                       -> (header -> SizeInBytes)
                       -> PeerFetchInFlightLimits
                       -> header
+                      -> Maybe NominalDiffTime
                       -> FetchClientStateVars m header
                       -> m ()
 
-completeBlockDownload tracer blockFetchSize inflightlimits header
+completeBlockDownload tracer blockFetchSize inflightlimits header blockDelay_m
                       FetchClientStateVars {
                         fetchClientInFlightVar,
                         fetchClientStatusVar
@@ -555,6 +559,7 @@ completeBlockDownload tracer blockFetchSize inflightlimits header
         (blockPoint header)
         inflight' inflightlimits
         currentStatus'
+        blockDelay_m
 
 
 completeFetchBatch :: MonadSTM m
