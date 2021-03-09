@@ -294,7 +294,8 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchClientPolicy = FetchClientPolicy {
                           blockFetchSize,
                           blockMatchesHeader,
-                          addFetchedBlock
+                          addFetchedBlock,
+                          blockForgeUTCTime
                         }
 
     fetchDecisionPolicy :: FetchDecisionPolicy header
