@@ -266,9 +266,9 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
       return $ \_now ->
 
           assert
-            (Map.isSubmapOfBy (\_ _ -> True)
-                 (Map.fromSet (const ()) publicRootPeers')
-                 (KnownPeers.toMap knownPeers'))
+            (Set.isSubsetOf
+                 publicRootPeers'
+                 (KnownPeers.toSet knownPeers'))
         . assert
             (Map.isSubmapOfBy (\rootPeerAdvertise
                    KnownPeerInfo {knownPeerAdvertise} ->

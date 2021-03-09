@@ -483,17 +483,17 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 
 interpretPickScript :: (MonadSTMTx stm, Ord peeraddr)
                     => TVar_ stm PickScript
-                    -> Map peeraddr a
+                    -> Set peeraddr
                     -> Int
                     -> stm (Set peeraddr)
 interpretPickScript scriptVar available pickNum
-  | Map.null available
+  | Set.null available
   = error "interpretPickScript: given empty map to pick from"
   | pickNum <= 0
   = error "interpretPickScript: given invalid pickNum"
 
-  | Map.size available <= pickNum
-  = return (Map.keysSet available)
+  | Set.size available <= pickNum
+  = return available
 
   | otherwise
   = do offsets <- stepScriptSTM scriptVar
@@ -502,11 +502,11 @@ interpretPickScript scriptVar available pickNum
               . NonEmpty.take pickNum
               $ offsets
 
-pickMapKeys :: Ord a => Map a b -> [Int] -> Set a
+pickMapKeys :: Ord a => Set a -> [Int] -> Set a
 pickMapKeys m ns =
     Set.fromList (map pick ns)
   where
-    pick n = fst (Map.elemAt i m) where i = n `mod` Map.size m
+    pick n = Set.elemAt i m where i = n `mod` Set.size m
 
 
 --
@@ -1224,5 +1224,5 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
                 policyGossipBatchWaitTime     = 0, -- seconds
                 policyGossipOverallTimeout    = 0  -- seconds
               }
-    pickTrivially :: Applicative m => Map SockAddr a -> Int -> m (Set SockAddr)
-    pickTrivially m n = pure . Set.take n . Map.keysSet $ m
+    pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
+    pickTrivially m n = pure . Set.take n $ m

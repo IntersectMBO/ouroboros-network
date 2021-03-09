@@ -15,6 +15,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     insert,
     delete,
     toMap,
+    toSet,
 
     -- * Special operations
     setCurrentTime,
@@ -154,6 +155,10 @@ size = Map.size . allPeers
 -- | /O(1)/
 toMap :: KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
 toMap = allPeers
+
+-- | /O(n)/
+toSet :: KnownPeers peeraddr -> Set peeraddr
+toSet = Map.keysSet . allPeers
 
 insert :: Ord peeraddr
        => (peeraddr -> PeerAdvertise) -- ^ Usually @const DoAdvertisePeer@

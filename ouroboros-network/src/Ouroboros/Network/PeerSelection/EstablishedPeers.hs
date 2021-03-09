@@ -7,6 +7,7 @@ module Ouroboros.Network.PeerSelection.EstablishedPeers
   ( EstablishedPeers
   , empty
   , toMap
+  , toSet
   , readyPeers
 
   , size
@@ -68,6 +69,10 @@ invariant EstablishedPeers { allPeers, nextActivateTimes } =
 toMap :: EstablishedPeers peeraddr peerconn -> Map peeraddr peerconn
 toMap = allPeers
 
+-- | /O(n)/
+toSet :: EstablishedPeers peeraddr peerconn -> Set peeraddr
+toSet = Map.keysSet . allPeers
+
 
 -- | Map of established peers that are either active or ready to be promoted
 -- to active.
@@ -76,11 +81,11 @@ toMap = allPeers
 --
 readyPeers :: Ord peeraddr
            => EstablishedPeers peeraddr peerconn
-           -> Map peeraddr peerconn
+           -> Set peeraddr
 readyPeers EstablishedPeers { allPeers, nextActivateTimes } =
     PSQ.fold'
-      (\peeraddr _ _ -> Map.delete peeraddr)
-      allPeers
+      (\peeraddr _ _ -> Set.delete peeraddr)
+      (Map.keysSet allPeers)
       nextActivateTimes
 
 
@@ -173,6 +178,6 @@ setActivateTime peeraddrs time  ep@EstablishedPeers { nextActivateTimes } =
                                               nextActivateTimes
                                               peeraddrs
                  }
-    in   assert (all (not . (`Map.member` readyPeers ep')) peeraddrs)
+    in   assert (all (not . (`Set.member` readyPeers ep')) peeraddrs)
        . assert (invariant ep')
        $ ep'

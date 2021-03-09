@@ -9,6 +9,7 @@ module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
 import           Data.Semigroup (Min(..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job(..))
@@ -17,7 +18,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Exception (SomeException)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo(..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -64,11 +64,10 @@ belowTarget actions
       --
       -- The numPeersToPromote is positive based on the first guard.
       --
-      let availableToPromote :: Map peeraddr KnownPeerInfo
-          availableToPromote = KnownPeers.toMap knownPeers
-                                `Map.restrictKeys` availableToConnect
-                                 Map.\\ EstablishedPeers.toMap establishedPeers
-                                `Map.withoutKeys` inProgressPromoteCold
+      let availableToPromote :: Set peeraddr
+          availableToPromote = availableToConnect
+                                 Set.\\ EstablishedPeers.toSet establishedPeers
+                                 Set.\\ inProgressPromoteCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
@@ -199,7 +198,6 @@ aboveTarget actions
               policyPickWarmPeersToDemote
             }
             st@PeerSelectionState {
-              knownPeers,
               establishedPeers,
               activePeers,
               inProgressDemoteWarm,
@@ -230,13 +228,11 @@ aboveTarget actions
   , numPeersToDemote > 0
   = Guarded Nothing $ do
 
-      let availableToDemote :: Map peeraddr KnownPeerInfo
-          availableToDemote = KnownPeers.toMap knownPeers
-                               `Map.intersection` EstablishedPeers.toMap
-                                                    establishedPeers
-                               `Map.withoutKeys` activePeers
-                               `Map.withoutKeys` inProgressDemoteWarm
-                               `Map.withoutKeys` inProgressPromoteWarm
+      let availableToDemote :: Set peeraddr
+          availableToDemote = EstablishedPeers.toSet establishedPeers
+                                Set.\\ activePeers
+                                Set.\\ inProgressDemoteWarm
+                                Set.\\ inProgressPromoteWarm
       selectedToDemote <- pickPeers
                             policyPickWarmPeersToDemote
                             availableToDemote

@@ -35,25 +35,25 @@ import           Ouroboros.Network.PeerSelection.Types
 -- The post-condition is that the picked set is non-empty but must not be
 -- bigger than the requested number.
 --
-type PickPolicy peeraddr m = Map peeraddr KnownPeerInfo
+type PickPolicy peeraddr m = Set peeraddr
                           -> Int
                           -> STM m (Set peeraddr)
 
 
 -- | Check pre-conditions and post-conditions on the pick policies
 pickPeers :: (Ord peeraddr, Functor m)
-          => (Map peeraddr a -> Int -> m (Set peeraddr))
-          ->  Map peeraddr a -> Int -> m (Set peeraddr)
+          => (Set peeraddr -> Int -> m (Set peeraddr))
+          ->  Set peeraddr -> Int -> m (Set peeraddr)
 pickPeers pick available num =
     assert precondition $
     fmap (\picked -> assert (postcondition picked) picked)
          (pick available numClamped)
   where
-    precondition         = not (Map.null available) && num > 0
+    precondition         = not (Set.null available) && num > 0
     postcondition picked = not (Set.null picked)
                         && Set.size picked <= numClamped
-                        && picked `Set.isSubsetOf` Map.keysSet available
-    numClamped           = min num (Map.size available)
+                        && picked `Set.isSubsetOf` available
+    numClamped           = min num (Set.size available)
 
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
@@ -324,9 +324,9 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
   where
     localRootPeersSet   = Map.keysSet localRootPeers
-    knownPeersSet       = Map.keysSet (KnownPeers.toMap knownPeers)
-    establishedPeersSet = Map.keysSet (EstablishedPeers.toMap      establishedPeers)
-    establishedReadySet = Map.keysSet (EstablishedPeers.readyPeers establishedPeers)
+    knownPeersSet       = KnownPeers.toSet knownPeers
+    establishedPeersSet = EstablishedPeers.toSet      establishedPeers
+    establishedReadySet = EstablishedPeers.readyPeers establishedPeers
     activePeersSet      = activePeers
     coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet        = establishedPeersSet Set.\\ activePeersSet

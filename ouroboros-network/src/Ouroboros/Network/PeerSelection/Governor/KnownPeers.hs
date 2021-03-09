@@ -62,8 +62,7 @@ belowTarget actions
   = Guarded Nothing $ do
       selectedForGossip <- pickPeers
                              policyPickKnownPeersForGossip
-                             (KnownPeers.toMap knownPeers
-                                `Map.restrictKeys` availableForGossip)
+                             availableForGossip
                              numGossipReqsPossible
       let numGossipReqs = Set.size selectedForGossip
       return $ \now -> Decision {
@@ -277,12 +276,12 @@ aboveTarget PeerSelectionPolicy {
                               - targetNumberOfRootPeers
         protectedRootPeers    = Map.keysSet localRootPeers
                              <> Set.drop numRootPeersCanForget publicRootPeers
-        availableToForget     = KnownPeers.toMap knownPeers
-                                   Map.\\ EstablishedPeers.toMap establishedPeers
-                                  `Map.withoutKeys` protectedRootPeers
-                                  `Map.withoutKeys` inProgressPromoteCold
+        availableToForget     = KnownPeers.toSet knownPeers
+                                  Set.\\ EstablishedPeers.toSet establishedPeers
+                                  Set.\\ protectedRootPeers
+                                  Set.\\ inProgressPromoteCold
 
-  , not (Map.null availableToForget)
+  , not (Set.null availableToForget)
   = Guarded Nothing $ do
       let numPeersToForget = numKnownPeers - targetNumberOfKnownPeers
       selectedToForget <- pickPeers
