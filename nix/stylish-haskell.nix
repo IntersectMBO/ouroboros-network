@@ -1,8 +1,9 @@
 { pkgs
+, config
 }:
 let
   hsPkgs = pkgs.haskell-nix.stackProject {
-    compiler-nix-name = "ghc8104";
+    compiler-nix-name = config.compiler;
     modules = [ ];
     src = pkgs.fetchFromGitHub {
       owner = "jaspervdj";

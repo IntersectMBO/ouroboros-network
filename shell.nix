@@ -1,7 +1,7 @@
 # This file is used by nix-shell.
 # It just takes the shell attribute from default.nix.
-{ config ? {}
-, sourcesOverride ? {}
+{ config ? { compiler = "ghc8104"; }
+, sourcesOverride ? { }
 , withHoogle ? false
 , pkgs ? import ./nix {
     inherit config sourcesOverride;
@@ -9,7 +9,7 @@
 }:
 with pkgs;
 let
-  stylish-haskell = import ./nix/stylish-haskell.nix { inherit pkgs; };
+  stylish-haskell = import ./nix/stylish-haskell.nix { inherit pkgs config; };
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
   # NOTE: due to some cabal limitation,

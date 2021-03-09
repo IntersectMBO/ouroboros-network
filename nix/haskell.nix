@@ -6,10 +6,10 @@
 , pkgs
 , haskell-nix
 , buildPackages
-, config ? {}
-# GHC attribute name
-, compiler ? config.haskellNix.compiler or "ghc8104"
-# Enable profiling
+, config ? { }
+  # GHC attribute name
+, compiler ? config.compiler
+  # Enable profiling
 , profiling ? config.haskellNix.profiling or false
 , libsodium ? pkgs.libsodium
 }:
