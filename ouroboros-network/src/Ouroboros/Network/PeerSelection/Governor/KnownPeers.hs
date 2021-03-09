@@ -20,7 +20,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Exception (Exception(..), SomeException, assert)
 
-import           Ouroboros.Network.PeerSelection.Types
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -142,7 +141,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
-                                             (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
@@ -172,7 +170,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
-                                             (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
@@ -217,7 +214,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
         decisionState = st {
                           --TODO: also update with the failures
                           knownPeers = KnownPeers.insert
-                                         (const DoAdvertisePeer)
                                          (Set.fromList newPeers)
                                          (knownPeers st),
                           inProgressGossipReqs = inProgressGossipReqs st

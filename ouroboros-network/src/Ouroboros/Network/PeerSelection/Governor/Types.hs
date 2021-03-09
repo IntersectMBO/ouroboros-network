@@ -22,7 +22,7 @@ import           Control.Exception (assert, SomeException)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.EstablishedPeers (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers, KnownPeerInfo(..))
+import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
 import           Ouroboros.Network.PeerSelection.Types
 
 
@@ -292,9 +292,7 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- and with correct source info in the knownPeers (either
     -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
     -- root peers might overlap).
-  . assert (Map.isSubmapOfBy (\rootPeerAdvertise
-               KnownPeerInfo {knownPeerAdvertise} ->
-                 knownPeerAdvertise == rootPeerAdvertise)
+  . assert (Map.isSubmapOfBy (\_ _ -> True)
              localRootPeers
              (KnownPeers.toMap knownPeers))
 

@@ -14,7 +14,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (SomeException, assert)
 
-import           Ouroboros.Network.PeerSelection.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -114,7 +113,6 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
                                        Set.\\ publicRootPeers st
             publicRootPeers' = publicRootPeers st <> newPeers
             knownPeers'      = KnownPeers.insert
-                                 (const DoAdvertisePeer)
                                  newPeers
                                  (knownPeers st)
 

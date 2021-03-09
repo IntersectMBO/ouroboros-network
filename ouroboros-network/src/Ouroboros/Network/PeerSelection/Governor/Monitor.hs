@@ -26,7 +26,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -234,15 +233,10 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
           removed     = localRootPeers  Map.\\ localRootPeers'
           addedSet    = Map.keysSet added
           removedSet  = Map.keysSet removed
-          knownPeers' = KnownPeers.insert (added Map.!)
-                                          addedSet
-
+          knownPeers' = KnownPeers.insert addedSet
                         -- We do not immediately remove old ones from the
                         -- known peers set because we may have established
-                        -- connections, but we mark them so that policy
-                        -- functions can prioritise them to forget:
-                      . KnownPeers.insert (const DoNotAdvertisePeer)
-                                          removedSet
+                        -- connections
                       $ knownPeers
 
           -- We have to adjust the publicRootPeers to maintain the invariant
@@ -270,9 +264,7 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
                  publicRootPeers'
                  (KnownPeers.toSet knownPeers'))
         . assert
-            (Map.isSubmapOfBy (\rootPeerAdvertise
-                   KnownPeerInfo {knownPeerAdvertise} ->
-                     knownPeerAdvertise == rootPeerAdvertise)
+            (Map.isSubmapOfBy (\_ _ -> True)
                  localRootPeers'
                  (KnownPeers.toMap knownPeers'))
 

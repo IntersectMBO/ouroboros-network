@@ -46,18 +46,12 @@ import           Data.OrdPSQ (OrdPSQ)
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
-import           Ouroboros.Network.PeerSelection.Types
-
 
 -------------------------------
 -- Known peer set representation
 --
 
 data KnownPeerInfo = KnownPeerInfo {
-
-       -- | Should we advertise this peer when other nodes send us gossip requests?
-       knownPeerAdvertise :: !PeerAdvertise,
-
        -- | The current number of consecutive connection attempt failures. This
        -- is reset as soon as there is a successful connection.
        --
@@ -161,11 +155,10 @@ toSet :: KnownPeers peeraddr -> Set peeraddr
 toSet = Map.keysSet . allPeers
 
 insert :: Ord peeraddr
-       => (peeraddr -> PeerAdvertise) -- ^ Usually @const DoAdvertisePeer@
-       -> Set peeraddr
+       => Set peeraddr
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
-insert peeradvertise peeraddrs
+insert peeraddrs
        knownPeers@KnownPeers {
          allPeers,
          availableForGossip,
@@ -191,14 +184,12 @@ insert peeradvertise peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeerInfo peeraddr =
+    newPeerInfo _peeraddr =
       KnownPeerInfo {
-        knownPeerAdvertise = peeradvertise peeraddr,
         knownPeerFailCount = 0
       }
-    mergePeerInfo old new =
+    mergePeerInfo old _new =
       KnownPeerInfo {
-        knownPeerAdvertise = knownPeerAdvertise new,
         knownPeerFailCount = knownPeerFailCount old
       }
 
