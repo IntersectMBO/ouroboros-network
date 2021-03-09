@@ -359,8 +359,8 @@ mockPeerSelectionActions' tracer
         -- monitoring loop which does asynchronous demotions. It will terminate
         -- as soon as either of the events:
         --
-        -- * the script returns 'Noop'
-        -- * peer demoted to 'PeerCold'
+        -- + the script returns 'Noop'
+        -- + peer demoted to 'PeerCold'
         --
         let loop = do
               (demotion, delay) <- stepScript connectScript
