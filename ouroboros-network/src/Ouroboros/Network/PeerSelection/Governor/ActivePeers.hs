@@ -8,17 +8,17 @@ module Ouroboros.Network.PeerSelection.Governor.ActivePeers
   , jobDemoteActivePeer
   ) where
 
+import           Data.Semigroup (Min(..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Concurrent.JobPool (Job(..))
-import           Control.Exception (SomeException)
+import           Control.Exception (SomeException, assert)
 
-import           Ouroboros.Network.PeerSelection.Types
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeerInfo(..))
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -39,7 +39,6 @@ belowTarget actions
               policyPickWarmPeersToPromote
             }
             st@PeerSelectionState {
-              knownPeers,
               establishedPeers,
               activePeers,
               inProgressPromoteWarm,
@@ -52,17 +51,16 @@ belowTarget actions
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
 
     -- Are there any warm peers we could pick to promote?
-  , numEstablishedPeers - numActivePeers
-                        - numPromoteInProgress - numDemoteInProgress > 0
+  , numEstablishedReadyPeers - numActivePeers
+                             - numPromoteInProgress - numDemoteInProgress > 0
   = Guarded Nothing $ do
           -- The availableToPromote is non-empty due to the second guard.
           -- The numPeersToPromote is positive due to the first guard.
-      let availableToPromote :: Map peeraddr KnownPeerInfo
-          availableToPromote = KnownPeers.toMap knownPeers
-                                `Map.intersection` establishedPeers
-                                `Map.withoutKeys` activePeers
-                                `Map.withoutKeys` inProgressPromoteWarm
-                                `Map.withoutKeys` inProgressDemoteWarm
+      let availableToPromote :: Set peeraddr
+          availableToPromote = EstablishedPeers.readyPeers establishedPeers
+                                 Set.\\ activePeers
+                                 Set.\\ inProgressPromoteWarm
+                                 Set.\\ inProgressDemoteWarm
           numPeersToPromote  = targetNumberOfActivePeers
                              - numActivePeers
                              - numPromoteInProgress
@@ -71,9 +69,9 @@ belowTarget actions
                              availableToPromote
                              numPeersToPromote
       let selectedToPromote' :: Map peeraddr peerconn
-          selectedToPromote' = establishedPeers
+          selectedToPromote' = EstablishedPeers.toMap establishedPeers
                                  `Map.restrictKeys` selectedToPromote
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TracePromoteWarmPeers
                           targetNumberOfActivePeers
                           numActivePeers
@@ -86,11 +84,16 @@ belowTarget actions
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
+    -- If we could promote except that there are no peers currently available
+    -- then we return the next wakeup time (if any)
+  | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
+  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers)
+
   | otherwise
   = GuardedSkip Nothing
   where
-    numEstablishedPeers, numActivePeers, numPromoteInProgress :: Int
-    numEstablishedPeers  = Map.size establishedPeers
+    numEstablishedReadyPeers, numActivePeers, numPromoteInProgress :: Int
+    numEstablishedReadyPeers = EstablishedPeers.sizeReady establishedPeers
     numActivePeers       = Set.size activePeers
     numPromoteInProgress = Set.size inProgressPromoteWarm
     numDemoteInProgress  = Set.size inProgressDemoteWarm
@@ -102,7 +105,7 @@ jobPromoteWarmPeer :: forall peeraddr peerconn m.
                    -> peeraddr
                    -> peerconn
                    -> Job m (Completion m peeraddr peerconn)
-jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
+jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {activatePeerConnection}}
                    peeraddr peerconn =
     Job job handler "promoteWarmPeer"
   where
@@ -110,8 +113,16 @@ jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
     handler e =
       --TODO: decide what happens if promotion fails, do we stay warm or go to
       -- cold? Will this be reported asynchronously via the state monitoring?
-      Completion $ \st _now -> Decision {
-        decisionTrace = TracePromoteWarmFailed peeraddr e,
+      Completion $ \st@PeerSelectionState {
+                               activePeers,
+                               targets = PeerSelectionTargets {
+                                           targetNumberOfActivePeers
+                                         }
+                             }
+                    _now -> Decision {
+        decisionTrace = TracePromoteWarmFailed targetNumberOfActivePeers
+                                               (Set.size activePeers) 
+                                               peeraddr e,
         decisionState = st {
                           inProgressPromoteWarm = Set.delete peeraddr
                                                     (inProgressPromoteWarm st)
@@ -124,18 +135,26 @@ jobPromoteWarmPeer PeerSelectionActions{activatePeerConnection}
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of activatePeerConnection
       activatePeerConnection peerconn
-      return $ Completion $ \st _now -> Decision {
-        decisionTrace = TracePromoteWarmDone peeraddr,
-        decisionState = st {
-                          activePeers           = Set.insert peeraddr
-                                                    (activePeers st),
-                          establishedStatus     = Map.insert peeraddr PeerHot
-                                                    (establishedStatus st),
-                          inProgressPromoteWarm = Set.delete peeraddr
-                                                    (inProgressPromoteWarm st)
-                        },
-        decisionJobs  = []
-      }
+      return $ Completion $ \st@PeerSelectionState {
+                               activePeers,
+                               targets = PeerSelectionTargets {
+                                           targetNumberOfActivePeers
+                                         }
+                             }
+                           _now ->
+        assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
+        let activePeers' = Set.insert peeraddr activePeers in
+        Decision {
+          decisionTrace = TracePromoteWarmDone targetNumberOfActivePeers
+                                               (Set.size activePeers')
+                                               peeraddr,
+          decisionState = st {
+                            activePeers           = activePeers',
+                            inProgressPromoteWarm = Set.delete peeraddr
+                                                      (inProgressPromoteWarm st)
+                          },
+          decisionJobs  = []
+        }
 
 
 ----------------------------
@@ -154,7 +173,6 @@ aboveTarget actions
               policyPickHotPeersToDemote
             }
             st@PeerSelectionState {
-              knownPeers,
               establishedPeers,
               activePeers,
               inProgressDemoteHot,
@@ -175,19 +193,18 @@ aboveTarget actions
   , numPeersToDemote > 0
   = Guarded Nothing $ do
 
-      let availableToDemote :: Map peeraddr KnownPeerInfo
-          availableToDemote = KnownPeers.toMap knownPeers
-                               `Map.restrictKeys` activePeers
-                               `Map.withoutKeys` inProgressDemoteHot
+      let availableToDemote :: Set peeraddr
+          availableToDemote = activePeers
+                                Set.\\ inProgressDemoteHot
       selectedToDemote <- pickPeers
                             policyPickHotPeersToDemote
                             availableToDemote
                             numPeersToDemote
       let selectedToDemote' :: Map peeraddr peerconn
-          selectedToDemote' = establishedPeers
+          selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                 `Map.restrictKeys` selectedToDemote
 
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TraceDemoteHotPeers
                           targetNumberOfActivePeers
                           numActivePeers
@@ -210,7 +227,7 @@ jobDemoteActivePeer :: forall peeraddr peerconn m.
                     -> peeraddr
                     -> peerconn
                     -> Job m (Completion m peeraddr peerconn)
-jobDemoteActivePeer PeerSelectionActions{deactivatePeerConnection}
+jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
                     peeraddr peerconn =
     Job job handler "demoteActivePeer"
   where
@@ -220,8 +237,15 @@ jobDemoteActivePeer PeerSelectionActions{deactivatePeerConnection}
       -- the state where we believed these peers are still warm, since then we
       -- can have another go at the ones we didn't yet try to close, or perhaps
       -- it'll be closed for other reasons and our monitoring will notice it.
-      Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteHotFailed peeraddr e,
+      Completion $ \st@PeerSelectionState {
+                      activePeers,
+                      targets = PeerSelectionTargets {
+                                  targetNumberOfActivePeers
+                                }
+                    }
+                    _now -> Decision {
+        decisionTrace = TraceDemoteHotFailed targetNumberOfActivePeers
+                                             (Set.size activePeers) peeraddr e,
         decisionState = st {
                           inProgressDemoteHot = Set.delete peeraddr
                                                   (inProgressDemoteHot st)
@@ -232,15 +256,23 @@ jobDemoteActivePeer PeerSelectionActions{deactivatePeerConnection}
     job :: m (Completion m peeraddr peerconn)
     job = do
       deactivatePeerConnection peerconn
-      return $ Completion $ \st _now -> Decision {
-        decisionTrace = TraceDemoteHotDone peeraddr,
-        decisionState = st {
-                          activePeers         = Set.delete peeraddr
-                                                  (activePeers st),
-                          establishedStatus   = Map.insert peeraddr PeerWarm
-                                                  (establishedStatus st),
-                          inProgressDemoteHot = Set.delete peeraddr
-                                                  (inProgressDemoteHot st)
-                        },
-        decisionJobs  = []
-      }
+      return $ Completion $ \st@PeerSelectionState {
+                                activePeers,
+                                targets = PeerSelectionTargets {
+                                            targetNumberOfActivePeers
+                                          }
+                             }
+                             _now ->
+        assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
+        let activePeers' = Set.delete peeraddr activePeers in
+        Decision {
+          decisionTrace = TraceDemoteHotDone targetNumberOfActivePeers
+                                             (Set.size activePeers')
+                                             peeraddr,
+          decisionState = st {
+                            activePeers         = activePeers',
+                            inProgressDemoteHot = Set.delete peeraddr
+                                                    (inProgressDemoteHot st)
+                          },
+          decisionJobs  = []
+        }

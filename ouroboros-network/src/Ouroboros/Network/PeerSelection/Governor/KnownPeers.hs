@@ -18,9 +18,9 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Exception (Exception(..), SomeException)
+import           Control.Exception (Exception(..), SomeException, assert)
 
-import           Ouroboros.Network.PeerSelection.Types
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -35,9 +35,8 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 --
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> Time
             -> MkGuardedDecision peeraddr peerconn m
-belowTarget actions now
+belowTarget actions
             policy@PeerSelectionPolicy {
               policyMaxInProgressGossipReqs,
               policyPickKnownPeersForGossip,
@@ -62,11 +61,10 @@ belowTarget actions now
   = Guarded Nothing $ do
       selectedForGossip <- pickPeers
                              policyPickKnownPeersForGossip
-                             (KnownPeers.toMap knownPeers
-                                `Map.restrictKeys` availableForGossip)
+                             availableForGossip
                              numGossipReqsPossible
       let numGossipReqs = Set.size selectedForGossip
-      return Decision {
+      return $ \now -> Decision {
         decisionTrace = TraceGossipRequests
                           targetNumberOfKnownPeers
                           numKnownPeers
@@ -143,8 +141,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
-                                             PeerSourceGossip
-                                             (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
@@ -174,8 +170,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
-                                             PeerSourceGossip
-                                             (const DoAdvertisePeer)
                                              (Set.fromList newPeers)
                                              (knownPeers st),
                               inProgressGossipReqs = inProgressGossipReqs st
@@ -220,8 +214,6 @@ jobGossip PeerSelectionActions{requestPeerGossip}
         decisionState = st {
                           --TODO: also update with the failures
                           knownPeers = KnownPeers.insert
-                                         PeerSourceGossip
-                                         (const DoAdvertisePeer)
                                          (Set.fromList newPeers)
                                          (knownPeers st),
                           inProgressGossipReqs = inProgressGossipReqs st
@@ -280,39 +272,44 @@ aboveTarget PeerSelectionPolicy {
                               - targetNumberOfRootPeers
         protectedRootPeers    = Map.keysSet localRootPeers
                              <> Set.drop numRootPeersCanForget publicRootPeers
-        availableToForget     = KnownPeers.toMap knownPeers
-                                   Map.\\ establishedPeers
-                                  `Map.withoutKeys` protectedRootPeers
-                                  `Map.withoutKeys` inProgressPromoteCold
+        availableToForget     = KnownPeers.toSet knownPeers
+                                  Set.\\ EstablishedPeers.toSet establishedPeers
+                                  Set.\\ protectedRootPeers
+                                  Set.\\ inProgressPromoteCold
 
-  , not (Map.null availableToForget)
+  , not (Set.null availableToForget)
   = Guarded Nothing $ do
       let numPeersToForget = numKnownPeers - targetNumberOfKnownPeers
       selectedToForget <- pickPeers
                             policyPickColdPeersToForget
                             availableToForget
                             numPeersToForget
-      return Decision {
-        decisionTrace = TraceForgetColdPeers
-                          targetNumberOfKnownPeers
-                          numKnownPeers
-                          selectedToForget,
-        decisionState = st {
-                          knownPeers      = KnownPeers.delete
-                                              selectedToForget
-                                              knownPeers,
-                          publicRootPeers = publicRootPeers
-                                              Set.\\ selectedToForget
-                        },
-        decisionJobs  = []
-      }
+      return $ \_now ->
+        let knownPeers'      = KnownPeers.delete
+                                 selectedToForget
+                                 knownPeers
+            publicRootPeers' = publicRootPeers
+                                 Set.\\ selectedToForget
+        in assert (Set.isSubsetOf
+                     publicRootPeers'
+                    (KnownPeers.toSet knownPeers'))
+
+              Decision {
+                decisionTrace = TraceForgetColdPeers
+                                  targetNumberOfKnownPeers
+                                  numKnownPeers
+                                  selectedToForget,
+                decisionState = st { knownPeers      = knownPeers',
+                                     publicRootPeers = publicRootPeers' },
+                decisionJobs  = []
+              }
 
   | otherwise
   = GuardedSkip Nothing
   where
     numKnownPeers, numEstablishedPeers :: Int
     numKnownPeers        = KnownPeers.size knownPeers
-    numEstablishedPeers  = Map.size establishedPeers
+    numEstablishedPeers  = EstablishedPeers.size establishedPeers
 
 
 -------------------------------

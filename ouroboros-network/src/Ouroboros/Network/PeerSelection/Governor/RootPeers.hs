@@ -12,9 +12,8 @@ import qualified Data.Set as Set
 import           Control.Concurrent.JobPool (Job(..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (SomeException)
+import           Control.Exception (SomeException, assert)
 
-import           Ouroboros.Network.PeerSelection.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
@@ -27,9 +26,9 @@ belowTarget :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> Time
             -> PeerSelectionState peeraddr peerconn
-            -> Guarded (STM m) (Decision m peeraddr peerconn)
+            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 belowTarget actions
-            now
+            blockedAt
             st@PeerSelectionState {
               localRootPeers,
               publicRootPeers,
@@ -46,9 +45,9 @@ belowTarget actions
   , not inProgressPublicRootsReq
 
     -- We limit how frequently we make requests, are we allowed to do it yet?
-  , now >= publicRootRetryTime
+  , blockedAt >= publicRootRetryTime
   = Guarded Nothing $
-      return Decision {
+      return $ \_now -> Decision {
         decisionTrace = TracePublicRootsRequest
                           targetNumberOfRootPeers
                           numRootPeers,
@@ -114,8 +113,6 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
                                        Set.\\ publicRootPeers st
             publicRootPeers' = publicRootPeers st <> newPeers
             knownPeers'      = KnownPeers.insert
-                                 PeerSourcePublicRoot
-                                 (const DoAdvertisePeer)
                                  newPeers
                                  (knownPeers st)
 
@@ -138,17 +135,22 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
 
             publicRootRetryTime :: Time
             publicRootRetryTime = addTime publicRootRetryDiffTime now
-         in Decision {
-              decisionTrace = TracePublicRootsResults
-                                newPeers
-                                publicRootBackoffs'
-                                publicRootRetryDiffTime,
-              decisionState = st {
-                                publicRootPeers     = publicRootPeers',
-                                knownPeers          = knownPeers',
-                                publicRootBackoffs  = publicRootBackoffs',
-                                publicRootRetryTime = publicRootRetryTime,
-                                inProgressPublicRootsReq = False
-                              },
-              decisionJobs  = []
-            }
+
+         in assert (Set.isSubsetOf
+                      publicRootPeers'
+                     (KnownPeers.toSet knownPeers'))
+
+             Decision {
+                decisionTrace = TracePublicRootsResults
+                                  newPeers
+                                  publicRootBackoffs'
+                                  publicRootRetryDiffTime,
+                decisionState = st {
+                                  publicRootPeers     = publicRootPeers',
+                                  knownPeers          = knownPeers',
+                                  publicRootBackoffs  = publicRootBackoffs',
+                                  publicRootRetryTime = publicRootRetryTime,
+                                  inProgressPublicRootsReq = False
+                                },
+                decisionJobs  = []
+              }

@@ -18,10 +18,11 @@ import           Control.Concurrent.JobPool (Job)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert, SomeException)
-import           GHC.Stack
 
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.EstablishedPeers (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers, KnownPeerInfo(..))
+import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
 import           Ouroboros.Network.PeerSelection.Types
 
 
@@ -34,25 +35,25 @@ import           Ouroboros.Network.PeerSelection.Types
 -- The post-condition is that the picked set is non-empty but must not be
 -- bigger than the requested number.
 --
-type PickPolicy peeraddr m = Map peeraddr KnownPeerInfo
+type PickPolicy peeraddr m = Set peeraddr
                           -> Int
                           -> STM m (Set peeraddr)
 
 
 -- | Check pre-conditions and post-conditions on the pick policies
-pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
-          => (Map peeraddr a -> Int -> m (Set peeraddr))
-          ->  Map peeraddr a -> Int -> m (Set peeraddr)
+pickPeers :: (Ord peeraddr, Functor m)
+          => (Set peeraddr -> Int -> m (Set peeraddr))
+          ->  Set peeraddr -> Int -> m (Set peeraddr)
 pickPeers pick available num =
     assert precondition $
     fmap (\picked -> assert (postcondition picked) picked)
          (pick available numClamped)
   where
-    precondition         = not (Map.null available) && num > 0
+    precondition         = not (Set.null available) && num > 0
     postcondition picked = not (Set.null picked)
                         && Set.size picked <= numClamped
-                        && picked `Set.isSubsetOf` Map.keysSet available
-    numClamped           = min num (Map.size available)
+                        && picked `Set.isSubsetOf` available
+    numClamped           = min num (Set.size available)
 
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
@@ -163,13 +164,35 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        requestPeerGossip :: peeraddr -> m [peeraddr],
 
-       establishPeerConnection  :: peeraddr -> m peerconn,
-       monitorPeerConnection    :: peerconn -> STM m PeerStatus,
-       activatePeerConnection   :: peerconn -> m (),
-       deactivatePeerConnection :: peerconn -> m (),
-       closePeerConnection      :: peerconn -> m ()
+       -- | Core actions run by the governor to change 'PeerStatus'.
+       --
+       peerStateActions :: PeerStateActions peeraddr peerconn m
      }
 
+
+-- | Callbacks which are performed to change peer state.
+--
+data PeerStateActions peeraddr peerconn m = PeerStateActions {
+    -- | Monitor peer state.
+    --
+    monitorPeerConnection    :: peerconn -> STM m PeerStatus,
+
+    -- | Establish new connection.
+    --
+    establishPeerConnection  :: peeraddr -> m peerconn,
+
+    -- | Activate a connection: warm to hot promotion.
+    --
+    activatePeerConnection   :: peerconn -> m (),
+
+    -- | Deactive a peer: hot to warm demotion.
+    --
+    deactivatePeerConnection :: peerconn -> m (),
+
+    -- | Close a connection: warm to cold transition.
+    --
+    closePeerConnection      :: peerconn -> m ()
+  }
 
 -----------------------
 -- Peer Selection State
@@ -196,8 +219,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        -- |
        --
-       establishedPeers     :: !(Map peeraddr peerconn),
-       establishedStatus    :: !(Map peeraddr PeerStatus),
+       establishedPeers     :: !(EstablishedPeers peeraddr peerconn),
 
        -- |
        --
@@ -240,8 +262,7 @@ emptyPeerSelectionState =
       localRootPeers       = Map.empty,
       publicRootPeers      = Set.empty,
       knownPeers           = KnownPeers.empty,
-      establishedPeers     = Map.empty,
-      establishedStatus    = Map.empty,
+      establishedPeers     = EstablishedPeers.empty,
       activePeers          = Set.empty,
       publicRootBackoffs   = 0,
       publicRootRetryTime  = Time 0,
@@ -254,63 +275,72 @@ emptyPeerSelectionState =
     }
 
 
-invariantPeerSelectionState :: Ord peeraddr
-                            => PeerSelectionState peeraddr peerconn -> Bool
-invariantPeerSelectionState PeerSelectionState{..} =
-    KnownPeers.invariant knownPeers
+assertPeerSelectionState :: Ord peeraddr
+                         => PeerSelectionState peeraddr peerconn
+                         -> a -> a
+assertPeerSelectionState PeerSelectionState{..} =
+    assert (KnownPeers.invariant knownPeers)
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
- && Set.isSubsetOf activePeersSet establishedPeersSet
- && Set.isSubsetOf establishedPeersSet knownPeersSet
- && Map.keysSet establishedStatus == establishedPeersSet
-
-    -- The localRootPeers and publicRootPeers must not overlap.
- && Set.null (Set.intersection localRootPeersSet publicRootPeers)
-
+  . assert (Set.isSubsetOf activePeersSet establishedReadySet)
+  . assert (Set.isSubsetOf establishedPeersSet knownPeersSet)
+  . assert (EstablishedPeers.invariant establishedPeers)
+   -- The localRootPeers and publicRootPeers must not overlap.
+  . assert (Set.null (Set.intersection localRootPeersSet publicRootPeers))
     -- The localRootPeers are a subset of the knownPeers,
-    -- and with correct source and other info in the knownPeers.
- && Map.isSubmapOfBy (\rootPeerAdvertise
-                       KnownPeerInfo {knownPeerAdvertise, knownPeerSource} ->
-                           knownPeerSource == PeerSourceLocalRoot
-                        && knownPeerAdvertise == rootPeerAdvertise)
-                     localRootPeers
-                     (KnownPeers.toMap knownPeers)
+    -- and with correct source info in the knownPeers (either
+    -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
+    -- root peers might overlap).
+  . assert (Set.isSubsetOf
+             (Map.keysSet localRootPeers)
+             (KnownPeers.toSet knownPeers))
 
     -- The publicRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers.
- && Map.isSubmapOfBy (\_ KnownPeerInfo {knownPeerSource} ->
-                         knownPeerSource == PeerSourcePublicRoot)
-                     (Map.fromSet (const ()) publicRootPeers)
-                     (KnownPeers.toMap knownPeers)
+  . assert (Set.isSubsetOf
+              publicRootPeers
+             (KnownPeers.toSet knownPeers))
 
     --TODO: all other peers have PeerSourceGossip, so no stale source info.
 
     -- We don't want to pick local root peers to forget, so it had better be
     -- the case that there's fewer of them than our target number.
- && Map.size localRootPeers <= targetNumberOfKnownPeers targets
-
+  . assert (Map.size localRootPeers <= targetNumberOfKnownPeers targets)
     -- All currently established peers are in the availableToConnect set since
     -- the alternative is a record of failure, but these are not (yet) failed.
- && Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers)
+  . assert (Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers))
 
     -- No constraint for publicRootBackoffs, publicRootRetryTime
     -- or inProgressPublicRootsReq
 
- && inProgressGossipReqs >= 0
- && Set.isSubsetOf inProgressPromoteCold coldPeersSet
- && Set.isSubsetOf inProgressPromoteWarm warmPeersSet
- && Set.isSubsetOf inProgressDemoteWarm  warmPeersSet
- && Set.isSubsetOf inProgressDemoteHot   hotPeersSet
- && Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm)
+  . assert (inProgressGossipReqs >= 0)
+  . assert (Set.isSubsetOf inProgressPromoteCold coldPeersSet)
+  . assert (Set.isSubsetOf inProgressPromoteWarm warmPeersSet)
+  . assert (Set.isSubsetOf inProgressDemoteWarm  warmPeersSet)
+  . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet)
+  . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
   where
     localRootPeersSet   = Map.keysSet localRootPeers
-    knownPeersSet       = Map.keysSet (KnownPeers.toMap knownPeers)
-    establishedPeersSet = Map.keysSet establishedPeers
+    knownPeersSet       = KnownPeers.toSet knownPeers
+    establishedPeersSet = EstablishedPeers.toSet      establishedPeers
+    establishedReadySet = EstablishedPeers.readyPeers establishedPeers
     activePeersSet      = activePeers
     coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet        = establishedPeersSet Set.\\ activePeersSet
     hotPeersSet         = activePeersSet
+
+
+-- | A view of the status of each established peer, for testing and debugging.
+--
+establishedPeersStatus :: Ord peeraddr
+                       => PeerSelectionState peeraddr peerconn
+                       -> Map peeraddr PeerStatus
+establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
+    -- map union-override, left to right
+    Map.fromSet (\_ -> PeerHot)  activePeers
+ <> Map.fromSet (\_ -> PeerWarm) (EstablishedPeers.toSet establishedPeers)
+
 
 
 ---------------------------
@@ -372,6 +402,10 @@ data Decision m peeraddr peerconn = Decision {
        decisionJobs  :: [Job m (Completion m peeraddr peerconn)]
      }
 
+-- | Decision which has access to the current time, rather than the time when
+-- the governor's loop blocked to make a decision.
+--
+type TimedDecision m peeraddr peerconn = Time -> Decision m peeraddr peerconn
 
 -- | Type alias for function types which are used to create governor decisions.
 -- Allmost all decisions are following this pattern.
@@ -379,7 +413,7 @@ data Decision m peeraddr peerconn = Decision {
 type MkGuardedDecision peeraddr peerconn m
      = PeerSelectionPolicy peeraddr m
     -> PeerSelectionState peeraddr peerconn
-    -> Guarded (STM m) (Decision m peeraddr peerconn)
+    -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 
 
 newtype Completion m peeraddr peerconn =
@@ -393,26 +427,43 @@ data TracePeerSelection peeraddr =
      | TracePublicRootsRequest Int Int
      | TracePublicRootsResults (Set peeraddr) Int DiffTime
      | TracePublicRootsFailure SomeException Int DiffTime
-     | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr) -- target, actual, selected
+     -- | target known peers, actual known peers, peers available for gossip,
+     -- peers selected for gossip
+     | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr)
      | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
-     | TraceForgetColdPeers    Int Int (Set peeraddr) -- target, actual, selected
+     -- | target known peers, actual known peers, selected peer
+     | TraceForgetColdPeers    Int Int (Set peeraddr)
+     -- | target established, actual established, selected peers
      | TracePromoteColdPeers   Int Int (Set peeraddr)
-     | TracePromoteColdFailed  peeraddr SomeException
-     | TracePromoteColdDone    peeraddr
+     -- | target established, actual established, peer, delay until next
+     -- promotion, reason
+     | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
+     -- | target established, actual established, peer
+     | TracePromoteColdDone    Int Int peeraddr
+     -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
-     | TracePromoteWarmFailed  peeraddr SomeException
-     | TracePromoteWarmDone    peeraddr
-     | TraceDemoteWarmPeers    Int Int (Set peeraddr) -- target, actual, selected
-     | TraceDemoteWarmFailed   peeraddr SomeException
-     | TraceDemoteWarmDone     peeraddr
+     -- | target active, actual active, peer, reason
+     | TracePromoteWarmFailed  Int Int peeraddr SomeException
+     -- | target active, actual active, peer
+     | TracePromoteWarmDone    Int Int peeraddr
+     -- | target established, actual established, selected peers
+     | TraceDemoteWarmPeers    Int Int (Set peeraddr)
+     -- | target established, actual established, peer, reason
+     | TraceDemoteWarmFailed   Int Int  peeraddr SomeException
+     -- | target established, actual established, peer
+     | TraceDemoteWarmDone     Int Int peeraddr
+     -- | target active, actual active, selected peers
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
-     | TraceDemoteHotFailed    peeraddr SomeException
-     | TraceDemoteHotDone      peeraddr
+     -- | target active, actual active, peer, reason
+     | TraceDemoteHotFailed    Int Int peeraddr SomeException
+     -- | target active, actual active, peer
+     | TraceDemoteHotDone      Int Int peeraddr
      | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
   deriving Show
 
 data DebugPeerSelection peeraddr peerconn =
-       TraceGovernorState  (PeerSelectionState peeraddr peerconn)
-                           (Maybe DiffTime)
+       TraceGovernorState Time
+                          (Maybe DiffTime)
+                          (PeerSelectionState peeraddr peerconn)
   deriving (Show, Functor)

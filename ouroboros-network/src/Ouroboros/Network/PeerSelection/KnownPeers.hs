@@ -6,7 +6,6 @@
 module Ouroboros.Network.PeerSelection.KnownPeers (
     -- * Types
     KnownPeers,
-    KnownPeerInfo(..),
     invariant,
 
     -- * Basic container operations
@@ -14,11 +13,12 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     size,
     insert,
     delete,
-    toMap,
+    toSet,
 
     -- * Special operations
     setCurrentTime,
     incrementFailCount,
+    resetFailCount,
 
     -- ** Tracking when we can gossip
     minGossipTime,
@@ -28,7 +28,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     -- ** Tracking when we can (re)connect
     minConnectTime,
     setConnectTime,
-    availableToConnect,
+    availableToConnect
   ) where
 
 import qualified Data.List as List
@@ -36,6 +36,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import           Data.Semigroup (Min (..))
 import qualified Data.OrdPSQ as PSQ
 import           Data.OrdPSQ (OrdPSQ)
 --import           System.Random (RandomGen(..))
@@ -43,32 +44,13 @@ import           Data.OrdPSQ (OrdPSQ)
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
-import           Ouroboros.Network.PeerSelection.Types
-
 
 -------------------------------
 -- Known peer set representation
 --
 
-data KnownPeerInfo = KnownPeerInfo {
-
-       -- | Should we advertise this peer when other nodes send us gossip requests?
-       knownPeerAdvertise :: !PeerAdvertise,
-
-       knownPeerSource    :: !PeerSource,
-
-       -- | The current number of consecutive connection attempt failures. This
-       -- is reset as soon as there is a successful connection.
-       --
-       -- It is used to implement the exponential backoff strategy and may also
-       -- be used by policies to select peers to forget.
-       --
-       knownPeerFailCount :: !Int
-     }
-  deriving (Eq, Show)
-
 -- | The set of known peers. To a first approximation it can be thought of as
--- a 'Map' from @peeraddr@ to the 'KnownPeerInfo' for each one.
+-- a 'Set' of @peeraddr@.
 --
 -- It has two special features:
 --
@@ -107,6 +89,17 @@ data KnownPeers peeraddr = KnownPeers {
        nextConnectTimes   :: !(OrdPSQ peeraddr Time ())
      }
   deriving Show
+
+data KnownPeerInfo = KnownPeerInfo {
+       -- | The current number of consecutive connection attempt failures. This
+       -- is reset as soon as there is a successful connection.
+       --
+       -- It is used to implement the exponential backoff strategy and may also
+       -- be used by policies to select peers to forget.
+       --
+       knownPeerFailCount :: !Int
+     }
+  deriving (Eq, Show)
 
 
 invariant :: Ord peeraddr => KnownPeers peeraddr -> Bool
@@ -151,17 +144,15 @@ empty =
 size :: KnownPeers peeraddr -> Int
 size = Map.size . allPeers
 
--- | /O(1)/
-toMap :: KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
-toMap = allPeers
+-- | /O(n)/
+toSet :: KnownPeers peeraddr -> Set peeraddr
+toSet = Map.keysSet . allPeers
 
 insert :: Ord peeraddr
-       => PeerSource
-       -> (peeraddr -> PeerAdvertise) -- ^ Usually @const DoAdvertisePeer@
-       -> Set peeraddr
+       => Set peeraddr
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
-insert peersource peeradvertise peeraddrs
+insert peeraddrs
        knownPeers@KnownPeers {
          allPeers,
          availableForGossip,
@@ -187,18 +178,12 @@ insert peersource peeradvertise peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeerInfo peeraddr =
+    newPeerInfo _peeraddr =
       KnownPeerInfo {
-        knownPeerSource    = peersource,
-        knownPeerAdvertise = peeradvertise peeraddr,
         knownPeerFailCount = 0
       }
-    mergePeerInfo old new =
+    mergePeerInfo old _new =
       KnownPeerInfo {
-        knownPeerSource    = knownPeerSource old `min` knownPeerSource new,
-        knownPeerAdvertise = case knownPeerSource new of
-                               PeerSourceLocalRoot -> knownPeerAdvertise new
-                               _                   -> knownPeerAdvertise old,
         knownPeerFailCount = knownPeerFailCount old
       }
 
@@ -240,11 +225,14 @@ setCurrentTime :: Ord peeraddr
                => Time
                -> KnownPeers peeraddr
                -> KnownPeers peeraddr
-setCurrentTime now knownPeers@KnownPeers { nextGossipTimes }
+setCurrentTime now knownPeers@KnownPeers { nextGossipTimes, nextConnectTimes }
  -- Efficient check for the common case of there being nothing to do:
-  | Just (_,t,_,_) <- PSQ.minView nextGossipTimes
+  | Just (Min t) <- (f <$> PSQ.minView nextGossipTimes)
+                 <> (f <$> PSQ.minView nextConnectTimes)
   , t > now
   = knownPeers
+  where
+    f (_,t,_,_) = Min t
 
 setCurrentTime now knownPeers@KnownPeers {
                      availableForGossip,
@@ -279,14 +267,28 @@ setCurrentTime now knownPeers@KnownPeers {
 incrementFailCount :: Ord peeraddr
                    => peeraddr
                    -> KnownPeers peeraddr
-                   -> KnownPeers peeraddr
+                   -> (Int, KnownPeers peeraddr)
 incrementFailCount peeraddr knownPeers@KnownPeers{allPeers} =
     assert (peeraddr `Map.member` allPeers) $
-    knownPeers {
-      allPeers = Map.adjust incr peeraddr allPeers
-    }
+    let allPeers' = Map.update (Just . incr) peeraddr allPeers
+    in ( -- since the `peeraddr` is assumed to be part of `allPeers` the `Map.!`
+         -- is safe
+         knownPeerFailCount (allPeers' Map.! peeraddr)
+       , knownPeers { allPeers = allPeers' }
+       )
   where
     incr kpi = kpi { knownPeerFailCount = knownPeerFailCount kpi + 1 }
+
+
+resetFailCount :: Ord peeraddr
+               => peeraddr
+               -> KnownPeers peeraddr
+               -> KnownPeers peeraddr
+resetFailCount peeraddr knownPeers@KnownPeers{allPeers} =
+    assert (peeraddr `Map.member` allPeers) $
+    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownPeerFailCount = 0 })
+                              peeraddr allPeers
+               }
 
 
 -------------------------------
@@ -338,13 +340,11 @@ setGossipTime peeraddrs time
 -- Tracking when we can (re)connect
 --
 
-minConnectTime :: Ord peeraddr => KnownPeers peeraddr -> Maybe Time
-minConnectTime KnownPeers {
-                   availableToConnect,
-                   nextConnectTimes
-                 }
-  | Set.null availableToConnect
-  , Just (_k, t, _, _psq) <- PSQ.minView nextConnectTimes
+minConnectTime :: Ord peeraddr
+               => KnownPeers peeraddr
+               -> Maybe Time
+minConnectTime KnownPeers { nextConnectTimes }
+  | Just (_k, t, _, _psq) <- PSQ.minView nextConnectTimes
   = Just t
 
   | otherwise
@@ -364,11 +364,11 @@ setConnectTime peeraddrs time
                  } =
     assert (all (`Map.member` allPeers) peeraddrs) $
     let knownPeers' = knownPeers {
-          availableForGossip =
+          availableToConnect =
                    availableToConnect
             Set.\\ peeraddrs,
 
-          nextGossipTimes =
+          nextConnectTimes =
             List.foldl' (\psq peeraddr -> PSQ.insert peeraddr time () psq)
                         nextConnectTimes
                         peeraddrs

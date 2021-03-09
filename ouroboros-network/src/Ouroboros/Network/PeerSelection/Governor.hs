@@ -18,6 +18,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     PeerSelectionPolicy(..),
     PeerSelectionTargets(..),
     PeerSelectionActions(..),
+    PeerStateActions(..),
     TracePeerSelection(..),
     DebugPeerSelection(..),
     peerSelectionGovernor,
@@ -28,6 +29,7 @@ module Ouroboros.Network.PeerSelection.Governor (
 
     -- * Internals exported for testing
     sanePeerSelectionTargets,
+    establishedPeersStatus,
     PeerSelectionState(..),
 ) where
 
@@ -43,8 +45,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith)
-import           Control.Exception (assert)
 
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
 import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
@@ -470,47 +472,52 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
     loop
   where
     loop :: PeerSelectionState peeraddr peerconn -> m Void
-    loop !st = assert (invariantPeerSelectionState st) $ do
+    loop !st = assertPeerSelectionState st $ do
+      blockedAt <- getMonotonicTime
+      let knownPeers'       = KnownPeers.setCurrentTime blockedAt (knownPeers st)
+          establishedPeers' = EstablishedPeers.setCurrentTime blockedAt (establishedPeers st)
+          st'               = st { knownPeers       = knownPeers',
+                                   establishedPeers = establishedPeers' }
+
+      timedDecision <- evalGuardedDecisions blockedAt st'
+
+      -- get the current time after the governor returned from the blocking
+      -- 'evalGuardedDecisions' call.
       now <- getMonotonicTime
-      let knownPeers' = KnownPeers.setCurrentTime now (knownPeers st)
-          st'         = st { knownPeers = knownPeers' }
-
-      decision <- evalGuardedDecisions now st'
-
-      let Decision { decisionTrace, decisionJobs, decisionState } = decision
+      let Decision { decisionTrace, decisionJobs, decisionState } = timedDecision now
       traceWith tracer decisionTrace
       mapM_ (JobPool.forkJob jobPool) decisionJobs
       loop decisionState
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
-                         -> m (Decision m peeraddr peerconn)
-    evalGuardedDecisions now st =
-      case guardedDecisions now st of
+                         -> m (TimedDecision m peeraddr peerconn)
+    evalGuardedDecisions blockedAt st =
+      case guardedDecisions blockedAt st of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
 
         Guarded Nothing decisionAction -> do
-          traceWith debugTracer (TraceGovernorState st Nothing)
+          traceWith debugTracer (TraceGovernorState blockedAt Nothing st)
           atomically decisionAction
 
         Guarded (Just (Min wakeupAt)) decisionAction -> do
-          let wakeupIn = diffTime wakeupAt now
-          traceWith debugTracer (TraceGovernorState st (Just wakeupIn))
+          let wakeupIn = diffTime wakeupAt blockedAt
+          traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
           wakupTimeout <- newTimeout wakeupIn
           let wakeup    = awaitTimeout wakupTimeout >> pure (wakeupDecision st)
-          decision     <- atomically (decisionAction <|> wakeup)
+          timedDecision     <- atomically (decisionAction <|> wakeup)
           cancelTimeout wakupTimeout
-          return decision
+          return timedDecision
 
     guardedDecisions :: Time
                      -> PeerSelectionState peeraddr peerconn
-                     -> Guarded (STM m) (Decision m peeraddr peerconn)
-    guardedDecisions now st =
+                     -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+    guardedDecisions blockedAt st =
       -- All the alternative non-blocking internal decisions.
-         RootPeers.belowTarget        actions now        st
-      <> KnownPeers.belowTarget       actions now policy st
+         RootPeers.belowTarget        actions blockedAt  st
+      <> KnownPeers.belowTarget       actions     policy st
       <> KnownPeers.aboveTarget                   policy st
       <> EstablishedPeers.belowTarget actions     policy st
       <> EstablishedPeers.aboveTarget actions     policy st
@@ -520,7 +527,7 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
       -- All the alternative potentially-blocking decisions.
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions st
-      <> Monitor.jobs                 jobPool st now
+      <> Monitor.jobs                 jobPool st
       <> Monitor.connections          actions st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
@@ -535,8 +542,8 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
 
 
 wakeupDecision :: PeerSelectionState peeraddr peerconn
-               -> Decision m peeraddr peerconn
-wakeupDecision st =
+               -> TimedDecision m peeraddr peerconn
+wakeupDecision st _now =
   Decision {
     decisionTrace = TraceGovernorWakeup,
     decisionState = st,
