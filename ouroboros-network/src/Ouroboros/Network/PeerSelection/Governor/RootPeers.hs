@@ -136,10 +136,9 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
             publicRootRetryTime :: Time
             publicRootRetryTime = addTime publicRootRetryDiffTime now
 
-         in assert
-             (Map.isSubmapOfBy (\_ _ -> True)
-                  (Map.fromSet (const ()) publicRootPeers')
-                  (KnownPeers.toMap knownPeers'))
+         in assert (Set.isSubsetOf
+                      publicRootPeers'
+                     (KnownPeers.toSet knownPeers'))
 
              Decision {
                 decisionTrace = TracePublicRootsResults

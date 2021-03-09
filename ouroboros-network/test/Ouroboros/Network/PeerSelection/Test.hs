@@ -658,7 +658,7 @@ prop_governor_gossip_1hr (GovernorMockEnvironmentWAD env@GovernorMockEnvironment
     knownPeersAfter1Hour :: [(Time, TestTraceEvent)] -> Maybe (Set PeerAddr)
     knownPeersAfter1Hour trace =
       listToMaybe
-        [ Map.keysSet (KnownPeers.toMap (Governor.knownPeers st))
+        [ KnownPeers.toSet (Governor.knownPeers st)
         | (_, GovernorDebug (TraceGovernorState _ _ st)) <- reverse (takeFirstNHours 1 trace) ]
 
     -- The ones we find should be a subset of the ones possible to find

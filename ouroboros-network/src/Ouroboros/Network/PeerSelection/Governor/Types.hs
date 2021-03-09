@@ -292,15 +292,15 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- and with correct source info in the knownPeers (either
     -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
     -- root peers might overlap).
-  . assert (Map.isSubmapOfBy (\_ _ -> True)
-             localRootPeers
-             (KnownPeers.toMap knownPeers))
+  . assert (Set.isSubsetOf
+             (Map.keysSet localRootPeers)
+             (KnownPeers.toSet knownPeers))
 
     -- The publicRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers.
-  . assert (Map.isSubmapOfBy (\_ _ -> True)
-             (Map.fromSet (const ()) publicRootPeers)
-             (KnownPeers.toMap knownPeers))
+  . assert (Set.isSubsetOf
+              publicRootPeers
+             (KnownPeers.toSet knownPeers))
 
     --TODO: all other peers have PeerSourceGossip, so no stale source info.
 
@@ -339,7 +339,7 @@ establishedPeersStatus :: Ord peeraddr
 establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
     -- map union-override, left to right
     Map.fromSet (\_ -> PeerHot)  activePeers
- <> Map.map     (\_ -> PeerWarm) (EstablishedPeers.toMap establishedPeers)
+ <> Map.fromSet (\_ -> PeerWarm) (EstablishedPeers.toSet establishedPeers)
 
 
 

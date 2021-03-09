@@ -259,14 +259,12 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
                                `Map.restrictKeys` selectedToDemote
       return $ \_now ->
 
-          assert
-            (Set.isSubsetOf
-                 publicRootPeers'
-                 (KnownPeers.toSet knownPeers'))
-        . assert
-            (Map.isSubmapOfBy (\_ _ -> True)
-                 localRootPeers'
-                 (KnownPeers.toMap knownPeers'))
+          assert (Set.isSubsetOf
+                    publicRootPeers'
+                   (KnownPeers.toSet knownPeers'))
+        . assert (Set.isSubsetOf
+                   (Map.keysSet localRootPeers')
+                   (KnownPeers.toSet knownPeers'))
 
         $ Decision {
             decisionTrace = TraceLocalRootPeersChanged localRootPeers

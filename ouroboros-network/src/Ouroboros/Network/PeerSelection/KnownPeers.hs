@@ -6,7 +6,6 @@
 module Ouroboros.Network.PeerSelection.KnownPeers (
     -- * Types
     KnownPeers,
-    KnownPeerInfo(..),
     invariant,
 
     -- * Basic container operations
@@ -14,7 +13,6 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     size,
     insert,
     delete,
-    toMap,
     toSet,
 
     -- * Special operations
@@ -51,19 +49,8 @@ import           Control.Exception (assert)
 -- Known peer set representation
 --
 
-data KnownPeerInfo = KnownPeerInfo {
-       -- | The current number of consecutive connection attempt failures. This
-       -- is reset as soon as there is a successful connection.
-       --
-       -- It is used to implement the exponential backoff strategy and may also
-       -- be used by policies to select peers to forget.
-       --
-       knownPeerFailCount :: !Int
-     }
-  deriving (Eq, Show)
-
 -- | The set of known peers. To a first approximation it can be thought of as
--- a 'Map' from @peeraddr@ to the 'KnownPeerInfo' for each one.
+-- a 'Set' of @peeraddr@.
 --
 -- It has two special features:
 --
@@ -102,6 +89,17 @@ data KnownPeers peeraddr = KnownPeers {
        nextConnectTimes   :: !(OrdPSQ peeraddr Time ())
      }
   deriving Show
+
+data KnownPeerInfo = KnownPeerInfo {
+       -- | The current number of consecutive connection attempt failures. This
+       -- is reset as soon as there is a successful connection.
+       --
+       -- It is used to implement the exponential backoff strategy and may also
+       -- be used by policies to select peers to forget.
+       --
+       knownPeerFailCount :: !Int
+     }
+  deriving (Eq, Show)
 
 
 invariant :: Ord peeraddr => KnownPeers peeraddr -> Bool
@@ -145,10 +143,6 @@ empty =
 
 size :: KnownPeers peeraddr -> Int
 size = Map.size . allPeers
-
--- | /O(1)/
-toMap :: KnownPeers peeraddr -> Map peeraddr KnownPeerInfo
-toMap = allPeers
 
 -- | /O(n)/
 toSet :: KnownPeers peeraddr -> Set peeraddr

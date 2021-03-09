@@ -290,10 +290,9 @@ aboveTarget PeerSelectionPolicy {
                                  knownPeers
             publicRootPeers' = publicRootPeers
                                  Set.\\ selectedToForget
-        in assert
-            (Map.isSubmapOfBy (\_ _ -> True)
-                 (Map.fromSet (const ()) publicRootPeers')
-                 (KnownPeers.toMap knownPeers'))
+        in assert (Set.isSubsetOf
+                     publicRootPeers'
+                    (KnownPeers.toSet knownPeers'))
 
               Decision {
                 decisionTrace = TraceForgetColdPeers
