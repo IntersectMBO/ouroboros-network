@@ -87,9 +87,10 @@ import qualified Shelley.Spec.Ledger.EpochBoundary as SL (BlocksMade (..),
                      emptySnapShots)
 import qualified Shelley.Spec.Ledger.Keys as SL (asWitness, hashWithSerialiser,
                      signedKES)
+import qualified Shelley.Spec.Ledger.LedgerState as SL (PulsingRewUpdate,
+                     startStep)
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
-import qualified Shelley.Spec.Ledger.Rewards as SL
 import qualified Shelley.Spec.Ledger.STS.Delegs as SL
                      (DelegsPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.STS.Ledger as SL
@@ -407,8 +408,8 @@ exampleCerts :: Crypto c => StrictSeq (SL.DCert c)
 exampleCerts = StrictSeq.fromList [
       SL.DCertDeleg (SL.RegKey (keyToCredential exampleStakeKey))
     , SL.DCertPool (SL.RegPool examplePoolParams)
-    , SL.DCertMir $ SL.MIRCert SL.ReservesMIR $ Map.fromList [
-        (keyToCredential (mkDSIGNKeyPair 2), SL.Coin 110)
+    , SL.DCertMir $ SL.MIRCert SL.ReservesMIR $ SL.StakeAddressesMIR $ Map.fromList [
+        (keyToCredential (mkDSIGNKeyPair 2), SL.DeltaCoin 110)
       ]
     ]
 
@@ -601,20 +602,14 @@ exampleNewEpochState value = SL.NewEpochState {
                  (keyToCredential examplePayKey)
                  (SL.StakeRefBase (keyToCredential exampleStakeKey))
 
-    rewardUpdate :: SL.RewardUpdate (EraCrypto era)
-    rewardUpdate = SL.RewardUpdate {
-          deltaT    = SL.DeltaCoin 10
-        , deltaR    = SL.DeltaCoin (- 100)
-        , rs        = Map.singleton
-                        (keyToCredential exampleStakeKey) $
-                        Set.singleton $ SL.Reward {
-                            SL.rewardType   = SL.MemberReward
-                          , SL.rewardPool   = (SL._poolId examplePoolParams)
-                          , SL.rewardAmount = SL.Coin 10
-                          }
-        , deltaF    = SL.DeltaCoin (- 3)
-        , nonMyopic = nonMyopic
-        }
+    rewardUpdate :: SL.PulsingRewUpdate (EraCrypto era)
+    rewardUpdate = SL.startStep @era
+                     (EpochSize 432000)
+                     (SL.BlocksMade (Map.singleton (mkKeyHash 1) 10))
+                     epochState
+                     (SL.Coin 45)
+                     (SL.activeSlotCoeff SL.testGlobals)
+                     10
 
     nonMyopic :: SL.NonMyopic (EraCrypto era)
     nonMyopic = def

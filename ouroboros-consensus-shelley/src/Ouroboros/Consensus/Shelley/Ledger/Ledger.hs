@@ -484,7 +484,7 @@ encodeShelleyLedgerState
                        , shelleyLedgerTransition
                        } =
     encodeVersion serialisationFormatVersion2 $ mconcat [
-        CBOR.encodeListLen 2
+        CBOR.encodeListLen 3
       , encodeWithOrigin encodeShelleyTip shelleyLedgerTip
       , toCBOR shelleyLedgerState
       , encodeShelleyTransition shelleyLedgerTransition
@@ -499,7 +499,7 @@ decodeShelleyLedgerState = decodeVersion [
   where
     decodeShelleyLedgerState2 :: Decoder s' (LedgerState (ShelleyBlock era))
     decodeShelleyLedgerState2 = do
-      enforceSize "LedgerState ShelleyBlock" 2
+      enforceSize "LedgerState ShelleyBlock" 3
       shelleyLedgerTip        <- decodeWithOrigin decodeShelleyTip
       shelleyLedgerState      <- fromCBOR
       shelleyLedgerTransition <- decodeShelleyTransition
