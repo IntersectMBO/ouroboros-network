@@ -626,7 +626,8 @@ runDataDiffusion tracers
     -- RNGs used for picking random peers from the ledger and for
     -- demoting/promoting peers.
     rng <- newStdGen
-    let (ledgerPeersRng, policyRng) = split rng
+    let (ledgerPeersRng, rng') = split rng
+        (policyRng, churnRng)  = split rng'
     policyRngVar <- newTVarIO policyRng
 
     -- Request interface, supply the number of peers desired.
@@ -723,6 +724,7 @@ runDataDiffusion tracers
 
           Async.withAsync
             (Governor.peerChurnGovernor
+              churnRng
               daPeerSelectionTargets
               peerSelectionTargetsVar
             )
