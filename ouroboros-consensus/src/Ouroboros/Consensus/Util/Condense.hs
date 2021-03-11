@@ -27,14 +27,15 @@ import           Text.Printf (printf)
 import           Control.Monad.Class.MonadTime (Time (..))
 
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN, Ed448DSIGN, MockDSIGN,
-                     SigDSIGN, pattern SigEd25519DSIGN, pattern SigEd448DSIGN,
-                     pattern SigMockDSIGN, SignedDSIGN (..), VerKeyDSIGN)
+                     SigDSIGN, SignedDSIGN (..), VerKeyDSIGN,
+                     pattern SigEd25519DSIGN, pattern SigEd448DSIGN,
+                     pattern SigMockDSIGN)
 import           Cardano.Crypto.Hash (Hash)
-import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES,
+import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES, SignedKES (..),
+                     SimpleKES, SingleKES, SumKES, VerKeyKES,
                      pattern SigMockKES, pattern SigSimpleKES,
                      pattern SigSingleKES, pattern SigSumKES,
-                     pattern SignKeyMockKES, SignedKES (..), SimpleKES,
-                     SingleKES, SumKES, VerKeyKES, pattern VerKeyMockKES,
+                     pattern SignKeyMockKES, pattern VerKeyMockKES,
                      pattern VerKeySingleKES, pattern VerKeySumKES)
 
 import           Ouroboros.Consensus.Util.HList (All, HList (..))

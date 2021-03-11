@@ -29,10 +29,10 @@ import qualified Cardano.Chain.Delegation.Validation.Scheduling as CC.Sched
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Chain.Slotting (EpochNumber, EpochSlots (..),
                      SlotNumber)
+import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.Update.Validation.Registration as CC.Reg
-import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
 
@@ -54,8 +54,8 @@ import qualified Test.Cardano.Chain.Common.Gen as CC
 import qualified Test.Cardano.Chain.Delegation.Gen as CC
 import qualified Test.Cardano.Chain.MempoolPayload.Gen as CC
 import qualified Test.Cardano.Chain.Slotting.Gen as CC
-import qualified Test.Cardano.Chain.Update.Gen as UG
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
+import qualified Test.Cardano.Chain.Update.Gen as UG
 import qualified Test.Cardano.Crypto.Gen as CC
 
 import           Test.Util.Orphans.Arbitrary ()

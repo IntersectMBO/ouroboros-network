@@ -59,10 +59,10 @@ import           Cardano.Binary (encodeListLen, enforceSize, fromCBOR, toCBOR)
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Genesis as Gen
+import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.Update.Validation.Endorsement as UPE
 import qualified Cardano.Chain.Update.Validation.Interface as UPI
-import qualified Cardano.Chain.UTxO as CC
 import qualified Cardano.Chain.ValidationMode as CC
 
 import           Ouroboros.Consensus.Block

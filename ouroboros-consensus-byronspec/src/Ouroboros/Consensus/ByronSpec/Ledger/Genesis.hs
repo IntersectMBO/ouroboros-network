@@ -27,8 +27,8 @@ import           Numeric.Natural (Natural)
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
-import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()

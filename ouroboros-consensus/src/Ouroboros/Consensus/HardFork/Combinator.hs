@@ -33,12 +33,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Mempool as X
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol as X
 
 -- Instance for 'CommonProtocolParams'
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams as X
-                     ()
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams as X ()
 
 -- Instance for 'LedgerSupportsPeerSelection'
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection as X
-                     ()
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection as X ()
 
 -- Instances for 'ShowQuery' and 'QueryLedger'
 -- Definition of 'Query', required for serialisation code
@@ -70,8 +68,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Forging as X
 import           Ouroboros.Consensus.HardFork.Combinator.Node as X ()
 
 -- Instance for 'NodeInitStorage'
-import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage as X
-                     ()
+import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage as X ()
 
 -- Instance for 'BlockSupportsMetrics'
 import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics as X ()

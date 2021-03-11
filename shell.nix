@@ -27,7 +27,7 @@ let
     ];
 
     tools = {
-      stylish-haskell = "0.11.0.0";
+      stylish-haskell = "0.12.2.0";
       ghcid = "0.8.7";
       cabal = "3.2.0.0";
       # todo: add back the build tools which are actually necessary

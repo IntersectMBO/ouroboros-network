@@ -27,8 +27,8 @@ import qualified Data.Map.Strict as Map
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Common as CC
-import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC
+import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 
 import           Ouroboros.Network.Block (Serialised (..))
 
@@ -53,8 +53,8 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 import qualified Test.Cardano.Chain.Common.Example as CC
 import qualified Test.Cardano.Chain.Genesis.Dummy as CC
-import qualified Test.Cardano.Chain.Update.Example as CC
 import qualified Test.Cardano.Chain.UTxO.Example as CC
+import qualified Test.Cardano.Chain.Update.Example as CC
 
 import           Test.ThreadNet.Infra.Byron.ProtocolInfo (mkLeaderCredentials)
 

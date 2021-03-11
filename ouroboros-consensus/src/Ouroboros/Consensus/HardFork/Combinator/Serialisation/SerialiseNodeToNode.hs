@@ -40,8 +40,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk
-                     ()
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk ()
 
 instance SerialiseHFC xs => SerialiseNodeToNodeConstraints (HardForkBlock xs) where
   estimateBlockSize = estimateHfcBlockSize
