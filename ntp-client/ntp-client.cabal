@@ -1,26 +1,32 @@
 cabal-version: 2.4
 
-name:                ntp-client
-version:             0.0.1
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-category:            Network
-build-type:          Simple
-extra-source-files:  README.md
+name:                 ntp-client
+version:              0.0.1
+license:              Apache-2.0
+license-files:        LICENSE
+                      NOTICE
+copyright:            2019-2021 Input Output (Hong Kong) Ltd.
+category:             Network
+build-type:           Simple
+extra-source-files:   README.md
 
 flag demo
   description: Build a demo application
   default: True
   manual: True
 
+common base                         { build-depends: base                             >= 4.12       && < 4.15     }
+
+common project-config
+  default-language:     Haskell2010
+
 library
+  import:               base, project-config
+
   exposed-modules:      Network.NTP.Client
   other-modules:        Network.NTP.Client.Packet
                         Network.NTP.Client.Query
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.15
                       , binary          >=0.8 && <0.11
                       , bytestring      >=0.10 && <0.11
                       , contra-tracer   >=0.1 && <0.2
@@ -30,7 +36,6 @@ library
                       , Win32-network   >=0.1 && <0.2
 
   hs-source-dirs:       src
-  default-language:     Haskell2010
   ghc-options:          -Wall
                         -Wcompat
                         -Wincomplete-uni-patterns
@@ -41,12 +46,13 @@ library
   default-extensions:   GeneralizedNewtypeDeriving
 
 test-suite test
+  import:               base, project-config
+
   hs-source-dirs:     test, src
   main-is:            Test.hs
   other-modules:        Network.NTP.Client.Packet
-  type:               exitcode-stdio-1.0
-  build-depends:        base            >=4.9 && <4.15
-                      , binary          >=0.8 && <0.11
+  type:                 exitcode-stdio-1.0
+  build-depends:        binary          >=0.8 && <0.11
                       , time            >=1.9.1 && <1.11
                       , QuickCheck
                       , tasty
@@ -55,6 +61,8 @@ test-suite test
   ghc-options:        -Wall
 
 executable demo-ntp-client
+  import:               base, project-config
+
   hs-source-dirs:     demo
   main-is:            Main.hs
   if flag(demo)
@@ -62,7 +70,6 @@ executable demo-ntp-client
   else
      buildable: False
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.15
                       , contra-tracer   >=0.1 && <0.2
                       , Win32-network   >=0.1 && <0.2
                       , ntp-client

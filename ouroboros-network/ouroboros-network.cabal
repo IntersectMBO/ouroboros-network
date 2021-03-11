@@ -1,21 +1,18 @@
 cabal-version: 2.4
 
-name:                ouroboros-network
-version:             0.1.0.0
-synopsis:            A networking layer for the Ouroboros blockchain protocol
--- description:
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019 Input Output (Hong Kong) Ltd.
-author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
-maintainer:
-category:            Network
-build-type:          Simple
-extra-source-files:
-  ChangeLog.md
-  test/messages.cddl
+name:                   ouroboros-network
+version:                0.1.0.0
+synopsis:               A networking layer for the Ouroboros blockchain protocol
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2021 Input Output (Hong Kong) Ltd.
+author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
+extra-source-files:     ChangeLog.md
+                        test/messages.cddl
 
 flag asserts
   description: Enable assertions
@@ -38,7 +35,14 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+common base                         { build-depends: base                             >= 4.12       && < 4.15     }
+
+common project-config
+  default-language:     Haskell2010
+
 library
+  import:               base, project-config
+
   hs-source-dirs:      src
 
   -- At this experiment/prototype stage everything is exposed.
@@ -143,8 +147,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base              >=4.9 && <4.15,
-                       async             >=2.2 && <2.3,
+  build-depends:       async             >=2.2 && <2.3,
                        base16-bytestring,
                        bytestring        >=0.10 && <0.11,
                        cborg             >=0.2.1 && <0.3,
@@ -193,6 +196,8 @@ library
                        time              >=1.9.1 && <1.11
 
 library ouroboros-protocol-tests
+  import:               base, project-config
+
   hs-source-dirs:      protocol-tests
   default-language:    Haskell2010
   exposed-modules:     Ouroboros.Network.Protocol.BlockFetch.Direct
@@ -223,8 +228,7 @@ library ouroboros-protocol-tests
                        Test.ChainGenerators
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
-  build-depends:       base,
-                       bytestring,
+  build-depends:       bytestring,
                        cborg,
                        containers,
                        pipes,
@@ -248,6 +252,8 @@ library ouroboros-protocol-tests
                        -Wno-unticked-promoted-constructors
 
 test-suite test
+  import:               base, project-config
+
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
@@ -270,8 +276,7 @@ test-suite test
                        Test.PeerState
                        Test.Version
   default-language:    Haskell2010
-  build-depends:       base,
-                       QuickCheck,
+  build-depends:       QuickCheck,
                        array,
                        async,
                        binary,
@@ -324,6 +329,8 @@ test-suite test
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
 test-suite cddl
+  import:               base, project-config
+
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test-cddl
   main-is:             Main.hs
@@ -332,8 +339,7 @@ test-suite cddl
   else
     buildable: False
   default-language:    Haskell2010
-  build-depends:       base,
-                       bytestring,
+  build-depends:       bytestring,
                        cborg,
                        containers,
                        directory,
@@ -366,10 +372,11 @@ test-suite cddl
                        -fno-ignore-asserts
 
 executable demo-chain-sync
+  import:               base, project-config
+
   hs-source-dirs:      demo
   main-is:             chain-sync.hs
-  build-depends:       base,
-                       async,
+  build-depends:       async,
                        bytestring,
                        containers,
                        directory,

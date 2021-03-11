@@ -1,16 +1,16 @@
 cabal-version: 2.4
 
-name:                 io-sim-classes
-version:              0.2.0.0
-synopsis:             Type classes for concurrency with STM, ST and timing
-license:              Apache-2.0
-license-files:        LICENSE
-                      NOTICE
-copyright:            2019 Input Output (Hong Kong) Ltd.
-author:               Alexander Vieth, Marcin Szamotulski, Duncan Coutts
-maintainer:
-category:             Control
-build-type:           Simple
+name:                   io-sim-classes
+version:                0.2.0.0
+synopsis:               Type classes for concurrency with STM, ST and timing
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2021 Input Output (Hong Kong) Ltd.
+author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+maintainer:             operations@iohk.io
+category:               Control
+build-type:             Simple
 
 source-repository head
   type:     git
@@ -27,7 +27,14 @@ flag asserts
   manual:      False
   default:     False
 
+common base                         { build-depends: base                             >= 4.12       && < 4.15     }
+
+common project-config
+  default-language:     Haskell2010
+
 library
+  import:               base, project-config
+
   hs-source-dirs:      src
 
   -- At this experiment/prototype stage everything is exposed.
@@ -53,8 +60,7 @@ library
                        FlexibleContexts
                        ScopedTypeVariables
                        RankNTypes
-  build-depends:       base  >=4.9 && <4.15,
-                       async >=2.1,
+  build-depends:       async >=2.1,
                        bytestring,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.5 && <2.6,
@@ -74,13 +80,14 @@ library
     cpp-options: -DCHECK_TVAR_INVARIANT
 
 test-suite test
+  import:               base, project-config
+
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:       Test.MonadTimer
   default-language:    Haskell2010
-  build-depends:       base,
-                       io-sim-classes,
+  build-depends:       io-sim-classes,
 
                        QuickCheck,
                        tasty,

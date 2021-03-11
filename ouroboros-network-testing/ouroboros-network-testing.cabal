@@ -1,24 +1,30 @@
 cabal-version: 2.4
 
-name:                ouroboros-network-testing
-version:             0.1.0.0
-synopsis:            Common modules used for testing in ouroboros-network and ouroboros-consensus
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019 Input Output (Hong Kong) Ltd.
-author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
-maintainer:
-category:            Network
-build-type:          Simple
-extra-source-files:  ChangeLog.md
+name:                   ouroboros-network-testing
+version:                0.1.0.0
+synopsis:               Common modules used for testing in ouroboros-network and ouroboros-consensus
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2021 Input Output (Hong Kong) Ltd.
+author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
+extra-source-files:     ChangeLog.md
 
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+common base                         { build-depends: base                             >= 4.12       && < 4.15     }
+
+common project-config
+  default-language:     Haskell2010
+
 library
+  import:               base, project-config
+
   hs-source-dirs:      src
 
   -- At this experiment/prototype stage everything is exposed.
@@ -50,8 +56,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base              >=4.9 && <4.15,
-                       contra-tracer,
+  build-depends:       contra-tracer,
                        io-sim,
                        io-sim-classes,
 

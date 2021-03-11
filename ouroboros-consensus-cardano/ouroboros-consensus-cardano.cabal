@@ -1,18 +1,16 @@
 cabal-version: 2.4
 
-name:                  ouroboros-consensus-cardano
-version:               0.1.0.0
-synopsis:              The instantation of the Ouroboros consensus layer used by Cardano
--- description:
-license:               Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:             2019 Input Output (Hong Kong) Ltd.
-author:                IOHK Engineering Team
-maintainer:            operations@iohk.io
-category:              Network
-build-type:            Simple
+name:                   ouroboros-consensus-cardano
+version:                0.1.0.0
+synopsis:               The instantation of the Ouroboros consensus layer used by Cardano
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2021 Input Output (Hong Kong) Ltd.
+author:                 IOHK Engineering Team
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
 
 source-repository head
   type:     git
@@ -23,7 +21,14 @@ flag asserts
   manual:      False
   default:     False
 
+common base                         { build-depends: base                             >= 4.12       && < 4.15     }
+
+common project-config
+  default-language:     Haskell2010
+
 library
+  import:               base, project-config
+
   hs-source-dirs:      src
   exposed-modules:
                        Ouroboros.Consensus.Cardano
@@ -35,8 +40,7 @@ library
                        Ouroboros.Consensus.Cardano.Node
                        Ouroboros.Consensus.Cardano.ShelleyBased
 
-  build-depends:       base              >=4.9   && <4.15
-                     , bytestring        >=0.10  && <0.11
+  build-depends:       bytestring        >=0.10  && <0.11
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
                      , mtl               >=2.2   && <2.3
@@ -72,10 +76,11 @@ library
     ghc-options:       -fno-ignore-asserts
 
 executable db-analyser
+  import:               base, project-config
+
   hs-source-dirs:      tools/db-analyser
   main-is:             Main.hs
   build-depends:       aeson
-                     , base
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper

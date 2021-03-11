@@ -1,18 +1,16 @@
 cabal-version: 2.4
 
-name:                  ouroboros-consensus-byron
-version:               0.1.0.0
-synopsis:              Byron ledger integration in the Ouroboros consensus layer
--- description:
-license:               Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:             2019 Input Output (Hong Kong) Ltd.
-author:                IOHK Engineering Team
-maintainer:            operations@iohk.io
-category:              Network
-build-type:            Simple
+name:                   ouroboros-consensus-byron
+version:                0.1.0.0
+synopsis:               Byron ledger integration in the Ouroboros consensus layer
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2021 Input Output (Hong Kong) Ltd.
+author:                 IOHK Engineering Team
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
 
 source-repository head
   type:     git
@@ -23,7 +21,14 @@ flag asserts
   manual:      False
   default:     False
 
+common base                         { build-depends: base                             >= 4.12       && < 4.15     }
+
+common project-config
+  default-language:     Haskell2010
+
 library
+  import:               base, project-config
+
   hs-source-dirs:      src
 
   exposed-modules:
@@ -47,8 +52,7 @@ library
                        Ouroboros.Consensus.Byron.Node.Serialisation
                        Ouroboros.Consensus.Byron.Protocol
 
-  build-depends:       base              >=4.9   && <4.15
-                     , bytestring        >=0.10  && <0.11
+  build-depends:       bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto
                      , cardano-crypto-class
@@ -81,10 +85,11 @@ library
     ghc-options:       -fno-ignore-asserts
 
 executable db-converter
+  import:               base, project-config
+
   hs-source-dirs:      tools/db-converter
   main-is:             Main.hs
-  build-depends:       base
-                     , bytestring
+  build-depends:       bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
