@@ -21,7 +21,8 @@ flag asserts
   manual:      False
   default:     False
 
-common base                         { build-depends: base                             >= 4.12       && < 4.15     }
+common base
+  build-depends:        base >= 4.12 && < 4.15
 
 common project-config
   default-language:     Haskell2010
