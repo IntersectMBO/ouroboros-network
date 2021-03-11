@@ -1,3 +1,5 @@
+cabal-version: 2.4
+
 name:                ouroboros-network-testing
 version:             0.1.0.0
 synopsis:            Common modules used for testing in ouroboros-network and ouroboros-consensus
@@ -11,7 +13,6 @@ maintainer:
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md
-cabal-version:       >=1.10
 
 source-repository head
   type:     git

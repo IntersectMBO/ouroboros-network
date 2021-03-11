@@ -1,17 +1,16 @@
-name:                io-sim-classes
-version:             0.2.0.0
-synopsis:            Type classes for concurrency with STM, ST and timing
--- description:
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019 Input Output (Hong Kong) Ltd.
-author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+cabal-version: 2.4
+
+name:                 io-sim-classes
+version:              0.2.0.0
+synopsis:             Type classes for concurrency with STM, ST and timing
+license:              Apache-2.0
+license-files:        LICENSE
+                      NOTICE
+copyright:            2019 Input Output (Hong Kong) Ltd.
+author:               Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:
-category:            Control
-build-type:          Simple
-cabal-version:       >=1.10
+category:             Control
+build-type:           Simple
 
 source-repository head
   type:     git

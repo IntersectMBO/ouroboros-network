@@ -1,3 +1,5 @@
+cabal-version: 2.4
+
 name:                ouroboros-network
 version:             0.1.0.0
 synopsis:            A networking layer for the Ouroboros blockchain protocol
@@ -14,7 +16,6 @@ build-type:          Simple
 extra-source-files:
   ChangeLog.md
   test/messages.cddl
-cabal-version:       >=1.10
 
 flag asserts
   description: Enable assertions

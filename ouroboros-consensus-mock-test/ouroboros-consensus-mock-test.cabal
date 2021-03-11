@@ -1,7 +1,8 @@
+cabal-version: 2.4
+
 name:                ouroboros-consensus-mock-test
 version:             0.1.0.0
 synopsis:            Tests of the mock ledger integration in the Ouroboros consensus layer
--- description:
 license:             Apache-2.0
 license-files:
   LICENSE
@@ -11,7 +12,6 @@ author:              IOHK Engineering Team
 maintainer:          operations@iohk.io
 category:            Network
 build-type:          Simple
-cabal-version:       >=1.10
 
 source-repository head
   type:     git
