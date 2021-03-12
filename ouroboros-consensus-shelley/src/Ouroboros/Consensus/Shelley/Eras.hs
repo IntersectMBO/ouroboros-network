@@ -33,6 +33,7 @@ import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Control.State.Transition (State)
 
+import           Cardano.Binary (FromCBOR, ToCBOR)
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
@@ -98,6 +99,9 @@ class ( SL.ShelleyBasedEra era
       , HasField "_tau" (LC.PParams era) SL.UnitInterval
       , HasField "_protocolVersion" (SL.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
       , SL.AdditionalGenesisConfig era ~ ()
+      , FromCBOR (LC.PParams era)
+      , FromCBOR (SL.PParamsDelta era)
+      , ToCBOR (LC.PParams era)
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.
