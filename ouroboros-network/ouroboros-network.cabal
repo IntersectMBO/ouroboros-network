@@ -188,7 +188,8 @@ library
                        Ouroboros.Network.MockChain.ProducerState
                        Ouroboros.Network.Testing.ConcreteBlock
   build-depends:       hashable          >=1.2 && <1.4,
-                       text              >=1.2 && <1.3
+                       text              >=1.2 && <1.3,
+                       time              >=1.6 && <1.11
 
 library ouroboros-protocol-tests
   hs-source-dirs:      protocol-tests

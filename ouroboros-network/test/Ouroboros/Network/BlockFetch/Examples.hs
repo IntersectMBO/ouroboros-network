@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -127,7 +128,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
     blockFetch registry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
-          (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
+          (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
@@ -137,6 +138,9 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
             bfcSalt                   = 0
           })
         >> return ()
+
+    headerForgeUTCTime (FromConsensus x) =
+        pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
     driver :: TestFetchedBlockHeap m Block -> m ()
     driver blockHeap = do
@@ -230,7 +234,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     blockFetch registry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
-          (sampleBlockFetchPolicy1 blockHeap currentChainHeaders candidateChainHeaders)
+          (sampleBlockFetchPolicy1 headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
           registry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
@@ -240,6 +244,9 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
             bfcSalt                   = 0
           })
         >> return ()
+
+    headerForgeUTCTime (FromConsensus x) =
+        pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
     driver :: TestFetchedBlockHeap m Block -> m ()
     driver blockHeap = do
@@ -255,11 +262,12 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
 --
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
-                        => TestFetchedBlockHeap m block
+                        => (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
+                        -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
                         -> BlockFetchConsensusInterface peer header block m
-sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
+sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
       readCurrentChain       = return currentChain,
@@ -276,8 +284,11 @@ sampleBlockFetchPolicy1 blockHeap currentChain candidateChains =
       compareCandidateChains,
 
       blockFetchSize         = \_ -> 2000,
-      blockMatchesHeader     = \_ _ -> True
-    }
+      blockMatchesHeader     = \_ _ -> True,
+
+      headerForgeUTCTime     = headerFieldsForgeUTCTime,
+      blockForgeUTCTime      = headerFieldsForgeUTCTime
+      }
   where
     plausibleCandidateChain cur candidate =
       AnchoredFragment.headBlockNo candidate > AnchoredFragment.headBlockNo cur

@@ -25,6 +25,9 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , ConcreteHeaderHash(..)
   , hashBody
 
+    -- * Converting slots to times
+  , convertSlotToTimeForTestsAssumingNoHardFork
+
     -- * Creating sample chains
   , mkChain
   , mkChainSimple
@@ -45,6 +48,8 @@ import           Data.Function (fix)
 import           Data.Hashable
 import           Data.String (IsString)
 import qualified Data.Text as Text
+import           Data.Time.Calendar (fromGregorian)
+import           Data.Time.Clock (UTCTime (..), addUTCTime, secondsToNominalDiffTime)
 import           NoThunks.Class (NoThunks)
 
 import           Codec.CBOR.Decoding (decodeInt, decodeListLenOf, decodeString,
@@ -345,3 +350,25 @@ instance Serialise BlockBody where
   encode (BlockBody b) = encodeString (Text.pack b)
 
   decode = BlockBody . Text.unpack <$> decodeString
+
+{-------------------------------------------------------------------------------
+  Simple static time conversions, since no HardFork
+-------------------------------------------------------------------------------}
+
+-- | Arbitrarily but consistently converts slots UTCTimes.
+--
+-- It is only intended for use in tests. Notably it assumes a fixed system
+-- start time, slot length, and the absence of a hard fork (ie no
+-- HardForkCombinator). This is how it's available as a pure function.
+convertSlotToTimeForTestsAssumingNoHardFork :: SlotNo -> UTCTime
+convertSlotToTimeForTestsAssumingNoHardFork sl =
+    flip addUTCTime startTime $
+      --   ^^^ arbitrary start time for testing
+    secondsToNominalDiffTime $
+    fromIntegral $ unSlotNo sl * 10
+      --   ^^^ arbitrary slot length for testing
+  where
+    startTime = UTCTime {
+        utctDay     = fromGregorian 2000 1 1,
+        utctDayTime = 0
+      }

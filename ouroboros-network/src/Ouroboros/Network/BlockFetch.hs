@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -97,6 +98,7 @@ module Ouroboros.Network.BlockFetch (
 
     -- * Re-export types used by 'BlockFetchConsensusInterface'
     FetchMode (..),
+    FromConsensus (..),
     SizeInBytes,
   ) where
 
@@ -115,6 +117,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.DeltaQ ( SizeInBytes )
 
 import           Ouroboros.Network.BlockFetch.State
+import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus(..))
 import           Ouroboros.Network.BlockFetch.ClientRegistry
                    ( FetchClientPolicy(..)
                    , FetchClientRegistry, newFetchClientRegistry
@@ -206,7 +209,29 @@ data BlockFetchConsensusInterface peer header block m =
        -- | Given a block header, validate the supposed corresponding block
        -- body.
        --
-       blockMatchesHeader      :: header -> block -> Bool
+       blockMatchesHeader      :: header -> block -> Bool,
+
+       -- | Calculate when a header's block was forged.
+       --
+       -- PRECONDITION: This function will succeed and give a _correct_ result
+       -- when applied to headers obtained via this interface (ie via
+       -- Consensus, ie via 'readCurrentChain' or 'readCandidateChains').
+       --
+       -- WARNING: This function may fail or, worse, __give an incorrect result
+       -- (!!)__ if applied to headers obtained from sources outside of this
+       -- interface. The 'FromConsensus' newtype wrapper is intended to make it
+       -- difficult to make that mistake, so please pay that syntactic price
+       -- and consider its meaning at each call to this function. Relatedly,
+       -- preserve that argument wrapper as much as possible when deriving
+       -- ancillary functions\/interfaces from this function.
+       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime,
+
+       -- | Calculate when a block was forged.
+       --
+       -- PRECONDITION: Same as 'headerForgeUTCTime'.
+       --
+       -- WARNING: Same as 'headerForgeUTCTime'.
+       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
      }
 
 -- | Configuration for FetchDecisionPolicy.
