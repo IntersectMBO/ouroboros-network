@@ -68,7 +68,7 @@ following pieces of information:
   with different implementations that work at different levels of abstraction
   (for example implementations used for simulation, implementations that run over virtual
   connections and implementations that actually transmit messages over the real network).
-  
+
 
 \item[States]
   States are abstract: they are not a value of some variables in a node, but
@@ -794,8 +794,8 @@ Messages of the protocol:
   \TxIdsBlocking    & \ReplyTxIds         & $\langle (id, size) \rangle$  & \Idle             \\ \hline
   \Idle             & \RequestTxIdsNB     & $ack$,$req$                   & \TxIdsNonBlocking \\ \hline
   \TxIdsNonBlocking & \ReplyTxIds         & $\langle (id, size) \rangle$  & \Idle             \\ \hline
-  \Idle             & \RequestTxs         & $\langle ids \rangle$         & \Txs              \\ \hline  
-  \Txs              & \ReplyTxs           & $\langle txs \rangle$         & \Idle             \\ \hline  
+  \Idle             & \RequestTxs         & $\langle ids \rangle$         & \Txs              \\ \hline
+  \Txs              & \ReplyTxs           & $\langle txs \rangle$         & \Idle             \\ \hline
   \RequestTxIdsB    & \MsgDone            &                               & \Done             \\ \hline
 \end{tabular}
 
