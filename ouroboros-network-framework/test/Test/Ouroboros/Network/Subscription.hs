@@ -586,6 +586,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         (AcceptedConnectionsLimit maxBound maxBound 0)
         (Socket.addrAddress responderAddr)
         unversionedHandshakeCodec
+        noTimeLimitsHandshake
         (cborTermVersionDataCodec unversionedProtocolDataCodec)
         acceptableVersion
         (unversionedProtocol (SomeResponderApplication responderApp))
@@ -610,6 +611,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
             (connectToNodeSocket
                 iocp
                 unversionedHandshakeCodec
+                noTimeLimitsHandshake
                 (cborTermVersionDataCodec unversionedProtocolDataCodec)
                 nullNetworkConnectTracers
                 acceptableVersion
@@ -730,6 +732,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         (AcceptedConnectionsLimit maxBound maxBound 0)
         responderAddr
         unversionedHandshakeCodec
+        noTimeLimitsHandshake
         (cborTermVersionDataCodec unversionedProtocolDataCodec)
         acceptableVersion
         (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
@@ -750,6 +753,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           (AcceptedConnectionsLimit maxBound maxBound 0)
           responderAddr
           unversionedHandshakeCodec
+          noTimeLimitsHandshake
           (cborTermVersionDataCodec unversionedProtocolDataCodec)
           acceptableVersion
           (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
@@ -775,6 +779,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
               (connectToNodeSocket
                   iocp
                   unversionedHandshakeCodec
+                  noTimeLimitsHandshake
                   (cborTermVersionDataCodec unversionedProtocolDataCodec)
                   nullNetworkConnectTracers
                   acceptableVersion
@@ -847,6 +852,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (connectToNodeSocket
                 iocp
                 unversionedHandshakeCodec
+                noTimeLimitsHandshake
                 (cborTermVersionDataCodec unversionedProtocolDataCodec)
                 nullNetworkConnectTracers
                 acceptableVersion
@@ -869,6 +875,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (AcceptedConnectionsLimit maxBound maxBound 0)
             (Socket.addrAddress addr)
             unversionedHandshakeCodec
+            noTimeLimitsHandshake
             (cborTermVersionDataCodec unversionedProtocolDataCodec)
             acceptableVersion
             (unversionedProtocol (SomeResponderApplication appRsp))

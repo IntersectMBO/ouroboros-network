@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.Handshake.Codec
 
   , byteLimitsHandshake
   , timeLimitsHandshake
+  , noTimeLimitsHandshake
 
   , encodeRefuseReason
   , decodeRefuseReason
@@ -94,6 +95,15 @@ timeLimitsHandshake = ProtocolTimeLimits stateToLimit
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokPropose) = shortWait
     stateToLimit (ServerAgency TokConfirm) = shortWait
+
+
+noTimeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBOR.Term)
+noTimeLimitsHandshake = ProtocolTimeLimits stateToLimit
+  where
+    stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
+                    PeerHasAgency pr st -> Maybe DiffTime
+    stateToLimit (ClientAgency TokPropose) = Nothing
+    stateToLimit (ServerAgency TokConfirm) = Nothing
 
 
 -- |

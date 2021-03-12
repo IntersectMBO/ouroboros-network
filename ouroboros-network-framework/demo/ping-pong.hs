@@ -109,6 +109,7 @@ clientPingPong pipelined =
     connectToNode
       (localSnocket iomgr defaultLocalSocketAddrPath)
       unversionedHandshakeCodec
+      noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
       nullNetworkConnectTracers
       acceptableVersion
@@ -150,6 +151,7 @@ serverPingPong =
       (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
       unversionedHandshakeCodec
+      noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
       acceptableVersion
       (unversionedProtocol (SomeResponderApplication app))
@@ -205,6 +207,7 @@ clientPingPong2 =
     connectToNode
       (localSnocket iomgr defaultLocalSocketAddrPath)
       unversionedHandshakeCodec
+      noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
       nullNetworkConnectTracers
       acceptableVersion
@@ -259,6 +262,7 @@ serverPingPong2 =
       (AcceptedConnectionsLimit maxBound maxBound 0)
       defaultLocalSocketAddr
       unversionedHandshakeCodec
+      noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
       acceptableVersion
       (unversionedProtocol (SomeResponderApplication app))
