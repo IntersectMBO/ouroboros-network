@@ -56,7 +56,6 @@ library
                        Control.Monad.Class.MonadThrow
                        Control.Monad.Class.MonadTime
                        Control.Monad.Class.MonadTimer
-  default-language:    Haskell2010
   other-extensions:    CPP
                        TypeFamilies
                        TypeFamilyDependencies
@@ -92,7 +91,6 @@ test-suite test
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:       Test.MonadTimer
-  default-language:    Haskell2010
   build-depends:       io-sim-classes,
 
                        QuickCheck,

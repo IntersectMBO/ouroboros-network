@@ -48,7 +48,6 @@ library
                      , ouroboros-consensus-mock
                      , ouroboros-consensus-test
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
@@ -89,7 +88,6 @@ test-suite test
                      , ouroboros-consensus-mock-test
                      , ouroboros-consensus-test
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns

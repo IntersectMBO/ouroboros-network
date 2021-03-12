@@ -32,7 +32,6 @@ import           Ouroboros.Consensus.Fragment.InFuture (ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.History (Bound (..))
 import           Ouroboros.Consensus.HeaderValidation (TipInfo)
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)

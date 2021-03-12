@@ -39,7 +39,6 @@ library
                        Ouroboros.Network.Testing.Serialise
                        Ouroboros.Network.Testing.QuickCheck
                        Ouroboros.Network.Testing.Utils
-  default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
                        EmptyCase,

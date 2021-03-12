@@ -130,7 +130,6 @@ library
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types
 
-  default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
                        EmptyCase,
@@ -203,7 +202,6 @@ library ouroboros-protocol-tests
   import:               base, project-config
 
   hs-source-dirs:      protocol-tests
-  default-language:    Haskell2010
   exposed-modules:     Ouroboros.Network.Protocol.BlockFetch.Direct
                        Ouroboros.Network.Protocol.BlockFetch.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Test
@@ -279,7 +277,6 @@ test-suite test
                        Test.Socket
                        Test.PeerState
                        Test.Version
-  default-language:    Haskell2010
   build-depends:       QuickCheck,
                        array,
                        async,
@@ -332,7 +329,6 @@ test-suite cddl
     buildable: True
   else
     buildable: False
-  default-language:    Haskell2010
   build-depends:       bytestring,
                        cborg,
                        directory,
@@ -372,7 +368,6 @@ executable demo-chain-sync
                        ouroboros-network-framework,
                        ouroboros-network
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -threaded
                        -rtsopts

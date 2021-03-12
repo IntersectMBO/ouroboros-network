@@ -57,7 +57,6 @@ library
 
     exposed-modules:   System.IOManager
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
@@ -76,7 +75,6 @@ executable named-pipe-demo
                          bytestring,
                          Win32,
                          Win32-network
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -threaded
 
@@ -86,7 +84,6 @@ test-suite test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
-  default-language:    Haskell2010
   if os(windows)
     buildable: True
   else

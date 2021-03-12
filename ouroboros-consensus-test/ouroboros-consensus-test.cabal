@@ -126,7 +126,6 @@ library
                      , ouroboros-network-framework
                      , ouroboros-consensus
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
@@ -193,7 +192,6 @@ test-suite test-consensus
                      , ouroboros-consensus-mock
                      , ouroboros-consensus-test
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
@@ -273,7 +271,6 @@ test-suite test-storage
                      , ouroboros-consensus
                      , ouroboros-consensus-test
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
@@ -301,7 +298,6 @@ test-suite test-infra
                      , ouroboros-consensus
                      , ouroboros-consensus-test
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
