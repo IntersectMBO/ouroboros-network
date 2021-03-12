@@ -27,6 +27,7 @@ import           Ouroboros.Consensus.Config.SecurityParam
 data RequestedSnapshotInterval =
     DefaultSnapshotInterval
   | RequestedSnapshotInterval DiffTime
+  deriving stock Show
 
 -- | On-disk policy
 --
