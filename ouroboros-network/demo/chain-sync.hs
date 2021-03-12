@@ -154,6 +154,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
       connectToNode
         (localSnocket iocp sockPath)
         unversionedHandshakeCodec
+        noTimeLimitsHandshake
         (cborTermVersionDataCodec unversionedProtocolDataCodec)
         nullNetworkConnectTracers
         acceptableVersion
@@ -187,6 +188,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
+      noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
       acceptableVersion
       (simpleSingletonVersions
@@ -358,6 +360,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                         connectToNode
                           (localSnocket iocp defaultLocalSocketAddrPath)
                           unversionedHandshakeCodec
+                          noTimeLimitsHandshake
                           (cborTermVersionDataCodec unversionedProtocolDataCodec)
                           nullNetworkConnectTracers
                           acceptableVersion
@@ -413,6 +416,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       (AcceptedConnectionsLimit maxBound maxBound 0)
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
+      noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
       acceptableVersion
       (simpleSingletonVersions

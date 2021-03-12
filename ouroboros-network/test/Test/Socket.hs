@@ -43,6 +43,8 @@ import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec)
 import           Ouroboros.Network.Protocol.Handshake.Version
                      (acceptableVersion)
+import           Ouroboros.Network.Protocol.Handshake.Codec
+                     (noTimeLimitsHandshake)
 import           Ouroboros.Network.Testing.Serialise
 import           Ouroboros.Network.Util.ShowProxy
 
@@ -157,6 +159,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       (AcceptedConnectionsLimit maxBound maxBound 0)
       producerAddress
       nodeToNodeHandshakeCodec
+      noTimeLimitsHandshake
       (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
       acceptableVersion
       (simpleSingletonVersions
@@ -171,6 +174,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         (connectToNode
           (socketSnocket iocp)
           nodeToNodeHandshakeCodec
+          noTimeLimitsHandshake
           (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
           nullNetworkConnectTracers
           acceptableVersion

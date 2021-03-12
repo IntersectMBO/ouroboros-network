@@ -93,7 +93,7 @@ import Network.Mux.DeltaQ.TraceTransformer
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Codec hiding (encode, decode)
-import           Ouroboros.Network.Driver (TraceSendRecv)
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
@@ -193,6 +193,7 @@ connectToNode
      )
   => Snocket IO fd addr
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers addr vNumber
   -> (vData -> vData -> Accept vData)
@@ -203,7 +204,7 @@ connectToNode
   -> addr
   -- ^ remote address
   -> IO ()
-connectToNode sn handshakeCodec versionDataCodec tracers acceptVersion versions localAddr remoteAddr =
+connectToNode sn handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions localAddr remoteAddr =
     bracket
       (Snocket.openToConnect sn remoteAddr)
       (Snocket.close sn)
@@ -212,7 +213,7 @@ connectToNode sn handshakeCodec versionDataCodec tracers acceptVersion versions 
             Just addr -> Snocket.bind sn sd addr
             Nothing   -> return ()
           Snocket.connect sn sd remoteAddr
-          connectToNode' sn handshakeCodec versionDataCodec tracers acceptVersion versions sd
+          connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions sd
       )
 
 -- |
@@ -232,6 +233,7 @@ connectToNode'
      )
   => Snocket IO fd addr
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers addr vNumber
   -> (vData -> vData -> Accept vData)
@@ -239,7 +241,7 @@ connectToNode'
   -- ^ application to run over the connection
   -> fd
   -> IO ()
-connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } acceptVersion versions sd = do
+connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } acceptVersion versions sd = do
     connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
@@ -254,7 +256,8 @@ connectToNode' sn handshakeCodec versionDataCodec NetworkConnectTracers {nctMuxT
           haHandshakeCodec   = handshakeCodec,
           haVersionDataCodec = versionDataCodec,
           haVersions         = versions,
-          haAcceptVersion    = acceptVersion
+          haAcceptVersion    = acceptVersion,
+          haTimeLimits       = handshakeTimeLimits
         }
     ts_end <- getMonotonicTime
     case app_e of
@@ -284,6 +287,7 @@ connectToNodeSocket
      )
   => IOManager
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+  -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers Socket.SockAddr vNumber
   -> (vData -> vData -> Accept vData)
@@ -291,10 +295,11 @@ connectToNodeSocket
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNodeSocket iocp handshakeCodec versionDataCodec tracers acceptVersion versions sd =
+connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions sd =
     connectToNode'
       (Snocket.socketSnocket iocp)
       handshakeCodec
+      handshakeTimeLimits 
       versionDataCodec
       tracers
       acceptVersion
@@ -351,12 +356,13 @@ beginConnection
     -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace)
     -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+    -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber vData addr IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr fd st ()
-beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acceptVersion fn t addr st = do
+beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
       AcceptConnection st' connectionId versions -> pure $ Server.Accept st' $ \sd -> do
@@ -373,7 +379,8 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec versionDataCodec acc
               haHandshakeCodec   = handshakeCodec,
               haVersionDataCodec = versionDataCodec,
               haVersions         = versions,
-              haAcceptVersion    = acceptVersion
+              haAcceptVersion    = acceptVersion,
+              haTimeLimits       = handshakeTimeLimits
             }
 
         case app_e of
@@ -511,6 +518,7 @@ runServerThread
     -> fd
     -> AcceptedConnectionsLimit
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+    -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
     -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString IO b)
@@ -527,6 +535,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
                 sd
                 acceptedConnectionsLimit
                 handshakeCodec
+                handshakeTimeLimits
                 versionDataCodec
                 acceptVersion
                 versions
@@ -538,7 +547,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
         (fromSnocket nmsConnectionTable sn sd)
         acceptedConnectionsLimit
         (acceptException sockAddr)
-        (beginConnection sn nstMuxTracer nstHandshakeTracer handshakeCodec versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
+        (beginConnection sn nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
         -- using 'CompleteConnection'
         (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
@@ -592,6 +601,7 @@ withServerNode
     -> AcceptedConnectionsLimit
     -> addr
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+    -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
     -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString IO b)
@@ -610,6 +620,7 @@ withServerNode sn
                acceptedConnectionsLimit
                addr
                handshakeCodec
+               handshakeTimeLimits
                versionDataCodec
                acceptVersion
                versions
@@ -623,6 +634,7 @@ withServerNode sn
         acceptedConnectionsLimit
         sd
         handshakeCodec
+        handshakeTimeLimits
         versionDataCodec
         acceptVersion
         versions
@@ -658,6 +670,7 @@ withServerNode'
     -> AcceptedConnectionsLimit
     -> fd
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
+    -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
     -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString IO b)
@@ -676,6 +689,7 @@ withServerNode' sn
                 acceptedConnectionsLimit
                 sd
                 handshakeCodec
+                handshakeTimeLimits
                 versionDataCodec
                 acceptVersion
                 versions
@@ -690,6 +704,7 @@ withServerNode' sn
           sd
           acceptedConnectionsLimit
           handshakeCodec
+          handshakeTimeLimits
           versionDataCodec
           acceptVersion
           versions
