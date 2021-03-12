@@ -113,6 +113,7 @@ executable db-analyser
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
-                       -threaded
+
+  ghc-options:         -threaded
                        -rtsopts
                        "-with-rtsopts=-T -I0 -N2 -A16m"

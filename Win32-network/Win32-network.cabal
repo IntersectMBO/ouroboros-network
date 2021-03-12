@@ -75,8 +75,13 @@ executable named-pipe-demo
                          bytestring,
                          Win32,
                          Win32-network
+                       , stm
+    if impl(ghc < 8.10)
+      build-depends:     binary
+
   ghc-options:         -Wall
-                       -threaded
+
+  ghc-options:         -threaded
 
 test-suite test
   import:               base, project-config
@@ -105,5 +110,7 @@ test-suite test
                          quickcheck-instances,
                          Win32,
                          Win32-network
+
   ghc-options:          -Wall
-                        -threaded
+
+  ghc-options:          -threaded

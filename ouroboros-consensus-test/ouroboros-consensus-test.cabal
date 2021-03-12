@@ -134,7 +134,8 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
-                       -fno-ignore-asserts
+
+  ghc-options:         -fno-ignore-asserts
 
 test-suite test-consensus
   import:               base, project-config
@@ -200,8 +201,10 @@ test-suite test-consensus
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
-                       -fno-ignore-asserts
-                       -threaded
+
+  ghc-options:         -fno-ignore-asserts
+
+  ghc-options:         -threaded
                        -rtsopts
 
 test-suite test-storage
@@ -279,7 +282,8 @@ test-suite test-storage
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
-                       -fno-ignore-asserts
+
+  ghc-options:         -fno-ignore-asserts
 
 test-suite test-infra
   import:               base, project-config
@@ -306,4 +310,5 @@ test-suite test-infra
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
-                       -fno-ignore-asserts
+
+  ghc-options:         -fno-ignore-asserts

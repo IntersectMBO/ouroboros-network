@@ -146,7 +146,8 @@ test-suite test
 
   ghc-options:         -rtsopts
                        -threaded
-                       -Wall
+
+  ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
                        -Wincomplete-record-updates
@@ -179,7 +180,6 @@ executable demo-ping-pong
                        Win32           >=2.5.4.1 && <3.0
 
   ghc-options:         -Wall
-                       -threaded
                        -Wcompat
                        -Wincomplete-uni-patterns
                        -Wincomplete-record-updates
@@ -187,3 +187,5 @@ executable demo-ping-pong
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+
+  ghc-options:         -threaded

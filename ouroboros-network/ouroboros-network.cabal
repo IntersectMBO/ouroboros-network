@@ -314,8 +314,11 @@ test-suite test
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
-                       -threaded
+
+  ghc-options:         -fno-ignore-asserts
+
+  ghc-options:         -threaded
+
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
@@ -347,7 +350,8 @@ test-suite cddl
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
+
+  ghc-options:         -fno-ignore-asserts
 
 executable demo-chain-sync
   import:               base, project-config
@@ -369,7 +373,8 @@ executable demo-chain-sync
                        ouroboros-network
 
   ghc-options:         -Wall
-                       -threaded
+
+  ghc-options:         -threaded
                        -rtsopts
 
 

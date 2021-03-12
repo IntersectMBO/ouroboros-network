@@ -72,7 +72,8 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
-                       -fno-ignore-asserts
+
+  ghc-options:         -fno-ignore-asserts
 
 test-suite test
   import:               base, project-config
@@ -110,6 +111,8 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
-                       -fno-ignore-asserts
-                       -threaded
+
+  ghc-options:         -fno-ignore-asserts
+
+  ghc-options:         -threaded
                        -rtsopts

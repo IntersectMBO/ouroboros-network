@@ -85,4 +85,5 @@ test-suite test
                        time               >= 1.9.1
 
   ghc-options:         -Wall
-                       -fno-ignore-asserts
+
+  ghc-options:         -fno-ignore-asserts

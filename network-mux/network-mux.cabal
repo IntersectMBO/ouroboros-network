@@ -38,13 +38,14 @@ common project-config
 common demo-deps
   ghc-options:         -threaded
                        -Wall
-                       -fno-ignore-asserts
                        -Wcompat
                        -Wincomplete-uni-patterns
                        -Wincomplete-record-updates
                        -Wpartial-fields
                        -Widentities
                        -Wredundant-constraints
+
+  ghc-options:         -fno-ignore-asserts
 
 library
   import:               base, project-config
@@ -138,7 +139,6 @@ test-suite test
                        Win32-network   >=0.1 && <0.2
   ghc-options:         -threaded
                        -Wall
-                       -fno-ignore-asserts
                        -Wcompat
                        -Wincomplete-uni-patterns
                        -Wincomplete-record-updates
@@ -146,6 +146,7 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+  ghc-options:         -fno-ignore-asserts
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
