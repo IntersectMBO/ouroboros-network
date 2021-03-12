@@ -240,6 +240,7 @@ connectTo
 connectTo snocket tracers versions path =
     connectToNode snocket
                   nodeToClientHandshakeCodec
+                  noTimeLimitsHandshake
                   (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                   tracers
                   acceptableVersion
@@ -270,6 +271,7 @@ withServer sn tracers networkState sd versions errPolicies =
     (AcceptedConnectionsLimit maxBound maxBound 0)
     sd
     nodeToClientHandshakeCodec
+    noTimeLimitsHandshake
     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
     acceptableVersion
     (SomeResponderApplication <$> versions)
@@ -316,6 +318,7 @@ ncSubscriptionWorker
         (connectToNode'
           sn
           nodeToClientHandshakeCodec
+          noTimeLimitsHandshake
           (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           acceptableVersion
