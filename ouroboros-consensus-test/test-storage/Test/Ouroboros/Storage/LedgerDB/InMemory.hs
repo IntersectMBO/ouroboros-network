@@ -29,6 +29,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
 import           Ouroboros.Consensus.Util
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
@@ -381,11 +382,3 @@ instance Arbitrary SwitchSetup where
         | ssNumRollback' <- shrink ssNumRollback
         ]
       ]
-
-{-------------------------------------------------------------------------------
-  Orphan Arbitrary instances
--------------------------------------------------------------------------------}
-
-instance Arbitrary SecurityParam where
-  arbitrary = SecurityParam <$> choose (0, 6)
-  shrink (SecurityParam k) = SecurityParam <$> shrink k
