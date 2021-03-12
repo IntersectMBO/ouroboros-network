@@ -1,11 +1,9 @@
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary where
+module Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary () where
 
+import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
 import           Test.QuickCheck
-import           Data.Time.Clock (DiffTime, secondsToDiffTime, diffTimeToPicoseconds)
-import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam(..))
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (RequestedSnapshotInterval(..))
 
 {-------------------------------------------------------------------------------
   Orphan Arbitrary instances
