@@ -22,6 +22,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 library
   import:               base, project-config
 
@@ -89,7 +94,6 @@ test-suite test
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-test
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
@@ -100,9 +104,7 @@ test-suite test
                      , mtl
                      , QuickCheck
                      , tasty
-                     , tasty-hunit
                      , tasty-quickcheck
-                     , time
 
                      , byron-spec-chain
                      , byron-spec-ledger

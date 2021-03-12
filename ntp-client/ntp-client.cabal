@@ -21,6 +21,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 library
   import:               base, project-config
 

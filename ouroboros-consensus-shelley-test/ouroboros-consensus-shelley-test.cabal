@@ -22,6 +22,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 library
   import:               base, project-config
 
@@ -42,16 +47,12 @@ library
                      , containers        >=0.5   && <0.7
                      , data-default-class
                      , generic-random
-                     , hedgehog-quickcheck
-                     , iproute
                      , quiet             >=0.2   && <0.3
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
                      , time
-                     , serialise         >=0.2   && <0.3
                      , transformers
 
-                       -- cardano-ledger-specs
                      , cardano-ledger-shelley-ma
                      , cardano-ledger-shelley-ma-test
                      , shelley-spec-ledger
@@ -86,20 +87,15 @@ test-suite test
                        Test.ThreadNet.Shelley
 
   build-depends:       bytestring
-                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-slotting
                      , cborg
                      , containers
                      , QuickCheck
-                     , time
                      , tasty
-                     , tasty-hunit
                      , tasty-quickcheck
 
-                       -- cardano-ledger-specs
                      , shelley-spec-ledger
-                     , shelley-spec-ledger-test
 
                      , ouroboros-network
                      , ouroboros-consensus

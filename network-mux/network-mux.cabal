@@ -30,6 +30,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 common demo-deps
   ghc-options:         -threaded
                        -Wall
@@ -118,21 +123,16 @@ test-suite test
                        contra-tracer,
                        network-mux,
 
-                       array,
                        binary,
                        bytestring,
                        cborg,
                        containers,
-                       hashable,
-                       network,
                        process,
                        QuickCheck,
                        splitmix,
                        serialise,
-                       stm,
                        tasty,
                        tasty-quickcheck,
-                       tasty-hunit,
                        time
 
   if os(windows)
@@ -164,7 +164,6 @@ executable mux-demo
                        contra-tracer,
                        stm,
 
-                       binary,
                        bytestring,
                        cborg,
                        serialise

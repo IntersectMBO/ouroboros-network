@@ -17,6 +17,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 library
   import:               base, project-config
 
@@ -80,7 +85,6 @@ library
                      , Win32-network   >=0.1   && < 0.2
 
                        -- Used by the handshake protocol for now
-                     , serialise       >=0.2   && <0.3
                        -- Remove once codec is defined locally
                      , typed-protocols-examples
 
@@ -122,7 +126,6 @@ test-suite test
                      , iproute
                      , network
                      , serialise
-                     , text
                      , time
 
                      , QuickCheck
@@ -135,7 +138,6 @@ test-suite test
                      , io-sim-classes
                      , network-mux
                      , ouroboros-network-framework
-                     , ouroboros-network-testing
                      , typed-protocols
                      , typed-protocols-examples
 
@@ -164,11 +166,7 @@ executable demo-ping-pong
   build-depends:       async,
                        bytestring,
                        cborg,
-                       containers,
                        directory,
-                       network,
-                       stm,
-                       text,
 
                        contra-tracer,
 

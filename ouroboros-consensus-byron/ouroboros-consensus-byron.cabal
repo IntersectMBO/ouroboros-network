@@ -27,6 +27,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 library
   import:               base, project-config
 
@@ -92,13 +97,10 @@ executable db-converter
   main-is:             Main.hs
   build-depends:       bytestring
                      , cardano-binary
-                     , cardano-crypto-wrapper
                      , cardano-ledger-byron
-                     , cardano-slotting
                      , directory
                      , filepath
                      , mtl
-                     , optparse-applicative
                      , optparse-generic
                      , resourcet
                      , streaming

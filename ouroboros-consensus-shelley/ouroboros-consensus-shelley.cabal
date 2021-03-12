@@ -27,6 +27,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 library
   import:               base, project-config
 
@@ -68,10 +73,8 @@ library
                      , text              >=1.2   && <1.3
                      , transformers
 
-                       -- cardano-ledger-specs
                      , cardano-ledger-shelley-ma
                      , shelley-spec-ledger
-                     , shelley-spec-non-integral
                      , small-steps
 
                      , ouroboros-network

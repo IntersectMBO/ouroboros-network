@@ -41,6 +41,11 @@ common base
 common project-config
   default-language:     Haskell2010
 
+  ghc-options:          -Werror
+
+  if impl(ghc >= 8.10)
+    ghc-options:        -Wunused-packages
+
 library
   import:               base, project-config
 
@@ -157,13 +162,11 @@ library
                        dns,
                        fingertree        >=0.1.4.2 && <0.2,
                        iproute,
-                       mtl,
                        nothunks,
                        network           >=3.1.2 && <3.2,
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2 && <0.3,
                        random,
-                       stm               >=2.4 && <2.6,
 
                        cardano-binary,
                        cardano-prelude,
@@ -280,30 +283,20 @@ test-suite test
   build-depends:       QuickCheck,
                        array,
                        async,
-                       binary,
                        bytestring,
                        cborg,
                        containers,
-                       directory,
                        dns,
-                       fingertree,
                        hashable,
-                       iproute,
                        mtl,
                        network,
-                       pipes,
                        process,
-                       psqueues,
                        random,
                        serialise,
-                       splitmix,
-                       stm,
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
-                       text,
 
-                       cardano-binary,
                        cardano-prelude,
                        cardano-slotting,
                        contra-tracer,
@@ -342,27 +335,15 @@ test-suite cddl
   default-language:    Haskell2010
   build-depends:       bytestring,
                        cborg,
-                       containers,
                        directory,
                        filepath,
-                       fingertree,
-                       hashable,
-                       pipes,
                        process-extras,
                        serialise,
-                       text,
 
                        QuickCheck,
                        tasty,
                        tasty-quickcheck,
 
-                       cardano-binary,
-                       cardano-slotting,
-                       contra-tracer,
-
-                       io-sim,
-                       io-sim-classes,
-                       network-mux,
                        typed-protocols,
                        ouroboros-network-framework,
                        ouroboros-network,
@@ -381,17 +362,13 @@ executable demo-chain-sync
                        bytestring,
                        containers,
                        directory,
-                       network,
                        random,
                        serialise,
                        stm,
 
-                       QuickCheck,
-
                        contra-tracer,
 
                        network-mux,
-                       typed-protocols,
                        ouroboros-network-framework,
                        ouroboros-network
 
