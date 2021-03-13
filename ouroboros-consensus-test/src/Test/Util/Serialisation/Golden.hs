@@ -36,7 +36,7 @@ import           Control.Exception (SomeException, evaluate, try)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.UTF8 as BS.UTF8
-import           Data.List (nub)
+import qualified Data.List as L
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (..), ToExpr (..), ansiWlEditExpr, ediff)
@@ -174,7 +174,7 @@ goldenTests ::
   -> FilePath  -- ^ Folder containing the golden files
   -> TestTree
 goldenTests testName examples enc goldenFolder
-  | nub labels /= labels
+  | L.nub labels /= labels
   = error $ "Examples with the same label for " <> testName
   | [(Nothing, example)] <- examples
     -- If there's just a single unlabelled example, no need for grouping,
@@ -394,7 +394,7 @@ goldenTest_SerialiseNodeToNode ::
 goldenTest_SerialiseNodeToNode codecConfig goldenDir Examples {..} =
     testGroup "SerialiseNodeToNode" [
         testVersion version
-      | version <- nub $ Map.elems $ supportedNodeToNodeVersions $ Proxy @blk
+      | version <- L.nub $ Map.elems $ supportedNodeToNodeVersions $ Proxy @blk
       ]
   where
     testVersion :: BlockNodeToNodeVersion blk -> TestTree
@@ -431,7 +431,7 @@ goldenTest_SerialiseNodeToClient ::
 goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
     testGroup "SerialiseNodeToClient" [
         testVersion version
-      | version <- nub $ Map.elems $ supportedNodeToClientVersions $ Proxy @blk
+      | version <- L.nub $ Map.elems $ supportedNodeToClientVersions $ Proxy @blk
       ]
   where
     testVersion :: BlockNodeToClientVersion blk -> TestTree

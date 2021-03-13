@@ -1,10 +1,10 @@
 {-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Ingress (
     -- $ingress
@@ -12,8 +12,8 @@ module Network.Mux.Ingress (
     ) where
 
 import           Data.Array
-import           Data.List (nub)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.List as L
 import           Text.Printf
 
 import           Control.Monad
@@ -192,7 +192,7 @@ setupDispatchTable ptcls =
     -- The protocol numbers actually used, in the order of the first use within
     -- the 'ptcls' list. The order does not matter provided we do it
     -- consistently between the two arrays.
-    pnums   = nub $ map (miniProtocolNum . miniProtocolInfo) ptcls
+    pnums   = L.nub $ map (miniProtocolNum . miniProtocolInfo) ptcls
 
     -- The dense range of indexes of used protocol numbers.
     minpix, maxpix :: MiniProtocolIx

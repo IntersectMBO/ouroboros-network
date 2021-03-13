@@ -28,7 +28,7 @@ import           Control.Monad (forM_)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Get
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.List (foldl')
+import qualified Data.List as L
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
@@ -87,7 +87,7 @@ parseDBFile s = case T.splitOn "." $ T.pack s of
 -- | Go through all files, making three sets: the set of chunk files, primary
 -- index files, and secondary index files, discarding all others.
 dbFilesOnDisk :: Set String -> (Set ChunkNo, Set ChunkNo, Set ChunkNo)
-dbFilesOnDisk = foldl' categorise mempty
+dbFilesOnDisk = L.foldl' categorise mempty
   where
     categorise fs@(!chunk, !primary, !secondary) file =
       case parseDBFile file of

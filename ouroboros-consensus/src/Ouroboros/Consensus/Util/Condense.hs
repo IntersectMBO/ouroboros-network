@@ -12,7 +12,7 @@ module Ouroboros.Consensus.Util.Condense (
 import qualified Data.ByteString as BS.Strict
 import qualified Data.ByteString.Lazy as BS.Lazy
 import           Data.Int
-import           Data.List (intercalate)
+import qualified Data.List as L
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -101,7 +101,7 @@ instance Condense Rational where
   condense = printf "%.8f" . (fromRational :: Rational -> Double)
 
 instance Condense1 [] where
-  liftCondense f as = "[" ++ intercalate "," (map f as) ++ "]"
+  liftCondense f as = "[" ++ L.intercalate "," (map f as) ++ "]"
 
 instance Condense1 Set where
   liftCondense f = liftCondense f . Set.toList
@@ -142,7 +142,7 @@ instance Condense BS.Lazy.ByteString where
 -------------------------------------------------------------------------------}
 
 instance All Condense as => Condense (HList as) where
-  condense as = "(" ++ intercalate "," (HList.collapse (Proxy @Condense) condense as) ++ ")"
+  condense as = "(" ++ L.intercalate "," (HList.collapse (Proxy @Condense) condense as) ++ ")"
 
 {-------------------------------------------------------------------------------
   Orphans for ouroboros-network

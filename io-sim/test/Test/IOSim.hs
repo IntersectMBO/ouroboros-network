@@ -11,9 +11,9 @@ module Test.IOSim
 import           Data.Array
 import           Data.Either (isLeft)
 import           Data.Fixed (Fixed (..), Micro)
-import           Data.Graph
 import           Data.Function (on)
-import           Data.List (sortBy)
+import           Data.Graph
+import qualified Data.List as L
 import           Data.Time.Clock (picosecondsToDiffTime)
 
 import           Control.Exception (ArithException (..))
@@ -21,8 +21,8 @@ import           Control.Monad
 import           System.IO.Error (ioeGetErrorString, isUserError)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
@@ -235,7 +235,7 @@ test_timers xs =
          -- all timers should fire
          (length tr === length xs)
          -- timers should fire in the right order
-      .&&. (sortBy (on sortFn fst) tr === tr)
+      .&&. (L.sortBy (on sortFn fst) tr === tr)
 
     -- timers with negative timeout never fired, so we treat them as they would
     -- all fired at once at @-∞@.  This is to say that the following function is

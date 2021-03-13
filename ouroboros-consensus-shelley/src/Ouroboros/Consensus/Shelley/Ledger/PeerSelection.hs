@@ -9,7 +9,7 @@ module Ouroboros.Consensus.Shelley.Ledger.PeerSelection () where
 
 import           Data.Bifunctor (second)
 import           Data.Foldable (toList)
-import           Data.List (sortOn)
+import qualified Data.List as L
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -45,7 +45,7 @@ instance c ~ EraCrypto era
            SL.PoolDistr c
         -> [(SL.KeyHash 'SL.StakePool c, PoolStake)]
       orderByStake =
-            sortOn (Down . snd)
+            L.sortOn (Down . snd)
           . map (second (PoolStake . SL.individualPoolStake))
           . Map.toList
           . SL.unPoolDistr

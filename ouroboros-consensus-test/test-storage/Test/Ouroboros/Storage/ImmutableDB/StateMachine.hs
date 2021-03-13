@@ -31,7 +31,7 @@ import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity)
-import           Data.List (delete, partition, sortBy)
+import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -263,7 +263,7 @@ run env@ImmutableDBEnv {
     -- Remove the iterator from 'varIters'
     iteratorClose' :: TestIterator IO -> IO ()
     iteratorClose' it = do
-      atomically $ modifyTVar varIters (delete it)
+      atomically $ modifyTVar varIters (L.delete it)
       iteratorClose (unWithEq it)
 
     giveWithEq :: a -> IO (WithEq a)
@@ -546,7 +546,7 @@ generateCmd Model {..} = At <$> frequency
     blocks = dbmBlocks dbModel
 
     ebbs, regularBlocks :: [TestBlock]
-    (ebbs, regularBlocks) = partition (fromIsEBB . blockToIsEBB) blocks
+    (ebbs, regularBlocks) = L.partition (fromIsEBB . blockToIsEBB) blocks
 
     empty, noRegularBlocks, noEBBs :: Bool
     empty           = null blocks
@@ -1027,7 +1027,7 @@ tag = C.classify
           _ -> Right $ tagIteratorStreamedN streamedPerIterator
       , C.predFinish = do
           -- Find the entry with the highest value, i.e. the iterator that has
-          (_, longestStream) <- listToMaybe $ sortBy (flip compare `on` snd) $
+          (_, longestStream) <- listToMaybe $ L.sortBy (flip compare `on` snd) $
             Map.toList streamedPerIterator
           return $ TagIteratorStreamedN longestStream
       }

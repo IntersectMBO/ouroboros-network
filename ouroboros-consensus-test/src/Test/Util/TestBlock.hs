@@ -59,7 +59,7 @@ import           Codec.Serialise (Serialise (..))
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
 import           Data.Int
-import           Data.List (transpose)
+import qualified Data.List as L
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
@@ -547,7 +547,7 @@ mkTree threshold = go
 shrinkTree :: Tree a -> [Tree a]
 shrinkTree (Node a ts) = map (Node a) (shrinkList shrinkTree ts)
                          -- Also try shrinking all subtrees at once
-                      ++ map (Node a) (transpose (map shrinkTree ts))
+                      ++ map (Node a) (L.transpose (map shrinkTree ts))
 
 
 -- | Split list into two

@@ -21,7 +21,7 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
 
 import           Control.Monad
 import           Data.Bifunctor (first)
-import           Data.List (sortOn)
+import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -61,7 +61,7 @@ parseFd file =
 --
 -- Return separately any 'FsPath' which failed to parse.
 parseAllFds :: [FsPath] -> ([(FileId, FsPath)], [FsPath])
-parseAllFds = first (sortOn fst) . foldr judge ([], [])
+parseAllFds = first (L.sortOn fst) . foldr judge ([], [])
   where
     judge fsPath (parsed, notParsed) = case parseFd fsPath of
       Nothing     -> (parsed, fsPath : notParsed)

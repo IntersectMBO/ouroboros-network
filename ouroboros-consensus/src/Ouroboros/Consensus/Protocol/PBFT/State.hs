@@ -41,7 +41,7 @@ import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import qualified Data.Foldable as Foldable
-import           Data.List (sortOn)
+import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Sequence.Strict (StrictSeq (Empty, (:<|), (:|>)), (|>))
@@ -285,7 +285,7 @@ invert =
 uninvert :: PBftCrypto c => Map (PBftVerKeyHash c) [SlotNo] -> PBftState c
 uninvert =
       fromList
-    . sortOn pbftSignerSlotNo
+    . L.sortOn pbftSignerSlotNo
     . concatMap (\(key, slots) -> map (`PBftSigner` key) slots)
     . Map.toList
 

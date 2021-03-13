@@ -76,7 +76,7 @@ import           Data.Function (on)
 import           Data.Functor.Identity
 import           Data.Functor.Product
 import           Data.Kind (Constraint, Type)
-import           Data.List (foldl', maximumBy)
+import qualified Data.List as L
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -126,7 +126,7 @@ foldlM' f = go
     go !acc (x:xs) = f acc x >>= \acc' -> go acc' xs
 
 repeatedly :: (a -> b -> b) -> ([a] -> b -> b)
-repeatedly = flip . foldl' . flip
+repeatedly = flip . L.foldl' . flip
 
 repeatedlyM :: Monad m => (a -> b -> m b) -> ([a] -> b -> m b)
 repeatedlyM = flip . foldlM' . flip
@@ -260,7 +260,7 @@ safeMaximum = safeMaximumBy compare
 
 safeMaximumBy :: (a -> a -> Ordering) -> [a] -> Maybe a
 safeMaximumBy _cmp [] = Nothing
-safeMaximumBy cmp ls  = Just $ maximumBy cmp ls
+safeMaximumBy cmp ls  = Just $ L.maximumBy cmp ls
 
 safeMaximumOn :: Ord b => (a -> b) -> [a] -> Maybe a
 safeMaximumOn f = safeMaximumBy (compare `on` f)

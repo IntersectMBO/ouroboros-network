@@ -1,11 +1,11 @@
-{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- usage of `MsgKThxBye` is safe in this module.
@@ -22,28 +22,27 @@ module Ouroboros.Network.Protocol.TxSubmission.Test (
    ,DistinctList (..)
    ) where
 
-import           Data.List (nub)
+import           Data.ByteString.Lazy (ByteString)
+import qualified Data.List as L
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Word (Word16)
-import           Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.ST (runST)
-import           Control.Monad.IOSim
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Control.Tracer (Tracer(..), nullTracer)
+import           Control.Monad.IOSim
+import           Control.Monad.ST (runST)
+import           Control.Tracer (Tracer (..), nullTracer)
 
 import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as Serialise (encode, decode)
+import qualified Codec.Serialise as Serialise (decode, encode)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple
-                   (runConnectedPeersPipelined)
+import           Ouroboros.Network.Codec hiding (prop_codec)
+import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client
@@ -53,7 +52,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Examples
 import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     splits2, splits3)
 
 import           Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
@@ -378,8 +378,8 @@ newtype DistinctList a = DistinctList { fromDistinctList :: [a] }
   deriving Show
 
 instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
-  arbitrary = DistinctList . nub <$> arbitrary
+  arbitrary = DistinctList . L.nub <$> arbitrary
 
   shrink (DistinctList xs) =
-    [ DistinctList (nub xs') | xs' <- shrink xs ]
+    [ DistinctList (L.nub xs') | xs' <- shrink xs ]
 

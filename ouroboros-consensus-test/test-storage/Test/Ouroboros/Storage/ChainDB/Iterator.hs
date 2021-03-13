@@ -11,7 +11,7 @@ import           Test.Tasty.QuickCheck
 
 import           Control.Monad.Except
 import           Control.Tracer
-import           Data.List (intercalate)
+import qualified Data.List as L
 import qualified Data.Map.Strict as Map
 
 import           Control.Monad.IOSim (runSimOrThrow)
@@ -287,7 +287,7 @@ prop_general_test setup from to expected =
     failure msg = counterexample msg False
 
     ppStream :: [Either (RealPoint TestBlock) TestBlock] -> String
-    ppStream = intercalate " :> " . map ppGCedOrBlock
+    ppStream = L.intercalate " :> " . map ppGCedOrBlock
 
 {-------------------------------------------------------------------------------
   Test setup
@@ -307,10 +307,10 @@ data TestSetup = TestSetup
 testSetupInfo :: TestSetup -> String
 testSetupInfo TestSetup { immutable, volatile } = mconcat
     [ "Immutable: "
-    , intercalate " :> " (map ppBlock (Chain.toOldestFirst immutable))
+    , L.intercalate " :> " (map ppBlock (Chain.toOldestFirst immutable))
     , "\n"
     , "Volatile:  "
-    , intercalate ", " (map ppBlock volatile)
+    , L.intercalate ", " (map ppBlock volatile)
     ]
 
 ppGCedOrBlock :: Either (RealPoint TestBlock) TestBlock -> String

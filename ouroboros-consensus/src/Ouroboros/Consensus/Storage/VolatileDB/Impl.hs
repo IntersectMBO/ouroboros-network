@@ -123,7 +123,7 @@ import           Control.Monad.State.Strict (get, gets, lift, modify, put,
                      state)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.List (foldl')
+import qualified Data.List as L
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Set (Set)
@@ -494,7 +494,7 @@ garbageCollectFile hasFS (fileId, fileInfo) = do
             (\h -> (, h) . biPrevHash . ibiBlockInfo <$> Map.lookup h currentRevMap)
             (Set.toList hashes)
         currentSuccMap' =
-          foldl' (flip (uncurry deleteMapSet)) currentSuccMap deletedPairs
+          L.foldl' (flip (uncurry deleteMapSet)) currentSuccMap deletedPairs
 
     put st {
         currentMap     = Index.delete fileId currentMap

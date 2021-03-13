@@ -10,7 +10,7 @@ module Analysis (
   ) where
 
 import           Control.Monad.Except
-import           Data.List (intercalate)
+import qualified Data.List as L
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word16)
 
@@ -68,7 +68,7 @@ showSlotBlockNo AnalysisEnv { db, registry } =
     processAll_ db registry GetHeader process
   where
     process :: Header blk -> IO ()
-    process hdr = putStrLn $ intercalate "\t" [
+    process hdr = putStrLn $ L.intercalate "\t" [
         show (blockNo   hdr)
       , show (blockSlot hdr)
       ]
@@ -84,7 +84,7 @@ countTxOutputs AnalysisEnv { db, registry } = do
     process :: Int -> blk -> IO Int
     process cumulative blk = do
         let cumulative' = cumulative + count
-        putStrLn $ intercalate "\t" [
+        putStrLn $ L.intercalate "\t" [
             show slotNo
           , show count
           , show cumulative'
@@ -106,7 +106,7 @@ showHeaderSize AnalysisEnv { db, registry } = do
   where
     process :: Word16 -> (SlotNo, Word16) -> IO Word16
     process maxHeaderSize (slotNo, headerSize) = do
-        putStrLn $ intercalate "\t" [
+        putStrLn $ L.intercalate "\t" [
             show slotNo
           , "Header size = " <> show headerSize
           ]
@@ -121,7 +121,7 @@ showBlockTxsSize AnalysisEnv { db, registry } =
     processAll_ db registry GetBlock process
   where
     process :: blk -> IO ()
-    process blk = putStrLn $ intercalate "\t" [
+    process blk = putStrLn $ L.intercalate "\t" [
           show (blockSlot blk)
         , "Num txs in block = " <> show numBlockTxs
         , "Total size of txs in block = " <> show blockTxsSize
@@ -149,7 +149,7 @@ showEBBs AnalysisEnv { db, registry } = do
     process blk =
         case blockIsEBB blk of
           Just _epoch ->
-            putStrLn $ intercalate "\t" [
+            putStrLn $ L.intercalate "\t" [
                 show (blockHash blk)
               , show (blockPrevHash blk)
               , show (    Map.lookup

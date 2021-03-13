@@ -1,13 +1,13 @@
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 
@@ -15,42 +15,42 @@ module Test.Mux
     ( tests
     ) where
 
-import           Control.Applicative
-import           Control.Arrow ((&&&))
 import           Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
+import           Control.Applicative
+import           Control.Arrow ((&&&))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
-import           Data.List (dropWhileEnd, nub)
+import qualified Data.List as L
 import qualified Data.Map as M
 import           Data.Tuple (swap)
 import           Data.Word
+import qualified System.Random.SplitMix as SM
 import           Test.QuickCheck hiding ((.&.))
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
-import qualified System.Random.SplitMix as SM
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.IOSim ( runSimStrictShutdown, runSimTrace, selectTraceEventsSay
-                                     , traceResult )
+import           Control.Monad.IOSim (runSimStrictShutdown, runSimTrace,
+                     selectTraceEventsSay, traceResult)
 import           Control.Tracer
 
 #if defined(mingw32_HOST_OS)
-import qualified System.Win32.NamedPipes as Win32.NamedPipes
-import qualified System.Win32.File       as Win32.File
-import qualified System.Win32.Async      as Win32.Async
 import           System.IOManager
+import qualified System.Win32.Async as Win32.Async
+import qualified System.Win32.File as Win32.File
+import qualified System.Win32.NamedPipes as Win32.NamedPipes
 #else
 import           System.IO (hClose)
 import           System.Process (createPipe)
@@ -59,13 +59,14 @@ import           System.Process (createPipe)
 import           Test.Mux.ReqResp
 
 import           Network.Mux
-import qualified Network.Mux.Compat as Compat
-import           Network.Mux.Codec
-import           Network.Mux.Channel
-import           Network.Mux.Types ( muxBearerAsChannel, MiniProtocolDir(..), MuxSDU(..), MuxSDUHeader(..)
-                                   , RemoteClockModel(..) )
-import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Pipe
+import           Network.Mux.Bearer.Queues
+import           Network.Mux.Channel
+import           Network.Mux.Codec
+import qualified Network.Mux.Compat as Compat
+import           Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..),
+                     MuxSDUHeader (..), RemoteClockModel (..),
+                     muxBearerAsChannel)
 
 tests :: TestTree
 tests =
@@ -344,7 +345,7 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
 
     serverMux <- newMux $ MiniProtocolBundle [serverApp]
 
-    withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync -> 
+    withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync ->
       withAsync (runMux serverTracer serverMux serverBearer) $ \serverAsync -> do
 
         r <- step clientMux clientApp serverMux serverApp messages
@@ -913,12 +914,12 @@ prop_mux_starvation (Uneven response0 response1) =
 
     -- First verify that all messages where received correctly
     let res_short = case (srvRes2, cliRes2) of
-                         (Left _, _) -> False
-                         (_, Left _) -> False
+                         (Left _, _)        -> False
+                         (_, Left _)        -> False
                          (Right a, Right b) -> a && b
     let res_long  = case (srvRes3, cliRes3) of
-                         (Left _, _) -> False
-                         (_, Left _) -> False
+                         (Left _, _)        -> False
+                         (_, Left _)        -> False
                          (Right a, Right b) -> a && b
 
     stopMux serverMux
@@ -938,7 +939,7 @@ prop_mux_starvation (Uneven response0 response1) =
     verifyStarvation :: Eq a => [a] -> Property
     verifyStarvation [] = property True
     verifyStarvation ms =
-      let ms' = dropWhileEnd (\e -> e == last ms)
+      let ms' = L.dropWhileEnd (\e -> e == last ms)
                   (head ms : dropWhile (\e -> e == head ms) ms)
                 ++ [last ms]
       in
@@ -946,8 +947,8 @@ prop_mux_starvation (Uneven response0 response1) =
         $ label ("length " ++ label_ (length ms')) $ alternates ms'
 
       where
-        alternates []     = True
-        alternates (_:[]) = True
+        alternates []           = True
+        alternates (_:[])       = True
         alternates (a : b : as) = a /= b && alternates (b : as)
 
     label_ :: Int -> String
@@ -1126,8 +1127,8 @@ prop_demux_sdu a = do
     sduViolation (Just Compat.MuxUnknownMiniProtocol) = "unknown miniprotocol"
     sduViolation (Just Compat.MuxDecodeError        ) = "decode error"
     sduViolation (Just Compat.MuxIngressQueueOverRun) = "ingress queue overrun"
-    sduViolation (Just _                     ) = "unknown violation"
-    sduViolation Nothing                       = "none"
+    sduViolation (Just _                     )        = "unknown violation"
+    sduViolation Nothing                              = "none"
 
 prop_demux_sdu_sim :: ArbitrarySDU
                      -> Property
@@ -1186,7 +1187,7 @@ data DummyApps =
 instance Arbitrary DummyApps where
     arbitrary = do
         nums <- listOf1 $ arbitrary
-        apps <- mapM genApp $ nub nums
+        apps <- mapM genApp $ L.nub nums
         mode <- arbitrary
         case mode of
              InitiatorMode          -> return $ DummyInitiatorApps apps
@@ -1228,7 +1229,7 @@ data DummyRestartingApps =
 instance Arbitrary DummyRestartingApps where
     arbitrary = do
         nums <- listOf1 $ arbitrary
-        apps <- mapM genApp $ nub nums
+        apps <- mapM genApp $ L.nub nums
         mode <- arbitrary
         case mode of
              InitiatorMode          -> return $ DummyRestartingInitiatorApps apps

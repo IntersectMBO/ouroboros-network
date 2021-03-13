@@ -27,7 +27,7 @@ import qualified Data.Set as Set
 
 import           Data.Function (on)
 import           Data.Hashable
-import           Data.List (foldl', groupBy, sortBy, transpose)
+import qualified Data.List as L
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 import           GHC.Stack (HasCallStack)
@@ -564,7 +564,7 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
         | (_, status, inflight, _) <- chains ]
 
     -- The highest slot number that is or has been in flight for any peer.
-    maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
+    maxSlotNoInFlightWithOtherPeers = L.foldl' max NoMaxSlotNo
       [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
 
 -- | Filter a fragment. This is an optimised variant that will behave the same
@@ -620,16 +620,16 @@ prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
 
     map (\(decision, peer) ->
             (fmap (\(_,_,fragment) -> fragment) decision, peer))
-  . concatMap ( concat
-              . transpose
-              . groupBy (equatingFst
+  . concatMap ( L.concat
+              . L.transpose
+              . L.groupBy (equatingFst
                           (equatingRight
                             ((==) `on` chainHeadPoint)))
-              . sortBy  (comparingFst
+              . L.sortBy  (comparingFst
                           (comparingRight
                             (compare `on` chainHeadPoint)))
               )
-  . groupBy (equatingFst
+  . L.groupBy (equatingFst
               (equatingRight
                 (equatingPair
                    -- compare on probability band first, then preferred chain
@@ -637,7 +637,7 @@ prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
                    (equateCandidateChains `on` getChainSuffix)
                  `on`
                    (\(band, chain, _fragments) -> (band, chain)))))
-  . sortBy  (descendingOrder
+  . L.sortBy  (descendingOrder
               (comparingFst
                 (comparingRight
                   (comparingPair
@@ -670,7 +670,7 @@ prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
 prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
     map (\(decision, peer) ->
             (fmap (\(_, _, fragment) -> fragment) decision, peer))
-  . sortBy (comparingFst
+  . L.sortBy (comparingFst
              (comparingRight
                (comparingPair
                   -- compare on preferred chain first, then duration
@@ -856,7 +856,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
                maxSlotNoFetchedThisRound `max` maxSlotNoFetchedThisDecision)
               where
                 maxSlotNoFetchedThisDecision =
-                  foldl' max NoMaxSlotNo $ map MaxSlotNo $
+                  L.foldl' max NoMaxSlotNo $ map MaxSlotNo $
                   mapMaybe (withOriginToMaybe . AF.headSlot) fragments
 
                 blocksFetchedThisDecision =
@@ -887,7 +887,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     nPreferedPeers =
         map snd
       . take (fromIntegral maxConcurrentFetchPeers)
-      . sortBy (\a b -> comparePeerGSV nActivePeers (peerSalt fetchDecisionPolicy) a b)
+      . L.sortBy (\a b -> comparePeerGSV nActivePeers (peerSalt fetchDecisionPolicy) a b)
       . map (\(_, _, _, gsv, p, _) -> (gsv, p))
       $ chains
 

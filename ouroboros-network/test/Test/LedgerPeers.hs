@@ -9,21 +9,21 @@ import           Control.Exception (SomeException (..))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
-import           Control.Tracer (showTracing, Tracer (..), traceWith)
-import           Data.List (foldl', intercalate)
+import           Control.Tracer (Tracer (..), showTracing, traceWith)
+import qualified Data.List as L
 import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Word
 import           Data.Ratio
+import           Data.Word
 import           System.Random
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 
+import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-import           Test.QuickCheck
 import           Text.Printf
 
 tests :: TestTree
@@ -64,7 +64,7 @@ instance Arbitrary LedgerPools where
       where
         calculateRelativeStake :: [StakePool] -> [(PoolStake, NonEmpty RelayAddress)]
         calculateRelativeStake sps =
-            let totalStake = foldl' (\s p -> s + spStake p) 0 sps in
+            let totalStake = L.foldl' (\s p -> s + spStake p) 0 sps in
             map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
                        , spRelay p)) sps
 
@@ -82,11 +82,11 @@ prop_pick100 seed =
         tr' <- evaluateTrace tr
         case tr' of
              SimException e trace -> do
-                 return $ counterexample (intercalate "\n" $ show e : trace) False
+                 return $ counterexample (L.intercalate "\n" $ show e : trace) False
              SimDeadLock trace -> do
-                 return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
+                 return $ counterexample (L.intercalate "\n" $ "Deadlock" : trace) False
              SimReturn (_, peers) _trace -> do
-                 -- printf "Log: %s\n" (intercalate "\n" _trace)
+                 -- printf "Log: %s\n" (L.intercalate "\n" _trace)
                  return $ peers === [ RelayAddressAddr (read "1.1.1.1") 1 ]
 
 -- | Veify that given at least one peer we manage to pick `count` peers.
@@ -102,13 +102,13 @@ prop_pick (LedgerPools lps) count seed =
         tr' <- evaluateTrace tr
         case tr' of
              SimException e trace -> do
-                 return $ counterexample (intercalate "\n" $ show e : trace) False
+                 return $ counterexample (L.intercalate "\n" $ show e : trace) False
              SimDeadLock trace -> do
-                 return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
+                 return $ counterexample (L.intercalate "\n" $ "Deadlock" : trace) False
              SimReturn (_, peers) trace -> do
                  if null lps
                     then return $ property $ null peers
-                    else return $ counterexample (intercalate "\n" $ "Lenght missmatch" : trace)
+                    else return $ counterexample (L.intercalate "\n" $ "Lenght missmatch" : trace)
                                       (length peers == fromIntegral count)
 
 

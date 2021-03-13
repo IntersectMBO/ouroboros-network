@@ -25,7 +25,7 @@ import qualified Prelude
 
 import           Data.Bifunctor
 import           Data.Functor.Classes
-import           Data.List (intercalate)
+import qualified Data.List as L
 import           Data.TreeDiff (ToExpr)
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -50,7 +50,7 @@ extendMapping acc ((k, v) : kvs) =
       _otherwise        -> extendMapping ((k, v) : acc) kvs
   where
     renderError :: v -> String
-    renderError v' = intercalate " " [
+    renderError v' = L.intercalate " " [
           "Key"
         , show k
         , "with two different values"

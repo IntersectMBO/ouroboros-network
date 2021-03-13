@@ -19,7 +19,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia (
   , LiftNamedMismatch(..)
   ) where
 
-import           Data.List (intercalate)
+import qualified Data.List as L
 import           Data.Proxy
 import           Data.SOP.Dict
 import           Data.SOP.Strict
@@ -281,7 +281,7 @@ instance ( All SingleEraBlock xs
 
 showBlockTypes :: All SingleEraBlock xs => SList xs -> String
 showBlockTypes =
-    (\names -> "[" ++ intercalate "," names ++ "]") . hcollapse . go
+    (\names -> "[" ++ L.intercalate "," names ++ "]") . hcollapse . go
   where
     go :: All SingleEraBlock xs' => SList xs' -> NP (K String) xs'
     go SNil  = Nil

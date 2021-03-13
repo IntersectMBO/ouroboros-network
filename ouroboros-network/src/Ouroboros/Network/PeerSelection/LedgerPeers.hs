@@ -23,7 +23,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
 import           Control.Monad.Class.MonadSTM
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.IP as IP
-import           Data.List (foldl')
+import qualified Data.List as L
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
@@ -97,7 +97,7 @@ accPoolStake :: [(PoolStake, NonEmpty RelayAddress)]
              -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress)
 accPoolStake pl =
     let pl' = reRelativeStake pl
-        ackList = foldl' fn [] pl' in
+        ackList = L.foldl' fn [] pl' in
     Map.fromList ackList
   where
     fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAddress))]

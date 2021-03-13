@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Forge (
 
 import           Control.Exception
 import           Control.Monad.Except
-import           Data.List (foldl')
+import qualified Data.List as L
 import qualified Data.Sequence.Strict as Seq
 
 import           Ouroboros.Consensus.Block
@@ -88,7 +88,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader
       = return ()
 
     estimatedBodySize, actualBodySize :: Int
-    estimatedBodySize = fromIntegral $ foldl' (+) 0 (map txInBlockSize txs)
+    estimatedBodySize = fromIntegral $ L.foldl' (+) 0 (map txInBlockSize txs)
     actualBodySize    = SL.bBodySize body
 
     mkBhBody toSign = SL.BHBody {

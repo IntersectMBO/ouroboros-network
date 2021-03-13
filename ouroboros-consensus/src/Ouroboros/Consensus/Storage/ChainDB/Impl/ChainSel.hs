@@ -26,7 +26,7 @@ import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Function (on)
-import           Data.List (partition, sortBy)
+import qualified Data.List as L
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
@@ -790,7 +790,7 @@ chainSelection chainSelEnv chainDiffs =
 
     sortCandidates :: [ChainDiff (Header blk)] -> [ChainDiff (Header blk)]
     sortCandidates =
-      sortBy (flip (compareAnchoredFragments bcfg) `on` Diff.getSuffix)
+      L.sortBy (flip (compareAnchoredFragments bcfg) `on` Diff.getSuffix)
 
     -- 1. Take the first candidate from the list of sorted candidates
     -- 2. Validate it
@@ -972,7 +972,7 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
 
       (suffix', inFuture) -> do
         let (exceedClockSkew, inNearFuture) =
-              partition InFuture.inFutureExceedsClockSkew inFuture
+              L.partition InFuture.inFutureExceedsClockSkew inFuture
         -- Record future blocks
         unless (null inNearFuture) $ do
           let futureHeaders = InFuture.inFutureHeader <$> inNearFuture

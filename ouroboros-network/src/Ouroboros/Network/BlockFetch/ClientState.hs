@@ -1,9 +1,9 @@
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE BangPatterns     #-}
+{-# LANGUAGE DeriveFunctor    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RecordWildCards  #-}
 
 module Ouroboros.Network.BlockFetch.ClientState (
     FetchClientContext(..),
@@ -29,28 +29,28 @@ module Ouroboros.Network.BlockFetch.ClientState (
     FromConsensus(..),
   ) where
 
-import           Data.List (foldl')
+import qualified Data.List as L
 import           Data.Maybe (mapMaybe)
-import qualified Data.Set as Set
+import           Data.Semigroup (Last (..))
 import           Data.Set (Set)
-import           Data.Semigroup (Last(..))
+import qualified Data.Set as Set
 
+import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Mux (ControlMessageSTM, timeoutWithControlMessage)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-                   ( HasHeader, MaxSlotNo (..), Point, blockPoint )
-import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange(..))
+import           Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point,
+                     blockPoint)
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerFetchInFlightLimits(..)
-                   , calculatePeerFetchInFlightLimits
-                   , SizeInBytes, PeerGSV )
+                     (PeerFetchInFlightLimits (..), PeerGSV, SizeInBytes,
+                     calculatePeerFetchInFlightLimits)
+import           Ouroboros.Network.Mux (ControlMessageSTM,
+                     timeoutWithControlMessage)
 import           Ouroboros.Network.Point (withOriginToMaybe)
+import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.
@@ -188,7 +188,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- We track this because there is a fixed maximum number of outstanding
        -- requests that the protocol allows.
        --
-       peerFetchReqsInFlight :: !Word,
+       peerFetchReqsInFlight   :: !Word,
 
        -- | The sum of the byte count of blocks expected from all in-flight
        -- fetch requests. This is a close approximation of the amount of data
@@ -197,7 +197,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- We track this because we pipeline fetch requests and we want to keep
        -- some but not too much data in flight at once.
        --
-       peerFetchBytesInFlight :: !SizeInBytes,
+       peerFetchBytesInFlight  :: !SizeInBytes,
 
        -- | The points for the set of blocks that are currently in-flight.
        -- Note that since requests are for ranges of blocks this does not
@@ -215,7 +215,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- We track this to more efficiently remove blocks that are already
        -- in-flight from the candidate fragments: blocks with a slot number
        -- higher than this one do not have to be filtered out.
-       peerFetchMaxSlotNo  :: !MaxSlotNo
+       peerFetchMaxSlotNo      :: !MaxSlotNo
      }
   deriving (Eq, Show)
 
@@ -305,7 +305,7 @@ deleteHeadersInFlight :: HasHeader header
 deleteHeadersInFlight blockFetchSize headers inflight =
     -- Reusing 'deleteHeaderInFlight' rather than a direct impl still
     -- gives us O(n log m) which is fine
-    foldl' (flip (deleteHeaderInFlight blockFetchSize)) inflight headers
+    L.foldl' (flip (deleteHeaderInFlight blockFetchSize)) inflight headers
 
 
 newtype FetchRequest header =
@@ -340,7 +340,7 @@ instance HasHeader header => Semigroup (FetchRequest header) where
 
 fetchRequestMaxSlotNo :: HasHeader header => FetchRequest header -> MaxSlotNo
 fetchRequestMaxSlotNo (FetchRequest afs) =
-    foldl' max NoMaxSlotNo $ map MaxSlotNo $
+    L.foldl' max NoMaxSlotNo $ map MaxSlotNo $
       mapMaybe (withOriginToMaybe . AF.headSlot) afs
 
 -- | Tracing types for the various events that change the state

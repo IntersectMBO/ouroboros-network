@@ -8,7 +8,7 @@ module Test.Ouroboros.Storage.ChainDB.GcSchedule (tests, example) where
 import           Control.Monad (forM)
 import           Control.Tracer (nullTracer)
 import           Data.Fixed (div')
-import           Data.List (foldl', partition, sort)
+import qualified Data.List as L
 import           Data.Time.Clock
 import           Data.Void (Void)
 
@@ -223,7 +223,7 @@ runGc now gcState = GcState {
     }
   where
     (gcQueueLater, gcQueueNow) =
-      partition ((> now) . scheduledGcTime) (unGcQueue (gcQueue gcState))
+      L.partition ((> now) . scheduledGcTime) (unGcQueue (gcQueue gcState))
     mbHighestGCedSlot = safeMaximum $ map scheduledGcSlot gcQueueNow
     GcGarbageCollections pastGarbageCollections =
       gcGarbageCollections gcState
@@ -320,9 +320,9 @@ example gcParams = summarise gcParams 1000
 -- in the final 'GcGarbageCollections'.
 processQueueToEnd :: GcState -> GcGarbageCollections
 processQueueToEnd gcState@GcState { gcQueue = GcQueue queue } =
-    gcGarbageCollections (foldl' (flip runGc) gcState timesToGcAt)
+    gcGarbageCollections (L.foldl' (flip runGc) gcState timesToGcAt)
   where
-    timesToGcAt = sort (map scheduledGcTime queue)
+    timesToGcAt = L.sort (map scheduledGcTime queue)
 
 {-------------------------------------------------------------------------------
   Run the real GcSchedule

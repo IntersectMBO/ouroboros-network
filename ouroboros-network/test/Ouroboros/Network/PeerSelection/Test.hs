@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -20,7 +20,7 @@ import           Data.Function (on)
 import           Data.Functor (($>))
 import           Data.Graph (Graph)
 import qualified Data.Graph as Graph
-import           Data.List (groupBy, nub)
+import qualified Data.List as L
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
@@ -35,8 +35,8 @@ import           Data.Void (Void)
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import qualified Control.Monad.Fail as Fail
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
@@ -44,8 +44,8 @@ import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Monad.IOSim
 
 import qualified Network.DNS as DNS (defaultResolvConf)
-import           Network.Socket (SockAddr)
 import           Network.Mux.Timeout
+import           Network.Socket (SockAddr)
 
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
@@ -699,7 +699,7 @@ prop_governor_connstatus (GovernorMockEnvironmentWAD env) =
               . selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
         --TODO: check any actually get a true status output and try some deliberate bugs
-     in all ok (groupBy ((==) `on` fst) trace)
+     in all ok (L.groupBy ((==) `on` fst) trace)
   where
     -- We look at events when the environment's view of the state of all the
     -- peer connections changed, and check that before simulated time advances
@@ -866,7 +866,7 @@ instance Arbitrary GovernorMockEnvironment where
         numroots  <- choose (minroots, maxroots)
         ixs       <- vectorOf numroots (getNonNegative <$> arbitrary)
         let pick n    = Set.elemAt i peers where i = n `mod` Set.size peers
-            rootPeers = nub (map pick ixs)
+            rootPeers = L.nub (map pick ixs)
         -- divide into local and public, but with a bit of overlap:
         local <- vectorOf (length rootPeers) (choose (0, 10 :: Int))
         let localRoots  = [ x | (x, v) <- zip rootPeers local, v <= 5 ]

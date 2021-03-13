@@ -13,13 +13,13 @@ module Main where
 
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void)
-import           Data.List
+import qualified Data.List as L
 import qualified Data.Map as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Text.Read (readMaybe)
 import           Data.Void (Void)
+import           Text.Read (readMaybe)
 
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
@@ -39,11 +39,11 @@ import qualified Codec.Serialise as CBOR
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.IOManager
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient (LocalConnectionId)
 import           Ouroboros.Network.NodeToNode
-import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
@@ -308,7 +308,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               readFetchMode          = return FetchModeBulkSync,
               readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
                                          getTestFetchedBlocks blockHeap,
-              readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
+              readFetchedMaxSlotNo   = L.foldl' max NoMaxSlotNo .
                                        map (maxSlotNoFromWithOrigin . pointSlot) .
                                        Set.elems <$>
                                        getTestFetchedBlocks blockHeap,
@@ -348,7 +348,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                   -- downloaded candidate chain
                  --FIXME: there's something wrong here, we always get chains
                  -- of length 1.
-                  maximumBy compareCandidateChains $
+                  L.maximumBy compareCandidateChains $
                   [ candidateChainFetched
                   | candidateChain <- Map.elems candidates
                   , let candidateChainFetched =

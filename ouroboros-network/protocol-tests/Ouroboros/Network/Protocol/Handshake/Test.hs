@@ -1,6 +1,6 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -8,43 +8,41 @@ module Ouroboros.Network.Protocol.Handshake.Test where
 
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.List as L
+import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           Data.List (nub)
-import           Data.Maybe (fromMaybe)
-import qualified Data.Map as Map
 import           GHC.Generics
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
-import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow ( MonadCatch
-                                                , MonadThrow
-                                                )
+import           Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow)
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Proofs
 
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     splits2, splits3)
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Driver.Simple ( runConnectedPeers
-                                                 , runConnectedPeersAsymmetric
-                                                 )
+import           Ouroboros.Network.Driver.Simple (runConnectedPeers,
+                     runConnectedPeersAsymmetric)
 
-import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Client
-import           Ouroboros.Network.Protocol.Handshake.Server
 import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Direct
+import           Ouroboros.Network.Protocol.Handshake.Server
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
 
-import qualified Codec.CBOR.Write    as CBOR
+import qualified Codec.CBOR.Write as CBOR
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -186,7 +184,7 @@ dataCodecCBORTerm Version_2 = CodecCBORTerm {encodeTerm, decodeTerm}
 
 arbitraryVersionData :: VersionNumber -> Gen VersionData
 arbitraryVersionData Version_0 = (\a -> VersionData a False False)
-                              <$> arbitrary 
+                              <$> arbitrary
 arbitraryVersionData Version_1 = (\a b -> VersionData a b False)
                               <$> arbitrary
                               <*> arbitrary
@@ -246,7 +244,7 @@ genInvalidVersion Version_2 =
 --
 genValidVersions :: Gen (Versions VersionNumber VersionData Bool)
 genValidVersions = do
-  vns <- nub <$> resize 3 (listOf1 (arbitrary :: Gen VersionNumber))
+  vns <- L.nub <$> resize 3 (listOf1 (arbitrary :: Gen VersionNumber))
   vs <- traverse genValidVersion vns
   return $ Versions $ Map.fromList $ zip vns vs
 
@@ -255,7 +253,7 @@ genValidVersions = do
 --
 genVersions :: Gen (Versions VersionNumber VersionData Bool)
 genVersions = do
-  vns <- nub <$> resize 3 (listOf1 (arbitrary :: Gen VersionNumber))
+  vns <- L.nub <$> resize 3 (listOf1 (arbitrary :: Gen VersionNumber))
   vs <- traverse (\v -> oneof [genValidVersion v, genInvalidVersion v]) vns
   return $ Versions $ Map.fromList $ zip vns vs
 
@@ -301,7 +299,7 @@ instance Arbitrary ArbitraryVersions where
       [ (1, (\v -> ArbitraryVersions v v) <$> genVersions)
       , (2, ArbitraryVersions <$> genVersions <*> genVersions)
       ]
-    shrink (ArbitraryVersions (Versions vs) (Versions vs')) = 
+    shrink (ArbitraryVersions (Versions vs) (Versions vs')) =
       [ ArbitraryVersions (Versions $ Map.fromList vs'') (Versions vs')
       | vs'' <- shrinkList (const []) (Map.toList vs)
       ] ++
@@ -315,7 +313,7 @@ instance Arbitrary ArbitraryVersions where
 --
 validVersion :: VersionNumber -> Version VersionData Bool -> Bool
 validVersion Version_0 ((Version _ d)) = dataVersion1 d == False
-                                      && dataVersion2 d == False 
+                                      && dataVersion2 d == False
 validVersion Version_1 ((Version _ d)) = dataVersion2 d == False
 validVersion Version_2 ((Version _ _)) = True
 
@@ -330,8 +328,8 @@ prop_arbitrary_ArbitraryVersions (ArbitraryVersions (Versions vs) (Versions vs')
 
     -- in 25% of cases the common max version is valid
     cover 25 (case Map.lookupMax intersection of
-               Nothing -> False
-               Just (vn, s)  -> validVersion vn s)
+               Nothing      -> False
+               Just (vn, s) -> validVersion vn s)
                "valid common max version" $
 
     -- in 25% of cases all the versions in @vs'@ are either not in @vs@ or are
@@ -492,7 +490,7 @@ prop_channel_asymmetric createChannels clientVersions = do
         $ Map.singleton
             Version_1
             (Version (application d) d)
-              
+
 
     -- This codec does not know how to decode 'Version_0' and 'Version_2'.
     versionNumberCodec' :: CodecCBORTerm (String, Maybe Int) VersionNumber
@@ -603,11 +601,11 @@ instance Arbitrary ArbitraryRefuseReason where
 prop_codec_RefuseReason
   :: ArbitraryRefuseReason
   -> Bool
-prop_codec_RefuseReason (ArbitraryRefuseReason vReason) = 
+prop_codec_RefuseReason (ArbitraryRefuseReason vReason) =
   case CBOR.deserialiseFromBytes
         (decodeRefuseReason versionNumberCodec)
         (CBOR.toLazyByteString $ encodeRefuseReason versionNumberCodec vReason) of
-    Left _ -> False
+    Left _                  -> False
     Right (bytes, vReason') -> BL.null bytes && vReason' == vReason
 
 prop_codec_Handshake

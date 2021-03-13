@@ -84,7 +84,7 @@ import           Control.Monad (unless)
 import           Control.Monad.Except (runExcept)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Function (on)
-import           Data.List (isInfixOf, isPrefixOf, sortBy)
+import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
@@ -434,7 +434,7 @@ addBlock cfg blk m = Model {
 
     extendsImmutableChain :: Chain blk -> Bool
     extendsImmutableChain fork =
-      immutableChainHashes `isPrefixOf`
+      immutableChainHashes `L.isPrefixOf`
       map blockHash (Chain.toOldestFirst fork)
 
     newChain  :: Chain blk
@@ -779,7 +779,7 @@ validChains cfg m bs =
   where
     sortChains :: [Chain blk] -> [Chain blk]
     sortChains =
-      sortBy $ flip (
+      L.sortBy $ flip (
                Fragment.compareAnchoredFragments (configBlock cfg)
           `on` (Chain.toAnchoredFragment . fmap getHeader)
         )
@@ -819,7 +819,7 @@ between k from to m = do
 
     partOfCurrentChain :: AnchoredFragment blk -> Bool
     partOfCurrentChain fork =
-      map blockPoint (Fragment.toOldestFirst fork) `isInfixOf`
+      map blockPoint (Fragment.toOldestFirst fork) `L.isInfixOf`
       map blockPoint (Chain.toOldestFirst (currentChain m))
 
     -- A fragment for each possible chain in the database

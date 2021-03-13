@@ -23,7 +23,7 @@ import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Classes
 import           Data.Kind (Type)
-import           Data.List (delete, sort)
+import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.TreeDiff (defaultExprViaShow)
@@ -209,7 +209,7 @@ normalize (Resp r) = Resp $ aux <$> r
     aux :: Success MockThread -> Success MockThread
     aux (Unit ())    = Unit ()
     aux (Spawned t)  = Spawned t
-    aux (Threads ts) = Threads (sort ts)
+    aux (Threads ts) = Threads (L.sort ts)
 
 {-------------------------------------------------------------------------------
   Run against the mock implementation
@@ -330,7 +330,7 @@ newThread alive parentReg = \shouldLink -> do
                -> m ()
     threadBody childReg spawned comms = do
         us <- readMVar spawned
-        loop us `finally` (atomically $ modifyTVar alive (delete us))
+        loop us `finally` (atomically $ modifyTVar alive (L.delete us))
       where
         loop :: TestThread m -> m ()
         loop us = do

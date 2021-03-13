@@ -43,7 +43,7 @@ import           Prelude hiding (null)
 import           Control.Monad (replicateM, void)
 
 import qualified Data.ByteString as BS
-import           Data.List (dropWhileEnd, intercalate)
+import qualified Data.List as L
 import           Data.Maybe (catMaybes, isNothing)
 import           Data.Word (Word64)
 
@@ -103,7 +103,7 @@ always a = Stream (repeat (Just a))
 -- 'Just' where 'Nothing' has likelihood 2.
 mkStreamGen :: Int -> Gen a -> Gen (Stream a)
 mkStreamGen justLikelihood genA =
-    mkStream . dropWhileEnd isNothing <$> replicateM 10 mbGenA
+    mkStream . L.dropWhileEnd isNothing <$> replicateM 10 mbGenA
   where
     mbGenA = QC.frequency
       [ (2, return Nothing)
@@ -267,7 +267,7 @@ allNull Errors {..} = null dumpStateE
 
 instance Show Errors where
   show Errors {..} =
-      "Errors {"  <> intercalate ", " streams <> "}"
+      "Errors {"  <> L.intercalate ", " streams <> "}"
     where
       -- | Show a stream unless it is empty
       s :: Show a => String -> Stream a -> Maybe String

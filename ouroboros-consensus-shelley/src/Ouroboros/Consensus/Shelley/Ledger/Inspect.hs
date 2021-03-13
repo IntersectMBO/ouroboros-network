@@ -16,7 +16,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Inspect (
   ) where
 
 import           Control.Monad
-import           Data.List (sortBy)
+import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Ord (comparing)
@@ -127,7 +127,7 @@ protocolUpdates genesis st = [
     proposalsInv :: [(SL.PParamsDelta era, [SL.KeyHash 'SL.Genesis (EraCrypto era)])]
     proposalsInv =
           groupSplit id
-        . sortBy (comparing fst)
+        . L.sortBy (comparing fst)
         $ map swap (Map.toList proposals)
 
     -- Updated proposed within the proposal window

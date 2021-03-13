@@ -13,7 +13,7 @@ import           Control.Monad.Except (liftIO, runExceptT)
 import           Control.Monad.Trans.Resource (runResourceT)
 import qualified Data.ByteString as BS
 import           Data.Foldable (for_)
-import           Data.List (sort)
+import qualified Data.List as L
 import qualified Data.Text as T
 import           Data.Word (Word32, Word64)
 import           Options.Generic
@@ -54,7 +54,7 @@ main = do
     epochDir' <- canonicalizePath epochDir
     files     <- listDirectory epochDir'
     let magic = mkNetworkMagic networkMagic
-        epochFiles = sort $ filter (\f -> takeExtension f == ".epoch") files
+        epochFiles = L.sort $ filter (\f -> takeExtension f == ".epoch") files
     putStrLn $ "Writing to " <> show dbDir
     for_ epochFiles $ \f -> do
       putStrLn $ "Converting file " <> show f

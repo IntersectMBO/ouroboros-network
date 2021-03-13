@@ -1,21 +1,21 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 
 module Test.Ouroboros.Network.MockNode where
 
-import           Control.Monad (forM, forM_, replicateM, filterM, unless)
+import           Control.Monad (filterM, forM, forM_, replicateM, unless)
 import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array
 import           Data.Fixed (Micro)
 import           Data.Functor (void)
 import           Data.Graph
-import           Data.List (foldl')
+import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isNothing, listToMaybe)
@@ -25,9 +25,9 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -36,7 +36,8 @@ import qualified Control.Monad.IOSim as Sim
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState (..))
+import           Ouroboros.Network.MockChain.ProducerState
+                     (ChainProducerState (..))
 import           Ouroboros.Network.MockNode
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
@@ -78,7 +79,7 @@ test_blockGenerator chain slotDuration = do
     isValid startTime <$> withProbe (experiment slotDuration)
   where
     isValid :: Time -> [(Time, Block)] -> Property
-    isValid startTime = foldl'
+    isValid startTime = L.foldl'
       (\r (t, b) -> r .&&. counterexample (show t
                                            ++ " ≱ "
                                            ++ show (slotTime (blockSlot b)))
@@ -369,7 +370,7 @@ prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTr
   let vs = vertices graph
       es = edges graph
       gs = map (\i -> removeEdge (minimum vs, maximum vs) (es !! i) es) [0..length es - 1]
-      (cc :: Int) = foldl' (\x y -> if isDisconnected y then x + 1 else x) 0 gs
+      (cc :: Int) = L.foldl' (\x y -> if isDisconnected y then x + 1 else x) 0 gs
 
       probes = Sim.runSimOrThrow $ withProbe $
                  networkGraphSim g slotDuration coreTrDelay relayTrDelay
@@ -395,7 +396,7 @@ prop_networkGraph (NetworkTest g@(TestNetworkGraph graph cs) slotDuration coreTr
     -- centrality](https://en.wikipedia.org/wiki/Closeness_centrality) of
     -- generated graphs; we'd like to have some nodes that are on average very far
     -- from other nodes.
-    $ Map.foldl' (\v c -> foldl' Chain.selectChain c chains == c && v) True dict
+    $ Map.foldl' (\v c -> L.foldl' Chain.selectChain c chains == c && v) True dict
   where
   -- remove two edges: `a -> b` and `b -> a`
   removeEdge :: Bounds -> Edge -> [Edge] -> Graph

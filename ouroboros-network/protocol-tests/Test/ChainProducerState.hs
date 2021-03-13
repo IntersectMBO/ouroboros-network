@@ -10,7 +10,7 @@ module Test.ChainProducerState
   )
  where
 
-import           Data.List (unfoldr)
+import qualified Data.List as L
 import qualified Data.Map as Map
 
 import           Test.QuickCheck
@@ -106,7 +106,7 @@ prop_producer_sync1 (TestBlockChainAndUpdates c us) =
      in
         consumer == producerChain producer
   where
-    iterateFollowerUntilDone rid = unfoldr (followerInstruction rid)
+    iterateFollowerUntilDone rid = L.unfoldr (followerInstruction rid)
 
 -- | A variation on 'prop_producer_sync1' where we take an arbitrary
 -- interleaving of applying changes to the producer and doing syncronisation

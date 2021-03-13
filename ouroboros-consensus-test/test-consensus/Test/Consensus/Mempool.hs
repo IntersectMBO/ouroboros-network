@@ -17,7 +17,7 @@ import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.Bifunctor (first)
 import           Data.Either (isRight)
-import           Data.List (find, foldl', isSuffixOf, nub, partition, sort)
+import qualified Data.List as L
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
@@ -97,7 +97,7 @@ prop_Mempool_addTxs_getTxs setup =
       _ <- addTxs mempool (allTxs setup)
       MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
       return $ counterexample (ppTxs (txs setup)) $
-        validTxs setup `isSuffixOf` map fst snapshotTxs
+        validTxs setup `L.isSuffixOf` map fst snapshotTxs
 
 -- | Same as 'prop_Mempool_addTxs_getTxs', but add the transactions one-by-one
 -- instead of all at once.
@@ -107,7 +107,7 @@ prop_Mempool_addTxs_one_vs_multiple setup =
       forM_ (allTxs setup) $ \tx -> addTxs mempool [tx]
       MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
       return $ counterexample (ppTxs (txs setup)) $
-        validTxs setup `isSuffixOf` map fst snapshotTxs
+        validTxs setup `L.isSuffixOf` map fst snapshotTxs
 
 -- | Test that the result of adding transaction to a 'Mempool' matches our
 -- expectation: invalid transactions have errors associated with them and
@@ -136,7 +136,7 @@ prop_Mempool_InvalidTxsNeverAdded setup =
         -- Note that we can't check that no invalid transactions are in the
         -- mempool because the same transaction could be added twice: the
         -- first time as a valid one and the second time as an invalid one.
-        [ find (== txInMempool) (validTxs setup) === Just txInMempool
+        [ L.find (== txInMempool) (validTxs setup) === Just txInMempool
         | txInMempool <- txsInMempoolAfter
         , txInMempool `notElem` txsInMempoolBefore
         ]
@@ -284,7 +284,7 @@ prop_Mempool_TraceRemovedTxs setup =
       return $
         classify (not (null removedTxs)) "Removed some transactions" $
         map (const (Right ())) errs === errs .&&.
-        sort expected === sort removedTxs
+        L.sort expected === L.sort removedTxs
   where
     isRemoveTxsEvent :: TraceEventMempool blk -> Maybe [GenTx blk]
     isRemoveTxsEvent (TraceMempoolRemoveTxs txs _) = Just txs
@@ -347,7 +347,7 @@ ppTestTxWithHash x = condense
 
 -- | Given some transactions, calculate the sum of their sizes in bytes.
 txSizesInBytes :: [TestTx] -> TxSizeInBytes
-txSizesInBytes = foldl' (\acc tx -> acc + txSize tx) 0
+txSizesInBytes = L.foldl' (\acc tx -> acc + txSize tx) 0
 
 -- | Generate a 'TestSetup' and return the ledger obtained by applying all of
 -- the initial transactions.
@@ -520,7 +520,7 @@ genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
 
 genInvalidTx :: LedgerState TestBlock -> Gen TestTx
 genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
-    let peopleWithFunds = nub $ map fst $ Map.elems utxo
+    let peopleWithFunds = L.nub $ map fst $ Map.elems utxo
     sender    <- elements peopleWithFunds
     recipient <- elements $ filter (/= sender) peopleWithFunds
     let assets = filter (\(_, (addr, _)) -> addr == sender) $ Map.toList utxo
@@ -728,7 +728,7 @@ withTestMempool setup@TestSetup {..} prop =
       result  <- addTxs mempool testInitialTxs
       -- the invalid transactions are reported in the same order they were
       -- added, so the first error is not the result of a cascade
-      whenJust (find (isMempoolTxRejected . snd) result) $ \(invalidTx, _) ->
+      whenJust (L.find (isMempoolTxRejected . snd) result) $ \(invalidTx, _) ->
         error $ "Invalid initial transaction: " <> condense invalidTx
 
       -- Clear the trace
@@ -861,7 +861,7 @@ prop_TxSeq_lookupByTicketNo_sound smalls small =
     -- the identity mapping over haystack
     txseq :: TxSeq Int
     txseq =
-        foldl' (TxSeq.:>) TxSeq.Empty $ map mkTicket haystack
+        L.foldl' (TxSeq.:>) TxSeq.Empty $ map mkTicket haystack
 
     mkTicket x = TxTicket x (mkTicketNo x) 0
     mkTicketNo = TicketNo . toEnum
@@ -1122,7 +1122,7 @@ genActions genNbToAdd = go testInitLedger mempty mempty
             -- transactions to remove
           -> do
           tx <- elements txs
-          let ((vTxs, iTxs), ledger') = first (partition snd) $
+          let ((vTxs, iTxs), ledger') = first (L.partition snd) $
                 validateTxs testInitLedger (filter (/= tx) txs)
               txs'       = map fst vTxs
               removedTxs = tx : map fst iTxs

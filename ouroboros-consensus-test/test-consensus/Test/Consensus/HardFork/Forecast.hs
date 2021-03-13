@@ -20,7 +20,7 @@ import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Data.Either (isRight)
 import           Data.Foldable (toList)
-import           Data.List (intercalate)
+import qualified Data.List as L
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, listToMaybe)
@@ -360,7 +360,7 @@ prop_validTestSetup (Some setup@TestSetup{..}) = conjoin [
 
 prop_forecast :: Bool -> Some TestSetup -> Property
 prop_forecast useWithinEra (Some setup@TestSetup{..}) =
-      tabulate "(useWithinEra, isWithinEra, within range)" [intercalate "/" [
+      tabulate "(useWithinEra, isWithinEra, within range)" [L.intercalate "/" [
           show useWithinEra
         , show isWithinEra
         , show (isRight mForecastLedger)

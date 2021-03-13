@@ -11,7 +11,7 @@ module Test.Consensus.MiniProtocol.ChainSync.Client ( tests ) where
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import           Data.Bifunctor (first)
-import           Data.List (intercalate, unfoldr)
+import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isJust)
@@ -600,7 +600,7 @@ genUpdateSchedule securityParam = do
 -- | Repeatedly remove the last entry (highest 'Tick')
 shrinkUpdateSchedule :: Schedule [ChainUpdate]
                      -> [Schedule [ChainUpdate]]
-shrinkUpdateSchedule = unfoldr (fmap (\(_, m) -> (m, m)) . Map.maxView)
+shrinkUpdateSchedule = L.unfoldr (fmap (\(_, m) -> (m, m)) . Map.maxView)
 
 -- | Spread out updates over a schedule, i.e. schedule a number of updates to
 -- be executed on each tick. Most ticks will have no planned updates.
@@ -746,7 +746,7 @@ ppFragment :: AnchoredFragment TestBlock -> String
 ppFragment f = ppBlocks (AF.anchorPoint f) (AF.toOldestFirst f)
 
 ppBlocks :: Point TestBlock -> [TestBlock] -> String
-ppBlocks a bs = ppPoint a <> " ] " <> intercalate " :> " (map ppBlock bs)
+ppBlocks a bs = ppPoint a <> " ] " <> L.intercalate " :> " (map ppBlock bs)
 
 ppUpdates :: Schedule [ChainUpdate] -> String
 ppUpdates = unlines
@@ -756,7 +756,7 @@ ppUpdates = unlines
   where
     showEntry :: Tick -> [ChainUpdate] -> String
     showEntry (Tick tick) updates = show tick <> ": " <>
-      intercalate ", " (map showChainUpdate updates)
+      L.intercalate ", " (map showChainUpdate updates)
 
     showChainUpdate :: ChainUpdate -> String
     showChainUpdate u = case u of

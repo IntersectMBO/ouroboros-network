@@ -34,7 +34,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity)
-import           Data.List (sortOn)
+import qualified Data.List as L
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Ord (Down (..))
@@ -916,7 +916,7 @@ generator genBlock m@Model {..} = At <$> frequency
 
     genFollowerForwardPoints :: Gen [Point blk]
     genFollowerForwardPoints = choose (1, 3) >>= \n ->
-      sortOn (Down . pointSlot) <$> replicateM n genFollowerForwardPoint
+      L.sortOn (Down . pointSlot) <$> replicateM n genFollowerForwardPoint
 
     genFollowerForwardPoint :: Gen (Point blk)
     genFollowerForwardPoint = genPoint
