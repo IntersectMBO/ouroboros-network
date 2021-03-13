@@ -25,9 +25,6 @@ common project-config
 
   ghc-options:          -Werror
 
-  if impl(ghc >= 8.10)
-    ghc-options:        -Wunused-packages
-
 library
   import:               base, project-config
 
@@ -68,20 +65,19 @@ library
 executable named-pipe-demo
   import:               base, project-config
 
-  hs-source-dirs:      demo
-  main-is:             named-pipe-demo.hs
+  hs-source-dirs:       demo
+  main-is:              named-pipe-demo.hs
   if os(windows)
-    build-depends:       binary,
-                         bytestring,
-                         Win32,
-                         Win32-network
-                       , stm
-    if impl(ghc < 8.10)
-      build-depends:     binary
+    build-depends:      bytestring
+                      , Win32
+                      , Win32-network
 
-  ghc-options:         -Wall
+  if os(windows) && impl(ghc < 8.10)
+    build-depends:      binary
 
-  ghc-options:         -threaded
+  ghc-options:          -Wall
+
+  ghc-options:          -threaded
 
 test-suite test
   import:               base, project-config

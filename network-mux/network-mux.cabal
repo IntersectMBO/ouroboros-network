@@ -74,6 +74,7 @@ library
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
+
   if flag(asserts)
      ghc-options:      -fno-ignore-asserts
   hs-source-dirs:      src
@@ -126,7 +127,6 @@ test-suite test
                        bytestring,
                        cborg,
                        containers,
-                       process,
                        QuickCheck,
                        splitmix,
                        serialise,
@@ -137,6 +137,9 @@ test-suite test
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <3.0,
                        Win32-network   >=0.1 && <0.2
+  else
+    build-depends:     process
+
   ghc-options:         -threaded
                        -Wall
                        -Wcompat
@@ -157,8 +160,7 @@ executable mux-demo
   hs-source-dirs:      demo, test
   main-is:             mux-demo.hs
   other-modules:       Test.Mux.ReqResp
-  build-depends:       directory,
-                       network-mux,
+  build-depends:       network-mux,
                        io-sim-classes,
                        contra-tracer,
                        stm,
@@ -170,7 +172,8 @@ executable mux-demo
     build-depends:     Win32,
                        Win32-network
   else
-    build-depends:     network
+    build-depends:      directory
+                      , network
 
 executable cardano-ping
   import:               base, project-config

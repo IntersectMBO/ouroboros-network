@@ -287,7 +287,6 @@ test-suite test
                        hashable,
                        mtl,
                        network,
-                       process,
                        random,
                        serialise,
                        tasty,
@@ -314,6 +313,9 @@ test-suite test
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
+
+  if !(os(windows) && impl(ghc >= 8.10))
+    build-depends:     process         >=1.6 && <1.7
 
   ghc-options:         -fno-ignore-asserts
 

@@ -202,6 +202,9 @@ test-suite test-consensus
                        -Wredundant-constraints
                        -Wmissing-export-lists
 
+  if impl(ghc < 8.10)
+    ghc-options:       -Wno-incomplete-patterns
+
   ghc-options:         -fno-ignore-asserts
 
   ghc-options:         -threaded

@@ -75,6 +75,9 @@ library
                        -Wredundant-constraints
                        -Wmissing-export-lists
 
+  if impl(ghc < 8.10)
+    ghc-options:       -Wno-incomplete-patterns
+
   ghc-options:         -fno-ignore-asserts
 
 test-suite test
