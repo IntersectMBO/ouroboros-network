@@ -72,17 +72,24 @@ import           Data.Typeable (Typeable)
 import           Text.Printf
 import           Quiet (Quiet (..))
 import           GHC.Generics (Generic)
+import           GHC.IO.Unsafe (unsafeInterleaveIO)
 
 import           Control.Applicative (Alternative (..), liftA2)
-import           Control.Exception (ErrorCall (..), assert,
+import           Control.Concurrent (newEmptyMVar, readMVar, putMVar)
+import           Control.Exception (BlockedIndefinitelyOnMVar (..),
+                     ErrorCall (..),
+                     NonTermination (..),
+                     assert,
                      asyncExceptionFromException, asyncExceptionToException)
 import           Control.Monad (MonadPlus, join)
+import           Control.Monad.Fix (MonadFix (..))
 import qualified System.IO.Error as IO.Error (userError)
 
 import           Control.Monad (when)
 import           Control.Monad.ST.Lazy
 import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
 import qualified Control.Monad.ST.Strict as StrictST
+import           Control.Monad.ST.Unsafe (unsafeSTToIO)
 import           Data.STRef.Lazy
 
 import qualified Control.Monad.Catch as Exceptions
@@ -149,6 +156,7 @@ data SimA s a where
   SetMaskState :: MaskingState  -> IOSim s a -> (a -> SimA s b) -> SimA s b
   GetMaskState :: (MaskingState -> SimA s b) -> SimA s b
 
+  Fix          :: (x -> IOSim s x) -> (x -> SimA s r) -> SimA s r
 
 newtype STM s a = STM { unSTM :: forall r. (a -> StmA s r) -> StmA s r }
 
@@ -417,6 +425,9 @@ instance Ord (Async s a) where
 
 instance Functor (Async s) where
   fmap f (Async tid a) = Async tid (fmap f <$> a)
+
+instance MonadFix (IOSim s) where  
+    mfix f = IOSim $ \k -> Fix f k 
 
 instance MonadAsyncSTM (Async s) (STM s) where
   waitCatchSTM (Async _ w) = w
@@ -1105,6 +1116,20 @@ schedule thread@Thread{
           trace <- schedule thread' simstate''
           return $ SimTrace time tid tlbl (EventThrowTo e tid')
                  $ trace
+
+    Fix f k -> unsafeIOToST $ do
+      m <- newEmptyMVar
+      x <- unsafeInterleaveIO $
+             readMVar m
+             `catch`
+             \BlockedIndefinitelyOnMVar -> throwIO NonTermination
+      let -- recursion in 'IOSim'
+          io = do
+            x' <- f x
+            liftST (lazyToStrictST $ unsafeIOToST (putMVar m x'))
+            return x'
+          thread' = thread { threadControl = ThreadControl (unIOSim io k) ctl }
+      unsafeSTToIO (lazyToStrictST $ schedule thread' simstate)
 
 
 threadInterruptible :: Thread s a -> Bool
