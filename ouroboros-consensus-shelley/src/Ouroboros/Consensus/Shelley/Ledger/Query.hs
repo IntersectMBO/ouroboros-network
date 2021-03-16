@@ -105,8 +105,8 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   GetUTxO
     :: Query (ShelleyBlock era) (SL.UTxO era)
 
-  -- | Only for debugging purposes, we don't guarantee binary compatibility.
-  -- Moreover, it is huge.
+  -- | Only for debugging purposes, we make no effort to ensure binary
+  -- compatibility (cf the comment on 'GetCBOR'). Moreover, it is huge.
   DebugEpochState
     :: Query (ShelleyBlock era) (SL.EpochState era)
 
@@ -135,12 +135,13 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   GetGenesisConfig
     :: Query (ShelleyBlock era) (CompactGenesis era)
 
-  -- | Only for debugging purposes, we don't guarantee binary compatibility.
-  -- Moreover, it is huge.
+  -- | Only for debugging purposes, we make no effort to ensure binary
+  -- compatibility (cf the comment on 'GetCBOR'). Moreover, it is huge.
   DebugNewEpochState
     :: Query (ShelleyBlock era) (SL.NewEpochState era)
 
-  -- | Only for debugging purposes, we don't guarantee binary compatibility.
+  -- | Only for debugging purposes, we make no effort to ensure binary
+  -- compatibility (cf the comment on 'GetCBOR').
   DebugChainDepState
     :: Query (ShelleyBlock era) (SL.ChainDepState (EraCrypto era))
 
