@@ -59,7 +59,7 @@ library
                        bytestring,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.5 && <2.6,
-                       time  >=1.6 && <1.11
+                       time  >=1.9.1 && <1.11
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -Wcompat
