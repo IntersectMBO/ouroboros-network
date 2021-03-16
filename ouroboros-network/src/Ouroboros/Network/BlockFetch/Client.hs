@@ -23,6 +23,7 @@ module Ouroboros.Network.BlockFetch.Client (
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 
 import qualified Data.Set as Set
@@ -44,6 +45,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , FetchClientPolicy(..)
                    , FetchClientStateVars (fetchClientInFlightVar)
                    , FetchRequest(..)
+                   , FromConsensus (..)
                    , PeerFetchInFlight(..)
                    , TraceFetchClientState (..)
                    , fetchClientCtxStateVars
@@ -77,7 +79,7 @@ type BlockFetchClient header block m a =
 -- work in conjunction with our fetch logic.
 --
 blockFetchClient :: forall header block m.
-                    (MonadSTM m, MonadThrow m,
+                    (MonadSTM m, MonadThrow m, MonadTime m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
                  => NodeToNodeVersion
@@ -90,7 +92,8 @@ blockFetchClient _version controlMessageSTM
                    fetchClientCtxPolicy    = FetchClientPolicy {
                                                blockFetchSize,
                                                blockMatchesHeader,
-                                               addFetchedBlock
+                                               addFetchedBlock,
+                                               blockForgeUTCTime
                                              },
                    fetchClientCtxStateVars = stateVars
                  } =
@@ -262,6 +265,7 @@ blockFetchClient _version controlMessageSTM
 
 
           (MsgBlock block, header:headers') -> ReceiverEffect $ do
+            now <- getCurrentTime
             --TODO: consider how to enforce expected block size limit.
             -- They've lied and are sending us a massive amount of data.
             -- Resource consumption attack.
@@ -290,6 +294,9 @@ blockFetchClient _version controlMessageSTM
             -- Add the block to the chain DB, notifying of any new chains.
             addFetchedBlock (castPoint (blockPoint header)) block
 
+            forgeTime <- atomically $ blockForgeUTCTime $ FromConsensus block
+            let blockDelay = diffUTCTime now forgeTime
+
             -- Note that we add the block to the chain DB /before/ updating our
             -- current status and in-flight stats. Otherwise blocks will
             -- disappear from our in-flight set without yet appearing in the
@@ -298,7 +305,7 @@ blockFetchClient _version controlMessageSTM
 
             -- Update our in-flight stats and our current status
             completeBlockDownload tracer blockFetchSize inflightlimits
-                                  header stateVars
+                                  header blockDelay stateVars
 
             return (receiverStreaming inflightlimits range headers')
 
