@@ -12,7 +12,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.PeerSelection.Test (tests) where
+module Test.Ouroboros.Network.PeerSelection (tests, PeerAddr(..)) where
 
 import qualified Data.ByteString.Char8 as BS
 import           Data.Dynamic (fromDynamic)
