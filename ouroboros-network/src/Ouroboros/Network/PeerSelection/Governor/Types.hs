@@ -119,7 +119,7 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
  && targetNumberOfActivePeers      <= targetNumberOfEstablishedPeers
  && targetNumberOfEstablishedPeers <= targetNumberOfKnownPeers
  &&      targetNumberOfRootPeers   <= targetNumberOfKnownPeers
- && 0 <= targetNumberOfRootPeers
+ &&                              0 <= targetNumberOfRootPeers
 
  && targetNumberOfActivePeers      <= 100
  && targetNumberOfEstablishedPeers <= 1000
@@ -280,27 +280,25 @@ assertPeerSelectionState :: Ord peeraddr
                          -> a -> a
 assertPeerSelectionState PeerSelectionState{..} =
     assert (KnownPeers.invariant knownPeers)
+  . assert (EstablishedPeers.invariant establishedPeers)
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
   . assert (Set.isSubsetOf activePeersSet establishedReadySet)
   . assert (Set.isSubsetOf establishedPeersSet knownPeersSet)
-  . assert (EstablishedPeers.invariant establishedPeers)
+
    -- The localRootPeers and publicRootPeers must not overlap.
   . assert (Set.null (Set.intersection localRootPeersSet publicRootPeers))
+
     -- The localRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers (either
     -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
     -- root peers might overlap).
-  . assert (Set.isSubsetOf
-             (Map.keysSet localRootPeers)
-             (KnownPeers.toSet knownPeers))
+  . assert (Set.isSubsetOf localRootPeersSet knownPeersSet)
 
     -- The publicRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers.
-  . assert (Set.isSubsetOf
-              publicRootPeers
-             (KnownPeers.toSet knownPeers))
+  . assert (Set.isSubsetOf publicRootPeers knownPeersSet)
 
     --TODO: all other peers have PeerSourceGossip, so no stale source info.
 
