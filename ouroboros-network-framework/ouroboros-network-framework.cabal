@@ -206,6 +206,7 @@ executable demo-ping-pong
                        -Wno-unticked-promoted-constructors
 
 executable demo-connection-manager
+  buildable:           False
   hs-source-dirs:      demo test
   -- TODO: move Network.TypedProtocols.ReqResp.Codec.CBOR and
   --            Network.TypedProtocols.PingPong.Codec.CBOR
