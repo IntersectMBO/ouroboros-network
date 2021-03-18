@@ -13,8 +13,8 @@ import qualified Test.Version (tests)
 import qualified Test.Ouroboros.Network.MockNode (tests)
 import qualified Test.Ouroboros.Network.BlockFetch (tests)
 import qualified Test.Ouroboros.Network.KeepAlive (tests)
-import qualified Ouroboros.Network.NodeToNode.Version.Test (tests)
-import qualified Ouroboros.Network.NodeToClient.Version.Test (tests)
+import qualified Test.Ouroboros.Network.NodeToNode.Version (tests)
+import qualified Test.Ouroboros.Network.NodeToClient.Version (tests)
 import qualified Test.Ouroboros.Network.TxSubmission (tests)
 import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
 import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
@@ -25,7 +25,7 @@ import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
 import qualified Ouroboros.Network.Protocol.TipSample.Test (tests)
-import qualified Ouroboros.Network.PeerSelection.Test (tests)
+import qualified Test.Ouroboros.Network.PeerSelection (tests)
 import qualified Test.Socket (tests)
 
 main :: IO ()
@@ -58,11 +58,11 @@ tests =
   , Test.Socket.tests
   , Test.PeerState.tests
   , Test.Ouroboros.Network.BlockFetch.tests
-  , Ouroboros.Network.PeerSelection.Test.tests
+  , Test.Ouroboros.Network.PeerSelection.tests
   , Test.Ouroboros.Network.KeepAlive.tests
   , Test.Ouroboros.Network.TxSubmission.tests
-  , Ouroboros.Network.NodeToNode.Version.Test.tests
-  , Ouroboros.Network.NodeToClient.Version.Test.tests
+  , Test.Ouroboros.Network.NodeToNode.Version.tests
+  , Test.Ouroboros.Network.NodeToClient.Version.tests
   , Test.LedgerPeers.tests
 
     -- pseudo system-level
