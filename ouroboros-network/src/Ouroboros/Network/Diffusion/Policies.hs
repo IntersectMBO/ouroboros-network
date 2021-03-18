@@ -5,10 +5,14 @@
 -- Constants used in 'Ouroboros.Network.Diffusion'
 module Ouroboros.Network.Diffusion.Policies where
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
+import           Data.List (sortOn, unfoldr)
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import           Data.Word (Word32)
+import           System.Random
 
 import           Network.Socket (SockAddr)
 
@@ -33,9 +37,10 @@ closeConnectionTimeout :: DiffTime
 closeConnectionTimeout = 120
 
 
-simplePeerSelectionPolicy :: forall m. Applicative (STM m)
-                          => PeerSelectionPolicy SockAddr m
-simplePeerSelectionPolicy = PeerSelectionPolicy {
+simplePeerSelectionPolicy :: forall m. MonadSTM m
+                          => StrictTVar m StdGen
+                          -> PeerSelectionPolicy SockAddr m
+simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
       policyPickKnownPeersForGossip = simplePromotionPolicy,
       policyPickColdPeersToPromote  = simplePromotionPolicy,
       policyPickWarmPeersToPromote  = simplePromotionPolicy,
@@ -51,14 +56,36 @@ simplePeerSelectionPolicy = PeerSelectionPolicy {
       policyGossipOverallTimeout    = 10    -- seconds
     }
   where
-    -- TODO
-    simplePromotionPolicy :: PickPolicy SockAddr m
-    simplePromotionPolicy available pickNum
-      = pure . Set.take pickNum
-             $ available
 
-    -- TODO
+     -- Add metrics and a random number in order to prevent ordering based on SockAddr
+     -- TODO: upstreamyness is added here
+    addMetrics :: Set.Set SockAddr -> STM m (Map.Map SockAddr Word32)
+    addMetrics available = do
+      inRng <- readTVar rngVar
+
+      let (rng, rng') = split inRng
+          rns = take (Set.size available) $ unfoldr (Just . random)  rng :: [Word32]
+          available' = Map.fromList $ zip (Set.toList available) rns
+      writeTVar rngVar rng'
+      return available'
+
+    simplePromotionPolicy :: PickPolicy SockAddr m
+    simplePromotionPolicy available pickNum = do
+      available' <- addMetrics available
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn (\(_, rn) -> rn)
+             . Map.assocs
+             $ available'
+
     simpleDemotionPolicy :: PickPolicy SockAddr m
-    simpleDemotionPolicy available pickNum
-      = pure . Set.take pickNum
-             $ available
+    simpleDemotionPolicy available pickNum = do
+      available' <- addMetrics available
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn (\(_, rn) -> rn)
+             . Map.assocs
+             $ available'
+
