@@ -261,6 +261,10 @@ test-suite test
                        Test.Ouroboros.Network.MockNode
                        Test.Ouroboros.Network.TxSubmission
                        Test.Ouroboros.Network.PeerSelection
+                       Test.Ouroboros.Network.PeerSelection.Instances
+                       Test.Ouroboros.Network.PeerSelection.MockEnvironment
+                       Test.Ouroboros.Network.PeerSelection.PeerGraph
+                       Test.Ouroboros.Network.PeerSelection.Script
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
                        Test.Mux
