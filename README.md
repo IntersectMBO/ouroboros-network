@@ -34,6 +34,11 @@ the Cardano Shelley implementation:
 
 * [Haddock documentation](https://input-output-hk.github.io/ouroboros-network/)
 
+- [Official Cardano Documentation](https://docs.cardano.org/en/latest/)
+
+  Specifically the section "Explore Cardano" is helpful, since it talks about the [Cardano Architecture](https://docs.cardano.org/en/latest/explore-cardano/cardano-architecture-overview/index.html), [Cardano Design Rationale](https://docs.cardano.org/en/latest/explore-cardano/design-rationale.html), the [Cardano Network](https://docs.cardano.org/en/latest/explore-cardano/cardano-network.html), etc.
+  Although the Cardano documentation is less detailed, it is a good place to start and refresh some more basic concepts about Cardano.
+
 ## Ouroboros-Network API
 
 The API consists of three layers:
