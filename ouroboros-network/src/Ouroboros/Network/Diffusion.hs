@@ -52,7 +52,7 @@ import           Data.Set (Set)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Kind (Type)
-import           System.Random (newStdGen)
+import           System.Random (newStdGen, split)
 
 import           Network.Mux ( MiniProtocolBundle (..)
                              , MiniProtocolInfo (..)
@@ -632,14 +632,25 @@ runDataDiffusion tracers
     localControlChannel <- Server.newControlChannel
     localServerStateVar <- Server.newObservableStateVarIO
 
-    -- RNG used for picking random peers from the ledger.
-    ledgerPeersRng <- newStdGen
+    -- RNGs used for picking random peers from the ledger and for
+    -- demoting/promoting peers.
+    rng <- newStdGen
+    let (ledgerPeersRng, policyRng) = split rng
+    policyRngVar <- newTVarIO policyRng
+
     -- Request interface, supply the number of peers desired.
     ledgerPeersReq <- newEmptyTMVarIO :: IO (StrictTMVar IO NumberOfPeers)
     -- Response interface, returns a Set of peers. Nothing indicates that the
     -- ledger hasn't caught up to `useLedgerAfter`. May return less than
     -- the number of peers requested.
     ledgerPeersRsp <- newEmptyTMVarIO :: IO (StrictTMVar IO (Maybe (Set SockAddr, DiffTime)))
+
+
+    peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
+        -- Start with a smaller number of active peers, the churn governor will increase
+        -- it to the configured value after a delay.
+        targetNumberOfActivePeers = min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
+      }
 
     let -- snocket for remote communication.
         snocket :: SocketSnocket
@@ -835,15 +846,21 @@ runDataDiffusion tracers
                             dtTracePeerSelectionTracer
                             dtDebugPeerSelectionInitiatorTracer
                             peerSelectionActions
-                            Diffusion.Policies.simplePeerSelectionPolicy)
+                            (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
                           $ \governorThread ->
+                            Async.withAsync
+                              (Governor.peerChurnGovernor
+                                daPeerSelectionTargets
+                                peerSelectionTargetsVar)
+                              $ \churnGovernorThread ->
 
-                          -- wait for any thread to fail
-                          snd <$> Async.waitAny
-                            (maybeToList mbLocalPeerRootProviderThread
-                            ++ [ governorThread
-                               , ledgerPeerThread
-                               ])
+                                -- wait for any thread to fail
+                                snd <$> Async.waitAny
+                                  (maybeToList mbLocalPeerRootProviderThread
+                                  ++ [ governorThread
+                                     , ledgerPeerThread
+                                     , churnGovernorThread
+                                     ])
 
 
               -- InitiatorResponderMode
@@ -936,7 +953,7 @@ runDataDiffusion tracers
                           dtTracePeerSelectionTracer
                           dtDebugPeerSelectionInitiatorResponderTracer
                           peerSelectionActions
-                          Diffusion.Policies.simplePeerSelectionPolicy)
+                          (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
                         $ \governorThread -> do
                         let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
                             mkAddr addr = ( Socket.addrFamily  addr
@@ -967,14 +984,20 @@ runDataDiffusion tracers
                                   serverObservableStateVar    = observableStateVar
                                 })
                                 $ \serverThread ->
+                                  Async.withAsync
+                                    (Governor.peerChurnGovernor
+                                      daPeerSelectionTargets
+                                      peerSelectionTargetsVar)
+                                    $ \churnGovernorThread ->
 
-                                  -- wait for any thread to fail
-                                  snd <$> Async.waitAny
-                                    (maybeToList mbLocalPeerRootProviderThread
-                                    ++ [ serverThread
-                                       , governorThread
-                                       , ledgerPeerThread
-                                       ])
+                                      -- wait for any thread to fail
+                                      snd <$> Async.waitAny
+                                        (maybeToList mbLocalPeerRootProviderThread
+                                        ++ [ serverThread
+                                           , governorThread
+                                           , ledgerPeerThread
+                                           , churnGovernorThread
+                                           ])
 
     Async.runConcurrently
       $ asum
