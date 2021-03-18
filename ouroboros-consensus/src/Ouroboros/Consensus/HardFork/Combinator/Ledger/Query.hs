@@ -112,6 +112,23 @@ data instance Query (HardForkBlock xs) :: Type -> Type where
     => QueryHardFork (x ': xs) result
     -> Query (HardForkBlock (x ': xs)) result
 
+  -- WARNING: please add new queries to the end of the list here and for nested
+  -- query types. Stick to this order in all other pattern matches on queries.
+  -- This helps in particular with the en/decoders, as we want the CBOR tags to
+  -- be ordered.
+  --
+  -- WARNING: when adding a new query, a new
+  -- @HardForkSpecificNodeToClientVersionX@ must be added. See #2973 for a
+  -- template on how to do this.
+  --
+  -- WARNING: never modify an existing query that has been incorporated in a
+  -- release of the node, as it will break compatibility with deployed nodes.
+  -- Instead, add a new query. To remove the old query, first to stop supporting
+  -- it by modifying
+  -- 'Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient.querySupportedVersion'
+  -- (@< X@) and when the version is no longer used (because mainnet has
+  -- hard-forked to a newer version), it can be removed.
+
 instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
   answerQuery (ExtLedgerCfg cfg)
               query
