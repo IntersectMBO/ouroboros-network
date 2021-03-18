@@ -252,9 +252,6 @@ test-suite test
   main-is:             Main.hs
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
-                       Ouroboros.Network.PeerSelection.Test
-                       Ouroboros.Network.NodeToNode.Version.Test
-                       Ouroboros.Network.NodeToClient.Version.Test
 
                        Test.AnchoredFragment
                        Test.Chain
@@ -263,6 +260,9 @@ test-suite test
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.MockNode
                        Test.Ouroboros.Network.TxSubmission
+                       Test.Ouroboros.Network.PeerSelection
+                       Test.Ouroboros.Network.NodeToNode.Version
+                       Test.Ouroboros.Network.NodeToClient.Version
                        Test.Mux
                        Test.Pipe
                        Test.Socket
