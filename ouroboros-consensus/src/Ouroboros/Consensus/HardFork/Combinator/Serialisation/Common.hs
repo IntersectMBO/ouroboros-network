@@ -150,6 +150,9 @@ data HardForkSpecificNodeToClientVersion =
 
     -- | Enable the 'GetCurrentEra' query in 'QueryHardFork'.
   | HardForkSpecificNodeToClientVersion2
+
+    -- | Enable the 'GetLedgerCfg' query in 'QueryHardFork'.
+  | HardForkSpecificNodeToClientVersion3
   deriving (Eq, Ord, Show, Enum, Bounded)
 
 data HardForkNodeToNodeVersion xs where

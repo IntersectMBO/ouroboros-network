@@ -171,19 +171,28 @@ instance SerialiseHFC xs
   Queries
 -------------------------------------------------------------------------------}
 
+querySupportedVersion :: Some (QueryHardFork xs)
+                      -> HardForkSpecificNodeToClientVersion
+                      -> Bool
+querySupportedVersion = \case
+    Some GetInterpreter -> (>= HardForkSpecificNodeToClientVersion1)
+    Some GetCurrentEra  -> (>= HardForkSpecificNodeToClientVersion2)
+    Some GetLedgerCfg   -> (>= HardForkSpecificNodeToClientVersion3)
+    -- WARNING: when adding a new query, a new
+    -- @HardForkSpecificNodeToClientVersionX@ must be added. See #2973 for a
+    -- template on how to do this.
+
 encodeQueryHardFork ::
      HardForkSpecificNodeToClientVersion
   -> Some (QueryHardFork xs)
   -> Encoding
-encodeQueryHardFork vHfc = \case
+encodeQueryHardFork vHfc query
+  | querySupportedVersion query vHfc = case query of
     Some GetInterpreter -> mconcat [
         Enc.encodeListLen 1
       , Enc.encodeWord8 0
       ]
-    Some GetCurrentEra
-      | vHfc < HardForkSpecificNodeToClientVersion2 ->
-        throw HardForkEncoderQueryWrongVersion
-      | otherwise -> mconcat [
+    Some GetCurrentEra -> mconcat [
         Enc.encodeListLen 1
       , Enc.encodeWord8 1
       ]
@@ -191,6 +200,7 @@ encodeQueryHardFork vHfc = \case
         Enc.encodeListLen 1
       , Enc.encodeWord8 2
       ]
+  | otherwise = throw HardForkEncoderQueryWrongVersion
 
 decodeQueryHardFork :: Decoder s (Some (QueryHardFork xs))
 decodeQueryHardFork = do

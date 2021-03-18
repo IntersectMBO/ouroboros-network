@@ -374,6 +374,9 @@ instance CardanoHardForkConstraints c
       , (1, do version <- genWithHardForkSpecificNodeToClientVersion
                             (>= HardForkSpecificNodeToClientVersion2)
                return $ WithVersion version (Some GetCurrentEra))
+      , (1, do version <- genWithHardForkSpecificNodeToClientVersion
+                            (>= HardForkSpecificNodeToClientVersion3)
+               return $ WithVersion version (Some GetLedgerCfg))
       ]
 
 instance c ~ MockCryptoCompatByron
