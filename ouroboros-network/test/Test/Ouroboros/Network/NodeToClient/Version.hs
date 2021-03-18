@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns  #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.NodeToClient.Version.Test (tests) where
+module Test.Ouroboros.Network.NodeToClient.Version (tests) where
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
