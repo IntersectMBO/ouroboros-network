@@ -67,6 +67,7 @@ library
                        Ouroboros.Network.PeerSelection.EstablishedPeers
                        Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.LedgerPeers
+                       Ouroboros.Network.PeerSelection.LocalRootPeers
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.Protocol.ChainSync.Client
@@ -262,6 +263,7 @@ test-suite test
                        Test.Ouroboros.Network.TxSubmission
                        Test.Ouroboros.Network.PeerSelection
                        Test.Ouroboros.Network.PeerSelection.Instances
+                       Test.Ouroboros.Network.PeerSelection.LocalRootPeers
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
                        Test.Ouroboros.Network.PeerSelection.Script

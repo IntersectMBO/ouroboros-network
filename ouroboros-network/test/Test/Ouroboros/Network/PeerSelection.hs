@@ -37,6 +37,7 @@ import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
+import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 
@@ -48,7 +49,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
-  [ Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
+  [ Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
+  , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
