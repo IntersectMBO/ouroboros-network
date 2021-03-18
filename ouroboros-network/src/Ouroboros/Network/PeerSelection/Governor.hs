@@ -39,13 +39,15 @@ import           Data.Semigroup (Min(..))
 import           Control.Applicative (Alternative((<|>)))
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Concurrent.JobPool (JobPool)
+import           Control.Monad (forever)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith)
 
+import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
@@ -561,8 +563,73 @@ $peer-churn-governor
 
 -- |
 --
-peerChurnGovernor :: MonadSTM m
-                  => PeerSelectionTargets
-                  -> m () --Void
-peerChurnGovernor _ =
-    return ()
+peerChurnGovernor :: forall m.
+                     ( MonadSTM m
+                     , MonadMonotonicTime m
+                     , MonadDelay m
+                     )
+                   => PeerSelectionTargets
+                 -> StrictTVar m PeerSelectionTargets
+                  -> m Void
+peerChurnGovernor base peerSelectionVar = do
+  -- Wait a while so that not only the closest peers have had the time
+  -- to become warm.
+  startTs0 <- getMonotonicTime
+  threadDelay 3
+  atomically $ modifyTVar peerSelectionVar (\targets -> targets {
+      targetNumberOfActivePeers = targetNumberOfActivePeers base
+      })
+  endTs0 <- getMonotonicTime
+  threadDelay $ diffTime churnInterval $ Time $ diffTime endTs0 startTs0
+
+  forever $ do
+      startTs <- getMonotonicTime
+
+      -- Purge the worst active peer(s).
+      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfActivePeers = decrease (targetNumberOfActivePeers base)
+          })
+
+      -- Short delay, we may have no active peers right now
+      threadDelay 1
+
+      -- Pick new active peer(s) based on the best performing established
+      -- peers.
+      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfActivePeers = targetNumberOfActivePeers base
+          })
+
+      -- Give the promotion process time to start
+      threadDelay 1
+
+      -- Forget the worst performing non-active peers.
+      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfRootPeers = decrease (targetNumberOfRootPeers base)
+        , targetNumberOfKnownPeers = decrease (targetNumberOfKnownPeers base)
+        , targetNumberOfEstablishedPeers =
+              decrease (targetNumberOfEstablishedPeers base)
+        })
+
+      -- Give the governor time to properly demote them.
+      threadDelay $ 1 + closeConnectionTimeout
+
+      -- Pick new non-active peers
+      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfRootPeers = targetNumberOfRootPeers base
+        , targetNumberOfKnownPeers = targetNumberOfKnownPeers base
+        , targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
+        })
+      endTs <- getMonotonicTime
+      threadDelay $ diffTime churnInterval $ Time $ diffTime endTs startTs
+
+
+  where
+    -- The time between running the churn governor.
+    churnInterval :: Time
+    churnInterval = Time 3600 -- 1h
+
+    -- Replace 20% or at least on peer every churnInterval.
+    decrease :: Int -> Int
+    decrease v = v  - max 1 (v `div` 5)
+
+
