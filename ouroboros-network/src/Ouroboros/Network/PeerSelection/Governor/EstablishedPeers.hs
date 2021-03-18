@@ -54,7 +54,7 @@ belowTarget actions
     -- not cold and our invariant is that they are always in the connect set.
     -- We can also subtract the in progress ones since they are also already
     -- in the connect set and we cannot pick them again.
-  , Set.size availableToConnect - numEstablishedPeers - numConnectInProgress > 0
+  , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
   = Guarded Nothing $ do
       -- The availableToPromote here is non-empty due to the second guard.
       -- The known peers map restricted to the connect set is the same size as
@@ -100,6 +100,7 @@ belowTarget actions
     numEstablishedPeers  = EstablishedPeers.size establishedPeers
     numConnectInProgress = Set.size inProgressPromoteCold
     availableToConnect   = KnownPeers.availableToConnect knownPeers
+    numAvailableToConnect= Set.size availableToConnect
 
 
 baseColdPeerRetryDiffTime :: Int
@@ -114,7 +115,9 @@ jobPromoteColdPeer :: forall peeraddr peerconn m.
                    => PeerSelectionActions peeraddr peerconn m
                    -> peeraddr
                    -> Job m (Completion m peeraddr peerconn)
-jobPromoteColdPeer PeerSelectionActions{peerStateActions = PeerStateActions {establishPeerConnection}} peeraddr =
+jobPromoteColdPeer PeerSelectionActions {
+                     peerStateActions = PeerStateActions {establishPeerConnection}
+                   } peeraddr =
     Job job handler "promoteColdPeer"
   where
     handler :: SomeException -> Completion m peeraddr peerconn
@@ -133,7 +136,8 @@ jobPromoteColdPeer PeerSelectionActions{peerStateActions = PeerStateActions {est
             -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
             delay :: DiffTime
             delay = fromIntegral $
-              2 ^ (pred failCount `min` maxColdPeerRetryBackoff) * baseColdPeerRetryDiffTime
+                baseColdPeerRetryDiffTime
+              * 2 ^ (pred failCount `min` maxColdPeerRetryBackoff)
         in
           Decision {
             decisionTrace = TracePromoteColdFailed targetNumberOfEstablishedPeers
