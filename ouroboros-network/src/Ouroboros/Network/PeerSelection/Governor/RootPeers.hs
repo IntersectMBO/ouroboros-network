@@ -6,7 +6,6 @@ module Ouroboros.Network.PeerSelection.Governor.RootPeers
   ) where
 
 import           Data.Semigroup (Min(..))
-import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job(..))
@@ -15,6 +14,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Exception (SomeException, assert)
 
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -64,7 +64,8 @@ belowTarget actions
   | otherwise
   = GuardedSkip Nothing
   where
-    numRootPeers      = Map.size localRootPeers + Set.size publicRootPeers
+    numRootPeers      = LocalRootPeers.size localRootPeers
+                      + Set.size publicRootPeers
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
@@ -109,7 +110,7 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
     job = do
       (results, ttl) <- requestPublicRootPeers numExtraAllowed
       return $ Completion $ \st now ->
-        let newPeers         = results Set.\\ Map.keysSet (localRootPeers st)
+        let newPeers         = results Set.\\ LocalRootPeers.keysSet (localRootPeers st)
                                        Set.\\ publicRootPeers st
             publicRootPeers' = publicRootPeers st <> newPeers
             knownPeers'      = KnownPeers.insert
