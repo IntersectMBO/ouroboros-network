@@ -464,6 +464,10 @@ instance Arbitrary GovernorMockEnvironment where
            publicRootPeers,
            targets,
            pickKnownPeersForGossip,
+           pickColdPeersToPromote,
+           pickWarmPeersToPromote,
+           pickHotPeersToDemote,
+           pickWarmPeersToDemote,
            pickColdPeersToForget
          } =
       -- Special rule for shrinking the peerGraph because the localRootPeers
@@ -476,18 +480,31 @@ instance Arbitrary GovernorMockEnvironment where
       | peerGraph' <- shrink peerGraph
       , let nodes' = allPeers peerGraph' ]
       -- All the others are generic.
-   ++ [ env {
+   ++ [ GovernorMockEnvironment {
+          peerGraph,
           localRootPeers          = localRootPeers',
           publicRootPeers         = publicRootPeers',
           targets                 = targets',
           pickKnownPeersForGossip = pickKnownPeersForGossip',
+          pickColdPeersToPromote  = pickColdPeersToPromote',
+          pickWarmPeersToPromote  = pickWarmPeersToPromote',
+          pickHotPeersToDemote    = pickHotPeersToDemote',
+          pickWarmPeersToDemote   = pickWarmPeersToDemote',
           pickColdPeersToForget   = pickColdPeersToForget'
         }
       | (localRootPeers', publicRootPeers', targets',
          pickKnownPeersForGossip',
+         pickColdPeersToPromote',
+         pickWarmPeersToPromote',
+         pickHotPeersToDemote',
+         pickWarmPeersToDemote',
          pickColdPeersToForget')
           <- shrink (localRootPeers, publicRootPeers, targets,
                      pickKnownPeersForGossip,
+                     pickColdPeersToPromote,
+                     pickWarmPeersToPromote,
+                     pickHotPeersToDemote,
+                     pickWarmPeersToDemote,
                      pickColdPeersToForget)
       ]
 
