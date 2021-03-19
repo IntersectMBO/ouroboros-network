@@ -54,11 +54,15 @@ import           Control.Monad.IOSim
 
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import           Ouroboros.Network.PeerSelection.Types
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.Script
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
+import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+                   as LocalRootPeers hiding (tests)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, localOption, testGroup)
@@ -92,7 +96,7 @@ tests =
 --
 data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph               :: PeerGraph,
-       localRootPeers          :: Map PeerAddr PeerAdvertise,
+       localRootPeers          :: LocalRootPeers PeerAddr,
        publicRootPeers         :: Set PeerAddr,
        targets                 :: TimedScript PeerSelectionTargets,
        pickKnownPeersForGossip :: PickScript,
@@ -136,8 +140,8 @@ validGovernorMockEnvironment GovernorMockEnvironment {
                                targets
                              } =
       validPeerGraph peerGraph
-   && Map.keysSet localRootPeers `Set.isSubsetOf` allPeersSet
-   &&            publicRootPeers `Set.isSubsetOf` allPeersSet
+   && LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet
+   &&                       publicRootPeers `Set.isSubsetOf` allPeersSet
    && all (sanePeerSelectionTargets . fst) targets
   where
     allPeersSet = allPeers peerGraph
@@ -214,7 +218,7 @@ mockPeerSelectionActions' tracer
                           targetsVar
                           connsVar =
     PeerSelectionActions {
-      readLocalRootPeers       = return localRootPeers,
+      readLocalRootPeers       = return (LocalRootPeers.toGroups' localRootPeers),
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
       readPeerSelectionTargets = readTVar targetsVar,
       requestPeerGossip,
@@ -432,8 +436,10 @@ instance Arbitrary GovernorMockEnvironment where
       return GovernorMockEnvironment{..}
     where
       arbitraryRootPeers :: Set PeerAddr
-                         -> Gen (Map PeerAddr PeerAdvertise, Set PeerAddr)
-      arbitraryRootPeers peers | Set.null peers = return (Map.empty, Set.empty)
+                         -> Gen (LocalRootPeers PeerAddr, Set PeerAddr)
+      arbitraryRootPeers peers | Set.null peers =
+        return (LocalRootPeers.empty, Set.empty)
+
       arbitraryRootPeers peers = do
         -- We decide how many we want and then pick randomly.
         sz <- getSize
@@ -451,12 +457,12 @@ instance Arbitrary GovernorMockEnvironment where
             rootPeers = nub (map pick ixs)
         -- divide into local and public, but with a bit of overlap:
         local <- vectorOf (length rootPeers) (choose (0, 10 :: Int))
-        let localRoots  = [ x | (x, v) <- zip rootPeers local, v <= 5 ]
-            publicRoots = [ x | (x, v) <- zip rootPeers local, v >= 5 ]
-        peerinfos <- vectorOf (length localRoots) arbitrary
-        let localRootsMap  = Map.fromList (zip localRoots peerinfos)
-            publicRootsSet = Set.fromList publicRoots
-        return (localRootsMap, publicRootsSet)
+        let localRootsSet  = Set.fromList [ x | (x, v) <- zip rootPeers local
+                                              , v <= 5 ]
+            publicRootsSet = Set.fromList [ x | (x, v) <- zip rootPeers local
+                                              , v >= 5 ]
+        localRoots <- arbitraryLocalRootPeers localRootsSet
+        return (localRoots, publicRootsSet)
 
   shrink env@GovernorMockEnvironment {
            peerGraph,
@@ -474,7 +480,7 @@ instance Arbitrary GovernorMockEnvironment where
       -- depends on it so has to be updated too.
       [ env {
           peerGraph       = peerGraph',
-          localRootPeers  = Map.restrictKeys localRootPeers nodes',
+          localRootPeers  = LocalRootPeers.restrictKeys localRootPeers nodes',
           publicRootPeers = publicRootPeers `Set.intersection` nodes'
         }
       | peerGraph' <- shrink peerGraph
@@ -515,9 +521,9 @@ instance Arbitrary GovernorMockEnvironment where
 
 prop_arbitrary_GovernorMockEnvironment :: GovernorMockEnvironment -> Property
 prop_arbitrary_GovernorMockEnvironment env =
-    tabulate "num root peers"        [show (Map.size (localRootPeers env)
-                                          + Set.size (publicRootPeers env))] $
-    tabulate "num local root peers"  [show (Map.size (localRootPeers env))] $
+    tabulate "num root peers"        [show (LocalRootPeers.size (localRootPeers env)
+                                                     + Set.size (publicRootPeers env))] $
+    tabulate "num local root peers"  [show (LocalRootPeers.size (localRootPeers env))] $
     tabulate "num public root peers" [show (Set.size (publicRootPeers env))] $
     tabulate "empty root peers" [show $ not emptyGraph && emptyRootPeers]  $
     tabulate "overlapping local/public roots" [show overlappingRootPeers]  $
@@ -525,11 +531,13 @@ prop_arbitrary_GovernorMockEnvironment env =
     validGovernorMockEnvironment env
   where
     emptyGraph     = null g where PeerGraph g = peerGraph env
-    emptyRootPeers = Map.null (localRootPeers env)
+    emptyRootPeers = LocalRootPeers.null (localRootPeers env)
                   && Set.null (publicRootPeers env)
     overlappingRootPeers =
-      not $ Set.null $ Set.intersection (Map.keysSet (localRootPeers env))
-                                        (publicRootPeers env)
+      not $ Set.null $
+        Set.intersection
+          (LocalRootPeers.keysSet (localRootPeers env))
+          (publicRootPeers env)
 
 prop_shrink_GovernorMockEnvironment :: GovernorMockEnvironment -> Bool
 prop_shrink_GovernorMockEnvironment =
