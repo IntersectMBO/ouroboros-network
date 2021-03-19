@@ -24,7 +24,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (RequestedSnapshotInterval (..), defaultDiskPolicy)
+                     (SnapshotInterval (..), defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis

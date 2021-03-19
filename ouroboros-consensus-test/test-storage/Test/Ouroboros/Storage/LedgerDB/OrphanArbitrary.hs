@@ -5,7 +5,7 @@ module Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary where
 import           Test.QuickCheck
 import           Data.Time.Clock (DiffTime, secondsToDiffTime, diffTimeToPicoseconds)
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam(..))
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (RequestedSnapshotInterval(..))
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (SnapshotInterval(..))
 
 {-------------------------------------------------------------------------------
   Orphan Arbitrary instances
@@ -15,7 +15,7 @@ instance Arbitrary SecurityParam where
   arbitrary = SecurityParam <$> choose (0, 6)
   shrink (SecurityParam k) = SecurityParam <$> shrink k
 
-instance Arbitrary RequestedSnapshotInterval where
+instance Arbitrary SnapshotInterval where
   arbitrary =
     oneof [ requestedSnapshotInterval
           , defaultSnapshotInterval
@@ -23,11 +23,11 @@ instance Arbitrary RequestedSnapshotInterval where
   shrink DefaultSnapshotInterval = []
   shrink (RequestedSnapshotInterval v) = RequestedSnapshotInterval <$> shrink v
 
-requestedSnapshotInterval :: Gen RequestedSnapshotInterval
+requestedSnapshotInterval :: Gen SnapshotInterval
 requestedSnapshotInterval =
   RequestedSnapshotInterval <$> arbitrary
 
-defaultSnapshotInterval :: Gen RequestedSnapshotInterval
+defaultSnapshotInterval :: Gen SnapshotInterval
 defaultSnapshotInterval = pure DefaultSnapshotInterval
 
 instance Arbitrary DiffTime where

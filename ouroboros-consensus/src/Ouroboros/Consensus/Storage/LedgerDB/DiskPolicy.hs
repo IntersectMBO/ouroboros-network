@@ -7,7 +7,7 @@
 module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
     DiskPolicy(..)
   , defaultDiskPolicy
-  , RequestedSnapshotInterval(..)
+  , SnapshotInterval(..)
   ) where
 
 import           Data.Time.Clock (secondsToDiffTime)
@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.Config.SecurityParam
 -- 1. either explicitly provided by user in seconds
 -- 2. or default value can be requested - DiskPolicy specify what that is
 -- exactly, see `defaultDiskPolicy` as an example
-data RequestedSnapshotInterval =
+data SnapshotInterval =
     DefaultSnapshotInterval
   | RequestedSnapshotInterval DiffTime
   deriving stock Show
@@ -79,7 +79,7 @@ data DiskPolicy = DiskPolicy {
 
 -- | Default on-disk policy suitable to use with cardano-node
 --
-defaultDiskPolicy :: SecurityParam -> RequestedSnapshotInterval -> DiskPolicy
+defaultDiskPolicy :: SecurityParam -> SnapshotInterval -> DiskPolicy
 defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
   where
     onDiskNumSnapshots :: Word

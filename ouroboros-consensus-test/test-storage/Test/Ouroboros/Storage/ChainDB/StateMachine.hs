@@ -95,7 +95,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (RequestedSnapshotInterval (..), defaultDiskPolicy)
+                     (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
