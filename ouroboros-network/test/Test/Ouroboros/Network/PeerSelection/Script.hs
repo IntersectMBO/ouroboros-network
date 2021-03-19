@@ -113,8 +113,24 @@ playTimedScript (Script ((x0,d0) :| script)) = do
 -- choices by their index (modulo the number of choices). This representation
 -- was chosen because it allows easy shrinking.
 --
-type PickScript = Script (NonEmpty (NonNegative Int))
+type PickScript = Script PickMembers
 
+data PickMembers = PickFirst
+                 | PickAll
+                 | PickSome [Int]
+  deriving (Eq, Show)
+
+instance Arbitrary PickMembers where
+    arbitrary = frequency [ (1, pure PickFirst)
+                          , (1, pure PickAll)
+                          , (2, PickSome <$> listOf1 arbitrarySizedNatural) ]
+
+    shrink (PickSome ixs) = PickAll
+                          : [ PickSome ixs'
+                            | ixs' <- shrink ixs
+                            , not (null ixs') ]
+    shrink PickAll        = [PickFirst]
+    shrink PickFirst      = []
 
 interpretPickScript :: (MonadSTMTx stm, Ord peeraddr)
                     => TVar_ stm PickScript
@@ -131,11 +147,14 @@ interpretPickScript scriptVar available pickNum
   = return available
 
   | otherwise
-  = do offsets <- stepScriptSTM scriptVar
-       return . pickMapKeys available
-              . map getNonNegative
-              . NonEmpty.take pickNum
-              $ offsets
+  = do pickmembers <- stepScriptSTM scriptVar
+       return (interpretPickMembers pickmembers available pickNum)
+
+interpretPickMembers :: Ord peeraddr
+                     => PickMembers -> Set peeraddr -> Int -> Set peeraddr
+interpretPickMembers PickFirst      ps _ = Set.singleton (Set.elemAt 0 ps)
+interpretPickMembers PickAll        ps n = Set.take n ps
+interpretPickMembers (PickSome ixs) ps n = pickMapKeys ps (take n ixs)
 
 pickMapKeys :: Ord a => Set a -> [Int] -> Set a
 pickMapKeys m ns =
