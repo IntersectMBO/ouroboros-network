@@ -3,7 +3,6 @@
 , db-analyser
 , onlyImmutableDB ? true
 }:
-
 let
   immutableDBStr = if onlyImmutableDB then "--onlyImmutableDB" else "";
   cardano-mainnet-config = pkgs.fetchurl {
@@ -17,17 +16,17 @@ let
     sha256 = "1z51ak4f7klz5pv2kjgaj5jv6agn2aph2n172hjssmn8x1q2bdys";
   };
   mainnet-converted = pkgs.runCommand "convert-mainnet"
-    { buildInputs = [byron-db-converter ]; }
-    ''
-    ${byron-db-converter}/bin/db-converter \
-      --epochDir ${cardano-mainnet-mirror}/epochs \
-      --dbDir $out \
-      --epochSlots 21600
-    '';
-in
-  pkgs.runCommand "validate-mainnet"
     { buildInputs = [ byron-db-converter ]; }
     ''
+      ${byron-db-converter}/bin/db-converter \
+        --epochDir ${cardano-mainnet-mirror}/epochs \
+        --dbDir $out \
+        --epochSlots 21600
+    '';
+in
+pkgs.runCommand "validate-mainnet"
+{ buildInputs = [ byron-db-converter ]; }
+  ''
     mkdir $out
     cp -r ${mainnet-converted}/* $out
     chmod -R u+rw,g+rw,a+x $out/*
@@ -38,4 +37,4 @@ in
       --configByron ${cardano-mainnet-config} \
       --threshold 0.22 \
       ${immutableDBStr}
-    ''
+  ''

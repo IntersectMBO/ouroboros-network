@@ -1,7 +1,7 @@
 # This file is used by nix-shell.
 # It just takes the shell attribute from default.nix.
-{ config ? {}
-, sourcesOverride ? {}
+{ config ? { }
+, sourcesOverride ? { }
 , withHoogle ? false
 , pkgs ? import ./nix {
     inherit config sourcesOverride;
@@ -18,7 +18,7 @@ let
     name = "cabal-dev-shell";
 
     packages = ps: lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps)
-                ++ [ ps.cardano-crypto-class ];
+      ++ [ ps.cardano-crypto-class ];
 
     # These programs will be available inside the nix-shell.
     buildInputs = [
@@ -62,5 +62,4 @@ let
   };
 
 in
-
- shell // { inherit devops; }
+shell // { inherit devops; }
