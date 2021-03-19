@@ -17,7 +17,6 @@ module Test.Ouroboros.Network.PeerSelection (tests) where
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
 import           Data.List (groupBy)
-import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -34,6 +33,7 @@ import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
@@ -150,7 +150,7 @@ isEmptyEnv GovernorMockEnvironment {
              publicRootPeers,
              targets
            } =
-    (Map.null localRootPeers
+    (LocalRootPeers.null localRootPeers
       || all (\(t,_) -> targetNumberOfKnownPeers t == 0) targets)
  && (Set.null publicRootPeers
       || all (\(t,_) -> targetNumberOfRootPeers  t == 0) targets)
@@ -191,7 +191,7 @@ prop_governor_gossip_1hr (GovernorMockEnvironmentWAD env@GovernorMockEnvironment
                        }
         Just found = knownPeersAfter1Hour trace
         reachable  = firstGossipReachablePeers peerGraph
-                       (Map.keysSet localRootPeers <> publicRootPeers)
+                       (LocalRootPeers.keysSet localRootPeers <> publicRootPeers)
      in subsetProperty    found reachable
    .&&. bigEnoughProperty found reachable
   where
@@ -306,7 +306,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
 
     actions :: PeerSelectionActions SockAddr () IO
     actions = PeerSelectionActions {
-                readLocalRootPeers       = return Map.empty,
+                readLocalRootPeers       = return [],
                 readPeerSelectionTargets = return targets,
                 requestPeerGossip        = \_ -> return [],
                 requestPublicRootPeers   = \_ -> return (Set.empty, 0),
