@@ -23,6 +23,8 @@ import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as Established
 import           Ouroboros.Network.PeerSelection.EstablishedPeers (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import           Ouroboros.Network.PeerSelection.Types
 
 
@@ -87,6 +89,10 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 -- only a target from below. The governor does not try to shrink the root set
 -- to hit it, it simply stops looking for more.
 --
+-- There is also an implicit target that enough local root peers are selected
+-- as active. This comes from the configuration for local roots, and is not an
+-- independently adjustable target.
+--
 data PeerSelectionTargets = PeerSelectionTargets {
 
        targetNumberOfRootPeers        :: !Int,
@@ -144,7 +150,10 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- local configuration. It could be dynamic due to DNS resolution, or
        -- due to dynamic configuration updates.
        --
-       readLocalRootPeers :: STM m (Map peeraddr PeerAdvertise),
+       -- It is structured as a collection of (non-overlapping) groups of peers
+       -- where we are supposed to select n from each group.
+       --
+       readLocalRootPeers :: STM m [(Int, Map peeraddr PeerAdvertise)],
 
        -- | Request a sample of public root peers.
        --
@@ -207,9 +216,14 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        targets              :: !PeerSelectionTargets,
 
-       -- | The current set of local root peers.
+       -- | The current set of local root peers. This is structured as a
+       -- bunch of groups, with a target for each group. This gives us a set of
+       -- n-of-m choices, e.g. \"pick 2 from this group and 1 from this group\".
        --
-       localRootPeers       :: !(Map peeraddr PeerAdvertise),
+       -- The targets must of course be achievable, and to keep things simple,
+       -- the groups must be disjoint.
+       --
+       localRootPeers       :: !(LocalRootPeers peeraddr),
 
        publicRootPeers      :: !(Set peeraddr),
 
@@ -259,7 +273,7 @@ emptyPeerSelectionState :: PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState =
     PeerSelectionState {
       targets              = nullPeerSelectionTargets,
-      localRootPeers       = Map.empty,
+      localRootPeers       = LocalRootPeers.empty,
       publicRootPeers      = Set.empty,
       knownPeers           = KnownPeers.empty,
       establishedPeers     = EstablishedPeers.empty,
@@ -281,6 +295,7 @@ assertPeerSelectionState :: Ord peeraddr
 assertPeerSelectionState PeerSelectionState{..} =
     assert (KnownPeers.invariant knownPeers)
   . assert (EstablishedPeers.invariant establishedPeers)
+  . assert (LocalRootPeers.invariant localRootPeers)
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
@@ -300,11 +315,35 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- and with correct source info in the knownPeers.
   . assert (Set.isSubsetOf publicRootPeers knownPeersSet)
 
-    --TODO: all other peers have PeerSourceGossip, so no stale source info.
+    -- The targets should respect the containment relationships of the root,
+    -- known, established and active peers
+  . assert (sanePeerSelectionTargets targets)
 
-    -- We don't want to pick local root peers to forget, so it had better be
-    -- the case that there's fewer of them than our target number.
-  . assert (Map.size localRootPeers <= targetNumberOfKnownPeers targets)
+    -- All the local root peers are always a subset of the known peers. The
+    -- target for known peers is a target from both below and above. Thus the
+    -- number of local root peers must be less than or equal to the known peers
+    -- target, otherwise we could get stuck.
+  . assert (LocalRootPeers.size localRootPeers <= targetNumberOfKnownPeers targets)
+
+    -- Interestingly, although the local root peers are also a subset of the
+    -- root peers, the equivalent constraint does not apply to the target
+    -- number of root peers. The reason is that the root peers target is only
+    -- a target from below, not from above. It is ok to have more than the
+    -- target number of root peers.
+    --
+    --That is, we do /not/ need or want this invariant:
+    --    LocalRootPeers.size   localRootPeers <= targetNumberOfRootPeers
+    --
+    -- It is also not necessary for all the targets to be achievable. It is
+    -- just necessary that we do not get stuck. So although we have an implicit
+    -- target that all local root peers become established, and a certain
+    -- number of them become active, these targets do not need to be achievable.
+    --
+    --That is, we do /not/ need or want this invariant:
+    --    LocalRootPeers.size   localRootPeers <= targetNumberOfEstablishedPeers
+    --    LocalRootPeers.target localRootPeers <= targetNumberOfActivePeers
+    --
+
     -- All currently established peers are in the availableToConnect set since
     -- the alternative is a record of failure, but these are not (yet) failed.
   . assert (Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers))
@@ -319,8 +358,8 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet)
   . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
   where
-    localRootPeersSet   = Map.keysSet localRootPeers
     knownPeersSet       = KnownPeers.toSet knownPeers
+    localRootPeersSet   = LocalRootPeers.keysSet localRootPeers
     establishedPeersSet = EstablishedPeers.toSet      establishedPeers
     establishedReadySet = EstablishedPeers.readyPeers establishedPeers
     activePeersSet      = activePeers
@@ -419,8 +458,8 @@ newtype Completion m peeraddr peerconn =
                  -> Time -> Decision m peeraddr peerconn)
 
 data TracePeerSelection peeraddr =
-       TraceLocalRootPeersChanged (Map peeraddr PeerAdvertise)
-                                  (Map peeraddr PeerAdvertise)
+       TraceLocalRootPeersChanged (LocalRootPeers peeraddr)
+                                  (LocalRootPeers peeraddr)
      | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
      | TracePublicRootsRequest Int Int
      | TracePublicRootsResults (Set peeraddr) Int DiffTime
