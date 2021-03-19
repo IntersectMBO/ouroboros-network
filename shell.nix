@@ -24,6 +24,7 @@ let
     buildInputs = [
       niv
       pkgconfig
+      nixpkgs-fmt
     ];
 
     tools = {
