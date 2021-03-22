@@ -2,7 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
+module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage (
+
+  ) where
 
 import           Data.SOP.Strict
 

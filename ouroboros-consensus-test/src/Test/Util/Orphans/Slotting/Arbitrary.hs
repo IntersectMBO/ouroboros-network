@@ -4,7 +4,9 @@
 
 -- Placed here to separate them from the other orphan instances due to a
 -- conflict with other instances in cardano-ledger-specs.
-module Test.Util.Orphans.Slotting.Arbitrary () where
+module Test.Util.Orphans.Slotting.Arbitrary (
+
+  ) where
 
 import           Data.Word
 import           Test.QuickCheck

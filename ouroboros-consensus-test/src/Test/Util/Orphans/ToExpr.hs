@@ -4,7 +4,9 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Test.Util.Orphans.ToExpr () where
+module Test.Util.Orphans.ToExpr (
+
+  ) where
 
 import           Data.TreeDiff (ToExpr (..))
 

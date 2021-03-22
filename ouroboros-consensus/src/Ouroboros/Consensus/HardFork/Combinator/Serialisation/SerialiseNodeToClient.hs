@@ -15,6 +15,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient (
+
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

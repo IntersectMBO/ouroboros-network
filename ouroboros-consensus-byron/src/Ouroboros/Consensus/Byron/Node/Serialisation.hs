@@ -8,7 +8,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Node.Serialisation () where
+module Ouroboros.Consensus.Byron.Node.Serialisation (
+
+  ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR

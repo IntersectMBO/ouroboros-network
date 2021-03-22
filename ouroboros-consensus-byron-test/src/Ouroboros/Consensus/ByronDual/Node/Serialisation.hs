@@ -4,7 +4,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.ByronDual.Node.Serialisation () where
+module Ouroboros.Consensus.ByronDual.Node.Serialisation (
+
+  ) where
 
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy

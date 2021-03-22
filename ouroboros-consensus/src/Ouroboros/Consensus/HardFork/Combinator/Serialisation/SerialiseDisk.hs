@@ -4,7 +4,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk () where
+module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk (
+
+  ) where
 
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy

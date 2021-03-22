@@ -5,7 +5,9 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Byron.Ledger.Orphans () where
+module Ouroboros.Consensus.Byron.Ledger.Orphans (
+
+  ) where
 
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad (void)

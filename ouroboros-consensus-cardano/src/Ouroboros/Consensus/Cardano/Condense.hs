@@ -2,7 +2,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Cardano.Condense () where
+module Ouroboros.Consensus.Cardano.Condense (
+
+  ) where
 
 import           Ouroboros.Consensus.HardFork.Combinator.Condense
 

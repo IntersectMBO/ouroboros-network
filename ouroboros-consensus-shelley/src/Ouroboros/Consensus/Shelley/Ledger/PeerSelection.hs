@@ -5,7 +5,9 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Shelley.Ledger.PeerSelection () where
+module Ouroboros.Consensus.Shelley.Ledger.PeerSelection (
+
+  ) where
 
 import           Data.Bifunctor (second)
 import           Data.Foldable (toList)

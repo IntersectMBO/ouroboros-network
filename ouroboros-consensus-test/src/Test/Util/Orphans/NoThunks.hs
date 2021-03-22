@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Util.Orphans.NoThunks () where
+module Test.Util.Orphans.NoThunks (
+
+  ) where
 
 import           NoThunks.Class (NoThunks (..))
 
