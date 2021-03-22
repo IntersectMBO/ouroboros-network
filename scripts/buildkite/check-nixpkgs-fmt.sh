@@ -3,6 +3,6 @@
 
 set -euo pipefail
 
-nixpkgs-fmt `git ls-files -- '*.nix'`
+nixpkgs-fmt `git ls-files -- '*.nix' ':!:nix/sources.nix'`
 
 git diff --exit-code
