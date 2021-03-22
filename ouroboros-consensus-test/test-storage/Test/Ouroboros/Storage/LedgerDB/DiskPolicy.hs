@@ -1,4 +1,6 @@
 {-# LANGUAGE NumericUnderscores #-}
+
+{-# OPTIONS_GHC "-fno-warn-incomplete-patterns" #-}
 module Test.Ouroboros.Storage.LedgerDB.DiskPolicy (tests) where
 
 import           Data.Function ((&))
@@ -11,7 +13,7 @@ import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam(..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (DiskPolicy(..), defaultDiskPolicy, SnapshotInterval(..))
-import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
 
 tests :: TestTree
 tests = testGroup "DiskPolicy/defaultDiskPolicy" [
@@ -48,9 +50,8 @@ prop_shouldSnapshot_case1 blocksSinceLast securityParam@(SecurityParam k) snapsh
   -- then
   shouldSnapshot === (blocksSinceLast >= k)
 
-prop_shouldSnapshot_case2 :: DiffTime -> Word64 -> SecurityParam -> SnapshotInterval -> Property
-prop_shouldSnapshot_case2 _ _ _ DefaultSnapshotInterval = discard
-prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam snapshotInterval@(RequestedSnapshotInterval interval) = do
+prop_shouldSnapshot_case2 :: DiffTime -> Word64 -> SecurityParam -> AlwaysRequestedSnapshotInterval -> Property
+prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam (AlwaysRequestedSnapshotInterval snapshotInterval@(RequestedSnapshotInterval interval)) = do
   -- given
   let
     diskPolicy = defaultDiskPolicy securityParam snapshotInterval
@@ -59,9 +60,8 @@ prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam snapshotIn
   -- then
   shouldSnapshot === (timeSinceLast >= interval)
 
-prop_shouldSnapshot_case3 :: DiffTime -> Word64 -> SecurityParam -> SnapshotInterval -> Property
-prop_shouldSnapshot_case3 _ _ _ (RequestedSnapshotInterval _) = discard
-prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityParam k) snapshotInterval@DefaultSnapshotInterval = do
+prop_shouldSnapshot_case3 :: DiffTime -> Word64 -> SecurityParam -> AlwaysDefaultSnapshotInterval -> Property
+prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityParam k) (AlwaysDefaultSnapshotInterval snapshotInterval) = do
   -- given
   let
     diskPolicy = defaultDiskPolicy securityParam snapshotInterval

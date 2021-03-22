@@ -10,10 +10,11 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (SnapshotInterv
 {-------------------------------------------------------------------------------
   Orphan Arbitrary instances
 -------------------------------------------------------------------------------}
-
 instance Arbitrary SecurityParam where
   arbitrary = SecurityParam <$> choose (0, 6)
   shrink (SecurityParam k) = SecurityParam <$> shrink k
+
+-------------------------------------------------------------------------------}
 
 instance Arbitrary SnapshotInterval where
   arbitrary =
@@ -29,6 +30,20 @@ requestedSnapshotInterval =
 
 defaultSnapshotInterval :: Gen SnapshotInterval
 defaultSnapshotInterval = pure DefaultSnapshotInterval
+
+newtype AlwaysDefaultSnapshotInterval = AlwaysDefaultSnapshotInterval SnapshotInterval
+    deriving Show
+
+instance Arbitrary AlwaysDefaultSnapshotInterval where
+  arbitrary = AlwaysDefaultSnapshotInterval <$> defaultSnapshotInterval
+
+newtype AlwaysRequestedSnapshotInterval = AlwaysRequestedSnapshotInterval SnapshotInterval
+    deriving Show
+
+instance Arbitrary AlwaysRequestedSnapshotInterval where
+  arbitrary = AlwaysRequestedSnapshotInterval <$> requestedSnapshotInterval
+
+-------------------------------------------------------------------------------}
 
 instance Arbitrary DiffTime where
   arbitrary = fromIntegral @Int <$> arbitrary
