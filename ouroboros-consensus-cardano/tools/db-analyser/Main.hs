@@ -2,9 +2,7 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE RecordWildCards  #-}
 -- | Database analyse tool.
-module Main (
-    main
-  ) where
+module Main (main) where
 
 import           Data.Foldable (asum)
 import           Options.Applicative

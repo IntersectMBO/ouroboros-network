@@ -2,9 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Cardano.MockCrypto (
-    MockCryptoCompatByron
-  ) where
+module Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron) where
 
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash (Blake2b_224, Blake2b_256)

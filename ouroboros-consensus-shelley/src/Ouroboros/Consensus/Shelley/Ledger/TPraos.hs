@@ -5,9 +5,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- TODO where to put this?
-module Ouroboros.Consensus.Shelley.Ledger.TPraos (
-
-  ) where
+module Ouroboros.Consensus.Shelley.Ledger.TPraos () where
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map

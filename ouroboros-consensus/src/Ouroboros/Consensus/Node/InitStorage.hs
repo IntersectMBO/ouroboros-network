@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Node.InitStorage (
-    NodeInitStorage (..)
-  ) where
+module Ouroboros.Consensus.Node.InitStorage (NodeInitStorage (..)) where
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.IOLike

@@ -5,9 +5,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.ThreadNet.DualByron (
-    tests
-  ) where
+module Test.ThreadNet.DualByron (tests) where
 
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)

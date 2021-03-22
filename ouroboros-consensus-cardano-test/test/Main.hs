@@ -1,6 +1,4 @@
-module Main (
-    main
-  ) where
+module Main (main) where
 
 import           Cardano.Crypto.Libsodium (sodiumInit)
 

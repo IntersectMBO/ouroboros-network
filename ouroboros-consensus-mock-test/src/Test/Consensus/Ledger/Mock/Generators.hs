@@ -10,9 +10,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Consensus.Ledger.Mock.Generators (
-
-  ) where
+module Test.Consensus.Ledger.Mock.Generators () where
 
 import           Codec.Serialise (Serialise, encode, serialise)
 import           Control.Monad

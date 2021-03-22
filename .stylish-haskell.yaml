@@ -34,7 +34,7 @@ steps:
   #     #   determined by the `columns` setting. Not applicable when the export
   #     #   list contains comments as newlines will be required.
   #     # - always: always break before the "where".
-      break_where: exports
+      break_where: single
   #     # Where to put open bracket
   #     # Possible values:
   #     # - same_line: put open bracket on the same line as the module name, before the

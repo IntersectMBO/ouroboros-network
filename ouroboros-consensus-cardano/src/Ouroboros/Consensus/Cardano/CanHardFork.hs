@@ -21,7 +21,7 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
     ByronPartialLedgerConfig (..)
   , CardanoHardForkConstraints
   , TriggerHardFork (..)
-  -- * Re-exports of Shelley code
+    -- * Re-exports of Shelley code
   , ShelleyPartialLedgerConfig (..)
   , forecastAcrossShelley
   , translateChainDepStateAcrossShelley

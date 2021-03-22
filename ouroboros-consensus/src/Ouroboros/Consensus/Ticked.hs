@@ -6,9 +6,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 
-module Ouroboros.Consensus.Ticked (
-    Ticked (..)
-  ) where
+module Ouroboros.Consensus.Ticked (Ticked (..)) where
 
 import           Data.Kind (Type)
 import           Data.SOP.BasicFunctors

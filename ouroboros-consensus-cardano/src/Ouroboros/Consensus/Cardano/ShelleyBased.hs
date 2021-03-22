@@ -6,9 +6,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
-module Ouroboros.Consensus.Cardano.ShelleyBased (
-    overShelleyBasedLedgerState
-  ) where
+module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) where
 
 import           Data.SOP.Strict
 

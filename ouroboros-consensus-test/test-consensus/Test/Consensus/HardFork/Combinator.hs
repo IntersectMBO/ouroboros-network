@@ -19,9 +19,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Consensus.HardFork.Combinator (
-    tests
-  ) where
+module Test.Consensus.HardFork.Combinator (tests) where
 
 import qualified Data.Map as Map
 import           Data.SOP.Strict hiding (shape)

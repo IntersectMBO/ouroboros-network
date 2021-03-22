@@ -1,6 +1,4 @@
-module Main (
-    main
-  ) where
+module Main (main) where
 
 import           Control.Monad
 import           System.IO

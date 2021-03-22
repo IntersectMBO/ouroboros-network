@@ -8,9 +8,7 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Test.Ouroboros.Storage.ChainDB.Paths (
-    tests
-  ) where
+module Test.Ouroboros.Storage.ChainDB.Paths (tests) where
 
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE

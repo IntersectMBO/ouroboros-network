@@ -1,7 +1,5 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.ThreadNet.TxGen.Byron (
-
-  ) where
+module Test.ThreadNet.TxGen.Byron () where
 
 import           Ouroboros.Consensus.Byron.Ledger
 

@@ -4,9 +4,7 @@
 {-# LANGUAGE TypeOperators           #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork (
-    CanHardFork (..)
-  ) where
+module Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork (CanHardFork (..)) where
 
 import           Data.SOP.Strict
 import           Data.Typeable

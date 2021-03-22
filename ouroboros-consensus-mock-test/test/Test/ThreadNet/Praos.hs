@@ -1,9 +1,7 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Test.ThreadNet.Praos (
-    tests
-  ) where
+module Test.ThreadNet.Praos (tests) where
 
 import           Data.Word (Word64)
 import           Numeric.Natural (Natural)

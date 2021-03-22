@@ -11,9 +11,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Util.Orphans (
-
-  ) where
+module Ouroboros.Consensus.Util.Orphans () where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))

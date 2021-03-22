@@ -2,9 +2,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Ouroboros.Consensus.Config.SecurityParam (
-    SecurityParam (..)
-  ) where
+module Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..)) where
 
 import           Data.Word
 import           GHC.Generics (Generic)

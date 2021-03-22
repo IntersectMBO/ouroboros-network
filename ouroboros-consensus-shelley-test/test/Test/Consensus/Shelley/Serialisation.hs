@@ -2,9 +2,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Test.Consensus.Shelley.Serialisation (
-    tests
-  ) where
+module Test.Consensus.Shelley.Serialisation (tests) where
 
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy

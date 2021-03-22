@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (
-    module X
-  ) where
+module Ouroboros.Consensus.Storage.ImmutableDB.Chunks (module X) where
 
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout as X

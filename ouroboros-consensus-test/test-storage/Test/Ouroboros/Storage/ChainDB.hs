@@ -1,6 +1,4 @@
-module Test.Ouroboros.Storage.ChainDB (
-    tests
-  ) where
+module Test.Ouroboros.Storage.ChainDB (tests) where
 
 import           Test.Tasty
 

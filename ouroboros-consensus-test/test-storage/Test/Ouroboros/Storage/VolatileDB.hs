@@ -1,6 +1,4 @@
-module Test.Ouroboros.Storage.VolatileDB (
-    tests
-  ) where
+module Test.Ouroboros.Storage.VolatileDB (tests) where
 
 import           Test.Tasty (TestTree, testGroup)
 

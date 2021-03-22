@@ -8,9 +8,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Missing instances for standard type classes in the Byron spec
-module Ouroboros.Consensus.ByronSpec.Ledger.Orphans (
-
-  ) where
+module Ouroboros.Consensus.ByronSpec.Ledger.Orphans () where
 
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise

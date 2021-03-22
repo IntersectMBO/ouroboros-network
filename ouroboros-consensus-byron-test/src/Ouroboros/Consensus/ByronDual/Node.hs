@@ -8,9 +8,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.ByronDual.Node (
-    protocolInfoDualByron
-  ) where
+module Ouroboros.Consensus.ByronDual.Node (protocolInfoDualByron) where
 
 import           Data.Either (fromRight)
 import           Data.Map.Strict (Map)

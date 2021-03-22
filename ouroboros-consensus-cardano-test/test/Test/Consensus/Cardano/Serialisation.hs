@@ -4,9 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-module Test.Consensus.Cardano.Serialisation (
-    tests
-  ) where
+module Test.Consensus.Cardano.Serialisation (tests) where
 
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy

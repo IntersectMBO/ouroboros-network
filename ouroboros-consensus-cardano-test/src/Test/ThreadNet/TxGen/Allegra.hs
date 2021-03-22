@@ -1,9 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.ThreadNet.TxGen.Allegra (
-
-  ) where
+module Test.ThreadNet.TxGen.Allegra () where
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger

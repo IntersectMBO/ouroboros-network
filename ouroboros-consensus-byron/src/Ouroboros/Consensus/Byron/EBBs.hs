@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Byron.EBBs (
-    knownEBBs
-  ) where
+module Ouroboros.Consensus.Byron.EBBs (knownEBBs) where
 
 import           Cardano.Chain.Block (HeaderHash)
 

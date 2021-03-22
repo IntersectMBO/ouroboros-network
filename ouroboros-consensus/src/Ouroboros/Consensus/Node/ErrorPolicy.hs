@@ -2,9 +2,7 @@
 {-# LANGUAGE TypeApplications    #-}
 
 
-module Ouroboros.Consensus.Node.ErrorPolicy (
-    consensusErrorPolicy
-  ) where
+module Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy) where
 
 import           Data.Proxy (Proxy)
 import           Data.Time.Clock (DiffTime)

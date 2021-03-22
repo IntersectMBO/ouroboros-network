@@ -5,9 +5,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Node (
-
-  ) where
+module Ouroboros.Consensus.HardFork.Combinator.Node () where
 
 import           Data.Proxy
 import           Data.SOP.Strict

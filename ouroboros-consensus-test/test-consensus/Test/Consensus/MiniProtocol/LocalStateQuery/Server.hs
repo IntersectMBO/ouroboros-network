@@ -3,9 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.MiniProtocol.LocalStateQuery.Server (
-    tests
-  ) where
+module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
 import           Control.Tracer (nullTracer)
 import           Data.Map (Map)

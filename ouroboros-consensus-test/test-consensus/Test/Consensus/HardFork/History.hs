@@ -11,9 +11,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeOperators             #-}
 
-module Test.Consensus.HardFork.History (
-    tests
-  ) where
+module Test.Consensus.HardFork.History (tests) where
 
 import           Control.Exception (throw)
 import           Control.Monad.Except

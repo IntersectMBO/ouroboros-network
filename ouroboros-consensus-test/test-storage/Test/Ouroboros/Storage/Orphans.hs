@@ -1,8 +1,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Storage.Orphans (
-
-  ) where
+module Test.Ouroboros.Storage.Orphans () where
 
 import           Data.Maybe (isJust)
 

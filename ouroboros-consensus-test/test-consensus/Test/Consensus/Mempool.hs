@@ -9,9 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Test.Consensus.Mempool (
-    tests
-  ) where
+module Test.Consensus.Mempool (tests) where
 
 import           Control.Exception (assert)
 import           Control.Monad (foldM, forM, forM_, void)

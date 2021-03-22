@@ -1,8 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Shelley.Golden (
-    tests
-  ) where
+module Test.Consensus.Shelley.Golden (tests) where
 
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node ()

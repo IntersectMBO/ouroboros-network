@@ -14,9 +14,9 @@
 
 -- | This module is the Shelley Hard Fork Combinator
 module Ouroboros.Consensus.Shelley.ShelleyHFC (
-    ShelleyBlockHFC
+    ProtocolShelley
+  , ShelleyBlockHFC
   , ShelleyPartialLedgerConfig (..)
-  , ProtocolShelley
   , forecastAcrossShelley
   , translateChainDepStateAcrossShelley
   , translateLedgerViewAcrossShelley

@@ -1,8 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams (
-
-  ) where
+module Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams () where
 
 import           Data.SOP.Strict
 

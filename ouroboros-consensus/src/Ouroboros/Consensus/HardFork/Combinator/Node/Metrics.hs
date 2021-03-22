@@ -1,7 +1,5 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.HardFork.Combinator.Node.Metrics (
-
-  ) where
+module Ouroboros.Consensus.HardFork.Combinator.Node.Metrics () where
 
 import           Data.SOP.Strict
 

@@ -1,6 +1,4 @@
-module Test.Ouroboros.Storage.ImmutableDB (
-    tests
-  ) where
+module Test.Ouroboros.Storage.ImmutableDB (tests) where
 
 import           Test.Tasty (TestTree, testGroup)
 

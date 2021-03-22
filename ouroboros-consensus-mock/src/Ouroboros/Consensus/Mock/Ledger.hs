@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Mock.Ledger (
-    module X
-  ) where
+module Ouroboros.Consensus.Mock.Ledger (module X) where
 
 import           Ouroboros.Consensus.Mock.Ledger.Address as X
 import           Ouroboros.Consensus.Mock.Ledger.Block as X

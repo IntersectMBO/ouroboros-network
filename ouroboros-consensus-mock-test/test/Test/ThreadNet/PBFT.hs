@@ -2,9 +2,7 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Test.ThreadNet.PBFT (
-    tests
-  ) where
+module Test.ThreadNet.PBFT (tests) where
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set

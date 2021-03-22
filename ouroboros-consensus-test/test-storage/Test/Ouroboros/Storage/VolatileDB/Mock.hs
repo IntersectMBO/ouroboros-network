@@ -2,9 +2,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.Ouroboros.Storage.VolatileDB.Mock (
-    openDBMock
-  ) where
+module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util ((.:))

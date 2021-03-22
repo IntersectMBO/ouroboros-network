@@ -1,9 +1,7 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Test.ThreadNet.Shelley (
-    tests
-  ) where
+module Test.ThreadNet.Shelley (tests) where
 
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map

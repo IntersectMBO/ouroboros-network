@@ -1,7 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
-module Test.Util.FileLock (
-    mockFileLock
-  ) where
+module Test.Util.FileLock (mockFileLock) where
 
 import           Control.Monad (join, void)
 import           Data.Map (Map)
