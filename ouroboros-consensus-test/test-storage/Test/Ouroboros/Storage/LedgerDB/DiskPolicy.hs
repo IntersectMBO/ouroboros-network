@@ -1,3 +1,4 @@
+{-# LANGUAGE NumericUnderscores #-}
 module Test.Ouroboros.Storage.LedgerDB.DiskPolicy (tests) where
 
 import           Data.Function ((&))
@@ -30,6 +31,9 @@ tests = testGroup "DiskPolicy/defaultDiskPolicy" [
             , testProperty
                 "should take snapshot if time since last is greater then 2 * k if snapshot interval is set to default"
                 prop_shouldSnapshot_case3
+            , testProperty
+                "should take snapshot processed 50k and it's been more then 6 minutes since last snapshot was taken"
+                prop_shouldSnapshot_case4
         ]
       ]
     ]
@@ -67,6 +71,17 @@ prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityP
     kTimes2 = secondsToDiffTime $ fromIntegral $ k * 2
   shouldSnapshot === (timeSinceLast >= kTimes2)
 
+prop_shouldSnapshot_case4 :: DiffTime -> Word64 -> SecurityParam -> Property
+prop_shouldSnapshot_case4 timeSinceLast blocksSinceLast securityParam = do
+  -- given
+  let requestedInterval = RequestedSnapshotInterval $ timeSinceLast + 1
+   -- ^ given requested interval bigger then time passed
+      diskPolicy = defaultDiskPolicy securityParam requestedInterval
+  -- when
+      shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
+  -- then
+  shouldSnapshot === (  blocksSinceLast >= 50_000
+                     && timeSinceLast >= 6 * secondsToDiffTime 60)
 
 prop_onDiskNumSnapshots :: SecurityParam -> SnapshotInterval -> Property
 prop_onDiskNumSnapshots securityParam requestedInterval =
