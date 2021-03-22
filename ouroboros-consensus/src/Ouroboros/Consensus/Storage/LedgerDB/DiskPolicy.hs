@@ -93,7 +93,7 @@ defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
          timeSinceLast >= snapshotInterval
       || substantialAmountOfBlocksWereProcessed blocksSinceLast timeSinceLast
 
-   -- | If users never leave their wallet running for long. This would mean
+   -- | If users never leave their wallet running for long, this would mean
    -- that under some circumstances we would never take a snapshot
    -- So, on startup (when the 'time since the last snapshot' is `Nothing`),
    -- we take a snapshot as soon as there are @k@ blocks replayed.
