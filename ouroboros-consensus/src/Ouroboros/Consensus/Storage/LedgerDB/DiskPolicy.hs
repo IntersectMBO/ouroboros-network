@@ -22,8 +22,8 @@ import           Ouroboros.Consensus.Config.SecurityParam
 -- a snapshot is taken. It can be:
 --
 -- 1. either explicitly provided by user in seconds
--- 2. or default value can be requested - DiskPolicy specify what that is
--- exactly, see `defaultDiskPolicy` as an example
+-- 2. or default value can be requested - the specific DiskPolicy determines
+--    what that is exactly, see `defaultDiskPolicy` as an example
 data SnapshotInterval =
     DefaultSnapshotInterval
   | RequestedSnapshotInterval DiffTime
