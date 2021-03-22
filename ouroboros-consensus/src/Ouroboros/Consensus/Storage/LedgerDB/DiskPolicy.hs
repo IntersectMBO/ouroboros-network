@@ -93,15 +93,16 @@ defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
          timeSinceLast >= snapshotInterval
       || substantialAmountOfBlocksWereProcessed blocksSinceLast timeSinceLast
 
-   -- | If users never leave their wallet running for long, this would mean
-   -- that under some circumstances we would never take a snapshot
-   -- So, on startup (when the 'time since the last snapshot' is `Nothing`),
-   -- we take a snapshot as soon as there are @k@ blocks replayed.
-   -- This means that even if users frequently shut down their wallet, we still
-   -- take a snapshot roughly every @k@ blocks. It does mean the possibility of
-   -- an extra unnecessary snapshot during syncing (if the node is restarted), but
-   -- that is not a big deal.
-    onDiskShouldTakeSnapshot Nothing blocksSinceLast = blocksSinceLast >= k
+    onDiskShouldTakeSnapshot Nothing blocksSinceLast =
+      -- | If users never leave their wallet running for long, this would mean
+      -- that under some circumstances we would never take a snapshot
+      -- So, on startup (when the 'time since the last snapshot' is `Nothing`),
+      -- we take a snapshot as soon as there are @k@ blocks replayed.
+      -- This means that even if users frequently shut down their wallet, we still
+      -- take a snapshot roughly every @k@ blocks. It does mean the possibility of
+      -- an extra unnecessary snapshot during syncing (if the node is restarted), but
+      -- that is not a big deal.
+      blocksSinceLast >= k
 
     -- | We want to create a snapshot after a substantial amount of blocks were
     -- processed (hard-coded to 50k blocks). Given the fact that during bootstrap
