@@ -18,9 +18,9 @@ instance Arbitrary SecurityParam where
 
 instance Arbitrary SnapshotInterval where
   arbitrary =
-    oneof [ requestedSnapshotInterval
-          , defaultSnapshotInterval
-          ]
+    frequency [ (9,  requestedSnapshotInterval)
+              , (1, defaultSnapshotInterval)
+              ]
   shrink DefaultSnapshotInterval = []
   shrink (RequestedSnapshotInterval v) = RequestedSnapshotInterval <$> shrink v
 
