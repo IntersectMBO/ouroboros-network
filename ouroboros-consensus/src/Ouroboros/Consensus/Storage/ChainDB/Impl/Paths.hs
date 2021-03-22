@@ -8,8 +8,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (
     -- * LookupBlockInfo
     LookupBlockInfo
     -- * Candidates
-  , maximalCandidates
   , extendWithSuccessors
+  , maximalCandidates
     -- * Path
   , Path (..)
   , computePath

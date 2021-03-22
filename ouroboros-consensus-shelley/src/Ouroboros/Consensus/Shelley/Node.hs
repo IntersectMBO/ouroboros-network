@@ -18,26 +18,26 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Shelley.Node (
-    protocolInfoShelleyBased
-  , protocolInfoShelley
-  , ProtocolParamsShelleyBased (..)
-  , ProtocolParamsShelley (..)
+    MaxMajorProtVer (..)
   , ProtocolParamsAllegra (..)
   , ProtocolParamsMary (..)
-  , protocolClientInfoShelley
+  , ProtocolParamsShelley (..)
+  , ProtocolParamsShelleyBased (..)
+  , SL.Nonce (..)
+  , SL.ProtVer (..)
   , SL.ShelleyGenesis (..)
   , SL.ShelleyGenesisStaking (..)
+  , SL.emptyGenesisStaking
   , TPraosLeaderCredentials (..)
+  , protocolClientInfoShelley
+  , protocolInfoShelley
+  , protocolInfoShelleyBased
+  , registerGenesisStaking
+  , registerInitialFunds
   , shelleyBlockForging
   , shelleySharedBlockForging
   , tpraosBlockIssuerVKey
-  , SL.ProtVer (..)
-  , SL.Nonce (..)
-  , MaxMajorProtVer (..)
-  , SL.emptyGenesisStaking
   , validateGenesis
-  , registerGenesisStaking
-  , registerInitialFunds
   ) where
 
 import           Data.Bifunctor (first)

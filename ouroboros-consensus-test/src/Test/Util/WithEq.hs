@@ -1,9 +1,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Test.Util.WithEq
-  ( WithEq (..)
-  , Id (..)
+module Test.Util.WithEq (
+    Id (..)
+  , WithEq (..)
   ) where
 
 import           Data.Function (on)

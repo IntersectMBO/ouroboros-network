@@ -6,14 +6,15 @@
 -- Intended for qualified import
 -- > import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.Index as Index
 module Ouroboros.Consensus.Storage.VolatileDB.Impl.Index (
-    Index -- opaque
-  , empty
-  , lookup
-  , insert
-  , delete
-  , toAscList
+    delete
   , elems
+  , empty
+  , insert
   , lastFile
+  , lookup
+  , toAscList
+    -- * opaque
+  , Index
   ) where
 
 import           Prelude hiding (lookup)

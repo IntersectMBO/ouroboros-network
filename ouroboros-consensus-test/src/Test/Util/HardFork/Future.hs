@@ -4,16 +4,16 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Test.Util.HardFork.Future (
-  EraSize (..),
-  Future (..),
-  futureEpochInFirstEra,
-  futureFirstEpochSize,
-  futureFirstSlotLength,
-  futureSlotLengths,
-  futureSlotToEpoch,
-  futureSlotToTime,
-  futureTimeToSlot,
-  singleEraFuture,
+    EraSize (..)
+  , Future (..)
+  , futureEpochInFirstEra
+  , futureFirstEpochSize
+  , futureFirstSlotLength
+  , futureSlotLengths
+  , futureSlotToEpoch
+  , futureSlotToTime
+  , futureTimeToSlot
+  , singleEraFuture
   ) where
 
 import qualified Data.Fixed

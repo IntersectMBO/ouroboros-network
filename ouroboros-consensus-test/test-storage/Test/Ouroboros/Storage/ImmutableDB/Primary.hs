@@ -2,7 +2,9 @@
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
 
-module Test.Ouroboros.Storage.ImmutableDB.Primary (tests) where
+module Test.Ouroboros.Storage.ImmutableDB.Primary (
+    tests
+  ) where
 
 import           Data.Functor ((<&>))
 import           Data.Maybe (fromJust)

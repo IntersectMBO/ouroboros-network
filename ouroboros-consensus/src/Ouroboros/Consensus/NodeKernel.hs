@@ -12,16 +12,16 @@
 
 module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
-    NodeKernel (..)
-  , MaxTxCapacityOverride (..)
+    MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
+  , NodeKernel (..)
   , NodeKernelArgs (..)
   , TraceForgeEvent (..)
-  , initNodeKernel
   , getMempoolReader
   , getMempoolWriter
   , getPeersFromCurrentLedger
   , getPeersFromCurrentLedgerAfterSlot
+  , initNodeKernel
   ) where
 
 import           Control.Monad

@@ -1,13 +1,13 @@
 module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
     module Control.Monad.Class.MonadSTM.Strict
   , module Ouroboros.Consensus.Util.MonadSTM.StrictMVar
-  , newTVarIO
-  , newMVar
   , newEmptyMVar
+  , newMVar
+  , newTVarIO
     -- * Temporary
-  , uncheckedNewTVarM
-  , uncheckedNewMVar
   , uncheckedNewEmptyMVar
+  , uncheckedNewMVar
+  , uncheckedNewTVarM
   ) where
 
 import           GHC.Stack

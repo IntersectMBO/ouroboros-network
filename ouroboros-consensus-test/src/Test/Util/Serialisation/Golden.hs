@@ -13,17 +13,17 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Util.Serialisation.Golden (
     Examples (..)
+  , Labelled
+  , ToGoldenDirectory (..)
   , combineExamples
+  , goldenTest_SerialiseDisk
+  , goldenTest_SerialiseNodeToClient
+  , goldenTest_SerialiseNodeToNode
+  , goldenTest_all
+  , labelled
   , mapExamples
   , prefixExamples
-  , Labelled
   , unlabelled
-  , labelled
-  , ToGoldenDirectory (..)
-  , goldenTest_all
-  , goldenTest_SerialiseDisk
-  , goldenTest_SerialiseNodeToNode
-  , goldenTest_SerialiseNodeToClient
   ) where
 
 import           Codec.CBOR.Encoding (Encoding)

@@ -2,7 +2,9 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE RankNTypes            #-}
-module Test.Consensus.Util.Versioned (tests) where
+module Test.Consensus.Util.Versioned (
+    tests
+  ) where
 
 import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)

@@ -1,5 +1,5 @@
-module Test.Util.Tracer
-  ( recordingTracerIORef
+module Test.Util.Tracer (
+    recordingTracerIORef
   , recordingTracerTVar
   ) where
 

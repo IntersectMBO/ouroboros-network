@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.ThreadNet.TxGen.Cardano (
-    CardanoTxGenExtra (..),
+    CardanoTxGenExtra (..)
   ) where
 
 import           Control.Exception (assert)

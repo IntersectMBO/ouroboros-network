@@ -11,11 +11,11 @@
 -- > import           Ouroboros.Consensus.HeaderStateHistory (HeaderStateHistory)
 -- > import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 module Ouroboros.Consensus.HeaderStateHistory (
-    HeaderStateHistory(..)
-  , current
-  , trim
-  , rewind
+    HeaderStateHistory (..)
   , cast
+  , current
+  , rewind
+  , trim
     -- * Validation
   , validateHeader
     -- * Support for tests

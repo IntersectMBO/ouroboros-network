@@ -1,4 +1,6 @@
-module Main (main) where
+module Main (
+    main
+  ) where
 
 import qualified System.Directory as Dir
 import           System.IO.Temp

@@ -1,8 +1,8 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-module Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
-  ( localStateQueryServer
+module Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server (
+    localStateQueryServer
   ) where
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server

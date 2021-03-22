@@ -7,16 +7,16 @@
 -- pull this out to avoid circular module dependencies.
 module Ouroboros.Consensus.Ledger.Basics (
     -- * GetTip
-    GetTip(..)
+    GetTip (..)
   , getTipHash
   , getTipSlot
     -- * Definition of a ledger independent of a choice of block
+  , IsLedger (..)
   , LedgerCfg
-  , IsLedger(..)
     -- * Link block to its ledger
-  , LedgerState
   , LedgerConfig
   , LedgerError
+  , LedgerState
   , TickedLedgerState
   ) where
 

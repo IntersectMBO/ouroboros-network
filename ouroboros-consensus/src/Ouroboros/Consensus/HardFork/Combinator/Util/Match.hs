@@ -18,22 +18,22 @@
 -- > import Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
-    Mismatch(..)
+    Mismatch (..)
+  , flip
   , matchNS
   , matchTelescope
-  , flip
     -- * Utilities
-  , mismatchToNS
-  , mismatchOne
-  , mismatchTwo
-  , mkMismatchTwo
   , mismatchNotEmpty
   , mismatchNotFirst
+  , mismatchOne
+  , mismatchToNS
+  , mismatchTwo
+  , mkMismatchTwo
   , mustMatchNS
     -- * SOP operators
   , bihap
-  , bihmap
   , bihcmap
+  , bihmap
   ) where
 
 import           Prelude hiding (flip)

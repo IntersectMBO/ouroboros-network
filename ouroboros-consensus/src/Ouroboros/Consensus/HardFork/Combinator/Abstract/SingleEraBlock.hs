@@ -8,17 +8,17 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
     -- * Single era block
-    SingleEraBlock(..)
-  , singleEraTransition'
+    SingleEraBlock (..)
   , proxySingle
+  , singleEraTransition'
     -- * Era index
-  , EraIndex(..)
+  , EraIndex (..)
   , eraIndexEmpty
-  , eraIndexFromNS
   , eraIndexFromIndex
-  , eraIndexZero
+  , eraIndexFromNS
   , eraIndexSucc
   , eraIndexToInt
+  , eraIndexZero
   ) where
 
 import           Codec.Serialise

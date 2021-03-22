@@ -1,9 +1,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Test.ThreadNet.Util.Expectations
-    ( NumBlocks (..)
-    , determineForkLength
-    ) where
+module Test.ThreadNet.Util.Expectations (
+    NumBlocks (..)
+  , determineForkLength
+  ) where
 
 import           Data.Foldable (foldl')
 import qualified Data.Map.Strict as Map

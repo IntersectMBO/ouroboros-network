@@ -7,7 +7,9 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 
-module Test.Consensus.HardFork.Summary (tests) where
+module Test.Consensus.HardFork.Summary (
+    tests
+  ) where
 
 import           Data.Time
 import           Data.Word

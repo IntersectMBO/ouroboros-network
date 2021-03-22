@@ -5,24 +5,25 @@
 
 module Ouroboros.Consensus.BlockchainTime.WallClock.Types (
     -- * System time
-    SystemStart(..)
+    SystemStart (..)
     -- * Relative time
-  , RelativeTime(..)
+  , RelativeTime (..)
   , addRelTime
   , diffRelTime
-  , toRelativeTime
   , fromRelativeTime
+  , toRelativeTime
     -- * Get current time (as 'RelativeTime')
-  , SystemTime(..)
+  , SystemTime (..)
     -- * Slot length
-  , SlotLength -- Opaque
   , getSlotLength
   , mkSlotLength
     -- ** Conversions
-  , slotLengthFromSec
-  , slotLengthToSec
   , slotLengthFromMillisec
+  , slotLengthFromSec
   , slotLengthToMillisec
+  , slotLengthToSec
+    -- ** opaque
+  , SlotLength
   ) where
 
 import           Codec.Serialise

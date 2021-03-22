@@ -18,40 +18,42 @@
 -- > import Test.Util.FS.Sim.MockFS (MockFS)
 -- > import qualified Test.Util.FS.Sim.MockFS as Mock
 module Test.Util.FS.Sim.MockFS (
-    MockFS -- opaque
-  , HandleMock -- opaque
-  , empty
+    empty
   , example
-  , pretty
   , handleIsOpen
   , numOpenHandles
+  , pretty
     -- * Debugging
   , dumpState
     -- * Operations on files
-  , hOpen
   , hClose
-  , hIsOpen
-  , hSeek
+  , hGetSize
   , hGetSome
   , hGetSomeAt
+  , hIsOpen
+  , hOpen
   , hPutSome
+  , hSeek
   , hTruncate
-  , hGetSize
     -- * Operations on directories
   , createDirectory
   , createDirectoryIfMissing
-  , listDirectory
   , doesDirectoryExist
   , doesFileExist
+  , listDirectory
   , removeFile
   , renameFile
     -- * Exported for the benefit of tests only
-  , HandleState       -- opaque
-  , OpenHandleState   -- opaque
-  , ClosedHandleState -- opaque
-  , FilePtr           -- opaque
   , Files
   , mockFiles
+    -- ** opaque
+  , ClosedHandleState
+  , FilePtr
+  , HandleState
+  , OpenHandleState
+    -- * opaque
+  , HandleMock
+  , MockFS
   ) where
 
 import           Control.Monad.Except

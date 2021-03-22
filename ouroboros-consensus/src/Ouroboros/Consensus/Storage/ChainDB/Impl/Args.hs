@@ -4,8 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 
-module Ouroboros.Consensus.Storage.ChainDB.Impl.Args
-  ( ChainDbArgs (..)
+module Ouroboros.Consensus.Storage.ChainDB.Impl.Args (
+    ChainDbArgs (..)
   , ChainDbSpecificArgs (..)
   , RelativeMountPoint (..)
   , defaultArgs

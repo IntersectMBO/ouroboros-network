@@ -6,10 +6,10 @@
 -- Intended for qualified import
 -- > import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 module Ouroboros.Consensus.Util.AnchoredFragment (
-    compareHeadBlockNo
+    compareAnchoredFragments
+  , compareHeadBlockNo
   , forksAtMostKBlocks
   , preferAnchoredCandidate
-  , compareAnchoredFragments
   ) where
 
 import           Control.Monad.Except (throwError)

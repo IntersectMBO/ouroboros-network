@@ -4,7 +4,9 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Test.Consensus.Node (tests) where
+module Test.Consensus.Node (
+    tests
+  ) where
 
 import           Data.Bifunctor (second)
 import           Data.Functor ((<&>))

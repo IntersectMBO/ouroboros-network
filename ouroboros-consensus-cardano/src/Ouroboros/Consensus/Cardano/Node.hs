@@ -11,25 +11,25 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.Node (
-    protocolInfoCardano
-  , ProtocolParamsTransition (..)
+    CardanoHardForkConstraints
+  , MaxMajorProtVer (..)
   , ProtocolParamsAllegra (..)
   , ProtocolParamsMary (..)
-  , protocolClientInfoCardano
-  , CardanoHardForkConstraints
-  , MaxMajorProtVer (..)
+  , ProtocolParamsTransition (..)
   , TriggerHardFork (..)
+  , protocolClientInfoCardano
+  , protocolInfoCardano
     -- * SupportedNetworkProtocolVersion
-  , pattern CardanoNodeToNodeVersion1
-  , pattern CardanoNodeToNodeVersion2
-  , pattern CardanoNodeToNodeVersion3
-  , pattern CardanoNodeToNodeVersion4
   , pattern CardanoNodeToClientVersion1
   , pattern CardanoNodeToClientVersion2
   , pattern CardanoNodeToClientVersion3
   , pattern CardanoNodeToClientVersion4
   , pattern CardanoNodeToClientVersion5
   , pattern CardanoNodeToClientVersion6
+  , pattern CardanoNodeToNodeVersion1
+  , pattern CardanoNodeToNodeVersion2
+  , pattern CardanoNodeToNodeVersion3
+  , pattern CardanoNodeToNodeVersion4
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR

@@ -3,22 +3,22 @@
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Consensus.Byron.Examples (
     -- * Setup
-    secParam
-  , windowSize
-  , cfg
+    cfg
   , codecConfig
-  , ledgerConfig
   , leaderCredentials
+  , ledgerConfig
+  , secParam
+  , windowSize
     -- * Examples
-  , examples
+  , exampleApplyTxErr
   , exampleChainDepState
-  , exampleLedgerState
-  , exampleHeaderState
   , exampleExtLedgerState
-  , exampleHeaderHash
   , exampleGenTx
   , exampleGenTxId
-  , exampleApplyTxErr
+  , exampleHeaderHash
+  , exampleHeaderState
+  , exampleLedgerState
+  , examples
   ) where
 
 import           Control.Monad.Except (runExcept)

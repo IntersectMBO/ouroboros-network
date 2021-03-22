@@ -16,10 +16,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans      #-}
-module Test.Ouroboros.Storage.ImmutableDB.StateMachine
-    ( tests
-    , showLabelledExamples
-    ) where
+module Test.Ouroboros.Storage.ImmutableDB.StateMachine (
+    showLabelledExamples
+  , tests
+  ) where
 
 import           Prelude hiding (elem, notElem)
 

@@ -3,13 +3,13 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.State.Types (
     -- * Main types
-    HardForkState(..)
-  , Current(..)
-  , Past(..)
+    Current (..)
+  , HardForkState (..)
+  , Past (..)
     -- * Supporting types
-  , Translate(..)
-  , TranslateForecast(..)
-  , TransitionInfo(..)
+  , TransitionInfo (..)
+  , Translate (..)
+  , TranslateForecast (..)
   ) where
 
 import           Prelude hiding (sequence)

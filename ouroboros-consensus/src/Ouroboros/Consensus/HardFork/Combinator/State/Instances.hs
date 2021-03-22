@@ -15,10 +15,10 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.State.Instances (
     -- * Serialisation support
-    encodeCurrent
-  , decodeCurrent
-  , encodePast
+    decodeCurrent
   , decodePast
+  , encodeCurrent
+  , encodePast
   ) where
 
 import           Prelude hiding (sequence)

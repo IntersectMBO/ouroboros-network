@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Consensus.Ticked (
-    Ticked(..)
+    Ticked (..)
   ) where
 
 import           Data.Kind (Type)

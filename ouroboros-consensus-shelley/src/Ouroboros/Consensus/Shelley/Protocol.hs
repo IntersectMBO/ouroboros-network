@@ -15,20 +15,20 @@
 --   Transitional praos allows for the overlaying of Praos with an overlay
 --   schedule determining slots to be produced by BFT
 module Ouroboros.Consensus.Shelley.Protocol (
-    TPraos
-  , TPraosState (..)
-  , TPraosChainSelectView (..)
+    MaxMajorProtVer (..)
   , SelfIssued (..)
+  , TPraos
+  , TPraosCanBeLeader (..)
+  , TPraosChainSelectView (..)
   , TPraosFields (..)
-  , forgeTPraosFields
+  , TPraosIsLeader (..)
+  , TPraosParams (..)
+  , TPraosState (..)
   , TPraosToSign (..)
   , TPraosValidateView
-  , TPraosParams (..)
-  , mkTPraosParams
-  , TPraosCanBeLeader (..)
-  , TPraosIsLeader (..)
+  , forgeTPraosFields
   , mkShelleyGlobals
-  , MaxMajorProtVer (..)
+  , mkTPraosParams
     -- * Crypto
   , PraosCrypto
   , StandardCrypto

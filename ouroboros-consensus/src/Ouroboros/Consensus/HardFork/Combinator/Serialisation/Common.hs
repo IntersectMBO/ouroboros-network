@@ -19,52 +19,52 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
     -- * Conditions required by the HFC to support serialisation
-    SerialiseHFC(..)
+    HardForkEncoderException (..)
   , SerialiseConstraintsHFC
-  , pSHFC
-  , HardForkEncoderException(..)
-  , futureEraException
+  , SerialiseHFC (..)
   , disabledEraException
+  , futureEraException
+  , pSHFC
     -- * Distinguish first era from the rest
   , FirstEra
   , LaterEra
   , isFirstEra
   , notFirstEra
     -- * Versioning
-  , HardForkSpecificNodeToNodeVersion(..)
-  , HardForkSpecificNodeToClientVersion(..)
-  , HardForkNodeToNodeVersion(..)
-  , HardForkNodeToClientVersion(..)
-  , EraNodeToNodeVersion(..)
-  , EraNodeToClientVersion(..)
-  , isHardForkNodeToNodeEnabled
+  , EraNodeToClientVersion (..)
+  , EraNodeToNodeVersion (..)
+  , HardForkNodeToClientVersion (..)
+  , HardForkNodeToNodeVersion (..)
+  , HardForkSpecificNodeToClientVersion (..)
+  , HardForkSpecificNodeToNodeVersion (..)
   , isHardForkNodeToClientEnabled
+  , isHardForkNodeToNodeEnabled
     -- * Dealing with annotations
-  , AnnDecoder(..)
+  , AnnDecoder (..)
     -- * Serialisation of telescopes
-  , encodeTelescope
   , decodeTelescope
+  , encodeTelescope
     -- * Serialisation of sums
-  , encodeNS
-  , decodeNS
   , decodeAnnNS
+  , decodeNS
+  , encodeNS
     -- * Dependent serialisation
-  , encodeNestedCtxt
+  , decodeNested
   , decodeNestedCtxt
   , encodeNested
-  , decodeNested
+  , encodeNestedCtxt
     -- * MismatchEraInfo
-  , encodeEitherMismatch
   , decodeEitherMismatch
+  , encodeEitherMismatch
     -- * Distributive properties
   , distribAnnTip
-  , undistribAnnTip
-  , distribSerialisedHeader
-  , undistribSerialisedHeader
   , distribQueryIfCurrent
+  , distribSerialisedHeader
+  , undistribAnnTip
   , undistribQueryIfCurrent
+  , undistribSerialisedHeader
     -- * Deriving-via support for tests
-  , SerialiseNS(..)
+  , SerialiseNS (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

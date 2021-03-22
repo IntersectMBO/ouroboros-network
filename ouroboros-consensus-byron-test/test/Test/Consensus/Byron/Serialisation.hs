@@ -11,7 +11,9 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Byron.Serialisation (tests) where
+module Test.Consensus.Byron.Serialisation (
+    tests
+  ) where
 
 import           Codec.CBOR.Write (toLazyByteString)
 import qualified Data.ByteString.Lazy as Lazy

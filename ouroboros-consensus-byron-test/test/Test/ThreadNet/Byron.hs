@@ -11,10 +11,10 @@ module Test.ThreadNet.Byron (
     tests
     -- * To support the DualByron tests
   , TestSetup (..)
-  , noEBBs
   , byronPBftParams
-  , genTestSetup
   , expectedCannotForge
+  , genTestSetup
+  , noEBBs
   ) where
 
 import           Control.Monad (join)

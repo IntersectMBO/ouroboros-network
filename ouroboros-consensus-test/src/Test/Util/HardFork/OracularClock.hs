@@ -7,10 +7,10 @@
 -- > import Test.Util.OracularClock (OracularClock(..))
 -- > import qualified Test.Util.OracularClock as OracularClock
 module Test.Util.HardFork.OracularClock (
-    OracularClock (..)
-  , mkOracularClock
+    EndOfDaysException (..)
+  , OracularClock (..)
   , forkEachSlot
-  , EndOfDaysException (..)
+  , mkOracularClock
   ) where
 
 import           Control.Monad (void, when)

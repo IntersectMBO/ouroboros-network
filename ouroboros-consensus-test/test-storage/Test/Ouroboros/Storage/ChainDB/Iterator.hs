@@ -2,8 +2,8 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
-module Test.Ouroboros.Storage.ChainDB.Iterator
-  ( tests
+module Test.Ouroboros.Storage.ChainDB.Iterator (
+    tests
   ) where
 
 import           Test.Tasty

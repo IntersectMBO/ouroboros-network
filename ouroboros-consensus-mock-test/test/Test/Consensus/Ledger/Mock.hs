@@ -3,7 +3,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.Consensus.Ledger.Mock (tests) where
+module Test.Consensus.Ledger.Mock (
+    tests
+  ) where
 
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (Serialise, encode)

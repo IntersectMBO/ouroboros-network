@@ -5,8 +5,8 @@ module Ouroboros.Consensus.Cardano (
     CardanoBlock
     -- * Supported protocols
   , ProtocolByron
-  , ProtocolShelley
   , ProtocolCardano
+  , ProtocolShelley
     -- * Abstract over the various protocols
   , ProtocolParamsByron(..)
   , ProtocolParamsShelley(..)

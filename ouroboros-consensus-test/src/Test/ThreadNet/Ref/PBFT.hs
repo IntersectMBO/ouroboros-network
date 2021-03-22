@@ -8,20 +8,20 @@
 -- See 'step'.
 --
 module Test.ThreadNet.Ref.PBFT (
-  Outcome (..),
-  Result (..),
-  State (..),
-  advanceUpTo,
-  definitelyEnoughBlocks,
-  emptyState,
-  mkLeaderOf,
-  nullState,
-  pbftLimit,
-  resultConstrName,
-  simulate,
-  simulateShort,
-  step,
-  viable,
+    Outcome (..)
+  , Result (..)
+  , State (..)
+  , advanceUpTo
+  , definitelyEnoughBlocks
+  , emptyState
+  , mkLeaderOf
+  , nullState
+  , pbftLimit
+  , resultConstrName
+  , simulate
+  , simulateShort
+  , step
+  , viable
   ) where
 
 import           Control.Applicative ((<|>))

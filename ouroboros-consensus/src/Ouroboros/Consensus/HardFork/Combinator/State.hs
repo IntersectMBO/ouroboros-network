@@ -21,10 +21,10 @@ module Ouroboros.Consensus.HardFork.Combinator.State (
     -- * Serialisation support
   , recover
     -- * EpochInfo
-  , mostRecentTransitionInfo
-  , reconstructSummaryLedger
   , epochInfoLedger
   , epochInfoPrecomputedTransitionInfo
+  , mostRecentTransitionInfo
+  , reconstructSummaryLedger
     -- * Ledger specific functionality
   , extendToSlot
   ) where

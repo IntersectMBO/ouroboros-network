@@ -3,7 +3,7 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Translation (
     -- * Translate from one era to the next
-    EraTranslation(..)
+    EraTranslation (..)
   , trivialEraTranslation
   ) where
 

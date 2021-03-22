@@ -7,8 +7,8 @@
 {-# LANGUAGE TypeFamilies             #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.ThreadNet.TxGen.Shelley (
-    ShelleyTxGenExtra(..)
-  , WhetherToGeneratePPUs(..)
+    ShelleyTxGenExtra (..)
+  , WhetherToGeneratePPUs (..)
   , genTx
   , mkGenEnv
   ) where

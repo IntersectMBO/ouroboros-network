@@ -19,7 +19,9 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Storage.ChainDB.StateMachine ( tests ) where
+module Test.Ouroboros.Storage.ChainDB.StateMachine (
+    tests
+  ) where
 
 import           Prelude hiding (elem)
 

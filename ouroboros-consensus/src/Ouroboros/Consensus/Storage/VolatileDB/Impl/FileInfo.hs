@@ -9,16 +9,17 @@
 --
 -- Intended for qualified import.
 module Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (
-    FileInfo      -- opaque
+    -- * opaque
+    FileInfo
     -- * Construction
-  , empty
   , addBlock
+  , empty
   , fromParsedBlockInfos
     -- * Queries
-  , maxSlotNo
-  , hashes
   , canGC
+  , hashes
   , isFull
+  , maxSlotNo
   , maxSlotNoInFiles
   ) where
 

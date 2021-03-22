@@ -13,11 +13,11 @@
 -- This provides the core of the 'singletons' package, using the same name,
 -- but without pulling in all the dependencies and craziness.
 module Ouroboros.Consensus.Util.Singletons (
-    Sing(..)
-  , SingI(..)
-  , SomeSing(..)
+    Sing (..)
+  , SingI (..)
+  , SingKind (..)
+  , SomeSing (..)
   , withSomeSing
-  , SingKind(..)
   ) where
 
 import           Data.Kind (Type)

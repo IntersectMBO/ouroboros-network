@@ -5,13 +5,13 @@
 --
 -- > import Ouroboros.Consensus.Fragment.ValidatedDiff (ValidatedChainDiff (..))
 -- > import qualified Ouroboros.Consensus.Fragment.ValidatedDiff as ValidatedDiff
-module Ouroboros.Consensus.Fragment.ValidatedDiff
-  ( ValidatedChainDiff(ValidatedChainDiff)
+module Ouroboros.Consensus.Fragment.ValidatedDiff (
+    ValidatedChainDiff (ValidatedChainDiff)
   , getChainDiff
   , getLedger
   , new
-  , toValidatedFragment
   , rollbackExceedsSuffix
+  , toValidatedFragment
   ) where
 
 import           Control.Monad.Except (throwError)

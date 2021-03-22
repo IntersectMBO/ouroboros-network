@@ -2,10 +2,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-module Test.Util.Corruption
-  ( Corruption (..)
-  , detectCorruption
+module Test.Util.Corruption (
+    Corruption (..)
   , applyCorruption
+  , detectCorruption
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

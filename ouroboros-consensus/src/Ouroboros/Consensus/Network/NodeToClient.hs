@@ -12,12 +12,12 @@ module Ouroboros.Consensus.Network.NodeToClient (
     Handlers (..)
   , mkHandlers
     -- * Codecs
-  , Codecs' (..)
-  , Codecs
-  , DefaultCodecs
   , ClientCodecs
-  , defaultCodecs
+  , Codecs
+  , Codecs' (..)
+  , DefaultCodecs
   , clientCodecs
+  , defaultCodecs
   , identityCodecs
     -- * ClientCodecs
     -- * Tracers

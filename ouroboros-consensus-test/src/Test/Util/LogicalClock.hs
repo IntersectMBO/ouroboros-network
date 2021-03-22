@@ -9,16 +9,16 @@
 -- > import qualified Test.Util.LogicalClock as LogicalClock
 module Test.Util.LogicalClock (
     -- * API
-    LogicalClock(..)
-  , Tick(..)
-  , NumTicks(..)
+    LogicalClock (..)
+  , NumTicks (..)
+  , Tick (..)
     -- * Construction
   , new
   , sufficientTimeFor
     -- * Scheduling actions
-  , tickWatcher
-  , onTick
   , blockUntilTick
+  , onTick
+  , tickWatcher
   ) where
 
 import           Control.Monad

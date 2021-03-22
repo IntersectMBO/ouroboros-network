@@ -21,9 +21,9 @@ module Ouroboros.Consensus.Network.NodeToNode (
   , nullTracers
   , showTracers
     -- * Applications
+  , Apps (..)
   , ClientApp
   , ServerApp
-  , Apps (..)
   , mkApps
     -- ** Projections
   , initiator

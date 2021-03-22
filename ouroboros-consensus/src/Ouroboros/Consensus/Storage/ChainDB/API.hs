@@ -18,48 +18,48 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Storage.ChainDB.API (
     -- * Main ChainDB API
-    ChainDB(..)
-  , getCurrentTip
-  , getTipBlockNo
+    ChainDB (..)
   , getCurrentLedger
+  , getCurrentTip
+  , getHeaderStateHistory
   , getImmutableLedger
   , getPastLedger
-  , getHeaderStateHistory
+  , getTipBlockNo
     -- * Adding a block
-  , AddBlockPromise(..)
-  , addBlockWaitWrittenToDisk
+  , AddBlockPromise (..)
   , addBlock
+  , addBlockWaitWrittenToDisk
   , addBlock_
     -- * Serialised block/header with its point
-  , WithPoint(..)
+  , WithPoint (..)
+  , getPoint
   , getSerialisedBlockWithPoint
   , getSerialisedHeaderWithPoint
-  , getPoint
     -- * BlockComponent
-  , BlockComponent(..)
+  , BlockComponent (..)
     -- * Support for tests
-  , toChain
   , fromChain
+  , toChain
     -- * Iterator API
-  , StreamFrom(..)
-  , StreamTo(..)
-  , Iterator(..)
-  , IteratorResult(..)
+  , Iterator (..)
+  , IteratorResult (..)
+  , StreamFrom (..)
+  , StreamTo (..)
+  , UnknownRange (..)
   , emptyIterator
-  , traverseIterator
-  , UnknownRange(..)
-  , validBounds
   , streamAll
+  , traverseIterator
+  , validBounds
     -- * Invalid block reason
-  , InvalidBlockReason(..)
+  , InvalidBlockReason (..)
     -- * Followers
-  , Follower(..)
+  , Follower (..)
   , traverseFollower
     -- * Recovery
-  , ChainDbFailure(..)
-  , IsEBB(..)
+  , ChainDbFailure (..)
+  , IsEBB (..)
     -- * Exceptions
-  , ChainDbError(..)
+  , ChainDbError (..)
   ) where
 
 import           Control.Monad (void)

@@ -13,7 +13,7 @@
 module Test.Consensus.HardFork.Forecast (
     tests
     -- Quell ghc warning
-  , LedgerView(..)
+  , LedgerView (..)
   ) where
 
 import           Control.Exception (assert)

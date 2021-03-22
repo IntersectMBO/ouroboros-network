@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Test.Util.ChunkInfo (
-    SmallChunkInfo(..)
+    SmallChunkInfo (..)
   ) where
 
 import           Test.QuickCheck

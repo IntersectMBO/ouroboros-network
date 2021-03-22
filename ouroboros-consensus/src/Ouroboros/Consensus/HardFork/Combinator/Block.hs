@@ -17,8 +17,8 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Block (
     -- * Type family instances
-    Header(..)
-  , NestedCtxt_(..)
+    Header (..)
+  , NestedCtxt_ (..)
     -- * AnnTip
   , distribAnnTip
   , undistribAnnTip

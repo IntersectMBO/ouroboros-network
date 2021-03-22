@@ -6,8 +6,8 @@
 {-# LANGUAGE ViewPatterns             #-}
 module Ouroboros.Consensus.Cardano.Block (
     -- * Eras
-    module Ouroboros.Consensus.Shelley.Eras
-  , CardanoEras
+    CardanoEras
+  , module Ouroboros.Consensus.Shelley.Eras
   , ShelleyBasedEras
     -- * Block
   , CardanoBlock
@@ -16,90 +16,37 @@ module Ouroboros.Consensus.Cardano.Block (
     -- checks from GHC. But GHC expects a data type, not a type family, that's
     -- why we sometimes mention the data type of the instance in these exports
     -- instead of the abstract type family.
-  , HardForkBlock (
-        BlockByron
-      , BlockShelley
-      , BlockAllegra
-      , BlockMary
-      )
+  , HardForkBlock (BlockByron, BlockShelley, BlockAllegra, BlockMary)
     -- * Headers
   , CardanoHeader
-  , Header (
-        HeaderByron
-      , HeaderShelley
-      , HeaderAllegra
-      , HeaderMary
-      )
+  , Header (HeaderByron, HeaderShelley, HeaderAllegra, HeaderMary)
     -- * Generalised transactions
-  , CardanoGenTx
-  , GenTx (
-        GenTxByron
-      , GenTxShelley
-      , GenTxAllegra
-      , GenTxMary
-      )
-  , CardanoGenTxId
-  , TxId (
-        GenTxIdByron
-      , GenTxIdShelley
-      , GenTxIdAllegra
-      , GenTxIdMary
-      )
   , CardanoApplyTxErr
-  , HardForkApplyTxErr (
-        ApplyTxErrByron
-      , ApplyTxErrShelley
-      , ApplyTxErrAllegra
-      , ApplyTxErrMary
-      , ApplyTxErrWrongEra
-      )
+  , CardanoGenTx
+  , CardanoGenTxId
+  , GenTx (GenTxByron, GenTxShelley, GenTxAllegra, GenTxMary)
+  , HardForkApplyTxErr (ApplyTxErrByron, ApplyTxErrShelley, ApplyTxErrAllegra, ApplyTxErrMary, ApplyTxErrWrongEra)
+  , TxId (GenTxIdByron, GenTxIdShelley, GenTxIdAllegra, GenTxIdMary)
     -- * LedgerError
   , CardanoLedgerError
-  , HardForkLedgerError (
-        LedgerErrorByron
-      , LedgerErrorShelley
-      , LedgerErrorAllegra
-      , LedgerErrorMary
-      , LedgerErrorWrongEra
-      )
+  , HardForkLedgerError (LedgerErrorByron, LedgerErrorShelley, LedgerErrorAllegra, LedgerErrorMary, LedgerErrorWrongEra)
     -- * OtherEnvelopeError
   , CardanoOtherHeaderEnvelopeError
-  , HardForkEnvelopeErr (
-        OtherHeaderEnvelopeErrorByron
-      , OtherHeaderEnvelopeErrorShelley
-      , OtherHeaderEnvelopeErrorAllegra
-      , OtherHeaderEnvelopeErrorMary
-      , OtherHeaderEnvelopeErrorWrongEra
-      )
+  , HardForkEnvelopeErr (OtherHeaderEnvelopeErrorByron, OtherHeaderEnvelopeErrorShelley, OtherHeaderEnvelopeErrorAllegra, OtherHeaderEnvelopeErrorMary, OtherHeaderEnvelopeErrorWrongEra)
     -- * TipInfo
   , CardanoTipInfo
-  , OneEraTipInfo (
-        TipInfoByron
-      , TipInfoShelley
-      , TipInfoAllegra
-      , TipInfoMary
-      )
+  , OneEraTipInfo (TipInfoByron, TipInfoShelley, TipInfoAllegra, TipInfoMary)
     -- * Query
   , CardanoQuery
-  , Query (
-        QueryIfCurrentByron
-      , QueryIfCurrentShelley
-      , QueryIfCurrentAllegra
-      , QueryIfCurrentMary
-      , QueryAnytimeByron
-      , QueryAnytimeShelley
-      , QueryAnytimeAllegra
-      , QueryAnytimeMary
-      , QueryHardFork
-     )
   , CardanoQueryResult
   , Either (QueryResultSuccess, QueryResultEraMismatch)
+  , Query (QueryIfCurrentByron, QueryIfCurrentShelley, QueryIfCurrentAllegra, QueryIfCurrentMary, QueryAnytimeByron, QueryAnytimeShelley, QueryAnytimeAllegra, QueryAnytimeMary, QueryHardFork)
     -- * CodecConfig
   , CardanoCodecConfig
   , CodecConfig (CardanoCodecConfig)
     -- * BlockConfig
-  , CardanoBlockConfig
   , BlockConfig (CardanoBlockConfig)
+  , CardanoBlockConfig
     -- * StorageConfig
   , CardanoStorageConfig
   , StorageConfig (CardanoStorageConfig)
@@ -111,20 +58,10 @@ module Ouroboros.Consensus.Cardano.Block (
   , HardForkLedgerConfig (CardanoLedgerConfig)
     -- * LedgerState
   , CardanoLedgerState
-  , LedgerState (
-        LedgerStateByron
-      , LedgerStateShelley
-      , LedgerStateAllegra
-      , LedgerStateMary
-      )
+  , LedgerState (LedgerStateByron, LedgerStateShelley, LedgerStateAllegra, LedgerStateMary)
     -- * ChainDepState
   , CardanoChainDepState
-  , HardForkState (
-        ChainDepStateByron
-      , ChainDepStateShelley
-      , ChainDepStateAllegra
-      , ChainDepStateMary
-      )
+  , HardForkState (ChainDepStateByron, ChainDepStateShelley, ChainDepStateAllegra, ChainDepStateMary)
     -- * EraMismatch
   , EraMismatch (..)
   ) where

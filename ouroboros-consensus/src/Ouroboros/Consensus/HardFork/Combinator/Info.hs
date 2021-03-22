@@ -5,8 +5,8 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Info (
     -- * Era info
-    SingleEraInfo(..)
-  , LedgerEraInfo(..)
+    LedgerEraInfo (..)
+  , SingleEraInfo (..)
   ) where
 
 import           Codec.Serialise (Serialise)

@@ -7,7 +7,7 @@
 
 module Ouroboros.Consensus.ByronSpec.Ledger.Mempool (
     -- * Type family instances
-    GenTx(..)
+    GenTx (..)
   ) where
 
 import           Codec.Serialise

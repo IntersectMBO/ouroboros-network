@@ -1,13 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies     #-}
 module Ouroboros.Consensus.Ledger.SupportsMempool (
-    GenTx
-  , ApplyTxErr
+    ApplyTxErr
+  , GenTx
+  , GenTxId
+  , HasTxId (..)
+  , HasTxs (..)
   , LedgerSupportsMempool (..)
   , TxId
-  , HasTxId (..)
-  , GenTxId
-  , HasTxs (..)
   ) where
 
 import           Control.Monad.Except

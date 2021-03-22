@@ -10,12 +10,13 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Util.EarlyExit (
-    WithEarlyExit -- opaque
+    exitEarly
   , withEarlyExit
   , withEarlyExit_
-  , exitEarly
     -- * Re-exports
   , lift
+    -- * opaque
+  , WithEarlyExit
   ) where
 
 import           Control.Applicative

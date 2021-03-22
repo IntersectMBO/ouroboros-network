@@ -1,5 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
-module Test.Util.Split.Tests (tests) where
+module Test.Util.Split.Tests (
+    tests
+  ) where
 
 import           Data.Either (isLeft, isRight)
 import           Data.Maybe (mapMaybe)

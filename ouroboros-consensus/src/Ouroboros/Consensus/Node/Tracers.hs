@@ -5,10 +5,10 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Ouroboros.Consensus.Node.Tracers
-  ( -- * All tracers of a node bundled together
-    Tracers' (..)
-  , Tracers
+module Ouroboros.Consensus.Node.Tracers (
+    -- * All tracers of a node bundled together
+    Tracers
+  , Tracers' (..)
   , nullTracers
   , showTracers
     -- * Specific tracers

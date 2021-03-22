@@ -20,38 +20,38 @@
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
 module Test.Util.TestBlock (
     -- * Blocks
-    TestHash(TestHash)
-  , unTestHash
-  , testHashFromList
-  , TestBlock(..)
-  , TestBlockError(..)
-  , Header(..)
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
-  , Query(..)
+    BlockConfig (..)
+  , CodecConfig (..)
+  , Header (..)
+  , Query (..)
+  , StorageConfig (..)
+  , TestBlock (..)
+  , TestBlockError (..)
+  , TestHash (TestHash)
   , firstBlock
-  , successorBlock
-  , modifyFork
   , forkBlock
+  , modifyFork
+  , successorBlock
+  , testHashFromList
+  , unTestHash
     -- * Chain
-  , BlockChain(..)
+  , BlockChain (..)
   , blockChain
   , chainToBlocks
     -- * Tree
-  , BlockTree(..)
+  , BlockTree (..)
   , blockTree
+  , treePreferredChain
   , treeToBlocks
   , treeToChains
-  , treePreferredChain
     -- * Ledger infrastructure
   , lastAppliedBlock
-  , testInitLedger
-  , testInitExtLedger
   , singleNodeTestConfig
   , singleNodeTestConfigWithK
+  , testInitExtLedger
+  , testInitLedger
     -- * Support for tests
-  , Permutation(..)
+  , Permutation (..)
   , permute
   ) where
 

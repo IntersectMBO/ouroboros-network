@@ -5,9 +5,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 module Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser (
-    parseBlockFile
+    ParseError (..)
   , ParsedBlockInfo (..)
-  , ParseError (..)
+  , parseBlockFile
     -- * Auxiliary
   , extractBlockInfo
   ) where

@@ -14,7 +14,9 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 
-module Test.Consensus.ResourceRegistry (tests) where
+module Test.Consensus.ResourceRegistry (
+    tests
+  ) where
 
 import           Prelude hiding (elem)
 

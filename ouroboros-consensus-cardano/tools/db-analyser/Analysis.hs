@@ -4,9 +4,9 @@
 {-# LANGUAGE TypeApplications    #-}
 
 module Analysis (
-    AnalysisName (..)
+    AnalysisEnv (..)
+  , AnalysisName (..)
   , runAnalysis
-  , AnalysisEnv (..)
   ) where
 
 import           Control.Monad.Except

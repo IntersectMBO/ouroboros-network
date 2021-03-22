@@ -16,23 +16,23 @@
 -- | Byron mempool integration
 module Ouroboros.Consensus.Byron.Ledger.Mempool (
     -- * Mempool integration
-    GenTx(..)
-  , TxId(..)
+    GenTx (..)
+  , TxId (..)
     -- * Transaction IDs
-  , byronIdTx
   , byronIdDlg
   , byronIdProp
+  , byronIdTx
   , byronIdVote
     -- * Serialisation
-  , encodeByronGenTx
+  , decodeByronApplyTxError
   , decodeByronGenTx
-  , encodeByronGenTxId
   , decodeByronGenTxId
   , encodeByronApplyTxError
-  , decodeByronApplyTxError
+  , encodeByronGenTx
+  , encodeByronGenTxId
     -- * Low-level API (primarily for testing)
-  , toMempoolPayload
   , fromMempoolPayload
+  , toMempoolPayload
     -- * Auxiliary functions
   , countByronGenTxs
   ) where

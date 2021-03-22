@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Ledger.SupportsProtocol (
-    LedgerSupportsProtocol(..)
+    LedgerSupportsProtocol (..)
   ) where
 
 import           Control.Monad.Except

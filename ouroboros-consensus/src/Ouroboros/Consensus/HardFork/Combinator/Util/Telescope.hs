@@ -18,32 +18,32 @@
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 module Ouroboros.Consensus.HardFork.Combinator.Util.Telescope (
     -- * Telescope
-    Telescope(..)
+    Telescope (..)
   , sequence
     -- ** Utilities
-  , tip
-  , fromTip
-  , toAtMost
   , fromTZ
+  , fromTip
+  , tip
+  , toAtMost
     -- ** Bifunctor analogues of SOP functions
   , bihap
+  , bihczipWith
   , bihmap
   , bihzipWith
-  , bihczipWith
     -- * Extension, retraction, alignment
-  , Extend(..)
-  , extend
-  , Retract(..)
-  , retract
+  , Extend (..)
+  , Retract (..)
   , align
+  , extend
+  , retract
     -- ** Simplified API
-  , extendIf
-  , retractIf
   , alignExtend
   , alignExtendNS
+  , extendIf
+  , retractIf
     -- * Additional API
-  , SimpleTelescope(..)
-  , ScanNext(..)
+  , ScanNext (..)
+  , SimpleTelescope (..)
   , scanl
   ) where
 

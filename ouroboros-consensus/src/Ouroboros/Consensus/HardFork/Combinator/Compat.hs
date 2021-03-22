@@ -7,11 +7,11 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Compat (
-    HardForkCompatQuery(..)
+    HardForkCompatQuery (..)
     -- * Convenience constructors
-  , compatIfCurrent
   , compatGetEraStart
   , compatGetInterpreter
+  , compatIfCurrent
     -- * Wrappers
   , forwardCompatQuery
   , singleEraCompatQuery

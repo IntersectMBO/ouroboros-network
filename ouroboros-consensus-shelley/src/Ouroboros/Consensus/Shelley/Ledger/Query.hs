@@ -12,14 +12,14 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Query (
-    Query (..)
+    NonMyopicMemberRewards (..)
+  , Query (..)
   , querySupportedVersion
-  , NonMyopicMemberRewards (..)
     -- * Serialisation
-  , encodeShelleyQuery
   , decodeShelleyQuery
-  , encodeShelleyResult
   , decodeShelleyResult
+  , encodeShelleyQuery
+  , encodeShelleyResult
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

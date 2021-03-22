@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.InjectTxs (
-    InjectTx(..)
+    InjectTx (..)
   , cannotInjectTx
   , matchTx
   , matchTxNS

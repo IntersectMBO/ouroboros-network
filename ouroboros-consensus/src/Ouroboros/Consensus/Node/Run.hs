@@ -5,9 +5,9 @@
 -- The definitions in this module are independent from any specific protocol.
 module Ouroboros.Consensus.Node.Run (
     -- * SerialiseDisk
-    SerialiseDiskConstraints
-  , ImmutableDbSerialiseConstraints
+    ImmutableDbSerialiseConstraints
   , LgrDbSerialiseConstraints
+  , SerialiseDiskConstraints
   , VolatileDbSerialiseConstraints
     -- * SerialiseNodeToNode
   , SerialiseNodeToNodeConstraints (..)

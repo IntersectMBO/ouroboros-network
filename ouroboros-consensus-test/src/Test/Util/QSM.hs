@@ -1,10 +1,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Util.QSM (
-    Example -- opaque
+    Example
+    -- opaque
+  , example
   , run
   , run'
-  , example
   ) where
 
 import           Control.Monad

@@ -4,8 +4,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Util.Condense (
-    Condense(..)
-  , Condense1(..)
+    Condense (..)
+  , Condense1 (..)
   , condense1
   ) where
 

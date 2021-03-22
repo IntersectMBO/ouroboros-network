@@ -4,9 +4,9 @@
 
 -- | Derive 'EpochInfo'
 module Ouroboros.Consensus.HardFork.History.EpochInfo (
-    summaryToEpochInfo
+    dummyEpochInfo
   , snapshotEpochInfo
-  , dummyEpochInfo
+  , summaryToEpochInfo
   ) where
 
 import           Data.Functor.Identity

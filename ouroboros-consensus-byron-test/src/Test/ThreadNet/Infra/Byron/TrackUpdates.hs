@@ -5,10 +5,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.ThreadNet.Infra.Byron.TrackUpdates (
-  mkProtocolByronAndHardForkTxs,
-  ProtocolVersionUpdateLabel (..),
-  SoftwareVersionUpdateLabel (..),
-  mkUpdateLabels,
+    ProtocolVersionUpdateLabel (..)
+  , SoftwareVersionUpdateLabel (..)
+  , mkProtocolByronAndHardForkTxs
+  , mkUpdateLabels
   ) where
 
 import           Control.Exception (assert)

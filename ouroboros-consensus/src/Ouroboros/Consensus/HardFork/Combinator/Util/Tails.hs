@@ -11,16 +11,16 @@
 -- > import Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 module Ouroboros.Consensus.HardFork.Combinator.Util.Tails (
-    Tails(..)
+    Tails (..)
     -- * Convenience constructors
   , mk1
   , mk2
   , mk3
     -- * SOP-like operators
-  , hmap
   , hcmap
-  , hpure
   , hcpure
+  , hmap
+  , hpure
   ) where
 
 import           Data.Kind (Type)

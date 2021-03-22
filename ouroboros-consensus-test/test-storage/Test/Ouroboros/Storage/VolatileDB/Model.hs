@@ -9,29 +9,29 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | In-memory model implementation of 'VolatileDB'
-module Test.Ouroboros.Storage.VolatileDB.Model
-    ( DBModel (..)
-    , initDBModel
-      -- * Basic API
-    , closeModel
-    , isOpenModel
-    , reOpenModel
-    , getBlockComponentModel
-    , putBlockModel
-    , garbageCollectModel
-    , getBlockInfoModel
-    , filterByPredecessorModel
-    , getMaxSlotNoModel
-      -- * Corruptions
-    , runCorruptionsModel
-      -- * Exported for testing purposes
-    , getDBFileIds
-    , getDBFiles
-    , getCurrentFile
-    , blockIndex
-    , blockHashes
-    , BlocksInFile (..)
-    ) where
+module Test.Ouroboros.Storage.VolatileDB.Model (
+    DBModel (..)
+  , initDBModel
+    -- * Basic API
+  , closeModel
+  , filterByPredecessorModel
+  , garbageCollectModel
+  , getBlockComponentModel
+  , getBlockInfoModel
+  , getMaxSlotNoModel
+  , isOpenModel
+  , putBlockModel
+  , reOpenModel
+    -- * Corruptions
+  , runCorruptionsModel
+    -- * Exported for testing purposes
+  , BlocksInFile (..)
+  , blockHashes
+  , blockIndex
+  , getCurrentFile
+  , getDBFileIds
+  , getDBFiles
+  ) where
 
 import qualified Codec.CBOR.Write as CBOR
 import           Control.Monad.Except (MonadError, throwError)

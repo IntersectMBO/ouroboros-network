@@ -4,8 +4,9 @@
 --
 -- Use of this module is intended to /replace/ import of @GHC.Stack@
 module Ouroboros.Consensus.Util.CallStack (
-    PrettyCallStack -- Opaque
-  , prettyCallStack
+    prettyCallStack
+    -- * opaque
+  , PrettyCallStack
     -- * Re-exports
   , HasCallStack
   ) where

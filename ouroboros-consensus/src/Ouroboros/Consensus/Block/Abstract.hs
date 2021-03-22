@@ -13,24 +13,30 @@ module Ouroboros.Consensus.Block.Abstract (
   , CodecConfig
   , StorageConfig
     -- * Previous hash
-  , GetPrevHash(..)
+  , GetPrevHash (..)
   , blockPrevHash
     -- * Working with headers
+  , GetHeader (..)
   , Header
-  , GetHeader(..)
+  , blockIsEBB
+  , blockToIsEBB
   , getBlockHeaderFields
   , headerHash
   , headerPoint
   , headerToIsEBB
-  , blockIsEBB
-  , blockToIsEBB
     -- * Raw hash
-  , ConvertRawHash(..)
-  , encodeRawHash
+  , ConvertRawHash (..)
   , decodeRawHash
+  , encodeRawHash
     -- * Utilities for working with WithOrigin
   , succWithOrigin
     -- * Re-export basic definitions from @ouroboros-network@
+  , ChainHash (..)
+  , HasHeader (..)
+  , HeaderFields (..)
+  , HeaderHash
+  , Point (GenesisPoint, BlockPoint)
+  , StandardHash
   , blockHash
   , blockNo
   , blockPoint
@@ -38,23 +44,17 @@ module Ouroboros.Consensus.Block.Abstract (
   , castHash
   , castHeaderFields
   , castPoint
-  , ChainHash(..)
-  , HasHeader(..)
-  , HeaderFields(..)
-  , HeaderHash
-  , Point(GenesisPoint, BlockPoint)
   , pointHash
   , pointSlot
-  , StandardHash
     -- * Re-export basic definitions from @cardano-base@
-  , BlockNo(..)
-  , EpochNo(..)
-  , EpochSize(..)
+  , BlockNo (..)
+  , EpochNo (..)
+  , EpochSize (..)
+  , SlotNo (..)
+  , WithOrigin (Origin, NotOrigin)
   , fromWithOrigin
-  , SlotNo(..)
   , withOrigin
   , withOriginFromMaybe
-  , WithOrigin(Origin, NotOrigin)
   , withOriginToMaybe
   ) where
 

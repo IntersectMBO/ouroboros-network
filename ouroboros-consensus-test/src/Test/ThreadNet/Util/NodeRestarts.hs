@@ -1,9 +1,9 @@
-module  Test.ThreadNet.Util.NodeRestarts (
-  NodeRestart (..),
-  NodeRestarts (..),
-  noRestarts,
-  genNodeRestarts,
-  shrinkNodeRestarts,
+module Test.ThreadNet.Util.NodeRestarts (
+    NodeRestart (..)
+  , NodeRestarts (..)
+  , genNodeRestarts
+  , noRestarts
+  , shrinkNodeRestarts
   ) where
 
 import           Data.Map.Strict (Map)

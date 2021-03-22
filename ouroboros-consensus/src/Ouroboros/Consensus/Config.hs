@@ -7,14 +7,14 @@
 
 module Ouroboros.Consensus.Config (
     -- * The top-level node configuration
-    TopLevelConfig(..)
-  , mkTopLevelConfig
+    TopLevelConfig (..)
   , castTopLevelConfig
+  , mkTopLevelConfig
     -- ** Derived extraction functions
-  , configConsensus
-  , configLedger
   , configBlock
   , configCodec
+  , configConsensus
+  , configLedger
   , configStorage
     -- ** Additional convenience functions
   , configSecurityParam

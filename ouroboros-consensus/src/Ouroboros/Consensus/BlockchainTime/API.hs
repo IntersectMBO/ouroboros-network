@@ -7,8 +7,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.BlockchainTime.API (
-    BlockchainTime(..)
-  , CurrentSlot(..)
+    BlockchainTime (..)
+  , CurrentSlot (..)
   , knownSlotWatcher
   ) where
 

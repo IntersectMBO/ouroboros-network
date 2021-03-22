@@ -16,33 +16,33 @@
 
 module Ouroboros.Consensus.Protocol.PBFT (
     PBft
-  , PBftSignatureThreshold(..)
-  , PBftSelectView(..)
+  , PBftCanBeLeader (..)
+  , PBftFields (..)
+  , PBftIsLeader (..)
+  , PBftLedgerView (..)
+  , PBftParams (..)
+  , PBftSelectView (..)
+  , PBftSignatureThreshold (..)
   , mkPBftSelectView
-  , PBftLedgerView(..)
-  , PBftFields(..)
-  , PBftParams(..)
-  , PBftCanBeLeader(..)
-  , PBftIsLeader(..)
-  , pbftWindowSize
   , pbftWindowExceedsThreshold
+  , pbftWindowSize
     -- * Forging
   , forgePBftFields
     -- * Classes
-  , PBftCrypto(..)
+  , PBftCrypto (..)
   , PBftMockCrypto
-  , PBftMockVerKeyHash(..)
-  , PBftValidateView(..)
-  , pbftValidateRegular
+  , PBftMockVerKeyHash (..)
+  , PBftValidateView (..)
   , pbftValidateBoundary
+  , pbftValidateRegular
     -- * CannotForge
-  , PBftCannotForge(..)
+  , PBftCannotForge (..)
   , pbftCheckCanForge
     -- * Type instances
-  , ConsensusConfig(..)
-  , Ticked(..)
+  , ConsensusConfig (..)
+  , Ticked (..)
     -- * Exported for tracing errors
-  , PBftValidationErr(..)
+  , PBftValidationErr (..)
   ) where
 
 import           Codec.Serialise (Serialise (..))

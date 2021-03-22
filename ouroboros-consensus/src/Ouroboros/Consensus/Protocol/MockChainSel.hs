@@ -1,8 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Consensus.Protocol.MockChainSel
-  ( selectChain
+module Ouroboros.Consensus.Protocol.MockChainSel (
+    selectChain
   , selectUnvalidatedChain
   ) where
 

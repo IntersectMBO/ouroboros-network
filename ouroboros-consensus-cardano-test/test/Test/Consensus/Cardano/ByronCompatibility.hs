@@ -10,7 +10,9 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Test.Consensus.Cardano.ByronCompatibility (tests) where
+module Test.Consensus.Cardano.ByronCompatibility (
+    tests
+  ) where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)

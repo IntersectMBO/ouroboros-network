@@ -9,15 +9,15 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.Block.Forging (
-    CannotForge
+    BlockForging (..)
+  , CannotForge
   , ForgeStateInfo
   , ForgeStateUpdateError
-  , ForgeStateUpdateInfo(..)
+  , ForgeStateUpdateInfo (..)
+  , ShouldForge (..)
   , castForgeStateUpdateInfo
-  , forgeStateUpdateInfoFromUpdateInfo
-  , BlockForging(..)
-  , ShouldForge(..)
   , checkShouldForge
+  , forgeStateUpdateInfoFromUpdateInfo
     -- * 'UpdateInfo'
   , UpdateInfo (..)
   ) where

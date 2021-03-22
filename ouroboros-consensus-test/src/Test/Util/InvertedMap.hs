@@ -1,18 +1,18 @@
 module Test.Util.InvertedMap (
-  -- * InvertedMap type
-  InvertedMap,
-  -- * Query
-  Test.Util.InvertedMap.null,
-  -- * Construction
-  toMap,
-  unsafeInvertedMap,
-  -- * Conversion
-  fromMap,
-  unsafeCoercion,
-  -- * Filter
-  spanAntitone,
-  -- * Min/Max
-  minViewWithKey,
+    -- * InvertedMap type
+    InvertedMap
+    -- * Query
+  , Test.Util.InvertedMap.null
+    -- * Construction
+  , toMap
+  , unsafeInvertedMap
+    -- * Conversion
+  , fromMap
+  , unsafeCoercion
+    -- * Filter
+  , spanAntitone
+    -- * Min/Max
+  , minViewWithKey
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)

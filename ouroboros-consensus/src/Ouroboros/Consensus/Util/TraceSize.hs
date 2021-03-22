@@ -5,7 +5,7 @@ module Ouroboros.Consensus.Util.TraceSize (
     -- * Generic
     traceSize
     -- * Ledger DB specific
-  , LedgerDbSize(..)
+  , LedgerDbSize (..)
   , traceLedgerDbSize
   ) where
 

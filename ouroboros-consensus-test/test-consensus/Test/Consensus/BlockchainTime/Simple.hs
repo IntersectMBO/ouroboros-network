@@ -10,7 +10,9 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Test.Consensus.BlockchainTime.Simple (tests) where
+module Test.Consensus.BlockchainTime.Simple (
+    tests
+  ) where
 
 import           Control.Monad.Except
 import           Control.Monad.Reader

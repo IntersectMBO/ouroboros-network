@@ -12,22 +12,22 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
     -- * Pattern synonyms
-    HardForkBlock (DegenBlock)
-  , Header (DegenHeader)
+    BlockConfig (DegenBlockConfig)
+  , CodecConfig (DegenCodecConfig)
+  , ConsensusConfig (DegenConsensusConfig)
+  , Either (DegenQueryResult)
   , GenTx (DegenGenTx)
-  , TxId (DegenGenTxId)
   , HardForkApplyTxErr (DegenApplyTxErr)
-  , HardForkLedgerError (DegenLedgerError)
+  , HardForkBlock (DegenBlock)
   , HardForkEnvelopeErr (DegenOtherHeaderEnvelopeError)
+  , HardForkLedgerConfig (DegenLedgerConfig)
+  , HardForkLedgerError (DegenLedgerError)
+  , Header (DegenHeader)
+  , LedgerState (DegenLedgerState)
   , OneEraTipInfo (DegenTipInfo)
   , Query (DegenQuery)
-  , Either (DegenQueryResult)
-  , CodecConfig (DegenCodecConfig)
-  , BlockConfig (DegenBlockConfig)
-  , ConsensusConfig (DegenConsensusConfig)
-  , HardForkLedgerConfig (DegenLedgerConfig)
   , TopLevelConfig (DegenTopLevelConfig)
-  , LedgerState (DegenLedgerState)
+  , TxId (DegenGenTxId)
   ) where
 
 import           Data.SOP.Strict

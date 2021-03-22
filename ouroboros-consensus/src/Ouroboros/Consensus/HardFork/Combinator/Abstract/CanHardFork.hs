@@ -5,7 +5,7 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork (
-    CanHardFork(..)
+    CanHardFork (..)
   ) where
 
 import           Data.SOP.Strict

@@ -1,9 +1,9 @@
 -- | A @tasty@ command-line option for enabling nightly tests
 module Test.Util.Nightly (
-  IohkNightlyEnabled (..),
-  askIohkNightlyEnabled,
-  defaultMainWithIohkNightly,
-  iohkNightlyIngredient,
+    IohkNightlyEnabled (..)
+  , askIohkNightlyEnabled
+  , defaultMainWithIohkNightly
+  , iohkNightlyIngredient
   ) where
 
 import           Data.Proxy (Proxy (..))

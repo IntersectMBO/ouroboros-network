@@ -1,8 +1,8 @@
 {-# LANGUAGE CPP              #-}
 {-# LANGUAGE TypeApplications #-}
-module Ouroboros.Consensus.Util.Assert
-  ( assertWithMsg
-  , assertEqWithMsg
+module Ouroboros.Consensus.Util.Assert (
+    assertEqWithMsg
+  , assertWithMsg
   ) where
 
 import           GHC.Stack (HasCallStack)

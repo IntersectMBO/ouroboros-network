@@ -17,43 +17,44 @@
 {-# LANGUAGE UndecidableInstances   #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
-     -- * LedgerDB proper
-     LedgerDB  -- opaque
-   , LedgerDbCfg(..)
-   , ledgerDbWithAnchor
-     -- ** Serialisation
-   , encodeSnapshot
-   , decodeSnapshotBackwardsCompatible
-     -- ** Queries
-   , ledgerDbCurrent
-   , ledgerDbTip
-   , ledgerDbAnchor
-   , ledgerDbPast
-   , ledgerDbSnapshots
-   , ledgerDbBimap
-   , ledgerDbPrune
-     -- ** Running updates
-   , Ap(..)
-   , AnnLedgerError(..)
-   , ResolveBlock
-   , ResolvesBlocks(..)
-   , ThrowsLedgerError(..)
-   , defaultThrowLedgerErrors
-   , defaultResolveBlocks
-   , defaultResolveWithErrors
-     -- ** Updates
-   , ExceededRollback(..)
-   , ledgerDbPush
-   , ledgerDbSwitch
-     -- * Exports for the benefit of tests
-     -- ** Additional queries
-   , ledgerDbMaxRollback
-   , ledgerDbIsSaturated
-     -- ** Pure API
-   , ledgerDbPush'
-   , ledgerDbPushMany'
-   , ledgerDbSwitch'
-   ) where
+    -- * LedgerDB proper
+    LedgerDbCfg (..)
+  , ledgerDbWithAnchor
+    -- ** opaque
+  , LedgerDB
+    -- ** Serialisation
+  , decodeSnapshotBackwardsCompatible
+  , encodeSnapshot
+    -- ** Queries
+  , ledgerDbAnchor
+  , ledgerDbBimap
+  , ledgerDbCurrent
+  , ledgerDbPast
+  , ledgerDbPrune
+  , ledgerDbSnapshots
+  , ledgerDbTip
+    -- ** Running updates
+  , AnnLedgerError (..)
+  , Ap (..)
+  , ResolveBlock
+  , ResolvesBlocks (..)
+  , ThrowsLedgerError (..)
+  , defaultResolveBlocks
+  , defaultResolveWithErrors
+  , defaultThrowLedgerErrors
+    -- ** Updates
+  , ExceededRollback (..)
+  , ledgerDbPush
+  , ledgerDbSwitch
+    -- * Exports for the benefit of tests
+    -- ** Additional queries
+  , ledgerDbIsSaturated
+  , ledgerDbMaxRollback
+    -- ** Pure API
+  , ledgerDbPush'
+  , ledgerDbPushMany'
+  , ledgerDbSwitch'
+  ) where
 
 import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec

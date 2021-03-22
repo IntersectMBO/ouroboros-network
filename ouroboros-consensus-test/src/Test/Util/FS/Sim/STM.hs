@@ -3,9 +3,9 @@
 
 -- | 'HasFS' instance using 'MockFS' stored in an STM variable
 module Test.Util.FS.Sim.STM (
-      runSimFS
-    , simHasFS
-    ) where
+    runSimFS
+  , simHasFS
+  ) where
 
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike

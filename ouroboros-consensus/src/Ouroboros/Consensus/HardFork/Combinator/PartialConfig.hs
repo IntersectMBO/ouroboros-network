@@ -6,14 +6,14 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
-    HasPartialConsensusConfig(..)
-  , HasPartialLedgerConfig(..)
+    HasPartialConsensusConfig (..)
+  , HasPartialLedgerConfig (..)
     -- * Newtype wrappers
-  , WrapPartialLedgerConfig(..)
-  , WrapPartialConsensusConfig(..)
+  , WrapPartialConsensusConfig (..)
+  , WrapPartialLedgerConfig (..)
     -- * Convenience re-exports
-  , EpochInfo(..)
-  , Identity(..)
+  , EpochInfo (..)
+  , Identity (..)
   ) where
 
 import           Data.Functor.Identity

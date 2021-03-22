@@ -7,10 +7,10 @@
 --
 -- > import qualified Test.Util.Classify as C
 module Test.Util.Classify (
-    Predicate(..)
-  , predicate
-  , maximum
+    Predicate (..)
   , classify
+  , maximum
+  , predicate
     -- * Example
   , Tag
   , example

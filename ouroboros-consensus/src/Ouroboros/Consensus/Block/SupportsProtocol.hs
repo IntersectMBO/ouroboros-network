@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.Block.SupportsProtocol (
-    BlockSupportsProtocol(..)
+    BlockSupportsProtocol (..)
   ) where
 
 import           NoThunks.Class (NoThunks)

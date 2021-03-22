@@ -13,26 +13,29 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.History.Qry (
-    Qry -- Opaque
-  , Expr(..)
-  , PastHorizonException(..)
+    -- * Qry
+    Expr (..)
+  , PastHorizonException (..)
   , qryFromExpr
   , runQuery
-  , runQueryThrow
   , runQueryPure
+  , runQueryThrow
+    -- ** opaque
+  , Qry
     -- * Interpreter
-  , Interpreter -- opaque
-  , mkInterpreter
   , interpretQuery
+  , mkInterpreter
   , unsafeExtendSafeZone
+    -- ** opaque
+  , Interpreter
     -- * Specific queries
-  , wallclockToSlot
-  , slotToWallclock
-  , slotToEpoch'
-  , slotToEpoch
-  , epochToSlot'
-  , epochToSlot
   , epochToSize
+  , epochToSlot
+  , epochToSlot'
+  , slotToEpoch
+  , slotToEpoch'
+  , slotToWallclock
+  , wallclockToSlot
   ) where
 
 import           Codec.Serialise (Serialise (..))

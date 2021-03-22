@@ -9,12 +9,12 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-  ( validateAndReopen
-  , ValidateEnv (..)
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation (
+    ValidateEnv (..)
+  , validateAndReopen
     -- * Exported for testing purposes
-  , reconstructPrimaryIndex
   , ShouldBeFinalised (..)
+  , reconstructPrimaryIndex
   ) where
 
 import           Control.Exception (assert)

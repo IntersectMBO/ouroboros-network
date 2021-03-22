@@ -13,7 +13,7 @@ module Test.ThreadNet.Infra.TwoEras (
   , genNonce
   , genPartition
   , genTestConfig
-  -- * Era inspection
+    -- * Era inspection
   , ReachesEra2 (..)
   , activeSlotCoeff
   , isFirstEraBlock
@@ -23,9 +23,9 @@ module Test.ThreadNet.Infra.TwoEras (
   , partitionExclusiveUpperBound
   , secondEraOverlaySlots
   , shelleyEpochSize
-  -- * Properties
-  , label_hadActiveNonOverlaySlots
+    -- * Properties
   , label_ReachesEra2
+  , label_hadActiveNonOverlaySlots
   , prop_ReachesEra2
   , tabulateFinalIntersectionDepth
   , tabulatePartitionDuration

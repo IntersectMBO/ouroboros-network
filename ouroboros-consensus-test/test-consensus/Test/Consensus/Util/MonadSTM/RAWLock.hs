@@ -4,7 +4,9 @@
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Test.Consensus.Util.MonadSTM.RAWLock (tests) where
+module Test.Consensus.Util.MonadSTM.RAWLock (
+    tests
+  ) where
 
 import           Control.Exception (throw)
 import           Control.Monad.Except

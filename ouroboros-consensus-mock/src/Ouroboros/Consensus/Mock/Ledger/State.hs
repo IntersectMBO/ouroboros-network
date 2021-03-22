@@ -7,8 +7,8 @@
 
 module Ouroboros.Consensus.Mock.Ledger.State (
     -- * State of the mock ledger
-    MockState(..)
-  , MockError(..)
+    MockError (..)
+  , MockState (..)
   , updateMockState
   , updateMockTip
   , updateMockUTxO

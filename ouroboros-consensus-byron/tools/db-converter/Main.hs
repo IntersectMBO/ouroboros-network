@@ -7,7 +7,9 @@
 {-# LANGUAGE TypeOperators      #-}
 
 -- | Database conversion tool.
-module Main (main) where
+module Main (
+    main
+  ) where
 
 import           Control.Monad.Except (liftIO, runExceptT)
 import           Control.Monad.Trans.Resource (runResourceT)

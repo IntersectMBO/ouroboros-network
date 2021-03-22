@@ -3,7 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Test.Util.Slots (
-  NumSlots (..),
+    NumSlots (..)
   ) where
 
 import           Data.Word (Word64)

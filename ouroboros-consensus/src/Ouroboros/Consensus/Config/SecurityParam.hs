@@ -3,7 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Ouroboros.Consensus.Config.SecurityParam (
-    SecurityParam(..)
+    SecurityParam (..)
   ) where
 
 import           Data.Word

@@ -6,14 +6,14 @@
 -- | Support for CRC
 module Ouroboros.Consensus.Storage.FS.CRC (
     -- * Wrap digest functionality
-    CRC(..)
+    CRC (..)
+  , computeCRC
   , initCRC
   , updateCRC
-  , computeCRC
     -- * File system functions with CRC functionality
-  , hPutAllCRC
-  , hGetExactlyAtCRC
   , hGetAllAtCRC
+  , hGetExactlyAtCRC
+  , hPutAllCRC
   ) where
 
 import           Control.Monad (foldM)

@@ -1,6 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Consensus.Byron.Golden (tests) where
+module Test.Consensus.Byron.Golden (
+    tests
+  ) where
 
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node ()

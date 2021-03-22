@@ -17,23 +17,23 @@
 --
 -- Intended for qualified import.
 module Ouroboros.Consensus.Protocol.PBFT.State (
-    PBftState(..)
-  , Ticked(..)
-  , WindowSize(..)
-  , PBftSigner(..)
+    PBftSigner (..)
+  , PBftState (..)
+  , Ticked (..)
+  , WindowSize (..)
     -- * Construction
-  , empty
   , append
+  , empty
     -- * Queries
   , countSignatures
   , countSignedBy
   , lastSignedSlot
     -- * Conversion
-  , toList
   , fromList
+  , toList
     -- * Serialization
-  , encodePBftState
   , decodePBftState
+  , encodePBftState
   ) where
 
 import           Codec.Serialise (Serialise (..))

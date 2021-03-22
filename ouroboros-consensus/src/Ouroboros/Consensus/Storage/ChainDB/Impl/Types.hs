@@ -16,47 +16,47 @@
 -- | Types used throughout the implementation: handle, state, environment,
 -- types, trace types, etc.
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
-    SerialiseDiskConstraints
+    ChainDbEnv (..)
   , ChainDbHandle (..)
+  , ChainDbState (..)
+  , SerialiseDiskConstraints
   , getEnv
   , getEnv1
   , getEnv2
   , getEnvSTM
   , getEnvSTM1
-  , ChainDbState (..)
-  , ChainDbEnv (..)
     -- * Exposed internals for testing purposes
   , Internal (..)
     -- * Iterator-related
   , IteratorKey (..)
     -- * Follower-related
-  , FollowerKey (..)
   , FollowerHandle (..)
-  , FollowerState (..)
+  , FollowerKey (..)
   , FollowerRollState (..)
+  , FollowerState (..)
   , followerRollStatePoint
     -- * Invalid blocks
-  , InvalidBlocks
   , InvalidBlockInfo (..)
+  , InvalidBlocks
     -- * Future blocks
   , FutureBlocks
     -- * Blocks to add
-  , BlocksToAdd
   , BlockToAdd (..)
-  , newBlocksToAdd
+  , BlocksToAdd
   , addBlockToAdd
   , getBlockToAdd
+  , newBlocksToAdd
     -- * Trace types
-  , TraceEvent (..)
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
-  , TraceFollowerEvent (..)
   , TraceCopyToImmutableDBEvent (..)
+  , TraceEvent (..)
+  , TraceFollowerEvent (..)
   , TraceGCEvent (..)
-  , TraceValidationEvent (..)
   , TraceInitChainSelEvent (..)
-  , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
+  , TraceOpenEvent (..)
+  , TraceValidationEvent (..)
   ) where
 
 import           Control.Tracer
