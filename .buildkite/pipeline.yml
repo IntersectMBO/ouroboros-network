@@ -4,6 +4,11 @@ steps:
     agents:
       system: x86_64-linux
 
+  - label: 'Check nixpkgs-fmt'
+    command: 'nix-shell --run scripts/buildkite/check-nixpkgs-fmt.sh'
+    agents:
+      system: x86_64-linux
+
   - label: 'Check dependency tags in cabal.project are present on master branches'
     commands:
       - "nix build -f ./nix iohkNix.checkRepoTagsOnMasterBranches --arg src ./. --show-trace"
