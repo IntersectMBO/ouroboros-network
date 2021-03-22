@@ -120,5 +120,5 @@ defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
     -- snapshot interval is defaulted to k * 2 seconds - when @k = 2160@ the interval
     -- defaults to 72 minutes.
     snapshotInterval = case requestedInterval of
-      (RequestedSnapshotInterval value) -> value
+      RequestedSnapshotInterval value -> value
       DefaultSnapshotInterval           -> secondsToDiffTime $ fromIntegral $ k * 2
