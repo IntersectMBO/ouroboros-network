@@ -39,10 +39,10 @@ tests = testGroup "DiskPolicy/defaultDiskPolicy" [
     ]
 
 prop_shouldSnapshot_case1 :: Word64 -> SecurityParam -> SnapshotInterval -> Property
-prop_shouldSnapshot_case1 blocksSinceLast securityParam@(SecurityParam k) requestedInterval = do
+prop_shouldSnapshot_case1 blocksSinceLast securityParam@(SecurityParam k) snapshotInterval = do
   -- given
   let
-    diskPolicy = defaultDiskPolicy securityParam requestedInterval
+    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
   -- when
     shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) Nothing blocksSinceLast
   -- then
@@ -50,10 +50,10 @@ prop_shouldSnapshot_case1 blocksSinceLast securityParam@(SecurityParam k) reques
 
 prop_shouldSnapshot_case2 :: DiffTime -> Word64 -> SecurityParam -> SnapshotInterval -> Property
 prop_shouldSnapshot_case2 _ _ _ DefaultSnapshotInterval = discard
-prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam requestedInterval@(RequestedSnapshotInterval interval) = do
+prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam snapshotInterval@(RequestedSnapshotInterval interval) = do
   -- given
   let
-    diskPolicy = defaultDiskPolicy securityParam requestedInterval
+    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
   -- when
     shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
   -- then
@@ -61,10 +61,10 @@ prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam requestedI
 
 prop_shouldSnapshot_case3 :: DiffTime -> Word64 -> SecurityParam -> SnapshotInterval -> Property
 prop_shouldSnapshot_case3 _ _ _ (RequestedSnapshotInterval _) = discard
-prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityParam k) requestedInterval@DefaultSnapshotInterval = do
+prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityParam k) snapshotInterval@DefaultSnapshotInterval = do
   -- given
   let
-    diskPolicy = defaultDiskPolicy securityParam requestedInterval
+    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
   -- when
     shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
   -- then
@@ -74,9 +74,9 @@ prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityP
 prop_shouldSnapshot_case4 :: DiffTime -> Word64 -> SecurityParam -> Property
 prop_shouldSnapshot_case4 timeSinceLast blocksSinceLast securityParam = do
   -- given
-  let requestedInterval = RequestedSnapshotInterval $ timeSinceLast + 1
+  let snapshotInterval = RequestedSnapshotInterval $ timeSinceLast + 1
    -- ^ given requested interval bigger then time passed
-      diskPolicy = defaultDiskPolicy securityParam requestedInterval
+      diskPolicy = defaultDiskPolicy securityParam snapshotInterval
   -- when
       shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
   -- then
@@ -84,7 +84,7 @@ prop_shouldSnapshot_case4 timeSinceLast blocksSinceLast securityParam = do
                      && timeSinceLast >= 6 * secondsToDiffTime 60)
 
 prop_onDiskNumSnapshots :: SecurityParam -> SnapshotInterval -> Property
-prop_onDiskNumSnapshots securityParam requestedInterval =
+prop_onDiskNumSnapshots securityParam snapshotInterval =
   (diskPolicy & onDiskNumSnapshots) === 2
   where
-    diskPolicy = defaultDiskPolicy securityParam requestedInterval
+    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
