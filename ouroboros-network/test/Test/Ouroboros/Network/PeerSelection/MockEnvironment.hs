@@ -460,7 +460,7 @@ instance Arbitrary GovernorMockEnvironment where
         -- divide into local and public, but with a bit of overlap:
         local <- vectorOf (length rootPeers) (choose (0, 10 :: Int))
         let localRootsSet  = Set.fromList [ x | (x, v) <- zip rootPeers local
-                                              , v <= 5 ]
+                                              , v < 5 ]
             publicRootsSet = Set.fromList [ x | (x, v) <- zip rootPeers local
                                               , v >= 5 ]
         localRoots <- arbitraryLocalRootPeers localRootsSet
