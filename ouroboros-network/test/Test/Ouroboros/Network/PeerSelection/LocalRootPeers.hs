@@ -33,7 +33,8 @@ tests :: TestTree
 tests =
   testGroup "LocalRootPeers"
   [ testProperty "arbitrary"    prop_arbitrary_LocalRootPeers
-  , testProperty "fromGroups"   prop_fromToGroups
+  , testProperty "fromToGroups" prop_fromToGroups
+  , testProperty "fromGroups"   prop_fromGroups
   , testProperty "shrink"       prop_shrink_LocalRootPeers
   , testProperty "clampToLimit" prop_clampToLimit
   ]
@@ -48,7 +49,6 @@ tests =
 prop_clampToLimit :: LocalRootPeers PeerAddr -> PeerSelectionTargets -> Property
 prop_clampToLimit localRootPeers targets =
 
-
     let sizeLimit       = targetNumberOfKnownPeers targets
         localRootPeers' = LocalRootPeers.clampToLimit sizeLimit localRootPeers
 
@@ -61,7 +61,6 @@ prop_clampToLimit localRootPeers targets =
 
 arbitraryLocalRootPeers :: Set PeerAddr -> Gen (LocalRootPeers PeerAddr)
 arbitraryLocalRootPeers peeraddrs = do
-
     -- divide into a few disjoint groups
     ngroups     <- choose (1, 5 :: Int)
     gassignment <- vectorOf (Set.size peeraddrs) (choose (1, ngroups))
@@ -79,7 +78,6 @@ arbitraryLocalRootPeers peeraddrs = do
 
 
 instance Arbitrary (LocalRootPeers PeerAddr) where
-
     arbitrary = do
         peeraddrs <- Set.map (PeerAddr . getNonNegative)
                  <$> scale (`div` 4) arbitrary
@@ -129,6 +127,8 @@ prop_shrink_LocalRootPeers :: LocalRootPeers PeerAddr -> Bool
 prop_shrink_LocalRootPeers =
     all LocalRootPeers.invariant . shrink
 
+prop_fromGroups :: [(Int, Map PeerAddr PeerAdvertise)] -> Bool
+prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
 
 prop_fromToGroups :: LocalRootPeers PeerAddr -> Bool
 prop_fromToGroups lrps =
