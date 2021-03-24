@@ -383,7 +383,7 @@ localSnocket ioManager _ =
       , connect       = \(LocalSocket s) addr ->
           Socket.connect s (fromLocalAddress addr)
       , bind          = \(LocalSocket fd) addr -> Socket.bind fd (fromLocalAddress addr)
-      , listen        = flip Socket.listen 1 . getLocalHandle
+      , listen        = flip Socket.listen 8 . getLocalHandle
       , accept        = bimap LocalSocket toLocalAddress
                       . berkeleyAccept ioManager
                       . getLocalHandle
