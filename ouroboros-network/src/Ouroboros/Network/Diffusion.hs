@@ -678,7 +678,8 @@ runDataDiffusion tracers
                                         (WithWarm (\_ _ -> []))
                                         (WithEstablished (\_ _ -> [])))
                               <$> daLocalResponderApplication,
-                            haAcceptVersion = acceptableVersion
+                            haAcceptVersion = acceptableVersion,
+                            haTimeLimits = noTimeLimitsHandshake
                           }
                         (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
 
@@ -785,7 +786,8 @@ runDataDiffusion tracers
                             haHandshakeCodec = nodeToNodeHandshakeCodec,
                             haVersionDataCodec = cborTermVersionDataCodec NodeToNode.nodeToNodeCodecCBORTerm,
                             haVersions = daApplicationInitiatorMode,
-                            haAcceptVersion = acceptableVersion
+                            haAcceptVersion = acceptableVersion,
+                            haTimeLimits = timeLimitsHandshake
                           }
                         (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
@@ -889,7 +891,8 @@ runDataDiffusion tracers
                              haHandshakeCodec = nodeToNodeHandshakeCodec,
                              haVersionDataCodec = cborTermVersionDataCodec NodeToNode.nodeToNodeCodecCBORTerm,
                              haVersions = daApplicationInitiatorResponderMode,
-                             haAcceptVersion = acceptableVersion
+                             haAcceptVersion = acceptableVersion,
+                             haTimeLimits = timeLimitsHandshake
                            }
                          (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 

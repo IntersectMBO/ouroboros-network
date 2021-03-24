@@ -63,7 +63,8 @@ import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec)
+import           Ouroboros.Network.Protocol.Handshake.Codec ( cborTermVersionDataCodec
+                                                            , noTimeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
@@ -291,7 +292,8 @@ withInitiatorOnlyConnectionManager
                 hotRequestsVar
                 warmRequestsVar
                 establishedRequestsVar),
-            haAcceptVersion = acceptableVersion
+            haAcceptVersion = acceptableVersion,
+            haTimeLimits = noTimeLimitsHandshake
           }
         (mainThreadId, debugMuxErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
@@ -516,7 +518,8 @@ withBidirectionalConnectionManager name snocket socket localAddress
                               hotRequestsVar
                               warmRequestsVar
                               establishedRequestsVar),
-              haAcceptVersion = acceptableVersion
+              haAcceptVersion = acceptableVersion,
+              haTimeLimits = noTimeLimitsHandshake
             }
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
