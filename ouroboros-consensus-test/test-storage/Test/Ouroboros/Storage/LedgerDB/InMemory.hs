@@ -30,12 +30,13 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util
-import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 import           Test.Util.QuickCheck
 import           Test.Util.TestBlock
+
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
 tests :: TestTree
 tests = testGroup "InMemory" [

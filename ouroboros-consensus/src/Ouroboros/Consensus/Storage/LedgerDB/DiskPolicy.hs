@@ -80,7 +80,7 @@ data DiskPolicy = DiskPolicy {
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
 data TimeSinceLast time = NoSnapshotTakenYet | TimeSinceLast time
-  deriving Functor
+  deriving (Functor, Show)
 
 -- | Default on-disk policy suitable to use with cardano-node
 --

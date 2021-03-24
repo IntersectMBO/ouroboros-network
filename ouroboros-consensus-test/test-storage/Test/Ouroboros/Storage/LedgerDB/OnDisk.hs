@@ -76,6 +76,7 @@ import           Test.Util.TestBlock
 
 -- For the Arbitrary instance of 'MemPolicy'
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
 {-------------------------------------------------------------------------------
   Top-level tests

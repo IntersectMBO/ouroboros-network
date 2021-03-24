@@ -1,98 +1,233 @@
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE TypeApplications   #-}
+
 module Test.Ouroboros.Storage.LedgerDB.DiskPolicy (tests) where
 
-import           Data.Function ((&))
-import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 import           Data.Word
+import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds,
+                     picosecondsToDiffTime, secondsToDiffTime)
 
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (DiskPolicy (..), SnapshotInterval (..),
-                     TimeSinceLast (..), defaultDiskPolicy)
-import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
+                     DiskPolicy (..), defaultDiskPolicy, SnapshotInterval (..),
+                     TimeSinceLast (..))
 
 tests :: TestTree
-tests = testGroup "DiskPolicy/defaultDiskPolicy" [
-      testGroup "onDiskNumSnapshots" [
-          testProperty "should always be equal to 2" prop_onDiskNumSnapshots
-        ]
-    , testGroup "onDiskShouldTakeSnapshot" [
-          testGroup "haven't take a snapshot yet" [
-            testProperty
-              "should take snapshot if it processed at least k blocks"
-              prop_shouldSnapshot_case1
-        ]
-        , testGroup "have previously taken a snapshot" [
-              testProperty
-                "should take snapshot if time since last is greater then explicitly requested interval"
-                prop_shouldSnapshot_case2
-            , testProperty
-                "should take snapshot if time since last is greater then 2 * k if snapshot interval is set to default"
-                prop_shouldSnapshot_case3
-            , testProperty
-                "should take snapshot processed 50k and it's been more then 6 minutes since last snapshot was taken"
-                prop_shouldSnapshot_case4
-        ]
+tests =
+    testGroup "DiskPolicy" [
+        testGroup "defaultDiskPolicy" [
+            testProperty "onDiskNumSnapshots"       prop_onDiskNumSnapshots
+          , testProperty "onDiskShouldTakeSnapshot" prop_onDiskShouldTakeSnapshot
+          ]
       ]
-    ]
 
-prop_shouldSnapshot_case1 :: Word64 -> SecurityParam -> SnapshotInterval -> Property
-prop_shouldSnapshot_case1 blocksSinceLast securityParam@(SecurityParam k) snapshotInterval = do
-  -- given
-  let
-    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
-  -- when
-    shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) NoSnapshotTakenYet blocksSinceLast
-  -- then
-  shouldSnapshot === (blocksSinceLast >= k)
+{-------------------------------------------------------------------------------
+  Test inputs
+-------------------------------------------------------------------------------}
 
-prop_shouldSnapshot_case2 :: DiffTime -> Word64 -> SecurityParam -> AlwaysRequestedSnapshotInterval -> Property
-prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam (AlwaysRequestedSnapshotInterval snapshotInterval) =
-  case snapshotInterval of
-    DefaultSnapshotInterval -> impossible "expecting RequestedSnapshotInterval"
-    RequestedSnapshotInterval interval ->
-      -- given
-      let
-        diskPolicy = defaultDiskPolicy securityParam snapshotInterval
-        -- when
-        shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (TimeSinceLast timeSinceLast) blocksSinceLast
-      in
-        -- then
-        shouldSnapshot === (timeSinceLast >= interval)
+-- | All necessary inputs for a call to 'onDiskShouldTakeSnapshot'
+--
+-- This currently contains sufficient inputs for each property in this module.
+data TestSetup = TestSetup {
+    -- | One argument to 'onDiskShouldTakeSnapshot'
+    tsBlocksSince :: Word64
+    -- | One argument to 'defaultDiskPolicy'
+  , tsK           :: SecurityParam
+    -- | One argument to 'defaultDiskPolicy'
+  , tsRequested   :: SnapshotInterval
+    -- | One argument to 'onDiskShouldTakeSnapshot'
+  , tsTimeSince   :: TimeSinceLast DiffTime
+  }
+  deriving (Show)
 
+-- | The represented 'DiskPolicy'
+toDiskPolicy :: TestSetup -> DiskPolicy
+toDiskPolicy ts = defaultDiskPolicy (tsK ts) (tsRequested ts)
 
-prop_shouldSnapshot_case3 :: DiffTime -> Word64 -> SecurityParam -> AlwaysDefaultSnapshotInterval -> Property
-prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityParam k) (AlwaysDefaultSnapshotInterval snapshotInterval) = do
-  -- given
-  let
-    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
-  -- when
-    shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (TimeSinceLast timeSinceLast) blocksSinceLast
-  -- then
-    kTimes2 = secondsToDiffTime $ fromIntegral $ k * 2
-  shouldSnapshot === (timeSinceLast >= kTimes2)
+-- | The result of the represented call to 'onDiskShouldTakeSnapshot'
+toDecision :: TestSetup -> Bool
+toDecision ts = onDiskShouldTakeSnapshot
+    (toDiskPolicy ts)
+    (tsTimeSince ts)
+    (tsBlocksSince ts)
 
-prop_shouldSnapshot_case4 :: DiffTime -> Word64 -> SecurityParam -> Property
-prop_shouldSnapshot_case4 timeSinceLast blocksSinceLast securityParam = do
-  -- given
-  let snapshotInterval = RequestedSnapshotInterval $ timeSinceLast + 1
-   -- ^ given requested interval bigger then time passed
-      diskPolicy = defaultDiskPolicy securityParam snapshotInterval
-  -- when
-      shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (TimeSinceLast timeSinceLast) blocksSinceLast
-  -- then
-  shouldSnapshot === (  blocksSinceLast >= 50_000
-                     && timeSinceLast >= 6 * secondsToDiffTime 60)
+{-------------------------------------------------------------------------------
+  Generator and shrinker
+-------------------------------------------------------------------------------}
 
-prop_onDiskNumSnapshots :: SecurityParam -> SnapshotInterval -> Property
-prop_onDiskNumSnapshots securityParam snapshotInterval =
-  (diskPolicy & onDiskNumSnapshots) === 2
+instance Arbitrary TestSetup where
+  arbitrary = do
+      k <- frequency [
+          (9, choose (0, 3000))
+        , (1, choose (0, maxBound))
+        ]
+
+      -- values within usual expectations
+      let nominal =
+                (,)
+
+            -- 20 k is average number in a Shelley epoch
+            <$> choose (0, 20 * k)
+
+            -- a week is a defensible upper bound on the user input
+            <*> just95 (chooseSeconds 0 oneWeekInSeconds)
+
+      -- values near known cutoffs
+      let interesting =
+                (,)
+
+            <$> curry choose
+                  (minBlocksBeforeSnapshot `div` 2)
+                  (minBlocksBeforeSnapshot * 2)
+
+            <*> ( Just <$> chooseSeconds
+                    (minSecondsBeforeSnapshot `div` 2)
+                    (minSecondsBeforeSnapshot * 2)
+                )
+
+      -- all other conceivable values
+      let wild =
+                (,)
+            <$> choose (0, maxBound)
+            <*> just95 (chooseSeconds 0 oneCenturyInSeconds)
+
+      (b, t) <- frequency [
+          (80, nominal)
+        , (15, interesting)
+        , (5,  wild)
+        ]
+
+      tsRequested <- frequency [
+          (45, pure DefaultSnapshotInterval)
+        , (45, RequestedSnapshotInterval <$> chooseSeconds 0      oneWeekInSeconds)
+        , ( 4, RequestedSnapshotInterval <$> chooseSeconds 0 (2 * oneWeekInSeconds))
+        , ( 4, RequestedSnapshotInterval <$> chooseSeconds 0 (3 * oneWeekInSeconds))
+        , ( 1, RequestedSnapshotInterval <$> chooseSeconds 0 (4 * oneWeekInSeconds))
+        , ( 1, RequestedSnapshotInterval <$> chooseSeconds 0 oneCenturyInSeconds)
+        ]
+
+      pure TestSetup {
+          tsBlocksSince = b
+        , tsK           = SecurityParam k
+        , tsRequested
+        , tsTimeSince   = maybe NoSnapshotTakenYet TimeSinceLast t
+        }
+    where
+      -- 100 years seems a reasonable upper bound for consideration
+      oneCenturyInSeconds = 100 * 365 * oneDayInSeconds
+      -- one week seems a reasonable upper bound for relevance
+      oneWeekInSeconds = 7 * oneDayInSeconds
+      oneDayInSeconds  = 24 * 60 * 60
+
+      just95 :: Gen a -> Gen (Maybe a)
+      just95 m = frequency [(5, pure Nothing), (95, Just <$> m)]
+
+      -- both bounds are inclusive and in seconds
+      chooseSeconds :: Integer -> Integer -> Gen DiffTime
+      chooseSeconds lo hi = do
+          -- pick a second
+          s <- choose (lo, hi)
+          -- jitter within it
+          let nines = 10 ^ (12 :: Int) - 1
+          offset <- choose (negate nines, nines)
+          pure $ picosecondsToDiffTime $ max lo $ min hi $ s + offset
+
+  shrink (TestSetup x1 x2 x3 x4) = mconcat [
+        (\y -> TestSetup y x2 x3 x4) <$> shrink @Word64 x1
+      , (\y -> TestSetup x1 y x3 x4) <$> shrinkSecurityParam x2
+      , (\y -> TestSetup x1 x2 y x4) <$> shrinkSnapshotInterval x3
+      , (\y -> TestSetup x1 x2 x3 y) <$> shrinkTSL shrinkDiffTime x4
+      ]
+    where
+      shrinkSecurityParam =
+          fmap SecurityParam . shrink @Word64 . maxRollbacks
+
+      shrinkDiffTime =
+          fmap picosecondsToDiffTime
+        . shrink @Integer
+        . diffTimeToPicoseconds
+
+      shrinkTSL shnk = \case
+        NoSnapshotTakenYet -> []
+        TimeSinceLast    d -> NoSnapshotTakenYet : fmap TimeSinceLast (shnk d)
+
+      shrinkSnapshotInterval = \case
+        DefaultSnapshotInterval     -> []
+        RequestedSnapshotInterval d ->
+              DefaultSnapshotInterval
+            : (RequestedSnapshotInterval <$> shrinkDiffTime d)
+
+{-------------------------------------------------------------------------------
+  Properties
+-------------------------------------------------------------------------------}
+
+-- | Check 'onDiskNumSnapshots' of 'defaultDiskPolicy'
+prop_onDiskNumSnapshots :: TestSetup -> Property
+prop_onDiskNumSnapshots ts =
+    -- 'TestSetup' has more information than we need for this property
+      counterexample "should always be 2"
+    $ onDiskNumSnapshots (toDiskPolicy ts) === 2
+
+minBlocksBeforeSnapshot :: Word64
+minBlocksBeforeSnapshot = 50_000
+
+minSecondsBeforeSnapshot :: Integer
+minSecondsBeforeSnapshot = 6 * 60
+
+-- | Check 'onDiskShouldTakeSnapshot' of 'defaultDiskPolicy'
+prop_onDiskShouldTakeSnapshot :: TestSetup -> Property
+prop_onDiskShouldTakeSnapshot ts =
+    counterexample ("decided to take snapshot? " ++ show (toDecision ts)) $
+    case t of
+      NoSnapshotTakenYet ->
+            counterexample "haven't taken a snapshot yet"
+          $ counterexample "should take snapshot if it processed at least k blocks"
+          $ toDecision ts === (b >= k)
+      TimeSinceLast    d ->
+            counterexample "have previously taken a snapshot"
+          $ if   toDecision ts
+            then -- at least one disjunct must have decided true
+                 explicitDisjunctMatches d .||. implicitDisjunctMatches d
+            else -- both must have decided false
+                 explicitDisjunctMatches d .&&. implicitDisjunctMatches d
   where
-    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
+    TestSetup {
+        tsBlocksSince = b
+      , tsK           = SecurityParam k
+      , tsRequested   = r
+      , tsTimeSince   = t
+      } = ts
 
-impossible :: String -> Property
-impossible = (flip counterexample False) . ("Impossible, should not happen: " <>)
+    kTimes2 :: DiffTime
+    kTimes2 = secondsToDiffTime $ fromIntegral $ k * 2
+
+    explicitDisjunctMatches :: DiffTime -> Property
+    explicitDisjunctMatches d =
+        case r of
+
+          DefaultSnapshotInterval ->
+                counterexample "should take snapshot if time since last is greater then 2 * k seconds if snapshot interval is set to default"
+              $ toDecision ts === (d >= kTimes2)
+
+          RequestedSnapshotInterval interval ->
+                counterexample "should take snapshot if time since last is greater then explicitly requested interval"
+              $ toDecision ts === (d >= interval)
+
+    implicitDisjunctMatches :: DiffTime -> Property
+    implicitDisjunctMatches d =
+          (counterexample . unwords) [
+              "should take snapshot if"
+            , "we have processed", show minBlocksBeforeSnapshot
+            , "blocks and it's been more than", show minSecondsBeforeSnapshot
+            , "seconds since last snapshot was taken"
+            ]
+        $     toDecision ts
+          === (    b >= minBlocksBeforeSnapshot
+                && d >= secondsToDiffTime minSecondsBeforeSnapshot
+              )
