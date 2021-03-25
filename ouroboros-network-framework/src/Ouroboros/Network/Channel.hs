@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
@@ -184,8 +185,9 @@ createConnectedBufferedChannels sz = do
       }
 
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
-createConnectedBufferedChannelsSTM :: MonadSTMTx m
-                                   => Natural -> m (Channel m a, Channel m a)
+createConnectedBufferedChannelsSTM :: forall stm tvar tmvar tqueue tbqueue a.
+                                      MonadSTMTx stm tvar tmvar tqueue tbqueue
+                                   => Natural -> stm (Channel stm a, Channel stm a)
 createConnectedBufferedChannelsSTM sz = do
     -- Create two TBQueues to act as the channel buffers (one for each
     -- direction) and use them to make both ends of a bidirectional channel
@@ -195,6 +197,7 @@ createConnectedBufferedChannelsSTM sz = do
     return (queuesAsChannel bufferB bufferA,
             queuesAsChannel bufferA bufferB)
   where
+    queuesAsChannel :: tbqueue a -> tbqueue a -> Channel stm a
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
