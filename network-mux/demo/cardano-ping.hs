@@ -22,6 +22,7 @@ import           Data.Aeson hiding (Options, json)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BSC (pack, putStr)
+import           Data.List (foldl')
 import           Data.Maybe (fromMaybe, isNothing)
 import           Data.Word
 import           Data.TDigest
@@ -32,7 +33,7 @@ import           Text.Printf
 import           System.Environment (getArgs, getProgName)
 import           System.Exit
 import           System.Console.GetOpt
-import           System.IO (hFlush, hPutStr, stderr, stdout)
+import           System.IO (hFlush, hPutStr, hPrint, stderr, stdout)
 
 import           Network.Mux.Bearer.Socket
 import           Network.Mux.Types
@@ -134,11 +135,28 @@ main = do
 
     laid <- async $ logger msgQueue $ json options
     caids <- mapM (async . pingClient (Tracer $ doLog msgQueue) options) addresses
-    mapM_ wait caids
+    res <- zip addresses <$> mapM waitCatch caids
     doLog msgQueue LogEnd
     wait laid
+    case foldl' partition ([],[]) res of
+         ([], _) -> do
+             exitSuccess
+         (es, []) -> do
+             mapM_ (hPrint stderr) es
+             exitWith (ExitFailure 1)
+         (es, _) -> do
+             unless (quiet options) $
+               mapM_ (hPrint stderr) es
+             exitSuccess
 
   where
+
+    partition :: ([(AddrInfo, SomeException)], [AddrInfo])
+              -> (AddrInfo, Either SomeException ())
+              -> ([(AddrInfo, SomeException)], [AddrInfo])
+    partition (es, as) (a, Left e) = ((a, e) : es, as)
+    partition (es, as) (a, Right _) = (es, a : as)
+
     doLog :: StrictTMVar IO LogMsg -> LogMsg -> IO ()
     doLog msgQueue msg = atomically $ putTMVar msgQueue msg
 
