@@ -39,7 +39,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 -------------------------------------------------------------------------------}
 
 -- | Wait until the TVar changed
-blockUntilChanged :: forall stm a b. (MonadSTMTx stm, Eq b)
+blockUntilChanged :: forall stm tvar tmvar tqueue tbqueue a b.
+                     (MonadSTMTx stm tvar tmvar tqueue tbqueue, Eq b)
                   => (a -> b) -> b -> stm a -> stm (a, b)
 blockUntilChanged f b getA = do
     a <- getA
@@ -61,14 +62,16 @@ runWhenJust registry label getMaybeA action =
     void $ forkLinkedThread registry label $
       action =<< atomically (blockUntilJust getMaybeA)
 
-blockUntilJust :: MonadSTMTx stm => stm (Maybe a) -> stm a
+blockUntilJust :: MonadSTMTx stm tvar tmvar tqueue tbqueue
+               => stm (Maybe a) -> stm a
 blockUntilJust getMaybeA = do
     ma <- getMaybeA
     case ma of
       Nothing -> retry
       Just a  -> return a
 
-blockUntilAllJust :: MonadSTMTx stm => [stm (Maybe a)] -> stm [a]
+blockUntilAllJust :: MonadSTMTx stm tvar tmvar tqueue tbqueue
+                  => [stm (Maybe a)] -> stm [a]
 blockUntilAllJust = mapM blockUntilJust
 
 -- | Simple type that can be used to indicate something in a @TVar@ is

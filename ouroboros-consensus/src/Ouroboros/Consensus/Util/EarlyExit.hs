@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
@@ -80,12 +81,7 @@ instance (forall a'. NoThunks (m a'))
   Instances for io-classes
 -------------------------------------------------------------------------------}
 
-instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
-  type TVar_    (WithEarlyExit stm) = TVar_    stm
-  type TMVar_   (WithEarlyExit stm) = TMVar_   stm
-  type TQueue_  (WithEarlyExit stm) = TQueue_  stm
-  type TBQueue_ (WithEarlyExit stm) = TBQueue_ stm
-
+instance MonadSTMTx stm tvar tmvar tqueue tbqueue => MonadSTMTx (WithEarlyExit stm) tvar tmvar tqueue tbqueue where
   newTVar         = lift .  newTVar
   readTVar        = lift .  readTVar
   writeTVar       = lift .: writeTVar
@@ -116,7 +112,12 @@ instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
   isFullTBQueue   = lift .  isFullTBQueue
 
 instance MonadSTM m => MonadSTM (WithEarlyExit m) where
-  type STM (WithEarlyExit m) = WithEarlyExit (STM m)
+  type STM     (WithEarlyExit m) = WithEarlyExit (STM m)
+  type TVar    (WithEarlyExit m) = TVar    m
+  type TMVar   (WithEarlyExit m) = TMVar   m
+  type TQueue  (WithEarlyExit m) = TQueue  m
+  type TBQueue (WithEarlyExit m) = TBQueue m
+
 
   atomically      = earlyExit . atomically . withEarlyExit
   newTMVarIO      = lift . newTMVarIO
@@ -166,8 +167,8 @@ instance MonadThread m => MonadThread (WithEarlyExit m) where
   myThreadId  = lift    myThreadId
   labelThread = lift .: labelThread
 
-instance (MonadAsyncSTM async stm, MonadCatch stm)
-      => MonadAsyncSTM (WithEarlyExit async) (WithEarlyExit stm) where
+instance (MonadAsyncSTM async stm tvar tmvar tqueue tbqueue, MonadCatch stm)
+      => MonadAsyncSTM (WithEarlyExit async) (WithEarlyExit stm) tvar tmvar tqueue tbqueue where
   waitCatchSTM a = earlyExit (commute      <$> waitCatchSTM (withEarlyExit a))
   pollSTM      a = earlyExit (fmap commute <$> pollSTM      (withEarlyExit a))
 
