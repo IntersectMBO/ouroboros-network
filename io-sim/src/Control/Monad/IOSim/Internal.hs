@@ -47,6 +47,7 @@ import           Prelude hiding (read)
 
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
+import           Data.Function (on)
 import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -1263,6 +1264,9 @@ data TVar s a = TVar {
        --
        tvarBlocked :: !(STRef s ([ThreadId], Set ThreadId))
      }
+
+instance Eq (TVar s a) where
+    (==) = on (==) tvarId
 
 data StmTxResult s a =
        -- | A committed transaction reports the vars that were written (in order
