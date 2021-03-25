@@ -132,6 +132,10 @@ instance Arbitrary GovernorMockEnvironmentWithoutAsyncDemotion where
 
 -- | Invariant. Used to check the QC generator and shrinker.
 --
+-- NOTE: Local and Public Root Peers sets should be disjoint.
+-- However we do not check for that invariant here. The goal
+-- is to check if the actual Governor takes care of this and enforces
+-- the invariant.
 validGovernorMockEnvironment :: GovernorMockEnvironment -> Bool
 validGovernorMockEnvironment GovernorMockEnvironment {
                                peerGraph,
@@ -457,6 +461,8 @@ instance Arbitrary GovernorMockEnvironment where
             rootPeers = nub (map pick ixs)
         -- divide into local and public, but with a bit of overlap:
         local <- vectorOf (length rootPeers) (choose (0, 10 :: Int))
+        -- Deliberatly asking for a small intersection in order to test if
+        -- the Governor actually takes care of this invariant
         let localRootsSet  = Set.fromList [ x | (x, v) <- zip rootPeers local
                                               , v <= 5 ]
             publicRootsSet = Set.fromList [ x | (x, v) <- zip rootPeers local
