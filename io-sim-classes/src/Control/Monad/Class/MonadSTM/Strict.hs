@@ -3,7 +3,11 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
+-- 'Eq' instance of 'StrictTVar'
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- to preserve 'HasCallstack' constraint on 'checkInvariant'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -14,6 +18,7 @@ module Control.Monad.Class.MonadSTM.Strict
   , LazyTMVar
     -- * 'StrictTVar'
   , StrictTVar
+  , eqTVar
   , labelTVar
   , labelTVarIO
   , castStrictTVar
@@ -58,8 +63,10 @@ import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
                      newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
                      newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
                      readTMVar, readTVar, stateTVar, swapTMVar, takeTMVar,
-                     tryPutTMVar, tryReadTMVar, tryTakeTMVar, writeTVar)
+                     tryPutTMVar, tryReadTMVar, tryTakeTMVar, writeTVar, eqTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
+import           Data.Function (on)
+import           Data.Proxy (Proxy)
 import           GHC.Stack
 
 {-------------------------------------------------------------------------------
@@ -78,6 +85,15 @@ data StrictTVar m a = StrictTVar
      -- ^ Invariant checked whenever updating the 'StrictTVar'.
    , tvar      :: !(LazyTVar m a)
    }
+
+instance Eq (LazyTVar m a) => Eq (StrictTVar m a) where
+    (==) = on (==) tvar
+
+eqTVar :: forall m a.
+          MonadSTM m
+       => Proxy m
+       -> StrictTVar m a -> StrictTVar m a -> Bool
+eqTVar p = on (Lazy.eqTVar p) tvar
 
 labelTVar :: MonadLabelledSTM m => StrictTVar m a -> String -> STM m ()
 labelTVar StrictTVar { tvar } = Lazy.labelTVar tvar

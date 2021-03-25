@@ -5,6 +5,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTSyntax                 #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -47,6 +48,7 @@ import           Prelude hiding (read)
 
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
+import           Data.Function (on)
 import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -334,12 +336,11 @@ instance MonadFork (IOSim s) where
 instance MonadSay (STMSim s) where
   say msg = STM $ \k -> SayStm msg (k ())
 
-instance MonadSTMTx (STM s) where
-  type TVar_      (STM s) = TVar s
-  type TMVar_     (STM s) = TMVarDefault (IOSim s)
-  type TQueue_    (STM s) = TQueueDefault (IOSim s)
-  type TBQueue_   (STM s) = TBQueueDefault (IOSim s)
-
+instance MonadSTMTx (STM s)
+                    (TVar s)
+                    (TMVarDefault   (IOSim s))
+                    (TQueueDefault  (IOSim s))
+                    (TBQueueDefault (IOSim s)) where
   newTVar         x = STM $ \k -> NewTVar Nothing x k
   readTVar   tvar   = STM $ \k -> ReadTVar tvar k
   writeTVar  tvar x = STM $ \k -> WriteTVar tvar x (k ())
@@ -372,7 +373,11 @@ instance MonadSTMTx (STM s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
-instance MonadLabelledSTMTx (STM s) where
+instance MonadLabelledSTMTx (STM s)
+                            (TVar s)
+                            (TMVarDefault   (IOSim s))
+                            (TQueueDefault  (IOSim s))
+                            (TBQueueDefault (IOSim s)) where
   labelTVar tvar label = STM $ \k -> LabelTVar label tvar (k ())
   labelTMVar   = labelTMVarDefault
   labelTQueue  = labelTQueueDefault
@@ -381,7 +386,11 @@ instance MonadLabelledSTMTx (STM s) where
 instance MonadLabelledSTM (IOSim s) where
 
 instance MonadSTM (IOSim s) where
-  type STM       (IOSim s) = STM s
+  type STM     (IOSim s) = STM s
+  type TVar    (IOSim s) = TVar s
+  type TMVar   (IOSim s) = TMVarDefault (IOSim s)
+  type TQueue  (IOSim s) = TQueueDefault (IOSim s)
+  type TBQueue (IOSim s) = TBQueueDefault (IOSim s)
 
   atomically action = IOSim $ \k -> Atomically action k
 
@@ -399,7 +408,12 @@ instance Ord (Async s a) where
 instance Functor (Async s) where
   fmap f (Async tid a) = Async tid (fmap f <$> a)
 
-instance MonadAsyncSTM (Async s) (STM s) where
+instance MonadAsyncSTM (Async s)
+                       (STM s)
+                       (TVar s)
+                       (TMVarDefault   (IOSim s))
+                       (TQueueDefault  (IOSim s))
+                       (TBQueueDefault (IOSim s)) where
   waitCatchSTM (Async _ w) = w
   pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
 
@@ -1259,6 +1273,9 @@ data TVar s a = TVar {
        --
        tvarBlocked :: !(STRef s ([ThreadId], Set ThreadId))
      }
+
+instance Eq (TVar s a) where
+    (==) = on (==) tvarId
 
 data StmTxResult s a =
        -- | A committed transaction reports the vars that were written (in order
