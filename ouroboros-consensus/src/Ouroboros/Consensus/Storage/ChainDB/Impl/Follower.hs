@@ -377,7 +377,8 @@ instructionHelper registry varFollower blockComponent fromMaybeSTM CDB{..} = do
 
 -- | 'followerInstruction' for when the follower is in the 'FollowerInMem' state.
 instructionSTM ::
-     forall stm blk. (MonadSTMTx stm, HasHeader (Header blk))
+     forall stm tvar tmvar tqueue tbqueue blk.
+     (MonadSTMTx stm tvar tmvar tqueue tbqueue, HasHeader (Header blk))
   => FollowerRollState blk
      -- ^ The current 'FollowerRollState' of the follower
   -> AnchoredFragment (Header blk)
