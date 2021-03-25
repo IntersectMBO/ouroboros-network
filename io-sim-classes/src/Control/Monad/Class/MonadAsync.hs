@@ -33,6 +33,10 @@ import           Control.Monad.Class.MonadThrow
 
 import           Control.Concurrent.Async (AsyncCancelled (..))
 import qualified Control.Concurrent.Async as Async
+import qualified Control.Concurrent.STM.TVar as STM
+import qualified Control.Concurrent.STM.TMVar as STM
+import qualified Control.Concurrent.STM.TQueue as STM
+import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Exception as E
 import           Control.Monad.Reader
 import qualified Control.Monad.STM as STM
@@ -41,7 +45,10 @@ import           Data.Foldable (fold)
 import           Data.Kind (Type)
 import           Data.Proxy
 
-class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
+class ( Functor async
+      , MonadSTMTx stm tvar tmvar tqueue tbqueue
+      )
+      => MonadAsyncSTM async stm tvar tmvar tqueue tbqueue where
   {-# MINIMAL waitCatchSTM, pollSTM #-}
 
   waitSTM      :: async a -> stm a
@@ -98,6 +105,8 @@ class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
 class ( MonadSTM m
       , MonadThread m
       , MonadAsyncSTM (Async m) (STM m)
+                      (TVar m) (TMVar m)
+                      (TQueue m) (TBQueue m)
       ) => MonadAsync m where
 
   {-# MINIMAL async, asyncThreadId, cancel, cancelWith, asyncWithUnmask #-}
@@ -258,7 +267,9 @@ replicateConcurrently_ cnt = runConcurrently . fold . replicate cnt . Concurrent
 -- Instance for IO uses the existing async library implementations
 --
 
-instance MonadAsyncSTM Async.Async STM.STM where
+instance MonadAsyncSTM Async.Async STM.STM
+                                   STM.TVar STM.TMVar
+                                   STM.TQueue STM.TBQueue where
   waitSTM            = Async.waitSTM
   pollSTM            = Async.pollSTM
   waitCatchSTM       = Async.waitCatchSTM

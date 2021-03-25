@@ -1,8 +1,17 @@
+{-# LANGUAGE ConstraintKinds        #-}
 {-# LANGUAGE DefaultSignatures      #-}
 {-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE ImpredicativeTypes     #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE QuantifiedConstraints  #-}
+{-# LANGUAGE StandaloneDeriving     #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
+-- 'Eq' instance for 'TMVarDefault', 'TQueueDefault' and 'TBQueueDefault'.
+{-# LANGUAGE UndecidableInstances    #-}
+
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadSTMTx (..)
@@ -10,10 +19,14 @@ module Control.Monad.Class.MonadSTM
   , MonadLabelledSTMTx (..)
   , LazyTVar
   , LazyTMVar
-  , TVar
-  , TMVar
-  , TQueue
-  , TBQueue
+  , EqTVar
+  , eqTVar
+  , EqTMVar
+  , eqTMVar
+  , EqTQueue
+  , eqTQueue
+  , EqTBQueue
+  , eqTBQueue
 
   -- * Default 'TMVar' implementation
   , TMVarDefault (..)
@@ -78,6 +91,7 @@ import           Control.Applicative (Alternative (..))
 import           Control.Exception
 import           Control.Monad.Reader
 import           Data.Kind (Type)
+import           Data.Proxy (Proxy (..))
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
@@ -87,27 +101,38 @@ import           Numeric.Natural (Natural)
 type LazyTVar  m = TVar m
 type LazyTMVar m = TMVar m
 
--- The STM primitives
+-- | The STM primitive operations and associated types.
+--
+-- Current limitations of quantified constraints exluse usage of type families
+-- to limit the number of type parameters.
+--
 class ( Monad stm
       , Alternative stm
       , MonadPlus stm
-      ) => MonadSTMTx stm where
-  type TVar_ stm :: Type -> Type
-
-  newTVar      :: a -> stm (TVar_ stm a)
-  readTVar     :: TVar_ stm a -> stm a
-  writeTVar    :: TVar_ stm a -> a -> stm ()
+      , forall a. Eq (tvar a)
+      , forall a. Eq (tmvar a)
+      , forall a. Eq (tqueue a)
+      , forall a. Eq (tbqueue a)
+      ) => MonadSTMTx stm tvar tmvar tqueue tbqueue
+                    | stm -> tvar
+                    , stm -> tmvar
+                    , stm -> tqueue
+                    , stm -> tbqueue
+                    where
+  newTVar      :: a -> stm (tvar a)
+  readTVar     :: tvar a -> stm a
+  writeTVar    :: tvar a -> a -> stm ()
   retry        :: stm a
   orElse       :: stm a -> stm a -> stm a
 
-  modifyTVar   :: TVar_ stm a -> (a -> a) -> stm ()
+  modifyTVar   :: tvar a -> (a -> a) -> stm ()
   modifyTVar  v f = readTVar v >>= writeTVar v . f
 
-  modifyTVar'  :: TVar_ stm a -> (a -> a) -> stm ()
+  modifyTVar'  :: tvar a -> (a -> a) -> stm ()
   modifyTVar' v f = readTVar v >>= \x -> writeTVar v $! f x
 
   -- | @since io-sim-classes-0.2.0.0
-  stateTVar    :: TVar_ stm s -> (s -> (a, s)) -> stm a
+  stateTVar    :: tvar s -> (s -> (a, s)) -> stm a
   stateTVar    = stateTVarDefault
 
   check        :: Bool -> stm ()
@@ -115,53 +140,56 @@ class ( Monad stm
   check _    = retry
 
   -- Additional derived STM APIs
-  type TMVar_ stm :: Type -> Type
-  newTMVar        :: a -> stm (TMVar_ stm a)
-  newEmptyTMVar   ::      stm (TMVar_ stm a)
-  takeTMVar       :: TMVar_ stm a      -> stm a
-  tryTakeTMVar    :: TMVar_ stm a      -> stm (Maybe a)
-  putTMVar        :: TMVar_ stm a -> a -> stm ()
-  tryPutTMVar     :: TMVar_ stm a -> a -> stm Bool
-  readTMVar       :: TMVar_ stm a      -> stm a
-  tryReadTMVar    :: TMVar_ stm a      -> stm (Maybe a)
-  swapTMVar       :: TMVar_ stm a -> a -> stm a
-  isEmptyTMVar    :: TMVar_ stm a      -> stm Bool
+  newTMVar        :: a -> stm (tmvar a)
+  newEmptyTMVar   ::      stm (tmvar a)
+  takeTMVar       :: tmvar a      -> stm a
+  tryTakeTMVar    :: tmvar a      -> stm (Maybe a)
+  putTMVar        :: tmvar a -> a -> stm ()
+  tryPutTMVar     :: tmvar a -> a -> stm Bool
+  readTMVar       :: tmvar a      -> stm a
+  tryReadTMVar    :: tmvar a      -> stm (Maybe a)
+  swapTMVar       :: tmvar a -> a -> stm a
+  isEmptyTMVar    :: tmvar a      -> stm Bool
 
-  type TQueue_ stm :: Type -> Type
-  newTQueue      :: stm (TQueue_ stm a)
-  readTQueue     :: TQueue_ stm a -> stm a
-  tryReadTQueue  :: TQueue_ stm a -> stm (Maybe a)
-  writeTQueue    :: TQueue_ stm a -> a -> stm ()
-  isEmptyTQueue  :: TQueue_ stm a -> stm Bool
+  newTQueue      :: stm (tqueue a)
+  readTQueue     :: tqueue a -> stm a
+  tryReadTQueue  :: tqueue a -> stm (Maybe a)
+  writeTQueue    :: tqueue a -> a -> stm ()
+  isEmptyTQueue  :: tqueue a -> stm Bool
 
-  type TBQueue_ stm :: Type -> Type
-  newTBQueue     :: Natural -> stm (TBQueue_ stm a)
-  readTBQueue    :: TBQueue_ stm a -> stm a
-  tryReadTBQueue :: TBQueue_ stm a -> stm (Maybe a)
-  flushTBQueue   :: TBQueue_ stm a -> stm [a]
-  writeTBQueue   :: TBQueue_ stm a -> a -> stm ()
+  newTBQueue     :: Natural -> stm (tbqueue a)
+  readTBQueue    :: tbqueue a -> stm a
+  tryReadTBQueue :: tbqueue a -> stm (Maybe a)
+  flushTBQueue   :: tbqueue a -> stm [a]
+  writeTBQueue   :: tbqueue a -> a -> stm ()
   -- | @since 0.2.0.0
-  lengthTBQueue  :: TBQueue_ stm a -> stm Natural
-  isEmptyTBQueue :: TBQueue_ stm a -> stm Bool
-  isFullTBQueue  :: TBQueue_ stm a -> stm Bool
+  lengthTBQueue  :: tbqueue a -> stm Natural
+  isEmptyTBQueue :: tbqueue a -> stm Bool
+  isFullTBQueue  :: tbqueue a -> stm Bool
 
 
-stateTVarDefault :: MonadSTMTx stm => TVar_ stm s -> (s -> (a, s)) -> stm a
+-- class MonadSTMTx' stm (TVar_ stm) => MonadSTMTx stm where
+-- instance MonadSTMTx' stm (TVar_ stm) => MonadSTMTx stm
+
+stateTVarDefault :: MonadSTMTx stm tvar tmvar tqueue tbqueue
+                 => tvar s -> (s -> (a, s)) -> stm a
 stateTVarDefault var f = do
    s <- readTVar var
    let (a, s') = f s
    writeTVar var s'
    return a
 
-
-type TVar    m = TVar_    (STM m)
-type TMVar   m = TMVar_   (STM m)
-type TQueue  m = TQueue_  (STM m)
-type TBQueue m = TBQueue_ (STM m)
-
-class (Monad m, MonadSTMTx (STM m)) => MonadSTM m where
+-- | 'MonadSTM' provides the @'STM' m@ monad as well as all operations to
+-- execute it. 
+--
+class (Monad m, MonadSTMTx (STM m) (TVar m) (TMVar m) (TQueue m) (TBQueue m))
+   => MonadSTM m where
   -- STM transactions
-  type STM m :: Type -> Type
+  type STM  m    :: Type -> Type
+  type TVar m    :: Type -> Type
+  type TMVar m   :: Type -> Type
+  type TQueue m  :: Type -> Type
+  type TBQueue m :: Type -> Type
 
   atomically :: HasCallStack => STM m a -> m a
 
@@ -191,19 +219,141 @@ newEmptyTMVarM = newEmptyTMVarIO
 {-# DEPRECATED newEmptyTMVarM "Use newEmptyTMVarIO" #-}
 
 
+-- | Constraint which provides quantified constraint: @forall x. Eq (TVar m x)@.
+-- (see <https://gitlab.haskell.org/ghc/ghc/-/issues/14860>)
+--
+-- Call sites require 'ImpredicativeTypes' @GHC@ extension.
+--
+type EqTVar m tvar
+    = ( tvar ~ TVar m
+      , forall a. Eq (tvar a)
+      )
+
+eqTVar' :: forall stm tvar tmvar tqueue tbqueue a.
+           MonadSTMTx stm tvar tmvar tqueue tbqueue
+        => Proxy stm
+        -> tvar a -> tvar a -> Bool
+eqTVar' _ = (==)
+{-# INLINE eqTVar' #-}
+
+
+-- | Polymorphic equality of 'TVar's.
+--
+eqTVar :: forall m a.
+          MonadSTM m
+       => Proxy m
+       -> TVar m a -> TVar m a -> Bool
+eqTVar p = eqTVar' (f p)
+  where
+    f :: Proxy m -> Proxy (STM m)
+    f Proxy = Proxy
+
+
+-- | Constraint which provides quantified constraint: @forall x. Eq (TMVar m x)@.
+-- (see <https://gitlab.haskell.org/ghc/ghc/-/issues/14860>)
+--
+-- Call sites require 'ImpredicativeTypes' @GHC@ extension.
+--
+type EqTMVar m tmvar
+    = ( tmvar ~ TMVar m
+      , forall a. Eq (tmvar a)
+      )
+
+eqTMVar' :: forall stm tvar tmvar tqueue tbqueue a.
+            MonadSTMTx stm tvar tmvar tqueue tbqueue
+         => Proxy stm
+         -> tmvar a -> tmvar a -> Bool
+eqTMVar' _ = (==)
+{-# INLINE eqTMVar' #-}
+
+
+-- | Polymorphic equality of 'TMVar's.
+--
+eqTMVar :: forall m a.
+           MonadSTM m
+        => Proxy m
+        -> TMVar m a -> TMVar m a -> Bool
+eqTMVar p = eqTMVar' (f p)
+  where
+    f :: Proxy m -> Proxy (STM m)
+    f Proxy = Proxy
+
+
+-- | Constraint which provides quantified constraint: @forall x. Eq (TVar m x)@.
+-- (see <https://gitlab.haskell.org/ghc/ghc/-/issues/14860>)
+--
+-- Call sites require 'ImpredicativeTypes' @GHC@ extension.
+--
+type EqTQueue m tqueue
+    = ( tqueue ~ TQueue m
+      , forall a. Eq (tqueue a)
+      )
+
+eqTQueue' :: forall stm tvar tmvar tqueue tbqueue a.
+             MonadSTMTx stm tvar tmvar tqueue tbqueue
+          => Proxy stm
+          -> tqueue a -> tqueue a -> Bool
+eqTQueue' _ = (==)
+{-# INLINE eqTQueue' #-}
+
+
+-- | Polymorphic equality of 'TQueue's.
+--
+eqTQueue :: forall m a.
+            MonadSTM m
+         => Proxy m
+         -> TQueue m a -> TQueue m a -> Bool
+eqTQueue p = eqTQueue' (f p)
+  where
+    f :: Proxy m -> Proxy (STM m)
+    f Proxy = Proxy
+
+
+-- | Constraint which provides quantified constraint: @forall x. Eq (TVar m x)@.
+-- (see <https://gitlab.haskell.org/ghc/ghc/-/issues/14860>)
+--
+-- Call sites require 'ImpredicativeTypes' @GHC@ extension.
+--
+type EqTBQueue m tbqueue
+    = ( tbqueue ~ TBQueue m
+      , forall a. Eq (tbqueue a)
+      )
+
+eqTBQueue' :: forall stm tvar tmvar tqueue tbqueue a.
+              MonadSTMTx stm tvar tmvar tqueue tbqueue
+           => Proxy stm
+           -> tbqueue a -> tbqueue a -> Bool
+eqTBQueue' _ = (==)
+{-# INLINE eqTBQueue' #-}
+
+
+-- | Polymorphic equality of 'TBQueue's.
+--
+eqTBQueue :: forall m a.
+             MonadSTM m
+          => Proxy m
+          -> TBQueue m a -> TBQueue m a -> Bool
+eqTBQueue p = eqTBQueue' (f p)
+  where
+    f :: Proxy m -> Proxy (STM m)
+    f Proxy = Proxy
+
 -- | Labelled 'TVar's, 'TMVar's, 'TQueue's and 'TBQueue's.
 --
-class MonadSTMTx stm => MonadLabelledSTMTx stm where
-  labelTVar    :: TVar_    stm a -> String -> stm ()
-  labelTMVar   :: TMVar_   stm a -> String -> stm ()
-  labelTQueue  :: TQueue_  stm a -> String -> stm ()
-  labelTBQueue :: TBQueue_ stm a -> String -> stm ()
+class MonadSTMTx stm tvar tmvar tqueue tbqueue
+   => MonadLabelledSTMTx stm tvar tmvar tqueue tbqueue where
+  labelTVar    :: tvar    a -> String -> stm ()
+  labelTMVar   :: tmvar   a -> String -> stm ()
+  labelTQueue  :: tqueue  a -> String -> stm ()
+  labelTBQueue :: tbqueue a -> String -> stm ()
 
 -- | A convenience class which provides 'MonadSTM' and 'MonadLabelledSTMTx'
 -- constraints.
 --
-class (MonadSTM m, MonadLabelledSTMTx (STM m))
-   => MonadLabelledSTM m where
+class ( MonadSTM m
+      , MonadLabelledSTMTx (STM m) (TVar m) (TMVar m) (TQueue m) (TBQueue m)
+      )
+    => MonadLabelledSTM m where
   labelTVarIO    :: TVar    m a -> String -> m ()
   labelTMVarIO   :: TMVar   m a -> String -> m ()
   labelTQueueIO  :: TQueue  m a -> String -> m ()
@@ -225,12 +375,7 @@ class (MonadSTM m, MonadLabelledSTMTx (STM m))
 -- Instance for IO uses the existing STM library implementations
 --
 
-instance MonadSTMTx STM.STM where
-  type TVar_    STM.STM = STM.TVar
-  type TMVar_   STM.STM = STM.TMVar
-  type TQueue_  STM.STM = STM.TQueue
-  type TBQueue_ STM.STM = STM.TBQueue
-
+instance MonadSTMTx STM.STM STM.TVar STM.TMVar STM.TQueue STM.TBQueue where
   newTVar        = STM.newTVar
   readTVar       = STM.readTVar
   writeTVar      = STM.writeTVar
@@ -266,7 +411,11 @@ instance MonadSTMTx STM.STM where
 
 
 instance MonadSTM IO where
-  type STM IO = STM.STM
+  type STM     IO = STM.STM
+  type TVar    IO = STM.TVar
+  type TMVar   IO = STM.TMVar
+  type TQueue  IO = STM.TQueue
+  type TBQueue IO = STM.TBQueue
 
   atomically = wrapBlockedIndefinitely . STM.atomically
 
@@ -276,7 +425,9 @@ instance MonadSTM IO where
 
 -- | noop instance
 --
-instance MonadLabelledSTMTx STM.STM where
+instance MonadLabelledSTMTx STM.STM
+                            STM.TVar STM.TMVar
+                            STM.TQueue STM.TBQueue where
   labelTVar    = \_  _ -> return ()
   labelTMVar   = \_  _ -> return ()
   labelTQueue  = \_  _ -> return ()
@@ -311,7 +462,11 @@ wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 --
 
 instance MonadSTM m => MonadSTM (ReaderT r m) where
-  type STM (ReaderT r m) = STM m
+  type STM     (ReaderT r m) = STM m
+  type TVar    (ReaderT r m) = TVar m
+  type TMVar   (ReaderT r m) = TMVar m
+  type TQueue  (ReaderT r m) = TQueue m
+  type TBQueue (ReaderT r m) = TBQueue m
   atomically      = lift . atomically
   newTVarIO       = lift . newTVarM
   newTMVarIO      = lift . newTMVarM
@@ -322,6 +477,9 @@ instance MonadSTM m => MonadSTM (ReaderT r m) where
 --
 
 newtype TMVarDefault m a = TMVar (TVar m (Maybe a))
+
+deriving instance Eq (TVar m (Maybe a)) => Eq (TMVarDefault m a)
+
 
 labelTMVarDefault
   :: MonadLabelledSTM m
@@ -415,6 +573,8 @@ isEmptyTMVarDefault (TMVar t) = do
 data TQueueDefault m a = TQueue !(TVar m [a])
                                 !(TVar m [a])
 
+deriving instance Eq (TVar m [a]) => Eq (TQueueDefault m a)
+
 labelTQueueDefault
   :: MonadLabelledSTM m
   => TQueueDefault m a -> String -> STM m ()
@@ -436,7 +596,10 @@ writeTQueueDefault (TQueue _read write) a = do
 readTQueueDefault :: MonadSTM m => TQueueDefault m a -> STM m a
 readTQueueDefault queue = maybe retry return =<< tryReadTQueueDefault queue
 
-tryReadTQueueDefault :: MonadSTMTx (STM m) => TQueueDefault m a -> STM m (Maybe a)
+tryReadTQueueDefault :: MonadSTMTx (STM m)
+                                   (TVar m) (TMVar m)
+                                   (TQueue m) (TBQueue m)
+                     => TQueueDefault m a -> STM m (Maybe a)
 tryReadTQueueDefault (TQueue read write) = do
   xs <- readTVar read
   case xs of
@@ -452,7 +615,10 @@ tryReadTQueueDefault (TQueue read write) = do
           writeTVar read zs
           return (Just z)
 
-isEmptyTQueueDefault :: MonadSTMTx (STM m) => TQueueDefault m a -> STM m Bool
+isEmptyTQueueDefault :: MonadSTMTx (STM m)
+                                   (TVar m) (TMVar m)
+                                   (TQueue m) (TBQueue m)
+                     => TQueueDefault m a -> STM m Bool
 isEmptyTQueueDefault (TQueue read write) = do
   xs <- readTVar read
   case xs of
@@ -472,6 +638,10 @@ data TBQueueDefault m a = TBQueue
   !(TVar m Natural) -- write capacity
   !(TVar m [a])     -- written elements
   !Natural
+
+deriving instance ( Eq (TVar m [a])
+                  , Eq (TVar m Natural)
+                  ) => Eq (TBQueueDefault m a)
 
 labelTBQueueDefault
   :: MonadLabelledSTM m
@@ -493,7 +663,10 @@ newTBQueueDefault size = do
 readTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m a
 readTBQueueDefault queue = maybe retry return =<< tryReadTBQueueDefault queue
 
-tryReadTBQueueDefault :: MonadSTMTx (STM m) => TBQueueDefault m a -> STM m (Maybe a)
+tryReadTBQueueDefault :: MonadSTMTx (STM m)
+                                    (TVar m) (TMVar m)
+                                    (TQueue m) (TBQueue m)
+                      => TBQueueDefault m a -> STM m (Maybe a)
 tryReadTBQueueDefault (TBQueue rsize read _wsize write _size) = do
   xs <- readTVar read
   r <- readTVar rsize
@@ -572,13 +745,17 @@ flushTBQueueDefault (TBQueue rsize read wsize write size) = do
 
 -- | 'throwIO' specialised to @stm@ monad.
 --
-throwSTM :: (MonadSTMTx stm, MonadThrow.MonadThrow stm, Exception e)
+throwSTM :: ( MonadSTMTx stm tvar tmvar tqueue tbqueue
+            , MonadThrow.MonadThrow stm, Exception e
+            )
          => e -> stm a
 throwSTM = MonadThrow.throwIO
 
 
 -- | 'catch' speclialized for an @stm@ monad.
 --
-catchSTM :: (MonadSTMTx stm, MonadThrow.MonadCatch stm, Exception e)
+catchSTM :: ( MonadSTMTx stm tvar tmvar tqueue tbqueue
+            , MonadThrow.MonadCatch stm, Exception e
+            )
          => stm a -> (e -> stm a) -> stm a
 catchSTM = MonadThrow.catch
