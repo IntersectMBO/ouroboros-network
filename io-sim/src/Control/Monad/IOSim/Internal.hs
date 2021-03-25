@@ -57,6 +57,7 @@ import           Data.Bifoldable
 import           Data.Bifunctor
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
+import           Data.Function (on)
 import qualified Data.List as List
 import           Data.List.Octopus (Octopus (..), ppOctopus)
 import           Data.Map.Strict (Map)
@@ -1352,6 +1353,9 @@ data TVar s a = TVar {
        --
        tvarBlocked :: !(STRef s ([ThreadId], Set ThreadId))
      }
+
+instance Eq (TVar s a) where
+    (==) = on (==) tvarId
 
 data StmTxResult s a =
        -- | A committed transaction reports the vars that were written (in order
