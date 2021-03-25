@@ -133,21 +133,19 @@ instance Arbitrary GovernorMockEnvironmentWithoutAsyncDemotion where
 -- | Invariant. Used to check the QC generator and shrinker.
 --
 validGovernorMockEnvironment :: GovernorMockEnvironment -> Bool
-validGovernorMockEnvironment
-    GovernorMockEnvironment
-        { peerGraph,
-          localRootPeers,
-          publicRootPeers,
-          targets
-        } =
-        validPeerGraph peerGraph
-            && LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet
-            && publicRootPeers `Set.isSubsetOf` allPeersSet
-            && Set.null (Set.intersection localRootPeersSet publicRootPeers)
-            && all (sanePeerSelectionTargets . fst) targets
-        where
-            allPeersSet = allPeers peerGraph
-            localRootPeersSet = LocalRootPeers.keysSet localRootPeers
+validGovernorMockEnvironment GovernorMockEnvironment {
+                               peerGraph,
+                               localRootPeers,
+                               publicRootPeers,
+                               targets
+                             } =
+      validPeerGraph peerGraph
+   && LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet
+   &&                       publicRootPeers `Set.isSubsetOf` allPeersSet
+   && all (sanePeerSelectionTargets . fst) targets
+  where
+    allPeersSet = allPeers peerGraph
+
 
 --
 -- Execution in the mock environment
