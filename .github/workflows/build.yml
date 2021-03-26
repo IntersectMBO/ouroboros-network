@@ -153,12 +153,6 @@ jobs:
     - name: Build projects [build]
       run: cabal --builddir="$CABAL_BUILDDIR" build all
 
-    # Test Win32 specific packages
-
-    - name: Win32-network [test]
-      if: matrix.os == 'windows-latest'
-      run: cabal --builddir="$CABAL_BUILDDIR" run Win32-network:test
-
     # Test network packages
 
     - name: ntp-client [test]
