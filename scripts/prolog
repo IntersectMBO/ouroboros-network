@@ -18,7 +18,7 @@ This site contains Haskell documentation of
 
 * __Network__ - low level networking libraries, independent of our choices
 
-    * __Win32-network__
+    * __[Win32-network](/Win32-network)__
     * __[typed-protocols](typed-protocols/Network-TypedProtocol.html)__
     * __[network-mux](network-mux/Network-Mux.html)__
 
