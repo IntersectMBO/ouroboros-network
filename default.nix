@@ -59,6 +59,10 @@ let
       inherit pkgs;
       withHoogle = true;
     };
+
+    # so that eval time gc roots are cached (nix-tools stuff)
+    inherit (ouroborosNetworkHaskellPackages) roots;
+    inherit (haskellPackages.ouroboros-network.project) plan-nix;
   };
 in
 self
