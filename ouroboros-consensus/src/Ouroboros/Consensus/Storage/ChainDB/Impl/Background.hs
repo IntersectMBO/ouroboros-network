@@ -74,6 +74,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (TimeSinceLast (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -245,17 +247,17 @@ copyAndSnapshotRunner
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m Void
 copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
-    if onDiskShouldTakeSnapshot Nothing replayed then do
+    if onDiskShouldTakeSnapshot NoSnapshotTakenYet replayed then do
       updateLedgerSnapshots cdb
       now <- getMonotonicTime
-      loop (Just now) 0
+      loop (TimeSinceLast now) 0
     else
-      loop Nothing replayed
+      loop NoSnapshotTakenYet replayed
   where
     SecurityParam k      = configSecurityParam cdbTopLevelConfig
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
 
-    loop :: Maybe Time -> Word64 -> m Void
+    loop :: TimeSinceLast Time -> Word64 -> m Void
     loop mPrevSnapshot distance = do
       -- Wait for the chain to grow larger than @k@
       numToWrite <- atomically $ do
@@ -275,7 +277,7 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 
       if onDiskShouldTakeSnapshot elapsed distance' then do
         updateLedgerSnapshots cdb
-        loop (Just now) 0
+        loop (TimeSinceLast now) 0
       else
         loop mPrevSnapshot distance'
 

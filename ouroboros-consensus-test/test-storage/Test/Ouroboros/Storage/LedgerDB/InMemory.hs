@@ -29,8 +29,8 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
 import           Ouroboros.Consensus.Util
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
 
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 

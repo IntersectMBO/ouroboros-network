@@ -2,15 +2,17 @@
 module Test.Ouroboros.Storage.LedgerDB.DiskPolicy (tests) where
 
 import           Data.Function ((&))
-import           Data.Word
 import           Data.Time.Clock (DiffTime, secondsToDiffTime)
+import           Data.Word
 
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam(..))
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (DiskPolicy(..), defaultDiskPolicy, SnapshotInterval(..))
+import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (DiskPolicy (..), SnapshotInterval (..),
+                     TimeSinceLast (..), defaultDiskPolicy)
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
 
 tests :: TestTree
@@ -44,7 +46,7 @@ prop_shouldSnapshot_case1 blocksSinceLast securityParam@(SecurityParam k) snapsh
   let
     diskPolicy = defaultDiskPolicy securityParam snapshotInterval
   -- when
-    shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) Nothing blocksSinceLast
+    shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) NoSnapshotTakenYet blocksSinceLast
   -- then
   shouldSnapshot === (blocksSinceLast >= k)
 
@@ -57,7 +59,7 @@ prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam (AlwaysReq
       let
         diskPolicy = defaultDiskPolicy securityParam snapshotInterval
         -- when
-        shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
+        shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (TimeSinceLast timeSinceLast) blocksSinceLast
       in
         -- then
         shouldSnapshot === (timeSinceLast >= interval)
@@ -69,7 +71,7 @@ prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityP
   let
     diskPolicy = defaultDiskPolicy securityParam snapshotInterval
   -- when
-    shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
+    shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (TimeSinceLast timeSinceLast) blocksSinceLast
   -- then
     kTimes2 = secondsToDiffTime $ fromIntegral $ k * 2
   shouldSnapshot === (timeSinceLast >= kTimes2)
@@ -81,7 +83,7 @@ prop_shouldSnapshot_case4 timeSinceLast blocksSinceLast securityParam = do
    -- ^ given requested interval bigger then time passed
       diskPolicy = defaultDiskPolicy securityParam snapshotInterval
   -- when
-      shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
+      shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (TimeSinceLast timeSinceLast) blocksSinceLast
   -- then
   shouldSnapshot === (  blocksSinceLast >= 50_000
                      && timeSinceLast >= 6 * secondsToDiffTime 60)

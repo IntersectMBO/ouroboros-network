@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveFunctor      #-}
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE NumericUnderscores #-}
@@ -8,6 +9,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
     DiskPolicy(..)
   , defaultDiskPolicy
   , SnapshotInterval(..)
+  , TimeSinceLast (..)
   ) where
 
 import           Data.Time.Clock (secondsToDiffTime)
@@ -59,8 +61,8 @@ data DiskPolicy = DiskPolicy {
       --
       -- This function is passed two bits of information:
       --
-      -- * The time since the last snapshot, or 'Nothing' if none was taken yet.
-      --   Note that 'Nothing' merely means no snapshot had been taking yet
+      -- * The time since the last snapshot, or 'NoSnapshotTakenYet' if none was taken yet.
+      --   Note that 'NoSnapshotTakenYet' merely means no snapshot had been taking yet
       --   since the node was started; it does not necessarily mean that none
       --   exist on disk.
       --
@@ -73,9 +75,12 @@ data DiskPolicy = DiskPolicy {
       --   blocks had to be replayed.
       --
       -- See also 'defaultDiskPolicy'
-    , onDiskShouldTakeSnapshot :: Maybe DiffTime -> Word64 -> Bool
+    , onDiskShouldTakeSnapshot :: TimeSinceLast DiffTime -> Word64 -> Bool
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
+
+data TimeSinceLast time = NoSnapshotTakenYet | TimeSinceLast time
+  deriving Functor
 
 -- | Default on-disk policy suitable to use with cardano-node
 --
@@ -86,14 +91,14 @@ defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
     onDiskNumSnapshots = 2
 
     onDiskShouldTakeSnapshot ::
-         Maybe DiffTime
+         TimeSinceLast DiffTime
       -> Word64
       -> Bool
-    onDiskShouldTakeSnapshot (Just timeSinceLast) blocksSinceLast =
+    onDiskShouldTakeSnapshot (TimeSinceLast timeSinceLast) blocksSinceLast =
          timeSinceLast >= snapshotInterval
       || substantialAmountOfBlocksWereProcessed blocksSinceLast timeSinceLast
 
-    onDiskShouldTakeSnapshot Nothing blocksSinceLast =
+    onDiskShouldTakeSnapshot NoSnapshotTakenYet blocksSinceLast =
       -- | If users never leave their wallet running for long, this would mean
       -- that under some circumstances we would never take a snapshot
       -- So, on startup (when the 'time since the last snapshot' is `Nothing`),

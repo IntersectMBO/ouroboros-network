@@ -4,9 +4,9 @@ module Test.Ouroboros.Storage.LedgerDB (
 
 import           Test.Tasty
 
+import qualified Test.Ouroboros.Storage.LedgerDB.DiskPolicy as DiskPolicy
 import qualified Test.Ouroboros.Storage.LedgerDB.InMemory as InMemory
 import qualified Test.Ouroboros.Storage.LedgerDB.OnDisk as OnDisk
-import qualified Test.Ouroboros.Storage.LedgerDB.DiskPolicy as DiskPolicy
 
 tests :: TestTree
 tests = testGroup "LedgerDB" [
