@@ -1,6 +1,4 @@
 {-# LANGUAGE NumericUnderscores #-}
-
-{-# OPTIONS_GHC "-fno-warn-incomplete-patterns" #-}
 module Test.Ouroboros.Storage.LedgerDB.DiskPolicy (tests) where
 
 import           Data.Function ((&))
@@ -51,14 +49,19 @@ prop_shouldSnapshot_case1 blocksSinceLast securityParam@(SecurityParam k) snapsh
   shouldSnapshot === (blocksSinceLast >= k)
 
 prop_shouldSnapshot_case2 :: DiffTime -> Word64 -> SecurityParam -> AlwaysRequestedSnapshotInterval -> Property
-prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam (AlwaysRequestedSnapshotInterval snapshotInterval@(RequestedSnapshotInterval interval)) = do
-  -- given
-  let
-    diskPolicy = defaultDiskPolicy securityParam snapshotInterval
-  -- when
-    shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
-  -- then
-  shouldSnapshot === (timeSinceLast >= interval)
+prop_shouldSnapshot_case2 timeSinceLast blocksSinceLast securityParam (AlwaysRequestedSnapshotInterval snapshotInterval) =
+  case snapshotInterval of
+    DefaultSnapshotInterval -> impossible "expecting RequestedSnapshotInterval"
+    RequestedSnapshotInterval interval ->
+      -- given
+      let
+        diskPolicy = defaultDiskPolicy securityParam snapshotInterval
+        -- when
+        shouldSnapshot = (onDiskShouldTakeSnapshot diskPolicy) (Just timeSinceLast) blocksSinceLast
+      in
+        -- then
+        shouldSnapshot === (timeSinceLast >= interval)
+
 
 prop_shouldSnapshot_case3 :: DiffTime -> Word64 -> SecurityParam -> AlwaysDefaultSnapshotInterval -> Property
 prop_shouldSnapshot_case3 timeSinceLast blocksSinceLast securityParam@(SecurityParam k) (AlwaysDefaultSnapshotInterval snapshotInterval) = do
@@ -88,3 +91,6 @@ prop_onDiskNumSnapshots securityParam snapshotInterval =
   (diskPolicy & onDiskNumSnapshots) === 2
   where
     diskPolicy = defaultDiskPolicy securityParam snapshotInterval
+
+impossible :: String -> Property
+impossible = (flip counterexample False) . ("Impossible, should not happen: " <>)
