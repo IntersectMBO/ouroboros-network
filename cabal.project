@@ -21,7 +21,6 @@ packages: ./typed-protocols
           ./io-sim
           ./io-sim-classes
           ./ntp-client
-          ./Win32-network
           ./cardano-client
 
 constraints:
@@ -136,6 +135,11 @@ package small-steps
 
 package small-steps-test
   tests: False
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/Win32-network
+  tag: d81187239fe5f303aa1770565ad307efa605c820
 
 source-repository-package
   type: git
