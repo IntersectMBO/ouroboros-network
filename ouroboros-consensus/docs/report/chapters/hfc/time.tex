@@ -151,12 +151,13 @@ triplet
 \begin{center}
 (wallclock time, slot number, epoch number)
 \end{center}
-if $\sigma$ contains sufficient information to do so; $\timeconv{\sigma}{t}$
-is undefined otherwise.
+using ledger state $\sigma$, provided $\sigma$ contains sufficient information
+to do so; $\timeconv{\sigma}{t}$ is undefined otherwise.
 \end{definition}
 
 Since all past era transitions are (obviously) known, time conversion should
-always be possible for points in the past:
+always be possible for points in the past. Let $\ledgertip{\sigma}$ be the (time
+of) the most recently applied block in $\sigma$. Then:
 
 \begin{property}[Conversion for past points]
 $\timeconv{\sigma}{t}$ should be defined for all $t \le \ledgertip{\sigma}$.
@@ -171,6 +172,9 @@ If $\timeconv{\sigma}{t}$ is defined, then $\timeconv{\applyBlocks{bs}{\sigma}}{
 \timeconv{\applyBlocks{bs}{\sigma}}{t} = \timeconv{\sigma}{t}
 \end{equation*}
 \end{property}
+%
+where $\applyBlocks{bs}{\sigma}$ denotes the ledger state after applying blocks
+$\mathit{bs}$.
 
 \subsection{Forecast range}
 
