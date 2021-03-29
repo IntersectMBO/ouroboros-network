@@ -456,7 +456,8 @@ The block is known to be invalid (\cref{chaindb:invalidblocks}).
 \subsection{Add to current chain}
 \label{chainsel:addtochain}
 
-If $B$ fits onto the end of our current fragment $F$ (and hence onto our current chain) $F$, i.e.
+Let $B_\mathit{pred}$ be the predecessor block of $B$. If $B$ fits onto the end
+of our current fragment $F$ (and hence onto our current chain) $F$, i.e.
 %
 \begin{itemize}
 \item $F$ is empty, and $B_\mathit{pred} = I$
