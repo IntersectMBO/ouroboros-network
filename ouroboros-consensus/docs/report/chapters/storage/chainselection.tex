@@ -369,9 +369,10 @@ selection first, because that is much cheaper. Both approaches are semantically
 equivalent, since \lstinline!sortBy f . filter p = filter p . sortBy f! due to
 the stability of \lstinline!sortBy!.} Candidates that are strict prefixes of
 other candidates can be ignored (as justified by the ``prefer extension''
-assumption, \cref{prefer-extension}).\footnote{The implementation does not
+assumption, \cref{prefer-extension});\footnote{The implementation does not
 compute candidates, but rather ``maximal'' candidates, which do not include such
-prefixes.}
+prefixes.} we may reconsider some of these prefixes if we subsequently discover
+invalid blocks (see \cref{chaindb:init:select}).
 
 \item
 \label{chaindb:init:select}
