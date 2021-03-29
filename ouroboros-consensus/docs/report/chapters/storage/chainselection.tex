@@ -308,9 +308,10 @@ If we add a new block, then any new candidates must involve that new block:
 \end{lemma}
 
 The next lemma says that if we have previously found some optimal candidate $F$,
-and subsequently learn of a new block $B$, it suffices to find a locally optimal
-candidate \emph{amongst the candidates that involve $B$}; this new candidate
-will also be a globally optimal candidate.
+and subsequently learn of a new block $B$ (where $B$ is a direct or indirect
+extension of $F$), it suffices to find a locally optimal candidate \emph{amongst
+the candidates that involve $B$}; this new candidate will also be a globally
+optimal candidate.
 
 \begin{lemma}[Focus on new block]
 \label{focusonnewblock}
