@@ -86,14 +86,21 @@ applied (yet). This means that we should have
 The inclusion of \lstinline!LedgerErr! in \lstinline!IsLedger! is perhaps
 somewhat surprising. \lstinline!LedgerErr! is the type of errors that can arise
 when applying blocks to the ledger, but block application is not yet defined
-here. Nonetheless, a ledger can only be applied to a \emph{single} type of
-block, and consequently can only have a \emph{single} type of error; the only
-reason block application is defined separately is that a single type of
-\emph{block} can be used with multiple ledgers (in other words, this is a
-1-to-many relationship).\footnote{Defining \lstinline!LedgerErr! in
-\lstinline!ApplyBlock! (\cref{ledger:api:ApplyBlock}) would result in ambiguous
-types, since it would not refer to the \lstinline!blk! type variable of that
-class.}
+here. Nonetheless, a ledger can only be used with a \emph{single} type of
+block\footnote{While it is true that the Cardano ledger can be used with Byron
+blocks, Shelley blocks, Goguen blocks, etc., this distinction between the
+different blocks is invisible to most of the consensus layer. The whole raison
+d'\^{e}tre of the hard fork combinator (\cref{hfc}) is to present a composite
+ledger (say, the one consisting of the Byron, Shelley and Goguen eras) as a
+single type of ledger with a single type of block. The rest of the consensus
+layer is not aware that this composition has happened; from its point
+perspective it's just another ledger with an associated block type.}, and
+consequently can only have a \emph{single} type of error; the only reason block
+application is defined separately is that a single type of \emph{block} can be
+used with multiple ledgers (in other words, this is a 1-to-many
+relationship).\footnote{Defining \lstinline!LedgerErr! in \lstinline!ApplyBlock!
+(\cref{ledger:api:ApplyBlock}) would result in ambiguous types, since it would
+not refer to the \lstinline!blk! type variable of that class.}
 
 \subsection{Applying blocks}
 \label{ledger:api:ApplyBlock}
