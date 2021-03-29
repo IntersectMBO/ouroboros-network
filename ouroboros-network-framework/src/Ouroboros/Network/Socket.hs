@@ -432,11 +432,9 @@ fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
       (sd', remoteAddr, next) <- accept
       -- TOOD: we don't need to that on each accept
       localAddr <- Snocket.getLocalAddr sn sd'
-      atomically $ addConnection tblVar remoteAddr localAddr Nothing
       pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
 
-    close remoteAddr localAddr sd' = do
-        removeConnection tblVar remoteAddr localAddr
+    close remoteAddr localAddr sd' =
         Snocket.close sn sd'
 
 
