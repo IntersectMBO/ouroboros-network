@@ -346,8 +346,10 @@ the era transition is considered known again, it will be in the same location;
 after all, the block that confirmed the era transition \emph{is} stable. This
 means that any previously executed time conversions would remain to be valid;
 however, the fact that the forecast range shrinks might lead to unexpected
-surprises. Using blocks rather than slot numbers to determine stability avoids
-this problem.
+surprises. The consensus layer therefore does not use the ledger's layer
+notion of stability, but instead maintains additional state so that it can use
+\emph{block} numbers rather than slot numbers to determine stability and be
+able to determine stability precisely rather than approximate it.
 
 \section{Properties}
 
