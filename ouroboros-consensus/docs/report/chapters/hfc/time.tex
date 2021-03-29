@@ -277,8 +277,8 @@ information about future era transitions, and hence result in different time
 conversions. We therefore insist that an era transition is not considered
 ``known'' until the block confirming the era transition is stable (no longer
 subject to rollback). This means that the minimum distance from the announcement
-of the era transition to the actual era transition must be $k$ plus the width of
-the safe zone:
+of the era transition to the actual era transition must be long enough to
+guarantee $k$ blocks plus the width of the safe zone:
 %
 \begin{equation}
 \begin{tikzpicture}[baseline=0pt]
@@ -300,6 +300,10 @@ the safe zone:
 \end{tikzpicture}
 \end{equation}
 %
+How many slots are required to guarantee at least $k$ blocks is consensus
+protocol specific; for example, for Praos this is typically set to $3k/f$ slots,
+where $f$ is the active slot coefficient.
+
 Many ledgers set the width of the safe zone such that it guarantees at least $k$
 blocks, but \emph{in principle} there is no need for the width of the safe zone
 to be related to $k$ at all, although other parts of consensus might have
