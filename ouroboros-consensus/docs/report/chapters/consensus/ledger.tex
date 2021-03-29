@@ -270,7 +270,13 @@ yet known; we say that $e$ is ``out of the forecast range''.
 
 Since we're always forecasting what the ledger would look like \emph{if it would
 be advanced to a particular slot}, the result of forecasting is always something
-ticked:\footnote{Actually we never deal with an \emph{unticked} ledger view.}
+ticked:\footnote{An \emph{unticked} ledger view would arise from deriving the
+ledger view from the \emph{current} ledger state, not taking (nor needing to
+take) into account any changes that have been scheduled for later slots. The
+unticked ledger view is however rarely useful; when we validate a header, any
+changes that have been scheduled in the most recent ledger state for slots
+before or at the slot number of the header must be applied before we validate
+the header; we therefore almost exclusively work with ticked ledger views.}
 %
 \begin{lstlisting}
 data Forecast a = Forecast {
