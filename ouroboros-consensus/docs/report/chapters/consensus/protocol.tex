@@ -109,12 +109,21 @@ requirement does not change the protocol in any fundamental way: the analysis
 for Ouroboros Praos shows that nodes will not diverge more than $k$ blocks, and
 since BFT converges much quicker than that, adding this (large) maximum rollback
 requirement does not change anything.
-\item Ouroboros Genesis likewise does not impose a maximum rollback, \emph{but}
-the analysis \cite{cryptoeprint:2018:378} shows that when nodes are up to date,
-they can employ the Ouroboros Praos rule (i.e., the rule \emph{with} the maximum
-rollback requirement). This is not true when the node is behind and is catching
-up ,but the main goal of \cref{genesis} is to show how we can nonetheless avoid
-rollbacks exceeding $k$ blocks even when a node is catching up.
+\item The analysis that shows that nodes will not diverge by more than $k$
+blocks does of course not apply to new nodes joining the system. Indeed, when
+using Ouroboros Praos, such nodes are vulnerable to an attack where an adversary
+with some stake (does not have to be much) presents the newly joining node with
+a chain that diverges by more than $k$ blocks from the honest chain, at which
+point point the node would become unable to switch to the real chain. Solving
+this is the purview of Ouroboros Genesis.
+
+Like Ouroboros BFT, Ouroboros Genesis likewise does not impose a maximum
+rollback, \emph{but} the analysis \cite{cryptoeprint:2018:378} shows that when
+nodes are up to date, they can employ the Ouroboros Praos rule (i.e., the rule
+\emph{with} the maximum rollback requirement). This is not true when the node is
+behind and is catching up, but the main goal of \cref{genesis} is to show how we
+can nonetheless avoid rollbacks exceeding $k$ blocks even when a node is
+catching up.
 \end{itemize}
 
 Within the consensus layer we therefore assume that we \emph{always} have a
