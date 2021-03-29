@@ -583,9 +583,17 @@ time to a slot number. Both are problematic: the only ledger state we have
 available is our own current ledger state, which may not be usable to translate
 the current wallclock time to a slot number, and since we don't know anything
 about the provenance of the block (where the block came from), that ledger state
-may also not be usable to translate the block's slot number to a wallclock
-time. We now circumvent this problem by delaying the in-future check until we
-have validated the block, and so can use the block's \emph{own} ledger state to
+may also not be usable to translate the block's slot number to a wallclock time.
+We now circumvent this problem by delaying the in-future check until we have
+validated the block,\footnote{One might worry about vulnerability to a DoS
+attack, but the scope for an adversary to flood us with blocks from the future
+is limited, for two reasons. First, we still \emph{validate} all headers, and
+the forecast range will determine quite how far we can look ahead. Second, the
+moment that the adversary feeds us with enough blocks from the future that their
+chain becomes longer than our own, we will download the corresponding
+blocks, find that they are from the future, mark them as invalid (provided it
+exceeds clock skew) and disconnect from the peer which we now consider to be
+potentially adversarial.} and so can use the block's \emph{own} ledger state to
 do the time conversion (\cref{chainsel:infuture}).
 
 We saw in the previous section that the chain sync client \emph{could} do the
