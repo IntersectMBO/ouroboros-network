@@ -313,7 +313,8 @@ This function must satisfy two important properties:
 When we validate headers from an upstream node, the most recent usable ledger
 state we have is the ledger state at the intersection of our chain and the chain
 of the upstream node. That intersection will be at most $k$ blocks back, because
-that is our maximum rollback (\cref{consensus:overview:k}). Furthermore, it is
+that is our maximum rollback and we disconnect from nodes that fork from our
+chain more than $k$ blocks ago (\cref{consensus:overview:k}). Furthermore, it is
 only useful to track an upstream peer if we might want to adopt their blocks,
 and we only switch to their chain if it is longer than ours
 (\cref{consensus:overview:chainsel}). This means that in the worst case
