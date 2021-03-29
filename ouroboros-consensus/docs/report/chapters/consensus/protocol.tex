@@ -43,8 +43,12 @@ ones (justifying \emph{why} this is the right choice is the domain  of
 cryptographic research and well outside the scope of this report). In the
 simplest case, the length of the chain is \emph{all} that matters, and hence the
 only thing we need to know about the blocks at the tips of the chains is their
-block numbers.\footnote{This is not \emph{entirely} true, due to the presence of
-EBBs; see \cref{ebb-chain-selection}.}
+block numbers.\footnote{It doesn't actually matter if the actual block headers
+contain a block number or not; if they don't, we can add a ``virtual field''
+to the in-memory representation of the block header. For block headers that
+\emph{do} include a block number (which is the case for the Cardano chain),
+header  validation verifies that the block number is increasing. Note that EBBs
+complicate this particular somewhat; see page~\pageref{ebb-chain-selection}.}
 
 This does beg the question of how to compare two chains when one (or both) of
 them are empty, since now we have no header to compare. We will resolve this by

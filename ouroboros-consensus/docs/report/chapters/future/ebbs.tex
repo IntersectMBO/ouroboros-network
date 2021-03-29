@@ -130,7 +130,17 @@ possibility of having multiple blocks with the same block number and
 multiple blocks with the same slot number on a single chain. Some examples
 include:
 
-TODO: List of examples
+\begin{itemize}
+\item \label{ebb-chain-selection}
+For chain selection protocols based on chain length, two chains may end in
+blocks with the same block number, yet not have equal length.
+
+\item When we validate block headers that contain explicit block numbers, we
+cannot insist that those block numbers are monotonically increasing, instead
+having to add a special case for EBBs.
+
+\item TODO: Many, many others
+\end{itemize}
 
 In hindisght, we should have tried harder to eliminate EBBs from the get-go. In
 this chapter, we will discuss two options for modifying the existing design to
