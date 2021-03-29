@@ -605,19 +605,6 @@ validation we cut off this chain at $B$ because it is ahead of the clock, but we
 adopt $A$ because it is now valid.  In other words, we are always behind one
 block, adopting each block only when we receive the \emph{next} block.
 
-\begin{bug}
-One problem with this scheme is that if we receive a block $B$ which is ahead of
-the clock when we receive it, we might never notice it if block $B$ is not (yet)
-connected to our chain: by the time we receive the missing blocks (which connect
-$B$ to our chain), $B$ might no longer be ahead of the clock and we might adopt
-it, even if $B$ was ahead by more than the permissible clock skew.
-
-We could avoid this problem if we stored the time we received a block alongside
-the block in the volatile database, but in the current design, the volatile
-database does not store \emph{any} information on disk apart from raw blocks,
-so this would be quite a significant design change.
-\end{bug}
-
 \section{Sorting}
 
 In this chapter we have modelled chain selection as a partial order
