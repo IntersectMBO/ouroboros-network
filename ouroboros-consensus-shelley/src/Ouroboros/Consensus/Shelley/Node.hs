@@ -247,7 +247,8 @@ data ProtocolParamsMary = ProtocolParamsMary {
 
 -- | Parameters needed to run Alonzo
 data ProtocolParamsAlonzo = ProtocolParamsAlonzo {
-      alonzoProtVer :: SL.ProtVer
+      alonzoProtVer            :: SL.ProtVer
+    , alonzoTranslationContext :: Int
     }
 
 protocolInfoShelley ::

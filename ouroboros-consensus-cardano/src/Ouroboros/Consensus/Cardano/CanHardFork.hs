@@ -299,7 +299,8 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
         PCons (ignoringBoth cannotInjectTx)
       $ PCons (ignoringBoth translateTxShelleyToAllegraWrapper)
       $ PCons (ignoringBoth translateTxAllegraToMaryWrapper)
-      $ PCons (ignoringBoth translateTxMaryToAlonzoWrapper)
+      $ PCons (RequireBoth $ \_ (WrapLedgerConfig shelleyLedgerConfig) ->
+                                   translateTxMaryToAlonzoWrapper shelleyLedgerConfig)
       $ PNil
 
 {-------------------------------------------------------------------------------
@@ -511,9 +512,9 @@ translateLedgerStateMaryToAlonzoWrapper ::
        (ShelleyBlock (MaryEra c))
        (ShelleyBlock (AlonzoEra c))
 translateLedgerStateMaryToAlonzoWrapper =
-    ignoringBoth $
+   RequireBoth $ \_ (WrapLedgerConfig shelleyLedgerConfig) ->
       Translate $ \_epochNo ->
-        unComp . SL.translateEra' () . Comp
+        unComp . SL.translateEra' (shelleyTranslationContext shelleyLedgerConfig) . Comp
 
 
 translateTxAllegraToMaryWrapper ::
@@ -526,8 +527,9 @@ translateTxAllegraToMaryWrapper = InjectTx $
 
 translateTxMaryToAlonzoWrapper ::
      PraosCrypto c
-  => InjectTx
+  => ShelleyLedgerConfig (AlonzoEra c)
+  -> InjectTx
        (ShelleyBlock (MaryEra c))
        (ShelleyBlock (AlonzoEra c))
-translateTxMaryToAlonzoWrapper = InjectTx $
-    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+translateTxMaryToAlonzoWrapper shelleyLedgerConfig = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra (shelleyTranslationContext shelleyLedgerConfig) . Comp

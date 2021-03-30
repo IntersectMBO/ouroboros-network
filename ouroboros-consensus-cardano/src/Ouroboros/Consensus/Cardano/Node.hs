@@ -442,6 +442,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       }
                     ProtocolParamsAlonzo {
                         alonzoProtVer = protVerAlonzo
+                      , alonzoTranslationContext = translationContextAlonzo
                       }
                     ProtocolParamsTransition {
                         transitionTrigger = triggerHardForkByronShelley
@@ -574,7 +575,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
     -- Alonzo
     genesisAlonzo :: ShelleyGenesis (AlonzoEra c)
-    genesisAlonzo = SL.translateEra' () genesisMary
+    genesisAlonzo = SL.translateEra' translationContextAlonzo genesisMary
 
     blockConfigAlonzo :: BlockConfig (ShelleyBlock (AlonzoEra c))
     blockConfigAlonzo =
@@ -593,7 +594,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           genesisAlonzo
           maxMajorProtVer
           TriggerHardForkNever
-          ()
+          translationContextAlonzo
 
     -- Cardano
 

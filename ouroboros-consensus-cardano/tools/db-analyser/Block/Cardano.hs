@@ -113,7 +113,10 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
           maryProtVer    = ProtVer 4 0
         }
       ProtocolParamsAlonzo {
-          alonzoProtVer    = ProtVer 5 0
+            alonzoProtVer            = ProtVer 5 0
+          , alonzoTranslationContext = 0
+          -- ^ TODO this value is temp, we don't know the type of Alonzo's TranslationContext yet
+          --        Use default value or provide it as an argument
         }
       ProtocolParamsTransition {
           transitionTrigger = TriggerHardForkAtVersion 2

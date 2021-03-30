@@ -16,7 +16,11 @@ import qualified Shelley.Spec.Ledger.API as SL
   on the ledger-spec side
 -------------------------------------------------------------------------------}
 type instance PreviousEra (AlonzoEra c) = MaryEra c
-type instance TranslationContext (AlonzoEra c) = ()
+-- | We don't know yet what this type will look like but for now we are
+-- setting it to Int as an arbitrary type that is different
+-- than unit (unit was used as TranslationContext for all other shelley
+-- based eras)
+type instance TranslationContext (AlonzoEra c) = Int
 
 instance Crypto c => TranslateEra (AlonzoEra c) SL.ShelleyGenesis where
   translateEra _ctxt _genesis = undefined
