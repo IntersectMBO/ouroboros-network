@@ -699,12 +699,15 @@ trimming any blocks that are ahead of the wallclock.
 \label{time:scheduling-actions}
 
 The consensus layer provides an abstraction called \lstinline!BlockchainTime!
-that provides access to the current slot number. It also offers an interface
-for scheduling actions to be run on every slot change. However, if the node
-is still syncing with the chain, and does not have a recent ledger state
-available, the current slot number, and indeed the current slot length,
-are simply unknown. In this case the blockchain time will report the current
-slot number as unavailable, and any scheduled actions will not be run.
+that provides access to the current slot number. It also offers an interface for
+scheduling actions to be run on every slot change. However, if the node is still
+syncing with the chain, and does not have a recent ledger state available, the
+current slot number, and indeed the current slot length, are simply unknown:
+when the node uses its current ledger state to  try and convert the current
+wallclock to a slot number, it will discover that  the current wallclock is
+outside the ledger's forecast range. In this case the blockchain time will
+report the current slot number as unavailable, and any scheduled actions will
+not be run.
 
 We therefore limit the use of this scheduler to a single application only:
 it is used to trigger the leadership check (and corresponding block
@@ -731,7 +734,7 @@ In order to switch between these two modes we want to know if we are near the
 tip of the ledger---but how can we tell? If we know the current slot number
 (the slot number corresponding to the current wall clock), we can compare
 that current slot number to the slot number at the tip of the ledger. But,
-as we mentioned before, if we are far behind, the current slot number of
+as we mentioned before, if we are far behind, the current slot number is
 simply unknown. Fortunately, we can use this to our advantage: if the
 slot number is unknown, we \emph{must} be far behind, and hence we can use
 the decision, turning on deadline mode only if the slot number is known
