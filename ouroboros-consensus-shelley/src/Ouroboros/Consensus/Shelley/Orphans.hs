@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Shelley.Orphans where
 import           Cardano.Ledger.Era (TranslateEra (..), PreviousEra, TranslationContext)
 import           Cardano.Ledger.Alonzo (AlonzoEra)
 import           Cardano.Ledger.Mary (MaryEra)
+import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Cardano.Ledger.Crypto (Crypto)
 import qualified Shelley.Spec.Ledger.API as SL
 
@@ -25,3 +26,8 @@ instance Crypto c => TranslateEra (AlonzoEra c) SL.Tx where
 
 instance Crypto c => TranslateEra (AlonzoEra c) SL.NewEpochState where
   translateEra _ctxt _genesis = undefined
+
+{-------------------------------------------------------------------------------
+  TODO: Should it be us or ledger-spec
+-------------------------------------------------------------------------------}
+type instance TranslationContext (ShelleyEra c) = ()

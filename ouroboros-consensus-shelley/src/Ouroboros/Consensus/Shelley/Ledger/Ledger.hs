@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.Core as Ledger.Core
+import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 
@@ -105,8 +106,11 @@ data ShelleyLedgerConfig era = ShelleyLedgerConfig {
       -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
       -- because it used very often.
     , shelleyLedgerGlobals        :: !SL.Globals
+    , shelleyTranslationContext   :: !(SL.TranslationContext era)
     }
-  deriving (Generic, NoThunks)
+  deriving (Generic)
+
+deriving instance (ShelleyBasedEra era) => NoThunks (ShelleyLedgerConfig era)
 
 shelleyLedgerGenesis :: ShelleyLedgerConfig era -> SL.ShelleyGenesis era
 shelleyLedgerGenesis = getCompactGenesis . shelleyLedgerCompactGenesis
@@ -137,11 +141,13 @@ mkShelleyLedgerConfig
   :: SL.ShelleyGenesis era
   -> EpochInfo Identity
   -> MaxMajorProtVer
+  -> SL.TranslationContext era
   -> ShelleyLedgerConfig era
-mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
+mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) translationContext =
     ShelleyLedgerConfig {
         shelleyLedgerCompactGenesis = compactGenesis genesis
       , shelleyLedgerGlobals        = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
+      , shelleyTranslationContext   = translationContext
       }
 
 type instance LedgerCfg (LedgerState (ShelleyBlock era)) = ShelleyLedgerConfig era

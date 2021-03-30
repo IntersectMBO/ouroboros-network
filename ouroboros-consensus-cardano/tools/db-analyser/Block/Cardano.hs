@@ -101,6 +101,7 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
           shelleyBasedGenesis           = genesisShelley
         , shelleyBasedInitialNonce      = initialNonce
         , shelleyBasedLeaderCredentials = []
+        , shelleyTranslationContext     = ()
         }
       ProtocolParamsShelley {
           shelleyProtVer = ProtVer 2 0

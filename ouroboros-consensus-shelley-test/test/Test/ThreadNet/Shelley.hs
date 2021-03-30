@@ -371,3 +371,4 @@ prop_simple_real_tpraos_convergence TestSetup
             genesisConfig
             (fixedSizeEpochInfo epochSize)
             (MaxMajorProtVer 1000) -- TODO
+            ()

@@ -81,6 +81,7 @@ mkShelleyProtocolInfo genesis initialNonce =
           shelleyBasedGenesis           = genesis
         , shelleyBasedInitialNonce      = initialNonce
         , shelleyBasedLeaderCredentials = []
+        , shelleyTranslationContext     = ()
         }
       ProtocolParamsShelley {
           shelleyProtVer = SL.ProtVer 2 0

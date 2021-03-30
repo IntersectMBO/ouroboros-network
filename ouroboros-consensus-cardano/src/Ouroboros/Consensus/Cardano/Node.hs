@@ -519,6 +519,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           genesisShelley
           maxMajorProtVer
           triggerHardForkShelleyAllegra
+          ()
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley
@@ -545,6 +546,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           genesisAllegra
           maxMajorProtVer
           triggerHardForkAllegraMary
+          ()
 
     -- Mary
 
@@ -568,6 +570,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           genesisMary
           maxMajorProtVer
           triggerHardForkMaryAlonzo
+          ()
 
     -- Alonzo
     genesisAlonzo :: ShelleyGenesis (AlonzoEra c)
@@ -590,6 +593,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           genesisAlonzo
           maxMajorProtVer
           TriggerHardForkNever
+          ()
 
     -- Cardano
 
@@ -757,8 +761,9 @@ mkPartialLedgerConfigShelley ::
      ShelleyGenesis era
   -> MaxMajorProtVer
   -> TriggerHardFork
+  -> SL.TranslationContext era
   -> PartialLedgerConfig (ShelleyBlock era)
-mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFork =
+mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFork translationContext =
     ShelleyPartialLedgerConfig {
           shelleyLedgerConfig =
             Shelley.mkShelleyLedgerConfig
@@ -767,5 +772,6 @@ mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFo
               -- in the partial ledger config with the correct one.
               History.dummyEpochInfo
               maxMajorProtVer
+              translationContext
         , shelleyTriggerHardFork = shelleyTriggerHardFork
         }

@@ -27,6 +27,7 @@ import           Data.Default.Class (Default)
 import           Data.Text (Text)
 import           GHC.Records
 import           Numeric.Natural (Natural)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
@@ -39,9 +40,14 @@ import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Control.State.Transition (State)
 
+
 import           Cardano.Binary (FromCBOR, ToCBOR)
+import qualified Cardano.Ledger.Era as SL
+import           Cardano.Ledger.Mary.Translation ()
+import           Cardano.Ledger.Allegra.Translation ()
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
+import           Ouroboros.Consensus.Shelley.Orphans
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 
@@ -114,6 +120,7 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (LC.PParams era)
       , FromCBOR (SL.PParamsDelta era)
       , ToCBOR (LC.PParams era)
+      , NoThunks (SL.TranslationContext era)
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.

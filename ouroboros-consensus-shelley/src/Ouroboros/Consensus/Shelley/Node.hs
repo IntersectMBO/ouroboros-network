@@ -69,6 +69,7 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
+import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
@@ -226,6 +227,7 @@ data ProtocolParamsShelleyBased era = ProtocolParamsShelleyBased {
       -- mutually incompatible.
     , shelleyBasedInitialNonce      :: SL.Nonce
     , shelleyBasedLeaderCredentials :: [TPraosLeaderCredentials (EraCrypto era)]
+    , shelleyTranslationContext     :: SL.TranslationContext era
     }
 
 -- | Parameters needed to run Shelley
@@ -268,6 +270,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
                              shelleyBasedGenesis           = genesis
                            , shelleyBasedInitialNonce      = initialNonce
                            , shelleyBasedLeaderCredentials = credentialss
+                           , shelleyTranslationContext     = translationContext
                            }
                          protVer =
     assertWithMsg (validateGenesis genesis) $
@@ -297,7 +300,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
       }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock era)
-    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer
+    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer translationContext
 
     epochInfo :: EpochInfo Identity
     epochInfo = fixedSizeEpochInfo $ SL.sgEpochLength genesis
