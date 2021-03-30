@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies      #-}
@@ -20,18 +21,21 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Mock.Protocol.Praos (PraosKES)
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Util ((.....:))
 
+import Cardano.Crypto.KES.Class (SignKeyAccessKES)
+
 type MockPBftBlock = SimplePBftBlock SimpleMockCrypto PBftMockCrypto
 
-protocolInfoMockPBFT :: Monad m
+protocolInfoMockPBFT :: Monad (SignKeyAccessKES (PraosKES SimpleMockCrypto))
                      => PBftParams
                      -> HardFork.EraParams
                      -> CoreNodeId
-                     -> ProtocolInfo m MockPBftBlock
+                     -> ProtocolInfo (SignKeyAccessKES (PraosKES SimpleMockCrypto)) MockPBftBlock
 protocolInfoMockPBFT params eraParams nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -80,10 +84,10 @@ pbftBlockForging ::
      , PBftCrypto c'
      , Signable (PBftDSIGN c') (SignedSimplePBft c c')
      , ContextDSIGN (PBftDSIGN c') ~ ()
-     , Monad m
+     , Monad (SignKeyAccessKES (PraosKES c))
      )
   => PBftCanBeLeader c'
-  -> BlockForging m (SimplePBftBlock c c')
+  -> BlockForging (SignKeyAccessKES (PraosKES c)) (SimplePBftBlock c c')
 pbftBlockForging canBeLeader = BlockForging {
       forgeLabel       = "pbftBlockForging"
     , canBeLeader
@@ -95,5 +99,5 @@ pbftBlockForging canBeLeader = BlockForging {
                                canBeLeader
                                slot
                                tickedPBftState
-    , forgeBlock       = return .....: forgeSimple forgePBftExt
+    , forgeBlock       = forgeSimple forgePBftExt
     }

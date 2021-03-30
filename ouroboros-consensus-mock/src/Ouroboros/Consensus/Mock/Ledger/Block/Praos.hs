@@ -154,10 +154,9 @@ forgePraosExt :: forall c c'.
                  ( SimpleCrypto c
                  , PraosCrypto c'
                  , Signable (PraosKES c') (SignedSimplePraos c c')
-                 , c ~ c'
                  )
               => HotKey c'
-              -> ForgeExt c (SimplePraosExt c c')
+              -> ForgeExt c (SimplePraosExt c c') (SignKeyAccessKES (PraosKES c'))
 forgePraosExt hotKey = ForgeExt $ \_cfg isLeader SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
 

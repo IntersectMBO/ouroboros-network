@@ -7,4 +7,3 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Test.Util.Orphans.NoThunks ()
 
 instance IOLike (IOSim s) where
-  forgetSignKeyKES = const $ return ()

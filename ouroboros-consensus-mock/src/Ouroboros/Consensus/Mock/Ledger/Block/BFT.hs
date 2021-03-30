@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -30,7 +31,7 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Util
-import           Cardano.Crypto.KES.Class (SignKeyAccessKES)
+import           Cardano.Prelude (Identity)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -41,7 +42,6 @@ import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Mock.Protocol.Praos (PraosKES)
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.Serialisation
@@ -127,9 +127,8 @@ forgeBftExt :: forall c c'.
                ( SimpleCrypto c
                , BftCrypto c'
                , Signable (BftDSIGN c') (SignedSimpleBft c c')
-               , Monad (SignKeyAccessKES (PraosKES c))
                )
-            => ForgeExt c (SimpleBftExt c c')
+            => ForgeExt c (SimpleBftExt c c') Identity
 forgeBftExt = ForgeExt $ \cfg _ SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
         ext :: SimpleBftExt c c' = SimpleBftExt $

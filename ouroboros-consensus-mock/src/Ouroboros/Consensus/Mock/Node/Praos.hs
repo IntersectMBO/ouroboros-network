@@ -1,13 +1,18 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node.Praos (
     MockPraosBlock
   , protocolInfoPraos
   ) where
+
+import Cardano.Prelude (Identity, runIdentity)
 
 import           Data.Bifunctor (second)
 import           Data.Map (Map)
@@ -90,7 +95,9 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 =
             0)
 
 praosBlockForging ::
-     IOLike m
+     ( IOLike m
+     , SignKeyAccessKES (PraosKES PraosMockCrypto) ~ Identity
+     )
   => CoreNodeId
   -> HotKey PraosMockCrypto
   -> m (BlockForging m MockPraosBlock)
@@ -99,18 +106,18 @@ praosBlockForging cid initHotKey = do
     return $ BlockForging {
         forgeLabel       = "praosBlockForging"
       , canBeLeader      = cid
-      , updateForgeState = \_ sno _ -> updateMVar varHotKey $
-                                 second forgeStateUpdateInfoFromUpdateInfo
-                               . evolveKey sno
+      , updateForgeState = \_ sno _ ->
+          updateMVar varHotKey $ \hotKey ->
+            let (hotKey', info) = runIdentity (evolveKey sno hotKey)
+            in (hotKey', forgeStateUpdateInfoFromUpdateInfo info)
       , checkCanForge    = \_ _ _ _ _ -> return ()
       , forgeBlock       = \cfg bno sno tickedLedgerSt txs isLeader -> do
                                hotKey <- readMVar varHotKey
-                               return $
-                                 forgeSimple
-                                   (forgePraosExt hotKey)
-                                   cfg
-                                   bno sno
-                                   tickedLedgerSt
-                                   txs
-                                   isLeader
+                               forgeSimple
+                                 (hoistForgeExt into $ forgePraosExt hotKey)
+                                 cfg
+                                 bno sno
+                                 tickedLedgerSt
+                                 txs
+                                 isLeader
       }

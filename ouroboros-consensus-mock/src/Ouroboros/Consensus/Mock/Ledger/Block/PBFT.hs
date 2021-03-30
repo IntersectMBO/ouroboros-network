@@ -148,7 +148,7 @@ forgePBftExt :: forall c c'.
                 , ContextDSIGN (PBftDSIGN c') ~ ()
                 , Monad (SignKeyAccessKES (PraosKES c))
                 )
-             => ForgeExt c (SimplePBftExt c c')
+             => ForgeExt c (SimplePBftExt c c') (SignKeyAccessKES (PraosKES c))
 forgePBftExt = ForgeExt $ \_cfg isLeader SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
         ext :: SimplePBftExt c c' = SimplePBftExt $

@@ -124,8 +124,8 @@ type instance ForgeStateInfo (SimplePraosRuleBlock c) = ()
 
 type instance ForgeStateUpdateError (SimplePraosRuleBlock c) = Void
 
-forgePraosRuleExt :: (SimpleCrypto c, Monad (SignKeyAccessKES (PraosKES c)))
-                  => ForgeExt c SimplePraosRuleExt
+forgePraosRuleExt :: (SimpleCrypto c, Monad m)
+                  => ForgeExt c SimplePraosRuleExt m
 forgePraosRuleExt = ForgeExt $ \cfg _ SimpleBlock{..} -> do
     let ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
     let SimpleHeader{..} = simpleHeader
