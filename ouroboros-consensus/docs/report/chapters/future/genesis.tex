@@ -46,7 +46,13 @@ way\footnote{The chain sync client does actually allow for some clock skew.
 Headers that exceed the clock skew are however not included in chain selection.}
 for one chain to be longer than another is by having more filled slots between
 the tip of the shared prefix and ``now'': in other words, they must be
-\emph{denser}.
+\emph{denser}.\footnote{A slightly subtle point arises from era transitions on
+the chain that may change parameters such as the active slot coefficient,
+allowing for denser chains after the transition. Although an adversary can
+introduce such a transition on their own fork, such a transition would not take
+effect until one stability window later, and so this won't affect the density
+near the intersection point. Era transitions that are agreed on on the main
+chain  benefit the honest parties and the adversary equally.}
 %
 \begin{center}
 \begin{tikzpicture}
