@@ -115,7 +115,7 @@ blockFetchServer tracer chainDB _version registry = senderSide
       next <- ChainDB.iteratorNext it
       case next of
         IteratorResult blk     -> do
-          traceWith tracer TraceBlockFetchServerSendBlock
+          traceWith tracer $ TraceBlockFetchServerSendBlock $ point blk
           return $ SendMsgBlock (withoutPoint blk) (sendBlocks it)
         IteratorExhausted      -> do
           ChainDB.iteratorClose it
@@ -132,5 +132,5 @@ blockFetchServer tracer chainDB _version registry = senderSide
 -- | Events traced by the Block Fetch Server.
 data TraceBlockFetchServerEvent blk =
     -- | The server sent a block to the peer.
-    TraceBlockFetchServerSendBlock
+    TraceBlockFetchServerSendBlock !(Point blk)
   deriving (Eq, Show)
