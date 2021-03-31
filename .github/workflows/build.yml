@@ -21,19 +21,12 @@ jobs:
             subset: consensus
 
     steps:
-    - name: Select optimal cabal version
-      run: |
-        case "$OS" in
-          Windows_NT)   echo "CABAL_VERSION=3.4.0.0-rc5"  >> $GITHUB_ENV;;
-          *)            echo "CABAL_VERSION=3.4.0.0"      >> $GITHUB_ENV;;
-        esac
-
     - name: Install Haskell
       uses: haskell/actions/setup@v1
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: ${{ env.CABAL_VERSION }}
+        cabal-version: 3.4.0.0
 
     - name: Show Haskell tool versions
       run: |
