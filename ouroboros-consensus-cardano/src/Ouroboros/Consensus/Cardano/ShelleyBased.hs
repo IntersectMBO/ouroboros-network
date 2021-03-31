@@ -7,64 +7,17 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 module Ouroboros.Consensus.Cardano.ShelleyBased (
-    -- * Injection from Shelley-based eras into the Cardano eras
-    InjectShelley
-  , injectShelleyNP
-  , injectShelleyOptNP
-    -- * Transform Shelley-based types
-  , HasCrypto
-  , overShelleyBasedLedgerState
+    overShelleyBasedLedgerState
   ) where
 
 import           Data.SOP.Strict
 
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
-
 import           Ouroboros.Consensus.HardFork.Combinator
 
+import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto)
-
-import           Ouroboros.Consensus.Cardano.Block
-
-{-------------------------------------------------------------------------------
-  Injection from Shelley-based eras into the Cardano eras
--------------------------------------------------------------------------------}
-
--- | Witness the relation between the Cardano eras and the Shelley-based eras.
-class    cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
-instance cardanoEra ~ ShelleyBlock shelleyEra => InjectShelley shelleyEra cardanoEra
-
-injectShelleyNP ::
-     AllZip InjectShelley shelleyEras cardanoEras
-  => (   forall shelleyEra cardanoEra.
-         InjectShelley shelleyEra cardanoEra
-      => f shelleyEra -> g cardanoEra
-     )
-  -> NP f shelleyEras -> NP g cardanoEras
-injectShelleyNP _ Nil       = Nil
-injectShelleyNP f (x :* xs) = f x :* injectShelleyNP f xs
-
-injectShelleyOptNP ::
-     AllZip InjectShelley shelleyEras cardanoEras
-  => (   forall shelleyEra cardanoEra.
-         InjectShelley shelleyEra cardanoEra
-      => f shelleyEra -> g cardanoEra
-     )
-  -> OptNP empty f shelleyEras -> OptNP empty g cardanoEras
-injectShelleyOptNP _ OptNil         = OptNil
-injectShelleyOptNP f (OptSkip   xs) = OptSkip (injectShelleyOptNP f xs)
-injectShelleyOptNP f (OptCons x xs) = OptCons (f x) (injectShelleyOptNP f xs)
-
-{-------------------------------------------------------------------------------
-  Transform Shelley-based types
--------------------------------------------------------------------------------}
-
--- | Witness the relation between the crypto used by a Shelley-based era.
---
--- Can be partially applied while an equality constraint cannot.
-class EraCrypto era ~ c => HasCrypto c era
-instance EraCrypto era ~ c => HasCrypto c era
+import           Ouroboros.Consensus.Shelley.ShelleyBased
 
 -- | When the given ledger state corresponds to a Shelley-based era, apply the
 -- given function to it.
