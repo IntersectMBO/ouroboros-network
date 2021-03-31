@@ -123,6 +123,7 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsen
                                                              , NumberOfPeers
                                                              , UseLedgerAfter (..)
                                                              , runLedgerPeers)
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerStateActions ( PeerSelectionActionsTrace (..)
                                                                   , PeerStateActionsArguments (..)
                                                                   , PeerConnectionHandle
@@ -413,6 +414,7 @@ data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
 
     , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
       -- ^ Interface used to get peers from the current ledger.
+    , daPeerMetrics    :: PeerMetrics m ntnAddr
     , daBlockFetchMode :: STM m FetchMode
       -- ^ Used by churn-governor
     }
@@ -610,6 +612,7 @@ runDataDiffusion tracers
                                        , daMiniProtocolParameters
                                        , daLocalRethrowPolicy
                                        , daLedgerPeersCtx
+                                       , daPeerMetrics
                                        , daBlockFetchMode
                                        } =
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
@@ -890,11 +893,13 @@ runDataDiffusion tracers
                             dtTracePeerSelectionCounters
                             fuzzRng
                             peerSelectionActions
-                            (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
+                            (Diffusion.Policies.simplePeerSelectionPolicy
+                              policyRngVar daPeerMetrics))
                           $ \governorThread ->
                             Async.withAsync
                               (Governor.peerChurnGovernor
                                 dtTracePeerSelectionTracer
+                                daPeerMetrics
                                 churnRng
                                 daBlockFetchMode
                                 daPeerSelectionTargets
@@ -1012,7 +1017,8 @@ runDataDiffusion tracers
                           dtTracePeerSelectionCounters
                           fuzzRng
                           peerSelectionActions
-                          (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
+                          (Diffusion.Policies.simplePeerSelectionPolicy
+                            policyRngVar daPeerMetrics))
                         $ \governorThread -> do
                         let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
                             mkAddr addr = ( Socket.addrFamily  addr
@@ -1046,6 +1052,7 @@ runDataDiffusion tracers
                                   Async.withAsync
                                     (Governor.peerChurnGovernor
                                       dtTracePeerSelectionTracer
+                                      daPeerMetrics
                                       churnRng
                                       daBlockFetchMode
                                       daPeerSelectionTargets

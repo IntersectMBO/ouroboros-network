@@ -1010,6 +1010,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                      , intersectTimeout = waitForever
                      , mustReplyTimeout = waitForever
                      })
+                  (\_ _ _ -> return ())
                   (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
       -- In practice, a robust wallet/user can persistently add a transaction
