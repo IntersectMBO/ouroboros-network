@@ -7,44 +7,7 @@ Please open PRs to add particularly useful content in this file. Though we would
 like the file to remain as approachable as possible, therefore small and
 narrowly-scoped.
 
-The HR will run separate "on-boarding" that will help you to get to know
-the company better. The purpose of this document is to make you feel comfortable
-and productive in the Consensus team.
-
-Welcome, we are thrilled to have you here :)!
-
-## The team
-
-Currently the team consists of:
-
-* [Nicolas Frisby](https://github.com/nfrisby)
-* [Pawel Szulc](https://github.com/EncodePanda)
-* [Edsko de Vries](https://github.com/edsko) (8 hours a week)
-
 ## Quick-start
-
-### Join our slack channels
-
-Please join our internal slack channel `#ouroboros-prototyping` and say "hi" to the rest of the team.
-
-It is worth also joining:
-
-* `#haskell` - collective mind of all IOHK's Haskellers
-* `#consensus` - public channel where users of our layer will ask questions
-
-### Clone the repository
-
-If you have not done this already please clone
-[this repo](https://github.com/input-output-hk/ouroboros-network/). You don't have
-to fork it. Ask for appropriate rights to the repository on `#ouroboros-prototyping`
-
-### Create your first PR!
-
-* Create new branch - convention is `/github_nickname/name_of_the_branch`
-* Modify `ouroboros-consensus/docs/Onboarding.md` by adding yourself to the `## The team` section
-* Commit, push and make a PR
-* Find some one to review it by the end of the day
-* Merge it! - note that we use `bors` to merge our PRs
 
 ### Build the project
 
