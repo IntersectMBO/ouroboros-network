@@ -55,6 +55,7 @@ import           Ouroboros.Network.Driver
 import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.PeerSelection.PeerMetric (ReportHeaderMetricsSTM)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
@@ -109,6 +110,7 @@ data Handlers m peer blk = Handlers {
         :: peer
         -> NodeToNodeVersion
         -> ControlMessageSTM m
+        -> ReportHeaderMetricsSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
@@ -451,9 +453,10 @@ mkApps
   -> Tracers m remotePeer blk e
   -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA)
   -> m ChainSyncTimeout
+  -> (remotePeer -> ReportHeaderMetricsSTM m)
   -> Handlers m remotePeer blk
   -> Apps m remotePeer bCS bBF bTX bTX2 bKA ()
-mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
+mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout addHeaderMetrics Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
@@ -485,7 +488,8 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient them version controlMessageSTM varCandidate
+                  $ hChainSyncClient them version controlMessageSTM
+                      (addHeaderMetrics them) varCandidate
               return ((), trailing)
 
     aChainSyncServer

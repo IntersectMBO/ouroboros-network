@@ -56,6 +56,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
+import           Ouroboros.Network.PeerSelection.PeerMetric (ReportHeaderMetricsSTM)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
@@ -426,6 +427,7 @@ chainSyncClient
     -> ChainDbView m blk
     -> NodeToNodeVersion
     -> ControlMessageSTM m
+    -> ReportHeaderMetricsSTM m
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg
@@ -437,6 +439,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 }
                 _version
                 controlMessageSTM
+                reportHeaderMetricsSTM
                 varCandidate = ChainSyncClientPipelined $
     continueWithState () $ initialise
   where
@@ -718,6 +721,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                      (ClientPipelinedStIdle n)
     rollForward mkPipelineDecision n hdr theirTip
               = Stateful $ \kis -> traceException $ do
+      now <- getMonotonicTime
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
@@ -814,6 +818,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   , mostRecentIntersection  = mostRecentIntersection'
                   }
           atomically $ writeTVar varCandidate theirFrag'
+          let hf = getHeaderFields hdr
+              slotNo = headerFieldSlot hf
+          atomically $ reportHeaderMetricsSTM slotNo now
 
           continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
 
