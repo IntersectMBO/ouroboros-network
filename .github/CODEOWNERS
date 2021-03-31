@@ -49,11 +49,11 @@ scripts/buildkite/check-stylish.sh @nfrisby @input-output-hk/consensus-superowne
 bors.toml                          @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 nix/                               @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 *.nix                              @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-.github/workflows/                 @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+.github/workflows/                 @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 
-cabal.project.local.ci.windows     @coot @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-cabal.project.local.github-pages   @coot @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-.github/workflows/github-page.yml  @coot @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+cabal.project.local.ci.windows     @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+cabal.project.local.github-pages   @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+.github/workflows/github-page.yml  @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 
 .buildkite/slow-ThreadNet-tests.sh @nfrisby @input-output-hk/consensus-superowners
 .buildkite/validate-mainnet.sh     @nfrisby @input-output-hk/consensus-superowners
