@@ -832,7 +832,7 @@ runDataDiffusion tracers
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       timeout
-                      daPeerSelectionTargets
+                      (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
                       daLocalRootPeers
                       daPublicRootPeers
@@ -940,7 +940,7 @@ runDataDiffusion tracers
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       timeout
-                      daPeerSelectionTargets
+                      (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
                       daLocalRootPeers
                       daPublicRootPeers
