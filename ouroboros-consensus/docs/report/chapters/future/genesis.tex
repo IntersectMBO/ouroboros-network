@@ -941,7 +941,7 @@ all and can go straight to step (2). This will allow a node to sync faster:
 consider a new node that is joining the network. In most cases, all of the
 node's upstream peers will report the \emph{same} blocks for all but the last
 few blocks on the chain. Since there is no fork to resolve, we can start
-adopting blocks the moment we see them.
+adopting each block the moment it is reported by all peers.
 
 \item When we say that the density is \emph{known}, we mean that we have seen
 the last required header and validated it. However, consider what happens when
