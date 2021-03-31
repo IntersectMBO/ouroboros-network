@@ -43,7 +43,7 @@ nix-env -iA cachix -f https://cachix.org/api/v1/install
 
 * Configure cachix
 
-Open your `~/.confg/nix/nix.conf` and add/modify following entries
+Open your `~/.config/nix/nix.conf` and add/modify following entries
 
 ```
 substituters = https://cache.nixos.org/ https://ouroboros-network.cachix.org https://hydra.iohk.io/ https://iohk.cachix.org/
@@ -56,7 +56,7 @@ trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDS
 Enter nix shell from project's root folder
 
 ```
-$> nix-shell
+$> nix-shell -j4
 ```
 
 Build all
@@ -73,7 +73,8 @@ and test all
 
 ### Congrats!
 
-Congratulations! You are all set. Now, draw the rest of the owl.
+Congratulations! You are all set.
+Now, [draw the rest of the owl](https://i.kym-cdn.com/photos/images/newsfeed/000/572/078/d6d.jpg).
 
 
 ## Very High-Level Motivation
