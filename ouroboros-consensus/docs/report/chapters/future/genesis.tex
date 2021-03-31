@@ -923,13 +923,13 @@ peer's chain (in which case the peer will tell us so). If a peer tells us they h
 more headers but then do not provide them, we should disconnect from them
 after some time-out to avoid a potential denial of service attack.
 
-Note that if that last header is \emph{not} the last header on a peer's chain,
-we will not be able to validate it: since it is more than $s$ slots away from
-the anchor point (and we only have a ledger state at the anchor point), it falls
-outside the ledger's forecast range. However, this does not matter: the presence
-of this header only tells us that we have seen everything we need to see to
-compute the density within the window; an invalid header after that window
-cannot increase the density \emph{within} the window.
+If that header is outside the genesis window, we may not be able to validate it:
+since it is more than $s$ slots away from the anchor point (and we only have a
+ledger state at the anchor point), it falls outside the ledger's forecast range.
+However, this does not matter: the presence of this header only tells us that we
+have seen everything we need to see to compute the density within the window; an
+invalid header after that window cannot increase the density \emph{within} the
+window.
 
 \pagebreak
 
@@ -943,15 +943,17 @@ node's upstream peers will report the \emph{same} blocks for all but the last
 few blocks on the chain. Since there is no fork to resolve, we can start
 adopting each block the moment it is reported by all peers.
 
-\item When we say that the density is \emph{known}, we mean that we have seen
-the last required header and validated it. However, consider what happens when
-the node is up to date, and a new block is produced (by some other node).
-Strictly speaking we must now wait for \emph{all} peers to have provided us with
-this header, and have validated all those headers, before we would consider the
-density to be known and prefix selection can make progress. This is however
-unnecessary: when node $A$ provides us with a header, and then node $B$ reports
-the exact same tip, we know that node $B$'s density cannot exceed node $A$s, and
-so we can go ahead and select node $A$'s chain.
+\item When we say that the density is \emph{known}, it either means that the
+peer reports the next header to be outside the genesis window, or has given us
+the header corresponding to tip of their chain and we validated it. However,
+consider what happens when the node is up to date, and a new block is produced
+(by some other node). Strictly speaking we must now wait for \emph{all} peers to
+have provided us with this header, and have validated all those headers, before
+we would consider the density to be known and prefix selection can make progress
+(if we are up to date, all headers we receive will be within the genesis
+window). This is however unnecessary: when node $A$ provides us with a header,
+and then node $B$ reports the exact same tip, we know that node $B$'s density
+cannot exceed node $A$s, and so we can go ahead and select node $A$'s chain.
 \end{enumerate}
 
 \begin{figure}[p]
