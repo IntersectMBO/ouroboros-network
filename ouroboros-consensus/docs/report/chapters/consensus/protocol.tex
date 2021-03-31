@@ -771,3 +771,303 @@ scope of this report.
 
 \section{Combinator: Override the leader schedule}
 \label{consensus:override-leader-schedule}
+
+\cleardoublepage
+\section{Separation of responsibility between consensus and ledger}
+
+\subsection{Vision}
+
+In the vision that underlies the abstract design of the consensus layer,
+the separation of responsibility between the consensus layer and the
+ledger layer happens along three axes.
+
+\begin{description}
+\item{Block \emph{selection} versus block \emph{contents}}
+
+The primary objective of the consensus layer is to ensure that \emph{consensus}
+is reached: that is, everyone agrees on (a sufficiently long prefix of) the
+chain. From a sufficiently high vantage point, the consensus layer could
+reasonably be described as an implementation of the various Ouroboros papers
+(Praos, Genesis, etc.). A critical component of this is \emph{chain selection},
+choosing between competing chains. The consensus layer does not need to be aware
+of what is inside the blocks that it is choosing between.
+
+By contrast, the ledger layer is not aware of multiple chains at all, and will
+never need to execute chain selection: it exclusively deals with linear
+histories. \emph{Its} primary objective is to define the contents of blocks,
+along with rules that interpret those contents, computing the \emph{ledger
+state}.
+
+\item{\emph{Construction} versus \emph{verification}}
+
+The ledger layer only ever deals with fully formed blocks. Its responsibility is
+to \emph{verify} those blocks and describe how they transform the ledger state.
+But those blocks need to come from somewhere in the first place; block
+\emph{construction} is the responsibility of the consensus layer. This dichotomy
+manifests itself in two ways:
+
+\begin{itemize}
+\item When the ledger layer verifies a block, it must verify whether or not the
+node that produced the block had the right to do so, that is, whether or not it
+was a slot leader in the block's slot (though it may be argued that this should
+be a consensus concern instead, see below). Typically, it will need only access
+to the node's \emph{public} key to do so. Note that multiple nodes may have the
+right to produce a block in any given slot; the ledger layer is not checking
+for \emph{the} slot leader, but rather for \emph{a} slot leader.
+
+By contrast, the consensus layer is not checking if \emph{some} node is a leader
+for slot, but rather whether \emph{it} is a leader for the current slot, and if
+so, produce a block for that slot (along with evidence that it had the right to
+do so). Typically, it will need access to the node's \emph{private} key in order
+to execute that check.
+
+\item Blocks are only valid with respect to a particular ledger state. Since
+blocks specify their predecessor (the predecessor hash), they also implicitly
+specify which ledger state they should be evaluated against: the ledger state
+that was the result of applying that predecessor block (or the genesis ledger
+state for the very first block).
+
+By contrast, when the consensus layer produces a block, it must construct a
+block that is valid with respect to the node's \emph{current} ledger state, and
+\emph{choose} the predecessor of that new block to be the tip of the node's
+current chain.
+
+\end{itemize}
+
+\item{\emph{Stateful} versus \emph{stateless}}
+
+The ledger layer is entirely stateless: it is a pure function that accepts a
+ledger state and a block as input and produces the new ledger state (or an
+error if the block was invalid). State management is the responsibility of
+the consensus layer:
+
+\begin{itemize}
+
+\item The consensus layer must maintain the current ledger state, and pass that
+to the ledger layer when validating blocks that fit neatly onto the node's
+current tip. In addition, the consensus must provide efficient access to
+\emph{historical} ledger states, so that it can validate (and possibly adopt)
+alternative forks of the chain.
+
+\item Although the consensus layer does not need to be aware of the exact nature
+of the block contents, it \emph{does} have to collect these ``transactions'' and
+consider them when producing a block (the mempool, \cref{mempool}). If it
+chooses to do eager transaction validation (that is, before it actually produces
+a block), it will need support from the ledger layer to do; when producing a
+block, it will need assistance from the ledger layer to produce the block body.
+
+In both cases (transaction validation and block body construction), the
+consensus layer is responsible for passing an appropriate ledger state to the
+ledger layer. In the case of block production, the choice of ledger state is
+clear: the current ledger state. For the mempool, it is slightly less clearcut;
+the mempool is effectively constructing a ``virtual'' block with a predecessor
+chosen from the node's current chain, near its tip.\footnote{We could update
+this ``virtual'' block every time that the node's current chain changes, so that
+the virtual block's predecessor is always the current chain's tip. This however
+couples two concurrent processes more tightly than required, and is moreover
+costly: re-evaluating the mempool can be expensive.}
+
+\end{itemize}
+
+\end{description}
+
+Ideally, the implementation of a particular consensus protocol (say, Praos)
+should be useable with any choice of ledger (cryptocurrency or otherwise), and
+conversely, a particular ledger (say, Shelley) should be useable with any choice
+of consensus protocol  (Praos, Genesis, or indeed a different consensus protocol
+entirely). The consensus protocol \emph{does} need some limited information from
+the ledger, but we can provide this separately
+(\cref{ledger:api:LedgerSupportsProtocol}), and abstract over what a particular
+consensus algorithm needs from the ledger layer it is used with (specifically,
+the \lstinline!SelectView! and the \lstinline!LedgerView!, discussed in
+\cref{consensus:class:chainsel,consensus:class:ledgerview}).
+
+\subsection{Practice}
+
+In practice, the separation is not quite so clean. Partly this is for
+historical reasons. When the Cardano blockchain was re-implemented, the new
+consensus layer and the new ledger layer were developed in tandem, and it was
+not always practical to have one wait for design decisions by the other.
+For example, most of Praos is currently implemented in the ledger layer,
+despite the ledger layer never having to do chain selection, ever. These are
+issues that we can resolve with some relatively minor refactoring.
+
+More problematic is that the current ledgers are not designed to be parametric
+in a choice of consensus algorithm. Specifically, the Shelley ledger hardcodes
+Praos. At some level, that statement makes no sense: the ledger layer never
+needs to execute chain selection nor decide if it's a leader for a given slot.
+However, the \emph{verification} of a block by the ledger layer currently
+includes verification of the cryptographic proof produced by the consensus layer
+when constructing a block. This is specific to Praos; other consensus algorithms
+may require entirely different fields in the block (header). So while the ledger
+layer is morally independent from the choice of consensus algoritm, in practice
+it includes just enough information that running it with a different consensus
+algorithm is difficult to do.
+
+In an ideal world, the Shelley ledger would not be aware of the consensus
+algorithm at all. Since the implementation of the consensus protocol, and
+details of the fields required in blocks to support that protocol, are the
+responsibility of the consensus layer, it would make sense to move the
+leader verification check from the ledger layer into the consensus header check
+instead. Block assembly now becomes more of a joint effort between the
+consensus layer and the ledger layer: the ledger layer produces the block body
+and some fields in the block header\footnote{In an perfect world this
+header/body boundary would align neatly with the consensus/ledger boundary; I
+think this ought to be possible in principle, but in the current design this is
+non-trivial to achieve, since the ledger layer is interpreting some fields in
+the header; for example, it is executing some rules in response to epoch
+transitions, which it detects based on fields in the header.}), whereas the
+consensus layer produces the fields in the block header that are required by the
+consensus protocol.
+
+Unfortunately, disentangling the two isn't \emph{quite} that easy. In
+particular, the Shelley ledger supports key delegation, which is affecting
+the leadership check. Disentangling this would be non-trivial; it's not
+clear what consensus-protocol independent delegation would even \emph{mean}
+and what kind of data it should carry. Solving this will probably require
+some parameterization in the \emph{other} direction, with the ledger
+rules for delegation allowing for some protocol specific data to be included.
+
+
+
+\pagebreak
+\section{OLD: Separation of responsibility between consensus and ledger}
+
+\subsection{Vision}
+
+In the vision that underpins the consensus layer design, the distribution of
+responsibility between the consensus layer and the ledger layer is reasonably
+clear.
+
+\begin{itemize}
+\item The consensus layer is responsible for executing a \emph{consensus
+protocol}; that is, it is responsible for chain selection (choosing between
+competing chains) and leader selection (who gets to produce a block when). Its
+primary objective is to ensure \emph{consensus}, that is, ensure that everyone
+agrees on the same chain. From a high enough vantage point, the consensus layer
+should reasonably look like an implementation of the various Ouroboros papers.
+While the consensus layer may need some information in block \emph{headers}
+(such as the signature of the node that produced the block, perhaps various
+cryptographic proofs required by a specific choice of consensus protocol, etc.),
+it does not care at all about the block \emph{bodies}.
+
+Since the consensus layer is responsible for doing chain selection, and hence
+for switching to forks of the chain when appropriate, it \emph{is} the
+responsibility of the consensus layer to maintain sufficient state to do so;
+that is, call into the ledger layer to validate blocks against the appropriate
+ledger state.
+
+Since blocks have an explicit predecessor hash, they also implicitly specify
+which ledger state they should be evaluated against: the ledger state resulting
+from applying that predecessor block; the ledger rules can \emph{verify} that
+blocks are evaluated against the appropriate ledger state, but it is the
+responsibility of the consensus layer to \emph{maintain} both the current ledger
+state and (limited) historical ledger states, in order to be able to validate
+blocks on alternative forks (see also the discussion of the security parameter
+$k$ in \cref{consensus:overview:k}), and \emph{provide} the appropriate ledger
+state to the ledger layer when doing block validation.
+
+\item The ledger layer is responsible for interpreting the block bodies (and
+some fields of the header\footnote{In an ideal world this header/body boundary
+would align neatly with the consensus/ledger boundary; I think this ought to be
+possible in principle, but in the current design this is non-trivial to achieve,
+since the ledger layer is interpreting some fields in the header; for example,
+it is executing some rules in response to epoch transitions, which it detects
+based on fields in the header.}); it defines a ledger state along with rules
+that determine how that ledger state is updated in response to the contents of
+block bodies. It doesn't matter whether the ledger implements a cryptocurrency,
+a specialized ledger for non-fungible tokens, a scripting a language, or
+anything else---the consensus layer does not need to be aware of what's inside
+the blocks. Conversely, the ledger layer should be independent of a choice of
+consensus protocol. It should not matter to the ledger layer if it's running on
+top of a blockchain that uses Ouroboros BFT, Ouroboros Praos, or indeed a
+different kind of consensus algorithm entirely.
+
+The ledger layer needs to deal with linear histories only, it is not aware in
+any way of rollback or switching to forks.
+\end{itemize}
+
+While it is true that there is some interplay between the two, this interplay is
+limited (two obvious examples being the \lstinline!LedgerView! discussed in
+\cref{consensus:class:ledgerview} and the \lstinline!SelectView! discussed in
+\cref{consensus:class:chainsel}), and strictly in one direction only: in order
+to run a choice of consensus protocol with a choice of ledger, we may need to
+provide some glue code that derives some  information from the ledger state and
+make it available to the consensus layer (we capture this in the
+\lstinline!LedgerSupportsProtocol! type class, discussed in
+\cref{ledger:api:LedgerSupportsProtocol}), but it should be possible to change a
+consensus protocol without the ledger layer being aware.
+
+\subsection{Practice}
+
+In reality, while the abstract design of the consensus layer facilitates this
+vision, the ledgers that are currently integrated with the consensus layer do
+not. Partly this is for historical reasons; during the re-implementation of the
+Cardano blockchain, the new consensus layer and the new ledger layer were
+developed in tandem, and it was not always practical to delay until design
+decisions on either side were finalized. Partly however it is also due to
+additional interplay between the state of the ledger and the consensus protocol,
+as we discuss below.
+
+As a concrete example, the Shelley ledger is not abstract in a choice of
+consensus algorithm, but instead hardcodes the choice of Praos; and indeed,
+the implementation of the Praos chain selection algorithm is currently also
+(partly) done within the ledger layer. This is suboptimal, for multiple reasons:
+
+\begin{itemize}
+\item The ledger layer defines chain selection for Praos, despite never ever
+needing to do chain selection, not even in its own ledger rules; the ledger
+layer strictly deals with linear histories only.
+\item The ledger layer is verifying the leader proof in block headers, but the
+consensus layer is responsible for deciding \emph{when} a node is actually a
+leader (the ledger layer is entirely stateless). The ledger layer should not
+really care who produces which block when, that is a consensus concern. It would
+be better if the leader validation part of block validation would be part of the
+consensus header validation check.
+
+Since Ouroboros Praos uses a private leader schedule, it is possible that
+multiple nodes are elected a leader for the same slot. The ledger layer, not
+aware of forks, is merely verifying that each block was produced by \emph{a}
+leader for that slot, not necessarily \emph{the} leader. It is also doing
+\emph{a posteriori} verification: the slot leader provided cryptographic
+evidence that it was in fact the leader, and the leader leader just needs the
+public key of that node to verify the proof.
+
+Conversely, the consensus layer is not checking for \emph{a} valid leader, but
+rather whether \emph{it} has the right to produce a block in a particular slot.
+This check requires the node's \emph{private} key, and will \emph{produce} the
+cryptographic evidence, rather than verify it.
+
+Either way, of course, the construction and the verification of the evidence are
+highly coupled, and it would be better if the ledger was not aware of
+\emph{either} side of that coin. Unfortunately, the separation is not quite this
+clean. For example, key delegation means that the ledger state \emph{is}
+involved in the leader check (beyond just the active stake distribution,
+abstracted in consensus as the \lstinline!LedgerView!). Achieving a clear
+separation here is non-trivial; we would to have quite disciplined in
+distinguishing the ``logical'' delegation step from the consequences \emph{of}
+that delegation on the concrete choice of consensus protocol.
+
+\item As mentioned, it is the responsibility of the consensus layer to produce
+blocks. The ledger layer is stateless, and so a question such as ``should we
+produce a block \emph{now}'' is meaningless: the ledger layer is only concerned
+with validation. The consensus layer also maintains sufficient state to allow it
+to collect the transactions to be included in the next block (the mempool,
+\cref{mempool}). Of course, the consensus layer does not need to know what those
+transactions are, exactly, or how to interpret them; it depends on the ledger
+layer to verify tranactions, and would (ideally) also depend on the ledger layer
+to turn a set of transactions into a block body.
+
+However, if the ledger layer is not
+polymorphic in a choice of consensus algorithm, block production also couples
+the consensus layer and ledger layer too tightly. The consensus layer is
+performing a check that the ledger layer should not need to be aware of
+(``do I have the right to produce a block in this slot?''), yet must then
+produce evidence of the exact nature that the ledger layer expects.
+
+If the ledger layer abstracts over a choice of protocol, then the final assembly
+of the block would be more clearly separated into two parts: the ledger layer is
+responsible for constructing the block body (and maybe parts of the block
+header), and the consensus layer is responsible for adding whatever fields are
+required for the consensus protocol.
+\end{itemize}
