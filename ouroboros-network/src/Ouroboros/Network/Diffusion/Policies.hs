@@ -17,6 +17,7 @@ import           System.Random
 import           Network.Socket (SockAddr)
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.PeerMetric
 
 
 -- | Timeout for 'spsDeactivateTimeout'.
@@ -39,13 +40,14 @@ closeConnectionTimeout = 120
 
 simplePeerSelectionPolicy :: forall m. MonadSTM m
                           => StrictTVar m StdGen
+                          -> PeerMetrics m SockAddr
                           -> PeerSelectionPolicy SockAddr m
-simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
+simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
       policyPickKnownPeersForGossip = simplePromotionPolicy,
       policyPickColdPeersToPromote  = simplePromotionPolicy,
       policyPickWarmPeersToPromote  = simplePromotionPolicy,
 
-      policyPickHotPeersToDemote    = simpleDemotionPolicy,
+      policyPickHotPeersToDemote    = hotDemotionPolicy,
       policyPickWarmPeersToDemote   = simpleDemotionPolicy,
       policyPickColdPeersToForget   = simpleDemotionPolicy,
 
@@ -58,9 +60,8 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
   where
 
      -- Add metrics and a random number in order to prevent ordering based on SockAddr
-     -- TODO: upstreamyness is added here
-    addMetrics :: Set.Set SockAddr -> STM m (Map.Map SockAddr Word32)
-    addMetrics available = do
+    addRand :: Set.Set SockAddr -> STM m (Map.Map SockAddr Word32)
+    addRand available = do
       inRng <- readTVar rngVar
 
       let (rng, rng') = split inRng
@@ -69,9 +70,21 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
       writeTVar rngVar rng'
       return available'
 
+    hotDemotionPolicy :: PickPolicy SockAddr m
+    hotDemotionPolicy _ _ available pickNum = do
+        scores <- upstreamyness <$> (getHeaderMetrics metrics)
+        available' <- addRand available
+        return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn (\(peer, rn) ->
+                          (Map.findWithDefault 0 peer scores, rn))
+             . Map.assocs
+             $ available'
+
     simplePromotionPolicy :: PickPolicy SockAddr m
     simplePromotionPolicy _ _ available pickNum = do
-      available' <- addMetrics available
+      available' <- addRand available
       return $ Set.fromList
              . map fst
              . take pickNum
@@ -81,11 +94,10 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
 
     simpleDemotionPolicy :: PickPolicy SockAddr m
     simpleDemotionPolicy _ _ available pickNum = do
-      available' <- addMetrics available
+      available' <- addRand available
       return $ Set.fromList
              . map fst
              . take pickNum
              . sortOn (\(_, rn) -> rn)
              . Map.assocs
              $ available'
-
