@@ -185,8 +185,8 @@ createConnectedBufferedChannels sz = do
       }
 
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
-createConnectedBufferedChannelsSTM :: forall stm tvar tmvar tqueue tbqueue a.
-                                      MonadSTMTx stm tvar tmvar tqueue tbqueue
+createConnectedBufferedChannelsSTM :: forall stm a.
+                                      MonadSTMTxAbbreviation stm
                                    => Natural -> stm (Channel stm a, Channel stm a)
 createConnectedBufferedChannelsSTM sz = do
     -- Create two TBQueues to act as the channel buffers (one for each
@@ -197,7 +197,7 @@ createConnectedBufferedChannelsSTM sz = do
     return (queuesAsChannel bufferB bufferA,
             queuesAsChannel bufferA bufferB)
   where
-    queuesAsChannel :: tbqueue a -> tbqueue a -> Channel stm a
+    queuesAsChannel :: TBQueue_ stm a -> TBQueue_ stm a -> Channel stm a
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where

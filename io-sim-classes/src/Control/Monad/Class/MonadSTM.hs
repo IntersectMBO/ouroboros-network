@@ -75,6 +75,18 @@ module Control.Monad.Class.MonadSTM
   , newTMVarMDefault
   , newEmptyTMVarM
   , newEmptyTMVarMDefault
+
+  -- * TODO
+  , MonadSTMTxAbbreviation
+  , TVar_
+  , TMVar_
+  , TQueue_
+  , TBQueue_
+  , TVar
+  , TMVar
+  , TQueue
+  , TBQueue
+
   ) where
 
 import           Prelude hiding (read)
@@ -100,6 +112,14 @@ import           Numeric.Natural (Natural)
 {-# DEPRECATED LazyTMVar "Renamed back to 'TMVar'" #-}
 type LazyTVar  m = TVar m
 type LazyTMVar m = TMVar m
+
+type MonadSTMTxAbbreviation stm =
+  MonadSTMTx
+    stm
+    (TVar_    stm)
+    (TMVar_   stm)
+    (TQueue_  stm)
+    (TBQueue_ stm)
 
 -- | The STM primitive operations and associated types.
 --
@@ -179,17 +199,23 @@ stateTVarDefault var f = do
    writeTVar var s'
    return a
 
+type family TVar_    (stm :: Type -> Type) :: Type -> Type
+type family TMVar_   (stm :: Type -> Type) :: Type -> Type
+type family TQueue_  (stm :: Type -> Type) :: Type -> Type
+type family TBQueue_ (stm :: Type -> Type) :: Type -> Type
+
+type TVar m = TVar_ (STM m)
+type TMVar m = TMVar_ (STM m)
+type TQueue m = TQueue_ (STM m)
+type TBQueue m = TBQueue_ (STM m)
+
 -- | 'MonadSTM' provides the @'STM' m@ monad as well as all operations to
 -- execute it. 
 --
 class (Monad m, MonadSTMTx (STM m) (TVar m) (TMVar m) (TQueue m) (TBQueue m))
    => MonadSTM m where
   -- STM transactions
-  type STM  m    :: Type -> Type
-  type TVar m    :: Type -> Type
-  type TMVar m   :: Type -> Type
-  type TQueue m  :: Type -> Type
-  type TBQueue m :: Type -> Type
+  type STM m :: Type -> Type
 
   atomically :: HasCallStack => STM m a -> m a
 
@@ -410,12 +436,13 @@ instance MonadSTMTx STM.STM STM.TVar STM.TMVar STM.TQueue STM.TBQueue where
   isFullTBQueue  = STM.isFullTBQueue
 
 
+type instance TVar_    STM.STM = STM.TVar
+type instance TMVar_   STM.STM = STM.TMVar
+type instance TQueue_  STM.STM = STM.TQueue
+type instance TBQueue_ STM.STM = STM.TBQueue
+
 instance MonadSTM IO where
   type STM     IO = STM.STM
-  type TVar    IO = STM.TVar
-  type TMVar   IO = STM.TMVar
-  type TQueue  IO = STM.TQueue
-  type TBQueue IO = STM.TBQueue
 
   atomically = wrapBlockedIndefinitely . STM.atomically
 
@@ -462,11 +489,8 @@ wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 --
 
 instance MonadSTM m => MonadSTM (ReaderT r m) where
-  type STM     (ReaderT r m) = STM m
-  type TVar    (ReaderT r m) = TVar m
-  type TMVar   (ReaderT r m) = TMVar m
-  type TQueue  (ReaderT r m) = TQueue m
-  type TBQueue (ReaderT r m) = TBQueue m
+  type instance STM (ReaderT r m) = STM m
+
   atomically      = lift . atomically
   newTVarIO       = lift . newTVarM
   newTMVarIO      = lift . newTMVarM

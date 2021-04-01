@@ -111,13 +111,13 @@ instance MonadSTMTx stm tvar tmvar tqueue tbqueue => MonadSTMTx (WithEarlyExit s
   isEmptyTBQueue  = lift .  isEmptyTBQueue
   isFullTBQueue   = lift .  isFullTBQueue
 
-instance MonadSTM m => MonadSTM (WithEarlyExit m) where
-  type STM     (WithEarlyExit m) = WithEarlyExit (STM m)
-  type TVar    (WithEarlyExit m) = TVar    m
-  type TMVar   (WithEarlyExit m) = TMVar   m
-  type TQueue  (WithEarlyExit m) = TQueue  m
-  type TBQueue (WithEarlyExit m) = TBQueue m
+type instance TVar_    (WithEarlyExit stm) = TVar_    stm
+type instance TMVar_   (WithEarlyExit stm) = TMVar_   stm
+type instance TQueue_  (WithEarlyExit stm) = TQueue_  stm
+type instance TBQueue_ (WithEarlyExit stm) = TBQueue_ stm
 
+instance MonadSTM m => MonadSTM (WithEarlyExit m) where
+  type STM (WithEarlyExit m) = WithEarlyExit (STM m)
 
   atomically      = earlyExit . atomically . withEarlyExit
   newTMVarIO      = lift . newTMVarIO

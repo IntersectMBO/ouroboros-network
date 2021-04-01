@@ -349,8 +349,8 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyGossipOverallTimeout    = 10    -- seconds
     }
 
-interpretPickScript :: (MonadSTMTx stm tvar tmvar tqueue tbqueue, Ord peeraddr)
-                    => tvar PickScript
+interpretPickScript :: (MonadSTMTxAbbreviation stm, Ord peeraddr)
+                    => TVar_ stm PickScript
                     -> Map peeraddr a
                     -> Int
                     -> stm (Set peeraddr)
@@ -919,7 +919,7 @@ initScript = newTVarIO
 stepScript :: MonadSTM m => TVar m (Script a) -> m a
 stepScript scriptVar = atomically (stepScriptSTM scriptVar)
 
-stepScriptSTM :: MonadSTMTx stm tvar tmvar tqueue tbqueue => tvar (Script a) -> stm a
+stepScriptSTM :: MonadSTMTxAbbreviation stm => TVar_ stm (Script a) -> stm a
 stepScriptSTM scriptVar = do
     Script (x :| xs) <- readTVar scriptVar
     case xs of

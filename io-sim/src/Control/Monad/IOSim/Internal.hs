@@ -385,12 +385,13 @@ instance MonadLabelledSTMTx (STM s)
 
 instance MonadLabelledSTM (IOSim s) where
 
+type instance TVar_    (STM s) = TVar s
+type instance TMVar_   (STM s) = TMVarDefault (IOSim s)
+type instance TQueue_  (STM s) = TQueueDefault (IOSim s)
+type instance TBQueue_ (STM s) = TBQueueDefault (IOSim s)
+
 instance MonadSTM (IOSim s) where
   type STM     (IOSim s) = STM s
-  type TVar    (IOSim s) = TVar s
-  type TMVar   (IOSim s) = TMVarDefault (IOSim s)
-  type TQueue  (IOSim s) = TQueueDefault (IOSim s)
-  type TBQueue (IOSim s) = TBQueueDefault (IOSim s)
 
   atomically action = IOSim $ \k -> Atomically action k
 
