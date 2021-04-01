@@ -39,7 +39,7 @@ The \emph{Disaster Recovery Plan}\footnote{Currently not available as a public
 document.} sketches how we might ``patch the chain back up'' when a major
 problem like this occurs. This must happen out-of-band with the cooperation of
 the major stake holders, and is (mostly) outside the scope of the Consensus
-Layer report. That said, the options for disaster recovery are currenly limited
+Layer report. That said, the options for disaster recovery are currently limited
 due to a technical limitation in the consensus layer, which we will discuss now.
 
 From a chain security point of view, it makes little difference if the honest
@@ -78,7 +78,7 @@ the ``less than 1 block per $s$ slots'' boundary. This should be defined and
 implemented as an external policy, not dictated by implementation details.
 Moreover, even with an explicit stop, we might like the ability to mark the
 known-to-be-low-density chain and restart the system (point 2, above). It is
-also far from clear how to avoid adverserial nodes from taking advantage of such
+also far from clear how to avoid adversarial nodes from taking advantage of such
 ``automatic'' stops (how do we prevent adversaries from producing blocks?).
 Either way, such concerns are well outside the scope of this chapter. Here we
 address just one question: how can we allow the system to continue when there
@@ -616,7 +616,7 @@ then switch to the honest chain later.
 \subsection{Damage analysis}
 
 If we cannot limit when the chain sync client is allowed to download and
-validate blocks, then let's analyse exactly what the possiblity for denial of
+validate blocks, then let's analyse exactly what the possibility for denial of
 service attacks really is.
 
 \begin{lemma}
@@ -641,7 +641,7 @@ as well; see \cref{genesis:becoming-alert:DoS}.}
 This means that we only have to worry about DoS attacks while a node is syncing.
 As a first observation, node performance is less critical here. The node is
 anyway not producing blocks while syncing, so causing the node to slow down
-temporarily is not a huge deal (\emph{cf.} also \cref{genesis:optimizations}
+temporarily is not a huge deal (\emph{cf.} also \cref{genesis:optimisations}
 where we argue it's less essential during syncing to make the worst case
 performance and the normal case performance the same).
 

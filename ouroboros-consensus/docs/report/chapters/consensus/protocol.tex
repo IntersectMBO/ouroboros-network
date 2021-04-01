@@ -131,7 +131,7 @@ limit $k$ on the number of blocks we might have to rollback. We take advantage
 of this in many ways; here we just mention a few:
 
 \begin{itemize}
-\item We use it as an organizing principle in the storage layer
+\item We use it as an organising principle in the storage layer
 (\cref{storage}), dividing the chain into a part that we know is stable (the
 "immutable chain"), and a part near the tip that is still subject to rollback
 (the "volatile chain"). Block lookup into the immutable chain is very efficient,
@@ -859,7 +859,7 @@ block, it will need assistance from the ledger layer to produce the block body.
 In both cases (transaction validation and block body construction), the
 consensus layer is responsible for passing an appropriate ledger state to the
 ledger layer. In the case of block production, the choice of ledger state is
-clear: the current ledger state. For the mempool, it is slightly less clearcut;
+clear: the current ledger state. For the mempool, it is slightly less clear-cut;
 the mempool is effectively constructing a ``virtual'' block with a predecessor
 chosen from the node's current chain, near its tip.\footnote{We could update
 this ``virtual'' block every time that the node's current chain changes, so that
@@ -872,8 +872,8 @@ costly: re-evaluating the mempool can be expensive.}
 \end{description}
 
 Ideally, the implementation of a particular consensus protocol (say, Praos)
-should be useable with any choice of ledger (cryptocurrency or otherwise), and
-conversely, a particular ledger (say, Shelley) should be useable with any choice
+should be usable with any choice of ledger (cryptocurrency or otherwise), and
+conversely, a particular ledger (say, Shelley) should be usable with any choice
 of consensus protocol  (Praos, Genesis, or indeed a different consensus protocol
 entirely). The consensus protocol \emph{does} need some limited information from
 the ledger, but we can provide this separately
@@ -900,7 +900,7 @@ However, the \emph{verification} of a block by the ledger layer currently
 includes verification of the cryptographic proof produced by the consensus layer
 when constructing a block. This is specific to Praos; other consensus algorithms
 may require entirely different fields in the block (header). So while the ledger
-layer is morally independent from the choice of consensus algoritm, in practice
+layer is morally independent from the choice of consensus algorithm, in practice
 it includes just enough information that running it with a different consensus
 algorithm is difficult to do.
 
@@ -976,7 +976,7 @@ it is executing some rules in response to epoch transitions, which it detects
 based on fields in the header.}); it defines a ledger state along with rules
 that determine how that ledger state is updated in response to the contents of
 block bodies. It doesn't matter whether the ledger implements a cryptocurrency,
-a specialized ledger for non-fungible tokens, a scripting a language, or
+a specialised ledger for non-fungible tokens, a scripting a language, or
 anything else---the consensus layer does not need to be aware of what's inside
 the blocks. Conversely, the ledger layer should be independent of a choice of
 consensus protocol. It should not matter to the ledger layer if it's running on
@@ -1005,7 +1005,7 @@ vision, the ledgers that are currently integrated with the consensus layer do
 not. Partly this is for historical reasons; during the re-implementation of the
 Cardano blockchain, the new consensus layer and the new ledger layer were
 developed in tandem, and it was not always practical to delay until design
-decisions on either side were finalized. Partly however it is also due to
+decisions on either side were finalised. Partly however it is also due to
 additional interplay between the state of the ledger and the consensus protocol,
 as we discuss below.
 
@@ -1055,7 +1055,7 @@ with validation. The consensus layer also maintains sufficient state to allow it
 to collect the transactions to be included in the next block (the mempool,
 \cref{mempool}). Of course, the consensus layer does not need to know what those
 transactions are, exactly, or how to interpret them; it depends on the ledger
-layer to verify tranactions, and would (ideally) also depend on the ledger layer
+layer to verify transactions, and would (ideally) also depend on the ledger layer
 to turn a set of transactions into a block body.
 
 However, if the ledger layer is not

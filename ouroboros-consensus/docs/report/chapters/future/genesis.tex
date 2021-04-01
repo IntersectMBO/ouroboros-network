@@ -309,7 +309,7 @@ should switch to it. As mentioned above, however, the analysis tells us that
 alert nodes never have to roll back more than $k$ blocks.
 \end{proof}
 
-\Cref{lemma:adversarial-before-k} has a useful specialization for chains that an
+\Cref{lemma:adversarial-before-k} has a useful specialisation for chains that an
 adversary might try to construct near the wallclock:
 
 \begin{lemma}
@@ -966,7 +966,7 @@ with this property, and hence cannot arise.
 
 \subsection{Prefix selection on headers}
 
-When the chain sync client is dedicing which of the chains of its upstream peers
+When the chain sync client is deciding which of the chains of its upstream peers
 to download, it does so based on chains of \emph{headers}. It does not download
 block bodies and so cannot verify them. As such, it is basing its decisions
 based on header validity \emph{only}.  However, this is then only used to tell
@@ -1029,7 +1029,7 @@ the next slot leader produces a new block. Let
 denote an upstream peer and a downstream peer. The upstream peer's tip is $n$,
 and is sending headers to the downstream peer; the most recent header that the
 downstream peer validated is $m$. When $n = m$, the downstream peer has ``seen''
-the upstream's peer entire chain; in the terminology of this chapter, the
+the upstream peer's entire chain; in the terminology of this chapter, the
 density of the upstream peer is then \emph{known}.
 
 Consider a diamond topology with four peers $A \ldots D$, nodes $B$ and $C$
@@ -1126,7 +1126,7 @@ more of that chain}; this is the circular reasoning we described above in
 
 In principle it would be possible for $D$ to \emph{skip} the verification of
 any number of headers if those headers have already been verified from another
-peer. However, this would be optimizing the code for the best case, with
+peer. However, this would be optimising the code for the best case, with
 performance degrading when the peers are on different chains; this is something
 we avoid throughout (\cref{nonfunctional:best-is-worst}).
 
@@ -1459,10 +1459,10 @@ though we can probably just sidestep the entire issue and pretend we were
 using the Genesis rule all along.
 
 \subsection{Possible optimisations}
-\label{genesis:optimizations}
+\label{genesis:optimisations}
 
 Chain selection while we are not up to date has some properties that might
-enable us to implement some performance optimizations. Here we just list some of
+enable us to implement some performance optimisations. Here we just list some of
 the possibilities:
 
 \begin{itemize}
