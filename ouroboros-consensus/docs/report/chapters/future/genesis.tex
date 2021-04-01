@@ -412,8 +412,7 @@ intersection with $B$, but $B$ is longer:
 %
 In this case, the original rule ends up preferring either $A$ or $B$ depending
 on the order in which we consider them, whereas the Density Rule would simply
-pick $A$. (As we we will in \cref{density-ordering-sensitivity}, however, the
-Density rule is unfortunately not immune to order sensitivity either.)
+pick $A$.
 
 \begin{figure}
 \hrule
@@ -450,13 +449,14 @@ return (*$C_\mathit{max}$*)
 \section{Fragment selection}
 \label{genesis:fragment-selection}
 
-While the literature on Ouroboros compares entire chains, we will want to
-compare \emph{fragments} of chains: if at all possible we would prefer not to
-have to download and verify entire chains before we can make any decisions. As
-we have discussed in \cref{genesis:background:joining-late}, comparing fragments
-(prefixes) of chains using the Longest Chain rule does not actually make much
-sense, but in this section we will see that the situation is fortunately much
-better when we use the Density rule.
+While the algorithms described in the literature on Ouroboros compare entire
+chains, we will want to compare \emph{fragments} of chains: if at all possible
+we would prefer not to have to download and verify entire chains before we can
+make any decisions. As we have discussed in
+\cref{genesis:background:joining-late}, comparing fragments (prefixes) of chains
+using the Longest Chain rule does not actually make much sense, but in this
+section we will see that the situation is fortunately much better when we use
+the Density rule.
 
 \begin{definition}[Preferred fragment]
 Let $\mathcal{S}$ be set of chain fragments, all anchored at the same point
@@ -830,9 +830,8 @@ at point $a$; let's call it $x_i$. That means if we ever were to adopt any of
 the $\vec{y}, \ldots$, and then compared our chain to $x_i$, we would find that
 $x_i$ is denser at the intersection point (which is precisely what we are
 comparing in this window here), and therefore switch to it. This means we can
-focus our attention on the $\vec{x}$. (Unfortunately\todo{TODO}, the existing
-density rule does not always pick a unique best chain, so we cannot prove this
-algorithm correct. See \cref{density-ordering-sensitivity}.)
+focus our attention on the $\vec{x}$. (\Cref{greedy-chain-selection}
+justifies the greedy nature of this algorithm in a bit more depth.)
 
 \item \emph{Adopt common prefix.}
 Most of the time, the density of the $\vec{x}$ will yet not be known at point
@@ -896,12 +895,10 @@ longest one.
 \hrule
 \vspace{0.5em}
 
-The justification for step 1 in \cref{prefix-selection} does depend on ordering
-(\emph{first} adopt any of the $\vec{y}$, \emph{then} compare to $x_i$).
-Unfortunately we cannot do better than that with the existing Density rule (or
-indeed with the original Genesis chain selection rule from the paper, \emph{cf.}
-\cref{genesis:maxvalid-bg}). Consider three chains $A, B, C$ in the following
-example:
+Step 1 in \cref{prefix-selection} makes greedy decisions, discarding the less
+dense chains at every step without looking further ahead. To justify this, it is
+instructive to consider an apparent counter-example to the validity of this
+strategy. Consider three chains $A, B, C$ in the following example:
 %
 \begin{center}
 \begin{tikzpicture}
@@ -958,23 +955,13 @@ $A, B, C$ & $C$ \\
 \end{tabular}
 \end{center}
 %
-This is rather unfortunate, but resolving this would require input from the
-Ouroboros researchers. The algorithm described in \cref{prefix-selection}
-essentially makes local decisions: every time it sees a fork, it moves towards
-the densest chain in the window. For the example above, it would proceed as
-follows:
-%
-\begin{itemize}
-\item When resolving the initial fork, it would notice that $A$ is the densest
-fragment. Since it doesn't have sufficient look-ahead to compare $A$ and $B$,
-it would defer that decision, but it would discard $C$ and adopt the block $ab$
-in the common prefix of $A$ and $B$.
-\item When resolving the second fork, it would notice that $B$ is the densest
-fragment, and discard $A$. In this example, there are no further forks, and
-so it would adopt the entire fragment of $B$ in the window.
-\end{itemize}
-\hrule
-\caption{\label{density-ordering-sensitivity}Ordering sensitivity of the Density rule}
+In practice this situation cannot occur, however. The Genesis analysis tells us
+that there will be single chain (the honest chain) which will be denser than any
+other chain (within the genesis window) at every intersection point. This is
+precisely what justifies the greedy nature of the algorithm: it will always hone
+in on the honest chain. In the counter-example above, there is no single chain
+with this property, and hence cannot arise.
+\caption{\label{greedy-chain-selection}Greedy chain selection}
 \end{figure}
 
 \subsection{Prefix selection on headers}
