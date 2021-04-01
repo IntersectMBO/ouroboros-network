@@ -1196,12 +1196,22 @@ that \emph{none} of them will serve us the honest chain is negligible
 network layer), and avoid doing prefix selection until we have reached
 this threshold.
 
-The only remaining decision to make is when we can \emph{drop} this requirement:
-at which point is the state of the node comparable to the state of an alert node
-(a node that has consistently been online)?
+Of course, the need to avoid being eclipsed is not unique to genesis. When we
+are up to date we can however tolerate relatively long periods in which we do
+not see the honest chain; an exact analysis of the relation between the length
+of such an eclipse and the maximum chain divergence we can handle is beyond the
+scope of this chapter, but it seems safe to say that being eclipsed for short
+periods of time should be unproblematic. If however we are behind and are
+catching up with the chain, being eclipsed for even just one minute is already
+problematic: an attacker can easily feed us $k$ blocks in that period, at which
+point we would be unable to switch to the honest chain.
 
 \subsection{Becoming alert}
 \label{genesis:becoming-alert}
+
+The only remaining decision to make is when we can \emph{drop} this requirement:
+at which point is the state of the node comparable to the state of an alert node
+(a node that has consistently been online)?
 
 Every block that we adopt through prefix selection that is more than $s$ slots
 away from the wall clock must be a block on the honest chain, because at every
