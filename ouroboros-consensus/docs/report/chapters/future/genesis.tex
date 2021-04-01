@@ -1044,7 +1044,11 @@ are up to date:
 \end{tikzpicture}
 \end{center}
 
-Now consider what happens when node $A$ produces a new block:
+Now consider what happens when node $A$ produces a new block:\footnote{Exact
+details of the chain sync protocol may mean that this example as it  stands is
+not quite possible: the only way for $D$ to become aware of $C$'s new tip is
+when it receives the header. However, the point still remains; have $A$ switch
+to a fork instead and repeat the reasoning.}
 
 \begin{center}
 \begin{tabular}{c@{\hspace{1cm}}c@{\hspace{1cm}}c}
