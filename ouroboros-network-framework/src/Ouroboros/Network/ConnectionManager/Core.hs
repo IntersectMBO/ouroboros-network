@@ -488,8 +488,8 @@ withConnectionManager ConnectionManagerArguments {
           cleanup =
             -- We must ensure that we update 'connVar',
             -- `requestOutboundConnection` might be blocked on it awaiting for:
-            -- * handshake negotiation; or
-            -- * `Terminate: TerminatingState → TerminatedState` transition.
+            -- - handshake negotiation; or
+            -- - `Terminate: TerminatingState → TerminatedState` transition.
             -- That's why we use 'uninterruptibleMask'. Note that this cleanup
             -- function after all is interruptible, because we unmask async
             -- exceptions around 'threadDelay', but even if an async exception
@@ -559,8 +559,8 @@ withConnectionManager ConnectionManagerArguments {
                   `finally` do
                     -- We must ensure that we update 'connVar',
                     -- `requestOutboundConnection` might be blocked on it awaiting for:
-                    -- * handshake negotiation; or
-                    -- * `Terminate: TerminatingState → TerminatedState` transition.
+                    -- - handshake negotiation; or
+                    -- - `Terminate: TerminatingState → TerminatedState` transition.
                     traceWith tracer (TrConnectionTimeWaitDone connId)
                     trs <- atomically $ do
                       mConnState <- readTMVar stateVar
@@ -1356,8 +1356,8 @@ withConnectionManager ConnectionManagerArguments {
           cancel connThread
           -- We relay on the `finally` handler of connection thread to:
           --
-          -- * close the socket,
-          -- * set the state to 'TerminatedState'
+          -- - close the socket,
+          -- - set the state to 'TerminatedState'
           return (OperationSuccess (abstractState (fromState tr)))
 
         PruneConnections _connId pruneMap tr -> do
