@@ -141,8 +141,6 @@ point, and we \emph{happen} to download that chain first, we would adopt it and
 subsequently be unable to switch to the honest chain; after all, that would
 involve a rollback of more than $k$ blocks, which the Praos rule forbids.
 
-\clearpage
-
 \subsection{The Density rule}
 \label{genesis:background:density-rule}
 
@@ -252,8 +250,6 @@ Just to be very explicit, \cref{lemma:tip-density-is-chain-length} does
 %
 In this case of course the longer chain may well not be denser in the window.
 \end{proof}
-
-\clearpage
 
 \begin{lemma}[Rule Equivalence]
 \label{lemma:rule-equivalence}
@@ -469,8 +465,6 @@ We will now establish the (necessary and sufficient) condition for fragment
 preference to be decidable. First, if we have to choose between two chains, we
 must see enough of those chains to do a density comparison.
 
-\pagebreak
-
 \begin{definition}[Known density]
 We say that a chain fragment has a \emph{known density} at some point $p$
 if either of the following conditions hold:
@@ -555,8 +549,6 @@ In order to be able to pick a chain, we need to resolve forks. In order to
 resolve forks using the Density Rule, we need to know the density, but that
 is precisely what is guaranteed by look-ahead closure.
 \end{proof}
-
-\pagebreak
 
 \Cref{lemma:fragment-selection} is relevant because it reflects how the
 consensus layer uses chain selection:
@@ -1012,7 +1004,6 @@ node's upstream peers will report the \emph{same} blocks for all but the last
 few blocks on the chain. Since there is no fork to resolve, we can start
 adopting each block the moment it is reported by all peers.
 
-\pagebreak
 \subsection{Propagation delays}
 
 Propagation delays will be a bit slower than before. To see why, let's consider
@@ -1221,8 +1212,6 @@ from their tip. This means that we will not need to roll back at all: any block
 that we adopt which is more than $s$ slots away from the wall-clock is a block
 that we can be sure about.
 
-\pagebreak
-
 It is tempting to conclude from \cref{lemma:adversarial-within-s} that as soon
 we have reached $s$ slots from the wallclock, we can drop the requirement to be
 connected to $\RequiredPeers$ nodes and restrict rollback to  $k$ blocks. This
@@ -1401,8 +1390,6 @@ blocks from both chains (that is, for the first header outside the window), then
 do a density comparison, find that $A$ is denser, and choose to download the
 blocks from chain $A$.
 
-\pagebreak
-
 But the chain database cannot replicate any of that reasoning. When blocks  from
 either chain $A$ or chain $B$ are added, as far as the chain database is
 concerned, those \emph{are} the tips of those chains. This means that is not
@@ -1437,7 +1424,6 @@ avoid looking at the entire volatile database every time a new block is added to
 the database. If we however decide that the chain database is just selecting
 based on chain length \emph{anyway}, then the existing lemma and existing
 implementation can be used as-is.
-
 
 \subsection{Abstract chain selection interface}
 
@@ -1479,8 +1465,6 @@ For this reason we don't normally share work between various peers; when
 multiple upstream peers all send us the same header, we verify the header
 each time. This means that the average case (most upstream chains are the same)
 and the worst case (every upstream chain is different) are equal.
-
-\pagebreak
 
 However, it is less important that we can predict accurately how long it takes
 a node (that isn't up to date) to sync with the network. Such a node is anyway
