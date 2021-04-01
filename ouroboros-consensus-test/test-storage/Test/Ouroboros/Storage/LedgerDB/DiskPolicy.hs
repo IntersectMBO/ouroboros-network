@@ -191,11 +191,9 @@ prop_onDiskShouldTakeSnapshot ts =
           $ toDecision ts === (b >= k)
       TimeSinceLast    d ->
             counterexample "have previously taken a snapshot"
-          $ if   toDecision ts
-            then -- at least one disjunct must have decided true
-                 explicitDisjunctMatches d .||. implicitDisjunctMatches d
-            else -- both must have decided false
-                 explicitDisjunctMatches d .&&. implicitDisjunctMatches d
+          $ isDisjunctionOf
+              (toDecision ts `named` "the decision")
+              [primaryDisjunct d, secondaryDisjunct d]
   where
     TestSetup {
         tsBlocksSince = b
@@ -207,27 +205,60 @@ prop_onDiskShouldTakeSnapshot ts =
     kTimes2 :: DiffTime
     kTimes2 = secondsToDiffTime $ fromIntegral $ k * 2
 
-    explicitDisjunctMatches :: DiffTime -> Property
-    explicitDisjunctMatches d =
+    primaryDisjunct :: DiffTime -> NamedValue Bool
+    primaryDisjunct d =
         case r of
 
           DefaultSnapshotInterval ->
-                counterexample "should take snapshot if time since last is greater then 2 * k seconds if snapshot interval is set to default"
-              $ toDecision ts === (d >= kTimes2)
+              (d >= kTimes2) `named`
+                "time since last is greater then 2 * k seconds if snapshot interval is set to default"
 
           RequestedSnapshotInterval interval ->
-                counterexample "should take snapshot if time since last is greater then explicitly requested interval"
-              $ toDecision ts === (d >= interval)
+              (d >= interval) `named`
+                "time since last is greater then explicitly requested interval"
 
-    implicitDisjunctMatches :: DiffTime -> Property
-    implicitDisjunctMatches d =
-          (counterexample . unwords) [
-              "should take snapshot if"
-            , "we have processed", show minBlocksBeforeSnapshot
-            , "blocks and it's been more than", show minSecondsBeforeSnapshot
-            , "seconds since last snapshot was taken"
-            ]
-        $     toDecision ts
-          === (    b >= minBlocksBeforeSnapshot
-                && d >= secondsToDiffTime minSecondsBeforeSnapshot
-              )
+    secondaryDisjunct :: DiffTime -> NamedValue Bool
+    secondaryDisjunct d =
+        disjunct `named` msg
+      where
+        msg = unwords [
+            "we have processed", show minBlocksBeforeSnapshot
+          , "blocks and it's been more than", show minSecondsBeforeSnapshot
+          , "seconds since last snapshot was taken"
+          ]
+
+        disjunct =
+             b >= minBlocksBeforeSnapshot
+          && d >= secondsToDiffTime minSecondsBeforeSnapshot
+
+{-------------------------------------------------------------------------------
+  Auxiliary   -- TODO relocate this somewhere more general
+-------------------------------------------------------------------------------}
+
+-- | A value with an associated user-friendly string
+data NamedValue a = NamedValue String a
+
+forgetName :: NamedValue a -> a
+forgetName (NamedValue _s a) = a
+
+infix 0 `named`
+
+named :: a -> String -> NamedValue a
+named = flip NamedValue
+
+-- | Use this instead of @x '===' 'or' ys@ to get a 'counterexample' message
+-- that explains which of the disjuncts were mismatched
+isDisjunctionOf :: NamedValue Bool -> [NamedValue Bool] -> Property
+isDisjunctionOf (NamedValue s b) ds =
+    counterexample msg $ b === any forgetName ds
+  where
+    msg =
+      unlines $
+          (    show b <> " for " <> s
+            <> ", but the " <> show (length ds) <> " disjuncts were: "
+          )
+        : [    "  "
+            <> "disjunct " <> show (i :: Int) <> ": "
+            <> show b' <> " for " <> s'
+          | (i, NamedValue s' b') <- zip [0..] ds
+          ]
