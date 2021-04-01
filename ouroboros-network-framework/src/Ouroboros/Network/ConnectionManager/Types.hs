@@ -39,7 +39,7 @@
 --
 -- * 'InitiatorResponderMode' - useful for node-to-node applications, which
 --                              needs to create outbound connections as well as
---                              accept inbound ones; 
+--                              accept inbound ones;
 -- * 'ResponderMode'          - useful for server side of node-to-client; it
 --                              allows us to share the same server between
 --                              node-to-client and node-to-node;
@@ -54,13 +54,13 @@
 -- For inbound connections, the connection manager will pass handle (also after
 -- negotiation).
 --
--- >                                                                                   
--- > ┌────────────────────────┐                          
--- > │                        │        ┏━━━━━━━━━━━━━━━━┓     ┌──────────────────┐ 
--- > │   ConnectionHandler    │        ┃                ┃     │                  │ 
+-- >
+-- > ┌────────────────────────┐
+-- > │                        │        ┏━━━━━━━━━━━━━━━━┓     ┌──────────────────┐
+-- > │   ConnectionHandler    │        ┃                ┃     │                  │
 -- > │                        ┝━━━━━━━▶┃     handle     ┣━━━━▶│ PeerStateActions ├───▶ P2P Governor
--- > │  inbound / outbound    │        ┃                ┃     │                  │ 
--- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛     └──────────────────┘ 
+-- > │  inbound / outbound    │        ┃                ┃     │                  │
+-- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛     └──────────────────┘
 -- > └─────────╂──────────────┘           ┃
 -- >           ┃                          ┃
 -- >           ▼                          ┃
@@ -379,7 +379,7 @@ instance ( Show peerAddr
 -- | Data type used to classify 'handleErrors'.
 --
 data HandleErrorType =
-    -- | Handshake negotiation failed.  This is not a protocol error. 
+    -- | Handshake negotiation failed.  This is not a protocol error.
     HandshakeFailure
 
     -- | Handshake protocol error.  This should include timeout errors or any
@@ -522,6 +522,11 @@ newtype ConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleErro
 
 -- | Include outbound connection into 'ConnectionManager'.
 --
+--   This executes:
+--
+-- * \(Reserve\) to \(Negotiated^{*}_{Outbound}\) transitions
+-- * \(PromotedToWarm^{Duplex}_{Local}\) transition
+-- * \(Awake^{Duplex}_{Local}\) transition
 requestOutboundConnection
     :: HasInitiator muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
@@ -531,6 +536,9 @@ requestOutboundConnection =
 
 -- | Unregister outbound connection.
 --
+--   This executes:
+--
+-- * \(DemotedToCold^{*}_{Local}\) transitions
 unregisterOutboundConnection
     :: HasInitiator muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
@@ -541,10 +549,12 @@ unregisterOutboundConnection =
     ocmUnregisterConnection . withInitiatorMode . getConnectionManager
 
 -- | Notify the 'ConnectionManager' that a remote end promoted us to a
--- /warm peer/; this executes either
+-- /warm peer/.
+--
+-- This executes either:
 --
 -- * \(PromotedToWarm^{Duplex}_{Remote}\) transition,
--- * \(Awake^{Duplex}_{Remote}\) transition
+-- * \(Awake^{*}_{Remote}\) transition
 --
 -- from the specification.
 --
@@ -556,8 +566,11 @@ promotedToWarmRemote =
     icmPromotedToWarmRemote . withResponderMode . getConnectionManager
 
 -- | Notify the 'ConnectionManager' that a remote end demoted us to a /cold
--- peer/; this executes the \(DemotedToCold^{Duplex}_{Remote}\) transition.
+-- peer/.
 --
+-- This executes:
+--
+-- * \(DemotedToCold^{*}_{Remote}\) transition.
 demotedToColdRemote
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
@@ -566,7 +579,11 @@ demotedToColdRemote =
     icmDemotedToColdRemote . withResponderMode . getConnectionManager
 
 -- | Include an inbound connection into 'ConnectionManager'.
+--   This executes:
 --
+-- * \(Reserve\) to \(Negotiated^{*}_{Outbound}\) transitions
+-- * \(PromotedToWarm^{Duplex}_{Local}\) transition
+-- * \(Awake^{Duplex}_{Local}\) transition
 includeInboundConnection
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
@@ -574,8 +591,12 @@ includeInboundConnection
 includeInboundConnection =
     icmIncludeConnection . withResponderMode . getConnectionManager
 
--- | Unregister outbound connection.  Returns if the operation was successful.
+-- | Unregister outbound connection. Returns if the operation was successul.
 --
+-- This executes:
+--
+-- * \(Commit*{*}\) transition
+-- * \(TimeoutExpired\) transition
 unregisterInboundConnection
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
@@ -802,7 +823,7 @@ mkTransition from to = Transition { fromState = Known from
                                   }
 
 
-data TransitionTrace' peerAddr state = TransitionTrace 
+data TransitionTrace' peerAddr state = TransitionTrace
     { ttPeerAddr   :: peerAddr
     , ttTransition :: Transition' state
     }
