@@ -56,8 +56,9 @@ analyseBlock f =
 instance HasProtocolInfo (CardanoBlock StandardCrypto) where
   data Args (CardanoBlock StandardCrypto) =
     CardanoBlockArgs {
-        byronArgs   :: Args ByronBlock
-      , shelleyArgs :: Args (ShelleyBlock StandardShelley)
+        byronArgs                :: Args ByronBlock
+      , shelleyArgs              :: Args (ShelleyBlock StandardShelley)
+      , alonzoTranslationContext :: Int
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
@@ -66,7 +67,7 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     genesisByron <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
     genesisShelley <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
-    return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley initialNonce
+    return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley initialNonce alonzoTranslationContext
 
 instance HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
@@ -81,14 +82,20 @@ parseCardanoArgs :: Parser CardanoBlockArgs
 parseCardanoArgs = CardanoBlockArgs
     <$> argsParser Proxy
     <*> argsParser Proxy
+    <*> option auto
+          (  long "alonzoTranslation"
+          <> help "Translation Context for the Alonzo era"
+          <> metavar "CONTEXT"
+          )
 
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
   -> Maybe PBftSignatureThreshold
   -> ShelleyGenesis StandardShelley
   -> Nonce
+  -> Int
   -> ProtocolInfo IO (CardanoBlock StandardCrypto)
-mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonce =
+mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonce alonzoTranslationContext =
     protocolInfoCardano
       ProtocolParamsByron {
           byronGenesis                = genesisByron
@@ -114,9 +121,7 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
         }
       ProtocolParamsAlonzo {
             alonzoProtVer            = ProtVer 5 0
-          , alonzoTranslationContext = 0
-          -- ^ TODO this value is temp, we don't know the type of Alonzo's TranslationContext yet
-          --        Use default value or provide it as an argument
+          , alonzoTranslationContext = alonzoTranslationContext
         }
       ProtocolParamsTransition {
           transitionTrigger = TriggerHardForkAtVersion 2
