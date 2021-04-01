@@ -79,8 +79,13 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
              . Map.assocs
              $ available'
 
-    -- TODO
     simpleDemotionPolicy :: PickPolicy SockAddr m
-    simpleDemotionPolicy available pickNum
-      = pure . Set.take pickNum
-             $ available
+    simpleDemotionPolicy available pickNum = do
+      available' <- addMetrics available
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn (\(_, rn) -> rn)
+             . Map.assocs
+             $ available'
+
