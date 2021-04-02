@@ -297,7 +297,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
       domains $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
-          tracer tracer
+          tracer tracer tracer
           actions { requestPublicRootPeers }
           policy
   where
