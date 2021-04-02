@@ -168,6 +168,7 @@ runGovernorInMockEnvironment mockEnv =
       peerSelectionGovernor
         tracerTracePeerSelection
         tracerDebugPeerSelection
+        tracerTracePeerSelectionCounters
         actions
         policy
 
@@ -384,6 +385,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 
 data TestTraceEvent = GovernorDebug (DebugPeerSelection PeerAddr ())
                     | GovernorEvent (TracePeerSelection PeerAddr)
+                    | GovernorCounters PeerSelectionCounters
                     | MockEnvEvent   TraceMockEnv
   deriving Show
 
@@ -393,6 +395,9 @@ tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr peerconn)
 tracerDebugPeerSelection = contramap (GovernorDebug . fmap (const ()))
                                      tracerTestTraceEvent
+
+tracerTracePeerSelectionCounters :: Tracer (IOSim s) PeerSelectionCounters
+tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent
 
 tracerMockEnv :: Tracer (IOSim s) TraceMockEnv
 tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
