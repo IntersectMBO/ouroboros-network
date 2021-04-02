@@ -271,7 +271,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 data PeerSelectionCounters = PeerSelectionCounters {
       coldPeers :: !Int,
       warmPeers :: !Int,
-      hotPeers :: !Int
+      hotPeers  :: !Int
     } deriving Show
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
