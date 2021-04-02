@@ -123,6 +123,11 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 type ConnectionManagerState peerAddr handle handleError version m
   = Map peerAddr (StrictTVar m (ConnectionState peerAddr handle handleError version m))
 
+connectionManagerStateToCounters
+  :: Map peerAddr (ConnectionState peerAddr handle handleError version m)
+  -> ConnectionManagerCounters
+connectionManagerStateToCounters =
+    Map.foldMapWithKey (const connectionStateToCounters)
 
 -- | State of a connection.
 --
@@ -146,6 +151,29 @@ data ConnectionState peerAddr handle handleError version m =
   | DuplexState         !(ConnectionId peerAddr) !(Async m ()) !handle
   | TerminatingState    !(ConnectionId peerAddr) !(Async m ()) !(Maybe handleError)
   | TerminatedState                              !(Maybe handleError)
+
+-- | Perform counting from an 'AbstractState'
+connectionStateToCounters :: ConnectionState peerAddr handle handleError version m -> ConnectionManagerCounters
+connectionStateToCounters state =
+    case state of
+      ReservedOutboundState                 -> mempty
+      UnnegotiatedState Inbound _ _         -> conn <> incomingConn
+      UnnegotiatedState Outbound _ _        -> outgoingConn
+      OutboundUniState _ _ _                -> uniConn <> outgoingConn
+      OutboundDupState  _ _ _ _             -> conn <> duplexConn <> outgoingConn
+      InboundIdleState _ _ _ Unidirectional -> conn <> uniConn <> incomingConn
+      InboundIdleState _ _ _ Duplex         -> conn <> duplexConn  <> incomingConn
+      InboundState _ _ _ Unidirectional     -> conn <> uniConn <> incomingConn
+      InboundState _ _ _ Duplex             -> conn <> duplexConn <> incomingConn
+      DuplexState _ _ _                     -> conn <> duplexConn <> incomingConn <> outgoingConn
+      TerminatingState _ _ _                -> mempty
+      TerminatedState _                     -> mempty
+  where
+    conn          = ConnectionManagerCounters 1 0 0 0 0
+    duplexConn    = ConnectionManagerCounters 0 1 0 0 0
+    uniConn       = ConnectionManagerCounters 0 0 1 0 0
+    incomingConn  = ConnectionManagerCounters 0 0 0 1 0
+    outgoingConn  = ConnectionManagerCounters 0 0 0 0 1
 
 
 instance ( Show peerAddr
@@ -447,6 +475,11 @@ withConnectionManager ConnectionManagerArguments {
             traverse_ cancel (getConnThread connState) )
           state
   where
+    traceCounters :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m) -> m ()
+    traceCounters stateVar = do
+      mState <- atomically $ readTMVar stateVar >>= traverse readTVar
+      traceWith tracer (TrConnectionManagerCounters (connectionManagerStateToCounters mState))
+
     countConnections :: ConnectionManagerState peerAddr handle handleError version m
                      -> STM m Int
     countConnections state =
@@ -546,7 +579,8 @@ withConnectionManager ConnectionManagerArguments {
                            )
 
               case mConnVar of
-                Left !connState ->
+                Left !connState -> do
+                  traceCounters stateVar
                   traceWith trTracer (TransitionTrace peerAddr
                                         Transition
                                            { fromState = connState
@@ -585,6 +619,7 @@ withConnectionManager ConnectionManagerArguments {
                           )
                       let connState   = maybe Unknown Known mConnState
                           kConnState' = Known connState'
+
                       case updated of
                         Nothing ->
                           return [ Transition { fromState = connState
@@ -599,6 +634,8 @@ withConnectionManager ConnectionManagerArguments {
                                               , toState   = kConnState'
                                               }
                                  ]
+
+                    traceCounters stateVar
                     traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
 
       -- start connection thread
@@ -685,6 +722,7 @@ withConnectionManager ConnectionManagerArguments {
                                                                  (Just handleError)
                   HandshakeProtocolViolation -> TerminatedState  (Just handleError)
               modifyTMVarPure_ stateVar (Map.delete peerAddr)
+            traceCounters stateVar
             return (Disconnected connId (Just handleError))
 
           Right (handle, version) -> do
@@ -748,7 +786,7 @@ withConnectionManager ConnectionManagerArguments {
                                      (connectionDataFlow version)
                   writeTVar connVar connState'
                   return (mkTransition connState connState')
-
+            traceCounters stateVar
             -- Note that we don't set a timeout thread here which would perform
             -- @
             --   Commit^{dataFlow}
@@ -865,6 +903,7 @@ withConnectionManager ConnectionManagerArguments {
                        , UnsupportedState TerminatedSt )
 
       traverse_ cancel mbThread
+      traceCounters stateVar
       traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
       return result
 
@@ -1033,6 +1072,7 @@ withConnectionManager ConnectionManagerArguments {
                                       else Just connVar')
                                   peerAddr)
                     return (mkTransition connState connState')
+                  traceCounters stateVar
                   traceWith trTracer (TransitionTrace peerAddr tr)
 
               )
@@ -1071,6 +1111,7 @@ withConnectionManager ConnectionManagerArguments {
                   let connState' = UnnegotiatedState provenance connId connThread
                   writeTVar connVar connState'
                   return (mkTransition connState connState')
+                traceCounters stateVar
                 traceWith trTracer (TransitionTrace peerAddr tr)
 
                 res <- atomically (readPromise reader)
@@ -1088,6 +1129,7 @@ withConnectionManager ConnectionManagerArguments {
                                             (Just handleError)
                           HandshakeProtocolViolation ->
                             TerminatedState (Just handleError)
+
                       return ( Map.update
                                 (\connVar' ->
                                   if eqTVar (Proxy :: Proxy m) connVar' connVar
@@ -1123,6 +1165,7 @@ withConnectionManager ConnectionManagerArguments {
                               newOutboundConnection controlChannel connId dataFlow handle
                             NotInResponderMode -> return ()
                           return (mkTransition connState connState')
+                    traceCounters stateVar
                     traceWith
                       trTracer
                       (TransitionTrace peerAddr transition)
@@ -1212,10 +1255,12 @@ withConnectionManager ConnectionManagerArguments {
             case etr of
               Left tr'  -> traceWith trTracer tr'
               Right tr' -> traceWith tracer   tr'
+            traceCounters stateVar
             return connected
 
           -- Connection manager has a connection which can be reused.
-          Right (Here connected) ->
+          Right (Here connected) -> do
+            traceCounters stateVar
             return connected
 
 
@@ -1350,6 +1395,7 @@ withConnectionManager ConnectionManagerArguments {
               TerminatedState _handleError ->
                 return (DemoteToColdLocalNoop (mkTransition connState connState))
 
+      traceCounters stateVar
       case transition of
         DemotedToColdLocal _connId connThread tr -> do
           traceWith trTracer (TransitionTrace peerAddr tr)
@@ -1424,6 +1470,8 @@ withConnectionManager ConnectionManagerArguments {
               TerminatedState {} ->
                 return (UnsupportedState TerminatedSt)
 
+      traceCounters stateVar
+
       -- trace transition
       case result of
         OperationSuccess tr ->
@@ -1485,6 +1533,7 @@ withConnectionManager ConnectionManagerArguments {
               TerminatedState {} ->
                 return (UnsupportedState TerminatedSt)
 
+      traceCounters stateVar
       -- trace transition
       case result of
         OperationSuccess tr ->
