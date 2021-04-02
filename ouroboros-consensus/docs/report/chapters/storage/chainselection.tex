@@ -256,6 +256,14 @@ $\chainle$ operator.
 
 \subsection{Properties}
 
+In the following we will use ($F \app B$) to denote appending block $B$ to chain
+$F$, and lift this notation to sets, so that for some set of blocks
+$\mathcal{B}$ we have
+%
+\begin{equation*}
+F \app \mathcal{B} = \{ F \app B \mid B \in \mathcal{B} \}
+\end{equation*}
+
 \begin{lemma}[Properties of the set of candidates]
 \label{candidates:properties}
 The set of candidates computed by $\candidates{A}{V}$ has the following
@@ -300,9 +308,10 @@ If we add a new block, then any new candidates must involve that new block:
 \end{lemma}
 
 The next lemma says that if we have previously found some optimal candidate $F$,
-and subsequently learn of a new block $B$, it suffices to find a locally optimal
-candidate \emph{amongst the candidates that involve $B$}; this new candidate
-will also be a globally optimal candidate.
+and subsequently learn of a new block $B$ (where $B$ is a direct or indirect
+extension of $F$), it suffices to find a locally optimal candidate \emph{amongst
+the candidates that involve $B$}; this new candidate will also be a globally
+optimal candidate.
 
 \begin{lemma}[Focus on new block]
 \label{focusonnewblock}
@@ -360,9 +369,10 @@ selection first, because that is much cheaper. Both approaches are semantically
 equivalent, since \lstinline!sortBy f . filter p = filter p . sortBy f! due to
 the stability of \lstinline!sortBy!.} Candidates that are strict prefixes of
 other candidates can be ignored (as justified by the ``prefer extension''
-assumption, \cref{prefer-extension}).\footnote{The implementation does not
+assumption, \cref{prefer-extension});\footnote{The implementation does not
 compute candidates, but rather ``maximal'' candidates, which do not include such
-prefixes.}
+prefixes.} we may reconsider some of these prefixes if we subsequently discover
+invalid blocks (see \cref{chaindb:init:select}).
 
 \item
 \label{chaindb:init:select}
@@ -446,7 +456,8 @@ The block is known to be invalid (\cref{chaindb:invalidblocks}).
 \subsection{Add to current chain}
 \label{chainsel:addtochain}
 
-If $B$ fits onto the end of our current fragment $F$ (and hence onto our current chain) $F$, i.e.
+Let $B_\mathit{pred}$ be the predecessor block of $B$. If $B$ fits onto the end
+of our current fragment $F$ (and hence onto our current chain) $F$, i.e.
 %
 \begin{itemize}
 \item $F$ is empty, and $B_\mathit{pred} = I$
@@ -518,6 +529,8 @@ V$ and moreover this must form some kind of chain back to $I$; this means that
 the preferred candidate cannot be empty.}
 \end{enumerate}
 
+(This list is just the negation of the conditions we handled in the sections
+above.)
 We proceed in similar fashion to the case when the block fit onto the tip of our
 chain (\cref{chainsel:addtochain}). The new candidates in $\candidates{I}{V \cup
 \{B\}}$ must involve $B$ (\cref{candidates:properties},
@@ -591,19 +604,6 @@ again, we now discover the $A, B$ extension to our current chain; during
 validation we cut off this chain at $B$ because it is ahead of the clock, but we
 adopt $A$ because it is now valid.  In other words, we are always behind one
 block, adopting each block only when we receive the \emph{next} block.
-
-\begin{bug}
-One problem with this scheme is that if we receive a block $B$ which is ahead of
-the clock when we receive it, we might never notice it if block $B$ is not (yet)
-connected to our chain: by the time we receive the missing blocks (which connect
-$B$ to our chain), $B$ might no longer be ahead of the clock and we might adopt
-it, even if $B$ was ahead by more than the permissible clock skew.
-
-We could avoid this problem if we stored the time we received a block alongside
-the block in the volatile database, but in the current design, the volatile
-database does not store \emph{any} information on disk apart from raw blocks,
-so this would be quite a significant design change.
-\end{bug}
 
 \section{Sorting}
 

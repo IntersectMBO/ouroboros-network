@@ -46,7 +46,13 @@ way\footnote{The chain sync client does actually allow for some clock skew.
 Headers that exceed the clock skew are however not included in chain selection.}
 for one chain to be longer than another is by having more filled slots between
 the tip of the shared prefix and ``now'': in other words, they must be
-\emph{denser}.
+\emph{denser}.\footnote{A slightly subtle point arises from era transitions on
+the chain that may change parameters such as the active slot coefficient,
+allowing for denser chains after the transition. Although an adversary can
+introduce such a transition on their own fork, such a transition would not take
+effect until one stability window later, and so this won't affect the density
+near the intersection point. Era transitions that are agreed on on the main
+chain  benefit the honest parties and the adversary equally.}
 %
 \begin{center}
 \begin{tikzpicture}
@@ -134,8 +140,6 @@ If the adversary's chain contains more than $k$ blocks after the intersection
 point, and we \emph{happen} to download that chain first, we would adopt it and
 subsequently be unable to switch to the honest chain; after all, that would
 involve a rollback of more than $k$ blocks, which the Praos rule forbids.
-
-\clearpage
 
 \subsection{The Density rule}
 \label{genesis:background:density-rule}
@@ -247,8 +251,6 @@ Just to be very explicit, \cref{lemma:tip-density-is-chain-length} does
 In this case of course the longer chain may well not be denser in the window.
 \end{proof}
 
-\clearpage
-
 \begin{lemma}[Rule Equivalence]
 \label{lemma:rule-equivalence}
 When comparing two chains with an intersection that is at most $k$ blocks away
@@ -303,7 +305,7 @@ should switch to it. As mentioned above, however, the analysis tells us that
 alert nodes never have to roll back more than $k$ blocks.
 \end{proof}
 
-\Cref{lemma:adversarial-before-k} has a useful specialization for chains that an
+\Cref{lemma:adversarial-before-k} has a useful specialisation for chains that an
 adversary might try to construct near the wallclock:
 
 \begin{lemma}
@@ -406,8 +408,7 @@ intersection with $B$, but $B$ is longer:
 %
 In this case, the original rule ends up preferring either $A$ or $B$ depending
 on the order in which we consider them, whereas the Density Rule would simply
-pick $A$. (As we we will in \cref{density-ordering-sensitivity}, however, the
-Density rule is unfortunately not immune to order sensitivity either.)
+pick $A$.
 
 \begin{figure}
 \hrule
@@ -444,13 +445,14 @@ return (*$C_\mathit{max}$*)
 \section{Fragment selection}
 \label{genesis:fragment-selection}
 
-While the literature on Ouroboros compares entire chains, we will want to
-compare \emph{fragments} of chains: if at all possible we would prefer not to
-have to download and verify entire chains before we can make any decisions. As
-we have discussed in \cref{genesis:background:joining-late}, comparing fragments
-(prefixes) of chains using the Longest Chain rule does not actually make much
-sense, but in this section we will see that the situation is fortunately much
-better when we use the Density rule.
+While the algorithms described in the literature on Ouroboros compare entire
+chains, we will want to compare \emph{fragments} of chains: if at all possible
+we would prefer not to have to download and verify entire chains before we can
+make any decisions. As we have discussed in
+\cref{genesis:background:joining-late}, comparing fragments (prefixes) of chains
+using the Longest Chain rule does not actually make much sense, but in this
+section we will see that the situation is fortunately much better when we use
+the Density rule.
 
 \begin{definition}[Preferred fragment]
 Let $\mathcal{S}$ be set of chain fragments, all anchored at the same point
@@ -462,8 +464,6 @@ only if $A$ is a fragment of a preferred chain in $\mathcal{C}$.
 We will now establish the (necessary and sufficient) condition for fragment
 preference to be decidable. First, if we have to choose between two chains, we
 must see enough of those chains to do a density comparison.
-
-\pagebreak
 
 \begin{definition}[Known density]
 We say that a chain fragment has a \emph{known density} at some point $p$
@@ -549,8 +549,6 @@ In order to be able to pick a chain, we need to resolve forks. In order to
 resolve forks using the Density Rule, we need to know the density, but that
 is precisely what is guaranteed by look-ahead closure.
 \end{proof}
-
-\pagebreak
 
 \Cref{lemma:fragment-selection} is relevant because it reflects how the
 consensus layer uses chain selection:
@@ -824,15 +822,14 @@ at point $a$; let's call it $x_i$. That means if we ever were to adopt any of
 the $\vec{y}, \ldots$, and then compared our chain to $x_i$, we would find that
 $x_i$ is denser at the intersection point (which is precisely what we are
 comparing in this window here), and therefore switch to it. This means we can
-focus our attention on the $\vec{x}$. (Unfortunately\todo{TODO}, the existing
-density rule does not always pick a unique best chain, so we cannot prove this
-algorithm correct. See \cref{density-ordering-sensitivity}.)
+focus our attention on the $\vec{x}$. (\Cref{greedy-chain-selection}
+justifies the greedy nature of this algorithm in a bit more depth.)
 
 \item \emph{Adopt common prefix.}
-Most of the time, the density of the $\vec{x}$ will yet not be known. This means
-we do not yet know which $x_i$ will turn out to be the best, but we \emph{do}
-know that whichever it turns out to be, it will have the common prefix from $a$
-to $b$, so we choose this as the longest preferred prefix:
+Most of the time, the density of the $\vec{x}$ will yet not be known at point
+$b$. This means we do not yet know which $x_i$ will turn out to be the best, but
+we \emph{do} know that whichever it turns out to be, it will have the common
+prefix from $a$ to $b$, so we choose this as the longest preferred prefix:
 
 \begin{center}
 \begin{tikzpicture}
@@ -886,78 +883,14 @@ the density of all chains will be known, and the densest fragment equals the
 longest one.
 \end{proof}
 
-\subsection{Prefix selection on headers}
-
-When the chain sync client is dedicing which of the chains of its upstream peers
-to download, it does so based on chains of \emph{headers}. It does not download
-block bodies and so cannot verify them. As such, it is basing its decisions
-based on header validity \emph{only}.  However, this is then only used to tell
-the block fetch client which blocks to \emph{download}
-(\cref{chainsyncclient:plausiblecandidates}); it does not necessarily mean that
-those blocks will be \emph{adopted}. When the chain database performs chain
-selection (\cref{chainsel}), it will verify the blocks and discard any that turn
-out to be invalid. If any blocks \emph{are} invalid, then the chain sync client
-will disconnect from the nodes that provided them, which in turn may change
-which prefix is chosen by prefix selection.
-
-Indeed, the only reason to even validate headers at all is to avoid a denial
-of service attack where an adversary might cause us to waste resources.
-It may be worth reconsidering this risk, and balancing it against the costs
-for the implementation; the only reason we need forecasting, and a special
-treatment of low density chains (\cref{low-density}) is that we insist we want
-to validate headers independent from blocks.
-
-\subsection{Known density}
-
-\Cref{prefix-selection} requires known density at the anchor $a$ of the set, so
-that it can resolve the initial fork. This means we have to wait until
-we have downloaded enough headers from each peer: the last header we downloaded
-must either be outside the $s$ window, or else it must be the last header on that
-peer's chain (in which case the peer will tell us so). If a peer tells us they have
-more headers but then do not provide them, we should disconnect from them
-after some time-out to avoid a potential denial of service attack.
-
-Note that if that last header is \emph{not} the last header on a peer's chain,
-we will not be able to validate it: since it is more than $s$ slots away from
-the anchor point (and we only have a ledger state at the anchor point), it falls
-outside the ledger's forecast range. However, this does not matter: the presence
-of this header only tells us that we have seen everything we need to see to
-compute the density within the window; an invalid header after that window
-cannot increase the density \emph{within} the window.
-
-\pagebreak
-
-We can make two useful exceptions to the known density requirement:
-
-\begin{enumerate}
-\item If there \emph{is} no initial fork, we do not need to know the density at
-all and can go straight to step (2). This will allow a node to sync faster:
-consider a new node that is joining the network. In most cases, all of the
-node's upstream peers will report the \emph{same} blocks for all but the last
-few blocks on the chain. Since there is no fork to resolve, we can start
-adopting blocks the moment we see them.
-
-\item When we say that the density is \emph{known}, we mean that we have seen
-the last required header and validated it. However, consider what happens when
-the node is up to date, and a new block is produced (by some other node).
-Strictly speaking we must now wait for \emph{all} peers to have provided us with
-this header, and have validated all those headers, before we would consider the
-density to be known and prefix selection can make progress. This is however
-unnecessary: when node $A$ provides us with a header, and then node $B$ reports
-the exact same tip, we know that node $B$'s density cannot exceed node $A$s, and
-so we can go ahead and select node $A$'s chain.
-\end{enumerate}
-
 \begin{figure}[p]
 \hrule
 \vspace{0.5em}
 
-The justification for step 1 in \cref{prefix-selection} does depend on ordering
-(\emph{first} adopt any of the $\vec{y}$, \emph{then} compare to $x_i$).
-Unfortunately we cannot do better than that with the existing Density rule (or
-indeed with the original Genesis chain selection rule from the paper, \emph{cf.}
-\cref{genesis:maxvalid-bg}). Consider three chains $A, B, C$ in the following
-example:
+Step 1 in \cref{prefix-selection} makes greedy decisions, discarding the less
+dense chains at every step without looking further ahead. To justify this, it is
+instructive to consider an apparent counter-example to the validity of this
+strategy. Consider three chains $A, B, C$ in the following example:
 %
 \begin{center}
 \begin{tikzpicture}
@@ -1014,24 +947,202 @@ $A, B, C$ & $C$ \\
 \end{tabular}
 \end{center}
 %
-This is rather unfortunate, but resolving this would require input from the
-Ouroboros researchers. The algorithm described in \cref{prefix-selection}
-essentially makes local decisions: every time it sees a fork, it moves towards
-the densest chain in the window. For the example above, it would proceed as
-follows:
-%
-\begin{itemize}
-\item When resolving the initial fork, it would notice that $A$ is the densest
-fragment. Since it doesn't have sufficient look-ahead to compare $A$ and $B$,
-it would defer that decision, but it would discard $C$ and adopt the block $ab$
-in the common prefix of $A$ and $B$.
-\item When resolving the second fork, it would notice that $B$ is the densest
-fragment, and discard $A$. In this example, there are no further forks, and
-so it would adopt the entire fragment of $B$ in the window.
-\end{itemize}
-\hrule
-\caption{\label{density-ordering-sensitivity}Ordering sensitivity of the Density rule}
+In practice this situation cannot occur, however. The Genesis analysis tells us
+that there will be single chain (the honest chain) which will be denser than any
+other chain (within the genesis window) at every intersection point. This is
+precisely what justifies the greedy nature of the algorithm: it will always hone
+in on the honest chain. In the counter-example above, there is no single chain
+with this property, and hence cannot arise.
+\caption{\label{greedy-chain-selection}Greedy chain selection}
 \end{figure}
+
+\subsection{Prefix selection on headers}
+
+When the chain sync client is deciding which of the chains of its upstream peers
+to download, it does so based on chains of \emph{headers}. It does not download
+block bodies and so cannot verify them. As such, it is basing its decisions
+based on header validity \emph{only}.  However, this is then only used to tell
+the block fetch client which blocks to \emph{download}
+(\cref{chainsyncclient:plausiblecandidates}); it does not necessarily mean that
+those blocks will be \emph{adopted}. When the chain database performs chain
+selection (\cref{chainsel}), it will verify the blocks and discard any that turn
+out to be invalid. If any blocks \emph{are} invalid, then the chain sync client
+will disconnect from the nodes that provided them, which in turn may change
+which prefix is chosen by prefix selection.
+
+Indeed, the only reason to even validate headers at all is to avoid a denial
+of service attack where an adversary might cause us to waste resources.
+It may be worth reconsidering this risk, and balancing it against the costs
+for the implementation; the only reason we need forecasting, and a special
+treatment of low density chains (\cref{low-density}) is that we insist we want
+to validate headers independent from blocks.
+
+\pagebreak
+\subsection{Known density}
+
+\Cref{prefix-selection} requires known density at the anchor $a$ of the set, so
+that it can resolve the initial fork. This means we have to wait until
+we have downloaded enough headers from each peer: the last header we downloaded
+must either be outside the $s$ window, or else it must be the last header on that
+peer's chain (in which case the peer will tell us so). If a peer tells us they have
+more headers but then do not provide them, we should disconnect from them
+after some time-out to avoid a potential denial of service attack.
+
+If that header is outside the genesis window, we may not be able to validate it:
+since it is more than $s$ slots away from the anchor point (and we only have a
+ledger state at the anchor point), it falls outside the ledger's forecast range.
+However, this does not matter: the presence of this header only tells us that we
+have seen everything we need to see to compute the density within the window; an
+invalid header after that window cannot increase the density \emph{within} the
+window.
+
+We can make one useful exception to the known density requirement:
+if there \emph{is} no initial fork, we do not need to know the density at
+all and can go straight to step (2). This will allow a node to sync faster:
+consider a new node that is joining the network. In most cases, all of the
+node's upstream peers will report the \emph{same} blocks for all but the last
+few blocks on the chain. Since there is no fork to resolve, we can start
+adopting each block the moment it is reported by all peers.
+
+\subsection{Propagation delays}
+
+Propagation delays will be a bit slower than before. To see why, let's consider
+the most ideal situation where all nodes are on exactly the same chain, and
+the next slot leader produces a new block. Let
+%
+\begin{center}
+\begin{tikzpicture}[block/.style={rectangle,draw=black,minimum size=7mm}]
+\node at (0,0) (A) [block] {$n$};
+\draw [->] (A.east) -- ++(2,0) node[pos=0.9,above]{$m$};
+\end{tikzpicture}
+\end{center}
+%
+denote an upstream peer and a downstream peer. The upstream peer's tip is $n$,
+and is sending headers to the downstream peer; the most recent header that the
+downstream peer validated is $m$. When $n = m$, the downstream peer has ``seen''
+the upstream peer's entire chain; in the terminology of this chapter, the
+density of the upstream peer is then \emph{known}.
+
+Consider a diamond topology with four peers $A \ldots D$, nodes $B$ and $C$
+following node $A$, and node $D$ following nodes $B$ and $C$; suppose all nodes
+are up to date:
+
+\begin{center}
+\begin{tikzpicture}[block/.style={rectangle,draw=black,minimum size=9mm}]
+\node at ( 0,  0) (A) [block] {$n$};
+\node at (-1, -2) (B) [block] {$n$};
+\node at ( 1, -2) (C) [block] {$n$};
+\node at ( 0, -4) (D) [block] {$n$};
+\node at (A.south west) [above left] {$A$};
+\node at (B.south west) [above left] {$B$};
+\node at (C.south east) [above right] {$C$};
+\node at (D.south west) [above left] {$D$};
+\draw [->] (A.south) -- (B.north) node[pos=0.9,above left]{$n$};
+\draw [->] (A.south) -- (C.north) node[pos=0.9,above right]{$n$};
+\draw [->] (B.south) -- (D.north) node[pos=0.8,left]{$n$};
+\draw [->] (C.south) -- (D.north) node[pos=0.8,right]{$n$};
+\end{tikzpicture}
+\end{center}
+
+Now consider what happens when node $A$ produces a new block:\footnote{Exact
+details of the chain sync protocol may mean that this example as it  stands is
+not quite possible: the only way for $D$ to become aware of $C$'s new tip is
+when it receives the header. However, the point still remains; have $A$ switch
+to a fork instead and repeat the reasoning.}
+
+\begin{center}
+\begin{tabular}{c@{\hspace{1cm}}c@{\hspace{1cm}}c}
+\begin{tikzpicture}[block/.style={rectangle,draw=black,minimum size=9mm}]
+\node at ( 0,  0) (A) [block] {$n'$};
+\node at (-1, -2) (B) [block] {$n$};
+\node at ( 1, -2) (C) [block] {$n$};
+\node at ( 0, -4) (D) [block] {$n$};
+\node at (A.south west) [above left] {$A$};
+\node at (B.south west) [above left] {$B$};
+\node at (C.south east) [above right] {$C$};
+\node at (D.south west) [above left] {$D$};
+\draw [->] (A.south) -- (B.north) node[pos=0.9,above left]{$n$};
+\draw [->] (A.south) -- (C.north) node[pos=0.9,above right]{$n$};
+\draw [->] (B.south) -- (D.north) node[pos=0.8,left]{$n$};
+\draw [->] (C.south) -- (D.north) node[pos=0.8,right]{$n$};
+\end{tikzpicture}
+&
+\begin{tikzpicture}[block/.style={rectangle,draw=black,minimum size=9mm}]
+\node at ( 0,  0) (A) [block] {$n'$};
+\node at (-1, -2) (B) [block] {$n'$};
+\node at ( 1, -2) (C) [block] {$n'$};
+\node at ( 0, -4) (D) [block] {$n$};
+\node at (A.south west) [above left] {$A$};
+\node at (B.south west) [above left] {$B$};
+\node at (C.south east) [above right] {$C$};
+\node at (D.south west) [above left] {$D$};
+\draw [->] (A.south) -- (B.north) node[pos=0.9,above left]{$n'$};
+\draw [->] (A.south) -- (C.north) node[pos=0.9,above right]{$n'$};
+\draw [->] (B.south) -- (D.north) node[pos=0.8,left]{$n$};
+\draw [->] (C.south) -- (D.north) node[pos=0.8,right]{$n$};
+\end{tikzpicture}
+&
+\begin{tikzpicture}[block/.style={rectangle,draw=black,minimum size=9mm}]
+\node at ( 0,  0) (A) [block] {$n'$};
+\node at (-1, -2) (B) [block] {$n'$};
+\node at ( 1, -2) (C) [block] {$n'$};
+\node at ( 0, -4) (D) [block] {$n$};
+\node at (A.south west) [above left] {$A$};
+\node at (B.south west) [above left] {$B$};
+\node at (C.south east) [above right] {$C$};
+\node at (D.south west) [above left] {$D$};
+\draw [->] (A.south) -- (B.north) node[pos=0.9,above left]{$n'$};
+\draw [->] (A.south) -- (C.north) node[pos=0.9,above right]{$n'$};
+\draw [->] (B.south) -- (D.north) node[pos=0.8,left]{$n'$};
+\draw [->] (C.south) -- (D.north) node[pos=0.8,right]{$n$};
+\end{tikzpicture}
+\\
+(i) & (ii) & (iii)
+\end{tabular}
+\end{center}
+
+Initially node $A$ announces its header to $B$ and $C$ (i), which download it
+and verify it. Since their only peer is $A$, the density of ``all'' peers is now
+known and so both $B$ and $C$ adopt this new block and make it available to $D$
+(ii).
+
+Suppose node $D$ now downloads that header from $B$ and verifies it (iii).
+Prior to the implementation of genesis, the chain selection rule would have
+concluded that this chain is longer, therefore preferred, and node $D$ would be
+able to adopt the block before interacting with $C$.
+
+Prefix selection however will \emph{wait}: it hasn't yet verified the header
+from $C$, and so it considers the density of $C$'s chain's to be unknown, and
+hence it cannot make a decision. \emph{This is the correct behaviour}: the
+old implementation would select $C$'s chain immediately, but it would do so
+for a terrible reason: sure, it's longer, but only \emph{because we downloaded
+more of that chain}; this is the circular reasoning we described above in
+\cref{genesis:background:joining-late}.
+
+In principle it would be possible for $D$ to \emph{skip} the verification of
+any number of headers if those headers have already been verified from another
+peer. However, this would be optimising the code for the best case, with
+performance degrading when the peers are on different chains; this is something
+we avoid throughout (\cref{nonfunctional:best-is-worst}).
+
+
+
+
+
+
+
+% \item When we say that the density is \emph{known}, it either means that the
+% peer reports the next header to be outside the genesis window, or has given us
+% the header corresponding to tip of their chain and we validated it. However,
+% consider what happens when the node is up to date, and a new block is produced
+% (by some other node). Strictly speaking we must now wait for \emph{all} peers to
+% have provided us with this header, and have validated all those headers, before
+% we would consider the density to be known and prefix selection can make progress
+% (if we are up to date, all headers we receive will be within the genesis
+% window). This is however unnecessary: when node $A$ provides us with a header,
+% and then node $B$ reports the exact same tip, we know that node $B$'s density
+% cannot exceed node $A$s, and so we can go ahead and select node $A$'s chain.
+% \end{enumerate}
 
 \section{Avoiding long rollbacks}
 \label{genesis:avoiding-long-rollbacks}
@@ -1080,12 +1191,22 @@ that \emph{none} of them will serve us the honest chain is negligible
 network layer), and avoid doing prefix selection until we have reached
 this threshold.
 
-The only remaining decision to make is when we can \emph{drop} this requirement:
-at which point is the state of the node comparable to the state of an alert node
-(a node that has consistently been online)?
+Of course, the need to avoid being eclipsed is not unique to genesis. When we
+are up to date we can however tolerate relatively long periods in which we do
+not see the honest chain; an exact analysis of the relation between the length
+of such an eclipse and the maximum chain divergence we can handle is beyond the
+scope of this chapter, but it seems safe to say that being eclipsed for short
+periods of time should be unproblematic. If however we are behind and are
+catching up with the chain, being eclipsed for even just one minute is already
+problematic: an attacker can easily feed us $k$ blocks in that period, at which
+point we would be unable to switch to the honest chain.
 
 \subsection{Becoming alert}
 \label{genesis:becoming-alert}
+
+The only remaining decision to make is when we can \emph{drop} this requirement:
+at which point is the state of the node comparable to the state of an alert node
+(a node that has consistently been online)?
 
 Every block that we adopt through prefix selection that is more than $s$ slots
 away from the wall clock must be a block on the honest chain, because at every
@@ -1094,8 +1215,6 @@ parties (all alert nodes) will agree on blocks that are more than $s$ slots away
 from their tip. This means that we will not need to roll back at all: any block
 that we adopt which is more than $s$ slots away from the wall-clock is a block
 that we can be sure about.
-
-\pagebreak
 
 It is tempting to conclude from \cref{lemma:adversarial-within-s} that as soon
 we have reached $s$ slots from the wallclock, we can drop the requirement to be
@@ -1275,8 +1394,6 @@ blocks from both chains (that is, for the first header outside the window), then
 do a density comparison, find that $A$ is denser, and choose to download the
 blocks from chain $A$.
 
-\pagebreak
-
 But the chain database cannot replicate any of that reasoning. When blocks  from
 either chain $A$ or chain $B$ are added, as far as the chain database is
 concerned, those \emph{are} the tips of those chains. This means that is not
@@ -1312,7 +1429,6 @@ the database. If we however decide that the chain database is just selecting
 based on chain length \emph{anyway}, then the existing lemma and existing
 implementation can be used as-is.
 
-
 \subsection{Abstract chain selection interface}
 
 The current chain selection API compares two chains at a time, and only looks at
@@ -1333,10 +1449,10 @@ though we can probably just sidestep the entire issue and pretend we were
 using the Genesis rule all along.
 
 \subsection{Possible optimisations}
-\label{genesis:optimizations}
+\label{genesis:optimisations}
 
 Chain selection while we are not up to date has some properties that might
-enable us to implement some performance optimizations. Here we just list some of
+enable us to implement some performance optimisations. Here we just list some of
 the possibilities:
 
 \begin{itemize}
@@ -1353,8 +1469,6 @@ For this reason we don't normally share work between various peers; when
 multiple upstream peers all send us the same header, we verify the header
 each time. This means that the average case (most upstream chains are the same)
 and the worst case (every upstream chain is different) are equal.
-
-\pagebreak
 
 However, it is less important that we can predict accurately how long it takes
 a node (that isn't up to date) to sync with the network. Such a node is anyway

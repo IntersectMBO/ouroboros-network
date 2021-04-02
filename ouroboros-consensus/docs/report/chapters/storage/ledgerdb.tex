@@ -285,7 +285,7 @@ to the immutable tip, i.e., the block at the tip of the Immutable DB
 
 Ideally, we can construct the initial \lstinline!LedgerDB! from a snapshot of
 the ledger state that we wrote to disk. Remember that updating a ledger state
-with a block is not inversible: we can apply a block to a ledger state, but we
+with a block is not invertible: we can apply a block to a ledger state, but we
 cannot ``unapply'' a block to a ledger state. This means the snapshot has to be
 at least as old as the anchor. A snapshot matching the anchor can be used as is.
 A snapshot older than the anchor can be used after reapplying the necessary

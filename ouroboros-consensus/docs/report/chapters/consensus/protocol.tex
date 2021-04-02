@@ -43,8 +43,12 @@ ones (justifying \emph{why} this is the right choice is the domain  of
 cryptographic research and well outside the scope of this report). In the
 simplest case, the length of the chain is \emph{all} that matters, and hence the
 only thing we need to know about the blocks at the tips of the chains is their
-block numbers.\footnote{This is not \emph{entirely} true, due to the presence of
-EBBs; see \cref{ebb-chain-selection}.}
+block numbers.\footnote{It doesn't actually matter if the actual block headers
+contain a block number or not; if they don't, we can add a ``virtual field''
+to the in-memory representation of the block header. For block headers that
+\emph{do} include a block number (which is the case for the Cardano chain),
+header  validation verifies that the block number is increasing. Note that EBBs
+complicate this particular somewhat; see page~\pageref{ebb-chain-selection}.}
 
 This does beg the question of how to compare two chains when one (or both) of
 them are empty, since now we have no header to compare. We will resolve this by
@@ -78,7 +82,90 @@ It will therefore require special treatment; we will come back to this in
 \subsection{The security parameter $k$}
 \label{consensus:overview:k}
 
-TODO\todo{TODO}.
+When the Cardano blockchain was first launched, it was using a consensus
+protocol that we now refer to as Ouroboros Classic \cite{cryptoeprint:2016:889}.
+The re-implementation of the consensus layer never had support for Ouroboros
+Classic, instead using Ouroboros BFT \cite{cryptoeprint:2018:1049} as a
+transitional protocol towards Ouroboros Praos \cite{cryptoeprint:2017:573},
+which is the consensus protocol in use at the time of writing, with plans to
+switch to Ouroboros Genesis \cite{cryptoeprint:2018:378} relatively soon
+(\cref{genesis}).
+
+Both Ouroboros Classic and Ouroboros Praos are based on a chain selection rule
+that imposes a maximum rollback condition: alternative chains to a node's
+current chain that fork off more than a certain number of blocks ago are never
+considered for adoption. This limit is known as the \emph{security parameter},
+and is usually denoted by $k$; at present $k = 2160$ blocks. The Ouroboros
+analysis shows that consensus will be reached despite this maximum rollback
+limitation; indeed, this maximum rollback is \emph{required} in order to reach
+consensus (we discuss this in some detail in
+\cref{genesis:background:longest-chain}).
+
+For Ouroboros BFT and Ouroboros Genesis the situation is slightly different:
+
+\begin{itemize}
+\item Ouroboros BFT does not impose a maximum rollback, but adding such a
+requirement does not change the protocol in any fundamental way: the analysis
+for Ouroboros Praos shows that nodes will not diverge more than $k$ blocks, and
+since BFT converges much quicker than that, adding this (large) maximum rollback
+requirement does not change anything.
+\item The analysis that shows that nodes will not diverge by more than $k$
+blocks does of course not apply to new nodes joining the system. Indeed, when
+using Ouroboros Praos, such nodes are vulnerable to an attack where an adversary
+with some stake (does not have to be much) presents the newly joining node with
+a chain that diverges by more than $k$ blocks from the honest chain, at which
+point point the node would become unable to switch to the real chain. Solving
+this is the purview of Ouroboros Genesis.
+
+Like Ouroboros BFT, Ouroboros Genesis likewise does not impose a maximum
+rollback, \emph{but} the analysis \cite{cryptoeprint:2018:378} shows that when
+nodes are up to date, they can employ the Ouroboros Praos rule (i.e., the rule
+\emph{with} the maximum rollback requirement). This is not true when the node is
+behind and is catching up, but the main goal of \cref{genesis} is to show how we
+can nonetheless avoid rollbacks exceeding $k$ blocks even when a node is
+catching up.
+\end{itemize}
+
+Within the consensus layer we therefore assume that we \emph{always} have a
+limit $k$ on the number of blocks we might have to rollback. We take advantage
+of this in many ways; here we just mention a few:
+
+\begin{itemize}
+\item We use it as an organising principle in the storage layer
+(\cref{storage}), dividing the chain into a part that we know is stable (the
+"immutable chain"), and a part near the tip that is still subject to rollback
+(the "volatile chain"). Block lookup into the immutable chain is very efficient,
+and since the vast majority of the chain is immutable, this helps improve
+overall efficiency of the system.
+
+\item When we switch to a new fork by rolling back and then adopting some new
+blocks, those new blocks must be verified against the ledger state as it was
+at the point we rolled back to. This means we must be able to construct
+historical ledger states. In principle this is always possible, as we can always
+reply the entire chain, but doing so would be expensive. However, since we have
+a limit on the maximum rollback, we also have a limit on how old the oldest
+ledger state is we might have to reconstruct; we take advantage of this in the
+Ledger Database (\cref{ledgerdb}) which can efficiently reconstruct any of those
+$k$ historical ledger states.
+
+\item We need to keep track of the chains of our peer nodes in order to be able
+to decide whether or not we might wish to switch to those chains
+(\cref{chainsyncclient}). For consensus protocols based on a longest chain rule
+(such as Ouroboros Praos), this means that we would need to download and verify
+enough blocks from those alternative chains that the alternative chain becomes
+longer than our own. Without a maximum rollback, this would be an unbounded
+amount of work as well as an unbounded amount of data we would have to store.
+A maximum rollback of $k$, however, means that validating (and storing) $k+1$
+blocks should be sufficient.\footnote{For chain selection algorithms such as
+Ouroboros Genesis which are based on properties of the chains near their
+\emph{intersection point} rather than near their tips this is less relevant.}
+\end{itemize}
+
+Of course, a maximum rollback may be problematic in the case of severe network
+outages that partition the nodes for extended periods of time (in the order of
+days). When this happens, the chains will diverge and recovering converge will
+need manual intervention; this is true for any of the consensus protocols
+mentioned above. This manual intervention is outside the scope of this report.
 
 \section{The \lstinline!ConsensusProtocol! Class}
 \label{consensus:class}
@@ -574,6 +661,7 @@ description below.
 \begin{tabular}{c|l}
 $n$ & total number of core nodes \\
 $t$ & maximum number of core nodes \\
+    & (we do not make this distinction between $n$ and $t$ in the consensus layer, effectively setting $n = t$) \\
 $u$ & time to live (TTL) of a transaction \\
 \end{tabular}
 
@@ -683,3 +771,159 @@ scope of this report.
 
 \section{Combinator: Override the leader schedule}
 \label{consensus:override-leader-schedule}
+
+\cleardoublepage
+\section{Separation of responsibility between consensus and ledger}
+
+\subsection{Vision}
+
+In the vision that underlies the abstract design of the consensus layer,
+the separation of responsibility between the consensus layer and the
+ledger layer happens along three axes.
+
+\begin{description}
+\item{Block \emph{selection} versus block \emph{contents}}
+
+The primary objective of the consensus layer is to ensure that \emph{consensus}
+is reached: that is, everyone agrees on (a sufficiently long prefix of) the
+chain. From a sufficiently high vantage point, the consensus layer could
+reasonably be described as an implementation of the various Ouroboros papers
+(Praos, Genesis, etc.). A critical component of this is \emph{chain selection},
+choosing between competing chains. The consensus layer does not need to be aware
+of what is inside the blocks that it is choosing between.
+
+By contrast, the ledger layer is not aware of multiple chains at all, and will
+never need to execute chain selection: it exclusively deals with linear
+histories. \emph{Its} primary objective is to define the contents of blocks,
+along with rules that interpret those contents, computing the \emph{ledger
+state}.
+
+\item{\emph{Construction} versus \emph{verification}}
+
+The ledger layer only ever deals with fully formed blocks. Its responsibility is
+to \emph{verify} those blocks and describe how they transform the ledger state.
+But those blocks need to come from somewhere in the first place; block
+\emph{construction} is the responsibility of the consensus layer. This dichotomy
+manifests itself in two ways:
+
+\begin{itemize}
+\item When the ledger layer verifies a block, it must verify whether or not the
+node that produced the block had the right to do so, that is, whether or not it
+was a slot leader in the block's slot (though it may be argued that this should
+be a consensus concern instead, see below). Typically, it will need only access
+to the node's \emph{public} key to do so. Note that multiple nodes may have the
+right to produce a block in any given slot; the ledger layer is not checking
+for \emph{the} slot leader, but rather for \emph{a} slot leader.
+
+By contrast, the consensus layer is not checking if \emph{some} node is a leader
+for slot, but rather whether \emph{it} is a leader for the current slot, and if
+so, produce a block for that slot (along with evidence that it had the right to
+do so). Typically, it will need access to the node's \emph{private} key in order
+to execute that check.
+
+\item Blocks are only valid with respect to a particular ledger state. Since
+blocks specify their predecessor (the predecessor hash), they also implicitly
+specify which ledger state they should be evaluated against: the ledger state
+that was the result of applying that predecessor block (or the genesis ledger
+state for the very first block).
+
+By contrast, when the consensus layer produces a block, it must construct a
+block that is valid with respect to the node's \emph{current} ledger state, and
+\emph{choose} the predecessor of that new block to be the tip of the node's
+current chain.
+
+\end{itemize}
+
+\item{\emph{Stateful} versus \emph{stateless}}
+
+The ledger layer is entirely stateless: it is a pure function that accepts a
+ledger state and a block as input and produces the new ledger state (or an
+error if the block was invalid). State management is the responsibility of
+the consensus layer:
+
+\begin{itemize}
+
+\item The consensus layer must maintain the current ledger state, and pass that
+to the ledger layer when validating blocks that fit neatly onto the node's
+current tip. In addition, the consensus must provide efficient access to
+\emph{historical} ledger states, so that it can validate (and possibly adopt)
+alternative forks of the chain.
+
+\item Although the consensus layer does not need to be aware of the exact nature
+of the block contents, it \emph{does} have to collect these ``transactions'' and
+consider them when producing a block (the mempool, \cref{mempool}). If it
+chooses to do eager transaction validation (that is, before it actually produces
+a block), it will need support from the ledger layer to do; when producing a
+block, it will need assistance from the ledger layer to produce the block body.
+
+In both cases (transaction validation and block body construction), the
+consensus layer is responsible for passing an appropriate ledger state to the
+ledger layer. In the case of block production, the choice of ledger state is
+clear: the current ledger state. For the mempool, it is slightly less clear-cut;
+the mempool is effectively constructing a ``virtual'' block with a predecessor
+chosen from the node's current chain, near its tip.\footnote{We could update
+this ``virtual'' block every time that the node's current chain changes, so that
+the virtual block's predecessor is always the current chain's tip. This however
+couples two concurrent processes more tightly than required, and is moreover
+costly: re-evaluating the mempool can be expensive.}
+
+\end{itemize}
+
+\end{description}
+
+Ideally, the implementation of a particular consensus protocol (say, Praos)
+should be usable with any choice of ledger (cryptocurrency or otherwise), and
+conversely, a particular ledger (say, Shelley) should be usable with any choice
+of consensus protocol  (Praos, Genesis, or indeed a different consensus protocol
+entirely). The consensus protocol \emph{does} need some limited information from
+the ledger, but we can provide this separately
+(\cref{ledger:api:LedgerSupportsProtocol}), and abstract over what a particular
+consensus algorithm needs from the ledger layer it is used with (specifically,
+the \lstinline!SelectView! and the \lstinline!LedgerView!, discussed in
+\cref{consensus:class:chainsel,consensus:class:ledgerview}).
+
+\subsection{Practice}
+
+In practice, the separation is not quite so clean. Partly this is for
+historical reasons. When the Cardano blockchain was re-implemented, the new
+consensus layer and the new ledger layer were developed in tandem, and it was
+not always practical to have one wait for design decisions by the other.
+For example, most of Praos is currently implemented in the ledger layer,
+despite the ledger layer never having to do chain selection, ever. These are
+issues that we can resolve with some relatively minor refactoring.
+
+More problematic is that the current ledgers are not designed to be parametric
+in a choice of consensus algorithm. Specifically, the Shelley ledger hardcodes
+Praos. At some level, that statement makes no sense: the ledger layer never
+needs to execute chain selection nor decide if it's a leader for a given slot.
+However, the \emph{verification} of a block by the ledger layer currently
+includes verification of the cryptographic proof produced by the consensus layer
+when constructing a block. This is specific to Praos; other consensus algorithms
+may require entirely different fields in the block (header). So while the ledger
+layer is morally independent from the choice of consensus algorithm, in practice
+it includes just enough information that running it with a different consensus
+algorithm is difficult to do.
+
+In an ideal world, the Shelley ledger would not be aware of the consensus
+algorithm at all. Since the implementation of the consensus protocol, and
+details of the fields required in blocks to support that protocol, are the
+responsibility of the consensus layer, it would make sense to move the
+leader verification check from the ledger layer into the consensus header check
+instead. Block assembly now becomes more of a joint effort between the
+consensus layer and the ledger layer: the ledger layer produces the block body
+and some fields in the block header\footnote{In an perfect world this
+header/body boundary would align neatly with the consensus/ledger boundary; I
+think this ought to be possible in principle, but in the current design this is
+non-trivial to achieve, since the ledger layer is interpreting some fields in
+the header; for example, it is executing some rules in response to epoch
+transitions, which it detects based on fields in the header.}), whereas the
+consensus layer produces the fields in the block header that are required by the
+consensus protocol.
+
+Unfortunately, disentangling the two isn't \emph{quite} that easy. In
+particular, the Shelley ledger supports key delegation, which is affecting
+the leadership check. Disentangling this would be non-trivial; it's not
+clear what consensus-protocol independent delegation would even \emph{mean}
+and what kind of data it should carry. Solving this will probably require
+some parameterization in the \emph{other} direction, with the ledger
+rules for delegation allowing for some protocol specific data to be included.

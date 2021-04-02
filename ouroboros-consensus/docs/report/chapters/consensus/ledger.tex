@@ -86,14 +86,21 @@ applied (yet). This means that we should have
 The inclusion of \lstinline!LedgerErr! in \lstinline!IsLedger! is perhaps
 somewhat surprising. \lstinline!LedgerErr! is the type of errors that can arise
 when applying blocks to the ledger, but block application is not yet defined
-here. Nonetheless, a ledger can only be applied to a \emph{single} type of
-block, and consequently can only have a \emph{single} type of error; the only
-reason block application is defined separately is that a single type of
-\emph{block} can be used with multiple ledgers (in other words, this is a
-1-to-many relationship).\footnote{Defining \lstinline!LedgerErr! in
-\lstinline!ApplyBlock! (\cref{ledger:api:ApplyBlock}) would result in ambiguous
-types, since it would not refer to the \lstinline!blk! type variable of that
-class.}
+here. Nonetheless, a ledger can only be used with a \emph{single} type of
+block\footnote{While it is true that the Cardano ledger can be used with Byron
+blocks, Shelley blocks, Goguen blocks, etc., this distinction between the
+different blocks is invisible to most of the consensus layer. The whole raison
+d'\^{e}tre of the hard fork combinator (\cref{hfc}) is to present a composite
+ledger (say, the one consisting of the Byron, Shelley and Goguen eras) as a
+single type of ledger with a single type of block. The rest of the consensus
+layer is not aware that this composition has happened; from its point
+perspective it's just another ledger with an associated block type.}, and
+consequently can only have a \emph{single} type of error; the only reason block
+application is defined separately is that a single type of \emph{block} can be
+used with multiple ledgers (in other words, this is a 1-to-many
+relationship).\footnote{Defining \lstinline!LedgerErr! in \lstinline!ApplyBlock!
+(\cref{ledger:api:ApplyBlock}) would result in ambiguous types, since it would
+not refer to the \lstinline!blk! type variable of that class.}
 
 \subsection{Applying blocks}
 \label{ledger:api:ApplyBlock}
@@ -263,7 +270,13 @@ yet known; we say that $e$ is ``out of the forecast range''.
 
 Since we're always forecasting what the ledger would look like \emph{if it would
 be advanced to a particular slot}, the result of forecasting is always something
-ticked:\footnote{Actually we never deal with an \emph{unticked} ledger view.}
+ticked:\footnote{An \emph{unticked} ledger view would arise from deriving the
+ledger view from the \emph{current} ledger state, not taking (nor needing to
+take) into account any changes that have been scheduled for later slots. The
+unticked ledger view is however rarely useful; when we validate a header, any
+changes that have been scheduled in the most recent ledger state for slots
+before or at the slot number of the header must be applied before we validate
+the header; we therefore almost exclusively work with ticked ledger views.}
 %
 \begin{lstlisting}
 data Forecast a = Forecast {
@@ -300,7 +313,8 @@ This function must satisfy two important properties:
 When we validate headers from an upstream node, the most recent usable ledger
 state we have is the ledger state at the intersection of our chain and the chain
 of the upstream node. That intersection will be at most $k$ blocks back, because
-that is our maximum rollback (\cref{consensus:overview:k}). Furthermore, it is
+that is our maximum rollback and we disconnect from nodes that fork from our
+chain more than $k$ blocks ago (\cref{consensus:overview:k}). Furthermore, it is
 only useful to track an upstream peer if we might want to adopt their blocks,
 and we only switch to their chain if it is longer than ours
 (\cref{consensus:overview:chainsel}). This means that in the worst case
