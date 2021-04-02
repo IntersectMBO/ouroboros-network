@@ -30,6 +30,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , TimedDecision
   , MkGuardedDecision
   , Completion (..)
+  , PeerSelectionCounters (..)
+  , peerStateToCounters
 
   -- * Traces
   , TracePeerSelection (..)
@@ -298,6 +300,20 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
      }
   deriving (Show, Functor)
 
+data PeerSelectionCounters = PeerSelectionCounters {
+      coldPeers :: !Int,
+      warmPeers :: !Int,
+      hotPeers  :: !Int
+    } deriving Show
+
+peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
+peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers }
+  where
+    knownPeersSet = KnownPeers.toSet (knownPeers st)
+    establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
+    coldPeers = Set.size $ knownPeersSet Set.\\ establishedPeersSet
+    warmPeers = Set.size $ establishedPeersSet Set.\\ activePeers st
+    hotPeers  = Set.size $ activePeers st
 
 emptyPeerSelectionState :: PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState =

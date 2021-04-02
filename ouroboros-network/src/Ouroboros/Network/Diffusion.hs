@@ -31,8 +31,10 @@ module Ouroboros.Network.Diffusion
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
   , PeerSelectionActionsTrace (..)
+  , PeerSelectionCounters (..)
   , ConnectionManagerTrace (..)
   , ConnectionHandlerTrace (..)
+  , ConnectionManagerCounters (..)
   , ServerTrace (..)
   , InboundGovernorTrace (..)
   )
@@ -92,6 +94,7 @@ import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types ( TracePeerSelection (..)
                                                                 , DebugPeerSelection (..)
+                                                                , PeerSelectionCounters (..)
                                                                 )
 import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsensusInterface (..)
                                                              , TraceLedgerPeers
@@ -184,6 +187,8 @@ data DiffusionTracers = DiffusionTracers {
                        SockAddr
                          (NodeToNodePeerConnectionHandle InitiatorResponderMode ()))
 
+    , dtTracePeerSelectionCounters
+        :: Tracer IO PeerSelectionCounters
 
     , dtPeerSelectionActionsTracer
         :: Tracer IO (PeerSelectionActionsTrace SockAddr)
@@ -243,6 +248,7 @@ nullTracers = DiffusionTracers {
   , dtTracePeerSelectionTracer                   = nullTracer
   , dtDebugPeerSelectionInitiatorTracer          = nullTracer
   , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
+  , dtTracePeerSelectionCounters                 = nullTracer
   , dtPeerSelectionActionsTracer                 = nullTracer
   , dtConnectionManagerTracer                    = nullTracer
   , dtServerTracer                               = nullTracer
@@ -364,7 +370,7 @@ data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
                     (OuroborosBundle
                       InitiatorResponderMode ntnAddr
                       ByteString m () ())
-                      
+
 
     -- | NodeToClient responder application (server role)
     --
@@ -850,6 +856,7 @@ runDataDiffusion tracers
                           (Governor.peerSelectionGovernor
                             dtTracePeerSelectionTracer
                             dtDebugPeerSelectionInitiatorTracer
+                            dtTracePeerSelectionCounters
                             peerSelectionActions
                             (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
                           $ \governorThread ->
@@ -960,6 +967,7 @@ runDataDiffusion tracers
                         (Governor.peerSelectionGovernor
                           dtTracePeerSelectionTracer
                           dtDebugPeerSelectionInitiatorResponderTracer
+                          dtTracePeerSelectionCounters
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
                         $ \governorThread -> do
@@ -1023,6 +1031,7 @@ runDataDiffusion tracers
                      , dtTracePeerSelectionTracer
                      , dtDebugPeerSelectionInitiatorTracer
                      , dtDebugPeerSelectionInitiatorResponderTracer
+                     , dtTracePeerSelectionCounters
                      , dtPeerSelectionActionsTracer
                      , dtTraceLocalRootPeersTracer
                      , dtTracePublicRootPeersTracer
@@ -1044,7 +1053,7 @@ runDataDiffusion tracers
     miniProtocolBundleInitiatorResponderMode =
       combineMiniProtocolBundles miniProtocolBundleInitiatorMode
                                  miniProtocolBundleResponderMode
-     
+
     -- node-to-node responder bundle; it is only used in combination with
     -- the node-to-node initiator bundle defined below.
     --
@@ -1237,9 +1246,9 @@ withLocalSocket iocp tracer localAddress k =
     )
     -- We close the socket here, even if it was provided to us.
     (\case
-      Left  (sn, sd)    -> Snocket.close sn sd 
+      Left  (sn, sd)    -> Snocket.close sn sd
       Right (sn, sd, _) -> Snocket.close sn sd)
-    $ \case 
+    $ \case
       -- unconfigured socket
       Right (sn, sd, addr) -> do
         traceWith tracer . ConfiguringLocalSocket addr
