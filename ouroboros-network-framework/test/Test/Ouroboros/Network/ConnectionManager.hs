@@ -334,8 +334,8 @@ genScheduleInbound size = do
 
 -- TODO: this generator needs to be tuned. We ought to have greater change for
 -- generating edge cases:
--- * race conditions between inbound / outbound connections
--- * ScheduleInbound should be refined to contains information when remote
+-- - race conditions between inbound / outbound connections
+-- - ScheduleInbound should be refined to contains information when remote
 --   promotions / demotions should happen.
 instance Arbitrary (ScheduleEntry ()) where
     arbitrary =
@@ -960,8 +960,8 @@ fixupSchedule =
          if hasInbound || hasOutbound
          -- ignore an inbound connection if:
          --
-         -- * there is a running inbound connection or;
-         -- * an outbound connection.  For outbound connection we allow to have
+         -- - there is a running inbound connection or;
+         -- - an outbound connection.  For outbound connection we allow to have
          --   inbound connection started at the same time as outbound one, this
          --   simulates race condition that the connection manager can resolve.
          then go s acc as
@@ -1181,8 +1181,8 @@ prop_generator_RefinedSchedule a@(Schedule schedule) =
            ]) $
 
     -- % of all connections which:
-    -- * are outbound and reuse an existing inbound connection
-    -- * are blocked on ongoing handshake of the inbound connection
+    -- - are outbound and reuse an existing inbound connection
+    -- - are blocked on ongoing handshake of the inbound connection
     (label $ concat
            [ "reuse-handshake blocking "
            , if cs > 0
@@ -1195,8 +1195,8 @@ prop_generator_RefinedSchedule a@(Schedule schedule) =
            ]) $
 
     -- % of all connections which:
-    -- * are outbound and reuse an existing inbound connection
-    -- * are not blocked on ongoing handshake of the inbound connection
+    -- - are outbound and reuse an existing inbound connection
+    -- - are not blocked on ongoing handshake of the inbound connection
     (label $ concat
            [ "reuse-handshake non-blocking "
            , if cs > 0
@@ -1816,10 +1816,10 @@ instance Arbitrary SkewedBool where
 --  transitions.
 --
 -- Possible extensions:
--- * test that resources are eventually closed;
--- * we could check that every connection eventually ends in 'TerminatedState';
--- * we can statically compute which transitions we will observe
--- * include handshake failures
+-- - test that resources are eventually closed;
+-- - we could check that every connection eventually ends in 'TerminatedState';
+-- - we can statically compute which transitions we will observe
+-- - include handshake failures
 --
 -- This test does not cover 'TimeoutExpired' transition.  For that we would need
 -- to extend the 'seRemoteTransitions' type and track if we can call
