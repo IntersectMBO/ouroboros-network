@@ -14,16 +14,16 @@
 
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
-    ExtLedgerState(..)
-  , ExtValidationError(..)
-  , ExtLedgerCfg(..)
+    ExtLedgerCfg (..)
+  , ExtLedgerState (..)
+  , ExtValidationError (..)
     -- * Serialisation
-  , encodeExtLedgerState
   , decodeExtLedgerState
+  , encodeExtLedgerState
     -- * Casts
   , castExtLedgerState
     -- * Type family instances
-  , Ticked(..)
+  , Ticked (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

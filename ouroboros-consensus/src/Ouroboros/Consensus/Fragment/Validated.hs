@@ -11,7 +11,7 @@
 -- > import Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 -- > import qualified Ouroboros.Consensus.Fragment.Validated as VF
 module Ouroboros.Consensus.Fragment.Validated (
-    ValidatedFragment(ValidatedFragment)
+    ValidatedFragment (ValidatedFragment)
   , validatedFragment
   , validatedLedger
   , validatedTip

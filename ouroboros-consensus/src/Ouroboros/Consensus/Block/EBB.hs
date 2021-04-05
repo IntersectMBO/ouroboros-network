@@ -4,8 +4,8 @@
 -- | Generic infrastructure for working with EBBs
 module Ouroboros.Consensus.Block.EBB (
     IsEBB (..)
-  , toIsEBB
   , fromIsEBB
+  , toIsEBB
   ) where
 
 import           Codec.Serialise (Serialise (..))

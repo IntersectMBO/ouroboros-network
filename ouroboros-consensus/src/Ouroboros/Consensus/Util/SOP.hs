@@ -16,37 +16,37 @@
 
 module Ouroboros.Consensus.Util.SOP (
     -- * Minor variations on standard SOP operators
-    sequence_NS'
-  , map_NP'
-  , partition_NS
-  , npWithIndices
-  , nsToIndex
-  , nsFromIndex
-  , Lens(..)
-  , lenses_NP
-  , npToSListI
+    Lens (..)
   , allComposeShowK
   , fn_5
+  , lenses_NP
+  , map_NP'
+  , npToSListI
+  , npWithIndices
+  , nsFromIndex
+  , nsToIndex
+  , partition_NS
+  , sequence_NS'
     -- * Type-level non-empty lists
-  , IsNonEmpty(..)
-  , ProofNonEmpty(..)
+  , IsNonEmpty (..)
+  , ProofNonEmpty (..)
   , checkIsNonEmpty
     -- * Indexing SOP types
-  , Index(..)
-  , indices
+  , Index (..)
   , dictIndexAll
+  , indices
   , injectNS
   , injectNS'
   , projectNP
     -- * Zipping with indices
-  , himap
   , hcimap
-  , hizipWith
   , hcizipWith
-  , hizipWith3
   , hcizipWith3
-  , hizipWith4
   , hcizipWith4
+  , himap
+  , hizipWith
+  , hizipWith3
+  , hizipWith4
   ) where
 
 import           Data.Coerce

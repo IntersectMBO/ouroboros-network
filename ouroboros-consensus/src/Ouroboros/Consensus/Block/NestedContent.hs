@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Block.NestedContent (
   , NestedCtxt_
   , curriedNest
     -- * Flip type arguments
-  , NestedCtxt(..)
+  , NestedCtxt (..)
   , castNestedCtxt
   , mapNestedCtxt
     -- * Existentials

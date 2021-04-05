@@ -6,8 +6,8 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module Ouroboros.Consensus.Ledger.Query (
     Query
-  , QueryLedger(..)
-  , ShowQuery(..)
+  , QueryLedger (..)
+  , ShowQuery (..)
   ) where
 
 import           Data.Kind (Type)

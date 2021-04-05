@@ -10,31 +10,31 @@
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
     -- * Type-level utility
-    Dict(..)
+    Dict (..)
   , Empty
-  , Some(..)
-  , SomePair(..)
-  , SomeSecond(..)
-  , ShowProxy(..)
+  , ShowProxy (..)
+  , Some (..)
+  , SomePair (..)
+  , SomeSecond (..)
   , mustBeRight
     -- * Folding variations
   , foldlM'
-  , repeatedly
-  , repeatedlyM
   , nTimes
   , nTimesM
+  , repeatedly
+  , repeatedlyM
     -- * Lists
+  , allEqual
   , chunks
-  , pickOne
-  , markLast
-  , takeLast
   , dropLast
   , firstJust
-  , allEqual
-  , takeUntil
   , groupOn
   , groupSplit
+  , markLast
+  , pickOne
   , splits
+  , takeLast
+  , takeUntil
     -- * Safe variants of existing base functions
   , lastMaybe
   , safeMaximum
@@ -53,17 +53,17 @@ module Ouroboros.Consensus.Util (
     -- * Sets
   , allDisjoint
     -- * Composition
-  , (.:)
-  , (..:)
-  , (...:)
-  , (....:)
   , (.....:)
+  , (....:)
+  , (...:)
+  , (..:)
+  , (.:)
     -- * Product
   , pairFst
   , pairSnd
     -- * Miscellaneous
-  , fib
   , eitherToMaybe
+  , fib
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,

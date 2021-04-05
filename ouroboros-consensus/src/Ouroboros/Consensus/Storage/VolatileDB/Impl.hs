@@ -103,17 +103,17 @@
 -- duplicated.
 module Ouroboros.Consensus.Storage.VolatileDB.Impl (
     -- * Opening the database
-    openDB
-  , VolatileDbArgs (..)
-  , defaultArgs
+    VolatileDbArgs (..)
   , VolatileDbSerialiseConstraints
+  , defaultArgs
+  , openDB
     -- * Re-exported
-  , BlocksPerFile
-  , mkBlocksPerFile
   , BlockValidationPolicy (..)
+  , BlocksPerFile
   , ParseError (..)
   , TraceEvent (..)
   , extractBlockInfo
+  , mkBlocksPerFile
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

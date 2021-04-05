@@ -12,36 +12,36 @@
 --
 -- Intended for qualified import
 -- > import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary as PrimaryIndex
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
-  ( -- * SecondaryOffset
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary (
+    -- * SecondaryOffset
     SecondaryOffset
     -- * PrimaryIndex
-  , PrimaryIndex(..) -- Exported for the benefit of tests
+  , PrimaryIndex (..)
+  , appendOffsets
+  , backfill
+  , backfillChunk
+  , containsSlot
   , currentVersionNumber
-  , slots
-  , secondaryOffsetSize
+  , filledSlots
+  , firstFilledSlot
+  , getLastSlot
+  , isFilledSlot
+  , lastFilledSlot
+  , lastOffset
+  , load
+  , nextFilledSlot
+  , offsetOfSlot
+  , open
+  , readFirstFilledSlot
   , readOffset
   , readOffsets
-  , readFirstFilledSlot
-  , load
-  , write
+  , secondaryOffsetSize
+  , sizeOfSlot
+  , slots
   , truncateToSlot
   , truncateToSlotFS
   , unfinalise
-  , open
-  , appendOffsets
-  , lastOffset
-  , getLastSlot
-  , containsSlot
-  , offsetOfSlot
-  , sizeOfSlot
-  , isFilledSlot
-  , nextFilledSlot
-  , firstFilledSlot
-  , filledSlots
-  , lastFilledSlot
-  , backfill
-  , backfillChunk
+  , write
     -- * Exported for testing purposes
   , mk
   , toSecondaryOffsets

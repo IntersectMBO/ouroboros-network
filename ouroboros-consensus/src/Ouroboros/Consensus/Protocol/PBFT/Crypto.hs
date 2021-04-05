@@ -13,9 +13,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Protocol.PBFT.Crypto (
-    PBftCrypto(..)
+    PBftCrypto (..)
   , PBftMockCrypto
-  , PBftMockVerKeyHash(..)
+  , PBftMockVerKeyHash (..)
   ) where
 
 import           Codec.Serialise (Serialise)

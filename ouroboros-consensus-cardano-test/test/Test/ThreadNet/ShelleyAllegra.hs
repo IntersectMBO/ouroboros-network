@@ -14,9 +14,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.ThreadNet.ShelleyAllegra (
-    tests
-  ) where
+module Test.ThreadNet.ShelleyAllegra (tests) where
 
 import           Control.Monad (replicateM)
 import qualified Data.Map as Map

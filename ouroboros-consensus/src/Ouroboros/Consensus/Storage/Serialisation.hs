@@ -30,33 +30,33 @@
 -- this use case. Moreover, sometimes we only need a single direction.
 module Ouroboros.Consensus.Storage.Serialisation (
     -- * Serialisation to/from disk storage
-    EncodeDisk (..)
-  , DecodeDisk (..)
+    DecodeDisk (..)
+  , EncodeDisk (..)
     -- * Support for dependent pairs
-  , EncodeDiskDepIx(..)
-  , EncodeDiskDep(..)
-  , DecodeDiskDepIx(..)
-  , DecodeDiskDep(..)
+  , DecodeDiskDep (..)
+  , DecodeDiskDepIx (..)
+  , EncodeDiskDep (..)
+  , EncodeDiskDepIx (..)
     -- * Serialised header
-  , SerialisedHeader(..)
-  , serialisedHeaderToPair
-  , serialisedHeaderFromPair
+  , SerialisedHeader (..)
   , castSerialisedHeader
-  , encodeTrivialSerialisedHeader
   , decodeTrivialSerialisedHeader
+  , encodeTrivialSerialisedHeader
+  , serialisedHeaderFromPair
+  , serialisedHeaderToPair
     -- * Reconstruct nested type
-  , ReconstructNestedCtxt (..)
   , PrefixLen (..)
+  , ReconstructNestedCtxt (..)
   , addPrefixLen
   , takePrefix
     -- * Binary block info
-  , HasBinaryBlockInfo (..)
   , BinaryBlockInfo (..)
+  , HasBinaryBlockInfo (..)
     -- * Re-exported for convenience
   , SizeInBytes
     -- * Exported for the benefit of tests
-  , encodeDepPair
   , decodeDepPair
+  , encodeDepPair
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

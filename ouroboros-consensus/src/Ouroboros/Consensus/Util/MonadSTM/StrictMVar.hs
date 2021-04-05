@@ -6,25 +6,26 @@
 {-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
-    StrictMVar(..) -- constructors exported for benefit of tests
-  , castStrictMVar
-  , newMVar
-  , newMVarWithInvariant
-  , newEmptyMVar
-  , newEmptyMVarWithInvariant
-  , takeMVar
-  , tryTakeMVar
-  , putMVar
-  , tryPutMVar
-  , readMVar
-  , readMVarSTM
-  , tryReadMVar
-  , swapMVar
+    castStrictMVar
   , isEmptyMVar
-  , updateMVar
-  , updateMVar_
   , modifyMVar
   , modifyMVar_
+  , newEmptyMVar
+  , newEmptyMVarWithInvariant
+  , newMVar
+  , newMVarWithInvariant
+  , putMVar
+  , readMVar
+  , readMVarSTM
+  , swapMVar
+  , takeMVar
+  , tryPutMVar
+  , tryReadMVar
+  , tryTakeMVar
+  , updateMVar
+  , updateMVar_
+    -- * constructors exported for benefit of tests
+  , StrictMVar (..)
   ) where
 
 import           Control.Concurrent.STM (readTVarIO)

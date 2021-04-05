@@ -12,26 +12,26 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
-  ( -- * Environment
-    CacheEnv
-  , newEnv
-  , CacheConfig (..)
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache (
+    -- * Environment
+    CacheConfig (..)
+  , CacheEnv
   , checkInvariants
+  , newEnv
     -- * Background thread
   , expireUnusedChunks
     -- * Operations
   , close
   , restart
     -- ** On the primary index
-  , readOffsets
-  , readFirstFilledSlot
-  , openPrimaryIndex
   , appendOffsets
+  , openPrimaryIndex
+  , readFirstFilledSlot
+  , readOffsets
     -- ** On the secondary index
-  , readEntries
-  , readAllEntries
   , appendEntry
+  , readAllEntries
+  , readEntries
   ) where
 
 import           Control.Exception (assert)

@@ -4,10 +4,10 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
   , StakePoolRelay (..)
   , stakePoolRelayAddress
     -- * Re-exports for convenience
-  , RelayAddress (..)
   , DomainAddress (..)
   , IP (..)
   , PortNumber
+  , RelayAddress (..)
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)

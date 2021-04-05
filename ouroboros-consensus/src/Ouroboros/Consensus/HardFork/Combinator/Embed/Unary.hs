@@ -18,21 +18,21 @@
 
 -- | Witness isomorphism between @b@ and @HardForkBlock '[b]@
 module Ouroboros.Consensus.HardFork.Combinator.Embed.Unary (
-    Isomorphic(..)
-  , project'
+    Isomorphic (..)
   , inject'
+  , project'
     -- * Dependent types
-  , projQuery
-  , projQuery'
-  , ProjHardForkQuery(..)
+  , ProjHardForkQuery (..)
+  , injNestedCtxt
   , injQuery
-  , projQueryResult
   , injQueryResult
   , projNestedCtxt
-  , injNestedCtxt
+  , projQuery
+  , projQuery'
+  , projQueryResult
     -- * Convenience exports
-  , Proxy(..)
-  , I(..)
+  , I (..)
+  , Proxy (..)
   ) where
 
 import           Data.Bifunctor (first)

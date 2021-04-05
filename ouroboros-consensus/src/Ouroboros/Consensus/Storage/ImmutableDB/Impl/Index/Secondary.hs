@@ -9,17 +9,17 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
-module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
-  ( Entry (..)
-  , entrySize
-  , BlockOffset (..)
+module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary (
+    BlockOffset (..)
+  , BlockSize (..)
+  , Entry (..)
   , HeaderOffset (..)
   , HeaderSize (..)
-  , BlockSize (..)
-  , readEntry
-  , readEntries
-  , readAllEntries
   , appendEntry
+  , entrySize
+  , readAllEntries
+  , readEntries
+  , readEntry
   , truncateToEntry
   , writeAllEntries
   ) where

@@ -3,8 +3,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion (
-    ByronNodeToNodeVersion(..)
-  , ByronNodeToClientVersion(..)
+    ByronNodeToClientVersion (..)
+  , ByronNodeToNodeVersion (..)
   ) where
 
 import qualified Data.Map.Strict as Map

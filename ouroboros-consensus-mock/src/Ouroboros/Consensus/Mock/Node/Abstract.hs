@@ -4,8 +4,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node.Abstract (
-    CodecConfig(..)
-  , RunMockBlock(..)
+    CodecConfig (..)
+  , RunMockBlock (..)
   , constructMockNetworkMagic
   ) where
 

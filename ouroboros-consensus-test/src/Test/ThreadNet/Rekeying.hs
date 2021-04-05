@@ -3,8 +3,8 @@
 {-# LANGUAGE NamedFieldPuns            #-}
 
 module Test.ThreadNet.Rekeying (
-  Rekeying (..),
-  fromRekeyingToRekeyM,
+    Rekeying (..)
+  , fromRekeyingToRekeyM
   ) where
 
 import           Data.Functor ((<&>))

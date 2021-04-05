@@ -1,10 +1,10 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.Node.Recovery
-  ( createMarkerOnCleanShutdown
+module Ouroboros.Consensus.Node.Recovery (
+    createCleanShutdownMarker
+  , createMarkerOnCleanShutdown
   , hasCleanShutdownMarker
-  , createCleanShutdownMarker
   , removeCleanShutdownMarker
   ) where
 

@@ -3,8 +3,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion (
-    ShelleyNodeToNodeVersion(..)
-  , ShelleyNodeToClientVersion(..)
+    ShelleyNodeToClientVersion (..)
+  , ShelleyNodeToNodeVersion (..)
   ) where
 
 import qualified Data.Map.Strict as Map

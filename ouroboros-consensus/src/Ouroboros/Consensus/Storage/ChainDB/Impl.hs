@@ -7,31 +7,31 @@
 
 module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization
-    ChainDbArgs(..)
-  , defaultArgs
+    ChainDbArgs (..)
   , SerialiseDiskConstraints
-  , withDB
+  , defaultArgs
   , openDB
+  , withDB
     -- * Trace types
-  , TraceEvent (..)
+  , LgrDB.TraceLedgerReplayEvent
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
-  , TraceFollowerEvent (..)
   , TraceCopyToImmutableDBEvent (..)
+  , TraceEvent (..)
+  , TraceFollowerEvent (..)
   , TraceGCEvent (..)
-  , TraceValidationEvent (..)
   , TraceInitChainSelEvent (..)
-  , TraceOpenEvent (..)
   , TraceIteratorEvent (..)
-  , LgrDB.TraceLedgerReplayEvent
+  , TraceOpenEvent (..)
+  , TraceValidationEvent (..)
     -- * Re-exported for convenience
   , Args.RelativeMountPoint (..)
   , ImmutableDB.ImmutableDbSerialiseConstraints
   , LgrDB.LgrDbSerialiseConstraints
   , VolatileDB.VolatileDbSerialiseConstraints
     -- * Internals for testing purposes
-  , openDBInternal
   , Internal (..)
+  , openDBInternal
   ) where
 
 import           Control.Monad (when)

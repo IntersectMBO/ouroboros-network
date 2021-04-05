@@ -4,15 +4,15 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types (
     -- * Misc types
     BlockOrEBB (..)
-  , isBlockOrEBB
   , WithBlockSize (..)
+  , isBlockOrEBB
     -- * Validation policy
   , ValidationPolicy (..)
     -- * Chunk file error
   , ChunkFileError (..)
     -- * Tracing
-  , TraceEvent(..)
-  , TraceCacheEvent(..)
+  , TraceCacheEvent (..)
+  , TraceEvent (..)
   ) where
 
 import           Data.Text (Text)

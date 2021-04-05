@@ -1,9 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.Ledger.SupportsProtocol (
-    LedgerSupportsProtocol(..)
-  ) where
+module Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol (..)) where
 
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)

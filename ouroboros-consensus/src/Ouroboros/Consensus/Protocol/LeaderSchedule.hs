@@ -6,10 +6,10 @@
 {-# LANGUAGE TypeFamilies       #-}
 
 module Ouroboros.Consensus.Protocol.LeaderSchedule (
-    LeaderSchedule (..)
-  , leaderScheduleFor
+    ConsensusConfig (..)
+  , LeaderSchedule (..)
   , WithLeaderSchedule
-  , ConsensusConfig (..)
+  , leaderScheduleFor
   ) where
 
 import           Data.Map.Strict (Map)

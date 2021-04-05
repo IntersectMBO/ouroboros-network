@@ -1,9 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 
-module Ouroboros.Consensus.HardFork.Simple (
-    TriggerHardFork (..)
-  ) where
+module Ouroboros.Consensus.HardFork.Simple (TriggerHardFork (..)) where
 
 import           Data.Word
 import           GHC.Generics (Generic)

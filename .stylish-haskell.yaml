@@ -1,4 +1,4 @@
-# Stylish-haskell configuration file used for cardano-sl by Serokell.
+# Stylish-haskell configuration file used for the Consensus layer
 # It's based on default config provided by `stylish-haskell --defaults` but has some changes
 # ==================================
 
@@ -15,6 +15,32 @@ steps:
   #     # language extensions using some other method than pragmas. Default:
   #     # true.
   #     add_language_pragma: true
+  - module_header:
+  #     # How many spaces use for indentation in the module header.
+      indent: 2
+  #
+  #     # Should export lists be sorted?  Sorting is only performed within the
+  #     # export section, as delineated by Haddock comments.
+      sort: true
+  #
+  #     # See `separate_lists` for the `imports` step.
+      separate_lists: true
+  #
+  #     # When to break the "where".
+  #     # Possible values:
+  #     # - exports: only break when there is an explicit export list.
+  #     # - single: only break when the export list counts more than one export.
+  #     # - inline: only break when the export list is too long. This is
+  #     #   determined by the `columns` setting. Not applicable when the export
+  #     #   list contains comments as newlines will be required.
+  #     # - always: always break before the "where".
+      break_where: single
+  #     # Where to put open bracket
+  #     # Possible values:
+  #     # - same_line: put open bracket on the same line as the module name, before the
+  #     #              comment of the module
+  #     # - next_line: put open bracket on the next line, after module comment
+      open_bracket: same_line
 
   # Align the right hand side of some elements.  This is quite conservative
   # and only applies to statements where each element occupies a single

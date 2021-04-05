@@ -24,8 +24,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Ouroboros.Storage.LedgerDB.OnDisk (
-    tests
-  , showLabelledExamples
+    showLabelledExamples
+  , tests
   ) where
 
 import           Prelude hiding (elem)

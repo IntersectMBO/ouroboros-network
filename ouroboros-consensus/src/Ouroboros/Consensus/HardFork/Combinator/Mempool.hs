@@ -16,11 +16,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Mempool (
-    HardForkApplyTxErr(..)
-  , hardForkApplyTxErrToEither
+    GenTx (..)
+  , HardForkApplyTxErr (..)
+  , TxId (..)
   , hardForkApplyTxErrFromEither
-  , GenTx(..)
-  , TxId(..)
+  , hardForkApplyTxErrToEither
   ) where
 
 import           Control.Monad.Except

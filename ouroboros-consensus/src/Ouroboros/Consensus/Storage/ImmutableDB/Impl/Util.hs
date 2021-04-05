@@ -10,18 +10,18 @@
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (
     -- * Utilities
     Two (..)
-  , renderFile
+  , checkChecksum
+  , dbFilesOnDisk
   , fsPathChunkFile
   , fsPathPrimaryIndexFile
   , fsPathSecondaryIndexFile
-  , wrapFsError
-  , tryImmutableDB
   , parseDBFile
-  , dbFilesOnDisk
   , removeFilesStartingFrom
+  , renderFile
   , runGet
   , runGetWithUnconsumed
-  , checkChecksum
+  , tryImmutableDB
+  , wrapFsError
   ) where
 
 import           Control.Monad (forM_)

@@ -7,35 +7,35 @@
 {-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal (
-    ChunkInfo(..)
+    ChunkInfo (..)
+  , chunkInfoSupportsEBBs
   , simpleChunkInfo
   , singleChunkInfo
-  , chunkInfoSupportsEBBs
     -- * Chunk number
-  , ChunkNo(..)
-  , firstChunkNo
-  , chunkNoToInt
+  , ChunkNo (..)
   , chunkNoFromInt
+  , chunkNoToInt
+  , chunksBetween
+  , countChunks
+  , firstChunkNo
   , nextChunkNo
   , prevChunkNo
-  , countChunks
-  , chunksBetween
-  , unsafeEpochNoToChunkNo
   , unsafeChunkNoToEpochNo
+  , unsafeEpochNoToChunkNo
     -- * Chunk size
-  , ChunkSize(..)
+  , ChunkSize (..)
   , getChunkSize
     -- * Layout
-  , RelativeSlot(..)
-  , maxRelativeIndex
-  , mkRelativeSlot
+  , RelativeSlot (..)
   , assertRelativeSlotInChunk
   , compareRelativeSlot
+  , maxRelativeIndex
+  , mkRelativeSlot
     -- * Assertions
   , ChunkAssertionFailure
+  , assertChunkCanContainEBB
   , assertSameChunk
   , assertWithinBounds
-  , assertChunkCanContainEBB
   ) where
 
 import           Control.Exception

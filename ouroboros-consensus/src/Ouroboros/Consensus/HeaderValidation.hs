@@ -16,42 +16,42 @@
 {-# LANGUAGE UndecidableInstances  #-}
 -- | Header validation
 module Ouroboros.Consensus.HeaderValidation (
-    validateHeader
-  , revalidateHeader
+    revalidateHeader
+  , validateHeader
     -- * Annotated tips
-  , AnnTip(..)
+  , AnnTip (..)
+  , HasAnnTip (..)
   , annTipHash
   , annTipPoint
   , annTipRealPoint
   , castAnnTip
-  , mapAnnTip
-  , HasAnnTip(..)
   , getAnnTip
+  , mapAnnTip
     -- * Header state
-  , HeaderState(..)
+  , HeaderState (..)
   , castHeaderState
-  , tickHeaderState
   , genesisHeaderState
   , headerStatePoint
+  , tickHeaderState
     -- * Validate header envelope
-  , BasicEnvelopeValidation(..)
-  , HeaderEnvelopeError(..)
+  , BasicEnvelopeValidation (..)
+  , HeaderEnvelopeError (..)
+  , ValidateEnvelope (..)
   , castHeaderEnvelopeError
-  , ValidateEnvelope(..)
     -- * Errors
-  , HeaderError(..)
+  , HeaderError (..)
   , castHeaderError
     -- * TipInfoIsEBB
-  , TipInfoIsEBB(..)
+  , TipInfoIsEBB (..)
     -- * Serialization
-  , defaultEncodeAnnTip
-  , defaultDecodeAnnTip
-  , encodeAnnTipIsEBB
   , decodeAnnTipIsEBB
-  , encodeHeaderState
   , decodeHeaderState
+  , defaultDecodeAnnTip
+  , defaultEncodeAnnTip
+  , encodeAnnTipIsEBB
+  , encodeHeaderState
     -- * Type family instances
-  , Ticked(..)
+  , Ticked (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

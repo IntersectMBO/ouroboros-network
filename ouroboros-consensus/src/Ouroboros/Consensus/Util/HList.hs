@@ -15,23 +15,23 @@
 -- Intended for qualified import
 module Ouroboros.Consensus.Util.HList (
     -- * Basic definitions
-    HList(..)
-  , All
+    All
+  , HList (..)
     -- * Folding
+  , collapse
+  , foldMap
   , foldl
   , foldlM
   , foldr
-  , foldMap
   , repeatedly
   , repeatedlyM
-  , collapse
     -- * Singletons
+  , IsList (..)
   , SList
-  , IsList(..)
     -- * n-ary functions
   , Fn
-  , applyFn
   , afterFn
+  , applyFn
   ) where
 
 import           Data.Kind (Constraint, Type)

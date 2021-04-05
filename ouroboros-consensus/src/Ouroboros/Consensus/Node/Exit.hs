@@ -2,8 +2,8 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.Node.Exit
-  ( -- * ExitFailure
+module Ouroboros.Consensus.Node.Exit (
+    -- * ExitFailure
     ExitFailure
   , exitReasontoExitFailure
     -- * ExitReason

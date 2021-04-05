@@ -84,19 +84,19 @@
 --     index file.
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl (
     -- * Opening the databse
-    openDB
-  , ImmutableDbArgs (..)
-  , defaultArgs
+    ImmutableDbArgs (..)
   , ImmutableDbSerialiseConstraints
+  , defaultArgs
+  , openDB
     -- * Re-exported
-  , ValidationPolicy (..)
   , ChunkFileError (..)
-  , TraceEvent (..)
   , Index.CacheConfig (..)
+  , TraceEvent (..)
+  , ValidationPolicy (..)
     -- * Internals for testing purposes
-  , openDBInternal
   , Internal (..)
   , deleteAfter
+  , openDBInternal
   ) where
 
 import qualified Codec.CBOR.Write as CBOR

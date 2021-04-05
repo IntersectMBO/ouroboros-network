@@ -4,9 +4,9 @@
 -- | Support for defining 'BlockchainTime' instances
 module Ouroboros.Consensus.BlockchainTime.WallClock.Util (
     -- * Tracing
-    TraceBlockchainTimeEvent(..)
+    TraceBlockchainTimeEvent (..)
     -- * Exceptions
-  , SystemClockMovedBackException(..)
+  , SystemClockMovedBackException (..)
   ) where
 
 import           Control.Exception (Exception)

@@ -4,7 +4,7 @@
 -- > import Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 -- > import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 module Ouroboros.Consensus.Storage.ChainDB.Init (
-    InitChainDB(..)
+    InitChainDB (..)
   , fromFull
   , map
   ) where

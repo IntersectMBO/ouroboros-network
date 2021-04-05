@@ -9,8 +9,8 @@
 -- > import           Ouroboros.Consensus.ByronSpec.Ledger.GenTx (ByronSpecGenTx(..), ByronSpecGenTxErr(..))
 -- > import qualified Ouroboros.Consensus.ByronSpec.Ledger.GenTx as GenTx
 module Ouroboros.Consensus.ByronSpec.Ledger.GenTx (
-    ByronSpecGenTx(..)
-  , ByronSpecGenTxErr(..)
+    ByronSpecGenTx (..)
+  , ByronSpecGenTxErr (..)
   , apply
   , partition
   ) where

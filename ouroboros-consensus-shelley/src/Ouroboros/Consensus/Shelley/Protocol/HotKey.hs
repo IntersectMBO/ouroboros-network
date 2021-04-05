@@ -17,11 +17,11 @@ module Ouroboros.Consensus.Shelley.Protocol.HotKey (
   , KESStatus (..)
   , kesStatus
     -- * Hot Key
+  , HotKey (..)
   , KESEvolutionError (..)
   , KESEvolutionInfo
-  , HotKey (..)
-  , sign
   , mkHotKey
+  , sign
   ) where
 
 import           Data.Word (Word64)

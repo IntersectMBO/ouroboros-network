@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Shelley.Ledger (
-    module X
-  ) where
+module Ouroboros.Consensus.Shelley.Ledger (module X) where
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block as X
 import           Ouroboros.Consensus.Shelley.Ledger.Config as X

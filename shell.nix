@@ -9,6 +9,8 @@
 }:
 with pkgs;
 let
+  # This is temporally till we get a stylish 0.12.3.0 release available in hackage
+  stylish-haskell = import ./nix/stylish-haskell.nix { inherit pkgs; };
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
   # NOTE: due to some cabal limitation,
@@ -25,10 +27,10 @@ let
       niv
       pkgconfig
       nixpkgs-fmt
+      stylish-haskell
     ];
 
     tools = {
-      stylish-haskell = "0.12.2.0";
       ghcid = "0.8.7";
       cabal = "3.2.0.0";
       # todo: add back the build tools which are actually necessary

@@ -4,7 +4,7 @@
 module Ouroboros.Consensus.Util.RedundantConstraints (
     keepRedundantConstraint
     -- * Convenience re-export
-  , Proxy(..)
+  , Proxy (..)
   ) where
 
 import           Data.Proxy

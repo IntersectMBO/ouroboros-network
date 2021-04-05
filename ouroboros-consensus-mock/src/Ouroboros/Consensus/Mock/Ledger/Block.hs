@@ -24,42 +24,42 @@
 -- None of the definitions in this module depend on, or even refer to, any
 -- specific consensus protocols.
 module Ouroboros.Consensus.Mock.Ledger.Block (
-    SimpleBlock
-  , SimpleHeader
-  , SimpleBlock'(..)
-  , Header(..)
-  , SimpleStdHeader(..)
-  , SimpleBody(..)
+    Header (..)
+  , Query (..)
+  , SimpleBlock
+  , SimpleBlock' (..)
+  , SimpleBody (..)
   , SimpleHash
-  , Query(..)
+  , SimpleHeader
+  , SimpleStdHeader (..)
     -- * Working with 'SimpleBlock'
-  , mkSimpleHeader
-  , matchesSimpleHeader
   , countSimpleGenTxs
+  , matchesSimpleHeader
+  , mkSimpleHeader
     -- * Configuration
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
-  , SimpleLedgerConfig(..)
+  , BlockConfig (..)
+  , CodecConfig (..)
+  , SimpleLedgerConfig (..)
+  , StorageConfig (..)
     -- * Protocol-specific part
-  , MockProtocolSpecific(..)
+  , MockProtocolSpecific (..)
     -- * 'UpdateLedger'
-  , LedgerState(..)
-  , Ticked(..)
-  , updateSimpleLedgerState
+  , LedgerState (..)
+  , Ticked (..)
   , genesisSimpleLedgerState
+  , updateSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
-  , GenTx(..)
-  , TxId(..)
+  , GenTx (..)
+  , TxId (..)
   , mkSimpleGenTx
   , txSize
     -- * Crypto
   , SimpleCrypto
-  , SimpleStandardCrypto
   , SimpleMockCrypto
+  , SimpleStandardCrypto
     -- * Serialisation
-  , encodeSimpleHeader
   , decodeSimpleHeader
+  , encodeSimpleHeader
   , simpleBlockBinaryBlockInfo
   ) where
 

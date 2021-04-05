@@ -7,15 +7,15 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Byron.Node (
-    protocolInfoByron
-  , ProtocolParamsByron(..)
-  , protocolClientInfoByron
-  , mkByronConfig
-  , PBftSignatureThreshold(..)
-  , defaultPBftSignatureThreshold
+    PBftSignatureThreshold (..)
+  , ProtocolParamsByron (..)
   , byronBlockForging
+  , defaultPBftSignatureThreshold
+  , mkByronConfig
+  , protocolClientInfoByron
+  , protocolInfoByron
     -- * Secrets
-  , ByronLeaderCredentials(..)
+  , ByronLeaderCredentials (..)
   , ByronLeaderCredentialsError
   , mkByronLeaderCredentials
   , mkPBftCanBeLeader

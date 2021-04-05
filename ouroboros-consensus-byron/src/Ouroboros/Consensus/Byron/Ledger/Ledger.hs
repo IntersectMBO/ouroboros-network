@@ -17,26 +17,26 @@
 
 -- | Instances requires for consensus/ledger integration
 module Ouroboros.Consensus.Byron.Ledger.Ledger (
-    ByronTransition(..)
+    ByronTransition (..)
     -- * Ledger integration
-  , initByronLedgerState
   , byronEraParams
   , byronEraParamsNeverHardForks
+  , initByronLedgerState
     -- * Serialisation
-  , encodeByronAnnTip
   , decodeByronAnnTip
+  , decodeByronLedgerState
+  , decodeByronQuery
+  , decodeByronResult
+  , encodeByronAnnTip
   , encodeByronExtLedgerState
   , encodeByronHeaderState
   , encodeByronLedgerState
-  , decodeByronLedgerState
   , encodeByronQuery
-  , decodeByronQuery
   , encodeByronResult
-  , decodeByronResult
     -- * Type family instances
-  , Ticked(..)
-  , LedgerState(..)
-  , Query(..)
+  , LedgerState (..)
+  , Query (..)
+  , Ticked (..)
     -- * Auxiliary
   , validationErrorImpossible
   ) where

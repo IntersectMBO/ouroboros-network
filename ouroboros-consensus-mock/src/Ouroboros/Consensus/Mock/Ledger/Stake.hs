@@ -3,18 +3,18 @@
 
 module Ouroboros.Consensus.Mock.Ledger.Stake (
     -- * Stakeholders
-    StakeHolder(..)
+    StakeHolder (..)
     -- * Address distribution
   , AddrDist
     -- * Stake distribution
-  , StakeDist(..)
-  , stakeWithDefault
-  , relativeStakes
-  , totalStakes
+  , StakeDist (..)
   , equalStakeDist
   , genesisStakeDist
+  , relativeStakes
+  , stakeWithDefault
+  , totalStakes
     -- * Type family instances
-  , Ticked(..)
+  , Ticked (..)
   ) where
 
 import           Codec.Serialise (Serialise)

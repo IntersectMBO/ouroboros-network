@@ -13,8 +13,8 @@ module Ouroboros.Consensus.Shelley.ShelleyBased (
   , injectShelleyNP
   , injectShelleyOptNP
     -- * Transform Shelley-based types
-  , HasCrypto
   , EraCrypto
+  , HasCrypto
   ) where
 
 import           Data.SOP.Strict

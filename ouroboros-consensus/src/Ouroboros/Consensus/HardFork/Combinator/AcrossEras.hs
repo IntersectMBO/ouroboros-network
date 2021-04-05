@@ -20,41 +20,41 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
     -- * Value for /each/ era
-    PerEraConsensusConfig(..)
-  , PerEraBlockConfig(..)
-  , PerEraCodecConfig(..)
-  , PerEraLedgerConfig(..)
-  , PerEraStorageConfig(..)
+    PerEraBlockConfig (..)
+  , PerEraCodecConfig (..)
+  , PerEraConsensusConfig (..)
+  , PerEraLedgerConfig (..)
+  , PerEraStorageConfig (..)
     -- * Values for /some/ eras
-  , SomeErasCanBeLeader(..)
+  , SomeErasCanBeLeader (..)
     -- * Value for /one/ era
-  , OneEraApplyTxErr(..)
-  , OneEraBlock(..)
-  , OneEraCannotForge(..)
-  , OneEraEnvelopeErr(..)
-  , OneEraForgeStateInfo(..)
-  , OneEraForgeStateUpdateError(..)
-  , OneEraGenTx(..)
-  , OneEraGenTxId(..)
-  , OneEraHash(..)
-  , OneEraHeader(..)
-  , OneEraIsLeader(..)
-  , OneEraLedgerError(..)
-  , OneEraLedgerUpdate(..)
-  , OneEraLedgerWarning(..)
-  , OneEraSelectView(..)
-  , OneEraTipInfo(..)
-  , OneEraValidateView(..)
-  , OneEraValidationErr(..)
+  , OneEraApplyTxErr (..)
+  , OneEraBlock (..)
+  , OneEraCannotForge (..)
+  , OneEraEnvelopeErr (..)
+  , OneEraForgeStateInfo (..)
+  , OneEraForgeStateUpdateError (..)
+  , OneEraGenTx (..)
+  , OneEraGenTxId (..)
+  , OneEraHash (..)
+  , OneEraHeader (..)
+  , OneEraIsLeader (..)
+  , OneEraLedgerError (..)
+  , OneEraLedgerUpdate (..)
+  , OneEraLedgerWarning (..)
+  , OneEraSelectView (..)
+  , OneEraTipInfo (..)
+  , OneEraValidateView (..)
+  , OneEraValidationErr (..)
     -- * Value for two /different/ eras
-  , MismatchEraInfo(..)
-  , mismatchOneEra
+  , EraMismatch (..)
+  , MismatchEraInfo (..)
   , mismatchFutureEra
-  , EraMismatch(..)
+  , mismatchOneEra
   , mkEraMismatch
     -- * Utility
-  , oneEraBlockHeader
   , getSameValue
+  , oneEraBlockHeader
   ) where
 
 import           Codec.Serialise (Serialise (..))

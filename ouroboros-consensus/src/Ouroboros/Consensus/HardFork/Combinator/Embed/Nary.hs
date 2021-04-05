@@ -12,9 +12,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Nary (
     Inject (..)
   , inject'
     -- * Defaults
+  , injectHardForkState
   , injectNestedCtxt_
   , injectQuery
-  , injectHardForkState
     -- * Initial 'ExtLedgerState'
   , injectInitialExtLedgerState
   ) where

@@ -12,10 +12,10 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
-    SimpleBftBlock
+    SignedSimpleBft (..)
+  , SimpleBftBlock
+  , SimpleBftExt (..)
   , SimpleBftHeader
-  , SimpleBftExt(..)
-  , SignedSimpleBft(..)
   , forgeBftExt
   ) where
 

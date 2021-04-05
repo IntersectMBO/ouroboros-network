@@ -11,7 +11,7 @@
 
 module Ouroboros.Consensus.Mock.Node.Serialisation (
     MockBlock
-  , NestedCtxt_(..)
+  , NestedCtxt_ (..)
   ) where
 
 import           Codec.Serialise (Serialise, decode, encode, serialise)

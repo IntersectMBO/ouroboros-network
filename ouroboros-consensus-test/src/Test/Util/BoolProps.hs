@@ -5,13 +5,13 @@
 {-# LANGUAGE TypeOperators     #-}
 
 module Test.Util.BoolProps (
-  CollectReqs (..),
-  Prereq (..),
-  Requirement (..),
-  checkReqs,
-  enabledIf,
-  gCollectReqs,
-  requiredIf,
+    CollectReqs (..)
+  , Prereq (..)
+  , Requirement (..)
+  , checkReqs
+  , enabledIf
+  , gCollectReqs
+  , requiredIf
   ) where
 
 import           Data.Kind (Type)

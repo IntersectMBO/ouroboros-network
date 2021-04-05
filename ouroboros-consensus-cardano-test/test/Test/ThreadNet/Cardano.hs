@@ -4,9 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.ThreadNet.Cardano (
-    tests
-  ) where
+module Test.ThreadNet.Cardano (tests) where
 
 import           Control.Exception (assert)
 import           Control.Monad (replicateM)

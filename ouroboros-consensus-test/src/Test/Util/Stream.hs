@@ -1,8 +1,8 @@
 {-# LANGUAGE DeriveTraversable #-}
 
 module Test.Util.Stream (
-  Stream (..),
-  nubOrdBy,
+    Stream (..)
+  , nubOrdBy
   ) where
 
 import qualified Data.Set as Set

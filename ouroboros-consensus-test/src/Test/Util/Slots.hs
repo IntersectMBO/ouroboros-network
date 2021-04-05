@@ -2,9 +2,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Test.Util.Slots (
-  NumSlots (..),
-  ) where
+module Test.Util.Slots (NumSlots (..)) where
 
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)

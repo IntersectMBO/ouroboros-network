@@ -11,26 +11,26 @@
 
 module Ouroboros.Consensus.Byron.Ledger.Block (
     -- * Hash
-    ByronHash(..)
+    ByronHash (..)
   , mkByronHash
     -- * Block
-  , ByronBlock(..)
-  , mkByronBlock
+  , ByronBlock (..)
   , annotateByronBlock
+  , mkByronBlock
     -- * Header
-  , Header(..)
+  , Header (..)
+  , mkBoundaryByronHeader
   , mkByronHeader
   , mkRegularByronHeader
-  , mkBoundaryByronHeader
     -- * Dealing with EBBs
-  , byronHeaderIsEBB
   , byronBlockIsEBB
+  , byronHeaderIsEBB
   , knownEBBs
     -- * Low-level API
-  , UnsizedHeader(..)
+  , UnsizedHeader (..)
+  , joinSizeHint
   , mkUnsizedHeader
   , splitSizeHint
-  , joinSizeHint
   ) where
 
 import           Data.ByteString (ByteString)

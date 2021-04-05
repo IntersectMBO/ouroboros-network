@@ -18,11 +18,11 @@
 
 -- | Shelley mempool integration
 module Ouroboros.Consensus.Shelley.Ledger.Mempool (
-    SL.ApplyTxError (..)
-  , GenTx (..)
+    GenTx (..)
+  , SL.ApplyTxError (..)
   , TxId (..)
-  , mkShelleyTx
   , fixedBlockBodyOverhead
+  , mkShelleyTx
   , perTxOverhead
   ) where
 

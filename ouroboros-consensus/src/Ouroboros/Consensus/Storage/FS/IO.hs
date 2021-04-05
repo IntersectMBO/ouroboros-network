@@ -1,9 +1,9 @@
 -- | IO implementation of the 'HasFS' class
 module Ouroboros.Consensus.Storage.FS.IO (
     -- * IO implementation & monad
-      HandleIO
-    , ioHasFS
-    ) where
+    HandleIO
+  , ioHasFS
+  ) where
 
 import           Control.Concurrent.MVar
 import qualified Control.Exception as E

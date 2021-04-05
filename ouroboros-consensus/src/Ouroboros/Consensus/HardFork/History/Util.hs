@@ -1,10 +1,10 @@
 module Ouroboros.Consensus.HardFork.History.Util (
     -- * Adding and subtracting slots/epochs
-    addSlots
-  , subSlots
-  , addEpochs
-  , countSlots
+    addEpochs
+  , addSlots
   , countEpochs
+  , countSlots
+  , subSlots
   ) where
 
 import           Control.Exception (assert)

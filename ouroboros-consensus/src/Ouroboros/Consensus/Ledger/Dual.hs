@@ -20,40 +20,40 @@
 {-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Ledger.Dual (
-    Bridge(..)
+    Bridge (..)
     -- * Pair types
-  , DualBlock(..)
+  , DualBlock (..)
+  , DualGenTxErr (..)
   , DualHeader
-  , DualLedgerConfig(..)
-  , DualLedgerError(..)
-  , DualGenTxErr(..)
+  , DualLedgerConfig (..)
+  , DualLedgerError (..)
     -- * Lifted functions
+  , ctxtDualMain
   , dualExtValidationErrorMain
   , dualTopLevelConfigMain
-  , ctxtDualMain
     -- * Type class family instances
-  , Header(..)
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
-  , LedgerState(..)
-  , GenTx(..)
-  , TxId(..)
-  , NestedCtxt_(..)
-  , Ticked(..)
+  , BlockConfig (..)
+  , CodecConfig (..)
+  , GenTx (..)
+  , Header (..)
+  , LedgerState (..)
+  , NestedCtxt_ (..)
+  , StorageConfig (..)
+  , Ticked (..)
+  , TxId (..)
     -- * Serialisation
-  , encodeDualBlock
   , decodeDualBlock
-  , encodeDualHeader
-  , decodeDualHeader
-  , encodeDualGenTx
   , decodeDualGenTx
-  , encodeDualGenTxId
-  , decodeDualGenTxId
-  , encodeDualGenTxErr
   , decodeDualGenTxErr
-  , encodeDualLedgerState
+  , decodeDualGenTxId
+  , decodeDualHeader
   , decodeDualLedgerState
+  , encodeDualBlock
+  , encodeDualGenTx
+  , encodeDualGenTxErr
+  , encodeDualGenTxId
+  , encodeDualHeader
+  , encodeDualLedgerState
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

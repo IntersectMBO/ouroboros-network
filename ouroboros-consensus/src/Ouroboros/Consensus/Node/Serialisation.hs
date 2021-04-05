@@ -17,12 +17,12 @@
 -- both directions and we don't have access to the bytestrings that could be
 -- used for the annotations (we use CBOR-in-CBOR in those cases).
 module Ouroboros.Consensus.Node.Serialisation (
-    SerialiseNodeToNode (..)
-  , SerialiseNodeToClient (..)
+    SerialiseNodeToClient (..)
+  , SerialiseNodeToNode (..)
   , SerialiseResult (..)
     -- * Defaults
-  , defaultEncodeCBORinCBOR
   , defaultDecodeCBORinCBOR
+  , defaultEncodeCBORinCBOR
     -- * Re-exported for convenience
   , Some (..)
   ) where

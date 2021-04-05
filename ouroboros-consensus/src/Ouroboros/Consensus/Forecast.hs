@@ -1,11 +1,11 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module Ouroboros.Consensus.Forecast (
-    Forecast(..)
+    Forecast (..)
+  , OutsideForecastRange (..)
+  , constantForecastOf
   , mapForecast
   , trivialForecast
-  , constantForecastOf
-  , OutsideForecastRange(..)
     -- * Utilities for constructing forecasts
   , crossEraForecastBound
   ) where

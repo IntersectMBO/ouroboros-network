@@ -8,9 +8,9 @@
 {-# LANGUAGE TupleSections            #-}
 {-# LANGUAGE TypeFamilies             #-}
 module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Parser (
-    parseChunkFile
+    BlockSummary (..)
   , ChunkFileError (..)
-  , BlockSummary(..)
+  , parseChunkFile
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

@@ -14,22 +14,22 @@
 -- * Performing and scheduling garbage collections on the VolatileDB
 -- * Writing snapshots of the LedgerDB to disk and deleting old ones
 -- * Executing scheduled chain selections
-module Ouroboros.Consensus.Storage.ChainDB.Impl.Background
-  ( -- * Launch background tasks
+module Ouroboros.Consensus.Storage.ChainDB.Impl.Background (
+    -- * Launch background tasks
     launchBgTasks
     -- * Copying blocks from the VolatileDB to the ImmutableDB
-  , copyToImmutableDB
   , copyAndSnapshotRunner
+  , copyToImmutableDB
   , updateLedgerSnapshots
-     -- * Executing garbage collection
+    -- * Executing garbage collection
   , garbageCollect
     -- * Scheduling garbage collections
-  , GcSchedule
   , GcParams (..)
-  , newGcSchedule
-  , scheduleGC
+  , GcSchedule
   , computeTimeForGC
   , gcScheduleRunner
+  , newGcSchedule
+  , scheduleGC
     -- ** Testing
   , ScheduledGc (..)
   , dumpGcSchedule

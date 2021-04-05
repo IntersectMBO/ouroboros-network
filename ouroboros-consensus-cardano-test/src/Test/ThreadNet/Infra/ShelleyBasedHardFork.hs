@@ -13,8 +13,8 @@
 -- another, e.g., Shelley to Allegra.
 module Test.ThreadNet.Infra.ShelleyBasedHardFork (
     -- * Blocks
-    ShelleyBasedHardForkEras
-  , ShelleyBasedHardForkBlock
+    ShelleyBasedHardForkBlock
+  , ShelleyBasedHardForkEras
     -- * Transactions
   , pattern GenTxShelley1
   , pattern GenTxShelley2

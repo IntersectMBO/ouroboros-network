@@ -7,12 +7,12 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- | Instances required to support PBFT
 module Ouroboros.Consensus.Byron.Ledger.PBFT (
-    toPBftLedgerView
-  , toTickedPBftLedgerView
-  , fromPBftLedgerView
+    decodeByronChainDepState
   , encodeByronChainDepState
-  , decodeByronChainDepState
+  , fromPBftLedgerView
   , mkByronContextDSIGN
+  , toPBftLedgerView
+  , toTickedPBftLedgerView
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

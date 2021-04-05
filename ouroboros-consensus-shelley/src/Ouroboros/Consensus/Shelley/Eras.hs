@@ -6,13 +6,13 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
-    ShelleyEra
-  , AllegraEra
+    AllegraEra
   , MaryEra
+  , ShelleyEra
     -- * Eras instantiated with standard crypto
-  , StandardShelley
   , StandardAllegra
   , StandardMary
+  , StandardShelley
     -- * Shelley-based era
   , ShelleyBasedEra (..)
     -- * Type synonyms for convenience

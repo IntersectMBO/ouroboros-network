@@ -17,66 +17,67 @@
 --
 -- Intended for qualified import
 module Test.Ouroboros.Storage.ChainDB.Model (
-    Model -- opaque
-  , IteratorId
+    Model
+    -- opaque
   , CPS.FollowerId
+  , IteratorId
     -- * Construction
-  , empty
   , addBlock
-  , addBlocks
   , addBlockPromise
+  , addBlocks
+  , empty
     -- * Queries
   , currentChain
   , currentLedger
   , currentSlot
   , futureBlocks
-  , maxClockSkew
-  , lastK
-  , immutableChain
-  , volatileChain
-  , immutableBlockNo
-  , immutableSlotNo
-  , tipBlock
-  , tipPoint
   , getBlock
   , getBlockByPoint
   , getBlockComponentByPoint
+  , getIsValid
+  , getLedgerDB
+  , getMaxSlotNo
   , hasBlock
   , hasBlockByPoint
-  , getMaxSlotNo
-  , isOpen
+  , immutableBlockNo
+  , immutableChain
+  , immutableSlotNo
   , invalid
-  , getIsValid
+  , isOpen
   , isValid
-  , getLedgerDB
+  , lastK
+  , maxClockSkew
+  , tipBlock
+  , tipPoint
+  , volatileChain
     -- * Iterators
-  , stream
-  , iteratorNext
   , iteratorClose
+  , iteratorNext
+  , stream
     -- * Followers
-  , newFollower
-  , followerInstruction
-  , followerForward
   , followerClose
+  , followerForward
+  , followerInstruction
+  , newFollower
     -- * ModelSupportsBlock
   , ModelSupportsBlock
     -- * Exported for testing purposes
+  , advanceCurSlot
   , between
   , blocks
-  , volatileDbBlocks
-  , immutableDbChain
-  , validChains
-  , initLedger
-  , garbageCollectable
-  , garbageCollectablePoint
-  , garbageCollectableIteratorNext
-  , garbageCollect
-  , copyToImmutableDB
-  , closeDB
-  , reopen
-  , wipeVolatileDB
-  , advanceCurSlot
   , chains
+  , closeDB
+  , copyToImmutableDB
+  , garbageCollect
+  , garbageCollectable
+  , garbageCollectableIteratorNext
+  , garbageCollectablePoint
+  , immutableDbChain
+  , initLedger
+  , reopen
+  , validChains
+  , volatileDbBlocks
+  , wipeVolatileDB
   ) where
 
 import           Codec.Serialise (Serialise, serialise)

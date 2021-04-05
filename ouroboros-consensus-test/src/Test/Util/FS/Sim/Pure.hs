@@ -1,9 +1,10 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Test.Util.FS.Sim.Pure (
-    PureSimFS -- opaque
-  , runPureSimFS
+    PureSimFS
+    -- opaque
   , pureHasFS
+  , runPureSimFS
   ) where
 
 import           Control.Monad.Except

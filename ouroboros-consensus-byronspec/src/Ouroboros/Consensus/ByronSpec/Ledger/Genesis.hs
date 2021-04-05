@@ -9,15 +9,15 @@
 -- > import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis (ByronSpecGenesis)
 -- > import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
 module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
-    ByronSpecGenesis(..)
-  , modPBftThreshold
+    ByronSpecGenesis (..)
   , modFeeParams
+  , modPBftThreshold
+  , modPParams
   , modUtxo
   , modUtxoValues
-  , modPParams
     -- * Conversions
-  , toChainEnv
   , fromChainEnv
+  , toChainEnv
   ) where
 
 import           Data.Coerce (coerce)

@@ -16,45 +16,45 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.TestBlock (
     -- * Test block
-    TestBlock(..)
-  , TestHeader(..)
-  , TestHeaderHash(..)
-  , TestBody(..)
-  , TestBodyHash(..)
-  , Header(..)
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
-  , EBB(..)
-  , ChainLength(..)
+    BlockConfig (..)
+  , ChainLength (..)
+  , CodecConfig (..)
+  , EBB (..)
+  , Header (..)
+  , StorageConfig (..)
+  , TestBlock (..)
+  , TestBody (..)
+  , TestBodyHash (..)
+  , TestHeader (..)
+  , TestHeaderHash (..)
     -- ** Construction
-  , mkBlock
   , firstBlock
   , firstEBB
+  , mkBlock
   , mkNextBlock
-  , mkNextEBB
   , mkNextBlock'
+  , mkNextEBB
   , mkNextEBB'
     -- ** Query
-  , testBlockIsValid
-  , testBlockIsEBB
   , testBlockChainLength
+  , testBlockIsEBB
+  , testBlockIsValid
     -- ** Serialisation
-  , testBlockToBuilder
   , testBlockFromLazyByteString
+  , testBlockToBuilder
   , testBlockToLazyByteString
     -- * Ledger
-  , TestBlockError(..)
-  , testInitExtLedger
-  , TestBlockOtherHeaderEnvelopeError(..)
+  , TestBlockError (..)
+  , TestBlockOtherHeaderEnvelopeError (..)
   , mkTestConfig
+  , testInitExtLedger
     -- * Corruptions
   , Corruptions
-  , FileCorruption(..)
+  , FileCorruption (..)
+  , corruptFile
   , corruptionFiles
   , generateCorruptions
   , shrinkCorruptions
-  , corruptFile
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

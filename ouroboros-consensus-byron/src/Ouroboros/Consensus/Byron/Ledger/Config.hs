@@ -8,16 +8,16 @@
 
 module Ouroboros.Consensus.Byron.Ledger.Config (
     -- * Block config
-    BlockConfig(..)
-  , byronGenesisHash
-  , byronProtocolMagicId
-  , byronProtocolMagic
+    BlockConfig (..)
   , byronEpochSlots
+  , byronGenesisHash
+  , byronProtocolMagic
+  , byronProtocolMagicId
     -- * Codec config
-  , CodecConfig(..)
+  , CodecConfig (..)
   , mkByronCodecConfig
     -- * Storage config
-  , StorageConfig(..)
+  , StorageConfig (..)
     -- * Compact genesis config
   , compactGenesisConfig
   ) where

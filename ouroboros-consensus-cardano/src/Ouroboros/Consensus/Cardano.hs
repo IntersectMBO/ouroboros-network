@@ -5,14 +5,14 @@ module Ouroboros.Consensus.Cardano (
     CardanoBlock
     -- * Supported protocols
   , ProtocolByron
-  , ProtocolShelley
   , ProtocolCardano
+  , ProtocolShelley
     -- * Abstract over the various protocols
-  , ProtocolParamsByron(..)
-  , ProtocolParamsShelley(..)
-  , ProtocolParamsAllegra(..)
-  , ProtocolParamsMary(..)
-  , ProtocolParamsTransition(..)
+  , ProtocolParamsAllegra (..)
+  , ProtocolParamsByron (..)
+  , ProtocolParamsMary (..)
+  , ProtocolParamsShelley (..)
+  , ProtocolParamsTransition (..)
   , module X
   ) where
 

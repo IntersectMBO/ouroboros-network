@@ -5,17 +5,17 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 module Test.ThreadNet.Util (
-  -- * Chain properties
+    -- * Chain properties
     chainCommonPrefix
   , prop_all_common_prefix
   , shortestLength
-  -- * LeaderSchedule
+    -- * LeaderSchedule
+  , consensusExpected
   , emptyLeaderSchedule
   , roundRobinLeaderSchedule
-  , consensusExpected
-  -- * GraphViz Dot
+    -- * GraphViz Dot
   , tracesToDot
-  -- * Re-exports
+    -- * Re-exports
   , module Test.ThreadNet.Util.Expectations
   ) where
 

@@ -6,27 +6,27 @@
 
 module Ouroboros.Consensus.Util.CBOR (
     -- * Incremental parsing in I/O
-    IDecodeIO(..)
-  , fromIDecode
+    IDecodeIO (..)
   , deserialiseIncrementalIO
+  , fromIDecode
     -- * Higher-level incremental interface
-  , Decoder(..)
+  , Decoder (..)
   , initDecoderIO
     -- * Decode as FlatTerm
   , decodeAsFlatTerm
     -- * HasFS interaction
-  , ReadIncrementalErr(..)
+  , ReadIncrementalErr (..)
   , readIncremental
   , withStreamIncrementalOffsets
     -- * Encoding/decoding containers
-  , encodeList
   , decodeList
-  , encodeSeq
-  , decodeSeq
-  , encodeMaybe
   , decodeMaybe
-  , encodeWithOrigin
+  , decodeSeq
   , decodeWithOrigin
+  , encodeList
+  , encodeMaybe
+  , encodeSeq
+  , encodeWithOrigin
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR.D

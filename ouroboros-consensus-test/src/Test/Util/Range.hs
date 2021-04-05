@@ -1,8 +1,8 @@
 module Test.Util.Range (
-    RangeK(..)
-  , Range(..)
-  , rangeK
+    Range (..)
+  , RangeK (..)
   , range
+  , rangeK
   ) where
 
 import qualified Data.List as L

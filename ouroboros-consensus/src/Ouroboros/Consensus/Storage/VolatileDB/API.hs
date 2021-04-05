@@ -16,14 +16,14 @@ module Ouroboros.Consensus.Storage.VolatileDB.API (
     -- * Types
   , BlockInfo (..)
     -- * Errors
-  , VolatileDBError (..)
   , ApiMisuse (..)
   , UnexpectedFailure (..)
+  , VolatileDBError (..)
     -- * Derived functionality
-  , withDB
   , getIsMember
-  , getPredecessor
   , getKnownBlockComponent
+  , getPredecessor
+  , withDB
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

@@ -8,9 +8,9 @@
 
 -- | Infrastructure for doing chain selection across eras
 module Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel (
-    AcrossEraSelection(..)
+    AcrossEraSelection (..)
+  , WithBlockNo (..)
   , acrossEraSelection
-  , WithBlockNo(..)
   , mapWithBlockNo
   ) where
 

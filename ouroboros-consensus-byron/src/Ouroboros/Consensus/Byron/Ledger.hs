@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Byron.Ledger (
-    module X
-  ) where
+module Ouroboros.Consensus.Byron.Ledger (module X) where
 
 -- Modules Aux, Conversions and Orphans are not re-exported, as they deal with
 -- wrapping cardano-ledger-byron; this should not be needed elsewhere in consensus.

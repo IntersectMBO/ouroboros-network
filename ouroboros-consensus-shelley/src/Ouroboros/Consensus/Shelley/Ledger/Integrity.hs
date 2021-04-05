@@ -3,8 +3,8 @@
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE TypeFamilies             #-}
 module Ouroboros.Consensus.Shelley.Ledger.Integrity (
-    verifyHeaderIntegrity
-  , verifyBlockIntegrity
+    verifyBlockIntegrity
+  , verifyHeaderIntegrity
   ) where
 
 import           Data.Either (isRight)

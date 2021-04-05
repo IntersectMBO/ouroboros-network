@@ -1,16 +1,16 @@
 {-# OPTIONS_GHC -Wno-dodgy-imports #-}
 module Ouroboros.Consensus.Storage.IO (
-      FHandle
-    , open
-    , truncate
-    , seek
-    , read
-    , pread
-    , write
-    , close
-    , getSize
-    , sameError
-    ) where
+    FHandle
+  , close
+  , getSize
+  , open
+  , pread
+  , read
+  , sameError
+  , seek
+  , truncate
+  , write
+  ) where
 
 import           Prelude hiding (read, truncate)
 

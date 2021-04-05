@@ -1,8 +1,8 @@
 module Ouroboros.Consensus.HardFork.Combinator.Abstract (
     module X
     -- * Re-exports
-  , IsNonEmpty(..)
-  , ProofNonEmpty(..)
+  , IsNonEmpty (..)
+  , ProofNonEmpty (..)
   ) where
 
 import           Ouroboros.Consensus.Util.SOP

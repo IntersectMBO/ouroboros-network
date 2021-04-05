@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Config.SupportsNode (
-    ConfigSupportsNode (..)
-  ) where
+module Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode (..)) where
 
 import           Ouroboros.Network.Magic (NetworkMagic)
 

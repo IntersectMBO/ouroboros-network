@@ -1,17 +1,17 @@
 module Ouroboros.Consensus.Byron.Ledger.Conversions (
     -- * From @cardano-ledger-byron@ to @ouroboros-consensus@
-    fromByronSlotNo
+    fromByronBlockCount
   , fromByronBlockNo
-  , fromByronBlockCount
   , fromByronEpochSlots
   , fromByronSlotLength
+  , fromByronSlotNo
     -- * From @ouroboros-consensus@ to @cardano-ledger-byron@
-  , toByronSlotNo
   , toByronBlockCount
   , toByronSlotLength
+  , toByronSlotNo
     -- * Extract info from the genesis config
-  , genesisSecurityParam
   , genesisNumCoreNodes
+  , genesisSecurityParam
   , genesisSlotLength
   ) where
 

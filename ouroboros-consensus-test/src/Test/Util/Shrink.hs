@@ -1,8 +1,8 @@
 -- | Utility functions for defining @QuickCheck@'s 'Test.QuickCheck.shrink'
 --
 module Test.Util.Shrink (
-  andId,
-  dropId,
+    andId
+  , dropId
   ) where
 
 {-------------------------------------------------------------------------------

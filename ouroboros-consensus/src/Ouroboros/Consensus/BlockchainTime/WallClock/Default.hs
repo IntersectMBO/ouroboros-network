@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.BlockchainTime.WallClock.Default (
-    defaultSystemTime
-  ) where
+module Ouroboros.Consensus.BlockchainTime.WallClock.Default (defaultSystemTime) where
 
 import           Control.Monad
 import           Control.Tracer

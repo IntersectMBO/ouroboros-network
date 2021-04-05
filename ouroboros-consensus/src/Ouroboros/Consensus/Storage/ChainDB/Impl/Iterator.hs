@@ -10,9 +10,9 @@
 {-# LANGUAGE ViewPatterns        #-}
 
 -- | Iterators
-module Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
-  ( stream
-  , closeAllIterators
+module Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator (
+    closeAllIterators
+  , stream
     -- * Exported for testing purposes
   , IteratorEnv (..)
   , newIterator

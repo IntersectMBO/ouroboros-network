@@ -20,13 +20,13 @@
 -- This does not currently attempt to be exhaustive.
 module Data.SOP.Strict (
     -- * NP
-    NP(..)
+    NP (..)
   , hd
   , tl
     -- * NS
-  , NS(..)
-  , unZ
+  , NS (..)
   , index_NS
+  , unZ
     -- * Injections
   , Injection
   , injections

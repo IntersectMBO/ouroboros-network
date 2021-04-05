@@ -2,9 +2,7 @@
 {-# LANGUAGE RecordWildCards  #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Test.ThreadNet.LeaderSchedule (
-    tests
-  ) where
+module Test.ThreadNet.LeaderSchedule (tests) where
 
 import           Control.Monad (replicateM)
 import           Data.Map.Strict (Map)

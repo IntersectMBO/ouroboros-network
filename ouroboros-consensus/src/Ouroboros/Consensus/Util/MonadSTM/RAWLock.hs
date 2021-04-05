@@ -7,21 +7,21 @@
 -- | A Read-Append-Write (RAW) lock
 --
 -- Intended for qualified import
-module Ouroboros.Consensus.Util.MonadSTM.RAWLock
-  ( -- * Public API
+module Ouroboros.Consensus.Util.MonadSTM.RAWLock (
+    -- * Public API
     RAWLock
   , new
-  , withReadAccess
-  , withAppendAccess
-  , withWriteAccess
-  , read
   , poison
+  , read
+  , withAppendAccess
+  , withReadAccess
+  , withWriteAccess
     -- * Exposed internals: non-bracketed acquire & release
-  , unsafeAcquireReadAccess
-  , unsafeReleaseReadAccess
   , unsafeAcquireAppendAccess
-  , unsafeReleaseAppendAccess
+  , unsafeAcquireReadAccess
   , unsafeAcquireWriteAccess
+  , unsafeReleaseAppendAccess
+  , unsafeReleaseReadAccess
   , unsafeReleaseWriteAccess
   ) where
 

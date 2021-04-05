@@ -3,9 +3,10 @@
 {-# LANGUAGE StandaloneDeriving #-}
 module Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (
     -- * Blocks per file
-    BlocksPerFile -- opaque
+    mkBlocksPerFile
   , unBlocksPerFile
-  , mkBlocksPerFile
+    -- ** opaque
+  , BlocksPerFile
     -- * Block validation policy
   , BlockValidationPolicy (..)
     -- * Parse error
@@ -13,12 +14,12 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (
     -- * Tracing
   , TraceEvent (..)
     -- * Internal indices
+  , BlockOffset (..)
+  , BlockSize (..)
   , FileId
+  , InternalBlockInfo (..)
   , ReverseIndex
   , SuccessorsIndex
-  , BlockSize (..)
-  , BlockOffset (..)
-  , InternalBlockInfo (..)
   ) where
 
 

@@ -2,13 +2,13 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-module Ouroboros.Consensus.Node.NetworkProtocolVersion
-  ( HasNetworkProtocolVersion(..)
-  , SupportedNetworkProtocolVersion(..)
+module Ouroboros.Consensus.Node.NetworkProtocolVersion (
+    HasNetworkProtocolVersion (..)
+  , SupportedNetworkProtocolVersion (..)
   , latestReleasedNodeVersionDefault
     -- * Re-exports
-  , NodeToNodeVersion(..)
-  , NodeToClientVersion(..)
+  , NodeToClientVersion (..)
+  , NodeToNodeVersion (..)
   ) where
 
 import           Data.Kind (Type)

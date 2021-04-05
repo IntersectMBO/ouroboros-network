@@ -9,12 +9,13 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Config (
     BlockConfig (..)
-  , mkShelleyBlockConfig
   , CodecConfig (..)
   , StorageConfig (..)
-  , CompactGenesis -- opaque
-  , getCompactGenesis
   , compactGenesis
+  , getCompactGenesis
+  , mkShelleyBlockConfig
+    -- * opaque
+  , CompactGenesis
   ) where
 
 import           Data.Map.Strict (Map)

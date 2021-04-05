@@ -1,8 +1,8 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.ThreadNet.Util.NodeJoinPlan
-  ( -- * Node Join Plan
+module Test.ThreadNet.Util.NodeJoinPlan (
+    -- * Node Join Plan
     NodeJoinPlan (..)
   , coreNodeIdJoinSlot
   , genNodeJoinPlan

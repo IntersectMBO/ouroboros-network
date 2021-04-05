@@ -5,12 +5,13 @@
 {-# LANGUAGE TypeFamilies      #-}
 
 module Ouroboros.Consensus.ByronSpec.Ledger.Block (
-    ByronSpecBlock(..)
-  , ByronSpecHeader -- type alias
-  , Header(..)
-  , BlockConfig(..)
-  , CodecConfig(..)
-  , StorageConfig(..)
+    BlockConfig (..)
+  , ByronSpecBlock (..)
+  , CodecConfig (..)
+  , Header (..)
+  , StorageConfig (..)
+    -- * type alias
+  , ByronSpecHeader
   ) where
 
 import           Codec.Serialise

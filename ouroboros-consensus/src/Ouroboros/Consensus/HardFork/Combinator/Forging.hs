@@ -9,9 +9,9 @@
 {-# LANGUAGE TypeOperators       #-}
 module Ouroboros.Consensus.HardFork.Combinator.Forging (
     HardForkCannotForge
-  , hardForkBlockForging
-  , HardForkForgeStateInfo(..)
+  , HardForkForgeStateInfo (..)
   , HardForkForgeStateUpdateError
+  , hardForkBlockForging
   ) where
 
 import           Data.Functor.Product

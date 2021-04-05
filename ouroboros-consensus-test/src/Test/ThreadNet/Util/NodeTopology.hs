@@ -3,16 +3,16 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Test.ThreadNet.Util.NodeTopology
-  ( -- * Node Topology
+module Test.ThreadNet.Util.NodeTopology (
+    -- * Node Topology
     NodeTopology (..)
   , coreNodeIdNeighbors
   , edgesNodeTopology
   , genNodeTopology
-  , shrinkNodeTopology
   , mapNodeTopology
   , meshNodeTopology
   , minimumDegreeNodeTopology
+  , shrinkNodeTopology
   , unionNodeTopology
   ) where
 

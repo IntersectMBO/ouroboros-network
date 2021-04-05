@@ -3,9 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Test.ThreadNet.BFT (
-    tests
-  ) where
+module Test.ThreadNet.BFT (tests) where
 
 import           Test.QuickCheck
 import           Test.Tasty

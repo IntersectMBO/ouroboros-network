@@ -6,9 +6,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
-module Test.Ouroboros.Storage.ChainDB.Model.Test (
-    tests
-  ) where
+module Test.Ouroboros.Storage.ChainDB.Model.Test (tests) where
 
 import           GHC.Stack
 import           Test.QuickCheck

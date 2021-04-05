@@ -6,8 +6,8 @@
 
 module Ouroboros.Consensus.NodeId (
     -- * Node IDs
-    NodeId (..)
-  , CoreNodeId (..)
+    CoreNodeId (..)
+  , NodeId (..)
   , fromCoreNodeId
   ) where
 

@@ -1,6 +1,4 @@
-module Ouroboros.Consensus.Ledger.CommonProtocolParams (
-    CommonProtocolParams (..)
-  ) where
+module Ouroboros.Consensus.Ledger.CommonProtocolParams (CommonProtocolParams (..)) where
 
 import           Data.Word (Word32)
 

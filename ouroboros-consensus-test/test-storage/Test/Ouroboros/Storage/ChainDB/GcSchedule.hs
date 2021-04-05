@@ -3,7 +3,10 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
-module Test.Ouroboros.Storage.ChainDB.GcSchedule (tests, example) where
+module Test.Ouroboros.Storage.ChainDB.GcSchedule (
+    example
+  , tests
+  ) where
 
 import           Control.Monad (forM)
 import           Control.Tracer (nullTracer)

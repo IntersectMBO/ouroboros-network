@@ -13,41 +13,44 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Util.ResourceRegistry (
-    ResourceRegistry -- opaque
-  , RegistryClosedException(..)
+    RegistryClosedException (..)
   , ResourceRegistryThreadException
     -- * Creating and releasing the registry itself
-  , withRegistry
   , bracketWithPrivateRegistry
   , registryThread
+  , withRegistry
     -- * Allocating and releasing regular resources
   , ResourceKey
   , allocate
   , allocateEither
   , release
-  , unsafeRelease
   , releaseAll
+  , unsafeRelease
   , unsafeReleaseAll
     -- * Threads
-  , Thread -- opaque
-  , threadId
-  , forkThread
   , cancelThread
-  , withThread
-  , waitThread
-  , waitAnyThread
-  , linkToRegistry
   , forkLinkedThread
+  , forkThread
+  , linkToRegistry
+  , threadId
+  , waitAnyThread
+  , waitThread
+  , withThread
+    -- ** opaque
+  , Thread
     -- * Temporary registry
-  , WithTempRegistry -- opaque
-  , runWithTempRegistry
-  , TempRegistryException(..)
+  , TempRegistryException (..)
   , allocateTemp
   , modifyWithTempRegistry
+  , runWithTempRegistry
+    -- ** opaque
+  , WithTempRegistry
     -- * Combinators primarily for testing
-  , unsafeNewRegistry
   , closeRegistry
   , countResources
+  , unsafeNewRegistry
+    -- * opaque
+  , ResourceRegistry
   ) where
 
 import           Control.Applicative ((<|>))

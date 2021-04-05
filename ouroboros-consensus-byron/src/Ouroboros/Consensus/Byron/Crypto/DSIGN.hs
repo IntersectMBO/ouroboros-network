@@ -14,13 +14,13 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- | Byron digital signatures.
-module Ouroboros.Consensus.Byron.Crypto.DSIGN
-    ( ByronDSIGN
-    , VerKeyDSIGN(..)
-    , SignKeyDSIGN(..)
-    , SigDSIGN(..)
-    , HasSignTag(..)
-    ) where
+module Ouroboros.Consensus.Byron.Crypto.DSIGN (
+    ByronDSIGN
+  , HasSignTag (..)
+  , SigDSIGN (..)
+  , SignKeyDSIGN (..)
+  , VerKeyDSIGN (..)
+  ) where
 
 
 import           Control.Exception (throw)

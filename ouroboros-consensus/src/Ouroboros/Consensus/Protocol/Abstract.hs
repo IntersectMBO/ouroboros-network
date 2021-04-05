@@ -4,11 +4,11 @@
 
 module Ouroboros.Consensus.Protocol.Abstract (
     -- * Abstract definition of the Ouroboros protocol
-    ConsensusProtocol(..)
+    ConsensusConfig
+  , ConsensusProtocol (..)
   , preferCandidate
-  , ConsensusConfig
     -- * Convenience re-exports
-  , SecurityParam(..)
+  , SecurityParam (..)
   ) where
 
 import           Control.Monad.Except

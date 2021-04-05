@@ -10,34 +10,35 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Storage.FS.API.Types (
     -- * Modes
-    OpenMode(..)
-  , AllowExisting(..)
+    AllowExisting (..)
+  , OpenMode (..)
+  , SeekMode (..)
   , allowExisting
-  , SeekMode(..)
     -- * Paths
-  , FsPath -- opaque
-  , fsPathToList
-  , fsPathFromList
-  , fsPathSplit
-  , fsPathInit
-  , mkFsPath
-  , MountPoint(..)
-  , fsToFilePath
+  , MountPoint (..)
   , fsFromFilePath
+  , fsPathFromList
+  , fsPathInit
+  , fsPathSplit
+  , fsPathToList
+  , fsToFilePath
+  , mkFsPath
+    -- ** opaque
+  , FsPath
     -- * Handles
-  , Handle(..)
+  , Handle (..)
     -- * Offset
-  , AbsOffset(..)
+  , AbsOffset (..)
     -- * Errors
-  , FsError(..)
-  , FsErrorType(..)
-  , FsErrorPath(..)
-  , sameFsError
-  , isFsErrorType
-  , prettyFsError
+  , FsError (..)
+  , FsErrorPath (..)
+  , FsErrorType (..)
   , fsToFsErrorPath
   , fsToFsErrorPathUnmounted
   , hasMountPoint
+  , isFsErrorType
+  , prettyFsError
+  , sameFsError
     -- * From 'IOError' to 'FsError'
   , ioToFsError
   , ioToFsErrorType

@@ -9,8 +9,8 @@
 
 module Ouroboros.Consensus.HardFork.History.EraParams (
     -- * API
-    EraParams(..)
-  , SafeZone(..)
+    EraParams (..)
+  , SafeZone (..)
     -- * Defaults
   , defaultEraParams
   ) where

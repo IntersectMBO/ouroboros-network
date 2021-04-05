@@ -5,9 +5,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.HardFork.History.Caching (
-    RunWithCachedSummary(..)
-  , runWithCachedSummary
+    RunWithCachedSummary (..)
   , cachedRunQueryThrow
+  , runWithCachedSummary
   ) where
 
 import           Data.Kind (Type)

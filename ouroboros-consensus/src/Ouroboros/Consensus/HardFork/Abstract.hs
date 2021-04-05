@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies    #-}
 
 module Ouroboros.Consensus.HardFork.Abstract (
-    HasHardForkHistory(..)
+    HasHardForkHistory (..)
   , neverForksHardForkSummary
   ) where
 

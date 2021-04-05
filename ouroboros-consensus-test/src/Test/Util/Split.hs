@@ -2,9 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Util.Split (
-    spanLeft,
-    spanLeft',
-    splitAtJust,
+    spanLeft
+  , spanLeft'
+  , splitAtJust
   ) where
 
 import           Data.Bifunctor (first)

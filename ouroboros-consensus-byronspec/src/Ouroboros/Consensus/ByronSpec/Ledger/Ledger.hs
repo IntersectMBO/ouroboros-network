@@ -9,11 +9,11 @@
 {-# OPTIONS -Wno-orphans #-}
 
 module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
-    ByronSpecLedgerError(..)
+    ByronSpecLedgerError (..)
   , initByronSpecLedgerState
     -- * Type family instances
-  , LedgerState(..)
-  , Ticked(..)
+  , LedgerState (..)
+  , Ticked (..)
   ) where
 
 import           Codec.Serialise

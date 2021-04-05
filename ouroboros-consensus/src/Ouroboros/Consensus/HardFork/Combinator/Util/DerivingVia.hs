@@ -8,15 +8,15 @@
 {-# LANGUAGE TypeApplications      #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia (
-    LiftNS(..)
-  , LiftNP(..)
-  , LiftOptNP(..)
-  , LiftTelescope(..)
-  , LiftMismatch(..)
-  , LiftNamedNS(..)
-  , LiftNamedNP(..)
-  , LiftNamedTelescope(..)
-  , LiftNamedMismatch(..)
+    LiftMismatch (..)
+  , LiftNP (..)
+  , LiftNS (..)
+  , LiftNamedMismatch (..)
+  , LiftNamedNP (..)
+  , LiftNamedNS (..)
+  , LiftNamedTelescope (..)
+  , LiftOptNP (..)
+  , LiftTelescope (..)
   ) where
 
 import           Data.List (intercalate)

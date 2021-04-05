@@ -3,10 +3,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.ThreadNet.Infra.Byron.ProtocolInfo (
-  theProposedProtocolVersion,
-  theProposedSoftwareVersion,
-  mkProtocolByron,
-  mkLeaderCredentials,
+    mkLeaderCredentials
+  , mkProtocolByron
+  , theProposedProtocolVersion
+  , theProposedSoftwareVersion
   ) where
 
 import           Data.Foldable (find)

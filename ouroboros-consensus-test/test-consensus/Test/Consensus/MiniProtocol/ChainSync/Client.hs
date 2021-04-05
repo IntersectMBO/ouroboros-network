@@ -6,7 +6,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-module Test.Consensus.MiniProtocol.ChainSync.Client ( tests ) where
+module Test.Consensus.MiniProtocol.ChainSync.Client (tests) where
 
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)

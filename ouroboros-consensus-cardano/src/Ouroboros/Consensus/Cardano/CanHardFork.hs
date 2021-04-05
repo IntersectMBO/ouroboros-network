@@ -18,10 +18,10 @@
 {-# LANGUAGE UndecidableInstances     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.CanHardFork (
-    TriggerHardFork (..)
-  , ByronPartialLedgerConfig (..)
+    ByronPartialLedgerConfig (..)
   , CardanoHardForkConstraints
-  -- * Re-exports of Shelley code
+  , TriggerHardFork (..)
+    -- * Re-exports of Shelley code
   , ShelleyPartialLedgerConfig (..)
   , forecastAcrossShelley
   , translateChainDepStateAcrossShelley

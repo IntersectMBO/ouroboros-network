@@ -3,12 +3,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-  ( chainSyncHeadersServer
+module Ouroboros.Consensus.MiniProtocol.ChainSync.Server (
+    Tip
+  , chainSyncBlockServerFollower
   , chainSyncBlocksServer
   , chainSyncHeaderServerFollower
-  , chainSyncBlockServerFollower
-  , Tip
+  , chainSyncHeadersServer
     -- * Trace events
   , TraceChainSyncServerEvent (..)
   ) where

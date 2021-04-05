@@ -3,21 +3,19 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
-    ( -- * FileId utilities
-      parseFd
-    , parseAllFds
-    , filePath
-    , findLastFd
-
-      -- * Exception handling
-    , wrapFsError
-    , tryVolatileDB
-
-      -- * Map of Set utilities
-    , insertMapSet
-    , deleteMapSet
-    ) where
+module Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (
+    -- * FileId utilities
+    filePath
+  , findLastFd
+  , parseAllFds
+  , parseFd
+    -- * Exception handling
+  , tryVolatileDB
+  , wrapFsError
+    -- * Map of Set utilities
+  , deleteMapSet
+  , insertMapSet
+  ) where
 
 import           Control.Monad
 import           Data.Bifunctor (first)

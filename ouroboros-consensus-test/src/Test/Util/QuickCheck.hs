@@ -8,15 +8,15 @@
 module Test.Util.QuickCheck (
     -- * Generic QuickCheck utilities
     checkGenerator
-  , checkShrinker
   , checkInvariant
+  , checkShrinker
     -- * Comparison functions
-  , lt
-  , le
-  , gt
-  , ge
-  , strictlyIncreasing
   , expectRight
+  , ge
+  , gt
+  , le
+  , lt
+  , strictlyIncreasing
     -- * Comparing maps
   , isSubmapOfBy
     -- * Improved variants

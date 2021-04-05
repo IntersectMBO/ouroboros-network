@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards    #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
-    DiskPolicy(..)
+    DiskPolicy (..)
   , defaultDiskPolicy
   ) where
 

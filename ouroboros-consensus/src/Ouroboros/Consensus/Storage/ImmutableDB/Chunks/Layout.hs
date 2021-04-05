@@ -13,33 +13,34 @@
 -- relevant internally in the immutable DB.
 module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
     -- * Relative slots
-    RelativeSlot -- Opaque
-  , maxRelativeSlot
-  , relativeSlotIsEBB
-  , nthBlockOrEBB
+    NextRelativeSlot (..)
   , firstBlockOrEBB
-  , NextRelativeSlot(..)
+  , maxRelativeSlot
   , nextRelativeSlot
+  , nthBlockOrEBB
+  , relativeSlotIsEBB
   , unsafeNextRelativeSlot
+    -- ** Opaque
+  , RelativeSlot
     -- * Chunks
   , chunkIndexOfSlot
     -- * Slots within a chunk
-  , ChunkSlot(..)
+  , ChunkSlot (..)
   , pattern ChunkSlot
     -- ** Translation /to/ 'ChunkSlot'
-  , chunkSlotForUnknownBlock
-  , chunkSlotForRegularBlock
-  , chunkSlotForBoundaryBlock
   , chunkSlotForBlockOrEBB
-  , chunkSlotForTip
+  , chunkSlotForBoundaryBlock
+  , chunkSlotForRegularBlock
   , chunkSlotForRelativeSlot
+  , chunkSlotForTip
+  , chunkSlotForUnknownBlock
     -- ** Translation /from/ 'ChunkSlot'
-  , chunkSlotToSlot
   , chunkSlotToBlockOrEBB
+  , chunkSlotToSlot
     -- ** Support for EBBs
-  , slotNoOfEBB
   , slotMightBeEBB
   , slotNoOfBlockOrEBB
+  , slotNoOfEBB
   ) where
 
 import           Control.Monad

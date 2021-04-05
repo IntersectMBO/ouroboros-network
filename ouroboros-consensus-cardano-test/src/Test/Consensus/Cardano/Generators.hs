@@ -19,9 +19,7 @@
 --
 -- We combine the Byron and Shelley-based instances defined elsewhere into
 -- Cardano instances by picking randomly from one of the eras.
-module Test.Consensus.Cardano.Generators (
-    module Test.Consensus.Byron.Generators
-  ) where
+module Test.Consensus.Cardano.Generators (module Test.Consensus.Byron.Generators) where
 
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)

@@ -12,8 +12,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode (
-  ) where
+module Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode () where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)

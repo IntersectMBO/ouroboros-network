@@ -12,13 +12,13 @@
 -- | Interface to the ledger layer
 module Ouroboros.Consensus.Ledger.Abstract (
     -- * Apply block
-    ApplyBlock(..)
+    ApplyBlock (..)
   , UpdateLedger
     -- ** Derived
-  , tickThenApply
-  , tickThenReapply
   , foldLedger
   , refoldLedger
+  , tickThenApply
+  , tickThenReapply
     -- ** Short-hand
   , ledgerTipHash
   , ledgerTipPoint
