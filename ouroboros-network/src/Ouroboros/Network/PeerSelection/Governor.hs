@@ -516,7 +516,7 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
     guardedDecisions blockedAt st =
       -- All the alternative non-blocking internal decisions.
-         RootPeers.belowTarget        actions blockedAt  st
+         RootPeers.belowTarget       actions blockedAt  st
       <> KnownPeers.belowTarget       actions     policy st
       <> KnownPeers.aboveTarget                   policy st
       <> EstablishedPeers.belowTarget actions     policy st
@@ -525,8 +525,8 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
       <> ActivePeers.aboveTarget      actions     policy st
 
       -- All the alternative potentially-blocking decisions.
-      <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions st
+      <> Monitor.targetPeers          tracer actions st
+      <> Monitor.localRoots           tracer actions st
       <> Monitor.jobs                 jobPool st
       <> Monitor.connections          actions st
 

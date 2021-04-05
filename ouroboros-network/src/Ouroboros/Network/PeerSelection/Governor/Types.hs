@@ -497,6 +497,10 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotDone      Int Int peeraddr
      | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
+     -- | Number of root peers is more than the target number of known peers
+     --
+     -- number of target known peers, number of root peers
+     | TraceClampToLimit !Int !Int
   deriving Show
 
 data DebugPeerSelection peeraddr peerconn =

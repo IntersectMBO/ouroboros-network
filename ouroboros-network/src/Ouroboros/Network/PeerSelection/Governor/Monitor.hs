@@ -22,9 +22,11 @@ import           Data.Set (Set)
 
 import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
+import           Control.Tracer (Tracer(..), traceWith)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -39,10 +41,12 @@ import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemote
 -- picked by the governor's 'peerSelectionGovernorLoop'.
 --
 targetPeers :: (MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
+            => Tracer m (TracePeerSelection peeraddr)
+            -> PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-targetPeers PeerSelectionActions{readPeerSelectionTargets}
+targetPeers tracer
+            PeerSelectionActions{readPeerSelectionTargets}
             st@PeerSelectionState{
               localRootPeers,
               targets
@@ -55,10 +59,15 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
       -- practice so it's ok to resolve it arbitrarily using clampToLimit.
-      let localRootPeers' = LocalRootPeers.clampToLimit
-                              (targetNumberOfKnownPeers targets')
-                              localRootPeers
-      --TODO: trace when the clamping kicks in, and warn operators
+      let tNumberOfKnownPeers = targetNumberOfKnownPeers targets'
+          numberOfLocalPeers  = LocalRootPeers.size localRootPeers
+          localRootPeers'     = LocalRootPeers.clampToLimit
+                                 tNumberOfKnownPeers
+                                 localRootPeers
+
+      -- trace when the clamping kicks in, and warn operators
+      return $ when (numberOfLocalPeers <= tNumberOfKnownPeers) $
+        traceWith tracer (TraceClampToLimit tNumberOfKnownPeers numberOfLocalPeers)
 
       return $ \_now -> Decision {
         decisionTrace = TraceTargetsChanged targets targets',
@@ -213,10 +222,12 @@ connections PeerSelectionActions{
 --
 localRoots :: forall peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
-           => PeerSelectionActions peeraddr peerconn m
+           => Tracer m (TracePeerSelection peeraddr)
+           -> PeerSelectionActions peeraddr peerconn m
            -> PeerSelectionState peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-localRoots actions@PeerSelectionActions{readLocalRootPeers}
+localRoots tracer
+           actions@PeerSelectionActions{readLocalRootPeers}
            st@PeerSelectionState{
              localRootPeers,
              publicRootPeers,
@@ -231,12 +242,16 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
       -- not more than the target number of known peers. It's unlikely in
       -- practice so it's ok to resolve it arbitrarily using Map.take.
       localRootPeersRaw <- readLocalRootPeers
-      let localRootPeers' = LocalRootPeers.clampToLimit
-                              targetNumberOfKnownPeers
-                          . LocalRootPeers.fromGroups
-                          $ localRootPeersRaw
+      let numberOfLocalPeers  = LocalRootPeers.size localRootPeers
+          localRootPeers'     = LocalRootPeers.clampToLimit
+                                  targetNumberOfKnownPeers
+                              . LocalRootPeers.fromGroups
+                              $ localRootPeersRaw
       check (localRootPeers' /= localRootPeers)
-      --TODO: trace when the clamping kicks in, and warn operators
+
+      -- trace when the clamping kicks in, and warn operators
+      return $ when (numberOfLocalPeers <= targetNumberOfKnownPeers) $
+        traceWith tracer (TraceClampToLimit targetNumberOfKnownPeers numberOfLocalPeers)
 
       let added       = LocalRootPeers.toMap localRootPeers' Map.\\
                         LocalRootPeers.toMap localRootPeers
