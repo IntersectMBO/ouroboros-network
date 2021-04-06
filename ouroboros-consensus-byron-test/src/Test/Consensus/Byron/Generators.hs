@@ -159,7 +159,7 @@ instance Arbitrary API.ApplyMempoolPayloadErr where
     -- , MempoolUpdateVoteErr     <$> arbitrary
     ]
 
-instance Arbitrary (SomeSecond Query ByronBlock) where
+instance Arbitrary (SomeSecond BlockQuery ByronBlock) where
   arbitrary = pure $ SomeSecond GetUpdateInterfaceState
 
 instance Arbitrary EpochNumber where

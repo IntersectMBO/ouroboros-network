@@ -65,7 +65,7 @@ instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
 instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance CanMock era => Arbitrary (SomeSecond Query (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock era)) where
   arbitrary = oneof
     [ pure $ SomeSecond GetLedgerTip
     , pure $ SomeSecond GetEpochNo
@@ -175,7 +175,7 @@ instance {-# OVERLAPPABLE #-} Arbitrary a
 -- make sure to not generate those queries in combination with
 -- 'ShelleyNodeToClientVersion1'.
 instance CanMock era
-      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond Query (ShelleyBlock era))) where
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock era))) where
   arbitrary = do
       query@(SomeSecond q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q

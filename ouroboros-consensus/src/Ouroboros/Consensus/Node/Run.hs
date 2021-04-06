@@ -69,8 +69,8 @@ class ( ConvertRawHash blk
       , SerialiseNodeToClient blk (Serialised blk)
       , SerialiseNodeToClient blk (GenTx blk)
       , SerialiseNodeToClient blk (ApplyTxErr blk)
-      , SerialiseNodeToClient blk (SomeSecond Query blk)
-      , SerialiseResult       blk (Query blk)
+      , SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+      , SerialiseResult       blk (BlockQuery blk)
       ) => SerialiseNodeToClientConstraints blk
 
 class ( LedgerSupportsProtocol           blk
@@ -97,7 +97,7 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy            (ApplyTxErr blk)
       , ShowProxy                 (GenTx blk)
       , ShowProxy                (Header blk)
-      , ShowProxy                 (Query blk)
+      , ShowProxy            (BlockQuery blk)
       , ShowProxy           (TxId (GenTx blk))
       ) => RunNode blk
   -- This class is intentionally empty. It is not necessarily compositional - ie

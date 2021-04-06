@@ -136,11 +136,11 @@ toCardanoCodecConfig codecConfigByron =
 --
 -- Note that ledger state and all other types stored as part of the ledger
 -- snapshot are __not__ forwards compatible.
-newtype ByronToCardano                       = B2C        { unB2C        ::         ByronBlock   } deriving (Eq, Show)
-newtype instance Header ByronToCardano       = HeaderB2C  { unHeaderB2C  :: Header  ByronBlock   } deriving (Eq, Show)
-newtype instance GenTx ByronToCardano        = GenTxB2C   { unGenTxB2C   :: GenTx   ByronBlock   } deriving (Eq, Show)
-newtype instance TxId (GenTx ByronToCardano) = GenTxIdB2C { unGenTxIdB2C :: GenTxId ByronBlock   } deriving (Eq, Show)
-newtype instance Query ByronToCardano a      = QueryB2C   { unQueryB2C   :: Query   ByronBlock a } deriving (Eq, Show)
+newtype ByronToCardano                       = B2C        { unB2C        ::            ByronBlock   } deriving (Eq, Show)
+newtype instance Header ByronToCardano       = HeaderB2C  { unHeaderB2C  :: Header     ByronBlock   } deriving (Eq, Show)
+newtype instance GenTx ByronToCardano        = GenTxB2C   { unGenTxB2C   :: GenTx      ByronBlock   } deriving (Eq, Show)
+newtype instance TxId (GenTx ByronToCardano) = GenTxIdB2C { unGenTxIdB2C :: GenTxId    ByronBlock   } deriving (Eq, Show)
+newtype instance BlockQuery ByronToCardano a = QueryB2C   { unQueryB2C   :: BlockQuery ByronBlock a } deriving (Eq, Show)
 
 newtype instance NestedCtxt_ ByronToCardano f a where
   NestedCtxt_B2C :: NestedCtxt_ ByronBlock     f a
@@ -173,10 +173,10 @@ instance HasNestedContent Header ByronToCardano where
   nest (DepPair ctxt a) =
       HeaderB2C $ nest (DepPair (mapNestedCtxt unNestedCtxt_B2C ctxt) a)
 
-instance ShowQuery (Query ByronToCardano) where
+instance ShowQuery (BlockQuery ByronToCardano) where
   showResult (QueryB2C query) = showResult query
 
-instance SameDepIndex (Query ByronToCardano) where
+instance SameDepIndex (BlockQuery ByronToCardano) where
   sameDepIndex (QueryB2C q1) (QueryB2C q2) = sameDepIndex q1 q2
 
 {------------------------------------------------------------------------------
@@ -354,18 +354,18 @@ instance SerialiseNodeToClient ByronToCardano CC.ApplyMempoolPayloadErr where
   encodeNodeToClient = encodeNodeToClientB2C (Proxy @WrapApplyTxErr) id
   decodeNodeToClient = decodeNodeToClientB2C (Proxy @WrapApplyTxErr) (\(ApplyTxErrByron err) -> err)
 
-instance SerialiseNodeToClient ByronToCardano (SomeSecond Query ByronToCardano) where
+instance SerialiseNodeToClient ByronToCardano (SomeSecond BlockQuery ByronToCardano) where
   encodeNodeToClient = encodeNodeToClientB2C
-                         (Proxy @(SomeSecond Query))
+                         (Proxy @(SomeSecond BlockQuery))
                          (\(SomeSecond q) -> SomeSecond (unQueryB2C q))
   decodeNodeToClient = decodeNodeToClientB2C
-                         (Proxy @(SomeSecond Query))
+                         (Proxy @(SomeSecond BlockQuery))
                          (\(SomeSecond (QueryIfCurrentByron q)) -> SomeSecond (QueryB2C q))
 
-instance SerialiseResult ByronToCardano (Query ByronToCardano) where
+instance SerialiseResult ByronToCardano (BlockQuery ByronToCardano) where
   encodeResult (CodecConfigB2C ccfg) () (QueryB2C q) r =
       encodeResult ccfg byronNodeToClientVersion q r
-  decodeResult (CodecConfigB2C ccfg) () (QueryB2C (q :: Query ByronBlock result)) =
+  decodeResult (CodecConfigB2C ccfg) () (QueryB2C (q :: BlockQuery ByronBlock result)) =
       (\(QueryResultSuccess r) -> r) <$>
         decodeResult
           (toCardanoCodecConfig ccfg)
@@ -399,7 +399,7 @@ instance Arbitrary (GenTx ByronToCardano) where
 instance Arbitrary (GenTxId ByronToCardano) where
   arbitrary = GenTxIdB2C <$> arbitrary
 
-instance Arbitrary (SomeSecond Query ByronToCardano) where
+instance Arbitrary (SomeSecond BlockQuery ByronToCardano) where
   arbitrary = (\(SomeSecond q) -> SomeSecond (QueryB2C q)) <$> arbitrary
 
 instance Arbitrary (SomeResult ByronToCardano) where
@@ -417,11 +417,11 @@ instance Arbitrary (SomeResult ByronToCardano) where
 --
 -- Note that ledger state and all other types stored as part of the ledger
 -- snapshot are __not__ forwards compatible.
-newtype CardanoToByron                       = C2B        { unC2B        ::         ByronBlock   } deriving (Eq, Show)
-newtype instance Header CardanoToByron       = HeaderC2B  { unHeaderC2B  :: Header  ByronBlock   } deriving (Eq, Show)
-newtype instance GenTx CardanoToByron        = GenTxC2B   { unGenTxC2B   :: GenTx   ByronBlock   } deriving (Eq, Show)
-newtype instance TxId (GenTx CardanoToByron) = GenTxIdC2B { unGenTxIdC2B :: GenTxId ByronBlock   } deriving (Eq, Show)
-newtype instance Query CardanoToByron a      = QueryC2B   { unQueryC2B   :: Query   ByronBlock a } deriving (Eq, Show)
+newtype CardanoToByron                       = C2B        { unC2B        ::            ByronBlock   } deriving (Eq, Show)
+newtype instance Header CardanoToByron       = HeaderC2B  { unHeaderC2B  :: Header     ByronBlock   } deriving (Eq, Show)
+newtype instance GenTx CardanoToByron        = GenTxC2B   { unGenTxC2B   :: GenTx      ByronBlock   } deriving (Eq, Show)
+newtype instance TxId (GenTx CardanoToByron) = GenTxIdC2B { unGenTxIdC2B :: GenTxId    ByronBlock   } deriving (Eq, Show)
+newtype instance BlockQuery CardanoToByron a = QueryC2B   { unQueryC2B   :: BlockQuery ByronBlock a } deriving (Eq, Show)
 
 newtype instance NestedCtxt_ CardanoToByron f a where
   NestedCtxt_C2B :: NestedCtxt_ ByronBlock     f a
@@ -454,10 +454,10 @@ instance HasNestedContent Header CardanoToByron where
   nest (DepPair ctxt a) =
       HeaderC2B $ nest (DepPair (mapNestedCtxt unNestedCtxt_C2B ctxt) a)
 
-instance ShowQuery (Query CardanoToByron) where
+instance ShowQuery (BlockQuery CardanoToByron) where
   showResult (QueryC2B query) = showResult query
 
-instance SameDepIndex (Query CardanoToByron) where
+instance SameDepIndex (BlockQuery CardanoToByron) where
   sameDepIndex (QueryC2B q1) (QueryC2B q2) = sameDepIndex q1 q2
 
 {------------------------------------------------------------------------------
@@ -637,17 +637,17 @@ instance SerialiseNodeToClient CardanoToByron CC.ApplyMempoolPayloadErr where
   encodeNodeToClient = encodeNodeToClientC2B (Proxy @WrapApplyTxErr) ApplyTxErrByron
   decodeNodeToClient = decodeNodeToClientC2B (Proxy @WrapApplyTxErr) id
 
-instance SerialiseNodeToClient CardanoToByron (SomeSecond Query CardanoToByron) where
+instance SerialiseNodeToClient CardanoToByron (SomeSecond BlockQuery CardanoToByron) where
   encodeNodeToClient =
       encodeNodeToClientC2B
-        (Proxy @(SomeSecond Query))
+        (Proxy @(SomeSecond BlockQuery))
         (\(SomeSecond q) -> SomeSecond (QueryIfCurrentByron (unQueryC2B q)))
   decodeNodeToClient =
       decodeNodeToClientC2B
-        (Proxy @(SomeSecond Query))
+        (Proxy @(SomeSecond BlockQuery))
         (\(SomeSecond q) -> SomeSecond (QueryC2B q))
 
-instance SerialiseResult CardanoToByron (Query CardanoToByron) where
+instance SerialiseResult CardanoToByron (BlockQuery CardanoToByron) where
   encodeResult (CodecConfigC2B ccfg) () (QueryC2B q) (r :: result) =
       encodeResult
         (toCardanoCodecConfig ccfg)
@@ -682,7 +682,7 @@ instance Arbitrary (GenTx CardanoToByron) where
 instance Arbitrary (GenTxId CardanoToByron) where
   arbitrary = GenTxIdC2B <$> arbitrary
 
-instance Arbitrary (SomeSecond Query CardanoToByron) where
+instance Arbitrary (SomeSecond BlockQuery CardanoToByron) where
   arbitrary = (\(SomeSecond q) -> SomeSecond (QueryC2B q)) <$> arbitrary
 
 instance Arbitrary (SomeResult CardanoToByron) where

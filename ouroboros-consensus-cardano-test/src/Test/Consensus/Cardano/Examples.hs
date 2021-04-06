@@ -108,20 +108,20 @@ instance Inject SomeResult where
 
 instance Inject Examples where
   inject startBounds (idx :: Index xs x) Golden.Examples {..} = Golden.Examples {
-        exampleBlock            = inj (Proxy @I)                  exampleBlock
-      , exampleSerialisedBlock  = inj (Proxy @Serialised)         exampleSerialisedBlock
-      , exampleHeader           = inj (Proxy @Header)             exampleHeader
-      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)   exampleSerialisedHeader
-      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)     exampleHeaderHash
-      , exampleGenTx            = inj (Proxy @GenTx)              exampleGenTx
-      , exampleGenTxId          = inj (Proxy @WrapGenTxId)        exampleGenTxId
-      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)     exampleApplyTxErr
-      , exampleQuery            = inj (Proxy @(SomeSecond Query)) exampleQuery
-      , exampleResult           = inj (Proxy @SomeResult)         exampleResult
-      , exampleAnnTip           = inj (Proxy @AnnTip)             exampleAnnTip
-      , exampleLedgerState      = inj (Proxy @LedgerState)        exampleLedgerState
-      , exampleChainDepState    = inj (Proxy @WrapChainDepState)  exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)     exampleExtLedgerState
+        exampleBlock            = inj (Proxy @I)                       exampleBlock
+      , exampleSerialisedBlock  = inj (Proxy @Serialised)              exampleSerialisedBlock
+      , exampleHeader           = inj (Proxy @Header)                  exampleHeader
+      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)        exampleSerialisedHeader
+      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)          exampleHeaderHash
+      , exampleGenTx            = inj (Proxy @GenTx)                   exampleGenTx
+      , exampleGenTxId          = inj (Proxy @WrapGenTxId)             exampleGenTxId
+      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)          exampleApplyTxErr
+      , exampleQuery            = inj (Proxy @(SomeSecond BlockQuery)) exampleQuery
+      , exampleResult           = inj (Proxy @SomeResult)              exampleResult
+      , exampleAnnTip           = inj (Proxy @AnnTip)                  exampleAnnTip
+      , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
+      , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
+      , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)          exampleExtLedgerState
       }
     where
       inj ::
@@ -277,23 +277,23 @@ exampleApplyTxErrWrongEraShelley :: ApplyTxErr (CardanoBlock Crypto)
 exampleApplyTxErrWrongEraShelley =
       HardForkApplyTxErrWrongEra exampleEraMismatchShelley
 
-exampleQueryEraMismatchByron :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryEraMismatchByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryEraMismatchByron =
     SomeSecond (QueryIfCurrentShelley Shelley.GetLedgerTip)
 
-exampleQueryEraMismatchShelley :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryEraMismatchShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryEraMismatchShelley =
     SomeSecond (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
 
-exampleQueryAnytimeByron :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryAnytimeByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryAnytimeByron =
     SomeSecond (QueryAnytimeByron GetEraStart)
 
-exampleQueryAnytimeShelley :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryAnytimeShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryAnytimeShelley =
     SomeSecond (QueryAnytimeShelley GetEraStart)
 
-exampleQueryHardFork :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryHardFork :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryHardFork =
     SomeSecond (QueryHardFork GetInterpreter)
 
