@@ -50,7 +50,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2.ControlChannel
+import           Ouroboros.Network.InboundGovernor.ControlChannel
 
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
