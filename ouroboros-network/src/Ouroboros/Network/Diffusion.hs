@@ -75,6 +75,7 @@ import           Ouroboros.Network.Snocket ( FileDescriptor
                                            )
 import qualified Ouroboros.Network.Snocket as Snocket
 
+import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
@@ -389,6 +390,8 @@ data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
 
     , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
       -- ^ Interface used to get peers from the current ledger.
+    , daBlockFetchMode :: STM m FetchMode
+      -- ^ Used by churn-governor
     }
 
 
@@ -585,6 +588,7 @@ runDataDiffusion tracers
                                        , daMiniProtocolParameters
                                        , daLocalRethrowPolicy
                                        , daLedgerPeersCtx
+                                       , daBlockFetchMode
                                        } =
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
@@ -853,7 +857,9 @@ runDataDiffusion tracers
                           $ \governorThread ->
                             Async.withAsync
                               (Governor.peerChurnGovernor
+                                dtTracePeerSelectionTracer
                                 churnRng
+                                daBlockFetchMode
                                 daPeerSelectionTargets
                                 peerSelectionTargetsVar)
                               $ \churnGovernorThread ->
@@ -990,7 +996,9 @@ runDataDiffusion tracers
                                 $ \serverThread ->
                                   Async.withAsync
                                     (Governor.peerChurnGovernor
+                                      dtTracePeerSelectionTracer
                                       churnRng
+                                      daBlockFetchMode
                                       daPeerSelectionTargets
                                       peerSelectionTargetsVar)
                                     $ \churnGovernorThread ->
