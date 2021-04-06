@@ -9,7 +9,7 @@
 
 -- | Intended to be imported qualified.
 --
-module Ouroboros.Network.Server2.ControlChannel
+module Ouroboros.Network.InboundGovernor.ControlChannel
   ( NewConnection (..)
   , ControlChannel (..)
   , ServerControlChannel

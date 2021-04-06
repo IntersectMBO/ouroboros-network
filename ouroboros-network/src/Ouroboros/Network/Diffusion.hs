@@ -34,6 +34,7 @@ module Ouroboros.Network.Diffusion
   , ConnectionManagerTrace (..)
   , ConnectionHandlerTrace (..)
   , ServerTrace (..)
+  , InboundGovernorTrace (..)
   )
   where
 
@@ -84,6 +85,7 @@ import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.RethrowPolicy
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS ( DomainAddress
                                                               , resolveDomainAddresses
                                                               )
@@ -106,7 +108,6 @@ import           Ouroboros.Network.Server2 ( ServerArguments (..)
                                            , ServerTrace (..)
                                            )
 import qualified Ouroboros.Network.Server2 as Server
-import qualified Ouroboros.Network.Server2.ControlChannel as Server
 import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
@@ -195,6 +196,9 @@ data DiffusionTracers = DiffusionTracers {
     , dtServerTracer
         :: Tracer IO (ServerTrace SockAddr)
 
+    , dtInboundGovernorTracer
+        :: Tracer IO (InboundGovernorTrace SockAddr)
+
       --
       -- NodeToClient tracers
       --
@@ -217,6 +221,10 @@ data DiffusionTracers = DiffusionTracers {
     , dtLocalServerTracer
         :: Tracer IO (ServerTrace LocalAddress)
 
+      -- | Inbound protocol governor tracer for local clients
+    , dtLocalInboundGovernorTracer
+        :: Tracer IO (InboundGovernorTrace LocalAddress)
+
       -- | Diffusion initialisation tracer
     , dtDiffusionInitializationTracer
         :: Tracer IO DiffusionInitializationTracer
@@ -238,10 +246,12 @@ nullTracers = DiffusionTracers {
   , dtPeerSelectionActionsTracer                 = nullTracer
   , dtConnectionManagerTracer                    = nullTracer
   , dtServerTracer                               = nullTracer
+  , dtInboundGovernorTracer                      = nullTracer
   , dtLocalMuxTracer                             = nullTracer
   , dtLocalHandshakeTracer                       = nullTracer
   , dtLocalConnectionManagerTracer               = nullTracer
   , dtLocalServerTracer                          = nullTracer
+  , dtLocalInboundGovernorTracer                 = nullTracer
   , dtDiffusionInitializationTracer              = nullTracer
   , dtLedgerPeersTracer                          = nullTracer
   }
@@ -719,6 +729,7 @@ runDataDiffusion tracers
                           serverSockets               = localSocket :| [],
                           serverSnocket               = localSnocket,
                           serverTracer                = dtLocalServerTracer,
+                          serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
                           serverControlChannel        = localControlChannel,
                           serverConnectionLimits      = localConnectionLimits,
                           serverConnectionManager     = localConnectionManager,
@@ -969,6 +980,7 @@ runDataDiffusion tracers
                                   serverSockets               = sockets,
                                   serverSnocket               = snocket,
                                   serverTracer                = dtServerTracer,
+                                  serverInboundGovernorTracer = dtInboundGovernorTracer,
                                   serverControlChannel        = controlChannel,
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,
@@ -1010,10 +1022,12 @@ runDataDiffusion tracers
                      , dtTracePublicRootPeersTracer
                      , dtConnectionManagerTracer
                      , dtServerTracer
+                     , dtInboundGovernorTracer
                      , dtLocalMuxTracer
                      , dtLocalHandshakeTracer
                      , dtLocalConnectionManagerTracer
                      , dtLocalServerTracer
+                     , dtLocalInboundGovernorTracer
                      , dtLedgerPeersTracer
                      -- the tracer
                      , dtDiffusionInitializationTracer = tracer
