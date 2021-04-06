@@ -39,6 +39,9 @@ summaryToEpochInfo =
           epochInfoSize_  = \e -> cachedRunQueryThrow run (epochToSize  e)
         , epochInfoFirst_ = \e -> cachedRunQueryThrow run (epochToSlot' e)
         , epochInfoEpoch_ = \s -> cachedRunQueryThrow run (fst <$> slotToEpoch' s)
+
+        , epochInfoSlotToRelativeTime_ = \s ->
+            cachedRunQueryThrow run (fst <$> slotToWallclock s)
         }
 
 -- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
@@ -50,6 +53,9 @@ snapshotEpochInfo summary = EpochInfo {
       epochInfoSize_  = \e -> runQueryPure' (epochToSize  e)
     , epochInfoFirst_ = \e -> runQueryPure' (epochToSlot' e)
     , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch' s)
+
+    , epochInfoSlotToRelativeTime_ = \s ->
+        runQueryPure' (fst <$> slotToWallclock s)
     }
   where
     runQueryPure' :: HasCallStack => Qry a -> Identity a
@@ -60,7 +66,8 @@ snapshotEpochInfo summary = EpochInfo {
 -- To be used as a placeholder before a summary is available.
 dummyEpochInfo :: EpochInfo Identity
 dummyEpochInfo = EpochInfo {
-      epochInfoSize_  = \_ -> error "dummyEpochInfo used"
-    , epochInfoFirst_ = \_ -> error "dummyEpochInfo used"
-    , epochInfoEpoch_ = \_ -> error "dummyEpochInfo used"
+      epochInfoSize_               = \_ -> error "dummyEpochInfo used"
+    , epochInfoFirst_              = \_ -> error "dummyEpochInfo used"
+    , epochInfoEpoch_              = \_ -> error "dummyEpochInfo used"
+    , epochInfoSlotToRelativeTime_ = \_ -> error "dummyEpochInfo used"
     }

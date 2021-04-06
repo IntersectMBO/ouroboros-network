@@ -95,8 +95,6 @@ import qualified Shelley.Spec.Ledger.STS.Delegs as SL
                      (DelegsPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.STS.Ledger as SL
                      (LedgerPredicateFailure (..))
-import qualified Shelley.Spec.Ledger.STS.Ledgers as SL
-                     (LedgersPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.Tx as SL (addrWits)
 import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessesVKey)
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as SL
@@ -211,8 +209,6 @@ keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
 examples ::
      forall era.
      ( ShelleyBasedEra era
-     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
-       ~ SL.LedgerPredicateFailure era
      ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
        ~ SL.DelegsPredicateFailure era
      , Core.PParams era ~ SL.PParams era
@@ -513,8 +509,6 @@ exampleTx txBody auxiliaryData = SL.Tx txBody witnessSet (SJust auxiliaryData)
 exampleApplyTxErr ::
      forall era.
      ( ShelleyBasedEra era
-     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
-       ~ SL.LedgerPredicateFailure era
      ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
        ~ SL.DelegsPredicateFailure era
      )
@@ -522,7 +516,6 @@ exampleApplyTxErr ::
 exampleApplyTxErr =
       ApplyTxError
     $ pure
-    $ SL.LedgerFailure
     $ SL.DelegsFailure
     $ SL.DelegateeNotRegisteredDELEG @era (mkKeyHash 1)
 

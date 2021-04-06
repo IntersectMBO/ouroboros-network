@@ -41,4 +41,10 @@ class SingleEraBlock blk => NoHardForks blk where
 
 noHardForksEpochInfo :: NoHardForks blk
                      => TopLevelConfig blk -> EpochInfo Identity
-noHardForksEpochInfo = fixedSizeEpochInfo . History.eraEpochSize . getEraParams
+noHardForksEpochInfo cfg =
+    fixedEpochInfo
+      (History.eraEpochSize  params)
+      (History.eraSlotLength params)
+  where
+    params :: EraParams
+    params = getEraParams cfg
