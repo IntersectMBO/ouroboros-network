@@ -60,6 +60,7 @@ import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.IOManager
+import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
@@ -70,7 +71,6 @@ import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Server2 (ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
-import qualified Ouroboros.Network.Server2.ControlChannel as Server
 import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Util.ShowProxy
@@ -535,6 +535,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
                     serverSockets = socket :| [],
                     serverSnocket = snocket,
                     serverTracer = (name,) `contramap` nullTracer, -- ServerTrace
+                    serverInboundGovernorTracer = (name,) `contramap` nullTracer, -- InboundGovernorTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
                     serverProtocolIdleTimeout = protocolIdleTimeout,

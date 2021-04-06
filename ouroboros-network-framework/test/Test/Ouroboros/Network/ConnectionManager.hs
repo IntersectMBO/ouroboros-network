@@ -72,7 +72,7 @@ import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Server.RateLimiting
-import qualified Ouroboros.Network.Server2.ControlChannel as ControlChannel
+import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 
 import           Ouroboros.Network.Testing.Utils (Delay (..),
                    genDelayWithPrecision)
