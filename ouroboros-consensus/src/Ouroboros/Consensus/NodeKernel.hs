@@ -17,6 +17,7 @@ module Ouroboros.Consensus.NodeKernel (
   , NodeKernel (..)
   , NodeKernelArgs (..)
   , TraceForgeEvent (..)
+  , getFetchMode
   , getMempoolReader
   , getMempoolWriter
   , getPeersFromCurrentLedger
@@ -321,24 +322,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     readCurrentChain = ChainDB.getCurrentChain chainDB
 
     readFetchMode :: STM m FetchMode
-    readFetchMode = do
-      mCurSlot <- getCurrentSlot btime
-      case mCurSlot of
-        -- The current chain's tip far away from "now", so use bulk sync mode.
-        CurrentSlotUnknown  -> return FetchModeBulkSync
-        CurrentSlot curSlot -> do
-          curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain chainDB
-          let slotsBehind = case curChainSlot of
-                -- There's nothing in the chain. If the current slot is 0, then
-                -- we're 1 slot behind.
-                Origin         -> unSlotNo curSlot + 1
-                NotOrigin slot -> unSlotNo curSlot - unSlotNo slot
-              maxSlotsBehind = 1000
-          return $ if slotsBehind < maxSlotsBehind
-            -- When the current chain is near to "now", use deadline mode,
-            -- when it is far away, use bulk sync mode.
-            then FetchModeDeadline
-            else FetchModeBulkSync
+    readFetchMode = getFetchMode chainDB btime
 
     readFetchedBlocks :: STM m (Point blk -> Bool)
     readFetchedBlocks = ChainDB.getIsFetched chainDB
@@ -794,3 +778,32 @@ getPeersFromCurrentLedgerAfterSlot kernel slotNo =
       case ledgerTipSlot st of
         Origin        -> False
         NotOrigin tip -> tip > slotNo
+
+-- | Return 'FetchMode' for the Blockfetch client.
+-- The 'FetchMode' depends on how far away our tip is from the current slot.
+getFetchMode
+    :: forall m blk.
+       ( IOLike m
+       , BlockSupportsProtocol blk
+       )
+    => ChainDB m blk
+    -> BlockchainTime m
+    -> STM m FetchMode
+getFetchMode chainDB btime =  do
+  mCurSlot <- getCurrentSlot btime
+  case mCurSlot of
+    -- The current chain's tip far away from "now", so use bulk sync mode.
+    CurrentSlotUnknown  -> return FetchModeBulkSync
+    CurrentSlot curSlot -> do
+      curChainSlot <- AF.headSlot <$> ChainDB.getCurrentChain chainDB
+      let slotsBehind = case curChainSlot of
+            -- There's nothing in the chain. If the current slot is 0, then
+            -- we're 1 slot behind.
+            Origin         -> unSlotNo curSlot + 1
+            NotOrigin slot -> unSlotNo curSlot - unSlotNo slot
+          maxSlotsBehind = 1000
+      return $ if slotsBehind < maxSlotsBehind
+        -- When the current chain is near to "now", use deadline mode,
+        -- when it is far away, use bulk sync mode.
+        then FetchModeDeadline
+        else FetchModeBulkSync
