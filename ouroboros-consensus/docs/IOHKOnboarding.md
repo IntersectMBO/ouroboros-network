@@ -15,6 +15,7 @@ Currently the team consists of:
 * [Nicolas Frisby](https://github.com/nfrisby)
 * [Pawel Szulc](https://github.com/EncodePanda)
 * [Edsko de Vries](https://github.com/edsko) (8 hours a week)
+* [Javier Sagredo](https://github.com/Jasagredo)
 
 ### Join our slack channels
 
@@ -39,7 +40,7 @@ You'll eventually also need to be in the `CODEOWNERS` file.
 
 ## Create your first PR!
 
-* Create new branch - convention is `/github_nickname/meaningful_name`
+* Create new branch - convention is `github_nickname/meaningful_name`
 * Modify `ouroboros-consensus/docs/IOHKOnboarding.md` by adding yourself to the `## Meet the team` section
 * Commit, push and make a PR
 * Find some one to review it by the end of the day
