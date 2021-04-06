@@ -39,8 +39,8 @@ data BlockFetchResponse block m a = BlockFetchResponse {
     handleNoBlocks   :: m ()
   }
 
--- | Block are streamed and block receiver will handle each one when it comes,
--- it also needs to handle errors send back from the server.
+-- | Blocks are streamed and block receiver will handle each one when it comes,
+-- it also needs to handle errors sent back from the server.
 --
 data BlockFetchReceiver block m = BlockFetchReceiver {
     handleBlock      :: block -> m (BlockFetchReceiver block m),
@@ -108,7 +108,7 @@ data BlockFetchSender n c block point m a where
 
   -- | Send a `MsgRequestRange` but do not wait for response.  Supply a monadic
   -- action which runs on each received block and which updates the internal
-  -- received value @c@.  @c@ could be a Monoid, though it's more genral this
+  -- received value @c@.  @c@ could be a Monoid, though it's more general this
   -- way.
   --
   SendMsgRequestRangePipelined
