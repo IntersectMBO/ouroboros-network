@@ -153,7 +153,7 @@ mkClient
   -> LocalStateQueryClient
        TestBlock
        (Point TestBlock)
-       (Query TestBlock)
+       (BlockQuery TestBlock)
        m
        [(Maybe (Point TestBlock), Either AcquireFailure (Point TestBlock))]
 mkClient points = localStateQueryClient [(pt, QueryLedgerTip) | pt <- points]
@@ -162,7 +162,7 @@ mkServer
   :: IOLike m
   => SecurityParam
   -> Chain TestBlock
-  -> m (LocalStateQueryServer TestBlock (Point TestBlock) (Query TestBlock) m ())
+  -> m (LocalStateQueryServer TestBlock (Point TestBlock) (BlockQuery TestBlock) m ())
 mkServer k chain = do
     lgrDB <- initLgrDB k chain
     return $

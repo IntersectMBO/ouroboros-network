@@ -378,7 +378,7 @@ instance CardanoHardForkConstraints c
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
-                                (SomeSecond Query (CardanoBlock c))) where
+                                (SomeSecond BlockQuery (CardanoBlock c))) where
   arbitrary = frequency
       [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary)
       , (1, WithVersion

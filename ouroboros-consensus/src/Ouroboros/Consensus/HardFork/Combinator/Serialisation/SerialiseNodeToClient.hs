@@ -198,7 +198,7 @@ decodeQueryHardFork = do
       _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
 
 instance SerialiseHFC xs
-      => SerialiseNodeToClient (HardForkBlock xs) (SomeSecond Query (HardForkBlock xs)) where
+      => SerialiseNodeToClient (HardForkBlock xs) (SomeSecond BlockQuery (HardForkBlock xs)) where
   encodeNodeToClient ccfg version (SomeSecond q) = case version of
       HardForkNodeToClientDisabled v0 -> case q of
         QueryIfCurrent qry ->
@@ -260,8 +260,8 @@ instance SerialiseHFC xs
     where
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-      injQueryIfCurrent :: NS (SomeSecond Query) xs
-                        -> SomeSecond Query (HardForkBlock xs)
+      injQueryIfCurrent :: NS (SomeSecond BlockQuery) xs
+                        -> SomeSecond BlockQuery (HardForkBlock xs)
       injQueryIfCurrent ns =
           case undistribQueryIfCurrent ns of
             Some q -> SomeSecond (QueryIfCurrent q)
@@ -271,7 +271,7 @@ instance SerialiseHFC xs
 -------------------------------------------------------------------------------}
 
 instance SerialiseHFC xs
-      => SerialiseResult (HardForkBlock xs) (Query (HardForkBlock xs)) where
+      => SerialiseResult (HardForkBlock xs) (BlockQuery (HardForkBlock xs)) where
   encodeResult ccfg version (QueryIfCurrent qry) =
       case isNonEmpty (Proxy @xs) of
         ProofNonEmpty {} ->
@@ -318,7 +318,7 @@ encodeQueryIfCurrentResult (_ :* _) (EraNodeToClientDisabled :* _) (QZ qry) =
     qryDisabledEra qry
   where
     qryDisabledEra :: forall blk result. SingleEraBlock blk
-                   => Query blk result -> result -> Encoding
+                   => BlockQuery blk result -> result -> Encoding
     qryDisabledEra _ _ = throw $ disabledEraException (Proxy @blk)
 encodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
     encodeQueryIfCurrentResult cs vs qry
@@ -337,7 +337,7 @@ decodeQueryIfCurrentResult (_ :* _) (EraNodeToClientDisabled :* _) (QZ qry) =
     qryDisabledEra qry
   where
     qryDisabledEra :: forall blk result. SingleEraBlock blk
-                   => Query blk result -> forall s. Decoder s result
+                   => BlockQuery blk result -> forall s. Decoder s result
     qryDisabledEra _ = fail . show $ disabledEraException (Proxy @blk)
 decodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
     decodeQueryIfCurrentResult cs vs qry

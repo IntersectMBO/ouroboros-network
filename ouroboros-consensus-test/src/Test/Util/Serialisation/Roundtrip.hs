@@ -43,7 +43,7 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (Query)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -133,7 +133,7 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      )
   => CodecConfig blk
@@ -313,7 +313,7 @@ roundtrip_SerialiseNodeToClient
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
 
        -- Needed for testing the @Serialised blk@
@@ -323,10 +323,10 @@ roundtrip_SerialiseNodeToClient
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToClient ccfg =
-    [ rt (Proxy @blk)                    "blk"
-    , rt (Proxy @(GenTx blk))            "GenTx"
-    , rt (Proxy @(ApplyTxErr blk))       "ApplyTxErr"
-    , rt (Proxy @(SomeSecond Query blk)) "Query"
+    [ rt (Proxy @blk)                         "blk"
+    , rt (Proxy @(GenTx blk))                 "GenTx"
+    , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
+    , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
@@ -507,7 +507,7 @@ decodeThroughSerialised dec decSerialised = do
 -- need them in the tests.
 data SomeResult blk where
   SomeResult :: (Eq result, Show result, Typeable result)
-             => Query blk result -> result -> SomeResult blk
+             => BlockQuery blk result -> result -> SomeResult blk
 
 instance Show (SomeResult blk) where
   show (SomeResult _ result) = show result

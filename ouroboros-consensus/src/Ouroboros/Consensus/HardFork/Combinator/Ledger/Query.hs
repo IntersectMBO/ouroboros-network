@@ -19,8 +19,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Ledger.Query (
-    HardForkQueryResult
-  , Query (..)
+    BlockQuery (..)
+  , HardForkQueryResult
   , QueryAnytime (..)
   , QueryHardFork (..)
   , QueryIfCurrent (..)
@@ -75,9 +75,9 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..), mustMatchNS)
 
-instance Typeable xs => ShowProxy (Query (HardForkBlock xs)) where
+instance Typeable xs => ShowProxy (BlockQuery (HardForkBlock xs)) where
 
-instance All SingleEraBlock xs => ShowQuery (Query (HardForkBlock xs)) where
+instance All SingleEraBlock xs => ShowQuery (BlockQuery (HardForkBlock xs)) where
   showResult (QueryAnytime   qry _) result = showResult qry result
   showResult (QueryHardFork  qry)   result = showResult qry result
   showResult (QueryIfCurrent qry)  mResult =
@@ -87,11 +87,11 @@ instance All SingleEraBlock xs => ShowQuery (Query (HardForkBlock xs)) where
 
 type HardForkQueryResult xs = Either (MismatchEraInfo xs)
 
-data instance Query (HardForkBlock xs) :: Type -> Type where
+data instance BlockQuery (HardForkBlock xs) :: Type -> Type where
   -- | Answer a query about an era if it is the current one.
   QueryIfCurrent ::
        QueryIfCurrent xs result
-    -> Query (HardForkBlock xs) (HardForkQueryResult xs result)
+    -> BlockQuery (HardForkBlock xs) (HardForkQueryResult xs result)
 
   -- | Answer a query about an era from /any/ era.
   --
@@ -101,7 +101,7 @@ data instance Query (HardForkBlock xs) :: Type -> Type where
        IsNonEmpty xs
     => QueryAnytime result
     -> EraIndex (x ': xs)
-    -> Query (HardForkBlock (x ': xs)) result
+    -> BlockQuery (HardForkBlock (x ': xs)) result
 
   -- | Answer a query about the hard fork combinator
   --
@@ -110,7 +110,7 @@ data instance Query (HardForkBlock xs) :: Type -> Type where
   QueryHardFork ::
        IsNonEmpty xs
     => QueryHardFork (x ': xs) result
-    -> Query (HardForkBlock (x ': xs)) result
+    -> BlockQuery (HardForkBlock (x ': xs)) result
 
 instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
   answerQuery (ExtLedgerCfg cfg)
@@ -166,7 +166,7 @@ distribHeaderState (HeaderState tip chainDepState) =
           (\(Pair t cds) -> HeaderState (NotOrigin t) (unwrapChainDepState cds))
           (mustMatchNS "AnnTip" (distribAnnTip annTip) (State.tip chainDepState))
 
-instance All SingleEraBlock xs => SameDepIndex (Query (HardForkBlock xs)) where
+instance All SingleEraBlock xs => SameDepIndex (BlockQuery (HardForkBlock xs)) where
   sameDepIndex (QueryIfCurrent qry) (QueryIfCurrent qry') =
       apply Refl <$> sameDepIndex qry qry'
   sameDepIndex (QueryIfCurrent {}) _ =
@@ -183,9 +183,9 @@ instance All SingleEraBlock xs => SameDepIndex (Query (HardForkBlock xs)) where
   sameDepIndex (QueryHardFork {}) _ =
       Nothing
 
-deriving instance All SingleEraBlock xs => Show (Query (HardForkBlock xs) result)
+deriving instance All SingleEraBlock xs => Show (BlockQuery (HardForkBlock xs) result)
 
-getHardForkQuery :: Query (HardForkBlock xs) result
+getHardForkQuery :: BlockQuery (HardForkBlock xs) result
                  -> (forall result'.
                           result :~: HardForkQueryResult xs result'
                        -> QueryIfCurrent xs result'
@@ -212,7 +212,7 @@ getHardForkQuery q k1 k2 k3 = case q of
 -------------------------------------------------------------------------------}
 
 data QueryIfCurrent :: [Type] -> Type -> Type where
-  QZ :: Query x result           -> QueryIfCurrent (x ': xs) result
+  QZ :: BlockQuery x result      -> QueryIfCurrent (x ': xs) result
   QS :: QueryIfCurrent xs result -> QueryIfCurrent (x ': xs) result
 
 deriving instance All SingleEraBlock xs => Show (QueryIfCurrent xs result)

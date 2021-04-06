@@ -94,7 +94,7 @@ data Handlers m peer blk = Handlers {
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 
     , hStateQueryServer
-        :: LocalStateQueryServer blk (Point blk) (Query blk) m ()
+        :: LocalStateQueryServer blk (Point blk) (BlockQuery blk) m ()
     }
 
 mkHandlers
@@ -133,7 +133,7 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
 data Codecs' blk serialisedBlk e m bCS bTX bSQ = Codecs {
       cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Point blk) (Tip blk))  e m bCS
     , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) e m bTX
-    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Point blk) (Query blk))    e m bSQ
+    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Point blk) (BlockQuery blk))    e m bSQ
     }
 
 type Codecs blk e m bCS bTX bSQ =
@@ -162,7 +162,7 @@ type ClientCodecs blk  m =
 defaultCodecs :: forall m blk.
                  ( MonadST m
                  , SerialiseNodeToClientConstraints blk
-                 , ShowQuery (Query blk)
+                 , ShowQuery (BlockQuery blk)
                  )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
@@ -211,7 +211,7 @@ defaultCodecs ccfg version networkVersion = Codecs {
 clientCodecs :: forall m blk.
                 ( MonadST m
                 , SerialiseNodeToClientConstraints blk
-                , ShowQuery (Query blk)
+                , ShowQuery (BlockQuery blk)
                 )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk
@@ -259,7 +259,7 @@ identityCodecs :: (Monad m, QueryLedger blk)
                => Codecs blk CodecFailure m
                     (AnyMessage (ChainSync (Serialised blk) (Point blk) (Tip blk)))
                     (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
-                    (AnyMessage (LocalStateQuery blk (Point blk) (Query blk)))
+                    (AnyMessage (LocalStateQuery blk (Point blk) (BlockQuery blk)))
 identityCodecs = Codecs {
       cChainSyncCodec    = codecChainSyncId
     , cTxSubmissionCodec = codecLocalTxSubmissionId
@@ -277,7 +277,7 @@ type Tracers m peer blk e =
 data Tracers' peer blk e f = Tracers {
       tChainSyncTracer    :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Point blk) (Tip blk))))
     , tTxSubmissionTracer :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
-    , tStateQueryTracer   :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Point blk) (Query blk))))
+    , tStateQueryTracer   :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Point blk) (BlockQuery blk))))
     }
 
 instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk e f) where
@@ -303,7 +303,7 @@ nullTracers = Tracers {
 showTracers :: ( Show peer
                , Show (GenTx blk)
                , Show (ApplyTxErr blk)
-               , ShowQuery (Query blk)
+               , ShowQuery (BlockQuery blk)
                , HasHeader blk
                )
             => Tracer m String -> Tracers m peer blk e
@@ -341,9 +341,9 @@ mkApps
      , Exception e
      , ShowProxy blk
      , ShowProxy (ApplyTxErr blk)
-     , ShowProxy (Query blk)
+     , ShowProxy (BlockQuery blk)
      , ShowProxy (GenTx blk)
-     , ShowQuery (Query blk)
+     , ShowQuery (BlockQuery blk)
      )
   => NodeKernel m remotePeer localPeer blk
   -> Tracers m localPeer blk e
