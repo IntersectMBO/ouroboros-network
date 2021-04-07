@@ -113,7 +113,7 @@ data instance BlockQuery (HardForkBlock xs) :: Type -> Type where
     -> BlockQuery (HardForkBlock (x ': xs)) result
 
 instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
-  answerQuery (ExtLedgerCfg cfg)
+  answerBlockQuery (ExtLedgerCfg cfg)
               query
               ext@(ExtLedgerState st@(HardForkLedgerState hardForkState) _) =
       case query of
@@ -240,7 +240,7 @@ interpretQueryIfCurrent = go
        -> NS ExtLedgerState xs'
        -> HardForkQueryResult xs' result
     go (c :* _)  (QZ qry) (Z st) =
-        Right $ answerQuery c qry st
+        Right $ answerBlockQuery c qry st
     go (_ :* cs) (QS qry) (S st) =
         first shiftMismatch $ go cs qry st
     go _         (QZ qry) (S st) =

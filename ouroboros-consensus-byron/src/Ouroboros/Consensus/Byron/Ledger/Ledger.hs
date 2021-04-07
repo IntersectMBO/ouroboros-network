@@ -34,8 +34,8 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
   , encodeByronQuery
   , encodeByronResult
     -- * Type family instances
-  , LedgerState (..)
   , BlockQuery (..)
+  , LedgerState (..)
   , Ticked (..)
     -- * Auxiliary
   , validationErrorImpossible
@@ -199,7 +199,7 @@ data instance BlockQuery ByronBlock :: Type -> Type where
   GetUpdateInterfaceState :: BlockQuery ByronBlock UPI.State
 
 instance QueryLedger ByronBlock where
-  answerQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
+  answerBlockQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
 instance SameDepIndex (BlockQuery ByronBlock) where

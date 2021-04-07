@@ -24,8 +24,8 @@
 -- None of the definitions in this module depend on, or even refer to, any
 -- specific consensus protocols.
 module Ouroboros.Consensus.Mock.Ledger.Block (
-    Header (..)
-  , BlockQuery (..)
+    BlockQuery (..)
+  , Header (..)
   , SimpleBlock
   , SimpleBlock' (..)
   , SimpleBody (..)
@@ -494,7 +494,7 @@ data instance BlockQuery (SimpleBlock c ext) result where
     QueryLedgerTip :: BlockQuery (SimpleBlock c ext) (Point (SimpleBlock c ext))
 
 instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
-  answerQuery _cfg QueryLedgerTip =
+  answerBlockQuery _cfg QueryLedgerTip =
         castPoint
       . ledgerTipPoint (Proxy @(SimpleBlock c ext))
       . ledgerState

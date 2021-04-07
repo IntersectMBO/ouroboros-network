@@ -61,5 +61,5 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
       -> m (ServerStQuerying blk (Point blk) (BlockQuery blk) m () result)
     handleQuery ledgerState query = return $
         SendMsgResult
-          (answerQuery cfg query ledgerState)
+          (answerBlockQuery cfg query ledgerState)
           (acquired ledgerState)

@@ -339,7 +339,7 @@ data instance BlockQuery BlockA result
   deriving (Show)
 
 instance QueryLedger BlockA where
-  answerQuery _ qry = case qry of {}
+  answerBlockQuery _ qry = case qry of {}
 
 instance SameDepIndex (BlockQuery BlockA) where
   sameDepIndex qry _qry' = case qry of {}

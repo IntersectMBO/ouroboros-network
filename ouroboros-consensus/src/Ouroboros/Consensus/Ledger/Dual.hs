@@ -494,7 +494,7 @@ instance (Typeable m, Typeable a)
 
 -- | Not used in the tests: no constructors
 instance Bridge m a => QueryLedger (DualBlock m a) where
-  answerQuery _ = \case {}
+  answerBlockQuery _ = \case {}
 
 instance SameDepIndex (BlockQuery (DualBlock m a)) where
   sameDepIndex = \case {}

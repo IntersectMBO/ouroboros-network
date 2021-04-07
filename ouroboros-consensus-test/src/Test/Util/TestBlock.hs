@@ -21,9 +21,9 @@
 module Test.Util.TestBlock (
     -- * Blocks
     BlockConfig (..)
+  , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
-  , BlockQuery (..)
   , StorageConfig (..)
   , TestBlock (..)
   , TestBlockError (..)
@@ -379,7 +379,7 @@ data instance BlockQuery TestBlock result where
   QueryLedgerTip :: BlockQuery TestBlock (Point TestBlock)
 
 instance QueryLedger TestBlock where
-  answerQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
+  answerBlockQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
 
 instance SameDepIndex (BlockQuery TestBlock) where
