@@ -6,12 +6,14 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Hard fork protocol, block, and ledger state
@@ -42,6 +44,7 @@ import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
+import           Cardano.Binary
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -141,8 +144,30 @@ data HardForkLedgerConfig xs = HardForkLedgerConfig {
     }
   deriving (Generic)
 
-instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
+instance
+  ( SListI xs
+  , Typeable xs
+  , ToCBOR (PerEraLedgerConfig xs)
+  ) => ToCBOR (HardForkLedgerConfig xs) where
+    toCBOR (HardForkLedgerConfig hflcShape perEraLedgerConfig)
+      = mconcat [
+            encodeListLen 2
+          , toCBOR hflcShape
+          , toCBOR perEraLedgerConfig
+          ]
 
+instance
+  ( SListI xs
+  , Typeable xs
+  , FromCBOR (PerEraLedgerConfig xs)
+  ) => FromCBOR (HardForkLedgerConfig xs) where
+    fromCBOR = do
+      enforceSize "HardForkLedgerConfig" 2
+      HardForkLedgerConfig
+        <$> fromCBOR @(History.Shape xs)
+        <*> fromCBOR @(PerEraLedgerConfig xs)
+
+instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
 type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig xs
 
 {-------------------------------------------------------------------------------

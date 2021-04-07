@@ -24,7 +24,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (FromCBOR, ToCBOR)
+import qualified Cardano.Binary
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
@@ -116,7 +116,7 @@ newtype CompactGenesis era = CompactGenesis {
       getCompactGenesis :: SL.ShelleyGenesis era
     }
   deriving stock (Eq, Show, Generic)
-  deriving newtype (FromCBOR, ToCBOR)
+  deriving newtype (Cardano.Binary.FromCBOR, Cardano.Binary.ToCBOR)
 
 deriving anyclass instance ShelleyBasedEra era => NoThunks (CompactGenesis era)
 
