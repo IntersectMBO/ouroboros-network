@@ -6,8 +6,10 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module Ouroboros.Consensus.Ledger.Query (
     BlockQuery
+  , Query (..)
   , QueryLedger (..)
   , ShowQuery (..)
+  , answerQuery
   ) where
 
 import           Data.Kind (Type)
@@ -23,6 +25,17 @@ import           Ouroboros.Consensus.Util.DepPair
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
+
+-- | Different queries supported by the ledger for all block types, indexed
+-- by the result type.
+data Query blk result = BlockQuery (BlockQuery blk result)
+
+deriving instance Show (BlockQuery blk result) => Show (Query blk result)
+
+-- | Answer the given query about the extended ledger state.
+answerQuery :: QueryLedger blk => ExtLedgerCfg blk -> Query blk result -> ExtLedgerState blk -> result
+answerQuery cfg query st = case query of
+  BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type
