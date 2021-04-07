@@ -79,6 +79,8 @@ import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.OptNP (OptNP)
 
+import           Cardano.Binary
+import           Data.Typeable (Typeable)
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -95,6 +97,9 @@ newtype PerEraCodecConfig     xs = PerEraCodecConfig     { getPerEraCodecConfig 
 newtype PerEraConsensusConfig xs = PerEraConsensusConfig { getPerEraConsensusConfig :: NP WrapPartialConsensusConfig xs }
 newtype PerEraLedgerConfig    xs = PerEraLedgerConfig    { getPerEraLedgerConfig    :: NP WrapPartialLedgerConfig    xs }
 newtype PerEraStorageConfig   xs = PerEraStorageConfig   { getPerEraStorageConfig   :: NP StorageConfig              xs }
+
+deriving newtype instance (Typeable xs, ToCBOR (NP WrapPartialLedgerConfig xs)) => ToCBOR (PerEraLedgerConfig xs)
+deriving newtype instance (Typeable xs, FromCBOR (NP WrapPartialLedgerConfig xs)) => FromCBOR (PerEraLedgerConfig xs)
 
 {-------------------------------------------------------------------------------
   Values for /some/ eras

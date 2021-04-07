@@ -61,6 +61,7 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 import           Ouroboros.Network.Magic
 
+import           Cardano.Binary (FromCBOR (fromCBOR), ToCBOR (toCBOR))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -101,7 +102,14 @@ data instance ConsensusConfig ProtocolA = CfgA {
       cfgA_k           :: SecurityParam
     , cfgA_leadInSlots :: Set SlotNo
     }
+  deriving stock Generic
   deriving NoThunks via OnlyCheckWhnfNamed "CfgA" (ConsensusConfig ProtocolA)
+
+instance ToCBOR (ConsensusConfig ProtocolA) where
+  toCBOR (CfgA k leadInSlots) = toCBOR k <> toCBOR leadInSlots
+
+instance FromCBOR (ConsensusConfig ProtocolA) where
+  fromCBOR = CfgA <$> fromCBOR <*> fromCBOR
 
 instance ConsensusProtocol ProtocolA where
   type ChainDepState ProtocolA = ()
@@ -197,7 +205,14 @@ data PartialLedgerConfigA = LCfgA {
     , lcfgA_systemStart :: SystemStart
     , lcfgA_forgeTxs    :: Map SlotNo [GenTx BlockA]
     }
+  deriving stock Generic
   deriving NoThunks via OnlyCheckWhnfNamed "LCfgA" PartialLedgerConfigA
+
+instance ToCBOR PartialLedgerConfigA where
+  toCBOR (LCfgA k systemStart forgeTxs) = toCBOR k <> toCBOR systemStart <> encode forgeTxs
+
+instance FromCBOR PartialLedgerConfigA where
+  fromCBOR = LCfgA <$> fromCBOR <*> fromCBOR <*> decode
 
 type instance LedgerCfg (LedgerState BlockA) =
     (EpochInfo Identity, PartialLedgerConfigA)
