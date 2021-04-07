@@ -1,4 +1,5 @@
 {-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -23,6 +24,8 @@ import           NoThunks.Class (NoThunks)
 
 import           Cardano.Slotting.EpochInfo
 
+import           Cardano.Binary
+import           Data.Typeable (Typeable)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -78,6 +81,9 @@ class ( UpdateLedger blk
 
 newtype WrapPartialLedgerConfig    blk = WrapPartialLedgerConfig    { unwrapPartialLedgerConfig    :: PartialLedgerConfig                   blk  }
 newtype WrapPartialConsensusConfig blk = WrapPartialConsensusConfig { unwrapPartialConsensusConfig :: PartialConsensusConfig (BlockProtocol blk) }
+
+deriving newtype instance (Typeable blk, ToCBOR   (PartialLedgerConfig blk)) => ToCBOR   (WrapPartialLedgerConfig blk)
+deriving newtype instance (Typeable blk, FromCBOR (PartialLedgerConfig blk)) => FromCBOR (WrapPartialLedgerConfig blk)
 
 deriving instance NoThunks (PartialLedgerConfig                   blk)  => NoThunks (WrapPartialLedgerConfig    blk)
 deriving instance NoThunks (PartialConsensusConfig (BlockProtocol blk)) => NoThunks (WrapPartialConsensusConfig blk)

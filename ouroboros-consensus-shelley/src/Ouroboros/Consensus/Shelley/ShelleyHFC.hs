@@ -13,8 +13,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | This module is the Shelley Hard Fork Combinator
-module Ouroboros.Consensus.Shelley.ShelleyHFC (
-    ProtocolShelley
+module Ouroboros.Consensus.Shelley.ShelleyHFC
+  ( ProtocolShelley
   , ShelleyBlockHFC
   , ShelleyPartialLedgerConfig (..)
   , forecastAcrossShelley
@@ -33,6 +33,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
+import           Cardano.Binary
+import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo (hoistEpochInfo)
 
 import           Ouroboros.Consensus.Block
@@ -43,14 +45,17 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
-import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
+import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
+                     dummyEpochInfo, toPureEpochInfo)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
+import           Cardano.Ledger.Era (Era)
 import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
+import           Shelley.Spec.Ledger.BaseTypes
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -207,6 +212,72 @@ instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
                     epochInfo
             }
         }
+
+instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
+  fromCBOR =
+    ShelleyPartialLedgerConfig
+      <$> (ShelleyLedgerConfig
+        <$> fromCBOR @(CompactGenesis era)
+        <*> (SL.Globals
+              -- Globals
+              --
+              -- Note: we can't serialise EpochInfo as it contains
+              -- lambdas, but that's ok because it's value is known
+              -- staticaly. It is always just `dummyEpochInfo` when inside
+              -- a ShelleyPartialLedgerConfi
+              dummyEpochInfo
+              <$> fromCBOR @Word64
+              <*> fromCBOR @Word64
+              <*> fromCBOR @Word64
+              <*> fromCBOR @Word64
+              <*> fromCBOR @Word64
+              <*> fromCBOR @Word64
+              <*> fromCBOR @Natural
+              <*> fromCBOR @Word64
+              <*> fromCBOR @ActiveSlotCoeff
+              <*> fromCBOR @SL.Network
+            )
+      )
+      <*> fromCBOR @TriggerHardFork
+
+instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
+  toCBOR
+    (ShelleyPartialLedgerConfig
+      (ShelleyLedgerConfig
+        myCompactGenesis
+        (SL.Globals
+          _epochInfo
+          slotsPerKESPeriod
+          stabilityWindow
+          randomnessStabilisationWindow
+          securityParameter
+          maxKESEvo
+          quorum
+          maxMajorPV
+          maxLovelaceSupply
+          activeSlotCoeff
+          networkId
+        )
+      )
+      triggerHardFork
+    )
+      -- CompactGenesis
+      = toCBOR @(CompactGenesis era) myCompactGenesis
+        -- Globals
+        --
+        -- Note: we don't serialise EpochInfo. See comment in `decode` above.
+        <> toCBOR @Word64 slotsPerKESPeriod
+        <> toCBOR @Word64 stabilityWindow
+        <> toCBOR @Word64 randomnessStabilisationWindow
+        <> toCBOR @Word64 securityParameter
+        <> toCBOR @Word64 maxKESEvo
+        <> toCBOR @Word64 quorum
+        <> toCBOR @Natural maxMajorPV
+        <> toCBOR @Word64 maxLovelaceSupply
+        <> toCBOR @ActiveSlotCoeff activeSlotCoeff
+        <> toCBOR @SL.Network networkId
+        -- TriggerHardFork
+        <> toCBOR @TriggerHardFork triggerHardFork
 
 -- | Forecast from a Shelley-based era to the next Shelley-based era.
 forecastAcrossShelley ::
