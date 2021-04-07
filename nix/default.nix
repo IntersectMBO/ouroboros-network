@@ -9,8 +9,17 @@ let
   iohkNixMain = import sources.iohk-nix { };
   haskellNix = import sources."haskell.nix" { inherit system sourcesOverride; };
   haskellNixArgs = haskellNix.nixpkgsArgs;
-  nixpkgs = haskellNix.sources.nixpkgs-2009;
-
+  nixpkgs =
+    if (sources ? nixpkgs)
+    then
+      (builtins.trace "Not using nixpkgs that haskell.nix is exposing.
+        * This means that you've added entry to 'sources.json' via niv.
+        * This is fine, but please be aware that you might be getting less cache hits.
+        * Use 'niv drop nixpkgs' to use haskell.nix's nixpkgs"
+        sources.nixpkgs)
+    else
+      (builtins.trace "Using haskell.nix's nixpkgs. Good. Sharing is caring"
+        haskellNix.sources.nixpkgs-2009);
   # for inclusion in pkgs:
   overlays =
     # Haskell.nix (https://github.com/input-output-hk/haskell.nix)
