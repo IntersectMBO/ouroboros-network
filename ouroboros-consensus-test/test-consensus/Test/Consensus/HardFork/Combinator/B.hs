@@ -50,6 +50,7 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 import           Ouroboros.Network.Magic
 
+import           Cardano.Binary (FromCBOR (fromCBOR), ToCBOR (toCBOR))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -87,7 +88,14 @@ data instance ConsensusConfig ProtocolB = CfgB {
       cfgB_k           :: SecurityParam
     , cfgB_leadInSlots :: Set SlotNo
     }
+  deriving stock Generic
   deriving NoThunks via OnlyCheckWhnfNamed "CfgB" (ConsensusConfig ProtocolB)
+
+instance ToCBOR (ConsensusConfig ProtocolB) where
+  toCBOR (CfgB k leadInSlots) = toCBOR k <> toCBOR leadInSlots
+
+instance FromCBOR (ConsensusConfig ProtocolB) where
+  fromCBOR = CfgB <$> fromCBOR <*> fromCBOR
 
 instance ConsensusProtocol ProtocolB where
   type ChainDepState ProtocolB = ()

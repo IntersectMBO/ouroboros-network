@@ -1,12 +1,17 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE DeriveAnyClass   #-}
+{-# LANGUAGE DeriveGeneric    #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE TypeApplications #-}
 
-module Ouroboros.Consensus.HardFork.Simple (TriggerHardFork (..)) where
+module Ouroboros.Consensus.HardFork.Simple
+  ( TriggerHardFork (..)
+  ) where
 
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
+import           Cardano.Binary
 import           Cardano.Slotting.Slot (EpochNo)
 
 -- | The trigger condition that will cause the hard fork transition.
@@ -20,3 +25,17 @@ data TriggerHardFork =
     -- | Never trigger a hard fork
   | TriggerHardForkNever
   deriving (Show, Generic, NoThunks)
+
+instance ToCBOR TriggerHardFork where
+  toCBOR triggerHardFork = case triggerHardFork of
+    TriggerHardForkAtVersion v -> encodeTag 0 <> toCBOR v
+    TriggerHardForkAtEpoch e   -> encodeTag 1 <> toCBOR e
+    TriggerHardForkNever       -> encodeTag 2
+
+instance FromCBOR TriggerHardFork where
+  fromCBOR = do
+    decodeTag >>= \case
+      0   -> TriggerHardForkAtVersion <$> fromCBOR @Word16
+      1   -> TriggerHardForkAtEpoch <$> fromCBOR @EpochNo
+      2   -> return TriggerHardForkNever
+      tag -> fail $ "TriggerHardFork: unknown tag " ++ show tag
