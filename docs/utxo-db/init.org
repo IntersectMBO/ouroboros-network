@@ -1,0 +1,98 @@
+#+TITLE: Plan Of Attack
+
+
+* Mission
+The project is to create and then integrate the infrastructure in the node (ledger and consensus) to allow large parts of the ledger state to be kept on disk rather than in memory.
+
+
+
+* Purpose
+This document is intended to capture business + technical requirements, to
+present a small set of candidate solutions, and to evaluate and justify a
+preferred solution among those candidates.
+
+That solution should be justified in complexity by the captured requirements.
+
+We are primarily interested in:
+ - For a given memory footprint and IO-ops/s, what throughput can the solution support
+
+* What
+the large parts of the ledger state are
+ - The UTxO database
+ - Stake address mappings
+ - Aggregates of stack distribution, UTxO aggregated against stake address/stake pool
+   + Note that it remains to be decided whether this is to be included
+
+
+There are two interesting modes of operations:
+ - The node is catching up on the chain. Transactions are applied to the ledger state sequentially, until we are caught up
+ - The node is alert and up to date. Transactions are applied to the ledger state as required by the ledger rules and the consensus algorithm
+
+
+* Integration
+The existing UTxO database is modelled in the cardano node as a Data.Map
+ - cardano-ledger-specs/shelley/chain-and-ledger/executable-spec/src/Shelley/Spec/Ledger/UTxO.hs
+ - TODO: we need this per-ledger-rules so, also for
+   + byron
+   + shelley-ma
+   + alonzo
+
+This presents a challenge because the new on disk database will have to be
+accessed through IO eventually, and so the ledger rules will no longer be able
+to deal with a concrete Data.Map. Likely some monadic interface will have to be
+provided, and the interfaces to + implementations of the ledger rules adjusted
+accordingly.
+
+We don't necessarily need an exact interface, but we should have a reasonable idea design space and the consequences of various options.
+
+For the purposes of discussion, let's collect the interface to the UTxO db as:
+#+begin_src haskell
+data UTxODB era m = UTxODB
+  { lookup :: TxIn (Crypto era) -> m (Maybe (TxOut era))
+  -- etc
+  }
+
+#+end_src
+
+* Cost
+
+We need a model of the cost of maintaining the ledger state.
+
+Variables:
+ - Transaction Rate
+ - UTxO/transaction
+ - Bytes/UTxO
+
+Where operations are:
+ - Apply Transaction
+   + Delete TxIns
+   + Add TxOuts
+   + Modify Stack Address
+   + (maybe) Adjust stake aggregation
+
+ - Point Query
+   + Is this a UTxO, and what's it's value?
+   + What is the stake address for this UTxO?
+   + What is the current stake distribution?
+ - Range Query
+   +
+ - Rollback
+
+And the dependent variables are:
+ - Memory consumed
+ - IO-ops for each operation
+ - Time to process an UTxO
+
+* Candidate solutions
+We must estimate the costs of each of the solutions. From this information we can determine
+- The urgency of the project. We must have a replacement in place before the costs of the status quo become untenable
+- The tradeoffs inherent in the choice of datastore. What do we get for a more complex solution?
+
+** Do nothing.
+** Use an external key/value store. e.g. RocksDB
+** B+ tree on disk
+** LSM tree on disk
+
+
+* Notes
+When rolling forward, we know that there are no rollbacks. Only once we are alert are rollbacks possible.
