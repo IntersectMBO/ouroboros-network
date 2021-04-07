@@ -1,4 +1,8 @@
 \documentclass{report}
+\usepackage[dvipsnames,x11names]{xcolor}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[british]{babel}
 \usepackage{etoolbox}
 \newbool{isRelease}
 \IfFileExists{.isRelease}{\booltrue{isRelease}}{\boolfalse{isRelease}}
@@ -12,6 +16,10 @@
 \ifbool{isRelease}
     {\usepackage[disable]{todonotes}}
     {\usepackage{todonotes}}
+
+\usepackage{amsmath}
+\usepackage{stmaryrd}
+\usepackage{colonequals}
 
 \usepackage{tikz}
 \usetikzlibrary{automata, positioning, arrows}
@@ -28,18 +36,9 @@
 
 
 \usepackage{microtype}
-\usepackage{graphicx,color}
+\usepackage{graphicx}
 
-\usepackage{hyperref}
-\hypersetup{
-  colorlinks=true,
-  linkcolor={blue},
-  citecolor={blue},
-  urlcolor={blue},
-  linkbordercolor={},
-  citebordercolor={},
-  urlbordercolor={}
-}
+\usepackage[colorlinks,citecolor=blue,linkcolor=blue,anchorcolor=blue,urlcolor=blue]{hyperref}
 \usepackage[capitalise,noabbrev,nameinlink]{cleveref}
 
 \usetikzlibrary{arrows}
@@ -91,6 +90,33 @@
 \DeclareMathOperator*{\minimum}{min}
 \DeclareMathOperator*{\maximum}{max}
 
+% ---- Connection Manager things
+\lstset{
+  xleftmargin=2pt,
+  stepnumber=1,
+  belowcaptionskip=\bigskipamount,
+  captionpos=b,
+  escapeinside={*'}{'*},
+  language=haskell,
+  tabsize=2,
+  emphstyle={\bf},
+  commentstyle=\it,
+  stringstyle=\mdseries\rmfamily,
+  showspaces=false,
+  keywordstyle=\bfseries\rmfamily,
+  columns=flexible,
+  basicstyle=\small\sffamily,
+  showstringspaces=false,
+  morecomment=[l]\%,
+}
+
+\definecolor{shadecolor}{rgb}{.6,0.6,0.8}
+\usetikzlibrary{arrows,calc,matrix,shapes}
+\tikzset{every scope/.style={>=triangle 60,thick}}
+\exhyphenpenalty 10000
+
+% -------
+
 \raggedbottom
 
 \begin{document}
@@ -126,9 +152,12 @@
 \include{architecture}
 \include{miniprotocols}
 \include{mux}
+\include{connection-manager}
 % \include{rest}
+
 \appendix
 \include{cddl}
+
 \bibliographystyle{apalike}
 \bibliography{references}
 
