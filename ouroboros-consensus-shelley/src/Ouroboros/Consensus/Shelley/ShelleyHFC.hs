@@ -230,6 +230,7 @@ instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
               -- staticaly. It is always just `dummyEpochInfo` when inside
               -- a ShelleyPartialLedgerConfi
               (toPureEpochInfo dummyEpochInfo)
+              -- dummyEpochInfo
               <$> fromCBOR @Word64
               <*> fromCBOR @Word64
               <*> fromCBOR @Word64
