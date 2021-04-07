@@ -34,7 +34,7 @@ data family BlockQuery blk :: Type -> Type
 class (ShowQuery (BlockQuery blk), SameDepIndex (BlockQuery blk)) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  answerQuery :: ExtLedgerCfg blk -> BlockQuery blk result -> ExtLedgerState blk -> result
+  answerBlockQuery :: ExtLedgerCfg blk -> BlockQuery blk result -> ExtLedgerState blk -> result
 
 instance SameDepIndex (BlockQuery blk) => Eq (SomeSecond BlockQuery blk) where
   SomeSecond qry == SomeSecond qry' = isJust (sameDepIndex qry qry')

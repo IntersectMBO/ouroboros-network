@@ -165,7 +165,7 @@ data instance BlockQuery (ShelleyBlock era) :: Type -> Type where
 instance Typeable era => ShowProxy (BlockQuery (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
-  answerQuery cfg query ext =
+  answerBlockQuery cfg query ext =
       case query of
         GetLedgerTip ->
           shelleyLedgerTipPoint lst
@@ -188,7 +188,7 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
           getEpochState st
         GetCBOR query' ->
           mkSerialised (encodeShelleyResult query') $
-            answerQuery cfg query' ext
+            answerBlockQuery cfg query' ext
         GetFilteredDelegationsAndRewardAccounts creds ->
           getFilteredDelegationsAndRewardAccounts st creds
         GetGenesisConfig ->
