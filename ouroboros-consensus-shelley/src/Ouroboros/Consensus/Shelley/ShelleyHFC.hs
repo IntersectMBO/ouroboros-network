@@ -236,6 +236,7 @@ instance (Era era, FromCBOR (TranslationContext era)) => FromCBOR (ShelleyPartia
               -- staticaly. It is always just `dummyEpochInfo` when inside
               -- a ShelleyPartialLedgerConfi
               (toPureEpochInfo dummyEpochInfo)
+              -- dummyEpochInfo
               <$> fromCBOR @Word64
               <*> fromCBOR @Word64
               <*> fromCBOR @Word64
