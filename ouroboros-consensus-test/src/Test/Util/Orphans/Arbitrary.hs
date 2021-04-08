@@ -33,6 +33,7 @@ import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.History (Bound (..))
 import           Ouroboros.Consensus.HeaderValidation (TipInfo)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
@@ -52,6 +53,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
+import           Test.Util.Serialisation.Roundtrip
 import           Test.Util.Time
 
 minNumCoreNodes :: Word64
@@ -376,3 +378,25 @@ instance (All SingleEraBlock (x ': xs), IsNonEmpty xs)
       dictLedgerEraInfo ::
            Dict (All (Arbitrary `Compose` LedgerEraInfo)) (x ': xs)
       dictLedgerEraInfo = all_NP $ hcpure proxySingle Dict
+
+{-------------------------------------------------------------------------------
+  Query
+-------------------------------------------------------------------------------}
+
+instance Arbitrary (SomeSecond BlockQuery blk)
+      => Arbitrary (SomeSecond Query blk) where
+  arbitrary = do
+    SomeSecond someBlockQuery <- arbitrary
+    return (SomeSecond (BlockQuery someBlockQuery))
+
+instance Arbitrary (WithVersion version (SomeSecond BlockQuery blk))
+      => Arbitrary (WithVersion version (SomeSecond Query blk)) where
+  arbitrary = do
+    WithVersion v (SomeSecond someBlockQuery) <- arbitrary
+    return (WithVersion v (SomeSecond (BlockQuery someBlockQuery)))
+
+-- | This is @OVERLAPPABLE@ because we have to override the default behaviour
+-- for e.g. 'Query's.
+instance {-# OVERLAPPABLE #-} (Arbitrary version, Arbitrary a)
+      => Arbitrary (WithVersion version a) where
+  arbitrary = WithVersion <$> arbitrary <*> arbitrary

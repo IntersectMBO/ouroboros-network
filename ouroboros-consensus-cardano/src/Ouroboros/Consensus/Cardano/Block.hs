@@ -37,10 +37,10 @@ module Ouroboros.Consensus.Cardano.Block (
   , CardanoTipInfo
   , OneEraTipInfo (TipInfoByron, TipInfoShelley, TipInfoAllegra, TipInfoMary)
     -- * Query
+  , BlockQuery (QueryIfCurrentByron, QueryIfCurrentShelley, QueryIfCurrentAllegra, QueryIfCurrentMary, QueryAnytimeByron, QueryAnytimeShelley, QueryAnytimeAllegra, QueryAnytimeMary, QueryHardFork)
   , CardanoQuery
   , CardanoQueryResult
   , Either (QueryResultSuccess, QueryResultEraMismatch)
-  , BlockQuery (QueryIfCurrentByron, QueryIfCurrentShelley, QueryIfCurrentAllegra, QueryIfCurrentMary, QueryAnytimeByron, QueryAnytimeShelley, QueryAnytimeAllegra, QueryAnytimeMary, QueryHardFork)
     -- * CodecConfig
   , CardanoCodecConfig
   , CodecConfig (CardanoCodecConfig)

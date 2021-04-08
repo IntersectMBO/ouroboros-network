@@ -105,9 +105,9 @@ instance Arbitrary (BlockNodeToNodeVersion blk)
 
 arbitraryNodeToNode
   :: ( Arbitrary (WithVersion ByronNodeToNodeVersion byron)
-     , Arbitrary shelley
-     , Arbitrary allegra
-     , Arbitrary mary
+     , Arbitrary (WithVersion ShelleyNodeToNodeVersion shelley)
+     , Arbitrary (WithVersion ShelleyNodeToNodeVersion allegra)
+     , Arbitrary (WithVersion ShelleyNodeToNodeVersion mary)
      )
   => (byron   -> cardano)
   -> (shelley -> cardano)

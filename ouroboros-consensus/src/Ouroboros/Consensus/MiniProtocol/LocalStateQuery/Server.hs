@@ -21,18 +21,18 @@ localStateQueryServer ::
      -- ^ Get a past ledger
   -> STM m (Point blk)
      -- ^ Get the immutable point
-  -> LocalStateQueryServer blk (Point blk) (BlockQuery blk) m ()
+  -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
 localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
     LocalStateQueryServer $ return idle
   where
-    idle :: ServerStIdle blk (Point blk) (BlockQuery blk) m ()
+    idle :: ServerStIdle blk (Point blk) (Query blk) m ()
     idle = ServerStIdle {
           recvMsgAcquire = handleAcquire
         , recvMsgDone    = return ()
         }
 
     handleAcquire :: Maybe (Point blk)
-                  -> m (ServerStAcquiring blk (Point blk) (BlockQuery blk) m ())
+                  -> m (ServerStAcquiring blk (Point blk) (Query blk) m ())
     handleAcquire mpt = do
         (pt, mPastLedger, immutablePoint) <- atomically $ do
           pt <- maybe getTipPoint pure mpt
@@ -48,7 +48,7 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
             -> SendMsgFailure AcquireFailurePointNotOnChain idle
 
     acquired :: ExtLedgerState blk
-             -> ServerStAcquired blk (Point blk) (BlockQuery blk) m ()
+             -> ServerStAcquired blk (Point blk) (Query blk) m ()
     acquired ledgerState = ServerStAcquired {
           recvMsgQuery     = handleQuery ledgerState
         , recvMsgReAcquire = handleAcquire
@@ -57,9 +57,9 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
 
     handleQuery ::
          ExtLedgerState blk
-      -> BlockQuery blk result
-      -> m (ServerStQuerying blk (Point blk) (BlockQuery blk) m () result)
+      -> Query blk result
+      -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
     handleQuery ledgerState query = return $
         SendMsgResult
-          (answerBlockQuery cfg query ledgerState)
+          (answerQuery cfg query ledgerState)
           (acquired ledgerState)

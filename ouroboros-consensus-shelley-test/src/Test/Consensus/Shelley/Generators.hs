@@ -19,6 +19,7 @@ import           Ouroboros.Network.Block (mkSerialised)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.API as SL
@@ -157,19 +158,6 @@ instance PraosCrypto c => Arbitrary (SL.ChainDepState c) where
 {-------------------------------------------------------------------------------
   Versioned generators for serialisation
 -------------------------------------------------------------------------------}
-
--- | We only have single version, so no special casing required.
---
--- This blanket orphan instance will have to be replaced with more specific
--- ones, once we introduce a different Shelley version.
-instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToNodeVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary
-
--- | This is @OVERLAPPABLE@ because we have to override the default behaviour
--- for 'Query's.
-instance {-# OVERLAPPABLE #-} Arbitrary a
-      => Arbitrary (WithVersion ShelleyNodeToClientVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary
 
 -- | Some 'Query's are only supported by 'ShelleyNodeToClientVersion2', so we
 -- make sure to not generate those queries in combination with

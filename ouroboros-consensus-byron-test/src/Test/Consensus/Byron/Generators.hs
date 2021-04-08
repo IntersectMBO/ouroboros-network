@@ -313,14 +313,3 @@ instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeSecond (NestedCtxt H
                    , SomeSecond . NestedCtxt $ CtxtByronBoundary size
                    ]
       return (WithVersion version ctxt)
-
--- | All other types are unaffected by the versioning for
--- 'ByronNodeToNodeVersion'.
-instance {-# OVERLAPPABLE #-} Arbitrary a
-      => Arbitrary (WithVersion ByronNodeToNodeVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary
-
--- | No types are affected by the versioning for
--- 'ByronNodeToClientVersion'.
-instance Arbitrary a => Arbitrary (WithVersion ByronNodeToClientVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary

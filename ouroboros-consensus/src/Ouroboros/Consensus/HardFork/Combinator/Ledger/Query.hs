@@ -113,9 +113,10 @@ data instance BlockQuery (HardForkBlock xs) :: Type -> Type where
     -> BlockQuery (HardForkBlock (x ': xs)) result
 
 instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
-  answerBlockQuery (ExtLedgerCfg cfg)
-              query
-              ext@(ExtLedgerState st@(HardForkLedgerState hardForkState) _) =
+  answerBlockQuery
+    (ExtLedgerCfg cfg)
+    query
+    ext@(ExtLedgerState st@(HardForkLedgerState hardForkState) _) =
       case query of
         QueryIfCurrent queryIfCurrent ->
           interpretQueryIfCurrent

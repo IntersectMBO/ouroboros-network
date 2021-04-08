@@ -43,7 +43,7 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -133,6 +133,7 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      )
@@ -200,9 +201,6 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
 -- and can thus not be generated for any prior versions.
 data WithVersion v a = WithVersion v a
   deriving (Eq, Show, Functor, Foldable, Traversable)
-
-instance Arbitrary a => Arbitrary (WithVersion () a) where
-  arbitrary = WithVersion () <$> arbitrary
 
 -- | Similar to @Arbitrary'@, but with an 'Arbitrary' instasnce for
 -- @('WithVersion' v a)@.
@@ -313,6 +311,7 @@ roundtrip_SerialiseNodeToClient
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
 
@@ -327,6 +326,7 @@ roundtrip_SerialiseNodeToClient ccfg =
     , rt (Proxy @(GenTx blk))                 "GenTx"
     , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
     , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
+    , rt (Proxy @(SomeSecond Query blk))      "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
