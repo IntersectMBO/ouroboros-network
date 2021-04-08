@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..))
 import           Ouroboros.Consensus.HeaderValidation (TipInfo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -376,3 +377,13 @@ instance (All SingleEraBlock (x ': xs), IsNonEmpty xs)
       dictLedgerEraInfo ::
            Dict (All (Arbitrary `Compose` LedgerEraInfo)) (x ': xs)
       dictLedgerEraInfo = all_NP $ hcpure proxySingle Dict
+
+{-------------------------------------------------------------------------------
+  Query
+-------------------------------------------------------------------------------}
+
+instance Arbitrary (SomeSecond BlockQuery blk)
+      => Arbitrary (SomeSecond Query blk) where
+  arbitrary = do
+    SomeSecond someBlockQuery <- arbitrary
+    return (SomeSecond (BlockQuery someBlockQuery))

@@ -31,6 +31,7 @@ import           Test.QuickCheck
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Query (Query (..))
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -405,6 +406,14 @@ instance c ~ MockCryptoCompatByron
       injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra   query)
       injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary      query)
       injHardFork       (Some      query)  = SomeSecond (QueryHardFork         query)
+
+instance Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (SomeSecond BlockQuery blk))
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
+                                (SomeSecond Query blk)) where
+  arbitrary = do
+    WithVersion v (SomeSecond someBlockQuery) <- arbitrary
+    return (WithVersion v (SomeSecond (BlockQuery someBlockQuery)))
 
 instance Arbitrary History.EraEnd where
   arbitrary = oneof

@@ -4,8 +4,8 @@
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-  , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
+  , nodeToClientVersionCodec
   ) where
 
 import           Data.Bits (clearBit, setBit, testBit)
@@ -39,6 +39,9 @@ data NodeToClientVersion
     -- ^ enabled @CardanoNodeToClientVersion6@, adding a query
     | NodeToClientV_8
     -- ^ 'LocalStateQuery' protocol codec change, allows to acquire tip point.
+    | NodeToClientV_9
+    -- ^ 'LocalStateQuery' protocol codec change, queries are now
+    -- wrapped in a top level 'Query blk' Type.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -59,6 +62,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       encodeTerm NodeToClientV_6 = CBOR.TInt (6 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_7 = CBOR.TInt (7 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_8 = CBOR.TInt (8 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_9 = CBOR.TInt (9 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -72,6 +76,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (6, True)  -> Right NodeToClientV_6
         (7, True)  -> Right NodeToClientV_7
         (8, True)  -> Right NodeToClientV_8
+        (9, True)  -> Right NodeToClientV_9
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"

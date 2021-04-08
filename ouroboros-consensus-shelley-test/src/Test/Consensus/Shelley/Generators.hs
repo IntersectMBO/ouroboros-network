@@ -19,6 +19,7 @@ import           Ouroboros.Network.Block (mkSerialised)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.API as SL
@@ -180,3 +181,9 @@ instance CanMock era
       query@(SomeSecond q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q
       return $ WithVersion version query
+
+instance Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock era)))
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond Query (ShelleyBlock era))) where
+  arbitrary = do
+    WithVersion v (SomeSecond someBlockQuery) <- arbitrary
+    return (WithVersion v (SomeSecond (BlockQuery someBlockQuery)))

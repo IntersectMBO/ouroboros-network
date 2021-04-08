@@ -48,6 +48,7 @@ import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Consensus.Ledger.Query (Query (..))
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 
@@ -153,16 +154,16 @@ mkClient
   -> LocalStateQueryClient
        TestBlock
        (Point TestBlock)
-       (BlockQuery TestBlock)
+       (Query TestBlock)
        m
        [(Maybe (Point TestBlock), Either AcquireFailure (Point TestBlock))]
-mkClient points = localStateQueryClient [(pt, QueryLedgerTip) | pt <- points]
+mkClient points = localStateQueryClient [(pt, BlockQuery QueryLedgerTip) | pt <- points]
 
 mkServer
   :: IOLike m
   => SecurityParam
   -> Chain TestBlock
-  -> m (LocalStateQueryServer TestBlock (Point TestBlock) (BlockQuery TestBlock) m ())
+  -> m (LocalStateQueryServer TestBlock (Point TestBlock) (Query TestBlock) m ())
 mkServer k chain = do
     lgrDB <- initLgrDB k chain
     return $
