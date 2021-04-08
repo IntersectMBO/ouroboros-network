@@ -4,8 +4,8 @@
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-  , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
+  , nodeToClientVersionCodec
   ) where
 
 import           Data.Bits (clearBit, setBit, testBit)
@@ -41,6 +41,8 @@ data NodeToClientVersion
     -- ^ 'LocalStateQuery' protocol codec change, allows to acquire tip point.
     | NodeToClientV_9
     -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
+    -- 'LocalStateQuery' protocol codec change, queries are now
+    -- wrapped in a top level 'Query blk' Type.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
