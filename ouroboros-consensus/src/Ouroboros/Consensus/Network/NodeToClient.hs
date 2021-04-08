@@ -196,6 +196,10 @@ defaultCodecs ccfg version networkVersion = Codecs {
           ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
+          -- (queryEncodeNodeToClient ccfg networkVersion version . SomeSecond)
+          -- ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg networkVersion version)
+          -- (queryEncodeResult ccfg networkVersion version)
+          -- (queryDecodeResult ccfg networkVersion version)
     }
   where
     queryVersion :: QueryVersion
@@ -248,6 +252,10 @@ clientCodecs ccfg version networkVersion = Codecs {
           ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
+          -- (queryEncodeNodeToClient ccfg networkVersion version . SomeSecond)
+          -- ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg networkVersion version)
+          -- (queryEncodeResult ccfg networkVersion version)
+          -- (queryDecodeResult ccfg networkVersion version)
     }
   where
     queryVersion :: QueryVersion

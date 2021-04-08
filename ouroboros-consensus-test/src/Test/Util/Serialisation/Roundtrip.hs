@@ -50,7 +50,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..),
-                     QueryVersion)
+                     QueryVersion, queryDecodeNodeToClient, queryEncodeNodeToClient)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
@@ -121,8 +121,8 @@ roundtrip_all
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
 
-     , Show (BlockNodeToNodeVersion   blk)
-     , Show (BlockNodeToClientVersion blk)
+    , Show (BlockNodeToNodeVersion   blk)
+    , Show (BlockNodeToClientVersion blk)
 
      , StandardHash blk
      , GetHeader    blk
@@ -382,6 +382,9 @@ roundtrip_SerialiseNodeToClient ccfg =
                           blockVersion
         )
         "Query"
+    -- , rtWith (Proxy @(SomeSecond Query blk))  "Query"
+    --                                           (queryEncodeNodeToClient ccfg maxBound)
+    --                                           (queryDecodeNodeToClient ccfg maxBound)
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
@@ -434,6 +437,20 @@ roundtrip_SerialiseNodeToClient ccfg =
        -> String
        -> TestTree
     rtWith enc' dec' name =
+    -- rt p name = rtWith p name enc dec
+
+    -- rtWith
+    --   :: forall a.
+    --      ( Arbitrary (WithVersion (BlockNodeToClientVersion blk) a)
+    --      , Eq a
+    --      , Show a
+    --      )
+    --    => Proxy a
+    --    -> String
+    --    -> (BlockNodeToClientVersion blk -> a -> Encoding)
+    --    -> (BlockNodeToClientVersion blk -> forall s. Decoder s a)
+    --    -> TestTree
+    -- rtWith _ name enc' dec' =
       testProperty ("roundtrip " <> name) $
         \(WithVersion version a) ->
           roundtrip @a (enc' version) (dec' version) a
