@@ -49,6 +49,7 @@ import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import           Ouroboros.Consensus.Ledger.Query (Query (..))
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 

@@ -43,7 +43,7 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query, queryDecodeNodeToClient, queryEncodeNodeToClient)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
+
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -111,8 +112,8 @@ roundtrip_all
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
 
-     , Show (BlockNodeToNodeVersion   blk)
-     , Show (BlockNodeToClientVersion blk)
+    , Show (BlockNodeToNodeVersion   blk)
+    , Show (BlockNodeToClientVersion blk)
 
      , StandardHash blk
      , GetHeader    blk
@@ -326,7 +327,9 @@ roundtrip_SerialiseNodeToClient ccfg =
     , rt (Proxy @(GenTx blk))                 "GenTx"
     , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
     , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
-    , rt (Proxy @(SomeSecond Query blk))      "Query"
+    , rtWith (Proxy @(SomeSecond Query blk))  "Query"
+                                              (queryEncodeNodeToClient ccfg maxBound)
+                                              (queryDecodeNodeToClient ccfg maxBound)
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
@@ -365,10 +368,23 @@ roundtrip_SerialiseNodeToClient ccfg =
          , SerialiseNodeToClient blk a
          )
        => Proxy a -> String -> TestTree
-    rt _ name =
+    rt p name = rtWith p name enc dec
+
+    rtWith
+      :: forall a.
+         ( Arbitrary (WithVersion (BlockNodeToClientVersion blk) a)
+         , Eq a
+         , Show a
+         )
+       => Proxy a
+       -> String
+       -> (BlockNodeToClientVersion blk -> a -> Encoding)
+       -> (BlockNodeToClientVersion blk -> forall s. Decoder s a)
+       -> TestTree
+    rtWith _ name enc' dec' =
       testProperty ("roundtrip " <> name) $
         \(WithVersion version a) ->
-          roundtrip @a (enc version) (dec version) a
+          roundtrip @a (enc' version) (dec' version) a
 
 {-------------------------------------------------------------------------------
   Checking envelopes

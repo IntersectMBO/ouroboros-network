@@ -15,6 +15,10 @@ module Ouroboros.Consensus.Ledger.Query (
   , QueryLedger (..)
   , ShowQuery (..)
   , answerQuery
+  , queryEncodeNodeToClient
+  , queryDecodeNodeToClient
+  , queryEncodeResult
+  , queryDecodeResult
   ) where
 
 import           Data.Kind (Type)
@@ -27,10 +31,13 @@ import           Cardano.Binary
 import           Ouroboros.Consensus.Config (topLevelConfigLedger)
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+                     (NodeToClientVersion(..), HasNetworkProtocolVersion (..))
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
+import Ouroboros.Consensus.Block.Abstract (CodecConfig)
 
 {-------------------------------------------------------------------------------
   Queries
@@ -101,6 +108,87 @@ instance ( SerialiseResult blk (BlockQuery blk)
   decodeResult codecConfig blockVersion query = case query of
     BlockQuery blockQuery -> decodeResult codecConfig blockVersion blockQuery
     GetPartialLedgerConfig -> decodeNodeToClient codecConfig blockVersion
+
+queryEncodeNodeToClient ::
+    forall blk. (
+      SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+    )
+  => CodecConfig blk
+  -> NodeToClientVersion
+  -> BlockNodeToClientVersion blk
+  -> (SomeSecond Query blk)
+  -> Encoding
+queryEncodeNodeToClient codecConfig version blockVersion (SomeSecond query)
+  | not (version >= NodeToClientV_9)
+  = error "encode failure: Serializing Query is not supported"
+  | otherwise
+  = case query of
+    BlockQuery blockQuery ->
+      encodeTag 0 <> encodeNodeToClient
+                      @blk
+                      @(SomeSecond BlockQuery blk)
+                      codecConfig
+                      blockVersion
+                      (SomeSecond blockQuery)
+
+queryDecodeNodeToClient ::
+    forall blk. (
+      SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+    )
+  => CodecConfig blk
+  -> NodeToClientVersion
+  -> BlockNodeToClientVersion blk
+  -> forall s. Decoder s (SomeSecond Query blk)
+queryDecodeNodeToClient codecConfig version blockVersion
+  | not (version >= NodeToClientV_9)
+  = fail $ "decode failure: Deserializing Query is not supported (on node to client version: " ++ show version ++ ")"
+  | otherwise
+  = do
+    tag <- decodeTag
+    case tag of
+      0 -> do
+        SomeSecond x <- decodeNodeToClient
+            @blk
+            @(SomeSecond BlockQuery blk)
+            codecConfig
+            blockVersion
+        return (SomeSecond (BlockQuery x))
+      _ -> fail $ "SomeSecond Query blk: unknown tag " ++ show tag
+
+queryEncodeResult ::
+     forall blk result. SerialiseResult blk (BlockQuery blk)
+  => CodecConfig blk
+  -> NodeToClientVersion
+  -> BlockNodeToClientVersion blk
+  -> Query blk result
+  -> result
+  -> Encoding
+queryEncodeResult codecConfig version blockNodeToClientVersion query result
+  | not (version >= NodeToClientV_9)
+  = error $ "encode failure: Serializing Query result is not supported (on node to client version: " ++ show version ++ ")"
+  | otherwise
+  = case query of
+      BlockQuery blockQuery ->
+        encodeTag 0
+        <> encodeResult codecConfig blockNodeToClientVersion blockQuery result
+
+queryDecodeResult ::
+     forall blk result. SerialiseResult blk (BlockQuery blk)
+  => CodecConfig blk
+  -> NodeToClientVersion
+  -> BlockNodeToClientVersion blk
+  -> Query blk result
+  -> forall s. Decoder s result
+queryDecodeResult codecConfig version blockNodeToClientVersion query
+  | not (version >= NodeToClientV_9)
+  = error $ "encode failure: Deserializing Query result is not supported (on node to client version: " ++ show version ++ ")"
+  | otherwise
+  = do
+    tag <- decodeTag
+    case query of
+      BlockQuery blockQuery
+        | tag /= 0 -> fail $ "Query blk: Expected tag 0 but got " ++ show tag
+        | otherwise -> decodeResult codecConfig blockNodeToClientVersion blockQuery
 
 instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
   sameDepIndex (BlockQuery blockQueryA) (BlockQuery blockQueryB)
