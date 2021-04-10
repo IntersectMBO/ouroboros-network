@@ -24,6 +24,7 @@ import           Test.Ouroboros.Network.PeerSelection.Instances
 
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
