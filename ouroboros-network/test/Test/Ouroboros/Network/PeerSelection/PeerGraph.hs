@@ -205,8 +205,11 @@ instance Arbitrary GovernorScripts where
       | gossipScript' <- shrink gossipScript
       ]
       ++
-      [ GovernorScripts gossipScript (fixConnectionScript connectionScript')
-      | connectionScript' <- shrink connectionScript
+      [ GovernorScripts gossipScript connectionScript'
+      | connectionScript' <- map fixConnectionScript (shrink connectionScript)
+        -- fixConnectionScript can result in re-creating the same script
+        -- which would cause shrinking to loop. Filter out such cases.
+      , connectionScript' /= connectionScript
       ]
 
 -- | We ensure that eventually the connection script will allow to connect to
