@@ -37,6 +37,7 @@ import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.Script
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 
 
 --
