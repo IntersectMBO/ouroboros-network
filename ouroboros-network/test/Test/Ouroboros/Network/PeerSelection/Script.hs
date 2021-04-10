@@ -35,6 +35,7 @@ import           Control.Monad.Class.MonadTimer
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 
 
 --
@@ -43,7 +44,6 @@ import           Test.QuickCheck
 
 newtype Script a = Script (NonEmpty a)
   deriving (Eq, Show, Functor, Foldable, Traversable)
-  deriving Arbitrary via NonEmpty a
 
 singletonScript :: a -> Script a
 singletonScript x = (Script (x :| []))
@@ -69,6 +69,20 @@ stepScriptSTM scriptVar = do
       []     -> return ()
       x':xs' -> writeTVar scriptVar (Script (x' :| xs'))
     return x
+
+instance Arbitrary a => Arbitrary (Script a) where
+    arbitrary = (Script . NonEmpty.fromList) <$> listOf1 arbitrary
+
+    shrink (Script (x :| [])) = [ Script (x' :| []) | x' <- shrink x ]
+    shrink (Script (x :| xs)) =
+        Script (x :| [])                          -- drop whole tail
+      : Script (x :| take (length xs `div` 2) xs) -- drop half the tail
+      : Script (x :| init xs)                     -- drop only last
+
+        -- drop none, shrink only elements
+      : [ Script (x' :| xs) | x'  <- shrink x ]
+     ++ [ Script (x :| xs') | xs' <- shrinkListElems shrink xs ]
+
 
 --
 -- Timed scripts
