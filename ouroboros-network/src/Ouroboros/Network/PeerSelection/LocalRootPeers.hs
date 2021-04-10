@@ -14,6 +14,7 @@ module Ouroboros.Network.PeerSelection.LocalRootPeers (
     target,
     fromGroups,
     toGroups,
+    toGroupSets,
     toMap,
     keysSet,
 
@@ -44,8 +45,13 @@ data LocalRootPeers peeraddr =
 
        -- The groups, but without the associated PeerAdvertise
        [(Int, Set peeraddr)]
-  deriving (Eq, Show)
+  deriving Eq
 
+-- It is an abstract type, so the derived Show is unhelpful, e.g. for replaying
+-- test cases.
+--
+instance (Show peeraddr, Ord peeraddr) => Show (LocalRootPeers peeraddr) where
+  show lrps = "fromGroups " ++ show (toGroups lrps)
 
 invariant :: Ord peeraddr => LocalRootPeers peeraddr -> Bool
 invariant (LocalRootPeers m gs) =
@@ -79,8 +85,8 @@ toMap (LocalRootPeers m _) = m
 keysSet :: LocalRootPeers peeraddr -> Set peeraddr
 keysSet (LocalRootPeers m _) = Map.keysSet m
 
-toGroups :: LocalRootPeers peeraddr -> [(Int, Set peeraddr)]
-toGroups (LocalRootPeers _ gs) = gs
+toGroupSets :: LocalRootPeers peeraddr -> [(Int, Set peeraddr)]
+toGroupSets (LocalRootPeers _ gs) = gs
 
 
 -- | The local root peers info has some invariants that are not directly
@@ -110,6 +116,16 @@ fromGroups =
         !g'   = g `Map.withoutKeys` acc
         !t'   = min (max 0 t) (Map.size g')
         !acc' = acc <> Map.keysSet g
+
+-- | Inverse of 'fromGroups', for the subset of inputs to 'fromGroups' that
+-- satisfy the invariant.
+--
+toGroups :: Ord peeraddr
+         => LocalRootPeers peeraddr
+         -> [(Int, Map peeraddr PeerAdvertise)]
+toGroups (LocalRootPeers m gs) =
+    [ (t, Map.fromSet (m Map.!) g)
+    | (t, g) <- gs ]
 
 
 -- | Limit the size of the root peers collection to fit within given bounds.
