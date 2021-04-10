@@ -5,7 +5,6 @@
 
 module Test.Ouroboros.Network.PeerSelection.LocalRootPeers (
   arbitraryLocalRootPeers,
-  toGroups',
   restrictKeys,
   tests,
   ) where
@@ -84,15 +83,7 @@ instance Arbitrary (LocalRootPeers PeerAddr) where
         arbitraryLocalRootPeers peeraddrs
 
     shrink lrps =
-        map LocalRootPeers.fromGroups (shrink (toGroups' lrps))
-
-toGroups' :: Ord peeraddr
-          => LocalRootPeers peeraddr
-          -> [(Int, Map peeraddr PeerAdvertise)]
-toGroups' lrps =
-    [ (t, Map.fromSet (m Map.!) g)
-    | let m = LocalRootPeers.toMap lrps
-    , (t, g) <- LocalRootPeers.toGroups lrps ]
+        map LocalRootPeers.fromGroups (shrink (LocalRootPeers.toGroups lrps))
 
 restrictKeys :: Ord peeraddr
              => LocalRootPeers peeraddr
@@ -101,7 +92,7 @@ restrictKeys :: Ord peeraddr
 restrictKeys lrps ks =
     LocalRootPeers.fromGroups
   . map (\(t,g) -> (t, Map.restrictKeys g ks))
-  . toGroups'
+  . LocalRootPeers.toGroups
   $ lrps
 
 prop_arbitrary_LocalRootPeers :: LocalRootPeers PeerAddr -> Property
@@ -115,12 +106,12 @@ prop_arbitrary_LocalRootPeers lrps =
   where
     size       = renderRanges 5 (LocalRootPeers.size lrps)
     numGroups  = show (length (LocalRootPeers.toGroups lrps))
-    sizeGroups = map (show . Set.size . snd) (LocalRootPeers.toGroups lrps)
+    sizeGroups = map (show . Set.size . snd) (LocalRootPeers.toGroupSets lrps)
     targets    = [ case () of
                     _ | t == 0          -> "none"
                       | t == Set.size g -> "all"
                       | otherwise       -> "some"
-                 | (t, g) <- LocalRootPeers.toGroups lrps ]
+                 | (t, g) <- LocalRootPeers.toGroupSets lrps ]
 
 
 prop_shrink_LocalRootPeers :: LocalRootPeers PeerAddr -> Bool
@@ -132,5 +123,5 @@ prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
 
 prop_fromToGroups :: LocalRootPeers PeerAddr -> Bool
 prop_fromToGroups lrps =
-    LocalRootPeers.fromGroups (toGroups' lrps) == lrps
+    LocalRootPeers.fromGroups (LocalRootPeers.toGroups lrps) == lrps
 
