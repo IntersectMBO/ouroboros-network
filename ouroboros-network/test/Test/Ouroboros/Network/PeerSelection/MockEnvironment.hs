@@ -222,7 +222,7 @@ mockPeerSelectionActions' tracer
                           targetsVar
                           connsVar =
     PeerSelectionActions {
-      readLocalRootPeers       = return (LocalRootPeers.toGroups' localRootPeers),
+      readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
       readPeerSelectionTargets = readTVar targetsVar,
       requestPeerGossip,
