@@ -13,8 +13,6 @@ module Test.Ouroboros.Network.PeerSelection.Instances (
 
   ) where
 
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
 
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.Types
@@ -39,17 +37,6 @@ instance Arbitrary PeerAddr where
   arbitrary = PeerAddr . getNonNegative <$> arbitrary
   shrink _  = []
 
-
-instance Arbitrary a => Arbitrary (NonEmpty a) where
-  arbitrary = NonEmpty.fromList <$> listOf1 arbitrary
-
-  shrink = shrinkMap from to
-    where
-      to :: NonEmpty a -> NonEmptyList a
-      to xs = NonEmpty (NonEmpty.toList xs)
-
-      from :: NonEmptyList a -> NonEmpty a
-      from (NonEmpty xs) = NonEmpty.fromList xs
 
 
 instance Arbitrary PeerAdvertise where
