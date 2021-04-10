@@ -7,9 +7,6 @@ module Test.Ouroboros.Network.PeerSelection.Instances (
     -- test types
     PeerAddr(..),
 
-    -- test utils
-    renderRanges,
-
     -- generator tests
     prop_arbitrary_PeerSelectionTargets,
     prop_shrink_PeerSelectionTargets,
@@ -89,15 +86,4 @@ prop_arbitrary_PeerSelectionTargets =
 prop_shrink_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_shrink_PeerSelectionTargets =
     all sanePeerSelectionTargets . shrink
-
-
---
--- QuickCheck utils
---
-
-renderRanges :: Int -> Int -> String
-renderRanges r n = show lower ++ " -- " ++ show upper
-  where
-    lower = n - n `mod` r
-    upper = lower + (r-1)
 
