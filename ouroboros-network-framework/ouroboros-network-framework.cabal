@@ -55,6 +55,8 @@ library
                        Ouroboros.Network.Server.RateLimiting
                        Ouroboros.Network.Server2
                        Ouroboros.Network.Snocket
+                       Ouroboros.Network.IOSim
+                       Ouroboros.Network.IOSim.BufferedChannel
                        Ouroboros.Network.Socket
 
                        Ouroboros.Network.Subscription
