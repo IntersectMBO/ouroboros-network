@@ -236,9 +236,14 @@ data Snocket m fd addr = Snocket {
 
   , close         :: fd -> m ()
 
-  , toBearer      ::  DiffTime -> Tracer m MuxTrace -> fd -> MuxBearer m
+  , toBearer      ::  DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
   }
 
+
+pureBearer :: Monad m
+           => (DiffTime -> Tracer m MuxTrace -> fd ->    MuxBearer m)
+           ->  DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
+pureBearer f = \timeout tr fd -> return (f timeout tr fd)
 
 --
 -- Socket based Snockets
@@ -306,7 +311,7 @@ socketSnocket ioManager = Snocket {
       -- should be fixed upstream, once that's done we can remove
       -- `unitnerruptibleMask_'
     , close    = uninterruptibleMask_ . Socket.close
-    , toBearer = Mx.socketAsMuxBearer
+    , toBearer = pureBearer Mx.socketAsMuxBearer
     }
   where
     openSocket :: AddressFamily SockAddr -> IO Socket
@@ -460,7 +465,7 @@ localSnocket ioManager _ =
       , open          = openSocket
       , openToConnect = \_addr -> openSocket LocalFamily
       , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
-      , toBearer      = \df tr (LocalSocket sd) -> Mx.socketAsMuxBearer df tr sd
+      , toBearer      = \df tr (LocalSocket sd) -> pure (Mx.socketAsMuxBearer df tr sd)
       }
   where
     toLocalAddress :: SockAddr -> LocalAddress
