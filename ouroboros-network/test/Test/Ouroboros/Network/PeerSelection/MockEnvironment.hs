@@ -73,7 +73,9 @@ import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 tests :: TestTree
 tests =
   testGroup "Mock environment"
-    [ testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
+    [ testProperty "shrink for Script"                     prop_shrink_Script
+    , testProperty "shrink for GovernorScripts"            prop_shrink_GovernorScripts
+    , testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
     , testProperty "shrink for PeerSelectionTargets"       prop_shrink_PeerSelectionTargets
     , testProperty "arbitrary for PeerGraph"               prop_arbitrary_PeerGraph
     , localOption (QuickCheckMaxSize 30) $
@@ -107,7 +109,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickWarmPeersToDemote   :: PickScript PeerAddr,
        pickColdPeersToForget   :: PickScript PeerAddr
      }
-  deriving Show
+  deriving (Show, Eq)
 
 data PeerConn m = PeerConn !PeerAddr !(TVar m PeerStatus)
 
@@ -554,7 +556,8 @@ prop_arbitrary_GovernorMockEnvironment env =
           (LocalRootPeers.keysSet (localRootPeers env))
           (publicRootPeers env)
 
-prop_shrink_GovernorMockEnvironment :: GovernorMockEnvironment -> Bool
-prop_shrink_GovernorMockEnvironment =
-    all validGovernorMockEnvironment . shrink
+prop_shrink_GovernorMockEnvironment :: Fixed GovernorMockEnvironment -> Property
+prop_shrink_GovernorMockEnvironment x =
+      prop_shrink_valid validGovernorMockEnvironment x
+ .&&. prop_shrink_nonequal x
 
