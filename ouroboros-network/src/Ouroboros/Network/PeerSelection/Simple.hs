@@ -56,7 +56,14 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets st
             readPeerSelectionTargets = readTargets,
             readLocalRootPeers = do
               localRoots <- readTVar localRootsVar
-              pure (foldr Map.union staticLocalRootPeers localRoots),
+
+              -- TODO: Config support
+              -- For now use 1 target per ipaddress/domain name.
+              let staticLocalRootPeers' = map (\(sa, a) ->
+                    (1, Map.singleton sa a)) $ Map.toList staticLocalRootPeers
+                  localRoots' = map (\e -> (1, e)) $ Map.elems localRoots
+
+              pure $ staticLocalRootPeers' ++ localRoots',
             requestPublicRootPeers = requestLedgerPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions
