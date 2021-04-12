@@ -255,7 +255,8 @@ instance Arbitrary PeerGraph where
 
 arbitraryGossipScript :: [PeerAddr] -> Gen GossipScript
 arbitraryGossipScript peers =
-    arbitraryShortScriptOf gossipResult
+    sized $ \sz ->
+      arbitraryScriptOf (isqrt sz) gossipResult
   where
     gossipResult :: Gen (Maybe ([PeerAddr], GossipTime))
     gossipResult =
@@ -267,6 +268,9 @@ arbitraryGossipScript peers =
     selectHalfRandomly xs = do
         picked <- vectorOf (length xs) arbitrary
         return [ x | (x, True) <- zip xs picked ]
+
+isqrt :: Int -> Int
+isqrt = floor . sqrt . (fromIntegral :: Int -> Double)
 
 -- | Remove dangling graph edges and gossip results.
 --
