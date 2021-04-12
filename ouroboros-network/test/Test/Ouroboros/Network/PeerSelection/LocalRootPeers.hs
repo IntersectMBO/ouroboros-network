@@ -115,9 +115,10 @@ prop_arbitrary_LocalRootPeers lrps =
                  | (t, g) <- LocalRootPeers.toGroupSets lrps ]
 
 
-prop_shrink_LocalRootPeers :: LocalRootPeers PeerAddr -> Bool
-prop_shrink_LocalRootPeers =
-    all LocalRootPeers.invariant . shrink
+prop_shrink_LocalRootPeers :: Fixed (LocalRootPeers PeerAddr) -> Property
+prop_shrink_LocalRootPeers x =
+      prop_shrink_valid LocalRootPeers.invariant x
+ .&&. prop_shrink_nonequal x
 
 prop_fromGroups :: [(Int, Map PeerAddr PeerAdvertise)] -> Bool
 prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
