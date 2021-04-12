@@ -34,7 +34,7 @@ newtype PeerAddr = PeerAddr Int
 -- here for the few cases that need it, and it is used for (lack-of) shrinking.
 --
 instance Arbitrary PeerAddr where
-  arbitrary = PeerAddr . getNonNegative <$> arbitrary
+  arbitrary = PeerAddr <$> arbitrarySizedNatural
   shrink _  = []
 
 
