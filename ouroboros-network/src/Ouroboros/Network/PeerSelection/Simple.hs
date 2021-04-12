@@ -15,7 +15,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Tracer (Tracer)
 
-import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -38,9 +37,9 @@ withPeerSelectionActions
   -> STM IO PeerSelectionTargets
   -> Map Socket.SockAddr PeerAdvertise
   -- ^ static local root peers
-  -> [(DomainAddress, PeerAdvertise)]
+  -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
-  -> [DomainAddress]
+  -> StrictTVar IO [RelayAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
   -> (NumberOfPeers -> STM IO ())
@@ -50,8 +49,8 @@ withPeerSelectionActions
   -- (only if local root peers where non-empty).
   -> IO a
 withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets staticLocalRootPeers
-  localRootPeers publicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
-    localRootsVar <- newTVarIO Map.empty
+  localRootPeersVar publicRootPeersVar peerStateActions reqLedgerPeers getLedgerPeers k = do
+    localRootsVar <- newTVarIO []
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
             readLocalRootPeers = do
@@ -61,24 +60,20 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets st
               -- For now use 1 target per ipaddress/domain name.
               let staticLocalRootPeers' = map (\(sa, a) ->
                     (1, Map.singleton sa a)) $ Map.toList staticLocalRootPeers
-                  localRoots' = map (\e -> (1, e)) $ Map.elems localRoots
 
-              pure $ staticLocalRootPeers' ++ localRoots',
+              pure $ staticLocalRootPeers' ++ localRoots,
             requestPublicRootPeers = requestLedgerPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions
           }
-    case localRootPeers of
-      []       -> k Nothing peerSelectionActions
-      (a : as) ->
-        withAsync
-          (localRootPeersProvider
-            localRootTracer
-            timeout
-            DNS.defaultResolvConf
-            localRootsVar
-            (a :| as))
-          (\thread -> k (Just thread) peerSelectionActions)
+    withAsync
+      (localRootPeersProvider
+        localRootTracer
+        timeout
+        DNS.defaultResolvConf
+        localRootsVar
+        localRootPeersVar)
+      (\thread -> k (Just thread) peerSelectionActions)
   where
     -- We first try to get poublic root peers from the ledger, but if it fails
     -- (for example because the node hasn't synced far enough) we fall back
@@ -96,5 +91,5 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets st
     -- https://github.com/input-output-hk/cardano-node/issues/731
     requestPublicRootPeers :: Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers n =
-      publicRootPeersProvider publicRootTracer timeout DNS.defaultResolvConf publicRootPeers ($ n)
+      publicRootPeersProvider publicRootTracer timeout DNS.defaultResolvConf publicRootPeersVar ($ n)
 
