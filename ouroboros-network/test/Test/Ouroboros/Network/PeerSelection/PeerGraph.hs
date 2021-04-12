@@ -17,6 +17,7 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph (
     GossipTime,
     interpretGossipTime,
 
+    prop_shrink_GovernorScripts,
     prop_arbitrary_PeerGraph,
     prop_shrink_PeerGraph,
 
@@ -313,6 +314,10 @@ instance Arbitrary GossipTime where
 -- Tests for the QC Arbitrary instances
 --
 
+prop_shrink_GovernorScripts :: Fixed GovernorScripts -> Property
+prop_shrink_GovernorScripts =
+    prop_shrink_nonequal
+
 prop_arbitrary_PeerGraph :: PeerGraph -> Property
 prop_arbitrary_PeerGraph pg =
     -- We are interested in the distribution of the graph size (in nodes)
@@ -341,7 +346,8 @@ peerGraphNumStronglyConnectedComponents pg =
   where
     (g,_,_) = peerGraphAsGraph pg
 
-prop_shrink_PeerGraph :: PeerGraph -> Bool
-prop_shrink_PeerGraph =
-    all validPeerGraph . shrink
+prop_shrink_PeerGraph :: Fixed PeerGraph -> Property
+prop_shrink_PeerGraph x =
+      prop_shrink_valid validPeerGraph x
+ .&&. prop_shrink_nonequal x
 

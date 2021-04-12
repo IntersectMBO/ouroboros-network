@@ -18,6 +18,7 @@ import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.Types
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 
 
 --
@@ -70,7 +71,8 @@ prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =
     sanePeerSelectionTargets
 
-prop_shrink_PeerSelectionTargets :: PeerSelectionTargets -> Bool
-prop_shrink_PeerSelectionTargets =
-    all sanePeerSelectionTargets . shrink
+prop_shrink_PeerSelectionTargets :: Fixed PeerSelectionTargets -> Property
+prop_shrink_PeerSelectionTargets x =
+      prop_shrink_valid sanePeerSelectionTargets x
+ .&&. prop_shrink_nonequal x
 
