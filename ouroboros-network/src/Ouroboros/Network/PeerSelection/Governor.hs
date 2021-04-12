@@ -28,6 +28,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     peerChurnGovernor,
 
     -- * Internals exported for testing
+    assertPeerSelectionState,
     sanePeerSelectionTargets,
     establishedPeersStatus,
     PeerSelectionState(..),
