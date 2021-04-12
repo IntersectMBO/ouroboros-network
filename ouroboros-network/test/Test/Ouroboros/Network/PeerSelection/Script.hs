@@ -10,7 +10,7 @@ module Test.Ouroboros.Network.PeerSelection.Script (
     initScript,
     stepScript,
     stepScriptSTM,
-    arbitraryShortScriptOf,
+    arbitraryScriptOf,
 
     -- * Timed scripts
     ScriptDelay(..),
@@ -51,10 +51,11 @@ singletonScript x = (Script (x :| []))
 scriptHead :: Script a -> a
 scriptHead (Script (x :| _)) = x
 
-arbitraryShortScriptOf :: Gen a -> Gen (Script a)
-arbitraryShortScriptOf a =
-    sized $ \sz ->
-      (Script . NonEmpty.fromList) <$> vectorOf (min 5 (sz+1)) a
+arbitraryScriptOf :: Int -> Gen a -> Gen (Script a)
+arbitraryScriptOf maxSz a =
+    sized $ \sz -> do
+      n <- choose (1, max 1 (min maxSz sz))
+      (Script . NonEmpty.fromList) <$> vectorOf n a
 
 initScript :: MonadSTM m => Script a -> m (TVar m (Script a))
 initScript = newTVarIO
@@ -71,7 +72,7 @@ stepScriptSTM scriptVar = do
     return x
 
 instance Arbitrary a => Arbitrary (Script a) where
-    arbitrary = (Script . NonEmpty.fromList) <$> listOf1 arbitrary
+    arbitrary = sized $ \sz -> arbitraryScriptOf sz arbitrary
 
     shrink (Script (x :| [])) = [ Script (x' :| []) | x' <- shrink x ]
     shrink (Script (x :| xs)) =
