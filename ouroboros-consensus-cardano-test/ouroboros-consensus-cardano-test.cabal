@@ -38,6 +38,7 @@ library
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
+                     , cardano-ledger-core
                      , cardano-prelude
                      , cardano-slotting
                      , cborg
@@ -46,6 +47,7 @@ library
                      , mtl
                      , QuickCheck
                      , sop-core
+                     , strict-containers
                      , tasty
                      , tasty-quickcheck
                      , time

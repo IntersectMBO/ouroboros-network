@@ -159,6 +159,7 @@ library
                        serialise         >=0.2 && <0.3,
                        random,
                        stm               >=2.4 && <2.6,
+                       strict-containers,
 
                        cardano-binary,
                        cardano-prelude,
@@ -229,6 +230,7 @@ library ouroboros-protocol-tests
                        pipes,
                        QuickCheck,
                        serialise,
+                       strict-containers,
                        tasty,
                        tasty-quickcheck,
                        text,
@@ -291,6 +293,7 @@ test-suite test
                        serialise,
                        splitmix,
                        stm,
+                       strict-containers,
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
@@ -390,5 +393,3 @@ executable demo-chain-sync
   ghc-options:         -Wall
                        -threaded
                        -rtsopts
-
-

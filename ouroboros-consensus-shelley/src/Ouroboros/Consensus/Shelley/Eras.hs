@@ -34,6 +34,7 @@ import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Control.State.Transition (State)
 
 import           Cardano.Binary (FromCBOR, ToCBOR)
+import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
@@ -65,6 +66,8 @@ type EraCrypto era = Crypto era
 {-------------------------------------------------------------------------------
   Era polymorphism
 -------------------------------------------------------------------------------}
+
+type instance Core.Tx era = SL.Tx era
 
 -- | The ledger already defines 'SL.ShelleyBasedEra' as /the/ top-level
 -- constraint on an era, however, consensus often needs some more functionality
@@ -102,6 +105,7 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (LC.PParams era)
       , FromCBOR (SL.PParamsDelta era)
       , ToCBOR (LC.PParams era)
+      , Core.Witnesses era ~ SL.WitnessSet era
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.
