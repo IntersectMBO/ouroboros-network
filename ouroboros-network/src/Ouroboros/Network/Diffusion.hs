@@ -50,6 +50,7 @@ import           Control.Tracer (Tracer, nullTracer, traceWith)
 import           Data.Foldable (asum)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Set (Set)
 import           Data.Void (Void)
@@ -90,6 +91,7 @@ import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.PeerSelection.RootPeersDNS ( DomainAddress
                                                               , resolveDomainAddresses
+                                                              , RelayAddress (..)
                                                               )
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import           Ouroboros.Network.InboundGovernor.State (InboundGovernorCounters (..))
@@ -665,6 +667,15 @@ runDataDiffusion tracers
         targetNumberOfActivePeers = min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
       }
 
+    daLocalRootPeersVar <- newTVarIO $
+                            ([( 1
+                              , Map.fromList $
+                                  map (\(d,p) -> (RelayDomain d, p))
+                                      daLocalRootPeers)])
+    -- ^ TODO: This is just a simple transformation
+    daPublicRootPeersVar <- newTVarIO $ map RelayDomain daPublicRootPeers
+    daUseLedgerAfterVar <- newTVarIO daUseLedgerAfter
+
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
@@ -757,7 +768,7 @@ runDataDiffusion tracers
             (runLedgerPeers
               ledgerPeersRng
               dtLedgerPeersTracer
-              daUseLedgerAfter
+              daUseLedgerAfterVar
               daLedgerPeersCtx
               (resolveDomainAddresses
                 dtTracePublicRootPeersTracer
@@ -844,8 +855,8 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       [] -- TODO
-                      daLocalRootPeers
-                      daPublicRootPeers
+                      daLocalRootPeersVar
+                      daPublicRootPeersVar
                       peerStateActions
                       (putTMVar ledgerPeersReq)
                       (takeTMVar ledgerPeersRsp)
@@ -955,8 +966,8 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       [] -- TODO
-                      daLocalRootPeers
-                      daPublicRootPeers
+                      daLocalRootPeersVar
+                      daPublicRootPeersVar
                       peerStateActions
                       (putTMVar ledgerPeersReq)
                       (takeTMVar ledgerPeersRsp)
