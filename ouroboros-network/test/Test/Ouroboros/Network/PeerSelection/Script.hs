@@ -11,6 +11,7 @@ module Test.Ouroboros.Network.PeerSelection.Script (
     stepScript,
     stepScriptSTM,
     arbitraryScriptOf,
+    prop_shrink_Script,
 
     -- * Timed scripts
     ScriptDelay(..),
@@ -189,4 +190,12 @@ interpretPickMembers (PickSome as) ps n
   | otherwise    = Set.take n ps'
   where
     ps' = Set.intersection ps as
+
+
+--
+-- Tests for the QC Arbitrary instances
+--
+
+prop_shrink_Script :: Fixed (Script Int) -> Property
+prop_shrink_Script = prop_shrink_nonequal
 
