@@ -38,7 +38,7 @@ withPeerSelectionActions
   -> STM IO PeerSelectionTargets
   -> Map Socket.SockAddr PeerAdvertise
   -- ^ static local root peers
-  -> [(DomainAddress, PeerAdvertise)]
+  -> [(Int, Map DomainAddress PeerAdvertise)]
   -- ^ local root peers
   -> [DomainAddress]
   -- ^ public root peers
@@ -51,7 +51,7 @@ withPeerSelectionActions
   -> IO a
 withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets staticLocalRootPeers
   localRootPeers publicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
-    localRootsVar <- newTVarIO Map.empty
+    localRootsVar <- newTVarIO []
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
             readLocalRootPeers = do
@@ -61,9 +61,8 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets st
               -- For now use 1 target per ipaddress/domain name.
               let staticLocalRootPeers' = map (\(sa, a) ->
                     (1, Map.singleton sa a)) $ Map.toList staticLocalRootPeers
-                  localRoots' = map (\e -> (1, e)) $ Map.elems localRoots
 
-              pure $ staticLocalRootPeers' ++ localRoots',
+              pure $ staticLocalRootPeers' ++ localRoots,
             requestPublicRootPeers = requestLedgerPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions

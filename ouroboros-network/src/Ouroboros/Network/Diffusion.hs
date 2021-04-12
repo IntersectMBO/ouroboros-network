@@ -844,7 +844,7 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
-                      daLocalRootPeers
+                      [(1, Map.fromList daLocalRootPeers)] -- TODO: This is just a simple transformation
                       daPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)
@@ -955,7 +955,7 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
-                      daLocalRootPeers
+                      [(1, Map.fromList daLocalRootPeers)] -- TODO: This is just a simple transformation
                       daPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)
