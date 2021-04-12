@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -59,7 +58,8 @@ prop_clampToLimit localRootPeers targets =
                  (LocalRootPeers.size localRootPeers)
 
 
-arbitraryLocalRootPeers :: Set PeerAddr -> Gen (LocalRootPeers PeerAddr)
+arbitraryLocalRootPeers :: Ord peeraddr
+                        => Set peeraddr -> Gen (LocalRootPeers peeraddr)
 arbitraryLocalRootPeers peeraddrs = do
     -- divide into a few disjoint groups
     ngroups     <- choose (1, 5 :: Int)
@@ -77,10 +77,10 @@ arbitraryLocalRootPeers peeraddrs = do
     return (LocalRootPeers.fromGroups (zip targets groups))
 
 
-instance Arbitrary (LocalRootPeers PeerAddr) where
+instance (Arbitrary peeraddr, Ord peeraddr) =>
+         Arbitrary (LocalRootPeers peeraddr) where
     arbitrary = do
-        peeraddrs <- Set.map (PeerAddr . getNonNegative)
-                 <$> scale (`div` 4) arbitrary
+        peeraddrs <- scale (`div` 4) arbitrary
         arbitraryLocalRootPeers peeraddrs
 
     shrink lrps =
