@@ -46,7 +46,7 @@ import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DomainAddress (..))
+                     (RelayAddress (..), DomainAddress (..))
 
 import           Text.Printf
 
@@ -74,6 +74,8 @@ data TraceLedgerPeers =
       -- returned.
     | DisabledLedgerPeers
       -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedger.
+    | TraceUseLedgerAfter !UseLedgerAfter
+      -- ^ Trace UseLedgerAfter value
     | WaitingOnRequest
     | RequestForPeers !NumberOfPeers
     | ReusingLedgerState !Int !DiffTime
@@ -93,6 +95,9 @@ instance Show TraceLedgerPeers where
     show (FetchingNewLedgerState cnt) =
         printf "Fetching new ledgerstate, %d registered pools"
             cnt
+    show (TraceUseLedgerAfter ula) =
+        printf "UseLedgerAfter state %s"
+            (show ula)
     show WaitingOnRequest = "WaitingOnRequest"
     show (RequestForPeers (NumberOfPeers cnt)) = printf "RequestForPeers %d" cnt
     show (ReusingLedgerState cnt age) =
@@ -101,12 +106,6 @@ instance Show TraceLedgerPeers where
           (show age)
     show FallingBackToBootstrapPeers = "Falling back to bootstrap peers"
     show DisabledLedgerPeers = "LedgerPeers is disabled"
-
--- | A relay can have either an IP address and a port number or
--- a domain with a port number
-data RelayAddress = RelayDomain !DomainAddress
-                  | RelayAddress !IP.IP !Socket.PortNumber
-                  deriving (Show, Eq, Ord)
 
 -- | The relative stake of a stakepool in relation to the total amount staked.
 -- A value in the [0, 1] range.
@@ -204,18 +203,21 @@ runLedgerPeers :: forall m.
                       )
                => StdGen
                -> Tracer m TraceLedgerPeers
-               -> UseLedgerAfter
+               -> StrictTVar m UseLedgerAfter
                -> LedgerPeersConsensusInterface m
                -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
                -> STM m NumberOfPeers
                -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
                -> m Void
-runLedgerPeers inRng tracer useLedgerAfter LedgerPeersConsensusInterface{..} doResolve
+runLedgerPeers inRng tracer useLedgerAfterVar LedgerPeersConsensusInterface{..} doResolve
                getReq putRsp = do
     go inRng (Time 0) Map.empty
   where
     go :: StdGen -> Time -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress) -> m Void
     go rng oldTs peerMap = do
+        useLedgerAfter <- atomically $ readTVar useLedgerAfterVar
+        traceWith tracer (TraceUseLedgerAfter useLedgerAfter)
+
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerAfter
                                   then 30
                                   else 1847 -- Close to but not exactly 30min.
