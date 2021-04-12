@@ -16,10 +16,12 @@ module Test.Ouroboros.Network.PeerSelection (tests) where
 
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
-import           Data.List (groupBy)
+import           Data.List (groupBy, foldl')
 import           Data.Maybe (listToMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Void (Void)
 
 import           Control.Monad.Class.MonadTime
@@ -51,9 +53,14 @@ tests =
   testGroup "Ouroboros.Network.PeerSelection"
   [ Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
   , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
-  , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
-  , testProperty "governor connection status"       prop_governor_connstatus
-  , testProperty "governor no livelock"             prop_governor_nolivelock
+  , testGroup "governor"
+    [ testProperty "has output"         prop_governor_hasoutput
+    , testProperty "no failure"         prop_governor_nofail
+    , testProperty "no livelock"        prop_governor_nolivelock
+    , testProperty "event coverage"     prop_governor_trace_coverage
+    , testProperty "gossip reachable"   prop_governor_gossip_1hr
+    , testProperty "connection status"  prop_governor_connstatus
+    ]
   ]
 
 
@@ -61,88 +68,79 @@ tests =
 -- QuickCheck properties
 --
 
--- Things we might like to test...
+-- We start with basic properties in the style of "never does bad things"
+-- and progress to properties that check that it "eventually does good things".
 --
--- * for even insane environments, there is no insane behaviour
---   trace properties:
---   * progress: all actions should make monotonic progress
---   * no busy work: limit on number of governor iterations before time advances
---   * trace sanity: model of state can be reconstructed from trace events
+-- In the "never does bad things" category we have:
+--
+-- * A basic state space exploration property that checks we don't encounter
+--   internal errors. This includes some limited checking that we get adequate
+--   coverage of the different actions, by looking for coverage of all the
+--   trace events. The coverage checks here are useful to give us confidence
+--   about coverage for some of the other properties.
+--
+-- * A no-livelock property. This checks that the governor does not get stuck
+--   doing too many steps at a single moment in (virtual) time. It's quite easy
+--   to write bugs that don't cause the governor to fail, but cause it to go
+--   into a busy cycle. See also the "no excessive busyness" property for a
+--   more advanced version.
+--
+-- * A state consistency property that the governor's view of part of the state
+--   and the "true" state of the mock environment are maintained in an
+--   appropriate correspondence.
+--
+-- In the "eventually does good things" category we have:
+--
+-- * A basic property to check the governor does produce non-trivial traces.
+--
+-- * A cold peer gossip "reachable" property: that the governor either hits
+--   its target for the number of cold peers, or finds all the reachable peers.
+--
+-- Properties that we would like to have:
+--
+-- * A "no excessive busyness" property. This checks that the governor does not
+--   remain too busy for too long. It's quite easy to write bugs that don't
+--   cause the governor to fail, but cause it to go into fairly-busy cycles.
+--
+-- * A public root peers target property: that the governor hits its target for
+--   for the number of public root peers (or as near as possible), and does
+--   note "grossly" overshoot. Since the public roots is a one sided target, but
+--   we don't want to overshoot excessively.
+--
+-- * A warm peer target property: that the governor hits its established peers
+--   target (or as near as possible).
+--
+-- * A hot peer target property: that the governor hits its active peers
+--   target (or as near as possible).
+--
+-- * A local root peers target property: that the governor hits it target for
+--   getting all its local root peers into the established state, and a target
+--   number of them into the active state (or as near as possible).
+--
+-- Other properties we might like to think about
 --
 -- * for vaguely stable envs, we do stablise at our target number of cold peers
--- * we stabilise without going insane even if the available nodes are fewer than the target
 -- * time to stabilise after a change is not crazy
 -- * time to find new nodes after a graph change is ok
 -- * targets or root peer set dynamic
--- * check local root peers are what we expect
--- * check governor view of connection status does not lag reality too much
 
 
--- | Run the governor for up to 24 hours (simulated obviously) and see if it
--- throws any exceptions (assertions such as invariant violations) or if it
--- encounters a livelock situation.
+-- | As the most basic property we run the governor and check that it produces
+-- any trace output at all. It should elicit some activity, unless the test
+-- environment is actually empty.
 --
--- | It is easy to get bugs where the governor is stuck in a busy loop working
--- but not making progress. This kind of bug would result in the governor
--- thread consuming all the cpu, but wouldn't actually stop the node, so might
--- not be easily noticed.
---
--- We check for this condition by requiring that trace events a certain number
--- of events apart are sufficiently far apart in time too. This will be
--- violated if the governor starts making very slow forward progress.
---
--- This uses static targets and root peers.
---
--- TODO: Reenable this testcase.
-prop_governor_nolivelock :: GovernorMockEnvironment -> Property
-prop_governor_nolivelock env =
-    within 10_000_000 $
-    let trace = takeFirstNHours 24 .
-                selectGovernorEvents .
-                selectPeerSelectionTraceEvents $
+prop_governor_hasoutput :: GovernorMockEnvironment -> Bool
+prop_governor_hasoutput env =
+    let trace = selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
 
-     in
-{-
-       -- uncomment to check expected distribution
-       tabulate  "env size"   [renderRanges 10 envSize] $
-       tabulate  "max events" [renderRanges 10 (maxEvents 5 trace)] $
-       tabulate  "events/graph ratio"
-                 [show (maxEvents 5 trace `div` envSize)] $
--}
-       hasOutput trace
+     in hasOutput env (selectGovernorEvents trace)
 
-       -- Check we don't get too many events within a given time span.
-       -- How many events is too many? It scales with the graph size.
-       -- The ratio between them is from experimental evidence.
-  .&&. let maxevents = (2+envSize) * 8 -- ratio from experiments
-           timespan  = 5               -- seconds
-           actual    = maxEvents (floor timespan) trace
-        in counterexample ("Too many events in a span of time!\n"
-                        ++ "  time span:  " ++ show timespan ++ " seconds\n"
-                        ++ "  env size:   " ++ show envSize ++ "\n"
-                        ++ "  num events: " ++ show actual) $
-
-           property (makesAdequateProgress maxevents timespan
-                                           (map fst trace))
-  where
-    hasOutput :: [(Time, TracePeerSelection PeerAddr)] -> Property
-    hasOutput (_:_) = property True
-    hasOutput []    = counterexample "no trace output" $
-                      property (isEmptyEnv env)
-
-    envSize         = length g + length (targets env)
-                        where PeerGraph g = peerGraph env
-    maxEvents n     = maximum
-                    . (0:)
-                    . map length
-                    . timeSpans n
-
-    timeSpans :: Int -> [(Time, a)] -> [[(Time, a)]]
-    timeSpans _ []           = []
-    timeSpans n (x@(t,_):xs) =
-      let (xs', xs'') = span (\(t',_) -> t' <= addTime (fromIntegral n) t) (x:xs)
-       in xs' : timeSpans n xs''
+hasOutput :: GovernorMockEnvironment
+          -> [(Time, TracePeerSelection PeerAddr)]
+          -> Bool
+hasOutput _   (_:_) = True
+hasOutput env []    = isEmptyEnv env
 
 isEmptyEnv :: GovernorMockEnvironment -> Bool
 isEmptyEnv GovernorMockEnvironment {
@@ -156,16 +154,153 @@ isEmptyEnv GovernorMockEnvironment {
       || all (\(t,_) -> targetNumberOfRootPeers  t == 0) targets)
 
 
--- Check that events that are 100 events apart have an adequate time
--- between them, to indicate we're not in a busy livelock situation.
-makesAdequateProgress :: Int -> DiffTime -> [Time] -> Bool
-makesAdequateProgress n adequate ts =
-    go ts (drop n ts)
+-- | As a basic property we run the governor to explore its state space a bit
+-- and check it does not throw any exceptions (assertions such as invariant
+-- violations).
+--
+-- We do /not/ assume freedom from livelock for this property, so we run the
+-- governor for a maximum number of trace events rather than for a fixed
+-- simulated time.
+--
+prop_governor_nofail :: GovernorMockEnvironment -> Bool
+prop_governor_nofail env =
+    let trace = take 5000 .
+                selectPeerSelectionTraceEvents $
+                  runGovernorInMockEnvironment env
+
+     in foldl' (flip seq) True
+          [ assertPeerSelectionState st ()
+          | (_, GovernorDebug (TraceGovernorState _ _ st)) <- trace ]
+
+
+-- | It is relatively easy to write bugs where the governor is stuck in a tight
+-- cycle of continuous activity. Due to the way the I\/O simulator manages
+-- virtual time, these bugs exhibits themselves by infinite trace activity
+-- without time advancing.
+--
+-- It is important to catch these bugs early in the set of tests, since it is
+-- hard to write many of the other more interesting properties if there are
+-- these kinds of livelock bugs. Or to put it another way, the other properties
+-- can be expressed more simply if they can assume within event traces that the
+-- time always advances after some finite number of events.
+--
+prop_governor_nolivelock :: GovernorMockEnvironment -> Property
+prop_governor_nolivelock env =
+    let trace = take 5000 .
+                selectGovernorEvents .
+                selectPeerSelectionTraceEvents $
+                  runGovernorInMockEnvironment env
+     in case tooManyEventsBeforeTimeAdvances 1000 trace of
+          Nothing -> property True
+          Just (t, es) ->
+            counterexample
+              ("over 1000 events at time: " ++ show t ++ "\n" ++
+               "first 50 events: " ++ (unlines . map show . take 50 $ es)) $
+            property False
+
+
+-- | Scan the trace and return any occurrence where we have at least threshold
+-- events before virtual time moves on. Return the tail of the trace from that
+-- point on.
+--
+tooManyEventsBeforeTimeAdvances :: Int -> [(Time, e)] -> Maybe (Time, [e])
+tooManyEventsBeforeTimeAdvances _         []     = Nothing
+tooManyEventsBeforeTimeAdvances threshold trace0 =
+    go [ (t, diffTime t' t, e)
+       | ((t, e), (t', _)) <- zip trace0 (tail trace0) ]
   where
-    go (a:as) (b:bs)
-      | diffTime b a < adequate = False
-      | otherwise               = go as bs
-    go _ _ = True
+    go []                = Nothing
+    go trace@((t,_,_):_) = case countdown threshold trace of
+                             Just es' -> go es'
+                             Nothing  -> Just (t, trace')
+                               where
+                                 trace' = take threshold [ e | (_,_,e) <- trace ]
+
+    countdown 0 _  = Nothing
+    countdown _ [] = Just []
+    countdown n ((_t,dt,_e):es)
+      | dt == 0    = countdown (n-1) es
+      | otherwise  = Just es
+
+
+-- | A coverage property, much like 'prop_governor_nofail' but we look to see
+-- that we get adequate coverage of the state space. We look for all the trace
+-- events that the governor can produce, and tabules which ones we see.
+--
+prop_governor_trace_coverage :: GovernorMockEnvironment -> Property
+prop_governor_trace_coverage env =
+    let trace = take 5000 .
+                selectPeerSelectionTraceEvents $
+                  runGovernorInMockEnvironment env
+
+        traceNumsSeen  = collectTraces trace
+        traceNamesSeen = allTraceNames `Map.restrictKeys` traceNumsSeen
+
+     in coverTable "trace events" [ (n, 1) | n <- Map.elems allTraceNames ] $
+        tabulate   "trace events" (Map.elems traceNamesSeen)
+        True
+
+collectTraces :: [(Time, TestTraceEvent)] -> Set Int
+collectTraces trace =
+    Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
+
+traceNum :: TracePeerSelection peeraddr -> Int
+traceNum TraceLocalRootPeersChanged{} = 00
+traceNum TraceTargetsChanged{}        = 01
+traceNum TracePublicRootsRequest{}    = 02
+traceNum TracePublicRootsResults{}    = 03
+traceNum TracePublicRootsFailure{}    = 04
+traceNum TraceGossipRequests{}        = 05
+traceNum TraceGossipResults{}         = 06
+traceNum TraceForgetColdPeers{}       = 07
+traceNum TracePromoteColdPeers{}      = 08
+--traceNum TracePromoteColdLocalPeers{} = 09
+traceNum TracePromoteColdFailed{}     = 10
+traceNum TracePromoteColdDone{}       = 11
+traceNum TracePromoteWarmPeers{}      = 12
+--traceNum TracePromoteWarmLocalPeers{} = 13
+traceNum TracePromoteWarmFailed{}     = 14
+traceNum TracePromoteWarmDone{}       = 15
+traceNum TraceDemoteWarmPeers{}       = 16
+traceNum TraceDemoteWarmFailed{}      = 17
+traceNum TraceDemoteWarmDone{}        = 18
+traceNum TraceDemoteHotPeers{}        = 19
+traceNum TraceDemoteHotFailed{}       = 20
+traceNum TraceDemoteHotDone{}         = 21
+traceNum TraceDemoteAsynchronous{}    = 22
+traceNum TraceGovernorWakeup{}        = 23
+traceNum TraceChurnWait{}             = 24
+
+allTraceNames :: Map Int String
+allTraceNames =
+  Map.fromList
+   [ (00, "TraceLocalRootPeersChanged")
+   , (01, "TraceTargetsChanged")
+   , (02, "TracePublicRootsRequest")
+   , (03, "TracePublicRootsResults")
+   , (04, "TracePublicRootsFailure")
+   , (05, "TraceGossipRequests")
+   , (06, "TraceGossipResults")
+   , (07, "TraceForgetColdPeers")
+   , (08, "TracePromoteColdPeers")
+-- , (09, "TracePromoteColdLocalPeers")
+   , (10, "TracePromoteColdFailed")
+   , (11, "TracePromoteColdDone")
+   , (12, "TracePromoteWarmPeers")
+-- , (13, "TracePromoteWarmLocalPeers")
+   , (14, "TracePromoteWarmFailed")
+   , (15, "TracePromoteWarmDone")
+   , (16, "TraceDemoteWarmPeers")
+   , (17, "TraceDemoteWarmFailed")
+   , (18, "TraceDemoteWarmDone")
+   , (19, "TraceDemoteHotPeers")
+   , (20, "TraceDemoteHotFailed")
+   , (21, "TraceDemoteHotDone")
+   , (22, "TraceDemoteAsynchronous")
+   , (23, "TraceGovernorWakeup")
+   , (24, "TraceChurnWait")
+   ]
+
 
 -- | Run the governor for up to 1 hour (simulated obviously) and look at the
 -- set of known peers it has selected. This uses static targets and root peers.
