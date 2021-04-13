@@ -42,6 +42,7 @@ import           Test.Ouroboros.Network.PeerSelection.Instances
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
+import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -57,6 +58,7 @@ tests =
     [ testProperty "has output"         prop_governor_hasoutput
     , testProperty "no failure"         prop_governor_nofail
     , testProperty "no livelock"        prop_governor_nolivelock
+    , testProperty "no excess busyness" prop_governor_nobusyness
     , testProperty "event coverage"     prop_governor_trace_coverage
     , testProperty "gossip reachable"   prop_governor_gossip_1hr
     , testProperty "connection status"  prop_governor_connstatus
@@ -221,6 +223,166 @@ tooManyEventsBeforeTimeAdvances threshold trace0 =
     countdown n ((_t,dt,_e):es)
       | dt == 0    = countdown (n-1) es
       | otherwise  = Just es
+
+
+-- | It is easy to get bugs where the governor is stuck in a cycle, working but
+-- not making progress. This kind of bug would result in the governor thread
+-- being excessively busy, so it might not be easily noticed.
+--
+-- This is more subtle and general than a simple livelock test that just checks
+-- we don't get completely stuck. This property is about the possibility that
+-- the governor is excessively busy over some period of time. This includes
+-- "slow" livelocks where time advances during some of the steps in the cycle.
+-- More interestingly this is also about a failure to converge and return to
+-- being idle sufficiently quickly.
+--
+-- For example the governor could gets stuck in a cycle promoting and demoting
+-- a peer once a second. In such a failure mode it will have a continuous level
+-- of activity and will not return to being idle (perhaps ever or perhaps for
+-- an extended period until some other environment perturbation gets us out of
+-- the cycle).
+--
+-- The approach we take is based on the observation that the governor can
+-- (quite reasonably) start with a big burst of activity (e.g. as it gossips
+-- to discover a big graph) but that in the long term it settles down and only
+-- has small bursts of activity in reaction to perturbations in the environment
+-- such as failures or changes in targets.
+--
+-- The approach we take is to look at spans of busy activity followed by
+-- periods of idleness. If the spans of busy activity are too long then we
+-- fail. So this counts the time of busyness not the number of events. We
+-- account for activity in the environment that the governor needs to respond
+-- to by counting \"perturbation credits"\: more credits means we allow longer
+-- spans of busyness.
+--
+-- More specifically: we look at runs of events where the time between events
+-- is less than a threshold. This implies there follows a threshold level of
+-- idleness. Starting or within that run of events there can be environment
+-- events. These are the perturbations from the environment that we expect to
+-- trigger a series of responses from the governor. So we expect longer periods
+-- of business for bigger perturbations. We sum all the perturbations credits
+-- included in a run of events. We use a formula that relates the credits to
+-- the permitted time span of the run. If the run is within the permitted time
+-- span then it is ok, otherwise it is a failure (and the run is the
+-- counterexample).
+--
+-- TODO: This test uses static root peers, but we should move to dynamic root
+-- peers.
+--
+prop_governor_nobusyness :: GovernorMockEnvironment -> Property
+prop_governor_nobusyness env =
+    let trace = selectPeerSelectionTraceEvents $
+                  runGovernorInMockEnvironment env
+
+     in case tooBusyForTooLong (takeFirstNHours 10 trace) of
+          Nothing -> property True
+          Just (busyStartTime, busyEndTime, credits, trace') ->
+            counterexample
+              ("busy span too long\n" ++
+               "start time:   "     ++ show busyStartTime ++ "\n" ++
+               "end time:     "     ++ show busyEndTime ++ "\n" ++
+               "span credits: "     ++ show credits ++ "\n" ++
+               "first 50 events:\n" ++
+                 (unlines . map show . take 50 $ trace')) $
+            property False
+
+--
+tooBusyForTooLong :: [(Time, TestTraceEvent)]
+                  -> Maybe (Time, Time, DiffTime,
+                            [(Time, TestTraceEvent)])
+tooBusyForTooLong trace0 =
+    -- Pass in each timed event, with the diff-time to the next event
+    idle [ (t, diffTime t' t, e)
+         | ((t, e), (t', _)) <- zip trace0 (tail trace0) ]
+  where
+    -- How long between events before we say it's the end of a busy span
+    sameSpanThreshold :: DiffTime
+    sameSpanThreshold = 45
+
+    -- Starting credits for a busy span, even if there are no triggering
+    -- environment events. The value chosen here takes account of the normal
+    -- exponential backoff is 2+4+8+16+32 = 62, before a gap of 64 that's
+    -- bigger than the sameSpanThreshold of 45.
+    initialEventCredits :: DiffTime
+    initialEventCredits = 65
+
+    -- We process the event trace linearly, flipping between two states: idle
+    -- and busy. In the idle state, the next (non-debug) event flips us into
+    -- the busy state, starting with some minimal initial credits.
+
+    idle :: [(Time, DiffTime, TestTraceEvent)]
+         -> Maybe (Time, Time, DiffTime, [(Time, TestTraceEvent)])
+    idle [] = Nothing
+    idle ((_, _, GovernorDebug{}):trace') = idle trace'
+    idle trace@((busyStartTime,_,_):_) =
+      case busy busyStartTime initialEventCredits trace of
+        Right trace' -> idle trace'
+        Left (busyEndTime, credits) ->
+          Just (busyStartTime, busyEndTime, credits, trace')
+            where
+              trace' = [ (t, e)
+                       | (t,_dt, e) <-
+                           takeWhile (\(t,_,_) -> t <= busyEndTime) trace
+                       , case e of
+                           GovernorDebug{} -> False
+                           _               -> True
+                       ]
+
+    busy :: Time -> DiffTime -> [(Time, DiffTime, TestTraceEvent)]
+         -> Either (Time, DiffTime) [(Time, DiffTime, TestTraceEvent)]
+
+    -- For normal governor events we check if the length of the busy time span
+    -- is now too big (adjusted for any perturbation credits). If so we've
+    -- found a violation.
+    busy !busyStartTime !credits ((busyEndTime, _dt, GovernorEvent{}) : _trace')
+      | busySpanLength > credits = Left (busyEndTime, credits)
+      where
+        busySpanLength = diffTime busyEndTime busyStartTime
+
+    -- We also look at how long it is to the next event to see if this is the
+    -- last event in the busy span, and if so we return to idle.
+    busy !_busyStartTime !_credits ((_t, dt, _event) : trace')
+      | dt > sameSpanThreshold = Right trace'
+
+    -- For environment events we calculate the perturbation credits this
+    -- contributes and add it to our running total.
+    busy !busyStartTime !credits ((_, _, MockEnvEvent e) : trace') =
+      busy busyStartTime (credits + fromIntegral (envEventCredits e)) trace'
+
+    -- Otherwise we move on to the next event, updating the length of this busy
+    -- time span.
+    busy !busyStartTime !credits (_ : trace') =
+      busy busyStartTime credits trace'
+
+    -- running out of events before we find a violation is ok
+    busy !_ !_ [] = Right []
+
+
+envEventCredits :: TraceMockEnv -> Int
+envEventCredits (TraceEnvAddPeers peerGraph) = 80 * 5 + length adjacency * 5
+                   where
+                     PeerGraph adjacency = peerGraph
+
+envEventCredits (TraceEnvSetLocalRoots  peers) = LocalRootPeers.size peers
+envEventCredits (TraceEnvSetPublicRoots peers) = Set.size peers
+envEventCredits  TraceEnvPublicRootTTL         = 60
+envEventCredits (TraceEnvGossipTTL _)          = 30
+
+envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
+                   targetNumberOfRootPeers = _,
+                   targetNumberOfKnownPeers,
+                   targetNumberOfEstablishedPeers,
+                   targetNumberOfActivePeers
+                 }) = 80
+                    + 10 * (targetNumberOfKnownPeers
+                          + targetNumberOfEstablishedPeers
+                          + targetNumberOfActivePeers)
+
+envEventCredits (TraceEnvPeersDemote Noop   _) = 10
+envEventCredits (TraceEnvPeersDemote ToWarm _) = 30
+envEventCredits (TraceEnvPeersDemote ToCold _) = 30
+envEventCredits (TraceEnvPeersStatus _)        = 0
+
 
 
 -- | A coverage property, much like 'prop_governor_nofail' but we look to see
