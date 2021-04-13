@@ -482,22 +482,8 @@ withConnectionManager ConnectionManagerArguments {
 
     countConnections :: ConnectionManagerState peerAddr handle handleError version m
                      -> STM m Int
-    countConnections state =
-        Map.size
-      . Map.filter
-              (\connState -> case connState of
-                ReservedOutboundState          -> False
-                UnnegotiatedState Inbound  _ _ -> True
-                UnnegotiatedState Outbound _ _ -> False
-                InboundIdleState {}            -> True
-                InboundState {}                -> True
-                OutboundUniState {}            -> False
-                OutboundDupState {}            -> True
-                DuplexState {}                 -> True
-                TerminatingState {}            -> False
-                TerminatedState {}             -> False)
-     <$> traverse readTVar state
-
+    countConnections =
+        (numberConns . connectionManagerStateToCounters <$>) . traverse readTVar
 
     -- Start connection thread and run connection handler on it.
     --
