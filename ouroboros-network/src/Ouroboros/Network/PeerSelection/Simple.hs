@@ -38,7 +38,7 @@ withPeerSelectionActions
   -> STM IO PeerSelectionTargets
   -> Map Socket.SockAddr PeerAdvertise
   -- ^ static local root peers
-  -> [(Int, Map DomainAddress PeerAdvertise)]
+  -> [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
   -> [DomainAddress]
   -- ^ public root peers

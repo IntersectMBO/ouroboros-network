@@ -13,6 +13,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     -- * DNS based provider for local root peers
     localRootPeersProvider,
     DomainAddress (..),
+    RelayAddress (..),
     IP.IP (..),
     TraceLocalRootPeers(..),
 
@@ -71,6 +72,11 @@ data DomainAddress = DomainAddress {
   }
   deriving (Show, Eq, Ord)
 
+-- | A relay can have either an IP address and a port number or
+-- a domain with a port number
+data RelayAddress = RelayDomain !DomainAddress
+                  | RelayAddress !IP.IP !Socket.PortNumber
+                  deriving (Show, Eq, Ord)
 
 -----------------------------------------------
 -- Resource
@@ -265,7 +271,7 @@ newResolverResource resolvConf = go
 --
 
 data TraceLocalRootPeers =
-       TraceLocalRootDomains [(Int, Map DomainAddress PeerAdvertise)]
+       TraceLocalRootDomains [(Int, Map RelayAddress PeerAdvertise)]
      | TraceLocalRootWaiting DomainAddress DiffTime
      | TraceLocalRootResult  DomainAddress [(IPv4, DNS.TTL)]
      | TraceLocalRootFailure DomainAddress DNSorIOError
@@ -279,7 +285,7 @@ localRootPeersProvider :: Tracer IO TraceLocalRootPeers
                        -> TimeoutFn IO
                        -> DNS.ResolvConf
                        -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
-                       -> NonEmpty (Int, Map DomainAddress PeerAdvertise)
+                       -> NonEmpty (Int, Map RelayAddress PeerAdvertise)
                        -> IO Void
 localRootPeersProvider tracer timeout resolvConf rootPeersGroupsVar domainsGroups = do
     traceWith tracer (TraceLocalRootDomains (NonEmpty.toList domainsGroups))
@@ -288,29 +294,48 @@ localRootPeersProvider tracer timeout resolvConf rootPeersGroupsVar domainsGroup
 #else
     let rr = newResolverResource resolvConf
 #endif
-    -- Flatten the local root peers groups and associate a group index to each
-    -- DomainAddress to be monitorized.
     let domainsGroupsList = NonEmpty.toList domainsGroups
+
+        -- Flatten the local root peers groups and associate a group index to each
+        -- DomainAddress to be monitorized.
+        addresses = [ (group, address, pa)
+                    | (group, (_, m)) <- zip [0..] domainsGroupsList
+                    , (address, pa) <- Map.toList m ]
         domains = [ (group, domain, pa)
-                  | (group, (_, m)) <- zip [0..] domainsGroupsList
-                  , (domain, pa) <- Map.toList m ]
-    -- Since we want to preserve the number of groups, the targets, and
-    -- the addresses within each group, we fill the TVar with
-    -- a placeholder list, in order for each monitored DomainAddress to
-    -- be updated in the correct group.
+                  | (group, RelayDomain domain, pa) <- addresses ]
+        ipsAddr = [ (group, IP.toSockAddr (ip, port), pa)
+                  | (group, RelayAddress ip port, pa) <- addresses ]
+
+        -- Since we want to preserve the number of groups, the targets, and
+        -- the addresses within each group, we fill the TVar with
+        -- a placeholder list, in order for each monitored DomainAddress to
+        -- be updated in the correct group.
+        placeholder = map (\(t, _) -> (t, Map.empty)) domainsGroupsList
+        placeholder' =
+          foldr (\(group, addr, pa) ph
+                  -> let (target, entry) = ph !! group
+                     in updateList group (target, Map.insert addr pa entry) ph)
+                placeholder
+                ipsAddr
+
     atomically $
-        writeTVar rootPeersGroupsVar
-                  (map (\(t, _) -> (t, Map.empty)) domainsGroupsList)
+        writeTVar rootPeersGroupsVar placeholder'
 
     withAsyncAll (map (monitorDomain rr) domains) $ \asyncs ->
       snd <$> waitAny asyncs
   where
+    updateList :: Int -> a -> [a] -> [a]
+    updateList at v l =
+      case splitAt at l of
+        (before, _:after) -> before ++ v:after
+        _ -> l
+
     resolveDomain
       :: DNS.Resolver
       -> (DomainAddress, PeerAdvertise)
       -> IO (Either DNSError [((Socket.SockAddr, PeerAdvertise), DNS.TTL)])
     resolveDomain resolver
-                  (domain@DomainAddress {daDomain, daPortNumber}
+                  ((domain@DomainAddress {daDomain, daPortNumber})
                   , advertisePeer) = do
       reply <- lookupAWithTTL timeout resolvConf resolver daDomain
       case reply of
@@ -334,12 +359,6 @@ localRootPeersProvider tracer timeout resolvConf rootPeersGroupsVar domainsGroup
     monitorDomain rr0 (group, domain, advertisePeer) =
         go rr0 0
       where
-        updateList :: Int -> a -> [a] -> [a]
-        updateList at v l =
-          case splitAt at l of
-            (before, _:after) -> before ++ v:after
-            _ -> l
-
         go :: Resource DNSorIOError DNS.Resolver -> DiffTime -> IO Void
         go !rr !ttl = do
           when (ttl > 0) $ do

@@ -90,6 +90,7 @@ import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.PeerSelection.RootPeersDNS ( DomainAddress
                                                               , resolveDomainAddresses
+                                                              , RelayAddress (..)
                                                               )
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
@@ -844,7 +845,9 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
-                      [(1, Map.fromList daLocalRootPeers)] -- TODO: This is just a simple transformation
+                      [( 1
+                       , Map.fromList $ map (\(d,p) -> (RelayDomain d, p)) daLocalRootPeers)]
+                      -- ^ TODO: This is just a simple transformation
                       daPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)
@@ -955,7 +958,9 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
-                      [(1, Map.fromList daLocalRootPeers)] -- TODO: This is just a simple transformation
+                      [( 1
+                       , Map.fromList $ map (\(d,p) -> (RelayDomain d, p)) daLocalRootPeers)]
+                      -- ^ TODO: This is just a simple transformation
                       daPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)

@@ -45,7 +45,7 @@ import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DomainAddress (..))
+                     (RelayAddress (..), DomainAddress (..))
 
 import           Text.Printf
 
@@ -100,12 +100,6 @@ instance Show TraceLedgerPeers where
           (show age)
     show FallingBackToBootstrapPeers = "Falling back to bootstrap peers"
     show DisabledLedgerPeers = "LedgerPeers is disabled"
-
--- | A relay can have either an IP address and a port number or
--- a domain with a port number
-data RelayAddress = RelayDomain !DomainAddress
-                  | RelayAddress !IP.IP !Socket.PortNumber
-                  deriving (Show, Eq, Ord)
 
 -- | The relative stake of a stakepool in relation to the total amount staked.
 -- A value in the [0, 1] range.
