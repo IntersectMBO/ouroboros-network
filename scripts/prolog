@@ -38,6 +38,7 @@ This site contains Haskell documentation of
               * __[ChainSync](ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html)__
               * __[BlockFetch](ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html)__
               * __[TxSubmission](ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type.html)__
+              * __[TxSubmission2](ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html)__
               * __[LocalTxSubmission](ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html)__
               * __[LocalStateQuery](ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html)__
               * __[LocalTxMonitor](ouroboros-network/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
