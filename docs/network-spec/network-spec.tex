@@ -139,7 +139,17 @@
 \maketitle
 
 \begin{abstract}
-  This document describes .....
+  This document provides technical specification of the implementation of the
+  \texttt{ouroboros-network} component of \texttt{cardano-node}. It provides specification of all
+  mini-protocols as well multiplexing and low level wire encoding.  It provides
+  necessary information about both node-to-node and node-to-client protocols.
+
+  The primary audience for this document are engineers wishing to build
+  clients interacting with a node via node-to-client or node-to-node protocols
+  or independent implementations of a node.  Although the original
+  implementation of \texttt{ouroboros-network} is done \texttt{Haskell}, this specification is
+  made language agnostic. We may provide some implementation details which are
+  \texttt{Haskell} specific.
 \end{abstract}
 
 \tableofcontents
