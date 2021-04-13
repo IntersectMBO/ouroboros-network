@@ -220,6 +220,14 @@ following pieces of information:
     {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
 
 \miniEntry
+    {Keep Alive Protocol}
+    {keep-alive-protocol}
+    {A protocol for sending keep alive messages and round trip measurments}
+    {ouroboros-network/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
+
+
+\miniEntry
     {Local Transaction Submission Mini Protocol}
     {local-tx-submission-protocol}
     {Transmitting Transactions from a wallet to a local node.}
@@ -993,10 +1001,58 @@ segment header, but, as the MUX/DEMUX is not yet running the messages must not
 be split intos multiple segments.  These MUX segments are using a reserved
 protocol id $0$ (\texttt{Muxcontrol}).
 
+\section{Keep Alive Mini Protocol}
+\hsref{src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
+\label{keep-alive-protocol}
+\subsection{Description}
+Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
+two purposes: to provide keep alive messages, and do round trip time
+measurments.
+
+% \newcommand{\Done}{\state{Done}}
+\newcommand{\Client}{\state{Client}}
+\newcommand{\Server}{\state{Server}}
+\newcommand{\MsgKeepAlive}{\trans{MsgKeepAlive}}
+\newcommand{\MsgKeepAliveResponse}{\trans{MsgKeepAliveResponse}}
+% \newcommand{\MsgDone}{\trans{MsgDone}}
+\subsection{State machine}
+
+\begin{figure}[h]
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+  Client has Agency & \Client  \\ \hline
+  Server has Agency & \Server  \\ \hline
+\end{tabular}
+\end{figure}
+
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, green, initial]        (Client)  {\Client};
+  \node[state, blue, right of=Client] (Server)  {\Server};
+  \node[state, below of=Client]       (Done)    {\Done};
+
+  \draw (Client) edge[above, bend left=45] node{\MsgKeepAlive}         (Server);
+  \draw (Server) edge[below, bend left=45] node{\MsgKeepAliveResponse} (Client);
+  \draw (Client) edge[left]                node{\MsgDone}              (Done);
+\end{tikzpicture}
+
+\begin{description}
+\item [\MsgKeepAlive{} $cookie$]
+  Keep alive message.  The $cookie$ value is a \texttt{Word16} value which allows to
+  match requests with responses.  It is a protocol error if the cookie received
+  back with \MsgKeepAliveResponse{} does not match the value sent with
+  \MsgKeepAlive{}.
+\item [\MsgKeepAliveResponse{} $cookie$]
+  Keep alive response message. 
+\item [\MsgDone]
+  Terminating message.
+\end{description}
+
 \section{Local Transaction Submission Mini Protocol}
 \hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
 \label{local-tx-submission-protocol}
-\section{Description}
+\subsection{Description}
 The local transaction submission mini protocol is used by local clients,
 for example wallets or CLI tools, to submit transactions to a local node.
 The protocol is {\bf not} used to forward transactions from one core node to an other.
