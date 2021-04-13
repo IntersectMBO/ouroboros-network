@@ -209,14 +209,15 @@ following pieces of information:
     {Local Transaction Submission Mini Protocol}
     {local-tx-submission-protocol}
     {Transmitting Transactions from a wallet to a local node.}
-    {src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+    {ouroboros-network/src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html\#t:LocalTxSubmission}
 
 \miniEntry
-    {Node-to-Node Transaction Submission Protocol}
+    {Transaction Submission Protocol v2}
     {tx-submission-protocol}
     {A Protocol for transmitting transaction between core nodes.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type.html\#t:TxSubmission}
+    {ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
 
 \miniEntry
     {Handshake Mini Protocol}
@@ -665,7 +666,7 @@ Transition table:
 \section{Local Transaction Submission Mini Protocol}
 \hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
 \label{local-tx-submission-protocol}
-\subsection{Description}
+\section{Description}
 The local transaction submission mini protocol is used by local clients,
 for example wallets or CLI tools, to submit transactions to a local node.
 The protocol is {\bf not} used to forward transactions from one core node to an other.
@@ -718,6 +719,7 @@ Messages of the protocol:
 \end{description}
 
 \section{Node-to-Node Transaction Submission Protocol}
+\subsection{Version 1}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Type.hs}
 \label{tx-submission-protocol}
 \newcommand{\TxIdsBlocking}   {\state{TxIdsBlocking}}
@@ -729,7 +731,7 @@ Messages of the protocol:
 \newcommand{\RequestTxs}      {\trans{RequestTxs}}
 \newcommand{\ReplyTxs}        {\trans{ReplyTxs}}
 
-\subsection{Description}
+\subsubsection{Description}
 The node-to-node transaction submission protocol is used to transfer transactions between full nodes.
 The protocol follows a pull-based strategy where the initiator asks for new transactions and the responder
 replies with the transactions.
@@ -743,7 +745,7 @@ For technical reasons however the roles of the initiator and the responder are r
 the way the other mini protocols are implemented in the frame work.
 In other words: The Server is the initiator and ask for new transactions
 and the Client is the responder and replies with the transactions.
-\subsection{State machine}
+\subsubsection{State machine}
 
 \begin{tabular}{|l|l|}
   \hline
@@ -796,6 +798,65 @@ Messages of the protocol:
   \hline
   \multicolumn{4}{|c|}{Transition table} \\ \hline
   from state        & message             & parameters                    & to state          \\ \hline\hline
+  \Idle             & \RequestTxIdsB      & $ack$,$req$                   & \TxIdsBlocking    \\ \hline
+  \TxIdsBlocking    & \ReplyTxIds         & $\langle (id, size) \rangle$  & \Idle             \\ \hline
+  \Idle             & \RequestTxIdsNB     & $ack$,$req$                   & \TxIdsNonBlocking \\ \hline
+  \TxIdsNonBlocking & \ReplyTxIds         & $\langle (id, size) \rangle$  & \Idle             \\ \hline
+  \Idle             & \RequestTxs         & $\langle ids \rangle$         & \Txs              \\ \hline
+  \Txs              & \ReplyTxs           & $\langle txs \rangle$         & \Idle             \\ \hline
+  \RequestTxIdsB    & \MsgDone            &                               & \Done             \\ \hline
+\end{tabular}
+\subsection{Version 2}
+\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
+\label{tx-submission-protocol2}
+\newcommand{\Hello}  {\state{Hello}}
+\newcommand{\MsgHello} {\trans{MsgHello}}
+
+\subsubsection{Description}
+This mini-protocol changes the initial state of the transaction submission
+mini-protocol v1.  The new initial state, unlike the previous version, has
+agency on the client side.  One the client initialises the mini-protocol
+conversation with \MsgHello{} the version 1 of the protocol takes over.
+\subsubsection{State machine}
+
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+  Server has Agency & \Idle \\  \hline
+  Client has Agency & \TxIdsBlocking, \TxIdsNonBlocking, \Txs \\ \hline
+\end{tabular}
+
+\begin{figure}[h]
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, green, initial] (I) at (-4,  0) {\Hello};
+  \node[state, blue]           (A) at ( 0,  0) {\Idle};
+  \node[state]                 (B) at ( 8, -4) {\Done};
+  \node[state, green]          (C) at ( 4, -4) {\TxIdsBlocking};
+  \node[state, green]          (D) at (-4, -4) {\TxIdsNonBlocking};
+  \node[state, green]          (E) at ( 0,  4) {\Txs};
+  \draw (I)  edge[above]                    node[above]{\MsgHello}                                (A);
+  \draw (C)  edge[above]                    node[below]{\MsgDone}                                 (B);
+  \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\RequestTxIdsB}   (C);
+  \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\ReplyTxIds}     (A);
+  \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\RequestTxIdsNB} (D);
+  \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\ReplyTxIds}      (A);
+  \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center]{\RequestTxs}      (E);
+  \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center]{\ReplyTxs}        (A);
+\end{tikzpicture}
+\caption{State machine of the transaction submission protocol.}
+\label{tx-submission-automata}
+\end{figure}
+Messages of the protocol:
+\begin{description}
+\item [\MsgHello] initial message of the protocol
+\end{description}
+
+\begin{tabular}{|l|l|l|l|}
+  \hline
+  \multicolumn{4}{|c|}{Transition table} \\ \hline
+  from state        & message             & parameters                    & to state          \\ \hline\hline
+  \Hello            & \MsgHello           &                               & \Idle             \\ \hline
   \Idle             & \RequestTxIdsB      & $ack$,$req$                   & \TxIdsBlocking    \\ \hline
   \TxIdsBlocking    & \ReplyTxIds         & $\langle (id, size) \rangle$  & \Idle             \\ \hline
   \Idle             & \RequestTxIdsNB     & $ack$,$req$                   & \TxIdsNonBlocking \\ \hline
