@@ -47,6 +47,7 @@ library
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
+                     , cardano-ledger-core
                      , cardano-prelude
                      , cardano-slotting
                      , shelley-spec-ledger
@@ -78,6 +79,7 @@ executable db-analyser
                      , cardano-binary
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
+                     , cardano-ledger-core
                      , cardano-ledger-shelley-ma
                      , cardano-prelude
                      , containers
@@ -87,6 +89,7 @@ executable db-analyser
                      , mtl
                      , optparse-applicative
                      , shelley-spec-ledger
+                     , strict-containers
                      , text
 
                      , ouroboros-consensus

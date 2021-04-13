@@ -71,6 +71,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Time
 
 import qualified Cardano.Ledger.AuxiliaryData as SL (AuxiliaryDataHash (..))
+import qualified Cardano.Ledger.Coin as SL (DeltaCoin (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
 import qualified Cardano.Ledger.SafeHash as SL
@@ -80,7 +81,6 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (Seed (..),
                      mkNonceFromNumber, textToUrl)
 import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
-import qualified Shelley.Spec.Ledger.Coin as SL (DeltaCoin (..))
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
                      (IndividualPoolStake (..))
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL (BlocksMade (..),

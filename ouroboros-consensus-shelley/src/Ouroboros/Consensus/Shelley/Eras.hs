@@ -34,6 +34,7 @@ import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Control.State.Transition (State)
 
 import           Cardano.Binary (FromCBOR, ToCBOR)
+import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
@@ -65,6 +66,11 @@ type EraCrypto era = Crypto era
 {-------------------------------------------------------------------------------
   Era polymorphism
 -------------------------------------------------------------------------------}
+-- | TODO: Core.Tx is a transaction type which might vary from one Era to another.
+-- Currently, for all existing Shelley based eras (Shelley, Alegra,
+-- and Mary) this type is set to SL.TX. This will eventually change, most likely
+-- with Alonzo, thus this type instance will no longer be valid.
+type instance Core.Tx era = SL.Tx era
 
 -- | The ledger already defines 'SL.ShelleyBasedEra' as /the/ top-level
 -- constraint on an era, however, consensus often needs some more functionality
@@ -88,6 +94,12 @@ type EraCrypto era = Crypto era
 -- TODO Currently we include the constraint @SL.AdditionalGenesisConfig era ~
 -- ()@. When we fork to Alonzo we will need additional genesis config
 -- information.
+--
+-- TODO Core.Witnesses is type family that represents the set of witnesses
+-- in a Tx which may vary from one Era to another.
+-- Currently, for all existing Shelley based eras (Shelley, Alegra,
+-- and Mary) this type is set to SL.WitnessSet. This will eventually change,
+-- most likely with Alonzo, thus this equivalence will no longer be valid.
 class ( SL.ShelleyBasedEra era
       , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
       , Default (State (LC.EraRule "PPUP" era))
@@ -102,6 +114,7 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (LC.PParams era)
       , FromCBOR (SL.PParamsDelta era)
       , ToCBOR (LC.PParams era)
+      , Core.Witnesses era ~ SL.WitnessSet era
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.

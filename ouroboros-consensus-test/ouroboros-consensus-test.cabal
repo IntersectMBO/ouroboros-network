@@ -98,6 +98,7 @@ library
                      , random
                      , serialise         >=0.2   && <0.3
                      , sop-core
+                     , strict-containers
                      , tasty
                      , tasty-golden
                      , tasty-hunit
@@ -253,6 +254,7 @@ test-suite test-storage
                      , quiet
                      , random
                      , serialise
+                     , strict-containers
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
