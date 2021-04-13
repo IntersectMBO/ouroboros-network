@@ -35,7 +35,6 @@ import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
-
 import qualified Cardano.Ledger.Hashes as SL
 import qualified Cardano.Ledger.SafeHash as SL
 import           Cardano.Ledger.Val ((<->))

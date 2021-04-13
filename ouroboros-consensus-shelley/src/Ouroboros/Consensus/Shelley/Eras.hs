@@ -66,7 +66,10 @@ type EraCrypto era = Crypto era
 {-------------------------------------------------------------------------------
   Era polymorphism
 -------------------------------------------------------------------------------}
-
+-- | TODO: Core.Tx is a transaction type which might vary from one Era to another.
+-- Currently, for all existing Shelley based eras (Shelley, Alegra,
+-- and Mary) this type is set to SL.TX. This will eventually change, most likely
+-- with Alonzo, thus this type instance will no longer be valid.
 type instance Core.Tx era = SL.Tx era
 
 -- | The ledger already defines 'SL.ShelleyBasedEra' as /the/ top-level
@@ -91,6 +94,12 @@ type instance Core.Tx era = SL.Tx era
 -- TODO Currently we include the constraint @SL.AdditionalGenesisConfig era ~
 -- ()@. When we fork to Alonzo we will need additional genesis config
 -- information.
+--
+-- TODO Core.Witnesses is type family that represents the set of witnesses
+-- in a Tx which may vary from one Era to another.
+-- Currently, for all existing Shelley based eras (Shelley, Alegra,
+-- and Mary) this type is set to SL.WitnessSet. This will eventually change,
+-- most likely with Alonzo, thus this equivalence will no longer be valid.
 class ( SL.ShelleyBasedEra era
       , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
       , Default (State (LC.EraRule "PPUP" era))
