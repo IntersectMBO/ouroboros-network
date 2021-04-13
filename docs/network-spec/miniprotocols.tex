@@ -1148,6 +1148,59 @@ the server treats this case as a protocol violation of the peer
 The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
 }
 
+\section{Node-to-node protocol}
+\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode.hs}\newline
+\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode/Version.hs}\newline
+
+The node-to-node protocol consists of the following protocols:
+
+\begin{itemize}
+  \item chain synchronisation mini-protocol for headers
+  \item block fetch mini-protocol
+  \item transaction submission mini-protocol (from $NodeToNodeV\_6$ the version
+        2 is used)
+  \item keep alive mini-protocol (from $NodeToNodeV\_3$)
+\end{itemize}
+
+Currently there are the following versions of the node-to-node protocol:
+\begin{figure}[h]
+\begin{tabular}{l|l}
+  version         & description \\\hline\hline
+  $NodeToNodeV\_1$ & initial version \\\hline
+  $NodeToNodeV\_2$ & block size hints \\\hline
+  $NodeToNodeV\_3$ & introduction of keep-alive mini-protocol \\\hline
+  $NodeToNodeV\_4$ & introduction of diffusion mode in handshake mini-protocol \\\hline
+  $NodeToNodeV\_5$ & \\\hline
+  $NodeToNodeV\_6$ & transaction submission version 2 \\\hline
+\end{tabular}
+\end{figure}
+
+\section{Node-to-client protocol}
+\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient.hs}\newline
+\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient/Version.hs}\newline
+
+The node-to-client protocol consists of the following protocols:
+\begin{itemize}
+  \item chains synchronisation mini-protocols for blocks
+  \item local transaction submission mini-protocol
+  \item local state query mini-protocol (from version $NodeToClient\_2$)
+\end{itemize}
+
+Currenty there are the following version of the node-to-client protocol:
+\begin{figure}[h]
+\begin{tabular}{l|l}
+  version & description \\\hline\hline
+  $NodeToClientV\_1$ & initial version\\\hline
+  $NodeToClientV\_2$ & added local-query mini-protocol\\\hline
+  $NodeToClientV\_3$ & \\\hline
+  $NodeToClientV\_4$ & new queries added to local state query mini-protocol\\\hline
+  $NodeToClientV\_5$ & allegra \\\hline
+  $NodeToClientV\_6$ & mary \\\hline
+  $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
+  $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
+\end{tabular}
+\end{figure}
+
 
 
 % \wip{
