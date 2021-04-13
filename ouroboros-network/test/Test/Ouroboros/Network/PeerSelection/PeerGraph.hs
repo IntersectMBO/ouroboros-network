@@ -14,7 +14,7 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph (
     GossipScript,
     ConnectionScript,
     AsyncDemotion(..),
-    GossipTime,
+    GossipTime(..),
     interpretGossipTime,
 
     prop_shrink_GovernorScripts,
@@ -25,7 +25,6 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph (
 
 import           Data.Graph (Graph)
 import qualified Data.Graph as Graph
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
