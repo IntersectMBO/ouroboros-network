@@ -101,7 +101,7 @@ following pieces of information:
   Protocols use a small set of $Labels$ typically $|Labels| \leq 10$.
   The state machine framework requires that messages can be serialised,
   transferred over the network and de-serialised by the receiver.
-  The binary format for messages is described in Section~\ref{CBOR-section}.
+  The binary format for messages is described in appendix~\ref{CBOR-section}.
 
 \item[Agency]
   A node has agency if it is expected to send the next message.
@@ -1047,6 +1047,74 @@ Messages of the protocol:
 \item [\MsgDone]
       The client terminates the mini protocol.
 \end{description}
+
+\section{Local State Query Mini Protocol}
+\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
+\label{local-state-query-protocol}
+\newcommand{\Acquiring}{\state{Acquiring}}
+\newcommand{\Acquired}{\state{Acquired}}
+\newcommand{\Querying}{\state{Querying}}
+\newcommand{\MsgAcquire}{\trans{MsgAcquire}}
+\newcommand{\MsgAcquired}{\trans{MsgAcquired}}
+\newcommand{\MsgFailure}{\trans{MsgFailure}}
+\newcommand{\MsgQuery}{\trans{MsgQuery}}
+\newcommand{\MsgResult}{\trans{MsgResult}}
+\newcommand{\MsgRelease}{\trans{MsgRelease}}
+\newcommand{\MsgReAcquire}{\trans{MsgReAcquire}}
+
+\subsection{Description}
+Local State Query mini-protocol allows to query the consensus \/ ledger state.
+This mini protocol is part of the Node-to-Client protocol, hence it is only
+used by local (and thus trusted) clients.  Possible queries depend on the era
+(Byron, Shelly, etc) and are not specified in this document.  The protocol
+specifies basic operations like acquiring / releaseing the consensus \/ ledger
+state which is done by the server, or running queries against the acquired
+ledger state.
+
+\subsection{State machine}
+
+\begin{figure}[h]
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+  Server has Agency & \Idle{}, \Acquired{} \\ \hline
+  Client has Agency & \Acquiring{}, \Querying{} \\ \hline
+\end{tabular}
+\end{figure}
+
+\begin{figure}[h]
+\begin{tikzpicture}[->,=>stealth',shorten >=1pt,auto,node distance=4cm,semithick]
+  \tikzstyle{every state}=[fill=red,draw,none,text=white]
+  \node[state, green, initial] (Idle) {\Idle};
+  \node[state, blue, right of=Idle] (Acquiring) {\Acquiring};
+  \node[state, green, right of=Acquiring] (Acquired) {\Acquired};
+  \node[state, blue, right of=Acquired] (Querying) {\Querying};
+
+  \draw (Idle)      edge[bend left=45] node{\MsgAcquire}   (Acquiring);
+  \draw (Acquiring) edge[bend left=45] node{\MsgFailure}   (Idle);
+  \draw (Acquiring) edge[bend left=45] node{\MsgAcquired}  (Acquired);
+  \draw (Acquired)  edge[bend left=45] node{\MsgReAcquire} (Acquiring);
+  \draw (Acquired)  edge[bend left=45] node{\MsgQuery}     (Querying);
+  \draw (Querying)  edge[bend left=45] node{\MsgResult}    (Acquired);
+\end{tikzpicture}
+\end{figure}
+
+\begin{figure}[h]
+\begin{tabular}{|l|l|l|l|}
+  \hline
+  \multicolumn{4}{|c|}{Transition table} \\ \hline
+  from state        & message             & parameters          & to state \\ \hline\hline
+  \Idle             & \MsgAcquire         & $Maybe\ point$      & \Acquiring \\\hline
+  \Acquiring        & \MsgFailure         & $AcquireFailure$    & \Idle      \\\hline
+  \Acquiring        & \MsgAcquired        &                     & \Acquired  \\\hline
+  \Acquired         & \MsgReAcquire       & $Maybe\ point$      & \Acquiring \\\hline
+  \Acquired         & \MsgQuery           & $query$             & \Querying  \\\hline
+  \Querying         & \MsgResult          & $result$            & \Acquired  \\\hline
+\end{tabular}
+\end{figure}
+
+where $AcquireFailure$ is either $AcquireFailurePointTooOld$ or
+$AcquireFailurePointNotOnChain$.
 
 \section{Pipelining of Mini Protocols}
 \label{pipelining}
