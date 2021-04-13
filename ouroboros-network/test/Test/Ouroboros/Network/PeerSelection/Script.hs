@@ -5,6 +5,7 @@ module Test.Ouroboros.Network.PeerSelection.Script (
 
     -- * Test scripts
     Script(..),
+    NonEmpty(..),
     scriptHead,
     singletonScript,
     initScript,
@@ -34,6 +35,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
+import           Control.Tracer (Tracer, traceWith)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 
@@ -107,12 +109,13 @@ instance Arbitrary ScriptDelay where
   shrink NoDelay    = []
 
 playTimedScript :: (MonadAsync m, MonadTimer m)
-                => TimedScript a -> m (TVar m a)
-playTimedScript (Script ((x0,d0) :| script)) = do
+                => Tracer m a -> TimedScript a -> m (TVar m a)
+playTimedScript tracer (Script ((x0,d0) :| script)) = do
     v <- newTVarIO x0
     _ <- async $ do
            threadDelay (interpretScriptDelay d0)
            sequence_ [ do atomically (writeTVar v x)
+                          traceWith tracer x
                           threadDelay (interpretScriptDelay d)
                      | (x,d) <- script ]
     return v

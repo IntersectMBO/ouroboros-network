@@ -20,11 +20,8 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment (
     selectPeerSelectionTraceEvents,
     firstGossipReachablePeers,
 
-    Script,
-    ScriptDelay(..),
-    TimedScript,
-    scriptHead,
-    singletonScript,
+    module Test.Ouroboros.Network.PeerSelection.Script,
+    module Ouroboros.Network.PeerSelection.Types,
 
     tests,
 
@@ -33,7 +30,6 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment (
 import           Data.Dynamic (fromDynamic)
 import           Data.Functor (($>))
 import           Data.List (nub)
-import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
@@ -166,8 +162,8 @@ validGovernorMockEnvironment GovernorMockEnvironment {
 runGovernorInMockEnvironment :: GovernorMockEnvironment -> Trace Void
 runGovernorInMockEnvironment mockEnv =
     runSimTrace $ do
-      actions <- mockPeerSelectionActions tracerMockEnv mockEnv
       policy  <- mockPeerSelectionPolicy                mockEnv
+      actions <- mockPeerSelectionActions tracerMockEnv mockEnv policy
       peerSelectionGovernor
         tracerTracePeerSelection
         tracerDebugPeerSelection
@@ -175,28 +171,48 @@ runGovernorInMockEnvironment mockEnv =
         actions
         policy
 
-data TraceMockEnv = TraceEnvPeersStatus (Map PeerAddr PeerStatus)
+data TraceMockEnv = TraceEnvAddPeers       PeerGraph
+                  | TraceEnvSetLocalRoots  (LocalRootPeers PeerAddr)
+                  | TraceEnvSetPublicRoots (Set PeerAddr)
+                  | TraceEnvPublicRootTTL
+                  | TraceEnvGossipTTL      PeerAddr
+                  | TraceEnvSetTargets     PeerSelectionTargets
+                  | TraceEnvPeersDemote    AsyncDemotion PeerAddr
+                  | TraceEnvPeersStatus    (Map PeerAddr PeerStatus)
   deriving Show
 
 mockPeerSelectionActions :: (MonadAsync m, MonadTimer m, Fail.MonadFail m,
                              MonadThrow (STM m))
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
+                         -> PeerSelectionPolicy PeerAddr m
                          -> m (PeerSelectionActions PeerAddr (PeerConn m) m)
 mockPeerSelectionActions tracer
                          env@GovernorMockEnvironment {
-                           peerGraph = PeerGraph adjacency,
+                           peerGraph,
+                           localRootPeers,
+                           publicRootPeers,
                            targets
-                         } = do
+                         }
+                         policy = do
     scripts <- Map.fromList <$>
-                       sequence [ (\a b -> (addr, (a, b)))
-                                  <$> initScript gossipScript
-                                  <*> initScript connectionScript
-                                | (addr, _, GovernorScripts { gossipScript, connectionScript }) <- adjacency ]
-    targetsVar <- playTimedScript targets
+                 sequence
+                   [ (\a b -> (addr, (a, b)))
+                     <$> initScript gossipScript
+                     <*> initScript connectionScript
+                   | let PeerGraph adjacency = peerGraph
+                   , (addr, _, GovernorScripts {
+                                 gossipScript,
+                                 connectionScript
+                               }) <- adjacency
+                   ]
+    targetsVar <- playTimedScript (contramap TraceEnvSetTargets tracer) targets
     peerConns  <- newTVarIO Map.empty
+    traceWith tracer (TraceEnvAddPeers peerGraph)
+    traceWith tracer (TraceEnvSetLocalRoots localRootPeers)   --TODO: make dynamic
+    traceWith tracer (TraceEnvSetPublicRoots publicRootPeers) --TODO: make dynamic
     return $ mockPeerSelectionActions'
-               tracer env
+               tracer env policy
                scripts targetsVar peerConns
 
 
@@ -213,6 +229,7 @@ mockPeerSelectionActions' :: forall m.
                               MonadThrow (STM m))
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment
+                          -> PeerSelectionPolicy PeerAddr m
                           -> Map PeerAddr (TVar m GossipScript, TVar m ConnectionScript)
                           -> TVar m PeerSelectionTargets
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
@@ -222,12 +239,15 @@ mockPeerSelectionActions' tracer
                             localRootPeers,
                             publicRootPeers
                           }
+                          PeerSelectionPolicy {
+                            policyGossipRetryTime
+                          }
                           scripts
                           targetsVar
                           connsVar =
     PeerSelectionActions {
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
-      requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
+      requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
       requestPeerGossip,
       peerStateActions         = PeerStateActions {
@@ -239,7 +259,19 @@ mockPeerSelectionActions' tracer
         }
     }
   where
+    -- TODO: make this dynamic
+    requestPublicRootPeers _n = do
+      let ttl :: Num n => n
+          ttl = 60
+      _ <- async $ do
+        threadDelay ttl
+        traceWith tracer TraceEnvPublicRootTTL
+      return (publicRootPeers, ttl)
+
     requestPeerGossip addr = do
+      _ <- async $ do
+        threadDelay policyGossipRetryTime
+        traceWith tracer (TraceEnvGossipTTL addr)
       let Just (gossipScript, _) = Map.lookup addr scripts
       mgossip <- stepScript gossipScript
       case mgossip of
@@ -287,6 +319,7 @@ mockPeerSelectionActions' tracer
                     threadDelay (interpretScriptDelay delay)
                     atomically $  writeTVar v PeerCold
                                $> True
+              traceWith tracer (TraceEnvPeersDemote demotion peeraddr)
 
               if done
                 then return ()
