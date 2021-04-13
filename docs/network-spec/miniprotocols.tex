@@ -169,11 +169,11 @@ following pieces of information:
 \end{description}
 \section{Overview of all implemented Mini Protocols}
 
-\newcommand{\miniEntry}[4]{
+\newcommand{\miniEntry}[5]{
   \begin{framed}
       \noindent\textbf{#1}\hfill  Section \ref{#2}
       \newline {#3}
-      \newline {\small\texttt{#4}}
+      \newline {\href{#5}{\small\texttt{#4}}}
   \end{framed}
 }
 
@@ -182,24 +182,28 @@ following pieces of information:
     {ping-pong-protocol}
     {A simple ping-pong protocol for testing.}
     {typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 
 \miniEntry
     {Request Response Protocol}
     {request-response-protocol}
     {A ping pong like protocol which allows to exchanges data.}
     {typed-protocols/src/Network/TypedProtocol/ReqResp/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
 \miniEntry
     {Chain Synchronisation Protocol}
     {chain-sync-protocol}
     {The protocol by which a downstream chain consumer follows an upstream chain producer.}
     {ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html\#t:ChainSync}
 
 \miniEntry
     {Block Fetch Protocol}
     {block-fetch-protocol}
     {The block fetching mechanism enables a node to download ranges of blocks.}
     {ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html\#t:BlockFetch}
 
 \miniEntry
     {Local Transaction Submission Mini Protocol}
@@ -212,12 +216,14 @@ following pieces of information:
     {tx-submission-protocol}
     {A Protocol for transmitting transaction between core nodes.}
     {ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type.html\#t:TxSubmission}
 
 \miniEntry
     {Handshake Mini Protocol}
     {handshake-protocol}
     {This protocol is used for version negotiation.}
-    {src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+    {ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}
 
 \section{Ping-Pong Protocol}
 \label{ping-pong-protocol}
