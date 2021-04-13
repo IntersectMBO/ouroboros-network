@@ -192,6 +192,13 @@ following pieces of information:
     {https://input-output-hk.github.io/ouroboros-network/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
 \miniEntry
+    {Handshake Mini Protocol}
+    {handshake-protocol}
+    {This protocol is used for version negotiation.}
+    {ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}
+
+\miniEntry
     {Chain Synchronisation Protocol}
     {chain-sync-protocol}
     {The protocol by which a downstream chain consumer follows an upstream chain producer.}
@@ -206,6 +213,13 @@ following pieces of information:
     {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html\#t:BlockFetch}
 
 \miniEntry
+    {Transaction Submission Protocol v2}
+    {tx-submission-protocol2}
+    {A Protocol for transmitting transaction between core nodes.}
+    {ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
+
+\miniEntry
     {Local Transaction Submission Mini Protocol}
     {local-tx-submission-protocol}
     {Transmitting Transactions from a wallet to a local node.}
@@ -213,32 +227,28 @@ following pieces of information:
     {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html\#t:LocalTxSubmission}
 
 \miniEntry
-    {Transaction Submission Protocol v2}
-    {tx-submission-protocol}
-    {A Protocol for transmitting transaction between core nodes.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
+    {Locat State Query Mini Protocol}
+    {local-state-query-protocol}
+    {Protocol used by local clients to query ledger state}
+    {ouroboros-network/src/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
+    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
 
-\miniEntry
-    {Handshake Mini Protocol}
-    {handshake-protocol}
-    {This protocol is used for version negotiation.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}
 
-\section{Ping-Pong Protocol}
+\section{Dummy Protocols}
+Dummy protocols are only used for testing and are not needed either for
+Node-to-Node nor for the Node-to-Client protocols.
+\subsection{Ping-Pong Protocol}
 \label{ping-pong-protocol}
 \hsref{typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
 \newcommand{\Ping}{\msg{Ping}}
 \newcommand{\Pong}{\msg{Pong}}
 
-\subsection{Description}
+\subsubsection{Description}
 A client can use the Ping-Pong protocol to check that the server is responsive.
 The Ping-Pong protocol is very simple because the messages do not carry any data and
 because the Ping-Pong client and the Ping-Pong server do not access the internal state of the node.
 
-\subsection{State Machine}
-
+\subsubsection{State Machine}
 \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
   \node[state, green, initial]                            (Idle)      {\Idle};
@@ -278,7 +288,7 @@ The messages of the Ping-Pong protocol do not carry any data.
   \Idle        & \MsgDone           & \Done       \\ \hline
 \end{tabular}
 
-\section{Request Response Protocol}
+\subsection{Request Response Protocol}
 \label{request-response-protocol}
 \renewcommand{\Idle}{\state{Idle}}
 \renewcommand{\Busy}{\state{Busy}}
@@ -286,12 +296,12 @@ The messages of the Ping-Pong protocol do not carry any data.
 \newcommand{\Request}{\msg{Request}}
 \newcommand{\Response}{\msg{Response}}
 
-\subsection{Description}
+\subsubsection{Description}
 The request response protocol is polymorphic in the request and response data that is being transmitted.
 This means that there are different possible applications of this protocol and the
 application of the protocol determines the types of the requests and responses.
 
-\subsection{State machine}
+\subsubsection{State machine}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
 
 \begin{tabular}{|l|l|}
@@ -325,6 +335,73 @@ The protocol uses the following messages.
   \Idle        & \Request           & $request$              & \Busy     \\ \hline
   \Busy        & \Response          & $response$             & \Done     \\ \hline
 \end{tabular}
+
+\section{Handshake Mini Protocol}
+\hsref{src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+\label{handshake-protocol}
+\newcommand{\Propose}{\state{Propose}}
+\newcommand{\Confirm}{\state{Confirm}}
+\newcommand{\ProposeVersions}{\msg{ProposeVersions}}
+\newcommand{\AcceptVersion}{\msg{AcceptVersion}}
+\newcommand{\Refuse}{\msg{Refuse}}
+
+\newcommand{\VersionMismatch}{\msg{VersionMismatch}}
+\newcommand{\HandshakeDecodeError}{\msg{HandshakeDecodeError}}
+\newcommand{\Refused}{\msg{Refused}}
+
+\subsection{Description}
+The handshake mini protocol is used to negotiate the protocol version
+and the protocol parameters that are used by the client and the server.
+It is run exactly once when a new connection is initialised
+and consists of a single request from the client and a single reply from the server.
+Section \ref{peer-setup-section} explains the live cycle of a connection and the role of
+the handshake mini protocol in more detail.
+
+The handshake mini protocol is a generic protocol that can negotiate any kind protocol parameters.
+It only assumes that protocol parameters can be encoded to, and decoded from, CBOR terms.
+A node, that runs the handshake protocol, must instantiate it with the set of
+supported protocol versions and callback functions for handling the protocol parameters.
+These callback functions are specific for the supported protocol versions.
+
+\subsection{State machine}
+
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+  Client has Agency & \Propose \\ \hline
+  Server has Agency & \Confirm \\  \hline
+\end{tabular}
+
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, green, initial]                                     (Propose)    {\Propose};
+  \node[state, blue, right of=Propose]                             (Confirm)    {\Confirm};
+  \node[state, right of=Confirm]                                   (Done)       {\Done};
+
+  \draw (Propose)      edge[]      node{\ProposeVersions}          (Confirm);
+  \draw (Confirm)      edge[above, bend left]       node{\AcceptVersion}     (Done);
+  \draw (Confirm)      edge[below, bend right]      node{\Refuse}            (Done);
+
+\end{tikzpicture}
+
+Messages of the protocol:
+\begin{description}
+\item [\ProposeVersions{} {\boldmath $(versionTable)$}]
+      The client proposes a number of possible versions and protocol parameters.
+\item [\AcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
+      The server accepts $versionNumber$ and returns possible extra protocol parameters.
+\item [\Refuse{} {\boldmath $(reason)$}]
+      The server refuses the proposed versions.
+\end{description}
+
+\begin{tabular}{|l|l|l|l|} \hline
+\multicolumn{4}{|c|}{Transition table} \\ \hline
+  from        & message/event      & parameters                   & to          \\ \hline\hline
+  \Propose    & \ProposeVersions   & $versionTable$              & \Confirm    \\ \hline
+  \Confirm    & \AcceptVersion     & $(versionNumber,extraParameters)$ & \Done \\ \hline
+  \Confirm    & \Refuse            & $reason$                     & \Done \\ \hline
+\end{tabular}
+
 
 \section{Chain Synchronisation Protocol}
 \label{chain-sync-protocol}
@@ -663,62 +740,7 @@ Transition table:
   \Streaming   & \BatchDone          &                        & \Idle       \\ \hline
 \end{tabular}
 
-\section{Local Transaction Submission Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
-\label{local-tx-submission-protocol}
-\section{Description}
-The local transaction submission mini protocol is used by local clients,
-for example wallets or CLI tools, to submit transactions to a local node.
-The protocol is {\bf not} used to forward transactions from one core node to an other.
-The protocol for the transfer of transactions between full nodes
-is described in Section \ref{tx-submission-protocol}.
-
-The protocol follows a simple request-response pattern:
-\begin{enumerate}
-\item The client sends a request with a single transaction.
-\item The Server either accepts the transaction (returning a confirmation) or rejects it (returning the
-  reason).
-\end{enumerate}
-Note, that the local transaction submission protocol is a push based protocol where the client
-creates a workload for the server.
-This is acceptable because is protocol is only for use between a node and local client.
-\newcommand{\SubmitTx}{\trans{SubmitTx}}
-\newcommand{\AcceptTx}{\trans{AcceptTx}}
-\newcommand{\RejectTx}{\trans{RejectTx}}
-\subsection{State machine}
-
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \Idle \\ \hline
-  Server has Agency & \Busy \\  \hline
-\end{tabular}
-
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, blue, initial]                                     (Idle)       {\Idle};
-  \node[state, right of=Idle]                                     (Done)       {\Done};
-  \node[state, green, above of=Idle]                              (Busy)     {\Busy};
-
-  \draw (Idle)         edge[]                          node{\MsgDone}           (Done);
-  \draw (Idle)         edge[right, bend right=45]      node{\SubmitTx}          (Busy);
-  \draw (Busy)         edge[left, bend right=45]       node[below = 3mm]{\AcceptTx}          (Idle);
-  \draw (Busy)         edge[left, bend right=80]       node[above = 3mm]{\RejectTx}          (Idle);
-\end{tikzpicture}
-
-Messages of the protocol:
-\begin{description}
-\item [\SubmitTx{} {\boldmath $(t)$}]
-      The client submits a transaction.
-\item [\AcceptTx]
-      The server accepts the transaction.
-\item [\RejectTx{} {\boldmath $(reason)$}]
-      The server rejects the transactions and replies with the $reason$.
-\item [\MsgDone]
-      The client terminates the mini protocol.
-\end{description}
-
-\section{Node-to-Node Transaction Submission Protocol}
+\section{Transaction Submission Protocol}
 \subsection{Version 1}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Type.hs}
 \label{tx-submission-protocol}
@@ -745,6 +767,9 @@ For technical reasons however the roles of the initiator and the responder are r
 the way the other mini protocols are implemented in the frame work.
 In other words: The Server is the initiator and ask for new transactions
 and the Client is the responder and replies with the transactions.
+
+The version 1 of the protocol is only used by the node-to-node protocol version
+5 and earlier.
 \subsubsection{State machine}
 
 \begin{tabular}{|l|l|}
@@ -817,6 +842,8 @@ This mini-protocol changes the initial state of the transaction submission
 mini-protocol v1.  The new initial state, unlike the previous version, has
 agency on the client side.  One the client initialises the mini-protocol
 conversation with \MsgHello{} the version 1 of the protocol takes over.
+
+The version 2 is used by version 6 of node-to-node protocol.
 \subsubsection{State machine}
 
 \begin{tabular}{|l|l|}
@@ -909,72 +936,6 @@ The producer must reply immediately (i.e. within a small timeout) to a non-block
 It replies with not more then the requested number of ids (possible with an empty list).
 A blocking request on the other side, waits until at least one transaction is available.
 
-\section{Handshake Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/Handshake/Type.hs}
-\label{handshake-protocol}
-\newcommand{\Propose}{\state{Propose}}
-\newcommand{\Confirm}{\state{Confirm}}
-\newcommand{\ProposeVersions}{\msg{ProposeVersions}}
-\newcommand{\AcceptVersion}{\msg{AcceptVersion}}
-\newcommand{\Refuse}{\msg{Refuse}}
-
-\newcommand{\VersionMismatch}{\msg{VersionMismatch}}
-\newcommand{\HandshakeDecodeError}{\msg{HandshakeDecodeError}}
-\newcommand{\Refused}{\msg{Refused}}
-
-\subsection{Description}
-The handshake mini protocol is used to negotiate the protocol version
-and the protocol parameters that are used by the client and the server.
-It is run exactly once when a new connection is initialised
-and consists of a single request from the client and a single reply from the server.
-Section \ref{peer-setup-section} explains the live cycle of a connection and the role of
-the handshake mini protocol in more detail.
-
-The handshake mini protocol is a generic protocol that can negotiate any kind protocol parameters.
-It only assumes that protocol parameters can be encoded to, and decoded from, CBOR terms.
-A node, that runs the handshake protocol, must instantiate it with the set of
-supported protocol versions and callback functions for handling the protocol parameters.
-These callback functions are specific for the supported protocol versions.
-
-\subsection{State machine}
-
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \Propose \\ \hline
-  Server has Agency & \Confirm \\  \hline
-\end{tabular}
-
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]                                     (Propose)    {\Propose};
-  \node[state, blue, right of=Propose]                             (Confirm)    {\Confirm};
-  \node[state, right of=Confirm]                                   (Done)       {\Done};
-
-  \draw (Propose)      edge[]      node{\ProposeVersions}          (Confirm);
-  \draw (Confirm)      edge[above, bend left]       node{\AcceptVersion}     (Done);
-  \draw (Confirm)      edge[below, bend right]      node{\Refuse}            (Done);
-
-\end{tikzpicture}
-
-Messages of the protocol:
-\begin{description}
-\item [\ProposeVersions{} {\boldmath $(versionTable)$}]
-      The client proposes a number of possible versions and protocol parameters.
-\item [\AcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
-      The server accepts $versionNumber$ and returns possible extra protocol parameters.
-\item [\Refuse{} {\boldmath $(reason)$}]
-      The server refuses the proposed versions.
-\end{description}
-
-\begin{tabular}{|l|l|l|l|} \hline
-\multicolumn{4}{|c|}{Transition table} \\ \hline
-  from        & message/event      & parameters                   & to          \\ \hline\hline
-  \Propose    & \ProposeVersions   & $versionTable$              & \Confirm    \\ \hline
-  \Confirm    & \AcceptVersion     & $(versionNumber,extraParameters)$ & \Done \\ \hline
-  \Confirm    & \Refuse            & $reason$                     & \Done \\ \hline
-\end{tabular}
-
 \subsection{Client and Server Implementation}
 Section~\ref{included-cddl} contains the CDDL-specification of the binary format of the handshake messages.
 The version table is encoded as a CBOR table with the version number as key
@@ -1029,8 +990,63 @@ version.
 The handshake mini protocol runs before the MUX/DEMUX itself is initialised.
 Each message is transmitted within a single MUX segment, i.e. with a proper
 segment header, but, as the MUX/DEMUX is not yet running the messages must not
-be split into multiple segments.  These MUX segments are using a reserved
+be split intos multiple segments.  These MUX segments are using a reserved
 protocol id $0$ (\texttt{Muxcontrol}).
+
+\section{Local Transaction Submission Mini Protocol}
+\hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+\label{local-tx-submission-protocol}
+\section{Description}
+The local transaction submission mini protocol is used by local clients,
+for example wallets or CLI tools, to submit transactions to a local node.
+The protocol is {\bf not} used to forward transactions from one core node to an other.
+The protocol for the transfer of transactions between full nodes
+is described in Section \ref{tx-submission-protocol}.
+
+The protocol follows a simple request-response pattern:
+\begin{enumerate}
+\item The client sends a request with a single transaction.
+\item The Server either accepts the transaction (returning a confirmation) or rejects it (returning the
+  reason).
+\end{enumerate}
+Note, that the local transaction submission protocol is a push based protocol where the client
+creates a workload for the server.
+This is acceptable because is protocol is only for use between a node and local client.
+\newcommand{\SubmitTx}{\trans{SubmitTx}}
+\newcommand{\AcceptTx}{\trans{AcceptTx}}
+\newcommand{\RejectTx}{\trans{RejectTx}}
+\subsection{State machine}
+
+\begin{tabular}{|l|l|}
+  \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+  Client has Agency & \Idle \\ \hline
+  Server has Agency & \Busy \\  \hline
+\end{tabular}
+
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, blue, initial]                                     (Idle)       {\Idle};
+  \node[state, right of=Idle]                                     (Done)       {\Done};
+  \node[state, green, above of=Idle]                              (Busy)     {\Busy};
+
+  \draw (Idle)         edge[]                          node{\MsgDone}           (Done);
+  \draw (Idle)         edge[right, bend right=45]      node{\SubmitTx}          (Busy);
+  \draw (Busy)         edge[left, bend right=45]       node[below = 3mm]{\AcceptTx}          (Idle);
+  \draw (Busy)         edge[left, bend right=80]       node[above = 3mm]{\RejectTx}          (Idle);
+\end{tikzpicture}
+
+Messages of the protocol:
+\begin{description}
+\item [\SubmitTx{} {\boldmath $(t)$}]
+      The client submits a transaction.
+\item [\AcceptTx]
+      The server accepts the transaction.
+\item [\RejectTx{} {\boldmath $(reason)$}]
+      The server rejects the transactions and replies with the $reason$.
+\item [\MsgDone]
+      The client terminates the mini protocol.
+\end{description}
 
 \section{Pipelining of Mini Protocols}
 \label{pipelining}
@@ -1063,6 +1079,8 @@ the server treats this case as a protocol violation of the peer
 \hide{
 The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
 }
+
+
 
 % \wip{
   % \section{DeltaQ Mini Protocol}
