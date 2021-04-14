@@ -43,8 +43,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
+import           Control.Applicative ((<|>))
 import           Control.Exception (IOException)
-import           Control.Monad (when)
+import           Control.Monad (when, void)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -278,52 +279,73 @@ data TraceLocalRootPeers =
        --TODO: classify DNS errors, config error vs transitory
   deriving Show
 
-
 -- |
 --
-localRootPeersProvider :: Tracer IO TraceLocalRootPeers
-                       -> TimeoutFn IO
-                       -> DNS.ResolvConf
-                       -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
-                       -> NonEmpty (Int, Map RelayAddress PeerAdvertise)
-                       -> IO Void
-localRootPeersProvider tracer timeout resolvConf rootPeersGroupsVar domainsGroups = do
-    traceWith tracer (TraceLocalRootDomains (NonEmpty.toList domainsGroups))
+localRootPeersProvider
+  :: Tracer IO TraceLocalRootPeers
+  -> TimeoutFn IO
+  -> DNS.ResolvConf
+  -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
+  -> StrictTVar IO (NonEmpty (Int, Map RelayAddress PeerAdvertise))
+  -> IO Void
+localRootPeersProvider tracer
+                       timeout
+                       resolvConf
+                       rootPeersGroupsVar
+                       domainsGroupsVar = do
+  domainsGroups <- atomically $ readTVar domainsGroupsVar
+  traceWith tracer (TraceLocalRootDomains (NonEmpty.toList domainsGroups))
 #if !defined(mingw32_HOST_OS)
-    rr <- asyncResolverResource resolvConf
+  rr <- asyncResolverResource resolvConf
 #else
-    let rr = newResolverResource resolvConf
+  let rr = newResolverResource resolvConf
 #endif
-    let domainsGroupsList = NonEmpty.toList domainsGroups
+  let domainsGroupsList = NonEmpty.toList domainsGroups
 
-        -- Flatten the local root peers groups and associate a group index to each
-        -- DomainAddress to be monitorized.
-        addresses = [ (group, address, pa)
-                    | (group, (_, m)) <- zip [0..] domainsGroupsList
-                    , (address, pa) <- Map.toList m ]
-        domains = [ (group, domain, pa)
-                  | (group, RelayDomain domain, pa) <- addresses ]
-        ipsAddr = [ (group, IP.toSockAddr (ip, port), pa)
-                  | (group, RelayAddress ip port, pa) <- addresses ]
+      -- Flatten the local root peers groups and associate a group index to each
+      -- DomainAddress to be monitorized.
+      addresses = [ (group, address, pa)
+                  | (group, (_, m)) <- zip [0..] domainsGroupsList
+                  , (address, pa) <- Map.toList m ]
+      domains = [ (group, domain, pa)
+                | (group, RelayDomain domain, pa) <- addresses ]
+      ipsAddr = [ (group, IP.toSockAddr (ip, port), pa)
+                | (group, RelayAddress ip port, pa) <- addresses ]
 
-        -- Since we want to preserve the number of groups, the targets, and
-        -- the addresses within each group, we fill the TVar with
-        -- a placeholder list, in order for each monitored DomainAddress to
-        -- be updated in the correct group.
-        placeholder = map (\(t, _) -> (t, Map.empty)) domainsGroupsList
-        placeholder' =
-          foldr (\(group, addr, pa) ph
-                  -> let (target, entry) = ph !! group
-                     in updateList group (target, Map.insert addr pa entry) ph)
-                placeholder
-                ipsAddr
+      -- Since we want to preserve the number of groups, the targets, and
+      -- the addresses within each group, we fill the TVar with
+      -- a placeholder list, in order for each monitored DomainAddress to
+      -- be updated in the correct group.
+      placeholder = map (\(t, _) -> (t, Map.empty)) domainsGroupsList
+      placeholder' =
+        foldr (\(group, addr, pa) ph
+                -> let (target, entry) = ph !! group
+                   in updateList group (target, Map.insert addr pa entry) ph)
+              placeholder
+              ipsAddr
 
-    atomically $
-        writeTVar rootPeersGroupsVar placeholder'
+  atomically $
+    writeTVar rootPeersGroupsVar placeholder'
 
-    withAsyncAll (map (monitorDomain rr) domains) $ \asyncs ->
-      snd <$> waitAny asyncs
+  -- Launch DomainAddress monitoring threads and
+  -- wait for threads to return or for local config changes
+  withAsyncAll (map (monitorDomain rr) domains) $ \as ->
+    atomically $ do
+      (void $ waitAnySTM as) <|> waitConfigChanged domainsGroups
+
+  -- Recursive call to remonitor all new/updated local root peers
+  localRootPeersProvider tracer
+                         timeout
+                         resolvConf
+                         rootPeersGroupsVar
+                         domainsGroupsVar
+
   where
+    waitConfigChanged :: NonEmpty (Int, Map RelayAddress PeerAdvertise) -> STM IO ()
+    waitConfigChanged dg = do
+      dg' <- readTVar domainsGroupsVar
+      check (dg /= dg')
+
     updateList :: Int -> a -> [a] -> [a]
     updateList at v l =
       case splitAt at l of
@@ -570,7 +592,6 @@ withAsyncAll xs0 action = go [] xs0
   where
     go as []     = action as
     go as (x:xs) = withAsync x (\a -> go (a:as) xs)
-
 
 ---------------------------------------------
 -- Examples
