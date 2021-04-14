@@ -2,6 +2,8 @@ This file sketches the major points in the decomposition of the Genesis
 implementation. Edsko de Vries and Nicolas Frisby developed this plan of attack
 in 2021 March using chapter 21 of the Consensus Report.
 
+I've also updated this file after a discussion with Duncan on 2021 Apr 13.
+
   * add _prefix selection_ in between ChainSync -> BlockFetch (Sections
     21.1-21.4, 21.6.2 in the Chapter)
 
@@ -109,6 +111,13 @@ in 2021 March using chapter 21 of the Consensus Report.
      * We anticipate adding an `:: STM IsAlert` field to the
        `BlockFetchConsensusInterface` record.
 
+     * In particular, this flag can indicate that the Network Layer can "relax"
+       with regards to its set of peers. When we're catching up, the Network
+       Layer needs to take all sorts of precautions (eg higher valency) to
+       ensure we have at least one peer offering the honest chain. This
+       distinction is more severe than but similar to the existing
+       `FetchModeBulkSync` versus `FetchModeDeadline` distinction.
+
   * clock skew in relation to DoS attacks (Section 21.5.3)
 
       * The `Left PastHorizonException{} -> retry` forecast case in CS client
@@ -126,6 +135,51 @@ in 2021 March using chapter 21 of the Consensus Report.
   * key simplification: leave selection in ChainDB as-is (Section 21.6.1)
 
       * This realization saved a lot of development time.
+
+  * Risk 1: availability attack
+
+      * The design written above, would prevent BlockFetch from pessimistically
+        prefetching blocks from chains that are *almost* the best. EG Today
+        BlockFetch can fetch the longest _available_ chain, as a fallback for
+        when the only peers that sent headers indicating the best chain are slow
+        to actually provide the promised blocks.
+
+      * The idea to intersect all candidates with the result of `selectPrefix`
+        would prohibit that. And rightly so, in the sense of actually
+        implementing Genesis. (TODO NSF: why cann't we make some appeal to `k`
+        here, to reduce the severity of this potential spec divergence?)
+
+      * Duncan raised the concern that an attack could -- when the attackers'
+        and victims' leader schedules align in a particular way -- cause the
+        victim to forge a block that extends a recent prefix of the honest
+        chain. In other words, the attacker may be able to induce a some more
+        short forks than would naturally arise, thereby increasing the number of
+        "wasted blocks".
+
+      * Any mitigation of this would have to be guarded by `IsAlert`: the plan
+        written above (ie faithful Genesis) is in principle the only valid
+        option for use during catch up.
+
+      * Relevant reminder: even when it's caught up to the wallclock, Genesis
+        prefix selection only ever chooses a single chain. Any fluctuation in
+        that choice is based on the peers' chains being at their reported tip
+        within the density window.
+
+  * Risk 2: performance regression
+
+      * ChainSync validating headers is currently the bottleneck during bulk
+        fetch. EG 2 peers bulk fetchs quite a bit faster than 10 peers.
+
+      * The suggested delta is the exact opposite of the plan above: when
+        catching up, we need many many peers in order to increase the chance
+        that at least one has the honest chain. (We haven't considered actual
+        counts rigourously.)
+
+      * Mitigation plan: the ChainSync clients need to share some work, so that
+        we don't revalidate the same header once-per-peer.
+
+      * This violates avg-case = worst-case, but that's OK when bulk syncing.
+        Perhaps we should guard this work sharing by `NotIsAlert`.
 
   * SEPARATE WORK:
 
