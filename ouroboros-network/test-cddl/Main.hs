@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
@@ -50,6 +51,9 @@ import Ouroboros.Network.Protocol.TxSubmission.Type as TxSubmission
 import Ouroboros.Network.Protocol.TxSubmission.Test (TxId, Tx)
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec (codecLocalTxSubmission)
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
+import Ouroboros.Network.Protocol.LocalStateQuery.Type as LocalStateQuery
+import Ouroboros.Network.Protocol.LocalStateQuery.Test (Query (..))
+import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test as LocalStateQuery
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSubmission (Tx, Reject)
 
 
@@ -78,17 +82,19 @@ tests specPath =
   , testProperty "encode TxSubmission"          (prop_specTxSubmission specPath)
   , testProperty "encode Handshake"             (prop_specHandshake specPath)
   , testProperty "encode local Tx submission"   (prop_specLocalTxSubmission specPath)
+  , testProperty "encode LocalStateQuery"       (prop_specLocalStateQuery specPath)
   -- Test the parsers with CDDL-generated messages.
   , testProperty "generate and decode" $ ioProperty $ generateAndDecode 100 specPath
   ]
 
 -- The concrete/monomorphic types used for the test.
 type MonoCodec x = Codec x DeserialiseFailure IO ByteString
-type CS = ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader)
-type BF = BlockFetch Block (Point Block)
-type HS = Handshake VersionNumber CBOR.Term
-type TS = TxSubmission TxId Tx
-type LT = LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject
+type CS  = ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader)
+type BF  = BlockFetch Block (Point Block)
+type HS  = Handshake VersionNumber CBOR.Term
+type TS  = TxSubmission TxId Tx
+type LT  = LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject
+type LSQ = LocalStateQuery Block (Point Block) Query
 
 codecCS :: MonoCodec CS
 codecCS = codecChainSync
@@ -107,6 +113,9 @@ codecTS = codecTxSubmission Serialise.encode Serialise.decode Serialise.encode S
 codecLT :: MonoCodec LT
 codecLT = codecLocalTxSubmission Serialise.encode Serialise.decode Serialise.encode Serialise.decode
 
+codecLSQ :: MonoCodec LSQ
+codecLSQ = LocalStateQuery.codec True
+
 prop_specCS :: FilePath -> AnyMessageAndAgency CS -> Property
 prop_specCS specPath = prop_CDDLSpec specPath (0, codecCS)
 
@@ -123,6 +132,9 @@ prop_specLocalTxSubmission specPath = prop_CDDLSpec specPath (6, codecLT)
 -- 'nodeToClientHandshakeCodec'
 prop_specHandshake :: FilePath -> AnyMessageAndAgency HS -> Property
 prop_specHandshake specPath = prop_CDDLSpec specPath (5, versionNumberHandshakeCodec)
+
+prop_specLocalStateQuery :: FilePath -> AnyMessageAndAgency LSQ -> Property
+prop_specLocalStateQuery specPath = prop_CDDLSpec specPath (7, codecLSQ)
 
 prop_CDDLSpec :: FilePath -- ^ "messages.cddl" spec file path
               -> (Word, MonoCodec ps)
@@ -214,6 +226,7 @@ decodeMsg (tag, input) = case tag of
     4 -> tryParsers ["txSubmission"]          txSubmissionParsers
     5 -> tryParsers ["handshake"]             handshakeParsers
     6 -> tryParsers ["localTxSubmission"]     localTxSubmissionParsers
+    7 -> tryParsers ["localStateQuery"]       localStateQueryParsers
     _ -> error "unkown tag"
     where
         -- typed-protocols codecs are parameterized on the tokens which
@@ -286,3 +299,10 @@ decodeMsg (tag, input) = case tag of
             , runLT (ServerAgency LocalTxSubmission.TokBusy)
             ]
 
+        runLSQ = run codecLSQ
+        localStateQueryParsers = [
+              runLSQ (ClientAgency LocalStateQuery.TokIdle)
+            , runLSQ (ClientAgency LocalStateQuery.TokAcquired)
+            , runLSQ (ServerAgency LocalStateQuery.TokAcquiring)
+            , runLSQ (ServerAgency (LocalStateQuery.TokQuerying QueryPoint))
+            ]

@@ -8,8 +8,14 @@ allMessages
     / [4, txSubmissionMessage]
     / [5, handshakeMessage]
     / [6, localTxSubmissionMessage]
+    / [7, localStateQueryMessage]
 
-; ChainSync Protocol
+
+;
+; ChainSync mini-protocol
+;
+
+
 ; reference implementation of the codec in :
 ; ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Codec.hs
 chainSyncMessage
@@ -36,7 +42,10 @@ tip = [point, uint]
 
 points = [ *point ]
 
-; BlockFetch Protocol
+;
+; BlockFetch mini-protocol
+;
+
 ; reference implementation of the codec in :
 ; ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Codec.hs
 
@@ -55,7 +64,12 @@ msgNoBlocks     = [3]
 msgBlock        = [4, #6.24(bytes .cbor block)]
 msgBatchDone    = [5]
 
-; Transaction Submission Protocol
+
+;
+; TxSubmission mini-protocol
+;
+
+
 ; reference implementation of the codec in :
 ; ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Codec.hs
 
@@ -81,7 +95,12 @@ txIdAndSize     = [txId, txSizeInBytes]
 txId            = int
 txSizeInBytes   = word32
 
-; The handshake Protocol
+
+;
+; Handshake mini-protocol
+;
+
+
 ; reference implementation of the codec in:
 ; ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Codec.hs
 
@@ -119,7 +138,12 @@ refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
 refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
 refuseReasonRefused              = [2, versionNumber, tstr]
 
-; The local transaction submission protocol.
+
+;
+; LocalTxSubmission mini-protocol
+;
+
+
 ; Reference implementation of the codec in:
 ; ouroboros-network/src/Ouroboros/Network/Protocol/LocalTxSubmission/Codec.hs
 
@@ -160,3 +184,41 @@ rejectReason = int
 word16 = uint
 word32 = uint
 word64 = uint
+
+;
+; LocalStateQuery mini-protocol.
+;
+
+localStateQueryMessage
+  = msgAcquire
+  / msgAcquired
+  / msgFailure
+  / msgQuery
+  / msgResult
+  / msgRelease
+  / msgReAcquire
+  / lsqMsgDone
+
+acquireFailurePointTooOld     = 0
+acquireFailurePointNotOnChain = 1
+
+failure      = acquireFailurePointTooOld
+             / acquireFailurePointNotOnChain
+
+; 'query' and 'result' encodings are not specified; The values are only used
+; for compatibility with
+; 'Ouroboros.Network.Protocol.LocalStateQuery.Test.codec'
+query        = null
+result       = []
+             / [point]
+
+msgAcquire   = [0, point]
+             / [8] 
+msgAcquired  = [1]
+msgFailure   = [2, failure]
+msgQuery     = [3, query]
+msgResult    = [4, result]
+msgRelease   = [5]
+msgReAcquire = [6, point]
+             / [9]
+lsqMsgDone   = [7]

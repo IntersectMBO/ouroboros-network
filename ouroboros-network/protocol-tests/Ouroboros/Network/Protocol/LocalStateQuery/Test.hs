@@ -7,7 +7,11 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Network.Protocol.LocalStateQuery.Test (tests) where
+module Ouroboros.Network.Protocol.LocalStateQuery.Test
+  ( tests
+  , codec
+  , Query (..)
+  ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
