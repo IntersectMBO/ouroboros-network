@@ -41,7 +41,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 import           Test.ChainGenerators (TestChainAndPoints (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     splits2, splits3)
+                     prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -68,6 +68,7 @@ tests =
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3_BlockFetch
   , testProperty "codec cbor"          prop_codec_cbor_BlockFetch
+  , testProperty "codec valid cbor"    prop_codec_valid_cbor_BlockFetch
 
   , testProperty "codecSerialised"                   prop_codec_BlockFetchSerialised
   , testProperty "codecSerialised 2-splits"          prop_codec_splits2_BlockFetchSerialised
@@ -396,6 +397,11 @@ prop_codec_cbor_BlockFetch
   -> Bool
 prop_codec_cbor_BlockFetch msg =
   runST (prop_codec_cborM codec msg)
+
+prop_codec_valid_cbor_BlockFetch
+  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  -> Property
+prop_codec_valid_cbor_BlockFetch = prop_codec_valid_cbor_encoding codec
 
 prop_codec_BlockFetchSerialised
   :: AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))

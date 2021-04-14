@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Network.Protocol.Handshake.Test where
 
@@ -28,7 +29,8 @@ import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Proofs
 
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
@@ -66,6 +68,7 @@ tests =
   , testProperty "codec 3-splits"      $ withMaxSuccess 30
                                          prop_codec_splits3_Handshake
   , testProperty "codec cbor"            prop_codec_cbor
+  , testProperty "codec valid cbor"      prop_codec_valid_cbor
   , testGroup "Generators"
     [ testProperty "ArbitraryVersions" $
         checkCoverage prop_arbitrary_ArbitraryVersions
@@ -633,3 +636,10 @@ prop_codec_cbor
   -> Bool
 prop_codec_cbor msg =
   runSimOrThrow (prop_codec_cborM (codecHandshake versionNumberCodec) msg)
+
+-- | Check that the encoder produces a valid CBOR.
+--
+prop_codec_valid_cbor
+  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
+  -> Property
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codecHandshake versionNumberCodec)

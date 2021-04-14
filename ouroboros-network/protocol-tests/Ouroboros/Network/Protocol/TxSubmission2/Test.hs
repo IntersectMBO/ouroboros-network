@@ -38,7 +38,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Test hiding (tests)
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
 
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
@@ -61,6 +62,7 @@ tests =
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3
   , testProperty "codec cbor"          prop_codec_cbor
+  , testProperty "codec valid cbor"    prop_codec_valid_cbor
   , testProperty "encodings agree"     prop_encodings_agree
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
@@ -244,6 +246,13 @@ prop_codec_cbor
   -> Bool
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec2 msg)
+
+-- | Check that the encoder produces a valid CBOR.
+--
+prop_codec_valid_cbor
+  :: AnyMessageAndAgency (TxSubmission2 TxId Tx)
+  -> Property
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec2
 
 -- | 'codecTxSubmission' and 'codecTxSubmission2' agree on the encoding.  This
 -- and 'prop_codec' ensures the 'codecTxSubmission2' is backward compatible with

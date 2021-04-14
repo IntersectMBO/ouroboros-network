@@ -54,7 +54,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock (Block (..),
 import           Test.ChainGenerators ()
 import           Test.ChainProducerState (ChainProducerStateForkTest (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     splits2, splits3)
+                     prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -74,10 +74,11 @@ tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
   , testProperty "connectPipelinedMin ST" propChainSyncPipelinedMinConnectST
   , testProperty "connectPipelinedMax IO" propChainSyncPipelinedMaxConnectIO
   , testProperty "connectPipelinedMin IO" propChainSyncPipelinedMinConnectIO
-  , testProperty "codec"          prop_codec_ChainSync
-  , testProperty "codec 2-splits" prop_codec_splits2_ChainSync
-  , testProperty "codec 3-splits" $ withMaxSuccess 30 prop_codec_splits3_ChainSync
-  , testProperty "codec cbor"     prop_codec_cbor
+  , testProperty "codec"            prop_codec_ChainSync
+  , testProperty "codec 2-splits"   prop_codec_splits2_ChainSync
+  , testProperty "codec 3-splits"   $ withMaxSuccess 30 prop_codec_splits3_ChainSync
+  , testProperty "codec cbor"       prop_codec_cbor
+  , testProperty "codec valid cbor" prop_codec_valid_cbor
   , testProperty "codecSerialised"            prop_codec_ChainSyncSerialised
   , testProperty "codecSerialised 2-splits"   prop_codec_splits2_ChainSyncSerialised
   , testProperty "codecSerialised 3-splits" $ withMaxSuccess 30
@@ -450,11 +451,17 @@ prop_codec_splits3_ChainSync msg =
       splits3
       codec
       msg
+
 prop_codec_cbor
   :: AnyMessageAndAgency ChainSync_BlockHeader
   -> Bool
 prop_codec_cbor msg =
     ST.runST (prop_codec_cborM codec msg)
+
+prop_codec_valid_cbor
+  :: AnyMessageAndAgency ChainSync_BlockHeader
+  -> Property
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 
 codecSerialised
   :: ( MonadST m

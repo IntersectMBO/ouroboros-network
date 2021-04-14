@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE TypeApplications  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -34,9 +35,11 @@ import           Ouroboros.Network.Protocol.KeepAlive.Examples
 import           Ouroboros.Network.Protocol.KeepAlive.Direct
 
 import Test.Ouroboros.Network.Testing.Utils
-        ( splits2
+        ( prop_codec_valid_cbor_encoding
+        , splits2
         , splits3
         )
+
 
 import Test.QuickCheck
 import Text.Show.Functions ()
@@ -50,17 +53,18 @@ import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Protocol.KeepAlive"
-  [ testProperty "direct"            prop_direct
-  , testProperty "connect"           prop_connect
-  , testProperty "channel ST"        prop_channel_ST
-  , testProperty "channel IO"        prop_channel_IO
-  , testProperty "codec"             prop_codec
-  , testProperty "codec 2-splits"    prop_codec_splits2
-  , testProperty "codec 3-splits"    (withMaxSuccess 33 prop_codec_splits3)
-  , testProperty "codec v2"          prop_codec_v2
-  , testProperty "codec v2 2-splits" prop_codec_v2_splits2
-  , testProperty "codec v2 3-splits" (withMaxSuccess 33 prop_codec_v2_splits3)
-  , testProperty "byteLimits"        prop_byteLimits
+  [ testProperty "direct"              prop_direct
+  , testProperty "connect"             prop_connect
+  , testProperty "channel ST"          prop_channel_ST
+  , testProperty "channel IO"          prop_channel_IO
+  , testProperty "codec"               prop_codec
+  , testProperty "codec 2-splits"      prop_codec_splits2
+  , testProperty "codec 3-splits"      (withMaxSuccess 33 prop_codec_splits3)
+  , testProperty "codec v2"            prop_codec_v2
+  , testProperty "codec v2 2-splits"   prop_codec_v2_splits2
+  , testProperty "codec v2 3-splits"   (withMaxSuccess 33 prop_codec_v2_splits3)
+  , testProperty "codec v2 valid CBOR" prop_codec_v2_valid_cbor
+  , testProperty "byteLimits"          prop_byteLimits
   ]
 
 --
@@ -170,6 +174,9 @@ prop_codec_v2_splits3 :: AnyMessageAndAgency KeepAlive -> Bool
 prop_codec_v2_splits3 msg =
     runST (prop_codec_splitsM splits3 codecKeepAlive_v2 msg)
 
+prop_codec_v2_valid_cbor :: AnyMessageAndAgency KeepAlive -> Property
+prop_codec_v2_valid_cbor msg =
+    prop_codec_valid_cbor_encoding codecKeepAlive_v2 msg
 
 prop_byteLimits :: AnyMessageAndAgency KeepAlive
                          -> Bool

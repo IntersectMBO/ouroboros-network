@@ -42,7 +42,8 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Examples
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Text.Show.Functions ()
 import           Test.QuickCheck as QC
@@ -64,6 +65,7 @@ tests =
   , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                        prop_codec_splits3
   , testProperty "codec cbor"          prop_codec_cbor
+  , testProperty "codec valid cbor"    prop_codec_valid_cbor
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
   , testProperty "pipe IO"             prop_pipe_IO
@@ -254,3 +256,10 @@ prop_codec_cbor
   -> Bool
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec msg)
+
+-- | Check that the encoder produces a valid CBOR.
+--
+prop_codec_valid_cbor
+  :: AnyMessageAndAgency (LocalTxSubmission Tx Reject)
+  -> Property
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
