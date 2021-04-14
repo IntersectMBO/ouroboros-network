@@ -11,6 +11,19 @@
         "url": "https://github.com/input-output-hk/haskell.nix/archive/1b9b05beed75a1be98405501fbb33ac1f080069e.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
+    "hls-released": {
+        "branch": "1.1.0",
+        "description": "Successor of ghcide & haskell-ide-engine. One IDE to rule them all.",
+        "homepage": "",
+        "builtin": false,
+        "owner": "haskell",
+        "repo": "haskell-language-server",
+        "rev": "f1c096927186a93d8e3ccd4fe8385cc1b070350b",
+        "sha256": "0kviq3kinm3i0qm4r26rdnlkwbs1s3r1rqiqdry517rgkgnjpcp5",
+        "type": "tarball",
+        "url": "https://github.com/haskell/haskell-language-server/archive/f1c096927186a93d8e3ccd4fe8385cc1b070350b.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
     "iohk-nix": {
         "branch": "master",
         "description": "nix scripts shared across projects",
@@ -33,6 +46,19 @@
         "sha256": "0jn88ahv6mycxdkzihy1v0dz2110q0d42q4ggyj68l2lyba6y0yy",
         "type": "tarball",
         "url": "https://github.com/input-output-hk/niv/archive/89da7b2e7ae0779fd351618fc74df1b1da5e6214.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "stylish-haskell": {
+        "branch": "main",
+        "description": "Haskell code prettifier",
+        "homepage": "",
+        "builtin": false,
+        "owner": "haskell",
+        "repo": "stylish-haskell",
+        "rev": "3d5348041e2efbcae95f1c62ace5ac0ffd9629d2",
+        "sha256": "1rms68fll6w1rzdg9ppjs9g246mbgxi5589vxb8r8pcn5v1ncfj2",
+        "type": "tarball",
+        "url": "https://github.com/haskell/stylish-haskell/archive/3d5348041e2efbcae95f1c62ace5ac0ffd9629d2.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
