@@ -50,14 +50,17 @@ import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Protocol.KeepAlive"
-  [ testProperty "direct"         prop_direct
-  , testProperty "connect"        prop_connect
-  , testProperty "channel ST"     prop_channel_ST
-  , testProperty "channel IO"     prop_channel_IO
-  , testProperty "codec"          prop_codec
-  , testProperty "codec 2-splits" prop_codec_splits2
-  , testProperty "codec 3-splits" (withMaxSuccess 33 prop_codec_splits3)
-  , testProperty "byteLimits"     prop_byteLimits
+  [ testProperty "direct"            prop_direct
+  , testProperty "connect"           prop_connect
+  , testProperty "channel ST"        prop_channel_ST
+  , testProperty "channel IO"        prop_channel_IO
+  , testProperty "codec"             prop_codec
+  , testProperty "codec 2-splits"    prop_codec_splits2
+  , testProperty "codec 3-splits"    (withMaxSuccess 33 prop_codec_splits3)
+  , testProperty "codec v2"          prop_codec_v2
+  , testProperty "codec v2 2-splits" prop_codec_v2_splits2
+  , testProperty "codec v2 3-splits" (withMaxSuccess 33 prop_codec_v2_splits3)
+  , testProperty "byteLimits"        prop_byteLimits
   ]
 
 --
@@ -154,6 +157,18 @@ prop_codec_splits2 msg =
 prop_codec_splits3 :: AnyMessageAndAgency KeepAlive -> Bool
 prop_codec_splits3 msg =
     runST (prop_codec_splitsM splits3 codecKeepAlive msg)
+
+prop_codec_v2 :: AnyMessageAndAgency KeepAlive -> Bool
+prop_codec_v2 msg =
+    runST (prop_codecM codecKeepAlive_v2 msg)
+
+prop_codec_v2_splits2 :: AnyMessageAndAgency KeepAlive -> Bool
+prop_codec_v2_splits2 msg =
+    runST (prop_codec_splitsM splits2 codecKeepAlive_v2 msg)
+
+prop_codec_v2_splits3 :: AnyMessageAndAgency KeepAlive -> Bool
+prop_codec_v2_splits3 msg =
+    runST (prop_codec_splitsM splits3 codecKeepAlive_v2 msg)
 
 
 prop_byteLimits :: AnyMessageAndAgency KeepAlive
