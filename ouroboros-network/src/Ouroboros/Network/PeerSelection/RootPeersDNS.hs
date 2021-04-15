@@ -286,7 +286,7 @@ localRootPeersProvider
   -> TimeoutFn IO
   -> DNS.ResolvConf
   -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
-  -> StrictTVar IO (NonEmpty (Int, Map RelayAddress PeerAdvertise))
+  -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
   -> IO Void
 localRootPeersProvider tracer
                        timeout
@@ -294,18 +294,17 @@ localRootPeersProvider tracer
                        rootPeersGroupsVar
                        domainsGroupsVar = do
   domainsGroups <- atomically $ readTVar domainsGroupsVar
-  traceWith tracer (TraceLocalRootDomains (NonEmpty.toList domainsGroups))
+  traceWith tracer (TraceLocalRootDomains domainsGroups)
 #if !defined(mingw32_HOST_OS)
   rr <- asyncResolverResource resolvConf
 #else
   let rr = newResolverResource resolvConf
 #endif
-  let domainsGroupsList = NonEmpty.toList domainsGroups
-
+  let
       -- Flatten the local root peers groups and associate a group index to each
       -- DomainAddress to be monitorized.
       addresses = [ (group, address, pa)
-                  | (group, (_, m)) <- zip [0..] domainsGroupsList
+                  | (group, (_, m)) <- zip [0..] domainsGroups
                   , (address, pa) <- Map.toList m ]
       domains = [ (group, domain, pa)
                 | (group, RelayDomain domain, pa) <- addresses ]
@@ -316,7 +315,7 @@ localRootPeersProvider tracer
       -- the addresses within each group, we fill the TVar with
       -- a placeholder list, in order for each monitored DomainAddress to
       -- be updated in the correct group.
-      placeholder = map (\(t, _) -> (t, Map.empty)) domainsGroupsList
+      placeholder = map (\(t, _) -> (t, Map.empty)) domainsGroups
       placeholder' =
         foldr (\(group, addr, pa) ph
                 -> let (target, entry) = ph !! group
@@ -331,7 +330,9 @@ localRootPeersProvider tracer
   -- wait for threads to return or for local config changes
   withAsyncAll (map (monitorDomain rr) domains) $ \as ->
     atomically $ do
-      (void $ waitAnySTM as) <|> waitConfigChanged domainsGroups
+      if null as
+        then waitConfigChanged domainsGroups
+        else void (waitAnySTM as) <|> waitConfigChanged domainsGroups
 
   -- Recursive call to remonitor all new/updated local root peers
   localRootPeersProvider tracer
@@ -341,7 +342,7 @@ localRootPeersProvider tracer
                          domainsGroupsVar
 
   where
-    waitConfigChanged :: NonEmpty (Int, Map RelayAddress PeerAdvertise) -> STM IO ()
+    waitConfigChanged :: [(Int, Map RelayAddress PeerAdvertise)] -> STM IO ()
     waitConfigChanged dg = do
       dg' <- readTVar domainsGroupsVar
       check (dg /= dg')
@@ -357,7 +358,7 @@ localRootPeersProvider tracer
       -> (DomainAddress, PeerAdvertise)
       -> IO (Either DNSError [((Socket.SockAddr, PeerAdvertise), DNS.TTL)])
     resolveDomain resolver
-                  ((domain@DomainAddress {daDomain, daPortNumber})
+                  (domain@DomainAddress {daDomain, daPortNumber}
                   , advertisePeer) = do
       reply <- lookupAWithTTL timeout resolvConf resolver daDomain
       case reply of

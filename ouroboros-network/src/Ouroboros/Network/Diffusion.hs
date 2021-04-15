@@ -666,6 +666,13 @@ runDataDiffusion tracers
         targetNumberOfActivePeers = min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
       }
 
+    daLocalRootPeersVar <- newTVarIO $
+                            ([( 1
+                              , Map.fromList $
+                                  map (\(d,p) -> (RelayDomain d, p))
+                                      daLocalRootPeers)])
+    -- ^ TODO: This is just a simple transformation
+
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
@@ -845,9 +852,7 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
-                      [( 1
-                       , Map.fromList $ map (\(d,p) -> (RelayDomain d, p)) daLocalRootPeers)]
-                      -- ^ TODO: This is just a simple transformation
+                      daLocalRootPeersVar
                       daPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)
@@ -958,9 +963,7 @@ runDataDiffusion tracers
                       timeout
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
-                      [( 1
-                       , Map.fromList $ map (\(d,p) -> (RelayDomain d, p)) daLocalRootPeers)]
-                      -- ^ TODO: This is just a simple transformation
+                      daLocalRootPeersVar
                       daPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)
