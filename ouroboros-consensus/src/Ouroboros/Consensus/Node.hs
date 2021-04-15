@@ -74,7 +74,7 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode,
                      RemoteAddress, combineVersions,
                      defaultMiniProtocolParameters)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..),
-                     newPeerMetric, addHeaderMetric)
+                     newPeerMetric, reportMetric)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block
@@ -328,7 +328,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
           llrnChainSyncTimeout
-          (addHeaderMetric peerMetrics)
+          (reportMetric peerMetrics)
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps

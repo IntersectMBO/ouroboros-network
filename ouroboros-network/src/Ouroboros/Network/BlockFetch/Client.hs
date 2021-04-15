@@ -56,6 +56,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , rejectedFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), PeerFetchInFlightLimits(..) )
+import           Ouroboros.Network.PeerSelection.PeerMetric.Type (ReportFetchedMetricsSTM)
 
 
 data BlockFetchProtocolFailure =
@@ -84,9 +85,10 @@ blockFetchClient :: forall header block m.
                      HeaderHash header ~ HeaderHash block)
                  => NodeToNodeVersion
                  -> ControlMessageSTM m
+                 -> ReportFetchedMetricsSTM m
                  -> FetchClientContext header block m
                  -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m ()
-blockFetchClient _version controlMessageSTM
+blockFetchClient _version controlMessageSTM reportFetched
                  FetchClientContext {
                    fetchClientCtxTracer    = tracer,
                    fetchClientCtxPolicy    = FetchClientPolicy {
@@ -266,6 +268,7 @@ blockFetchClient _version controlMessageSTM
 
           (MsgBlock block, header:headers') -> ReceiverEffect $ do
             now <- getCurrentTime
+            nowMono <- getMonotonicTime
             --TODO: consider how to enforce expected block size limit.
             -- They've lied and are sending us a massive amount of data.
             -- Resource consumption attack.
@@ -296,6 +299,10 @@ blockFetchClient _version controlMessageSTM
 
             forgeTime <- atomically $ blockForgeUTCTime $ FromConsensus block
             let blockDelay = diffUTCTime now forgeTime
+
+            let hf = getHeaderFields header
+                slotNo = headerFieldSlot hf
+            atomically $ reportFetched (blockFetchSize header) slotNo nowMono
 
             -- Note that we add the block to the chain DB /before/ updating our
             -- current status and in-flight stats. Otherwise blocks will

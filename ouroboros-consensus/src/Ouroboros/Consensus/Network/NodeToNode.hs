@@ -55,7 +55,9 @@ import           Ouroboros.Network.Driver
 import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
-import           Ouroboros.Network.PeerSelection.PeerMetric (ReportHeaderMetricsSTM)
+import           Ouroboros.Network.PeerSelection.PeerMetric.Type
+                     (ReportFetchedMetricsSTM, ReportHeaderMetricsSTM,
+                     ReportPeerMetrics (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
@@ -125,6 +127,7 @@ data Handlers m peer blk = Handlers {
     , hBlockFetchClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
+        -> ReportFetchedMetricsSTM m
         -> BlockFetchClient (Header blk) blk m ()
 
     , hBlockFetchServer
@@ -451,10 +454,10 @@ mkApps
   -> Tracers m remotePeer blk e
   -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA)
   -> m ChainSyncTimeout
-  -> (remotePeer -> ReportHeaderMetricsSTM m)
+  -> ReportPeerMetrics m remotePeer
   -> Handlers m remotePeer blk
   -> Apps m remotePeer bCS bBF bTX bTX2 bKA ()
-mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout addHeaderMetrics Handlers {..} =
+mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout ReportPeerMetrics {..} Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
@@ -487,7 +490,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout addHeaderMetrics Handler
                   channel
                   $ chainSyncClientPeerPipelined
                   $ hChainSyncClient them version controlMessageSTM
-                      (addHeaderMetrics them) varCandidate
+                      (reportHeader them) varCandidate
               return ((), trailing)
 
     aChainSyncServer
@@ -526,7 +529,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout addHeaderMetrics Handler
           (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
           timeLimitsBlockFetch
           channel
-          $ hBlockFetchClient version controlMessageSTM clientCtx
+          $ hBlockFetchClient version controlMessageSTM (reportFetch them) clientCtx
 
     aBlockFetchServer
       :: NodeToNodeVersion

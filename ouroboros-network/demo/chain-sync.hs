@@ -296,7 +296,8 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               nullTracer -- (contramap (show . TraceLabelPeer connectionId) stdoutTracer)
               codecBlockFetch
               channel
-              (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy IO)) clientCtx)
+              (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy IO))
+                (\_ _ _ -> return ()) clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO

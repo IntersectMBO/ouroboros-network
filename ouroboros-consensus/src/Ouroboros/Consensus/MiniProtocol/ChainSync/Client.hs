@@ -56,7 +56,8 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
-import           Ouroboros.Network.PeerSelection.PeerMetric (ReportHeaderMetricsSTM)
+import           Ouroboros.Network.PeerSelection.PeerMetric.Type
+                     (ReportHeaderMetricsSTM)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
