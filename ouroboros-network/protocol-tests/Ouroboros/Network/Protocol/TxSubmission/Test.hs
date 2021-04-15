@@ -68,20 +68,22 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.TxSubmission"
-  [ testProperty "direct"              prop_direct
-  , testProperty "connect 1"           prop_connect1
-  , testProperty "connect 2"           prop_connect2
-  , testProperty "codec"               prop_codec
-  , testProperty "codec id"            prop_codec_id
-  , testProperty "codec 2-splits"      prop_codec_splits2
-  , testProperty "codec 3-splits"    $ withMaxSuccess 30
-                                       prop_codec_splits3
-  , testProperty "codec cbor"          prop_codec_cbor
-  , testProperty "codec valid cbor"    prop_codec_valid_cbor
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
+  testGroup "Ouroboros.Network.Protocol"
+  [ testGroup "TxSubmission"
+      [ testProperty "direct"              prop_direct
+      , testProperty "connect 1"           prop_connect1
+      , testProperty "connect 2"           prop_connect2
+      , testProperty "codec"               prop_codec
+      , testProperty "codec id"            prop_codec_id
+      , testProperty "codec 2-splits"      prop_codec_splits2
+      , testProperty "codec 3-splits"    $ withMaxSuccess 30
+                                           prop_codec_splits3
+      , testProperty "codec cbor"          prop_codec_cbor
+      , testProperty "codec valid cbor"    prop_codec_valid_cbor
+      , testProperty "channel ST"          prop_channel_ST
+      , testProperty "channel IO"          prop_channel_IO
+      , testProperty "pipe IO"             prop_pipe_IO
+      ]
   ]
 
 

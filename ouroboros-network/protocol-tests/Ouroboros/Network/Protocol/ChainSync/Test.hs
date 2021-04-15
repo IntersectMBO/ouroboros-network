@@ -61,43 +61,45 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.Protocol.ChainSyncProtocol"
-  [ testProperty "direct ST" propChainSyncDirectST
-  , testProperty "direct IO" propChainSyncDirectIO
-  , testProperty "connect ST" propChainSyncConnectST
-  , testProperty "connect IO" propChainSyncConnectIO
-  , testProperty "directPipelinedMax ST" propChainSyncPipeliendMaxDirectST
-  , testProperty "directPipelinedMax IO" propChainSyncPipeliendMaxDirectIO
-  , testProperty "directPipelinedMin ST" propChainSyncPipeliendMinDirectST
-  , testProperty "directPipelinedMin IO" propChainSyncPipeliendMinDirectIO
-  , testProperty "connectPipelinedMax ST" propChainSyncPipelinedMaxConnectST
-  , testProperty "connectPipelinedMin ST" propChainSyncPipelinedMinConnectST
-  , testProperty "connectPipelinedMax IO" propChainSyncPipelinedMaxConnectIO
-  , testProperty "connectPipelinedMin IO" propChainSyncPipelinedMinConnectIO
-  , testProperty "codec"            prop_codec_ChainSync
-  , testProperty "codec 2-splits"   prop_codec_splits2_ChainSync
-  , testProperty "codec 3-splits"   $ withMaxSuccess 30 prop_codec_splits3_ChainSync
-  , testProperty "codec cbor"       prop_codec_cbor
-  , testProperty "codec valid cbor" prop_codec_valid_cbor
-  , testProperty "codecSerialised"            prop_codec_ChainSyncSerialised
-  , testProperty "codecSerialised 2-splits"   prop_codec_splits2_ChainSyncSerialised
-  , testProperty "codecSerialised 3-splits" $ withMaxSuccess 30
-                                              prop_codec_splits3_ChainSyncSerialised
-  , testProperty "codecSerialised cbor"       prop_codec_cbor_ChainSyncSerialised
-  , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_ChainSync_ChainSyncSerialised
-  , testProperty "codecSerialised/codec bin compat"  prop_codec_binary_compat_ChainSyncSerialised_ChainSync
-  , testProperty "demo ST" propChainSyncDemoST
-  , testProperty "demo IO" propChainSyncDemoIO
-  , testProperty "demoPipelinedMax ST"     propChainSyncDemoPipelinedMaxST
-  , testProperty "demoPipelinedMax IO"     propChainSyncDemoPipelinedMaxIO
-  , testProperty "demoPipelinedMin ST"     propChainSyncDemoPipelinedMinST
-  , testProperty "demoPipelinedMin IO"     propChainSyncDemoPipelinedMinIO
-  , testProperty "demoPipelinedLowHigh ST" propChainSyncDemoPipelinedLowHighST
-  , testProperty "demoPipelinedLowHigh IO" propChainSyncDemoPipelinedLowHighIO
-  , testProperty "demoPipelinedMin IO (buffered)"
-                                       propChainSyncDemoPipelinedMinBufferedIO
-  , testProperty "demo IO" propChainSyncDemoIO
-  , testProperty "pipe demo" propChainSyncPipe
+tests = testGroup "Ouroboros.Network.Protocol"
+  [ testGroup "ChainSync"
+    [ testProperty "direct ST" propChainSyncDirectST
+    , testProperty "direct IO" propChainSyncDirectIO
+    , testProperty "connect ST" propChainSyncConnectST
+    , testProperty "connect IO" propChainSyncConnectIO
+    , testProperty "directPipelinedMax ST" propChainSyncPipeliendMaxDirectST
+    , testProperty "directPipelinedMax IO" propChainSyncPipeliendMaxDirectIO
+    , testProperty "directPipelinedMin ST" propChainSyncPipeliendMinDirectST
+    , testProperty "directPipelinedMin IO" propChainSyncPipeliendMinDirectIO
+    , testProperty "connectPipelinedMax ST" propChainSyncPipelinedMaxConnectST
+    , testProperty "connectPipelinedMin ST" propChainSyncPipelinedMinConnectST
+    , testProperty "connectPipelinedMax IO" propChainSyncPipelinedMaxConnectIO
+    , testProperty "connectPipelinedMin IO" propChainSyncPipelinedMinConnectIO
+    , testProperty "codec"            prop_codec_ChainSync
+    , testProperty "codec 2-splits"   prop_codec_splits2_ChainSync
+    , testProperty "codec 3-splits"   $ withMaxSuccess 30 prop_codec_splits3_ChainSync
+    , testProperty "codec cbor"       prop_codec_cbor
+    , testProperty "codec valid cbor" prop_codec_valid_cbor
+    , testProperty "codecSerialised"            prop_codec_ChainSyncSerialised
+    , testProperty "codecSerialised 2-splits"   prop_codec_splits2_ChainSyncSerialised
+    , testProperty "codecSerialised 3-splits" $ withMaxSuccess 30
+                                                prop_codec_splits3_ChainSyncSerialised
+    , testProperty "codecSerialised cbor"       prop_codec_cbor_ChainSyncSerialised
+    , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_ChainSync_ChainSyncSerialised
+    , testProperty "codecSerialised/codec bin compat"  prop_codec_binary_compat_ChainSyncSerialised_ChainSync
+    , testProperty "demo ST" propChainSyncDemoST
+    , testProperty "demo IO" propChainSyncDemoIO
+    , testProperty "demoPipelinedMax ST"     propChainSyncDemoPipelinedMaxST
+    , testProperty "demoPipelinedMax IO"     propChainSyncDemoPipelinedMaxIO
+    , testProperty "demoPipelinedMin ST"     propChainSyncDemoPipelinedMinST
+    , testProperty "demoPipelinedMin IO"     propChainSyncDemoPipelinedMinIO
+    , testProperty "demoPipelinedLowHigh ST" propChainSyncDemoPipelinedLowHighST
+    , testProperty "demoPipelinedLowHigh IO" propChainSyncDemoPipelinedLowHighIO
+    , testProperty "demoPipelinedMin IO (buffered)"
+                                         propChainSyncDemoPipelinedMinBufferedIO
+    , testProperty "demo IO" propChainSyncDemoIO
+    , testProperty "pipe demo" propChainSyncPipe
+    ]
   ]
 
 -- | Testing @'Client'@ which stops at a given point.

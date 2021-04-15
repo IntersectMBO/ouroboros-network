@@ -54,30 +54,32 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.Handshake"
-  [ testProperty "connect"               prop_connect
-  , testProperty "channel ST"            prop_channel_ST
-  , testProperty "channel IO"            prop_channel_IO
-  , testProperty "pipe IO"               prop_pipe_IO
-  , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
-  , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
-  , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
-  , testProperty "codec RefuseReason"    prop_codec_RefuseReason
-  , testProperty "codec"                 prop_codec_Handshake
-  , testProperty "codec 2-splits"        prop_codec_splits2_Handshake
-  , testProperty "codec 3-splits"      $ withMaxSuccess 30
-                                         prop_codec_splits3_Handshake
-  , testProperty "codec cbor"            prop_codec_cbor
-  , testProperty "codec valid cbor"      prop_codec_valid_cbor
-  , testGroup "Generators"
-    [ testProperty "ArbitraryVersions" $
-        checkCoverage prop_arbitrary_ArbitraryVersions
-    , testProperty "arbitrary ArbitraryValidVersions"
-        prop_arbitrary_ArbitraryValidVersions
-    , testProperty "shrink ArbitraryValidVersions"
-        prop_shrink_ArbitraryValidVersions
+  testGroup "Ouroboros.Network.Protocol"
+    [ testGroup "Handshake"
+        [ testProperty "connect"               prop_connect
+        , testProperty "channel ST"            prop_channel_ST
+        , testProperty "channel IO"            prop_channel_IO
+        , testProperty "pipe IO"               prop_pipe_IO
+        , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
+        , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
+        , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
+        , testProperty "codec RefuseReason"    prop_codec_RefuseReason
+        , testProperty "codec"                 prop_codec_Handshake
+        , testProperty "codec 2-splits"        prop_codec_splits2_Handshake
+        , testProperty "codec 3-splits"      $ withMaxSuccess 30
+                                               prop_codec_splits3_Handshake
+        , testProperty "codec cbor"            prop_codec_cbor
+        , testProperty "codec valid cbor"      prop_codec_valid_cbor
+        , testGroup "Generators"
+          [ testProperty "ArbitraryVersions" $
+              checkCoverage prop_arbitrary_ArbitraryVersions
+          , testProperty "arbitrary ArbitraryValidVersions"
+              prop_arbitrary_ArbitraryValidVersions
+          , testProperty "shrink ArbitraryValidVersions"
+              prop_shrink_ArbitraryValidVersions
+          ]
+        ]
     ]
-  ]
 
 --
 -- Test Versions

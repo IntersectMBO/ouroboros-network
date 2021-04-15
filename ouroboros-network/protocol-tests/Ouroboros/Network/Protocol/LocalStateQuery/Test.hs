@@ -58,21 +58,23 @@ import           Text.Show.Functions ()
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.LocalStateQuery"
-  [ testProperty "direct"              prop_direct
-  , testProperty "connect"             prop_connect
-  , testProperty "codec"               prop_codec
-  , testProperty "codec 2-splits"      prop_codec_splits2
-  , testProperty "codec 3-splits"    $ withMaxSuccess 30
-                                       prop_codec_splits3
-  , testProperty "codecs V7/V8 compatible"
-                                       prop_codec_V7_compatible
-  , testProperty "codec cbor"          prop_codec_cbor
-  , testProperty "codec valid cbor"    prop_codec_valid_cbor
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
-  ]
+  testGroup "Ouroboros.Network.Protocol"
+    [ testGroup "LocalStateQuery"
+        [ testProperty "direct"              prop_direct
+        , testProperty "connect"             prop_connect
+        , testProperty "codec"               prop_codec
+        , testProperty "codec 2-splits"      prop_codec_splits2
+        , testProperty "codec 3-splits"    $ withMaxSuccess 30
+                                             prop_codec_splits3
+        , testProperty "codecs V7/V8 compatible"
+                                             prop_codec_V7_compatible
+        , testProperty "codec cbor"          prop_codec_cbor
+        , testProperty "codec valid cbor"    prop_codec_valid_cbor
+        , testProperty "channel ST"          prop_channel_ST
+        , testProperty "channel IO"          prop_channel_IO
+        , testProperty "pipe IO"             prop_pipe_IO
+        ]
+    ]
 
 
 --
