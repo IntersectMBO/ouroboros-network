@@ -182,7 +182,7 @@ showTracers tr = Tracers
 data TraceForgeEvent blk
     -- | Start of the leadership check
     --
-    -- We record the current slot number.
+    -- We record the slot we're testing and also slot during which we're testing.
   = TraceStartLeadershipCheck SlotNo
 
     -- | Leadership check failed: the tip of the ImmutableDB inhabits the

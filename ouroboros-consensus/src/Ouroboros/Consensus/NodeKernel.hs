@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -27,6 +28,7 @@ module Ouroboros.Consensus.NodeKernel (
 import           Control.Monad
 import           Control.Monad.Except
 import           Data.Bifunctor (second)
+import           Data.Foldable (asum)
 import           Data.Hashable (Hashable)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
@@ -414,19 +416,53 @@ forkBlockForging
     -> InternalState m remotePeer localPeer blk
     -> BlockForging m blk
     -> m ()
-forkBlockForging maxTxCapacityOverride IS{..} blockForging =
-      void
-    $ forkLinkedWatcher registry threadLabel
-    $ knownSlotWatcher btime
-    $ withEarlyExit_ . go
+forkBlockForging maxTxCapacityOverride IS{..} blockForging = do
+    -- the latest slot during which we checked for leadership
+    mbPrevRef <- newTVarIO Nothing
+
+    void
+      $ forkLinkedWatcher registry threadLabel
+      $ knownSlotWatcher btime
+      $ \currentSlot -> flip finally (atomically $ writeTVar mbPrevRef $ Just currentSlot) $ do
+        atomically (readTVar mbPrevRef) >>= \case
+          Nothing   -> withEarlyExit_ $ go currentSlot currentSlot
+          Just prev ->
+            -- We try to forge for every lead slot we missed, in order. If we
+            -- somehow won the lottery for several of those slots, then it's
+            -- possible that we'll incur a sudden spike in CPU utilization from
+            -- rapidly forging one block per slot we missed. But maybe block
+            -- forging is indeed the top priority that SPOs want to spend their
+            -- CPU on?
+            --
+            -- Also, how likely is it that we'll have to forge " too many "
+            -- blocks? That'd be a lot of lottery wins.
+            --
+            -- Note that we will quickly fail to lead in slots that are behind
+            -- our local chain; we don't even check the lottery. See the
+            -- creation of 'TraceBlockFromFuture'.
+            --
+            -- An alternative is to start forging one block per missed lead
+            -- slot, but eg stop once the mempool is empty.
+            --
+            -- Another alternative is to forge only in the first missed slot
+            -- that we can.
+            withEarlyExit_
+              $ asum
+              $ map (go currentSlot)
+              $ reverse [max (prev + 1) (oldestToConsider currentSlot) .. currentSlot]
   where
+    -- TODO magic number to bound the work here for when an eg laptop node is
+    -- awoken from sleep
+    oldestToConsider currentSlot =
+        if currentSlot >= 1000 then currentSlot - 1000 else 0
+
     threadLabel :: String
     threadLabel =
         "NodeKernel.blockForging." <> Text.unpack (forgeLabel blockForging)
 
-    go :: SlotNo -> WithEarlyExit m ()
-    go currentSlot = do
-        trace $ TraceStartLeadershipCheck currentSlot
+    go :: SlotNo -> SlotNo -> WithEarlyExit m ()
+    go _currentSlot testingSlot = do
+        trace $ TraceStartLeadershipCheck testingSlot
 
         -- Figure out which block to connect to
         --
@@ -434,7 +470,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         -- be the /previous/ block, if there were multiple slot leaders
         BlockContext{bcBlockNo, bcPrevPoint} <- do
           eBlkCtx <- lift $ atomically $
-            mkCurrentBlockContext currentSlot
+            mkCurrentBlockContext testingSlot
                 <$> ChainDB.getCurrentChain chainDB
           case eBlkCtx of
             Right blkCtx -> return blkCtx
@@ -442,7 +478,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               trace failure
               exitEarly
 
-        trace $ TraceBlockContext currentSlot bcBlockNo bcPrevPoint
+        trace $ TraceBlockContext testingSlot bcBlockNo bcPrevPoint
 
         -- Get ledger state corresponding to bcPrevPoint
         --
@@ -455,10 +491,10 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
           case mExtLedger of
             Just l  -> return l
             Nothing -> do
-              trace $ TraceNoLedgerState currentSlot bcPrevPoint
+              trace $ TraceNoLedgerState testingSlot bcPrevPoint
               exitEarly
 
-        trace $ TraceLedgerState currentSlot bcPrevPoint
+        trace $ TraceLedgerState testingSlot bcPrevPoint
 
         -- We require the ticked ledger view in order to construct the ticked
         -- 'ChainDepState'.
@@ -467,7 +503,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
                            (ledgerViewForecastAt
                               (configLedger cfg)
                               (ledgerState unticked))
-                           currentSlot of
+                           testingSlot of
             Left err -> do
               -- There are so many empty slots between the tip of our chain and
               -- the current slot that we cannot get an ledger view anymore
@@ -475,12 +511,12 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               -- (we use the ticked ledger state). However, we probably don't
               -- /want/ to produce a block in this case; we are most likely
               -- missing a blocks on our chain.
-              trace $ TraceNoLedgerView currentSlot err
+              trace $ TraceNoLedgerView testingSlot err
               exitEarly
             Right lv ->
               return lv
 
-        trace $ TraceLedgerView currentSlot
+        trace $ TraceLedgerView testingSlot
 
         -- Tick the 'ChainDepState' for the 'SlotNo' we're producing a block
         -- for. We only need the ticked 'ChainDepState' to check the whether
@@ -491,7 +527,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
                 tickChainDepState
                   (configConsensus cfg)
                   ledgerView
-                  currentSlot
+                  testingSlot
                   (headerStateChainDep (headerState unticked))
 
         -- Check if we are the leader
@@ -501,29 +537,29 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               (contramap (TraceLabelCreds (forgeLabel blockForging))
                 (forgeStateInfoTracer tracers))
               cfg
-              currentSlot
+              testingSlot
               tickedChainDepState
           case shouldForge of
             ForgeStateUpdateError err -> do
-              trace $ TraceForgeStateUpdateError currentSlot err
+              trace $ TraceForgeStateUpdateError testingSlot err
               exitEarly
             CannotForge cannotForge -> do
-              trace $ TraceNodeCannotForge currentSlot cannotForge
+              trace $ TraceNodeCannotForge testingSlot cannotForge
               exitEarly
             NotLeader -> do
-              trace $ TraceNodeNotLeader currentSlot
+              trace $ TraceNodeNotLeader testingSlot
               exitEarly
             ShouldForge p -> return p
 
         -- At this point we have established that we are indeed slot leader
-        trace $ TraceNodeIsLeader currentSlot
+        trace $ TraceNodeIsLeader testingSlot
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
         let tickedLedgerState :: Ticked (LedgerState blk)
             tickedLedgerState =
               applyChainTick
                 (configLedger cfg)
-                currentSlot
+                testingSlot
                 (ledgerState unticked)
 
         -- Get a snapshot of the mempool that is consistent with the ledger
@@ -537,7 +573,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
                              getSnapshotFor
                                mempool
                                (ForgeInKnownSlot
-                                  currentSlot
+                                  testingSlot
                                   tickedLedgerState)
         let txs = map fst $ snapshotTxsForSize
                               mempoolSnapshot
@@ -548,12 +584,12 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
           Block.forgeBlock blockForging
             cfg
             bcBlockNo
-            currentSlot
+            testingSlot
             tickedLedgerState
             txs
             proof
         trace $ TraceForgedBlock
-                  currentSlot
+                  testingSlot
                   (ledgerTipPoint (Proxy @blk) (ledgerState unticked))
                   newBlock
                   (snapshotMempoolSize mempoolSnapshot)
@@ -570,9 +606,9 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
             ChainDB.getIsInvalidBlock chainDB
           case isInvalid of
             Nothing ->
-              trace $ TraceDidntAdoptBlock currentSlot newBlock
+              trace $ TraceDidntAdoptBlock testingSlot newBlock
             Just reason -> do
-              trace $ TraceForgedInvalidBlock currentSlot newBlock reason
+              trace $ TraceForgedInvalidBlock testingSlot newBlock reason
               -- We just produced a block that is invalid according to the
               -- ledger in the ChainDB, while the mempool said it is valid.
               -- There is an inconsistency between the two!
@@ -592,7 +628,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
         -- assert this here because the ability to extract transactions from a
         -- block, i.e., the @HasTxs@ class, is not implementable by all blocks,
         -- e.g., @DualBlock@.
-        trace $ TraceAdoptedBlock currentSlot newBlock txs
+        trace $ TraceAdoptedBlock testingSlot newBlock txs
 
     trace :: TraceForgeEvent blk -> WithEarlyExit m ()
     trace =
