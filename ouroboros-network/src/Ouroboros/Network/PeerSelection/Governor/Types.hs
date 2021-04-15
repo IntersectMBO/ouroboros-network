@@ -19,6 +19,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   -- These records are needed to run the peer selection.
   , PeerStateActions (..)
   , PeerSelectionActions (..) 
+  , ChurnMode (..)
 
   -- * P2P govnernor internals
   , PeerSelectionState (..)
@@ -598,6 +599,7 @@ data TracePeerSelection peeraddr =
      | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime
+     | TraceChurnMode          ChurnMode
   deriving Show
 
 data DebugPeerSelection peeraddr peerconn =
@@ -605,3 +607,7 @@ data DebugPeerSelection peeraddr peerconn =
                           (Maybe DiffTime)  -- wait time
                           (PeerSelectionState peeraddr peerconn)
   deriving (Show, Functor)
+
+data ChurnMode = ChurnModeBulkSync
+               | ChurnModeNormal deriving Show
+

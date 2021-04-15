@@ -111,7 +111,8 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS ( resolveDomainAcc
                                                               , ioDNSActions
                                                               )
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import           Ouroboros.Network.PeerSelection.Governor.Types ( TracePeerSelection (..)
+import           Ouroboros.Network.PeerSelection.Governor.Types ( ChurnMode (..)
+                                                                , TracePeerSelection (..)
                                                                 , DebugPeerSelection (..)
                                                                 , PeerSelectionCounters (..)
                                                                 )
@@ -666,6 +667,8 @@ runDataDiffusion tracers
         (churnRng, fuzzRng) = split rng''
     policyRngVar <- newTVarIO policyRng
 
+    churnModeVar <- newTVarIO ChurnModeNormal
+
     peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
         -- Start with a smaller number of active peers, the churn governor will
         -- increase it to the configured value after a delay.
@@ -871,12 +874,13 @@ runDataDiffusion tracers
                             fuzzRng
                             peerSelectionActions
                             (Diffusion.Policies.simplePeerSelectionPolicy
-                              policyRngVar daPeerMetrics))
+                              policyRngVar (readTVar churnModeVar) daPeerMetrics))
                           $ \governorThread ->
                             Async.withAsync
                               (Governor.peerChurnGovernor
                                 dtTracePeerSelectionTracer
                                 daPeerMetrics
+                                churnModeVar
                                 churnRng
                                 daBlockFetchMode
                                 daPeerSelectionTargets
@@ -992,7 +996,7 @@ runDataDiffusion tracers
                           fuzzRng
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
-                            policyRngVar daPeerMetrics))
+                            policyRngVar (readTVar churnModeVar) daPeerMetrics))
                         $ \governorThread -> do
                         let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
                             mkAddr addr = ( Socket.addrFamily  addr
@@ -1027,6 +1031,7 @@ runDataDiffusion tracers
                                     (Governor.peerChurnGovernor
                                       dtTracePeerSelectionTracer
                                       daPeerMetrics
+                                      churnModeVar
                                       churnRng
                                       daBlockFetchMode
                                       daPeerSelectionTargets
