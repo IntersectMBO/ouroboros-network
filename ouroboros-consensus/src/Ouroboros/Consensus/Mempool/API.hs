@@ -23,6 +23,9 @@ module Ouroboros.Consensus.Mempool.API (
     -- * Tracing support
   , TraceEventMempool (..)
   , addTxs
+  , isMempoolTxAdded
+  , isMempoolTxRejected
+  , mempoolTxAddedToMaybe
     -- * Re-exports
   , TxSizeInBytes
   ) where
