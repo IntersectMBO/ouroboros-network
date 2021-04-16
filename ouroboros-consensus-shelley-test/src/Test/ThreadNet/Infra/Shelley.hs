@@ -436,9 +436,9 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
     SL.Tx
-      { _body       = body
-      , _witnessSet = witnessSet
-      , _metadata   = SL.SNothing
+      { body            = body
+      , wits            = witnessSet
+      , auxiliaryData   = SL.SNothing
       }
   where
     -- The funds touched by this transaction assume it's the first transaction
@@ -563,9 +563,9 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
     SL.Tx
-      { _body       = body
-      , _witnessSet = witnessSet
-      , _metadata   = SL.SNothing
+      { body          = body
+      , wits          = witnessSet
+      , auxiliaryData = SL.SNothing
       }
   where
     -- The funds touched by this transaction assume it's the first transaction

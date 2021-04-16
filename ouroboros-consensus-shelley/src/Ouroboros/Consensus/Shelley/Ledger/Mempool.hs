@@ -27,7 +27,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
   ) where
 
 import           Control.Monad.Except (Except)
-import qualified Data.ByteString.Lazy as Lazy
 import           Data.Foldable (toList)
 import qualified Data.Sequence as Seq
 import           Data.Typeable (Typeable)
@@ -110,10 +109,10 @@ instance ShelleyBasedEra era
 
   txInBlockSize (ShelleyTx _ tx) = txSize + perTxOverhead
     where
-      txSize = fromIntegral . Lazy.length . SL.txFullBytes $ tx
+      txSize = fromIntegral $ getField @"txsize" tx
 
 mkShelleyTx :: forall era. ShelleyBasedEra era => SL.Tx era -> GenTx (ShelleyBlock era)
-mkShelleyTx tx = ShelleyTx (SL.txid @era (SL._body tx)) tx
+mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
 
 newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (SL.TxId (EraCrypto era))
   deriving newtype (Eq, Ord, NoThunks)
