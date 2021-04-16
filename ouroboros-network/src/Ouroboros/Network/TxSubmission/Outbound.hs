@@ -89,7 +89,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
   where
     client :: StrictSeq (txid, idx) -> idx -> ClientStIdle txid tx m ()
     client !unackedSeq !lastIdx =
-        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye }
+        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
       where
         recvMsgRequestTxIds :: forall blocking.
                                TokBlockingStyle blocking
@@ -191,6 +191,3 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           traceWith tracer (TraceTxSubmissionOutboundSendMsgReplyTxs txs)
 
           return $ SendMsgReplyTxs txs client'
-
-        recvMsgKThxBye :: m ()
-        recvMsgKThxBye = pure ()

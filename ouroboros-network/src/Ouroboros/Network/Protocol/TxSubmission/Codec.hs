@@ -6,9 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 
--- usage of `MsgKThxBye` is safe in this module.
-{-# OPTIONS_GHC -Wno-warnings-deprecations #-}
-
 module Ouroboros.Network.Protocol.TxSubmission.Codec (
     codecTxSubmission
   , codecTxSubmissionId
@@ -132,10 +129,6 @@ encodeTxSubmission encodeTxId encodeTx = encode
      <> CBOR.encodeListLenIndef
      <> foldr (\txid r -> encodeTxId txid <> r) CBOR.encodeBreak txids
 
-    encode (ServerAgency TokIdle) MsgKThxBye =
-         CBOR.encodeListLen 1
-      <> CBOR.encodeWord 5
-
     encode (ClientAgency TokTxs)  (MsgReplyTxs txs) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 3
@@ -199,9 +192,6 @@ decodeTxSubmission decodeTxId decodeTx = decode
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
           return (SomeMessage (MsgRequestTxs txids))
 
-        (ServerAgency TokIdle,       1, 5) ->
-          return (SomeMessage MsgKThxBye)
-
         (ClientAgency TokTxs,     2, 3) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
@@ -241,7 +231,6 @@ codecTxSubmissionId = Codec encode decode
   decode stok = return $ DecodePartial $ \bytes -> return $ case (stok, bytes) of
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxIds {}))) -> DecodeDone (SomeMessage msg) Nothing
     (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxs {})))   -> DecodeDone (SomeMessage msg) Nothing
-    (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgKThxBye {})))      -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency TokTxs,       Just (AnyMessage msg@(MsgReplyTxs {})))     -> DecodeDone (SomeMessage msg) Nothing
     (ClientAgency (TokTxIds b), Just (AnyMessage msg)) -> case (b, msg) of
       (TokBlocking,    MsgReplyTxIds (BlockingReply {}))    -> DecodeDone (SomeMessage msg) Nothing

@@ -65,14 +65,12 @@ txSubmissionMessage
     / msgRequestTxs
     / msgReplyTxs
     / tsMsgDone
-    / msgReplyKTnxBye
 
 msgRequestTxIds = [0, tsBlocking, txCount, txCount]
 msgReplyTxIds   = [1, [ *txIdAndSize] ]
 msgRequestTxs   = [2, tsIdList ]
 msgReplyTxs     = [3, tsIdList ]
 tsMsgDone       = [4]
-msgReplyKTnxBye = [5]
 
 tsBlocking      = false / true
 txCount         = word16
