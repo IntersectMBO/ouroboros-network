@@ -9,6 +9,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -21,14 +22,16 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
     GenTx (..)
   , SL.ApplyTxError (..)
   , TxId (..)
+  , Validated (..)
   , fixedBlockBodyOverhead
   , mkShelleyTx
+  , mkShelleyValidatedTx
   , perTxOverhead
   ) where
 
 import           Control.Monad.Except (Except)
+import           Control.Monad.Identity (Identity (..))
 import           Data.Foldable (toList)
-import qualified Data.Sequence as Seq
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Records
@@ -45,8 +48,8 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
+import qualified Cardano.Ledger.Era as SL (Crypto, TxInBlock, TxSeq, fromTxSeq)
 import qualified Shelley.Spec.Ledger.API as SL
-import           Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
@@ -61,6 +64,20 @@ deriving instance ShelleyBasedEra era => NoThunks (GenTx (ShelleyBlock era))
 deriving instance ShelleyBasedEra era => Eq (GenTx (ShelleyBlock era))
 
 instance Typeable era => ShowProxy (GenTx (ShelleyBlock era)) where
+
+data instance Validated (GenTx (ShelleyBlock era)) =
+    ShelleyValidatedTx
+      !(SL.TxId (EraCrypto era))
+      !(SL.TxInBlock era)
+  deriving stock (Generic)
+
+deriving instance ShelleyBasedEra era => NoThunks (Validated (GenTx (ShelleyBlock era)))
+
+deriving instance ShelleyBasedEra era => Eq (Validated (GenTx (ShelleyBlock era)))
+
+deriving instance ShelleyBasedEra era => Show (Validated (GenTx (ShelleyBlock era)))
+
+instance Typeable era => ShowProxy (Validated (GenTx (ShelleyBlock era))) where
 
 type instance ApplyTxErr (ShelleyBlock era) = SL.ApplyTxError era
 
@@ -98,9 +115,7 @@ instance ShelleyBasedEra era
 
   applyTx = applyShelleyTx
 
-  -- TODO actual reapplication:
-  -- https://github.com/input-output-hk/cardano-ledger-specs/issues/1304
-  reapplyTx = applyShelleyTx
+  reapplyTx = applyShelleyValidatedTx
 
   maxTxCapacity TickedShelleyLedgerState { tickedShelleyLedgerState = shelleyState } =
       fromIntegral maxBlockBodySize - fixedBlockBodyOverhead
@@ -111,8 +126,17 @@ instance ShelleyBasedEra era
     where
       txSize = fromIntegral $ getField @"txsize" tx
 
+  txForgetValidated (ShelleyValidatedTx txid tx) = ShelleyTx txid (SL.extractTx tx)
+
 mkShelleyTx :: forall era. ShelleyBasedEra era => SL.Tx era -> GenTx (ShelleyBlock era)
 mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
+
+mkShelleyValidatedTx :: forall era.
+     ShelleyBasedEra era
+  => SL.TxInBlock era
+  -> Validated (GenTx (ShelleyBlock era))
+mkShelleyValidatedTx tx =
+    ShelleyValidatedTx (SL.txid @era (getField @"body" tx)) tx
 
 newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (SL.TxId (EraCrypto era))
   deriving newtype (Eq, Ord, NoThunks)
@@ -129,13 +153,13 @@ instance ShelleyBasedEra era => HasTxId (GenTx (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => HasTxs (ShelleyBlock era) where
   extractTxs =
-        map mkShelleyTx
+        map mkShelleyValidatedTx
       . txSeqToList
       . SL.bbody
       . shelleyBlockRaw
     where
-      txSeqToList :: TxSeq era -> [SL.Tx era]
-      txSeqToList (TxSeq s) = toList s
+      txSeqToList :: SL.TxSeq era -> [SL.TxInBlock era]
+      txSeqToList = toList . SL.fromTxSeq @era
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -170,17 +194,64 @@ instance Show (GenTxId (ShelleyBlock era)) where
   Applying transactions
 -------------------------------------------------------------------------------}
 
-applyShelleyTx ::
+applyShelleyTx :: forall era.
      ShelleyBasedEra era
   => LedgerConfig (ShelleyBlock era)
   -> SlotNo
   -> GenTx (ShelleyBlock era)
   -> TickedLedgerState (ShelleyBlock era)
+  -> Except (ApplyTxErr (ShelleyBlock era))
+       ( TickedLedgerState (ShelleyBlock era)
+       , Validated (GenTx (ShelleyBlock era))
+       )
+applyShelleyTx cfg slot (ShelleyTx _ tx) st = do
+    (mempoolState', vtx) <-
+       SL.applyTx
+         (shelleyLedgerGlobals cfg)
+         (SL.mkMempoolEnv   innerSt slot)
+         (SL.mkMempoolState innerSt)
+         tx
+
+    let st' = set theLedgerLens mempoolState' st
+
+    pure (st', mkShelleyValidatedTx vtx)
+  where
+    innerSt = tickedShelleyLedgerState st
+
+applyShelleyValidatedTx :: forall era.
+     ShelleyBasedEra era
+  => LedgerConfig (ShelleyBlock era)
+  -> SlotNo
+  -> Validated (GenTx (ShelleyBlock era))
+  -> TickedLedgerState (ShelleyBlock era)
   -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era))
-applyShelleyTx cfg slot (ShelleyTx _ tx) st =
-    (\state -> st { tickedShelleyLedgerState = state }) <$>
-        SL.applyTxs
-          (shelleyLedgerGlobals cfg)
-          slot
-          (Seq.singleton tx)
-          (tickedShelleyLedgerState st)
+applyShelleyValidatedTx cfg slot (ShelleyValidatedTx _ tx) st = do
+    mempoolState' <-
+       SL.applyTxInBlock
+         (shelleyLedgerGlobals cfg)
+         (SL.mkMempoolEnv   innerSt slot)
+         (SL.mkMempoolState innerSt)
+         tx
+
+    pure $ set theLedgerLens mempoolState' st
+  where
+    innerSt = tickedShelleyLedgerState st
+
+-- | The lens combinator
+set ::
+     (forall f. Applicative f => (a -> f b) -> s -> f t)
+  -> b -> s -> t
+set lens inner outer =
+    runIdentity $ lens (\_ -> Identity inner) outer
+
+theLedgerLens ::
+     -- TODO SL.overNewEpochState should not require 'Applicative'
+     Applicative f
+  => (      (SL.UTxOState era, SL.DPState (SL.Crypto era))
+       -> f (SL.UTxOState era, SL.DPState (SL.Crypto era))
+     )
+  ->    TickedLedgerState (ShelleyBlock era)
+  -> f (TickedLedgerState (ShelleyBlock era))
+theLedgerLens f x =
+        (\y -> x{tickedShelleyLedgerState = y})
+    <$> SL.overNewEpochState f (tickedShelleyLedgerState x)

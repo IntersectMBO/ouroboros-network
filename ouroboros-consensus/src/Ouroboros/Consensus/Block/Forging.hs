@@ -141,7 +141,7 @@ data BlockForging m blk = BlockForging {
         -> BlockNo                      -- Current block number
         -> SlotNo                       -- Current slot number
         -> TickedLedgerState blk        -- Current ledger state
-        -> [GenTx blk]                  -- Contents of the mempool
+        -> [Validated (GenTx blk)]      -- Contents of the mempool
         -> IsLeader (BlockProtocol blk) -- Proof we are leader
         -> m blk
     }

@@ -439,7 +439,8 @@ ledgerView_AtoB = InPairs.ignoringBoth $ TranslateForecast $ \_ _ _ -> return $
 injectTx_AtoB ::
      RequiringBoth
        WrapLedgerConfig
-       InjectTx
+       (Product2 InjectTx InjectValidatedTx)
        BlockA
        BlockB
-injectTx_AtoB = InPairs.ignoringBoth $ cannotInjectTx
+injectTx_AtoB =
+    InPairs.ignoringBoth $ Pair2 cannotInjectTx cannotInjectValidatedTx

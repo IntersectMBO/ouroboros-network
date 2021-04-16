@@ -22,6 +22,7 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -113,6 +114,6 @@ praosBlockForging cid initHotKey = do
                                    cfg
                                    bno sno
                                    tickedLedgerSt
-                                   txs
+                                   (map txForgetValidated txs)
                                    isLeader
       }

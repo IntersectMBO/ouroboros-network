@@ -81,7 +81,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
         mbTx <- genTx cfg curSlotNo st stgeGenEnv
         case mbTx of
           Nothing -> return (reverse acc)  -- cannot afford more transactions
-          Just tx -> case runExcept $ applyTx lcfg curSlotNo tx st of
+          Just tx -> case runExcept $ fst <$> applyTx lcfg curSlotNo tx st of
               -- We don't mind generating invalid transactions
               Left  _   -> go (tx:acc) (n - 1) st
               Right st' -> go (tx:acc) (n - 1) st'

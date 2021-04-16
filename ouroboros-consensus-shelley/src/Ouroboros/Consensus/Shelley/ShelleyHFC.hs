@@ -309,3 +309,11 @@ instance ( ShelleyBasedEra era
   translateEra ctxt (Comp (ShelleyTx _txId tx)) =
     -- TODO will the txId stay the same? If so, we could avoid recomputing it
     Comp . mkShelleyTx <$> SL.translateEra ctxt tx
+
+instance ( ShelleyBasedEra era
+         , SL.TranslateEra era WrapTxInBlock
+         ) => SL.TranslateEra era (WrapValidatedGenTx :.: ShelleyBlock) where
+  type TranslationError era (WrapValidatedGenTx :.: ShelleyBlock) = SL.TranslationError era WrapTxInBlock
+  translateEra ctxt (Comp (WrapValidatedGenTx (ShelleyValidatedTx _txId tx))) =
+        Comp . WrapValidatedGenTx . mkShelleyValidatedTx . unwrapTxInBlock @era
+    <$> SL.translateEra ctxt (WrapTxInBlock @(SL.PreviousEra era) tx)

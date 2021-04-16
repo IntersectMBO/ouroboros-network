@@ -30,7 +30,7 @@ import           Data.Bifunctor (second)
 import           Data.Hashable (Hashable)
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Map.Strict (Map)
-import           Data.Maybe (isJust)
+import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy
 import qualified Data.Text as Text
 import           Data.Time.Clock (UTCTime)
@@ -581,7 +581,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
               -- run the risk of forging the same invalid block again. This
               -- means that we'll throw away some good transactions in the
               -- process.
-              lift $ removeTxs mempool (map txId txs)
+              lift $ removeTxs mempool (map (txId . txForgetValidated) txs)
           exitEarly
 
         -- We successfully produced /and/ adopted a block
@@ -706,22 +706,26 @@ mkCurrentBlockContext currentSlot c = case c of
 -------------------------------------------------------------------------------}
 
 getMempoolReader
-  :: forall m blk. (IOLike m, HasTxId (GenTx blk))
+  :: forall m blk.
+     ( LedgerSupportsMempool blk
+     , IOLike m
+     , HasTxId (GenTx blk)
+     )
   => Mempool m blk TicketNo
-  -> TxSubmissionMempoolReader (GenTxId blk) (GenTx blk) TicketNo m
+  -> TxSubmissionMempoolReader (GenTxId blk) (Validated (GenTx blk)) TicketNo m
 getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
     { mempoolZeroIdx     = zeroIdx mempool
     , mempoolGetSnapshot = convertSnapshot <$> getSnapshot mempool
     }
   where
     convertSnapshot
-      :: MempoolSnapshot               blk                       TicketNo
-      -> MempoolReader.MempoolSnapshot (GenTxId blk) (GenTx blk) TicketNo
+      :: MempoolSnapshot               blk                                   TicketNo
+      -> MempoolReader.MempoolSnapshot (GenTxId blk) (Validated (GenTx blk)) TicketNo
     convertSnapshot MempoolSnapshot { snapshotTxsAfter, snapshotLookupTx,
                                       snapshotHasTx } =
       MempoolReader.MempoolSnapshot
         { mempoolTxIdsAfter = \idx ->
-            [ (txId tx, idx', getTxSize mempool tx)
+            [ (txId (txForgetValidated tx), idx', getTxSize mempool (txForgetValidated tx))
             | (tx, idx') <- snapshotTxsAfter idx
             ]
         , mempoolLookupTx   = snapshotLookupTx
@@ -729,13 +733,16 @@ getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
         }
 
 getMempoolWriter
-  :: (IOLike m, HasTxId (GenTx blk))
+  :: ( LedgerSupportsMempool blk
+     , IOLike m
+     , HasTxId (GenTx blk)
+     )
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
     { Inbound.txId          = txId
     , mempoolAddTxs = \txs ->
-        map (txId . fst) . filter (isMempoolTxAdded . snd) <$>
+        map (txId . txForgetValidated) . mapMaybe mempoolTxAddedToMaybe <$>
         addTxs mempool txs
     }
 
