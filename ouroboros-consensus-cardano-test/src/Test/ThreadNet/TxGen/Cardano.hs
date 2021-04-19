@@ -211,12 +211,12 @@ migrateUTxO migrationInfo curSlot lcfg lst
     if Map.null picked then Nothing else
     (Just . GenTxShelley. mkShelleyTx) $
     SL.Tx
-      { SL._body       = body
-      , SL._metadata   = SL.SNothing
-      , SL._witnessSet = SL.WitnessSet
-                           (Set.fromList [delegWit, poolWit])
-                           mempty
-                           (Set.singleton byronWit)
+      { SL.body          = body
+      , SL.auxiliaryData = SL.SNothing
+      , SL.wits          = SL.WitnessSet
+                             (Set.fromList [delegWit, poolWit])
+                             mempty
+                             (Set.singleton byronWit)
       }
 
     | otherwise           = Nothing

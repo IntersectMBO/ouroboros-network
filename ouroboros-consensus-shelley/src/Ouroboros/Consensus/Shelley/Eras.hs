@@ -26,9 +26,10 @@ import           Data.Text (Text)
 import           GHC.Records
 import           Numeric.Natural (Natural)
 
+
 import           Cardano.Ledger.Allegra (AllegraEra)
 import qualified Cardano.Ledger.Core as LC
-import           Cardano.Ledger.Era (Crypto)
+import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Control.State.Transition (State)
@@ -39,6 +40,7 @@ import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
+import qualified Shelley.Spec.Ledger.BlockChain as SL
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -66,12 +68,6 @@ type EraCrypto era = Crypto era
 {-------------------------------------------------------------------------------
   Era polymorphism
 -------------------------------------------------------------------------------}
--- | TODO: Core.Tx is a transaction type which might vary from one Era to another.
--- Currently, for all existing Shelley based eras (Shelley, Alegra,
--- and Mary) this type is set to SL.TX. This will eventually change, most likely
--- with Alonzo, thus this type instance will no longer be valid.
-type instance Core.Tx era = SL.Tx era
-
 -- | The ledger already defines 'SL.ShelleyBasedEra' as /the/ top-level
 -- constraint on an era, however, consensus often needs some more functionality
 -- than the ledger currently provides.
@@ -114,6 +110,7 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (LC.PParams era)
       , FromCBOR (SL.PParamsDelta era)
       , ToCBOR (LC.PParams era)
+      , SL.TxSeq era ~ TxSeq era
       , Core.Witnesses era ~ SL.WitnessSet era
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,

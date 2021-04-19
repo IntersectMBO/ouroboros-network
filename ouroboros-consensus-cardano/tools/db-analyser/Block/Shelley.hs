@@ -15,7 +15,6 @@ module Block.Shelley (
   ) where
 
 import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
 import           Data.Sequence.Strict (StrictSeq)
@@ -47,11 +46,11 @@ instance ( ShelleyBasedEra era
       SL.Block _ (SL.TxSeq txs) -> sum $ fmap countOutputs txs
     where
       countOutputs :: SL.Tx era -> Int
-      countOutputs = length . getField @"outputs" . SL._body
+      countOutputs = length . getField @"outputs" . getField @"body"
 
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ (SL.TxSeq txs) ->
-        toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
+        toList $ fmap (fromIntegral . (getField @"txsize")) txs
 
   knownEBBs = const Map.empty
 
