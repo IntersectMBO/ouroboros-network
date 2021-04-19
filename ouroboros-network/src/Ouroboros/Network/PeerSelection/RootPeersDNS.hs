@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 --  'resolverResource' and 'asyncResolverResource' are not used when compiled
 --  on @Windows@
@@ -33,6 +34,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     Socket.PortNumber,
   ) where
 
+import           Data.Aeson
 import           Data.Word (Word32)
 import           Data.List (foldl')
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -42,6 +44,8 @@ import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.IntMap.Strict as IntMap
+import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import qualified Data.Text as Text
 import           Data.Void (Void)
 
 import           Control.Applicative ((<|>))
@@ -74,11 +78,51 @@ data DomainAddress = DomainAddress {
   }
   deriving (Show, Eq, Ord)
 
+instance FromJSON DomainAddress where
+  parseJSON = withObject "DomainAddress" $ \v ->
+    DomainAddress
+      <$> (encodeUtf8 <$> v .: "addr")
+      <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
+
+instance ToJSON DomainAddress where
+  toJSON da =
+    object
+      [ "addr" .= decodeUtf8 (daDomain da)
+      , "port" .= (fromIntegral (daPortNumber da) :: Int)
+      ]
+
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
 data RelayAddress = RelayDomain !DomainAddress
                   | RelayAddress !IP.IP !Socket.PortNumber
                   deriving (Show, Eq, Ord)
+
+instance FromJSON RelayAddress where
+  parseJSON = withObject "RelayAddress" $ \v -> do
+    addr <- v .: "addr"
+    port <- v .: "port"
+    return (toRelayAddress addr port)
+
+instance ToJSON RelayAddress where
+  toJSON (RelayDomain (DomainAddress addr port)) =
+    object
+      [ "addr" .= decodeUtf8 addr
+      , "port" .= (fromIntegral port :: Int)
+      ]
+  toJSON (RelayAddress ip port) =
+    object
+      [ "addr" .= Text.pack (show ip)
+      , "port" .= (fromIntegral port :: Int)
+      ]
+
+-- | Parse a address field as either an IP address or a DNS address.
+-- Returns corresponding RelayAddress.
+--
+toRelayAddress :: Text -> Int -> RelayAddress
+toRelayAddress address port =
+    case readMaybe (Text.unpack address) of
+      Nothing   -> RelayDomain (DomainAddress (encodeUtf8 address) (fromIntegral port))
+      Just addr -> RelayAddress addr (fromIntegral port)
 
 -----------------------------------------------
 -- Resource
