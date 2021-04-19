@@ -666,12 +666,12 @@ runDataDiffusion tracers
         targetNumberOfActivePeers = min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
       }
 
+    -- v TODO: This is just a simple transformation
     daLocalRootPeersVar <- newTVarIO $
                             ([( 1
                               , Map.fromList $
                                   map (\(d,p) -> (RelayDomain d, p))
                                       daLocalRootPeers)])
-    -- ^ TODO: This is just a simple transformation
     daPublicRootPeersVar <- newTVarIO $ map RelayDomain daPublicRootPeers
     daUseLedgerAfterVar <- newTVarIO daUseLedgerAfter
 

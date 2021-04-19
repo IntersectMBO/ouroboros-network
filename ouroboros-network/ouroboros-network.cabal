@@ -147,6 +147,7 @@ library
                        TypeFamilies,
                        TypeInType
   build-depends:       base              >=4.9 && <4.15,
+                       aeson,
                        async             >=2.2 && <2.3,
                        base16-bytestring,
                        bytestring        >=0.10 && <0.11,
