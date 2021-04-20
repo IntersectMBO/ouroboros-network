@@ -104,7 +104,8 @@ import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
 -- | Protocol handlers for node-to-node (remote) communication
 data Handlers m peer blk = Handlers {
       hChainSyncClient
-        :: NodeToNodeVersion
+        :: peer
+        -> NodeToNodeVersion
         -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
@@ -171,12 +172,12 @@ mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
-        hChainSyncClient =
+        hChainSyncClient = \peer ->
           chainSyncClient
             (pipelineDecisionLowHighMark
               (chainSyncPipeliningLowMark  miniProtocolParameters)
               (chainSyncPipeliningHighMark miniProtocolParameters))
-            (Node.chainSyncClientTracer tracers)
+            (contramap (TraceLabelPeer peer) (Node.chainSyncClientTracer tracers))
             getTopLevelConfig
             (defaultChainDbView getChainDB)
       , hChainSyncServer = \_version ->
@@ -466,7 +467,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
         bracketChainSyncClient
-            (Node.chainSyncClientTracer (getTracers kernel))
+            (contramap (TraceLabelPeer them) (Node.chainSyncClientTracer (getTracers kernel)))
             (defaultChainDbView (getChainDB kernel))
             (getNodeCandidates kernel)
             them $ \varCandidate -> do
@@ -479,7 +480,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version controlMessageSTM varCandidate
+                  $ hChainSyncClient them version controlMessageSTM varCandidate
               return ((), trailing)
 
     aChainSyncServer
