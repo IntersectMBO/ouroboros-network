@@ -1055,6 +1055,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
     customNodeToNodeCodecs
       :: TopLevelConfig blk
+      -> NodeToNodeVersion
       -> NTN.Codecs blk CodecError m
            Lazy.ByteString
            Lazy.ByteString
@@ -1063,7 +1064,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
            (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
            (AnyMessage KeepAlive)
-    customNodeToNodeCodecs cfg = NTN.Codecs
+    customNodeToNodeCodecs cfg ntnVersion = NTN.Codecs
         { cChainSyncCodec =
             mapFailureCodec (CodecBytesFailure "ChainSync") $
               NTN.cChainSyncCodec binaryProtocolCodecs
@@ -1087,7 +1088,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               NTN.cKeepAliveCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion
+        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion ntnVersion
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
@@ -1323,7 +1324,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           _ -> pure ()
       where
         codec =
-            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion
+            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion version
 
 -- | Variant of 'createConnectChannels' with intermediate queues for
 -- delayed-but-in-order messages

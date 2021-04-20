@@ -6,6 +6,7 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -51,7 +52,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Examples
 import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.Protocol.TxSubmission.Type
 
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+                     prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
@@ -64,19 +66,22 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.TxSubmission"
-  [ testProperty "direct"              prop_direct
-  , testProperty "connect 1"           prop_connect1
-  , testProperty "connect 2"           prop_connect2
-  , testProperty "codec"               prop_codec
-  , testProperty "codec id"            prop_codec_id
-  , testProperty "codec 2-splits"      prop_codec_splits2
-  , testProperty "codec 3-splits"    $ withMaxSuccess 30
-                                       prop_codec_splits3
-  , testProperty "codec cbor"          prop_codec_cbor
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
+  testGroup "Ouroboros.Network.Protocol"
+  [ testGroup "TxSubmission"
+      [ testProperty "direct"              prop_direct
+      , testProperty "connect 1"           prop_connect1
+      , testProperty "connect 2"           prop_connect2
+      , testProperty "codec"               prop_codec
+      , testProperty "codec id"            prop_codec_id
+      , testProperty "codec 2-splits"      prop_codec_splits2
+      , testProperty "codec 3-splits"    $ withMaxSuccess 30
+                                           prop_codec_splits3
+      , testProperty "codec cbor"          prop_codec_cbor
+      , testProperty "codec valid cbor"    prop_codec_valid_cbor
+      , testProperty "channel ST"          prop_channel_ST
+      , testProperty "channel IO"          prop_channel_IO
+      , testProperty "pipe IO"             prop_pipe_IO
+      ]
   ]
 
 
@@ -340,6 +345,13 @@ prop_codec_cbor
   -> Bool
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec msg)
+
+-- | Check that the encoder produces a valid CBOR.
+--
+prop_codec_valid_cbor
+  :: AnyMessageAndAgency (TxSubmission TxId Tx)
+  -> Property
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 
 --
 -- Local generators

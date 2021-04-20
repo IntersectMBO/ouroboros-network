@@ -244,6 +244,7 @@ library ouroboros-protocol-tests
                        io-sim-classes,
                        ouroboros-network,
                        ouroboros-network-framework,
+                       ouroboros-network-testing,
                        typed-protocols
 
   ghc-options:         -Wall
