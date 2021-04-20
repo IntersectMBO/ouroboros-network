@@ -85,7 +85,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 -------------------------------------------------------------------------------}
 
 -- | Protocol handlers for node-to-client (local) communication
-data Handlers m peer blk = Handlers {
+data Handlers m blk = Handlers {
       hChainSyncServer
         :: ChainDB.Follower m blk (ChainDB.WithPoint blk (Serialised blk))
         -> ChainSyncServer (Serialised blk) (Point blk) (Tip blk) m ()
@@ -98,15 +98,15 @@ data Handlers m peer blk = Handlers {
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer.
+  :: forall m blk remotePeer.
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , QueryLedger blk
      )
-  => NodeKernelArgs m remotePeer localPeer blk
-  -> NodeKernel     m remotePeer localPeer blk
-  -> Handlers       m            localPeer blk
+  => NodeKernelArgs m remotePeer blk
+  -> NodeKernel     m remotePeer blk
+  -> Handlers       m            blk
 mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
     Handlers {
         hChainSyncServer =
@@ -345,10 +345,10 @@ mkApps
      , ShowProxy (GenTx blk)
      , ShowQuery (Query blk)
      )
-  => NodeKernel m remotePeer localPeer blk
+  => NodeKernel m remotePeer blk
   -> Tracers m localPeer blk e
   -> Codecs blk e m bCS bTX bSQ
-  -> Handlers m localPeer blk
+  -> Handlers m blk
   -> Apps m localPeer bCS bTX bSQ ()
 mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
     Apps {..}

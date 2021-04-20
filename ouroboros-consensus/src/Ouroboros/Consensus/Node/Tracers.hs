@@ -48,7 +48,7 @@ import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
   All tracers of a node bundled together
 -------------------------------------------------------------------------------}
 
-data Tracers' remotePeer localPeer blk f = Tracers
+data Tracers' remotePeer blk f = Tracers
   { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk)
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
@@ -66,7 +66,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   }
 
 instance (forall a. Semigroup (f a))
-      => Semigroup (Tracers' remotePeer localPeer blk f) where
+      => Semigroup (Tracers' remotePeer blk f) where
   l <> r = Tracers
       { chainSyncClientTracer         = f chainSyncClientTracer
       , chainSyncServerHeaderTracer   = f chainSyncServerHeaderTracer
@@ -85,15 +85,15 @@ instance (forall a. Semigroup (f a))
       }
     where
       f :: forall a. Semigroup a
-        => (Tracers' remotePeer localPeer blk f -> a) -> a
+        => (Tracers' remotePeer blk f -> a) -> a
       f prj = prj l <> prj r
 
 -- | A record of 'Tracer's for the node.
-type Tracers m remotePeer localPeer blk =
-     Tracers'  remotePeer localPeer blk (Tracer m)
+type Tracers m remotePeer blk =
+     Tracers'  remotePeer blk (Tracer m)
 
 -- | Use a 'nullTracer' for each of the 'Tracer's in 'Tracers'
-nullTracers :: Monad m => Tracers m remotePeer localPeer blk
+nullTracers :: Monad m => Tracers m remotePeer blk
 nullTracers = Tracers
     { chainSyncClientTracer         = nullTracer
     , chainSyncServerHeaderTracer   = nullTracer
@@ -122,7 +122,7 @@ showTracers :: ( Show blk
                , Show remotePeer
                , LedgerSupportsProtocol blk
                )
-            => Tracer m String -> Tracers m remotePeer localPeer blk
+            => Tracer m String -> Tracers m remotePeer blk
 showTracers tr = Tracers
     { chainSyncClientTracer         = showTracing tr
     , chainSyncServerHeaderTracer   = showTracing tr

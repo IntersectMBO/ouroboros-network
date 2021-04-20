@@ -155,7 +155,7 @@ data Handlers m peer blk = Handlers {
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer.
+  :: forall m blk remotePeer.
      ( IOLike m
      , MonadTime m
      , MonadTimer m
@@ -164,9 +164,9 @@ mkHandlers
      , LedgerSupportsProtocol blk
      , Ord remotePeer
      )
-  => NodeKernelArgs m remotePeer localPeer blk
-  -> NodeKernel     m remotePeer localPeer blk
-  -> Handlers       m remotePeer           blk
+  => NodeKernelArgs m remotePeer blk
+  -> NodeKernel     m remotePeer blk
+  -> Handlers       m remotePeer blk
 mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
@@ -430,7 +430,7 @@ data Apps m peer bCS bBF bTX bTX2 bKA a = Apps {
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bBF bTX bTX2 bKA.
+  :: forall m remotePeer blk e bCS bBF bTX bTX2 bKA.
      ( IOLike m
      , MonadTimer m
      , Ord remotePeer
@@ -441,7 +441,7 @@ mkApps
      , ShowProxy (TxId (GenTx blk))
      , ShowProxy (GenTx blk)
      )
-  => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
+  => NodeKernel m remotePeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
   -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA
   -> m ChainSyncTimeout

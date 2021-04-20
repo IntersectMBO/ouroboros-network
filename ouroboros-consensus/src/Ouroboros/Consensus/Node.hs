@@ -118,7 +118,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB
 -- code, tests, etc.
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
       -- | Consensus tracers
-      rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      rnTraceConsensus :: Tracers m (ConnectionId addrNTN) blk
 
       -- | Protocol tracers for node-to-node communication
     , rnTraceNTN :: NTN.Tracers m (ConnectionId addrNTN) blk DeserialiseFailure
@@ -134,7 +134,7 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
       -- Called on the 'NodeKernel' after creating it, but before the network
       -- layer is initialised.
     , rnNodeKernelHook :: ResourceRegistry m
-                       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+                       -> NodeKernel m (ConnectionId addrNTN) blk
                        -> m ()
 
     }
@@ -160,8 +160,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 
       -- | Customise the 'NodeArgs'
     , llrnCustomiseNodeKernelArgs ::
-           NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-        -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+           NodeKernelArgs m (ConnectionId addrNTN) blk
+        -> NodeKernelArgs m (ConnectionId addrNTN) blk
 
       -- | Ie 'bfcSalt'
     , llrnBfcSalt :: Int
@@ -313,8 +313,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
     codecConfig = configCodec cfg
 
     mkNodeToNodeApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m (ConnectionId addrNTN) blk
+      -> NodeKernel     m (ConnectionId addrNTN) blk
       -> BlockNodeToNodeVersion blk
       -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ByteString ()
     mkNodeToNodeApps nodeKernelArgs nodeKernel version =
@@ -326,8 +326,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m (ConnectionId addrNTN) blk
+      -> NodeKernel     m (ConnectionId addrNTN) blk
       -> BlockNodeToClientVersion blk
       -> NodeToClientVersion
       -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
@@ -347,7 +347,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NodeToClientVersion
           -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
          )
-      -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeKernel m (ConnectionId addrNTN) blk
       -> DiffusionApplications
            addrNTN addrNTC
            versionDataNTN versionDataNTC
@@ -472,16 +472,16 @@ mkChainDbArgs
     }
 
 mkNodeKernelArgs
-  :: forall m addrNTN addrNTC blk. (RunNode blk, IOLike m)
+  :: forall m addrNTN blk. (RunNode blk, IOLike m)
   => ResourceRegistry m
   -> Int
   -> StdGen
   -> TopLevelConfig blk
   -> m [BlockForging m blk]
-  -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> Tracers m (ConnectionId addrNTN) blk
   -> BlockchainTime m
   -> ChainDB m blk
-  -> m (NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
+  -> m (NodeKernelArgs m (ConnectionId addrNTN) blk)
 mkNodeKernelArgs
   registry
   bfcSalt
@@ -523,8 +523,8 @@ mkNodeKernelArgs
 -- values. This function makes sure we don't exceed those limits and that the
 -- values are consistent.
 nodeKernelArgsEnforceInvariants
-  :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  :: NodeKernelArgs m (ConnectionId addrNTN) blk
+  -> NodeKernelArgs m (ConnectionId addrNTN) blk
 nodeKernelArgsEnforceInvariants nodeKernelArgs = nodeKernelArgs
     { miniProtocolParameters = miniProtocolParameters
         -- If 'blockFetchPipeliningMax' exceeds the configured default, it
@@ -698,8 +698,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
           })
 
     llrnCustomiseNodeKernelArgs ::
-         NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+         NodeKernelArgs m (ConnectionId addrNTN) blk
+      -> NodeKernelArgs m (ConnectionId addrNTN) blk
     llrnCustomiseNodeKernelArgs = overBlockFetchConfiguration $
           maybe id
             (\mc bfc -> bfc { bfcMaxConcurrencyDeadline = mc })
@@ -727,8 +727,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
 
 overBlockFetchConfiguration ::
      (BlockFetchConfiguration -> BlockFetchConfiguration)
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m (ConnectionId addrNTN) blk
+  -> NodeKernelArgs m (ConnectionId addrNTN) blk
 overBlockFetchConfiguration f args = args {
       blockFetchConfiguration = f blockFetchConfiguration
     }

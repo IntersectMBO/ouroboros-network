@@ -88,7 +88,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 -------------------------------------------------------------------------------}
 
 -- | Interface against running relay node
-data NodeKernel m remotePeer localPeer blk = NodeKernel {
+data NodeKernel m remotePeer blk = NodeKernel {
       -- | The 'ChainDB' of the node
       getChainDB             :: ChainDB m blk
 
@@ -105,7 +105,7 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
 
       -- | The node's tracers
-    , getTracers             :: Tracers m remotePeer localPeer blk
+    , getTracers             :: Tracers m remotePeer blk
     }
 
 -- | The maximum transaction capacity of a block is computed by taking the max
@@ -124,8 +124,8 @@ data MaxTxCapacityOverride
     -- of a block.
 
 -- | Arguments required when initializing a node
-data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
-      tracers                 :: Tracers m remotePeer localPeer blk
+data NodeKernelArgs m remotePeer blk = NodeKernelArgs {
+      tracers                 :: Tracers m remotePeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
     , btime                   :: BlockchainTime m
@@ -141,15 +141,15 @@ data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
     }
 
 initNodeKernel
-    :: forall m remotePeer localPeer blk.
+    :: forall m remotePeer blk.
        ( IOLike m
        , RunNode blk
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
        )
-    => NodeKernelArgs m remotePeer localPeer blk
-    -> m (NodeKernel m remotePeer localPeer blk)
+    => NodeKernelArgs m remotePeer blk
+    -> m (NodeKernel m remotePeer blk)
 initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverride
                                    , blockForging, chainDB, initChainDB
                                    , blockFetchConfiguration
@@ -187,8 +187,8 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
   Internal node components
 -------------------------------------------------------------------------------}
 
-data InternalState m remotePeer localPeer blk = IS {
-      tracers             :: Tracers m remotePeer localPeer blk
+data InternalState m remotePeer blk = IS {
+      tracers             :: Tracers m remotePeer blk
     , cfg                 :: TopLevelConfig blk
     , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
@@ -200,15 +200,15 @@ data InternalState m remotePeer localPeer blk = IS {
     }
 
 initInternalState
-    :: forall m remotePeer localPeer blk.
+    :: forall m remotePeer blk.
        ( IOLike m
        , LedgerSupportsProtocol blk
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk
        )
-    => NodeKernelArgs m remotePeer localPeer blk
-    -> m (InternalState m remotePeer localPeer blk)
+    => NodeKernelArgs m remotePeer blk
+    -> m (InternalState m remotePeer blk)
 initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
                                  , blockFetchSize, btime
                                  , mempoolCapacityOverride
@@ -408,10 +408,10 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     compareCandidateChains = compareAnchoredFragments bcfg
 
 forkBlockForging
-    :: forall m remotePeer localPeer blk.
+    :: forall m remotePeer blk.
        (IOLike m, RunNode blk)
     => MaxTxCapacityOverride
-    -> InternalState m remotePeer localPeer blk
+    -> InternalState m remotePeer blk
     -> BlockForging m blk
     -> m ()
 forkBlockForging maxTxCapacityOverride IS{..} blockForging =
@@ -759,7 +759,7 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 -- justifies merging the future and current stake pools.
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
-  => NodeKernel m remotePeer localPeer blk
+  => NodeKernel m remotePeer blk
   -> (LedgerState blk -> Bool)
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
 getPeersFromCurrentLedger kernel p = do
@@ -774,12 +774,12 @@ getPeersFromCurrentLedger kernel p = do
 -- | Like 'getPeersFromCurrentLedger' but with a \"after slot number X\"
 -- condition.
 getPeersFromCurrentLedgerAfterSlot ::
-     forall m blk localPeer remotePeer.
+     forall m blk remotePeer.
      ( IOLike m
      , LedgerSupportsPeerSelection blk
      , UpdateLedger blk
      )
-  => NodeKernel m remotePeer localPeer blk
+  => NodeKernel m remotePeer blk
   -> SlotNo
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
 getPeersFromCurrentLedgerAfterSlot kernel slotNo =

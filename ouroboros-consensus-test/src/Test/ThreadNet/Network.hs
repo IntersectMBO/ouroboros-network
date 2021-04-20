@@ -51,7 +51,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
-import           Data.Void (Void)
 import           GHC.Stack
 import           System.Random (mkStdGen)
 
@@ -238,7 +237,7 @@ data VertexStatus m blk
   | VFalling
     -- ^ The vertex has a node instance, but it is about to transition to
     -- 'VDown' as soon as its edges transition to 'EDown'.
-  | VUp !(NodeKernel m NodeId Void blk) !(LimitedApp m NodeId blk)
+  | VUp !(NodeKernel m NodeId blk) !(LimitedApp m NodeId blk)
     -- ^ The vertex currently has a node instance, with these handles.
 
 -- | A directed /edge/ denotes the \"operator of a node-to-node connection\";
@@ -774,8 +773,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
-      -> m ( NodeKernel m NodeId Void blk
-           , LimitedApp m NodeId      blk
+      -> m ( NodeKernel m NodeId blk
+           , LimitedApp m NodeId blk
            )
     forkNode coreNodeId clock joinSlot registry pInfo nodeInfo txs0 = do
       let ProtocolInfo{..} = pInfo
@@ -1546,7 +1545,7 @@ nullDebugTracers ::
      , LedgerSupportsProtocol blk
      , TracingConstraints blk
      )
-  => Tracers m peer Void blk
+  => Tracers m peer blk
 nullDebugTracers = nullTracers `asTypeOf` showTracers debugTracer
 
 -- | Occurs throughout in positions that might be useful for debugging.
