@@ -3,8 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork (
-    BackoffDelay (..)
+module Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
+  ( BackoffDelay (..)
   , HardForkBlockchainTimeArgs (..)
   , hardForkBlockchainTime
   ) where
@@ -24,6 +24,8 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.Time
+
+import qualified Ouroboros.Consensus.BlockchainTime.WallClock.Types as WCT
 
 -- | A backoff delay
 --
@@ -76,7 +78,8 @@ hardForkBlockchainTime :: forall m blk.
                        => HardForkBlockchainTimeArgs m blk
                        -> m (BlockchainTime m)
 hardForkBlockchainTime args = do
-    run <- HF.runWithCachedSummary (summarize <$> getLedgerState)
+    sysRelTime <- WCT.systemTimeCurrent (hfbtSystemTime args)
+    run <- HF.runWithCachedSummary sysRelTime (summarize <$> getLedgerState)
     systemTimeWait
 
     (firstSlot, now, firstDelay) <- getCurrentSlot' tracer time run backoffDelay

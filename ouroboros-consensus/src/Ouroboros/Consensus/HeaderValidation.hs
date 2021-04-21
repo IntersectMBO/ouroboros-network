@@ -15,8 +15,8 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 -- | Header validation
-module Ouroboros.Consensus.HeaderValidation (
-    revalidateHeader
+module Ouroboros.Consensus.HeaderValidation
+  ( revalidateHeader
   , validateHeader
     -- * Annotated tips
   , AnnTip (..)
@@ -66,6 +66,8 @@ import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
+                     (RelativeTime)
 
 import           Cardano.Binary (enforceSize)
 
@@ -182,7 +184,7 @@ deriving instance (BlockSupportsProtocol blk, HasAnnTip blk)
 
 data instance Ticked (HeaderState blk) = TickedHeaderState {
       untickedHeaderStateTip    :: WithOrigin (AnnTip blk)
-    , tickedHeaderStateChainDep :: Ticked (ChainDepState (BlockProtocol blk))
+    , tickedHeaderStateChainDep :: RelativeTime -> Ticked (ChainDepState (BlockProtocol blk))
     }
 
 -- | Tick the 'ChainDepState' inside the 'HeaderState'
@@ -193,8 +195,8 @@ tickHeaderState :: ConsensusProtocol (BlockProtocol blk)
                 -> HeaderState blk -> Ticked (HeaderState blk)
 tickHeaderState cfg ledgerView slot HeaderState {..} = TickedHeaderState {
       untickedHeaderStateTip    = headerStateTip
-    , tickedHeaderStateChainDep =
-        tickChainDepState cfg ledgerView slot headerStateChainDep
+    , tickedHeaderStateChainDep = \sysRelTime ->
+        tickChainDepState sysRelTime cfg ledgerView slot headerStateChainDep
     }
 
 genesisHeaderState :: ChainDepState (BlockProtocol blk) -> HeaderState blk
@@ -411,12 +413,13 @@ castHeaderError (HeaderEnvelopeError e) = HeaderEnvelopeError $
 -- it will get the chance to do so in 'applyLedgerBlock', which is passed the
 -- entire block (not just the block body).
 validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
-               => TopLevelConfig blk
+               => RelativeTime
+               -> TopLevelConfig blk
                -> Ticked (LedgerView (BlockProtocol blk))
                -> Header blk
                -> Ticked (HeaderState blk)
                -> Except (HeaderError blk) (HeaderState blk)
-validateHeader cfg ledgerView hdr st = do
+validateHeader sysRelTime cfg ledgerView hdr st = do
     withExcept HeaderEnvelopeError $
       validateEnvelope
         cfg
@@ -428,7 +431,7 @@ validateHeader cfg ledgerView hdr st = do
         (configConsensus cfg)
         (validateView (configBlock cfg) hdr)
         (blockSlot hdr)
-        (tickedHeaderStateChainDep st)
+        (tickedHeaderStateChainDep st sysRelTime)
     return $ HeaderState (NotOrigin (getAnnTip hdr)) chainDepState'
 
 -- | Header revalidation
@@ -440,12 +443,13 @@ validateHeader cfg ledgerView hdr st = do
 -- 'updateChainDepState').
 revalidateHeader ::
      forall blk. (BlockSupportsProtocol blk, ValidateEnvelope blk, HasCallStack)
-  => TopLevelConfig blk
+  => RelativeTime
+  -> TopLevelConfig blk
   -> Ticked (LedgerView (BlockProtocol blk))
   -> Header blk
   -> Ticked (HeaderState blk)
   -> HeaderState blk
-revalidateHeader cfg ledgerView hdr st =
+revalidateHeader sysRelTime cfg ledgerView hdr st =
     assertWithMsg envelopeCheck $
       HeaderState
         (NotOrigin (getAnnTip hdr))
@@ -457,7 +461,7 @@ revalidateHeader cfg ledgerView hdr st =
           (configConsensus cfg)
           (validateView (configBlock cfg) hdr)
           (blockSlot hdr)
-          (tickedHeaderStateChainDep st)
+          (tickedHeaderStateChainDep st sysRelTime)
 
     envelopeCheck :: Either String ()
     envelopeCheck = runExcept $ withExcept show $

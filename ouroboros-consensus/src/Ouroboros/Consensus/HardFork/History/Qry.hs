@@ -12,8 +12,8 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Ouroboros.Consensus.HardFork.History.Qry (
-    -- * Qry
+module Ouroboros.Consensus.HardFork.History.Qry
+  ( -- * Qry
     Expr (..)
   , PastHorizonException (..)
   , qryFromExpr
@@ -216,6 +216,9 @@ data Expr (f :: Type -> Type) :: Type -> Type where
   ERelToAbsSlot  :: Expr f (SlotInEra, TimeInSlot)   -> Expr f SlotNo
   ERelToAbsEpoch :: Expr f (EpochInEra, SlotInEpoch) -> Expr f EpochNo
 
+  -- System relative time
+  ESysRelTime  :: Expr f RelativeTime
+
   -- Convert between relative values
 
   ERelTimeToSlot  :: Expr f TimeInEra  -> Expr f (SlotInEra, TimeInSlot)
@@ -233,8 +236,8 @@ data Expr (f :: Type -> Type) :: Type -> Type where
   Interpreter
 -------------------------------------------------------------------------------}
 
-evalExprInEra :: EraSummary -> ClosedExpr a -> Maybe a
-evalExprInEra EraSummary{..} = \(ClosedExpr e) -> go e
+evalExprInEra :: RelativeTime -> EraSummary -> ClosedExpr a -> Maybe a
+evalExprInEra sysRelTime EraSummary{..} = \(ClosedExpr e) -> go e
   where
     EraParams{..} = eraParams
     slotLen   = getSlotLength eraSlotLength
@@ -267,6 +270,8 @@ evalExprInEra EraSummary{..} = \(ClosedExpr e) -> go e
     -- Convert absolute to relative
     --
     -- The guards here justify the subtractions.
+
+    go ESysRelTime = return sysRelTime
 
     go (EAbsToRelTime expr) = do
         t <- go expr
@@ -377,8 +382,8 @@ instance Exception PastHorizonException
 -- era which relative slot/time refers?
 runQuery ::
      forall a xs. HasCallStack
-  => Qry a -> Summary xs -> Either PastHorizonException a
-runQuery qry (Summary summary) = go summary
+  => RelativeTime -> Qry a -> Summary xs -> Either PastHorizonException a
+runQuery sysRelTime qry (Summary summary) = go summary
   where
     go :: NonEmpty xs' EraSummary -> Either PastHorizonException a
     go (NonEmptyOne era)       = tryEra era qry
@@ -390,17 +395,17 @@ runQuery qry (Summary summary) = go summary
     tryEra era = \case
         QPure x   -> Right x
         QExpr e k ->
-          case evalExprInEra era e of
+          case evalExprInEra sysRelTime era e of
             Just x  ->
               tryEra era (k x)
             Nothing ->
               Left $ PastHorizon callStack (Some e) (toList summary)
 
-runQueryThrow :: (HasCallStack, MonadThrow m )=> Qry a -> Summary xs -> m a
-runQueryThrow q = either throwIO return . runQuery q
+runQueryThrow :: (HasCallStack, MonadThrow m )=> RelativeTime -> Qry a -> Summary xs -> m a
+runQueryThrow sysRelTime q = either throwIO return . runQuery sysRelTime q
 
-runQueryPure :: HasCallStack => Qry a -> Summary xs -> a
-runQueryPure q = either throw id . runQuery q
+runQueryPure :: HasCallStack => RelativeTime -> Qry a -> Summary xs -> a
+runQueryPure sysRelTime q = either throw id . runQuery sysRelTime q
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -423,10 +428,11 @@ mkInterpreter = Interpreter
 
 interpretQuery ::
      HasCallStack
-  => Interpreter xs
+  => RelativeTime
+  -> Interpreter xs
   -> Qry a
   -> Either PastHorizonException a
-interpretQuery (Interpreter summary) qry = runQuery qry summary
+interpretQuery sysRelTime (Interpreter summary) qry = runQuery sysRelTime qry summary
 
 -- | UNSAFE: extend the safe zone of the current era of the given 'Interpreter'
 -- to be /unbounded/, ignoring any future hard forks.
@@ -603,6 +609,7 @@ instance Show (ClosedExpr a) where
 
           -- Domain specific
 
+          ESysRelTime       -> showString "ESysRelTime"
           EAbsToRelTime   e -> showString "EAbsToRelTime "   . go n 11 e
           EAbsToRelSlot   e -> showString "EAbsToRelSlot "   . go n 11 e
           EAbsToRelEpoch  e -> showString "EAbsToRelEpoch "  . go n 11 e

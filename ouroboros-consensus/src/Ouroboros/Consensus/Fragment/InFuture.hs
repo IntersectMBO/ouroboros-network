@@ -9,8 +9,8 @@
 --
 -- > import Ouroboros.Consensus.Fragment.InFuture (CheckInFuture(..), ClockSkew(..))
 -- > import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-module Ouroboros.Consensus.Fragment.InFuture (
-    CheckInFuture (..)
+module Ouroboros.Consensus.Fragment.InFuture
+  ( CheckInFuture (..)
   , InFuture (..)
   , reference
     -- * Clock skew
@@ -132,7 +132,7 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
            -> (AnchoredFragment (Header blk), [InFuture blk])
         go (Empty a) = (Empty a, [])
         go (hs :> h) =
-            case HF.runQuery
+            case HF.runQuery now
                    (HF.slotToWallclock (blockSlot h))
                    summary of
               Left _err ->
