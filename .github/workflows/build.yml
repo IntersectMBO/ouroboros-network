@@ -13,12 +13,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        subset: [network, consensus]
         ghc: ["8.10.4"]
         os: [ubuntu-20.04, windows-latest]
-        exclude:
-          - os: windows-latest
-            subset: consensus
 
     steps:
     - name: Install Haskell
@@ -146,32 +142,25 @@ jobs:
     # Test network packages
 
     - name: ntp-client [test]
-      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run ntp-client:test
 
     - name: io-sim [test]
-      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run io-sim:test
 
     - name: io-sim-classes [test]
-      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run io-sim-classes:test
 
     - name: typed-protocols-examples [test]
-      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-examples:tests
 
     - name: network-mux [test]
-      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run network-mux:test
 
     # issue: #1818
     - name: ourobors-network-framework [test]
-      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
 
     - name: ouroboros-network [test]
-      if: matrix.subset == 'network'
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test
 
     # Consensus tests take too long on GitHub's Azure machines
