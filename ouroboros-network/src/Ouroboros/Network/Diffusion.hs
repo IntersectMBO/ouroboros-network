@@ -673,6 +673,7 @@ runDataDiffusion tracers
                                       daLocalRootPeers)])
     -- ^ TODO: This is just a simple transformation
     daPublicRootPeersVar <- newTVarIO daPublicRootPeers
+    daUseLedgerAfterVar <- newTVarIO daUseLedgerAfter
 
     let -- snocket for remote communication.
         snocket :: SocketSnocket
@@ -766,7 +767,7 @@ runDataDiffusion tracers
             (runLedgerPeers
               ledgerPeersRng
               dtLedgerPeersTracer
-              daUseLedgerAfter
+              daUseLedgerAfterVar
               daLedgerPeersCtx
               (resolveDomainAddresses
                 dtTracePublicRootPeersTracer

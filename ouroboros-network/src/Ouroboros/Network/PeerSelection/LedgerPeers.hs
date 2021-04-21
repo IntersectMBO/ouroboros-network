@@ -181,18 +181,19 @@ runLedgerPeers :: forall m.
                       )
                => StdGen
                -> Tracer m TraceLedgerPeers
-               -> UseLedgerAfter
+               -> StrictTVar m UseLedgerAfter
                -> LedgerPeersConsensusInterface m
                -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
                -> STM m NumberOfPeers
                -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
                -> m Void
-runLedgerPeers inRng tracer useLedgerAfter LedgerPeersConsensusInterface{..} doResolve
+runLedgerPeers inRng tracer useLedgerAfterVar LedgerPeersConsensusInterface{..} doResolve
                getReq putRsp = do
     go inRng (Time 0) Map.empty
   where
     go :: StdGen -> Time -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress) -> m Void
     go rng oldTs peerMap = do
+        useLedgerAfter <- atomically $ readTVar useLedgerAfterVar
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerAfter
                                   then 30
                                   else 1847 -- Close to but not exactly 30min.
