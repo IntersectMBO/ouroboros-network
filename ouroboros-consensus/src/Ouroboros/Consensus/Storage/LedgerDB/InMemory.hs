@@ -16,8 +16,8 @@
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE UndecidableInstances   #-}
 
-module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
-    -- * LedgerDB proper
+module Ouroboros.Consensus.Storage.LedgerDB.InMemory
+  ( -- * LedgerDB proper
     LedgerDbCfg (..)
   , ledgerDbWithAnchor
     -- ** opaque

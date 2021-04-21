@@ -4,8 +4,8 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Consensus.HardFork.History.Caching (
-    RunWithCachedSummary (..)
+module Ouroboros.Consensus.HardFork.History.Caching
+  ( RunWithCachedSummary (..)
   , cachedRunQueryThrow
   , runWithCachedSummary
   ) where
@@ -14,6 +14,8 @@ import           Data.Kind (Type)
 
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
+                     (RelativeTime)
 import           Ouroboros.Consensus.HardFork.History.Qry
 import           Ouroboros.Consensus.HardFork.History.Summary
 
@@ -47,9 +49,10 @@ cachedRunQueryThrow run qry = either throwIO return =<< cachedRunQuery run qry
 -- Most use cases will probably construct this action from an action that reads
 -- the ledger state and then computes the summary from that.
 runWithCachedSummary :: forall m xs. MonadSTM m
-                     => STM m (Summary xs)
+                     => RelativeTime
+                     -> STM m (Summary xs)
                      -> m (RunWithCachedSummary xs m)
-runWithCachedSummary getLatestSummary = do
+runWithCachedSummary sysRelTime getLatestSummary = do
     initSummary <- atomically getLatestSummary
     var <- newTVarIO initSummary
     return $ RunWithCachedSummary { cachedRunQuery = go var }
@@ -58,9 +61,9 @@ runWithCachedSummary getLatestSummary = do
        -> Qry a -> STM m (Either PastHorizonException a)
     go var q = do
         summary <- readTVar var
-        case runQuery q summary of
+        case runQuery sysRelTime q summary of
           Right a             -> return (Right a)
           Left  PastHorizon{} -> do
             summary' <- getLatestSummary
             writeTVar var summary'
-            return $ runQuery q summary'
+            return $ runQuery sysRelTime q summary'

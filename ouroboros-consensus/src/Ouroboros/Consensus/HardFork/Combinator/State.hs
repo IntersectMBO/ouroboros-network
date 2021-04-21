@@ -14,8 +14,8 @@
 --
 -- > import Ouroboros.Consensus.HardFork.Combinator.State (HardForkState(..))
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-module Ouroboros.Consensus.HardFork.Combinator.State (
-    module X
+module Ouroboros.Consensus.HardFork.Combinator.State
+  ( module X
     -- * Support for defining instances
   , getTip
     -- * Serialisation support
@@ -36,6 +36,8 @@ import           Data.Functor.Identity
 import           Data.Functor.Product
 import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
+                     (RelativeTime)
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -150,21 +152,23 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 -- NOTE: The resulting 'EpochInfo' is a snapshot only, with a limited range.
 -- It should not be stored.
 epochInfoLedger :: All SingleEraBlock xs
-                => HardForkLedgerConfig xs
+                => RelativeTime
+                -> HardForkLedgerConfig xs
                 -> HardForkState LedgerState xs
                 -> EpochInfo Identity
-epochInfoLedger cfg st =
-    History.snapshotEpochInfo $
+epochInfoLedger sysRelTime  cfg st =
+    History.snapshotEpochInfo sysRelTime $
       reconstructSummaryLedger cfg st
 
 -- | Construct 'EpochInfo' given precomputed 'TransitionInfo'
 epochInfoPrecomputedTransitionInfo ::
-     History.Shape xs
+     RelativeTime
+  -> History.Shape xs
   -> TransitionInfo
   -> HardForkState f xs
   -> EpochInfo Identity
-epochInfoPrecomputedTransitionInfo shape transition st =
-    History.snapshotEpochInfo $
+epochInfoPrecomputedTransitionInfo sysRelTime shape transition st =
+    History.snapshotEpochInfo sysRelTime $
       reconstructSummary shape transition st
 
 {-------------------------------------------------------------------------------
