@@ -49,6 +49,7 @@ import           Control.Tracer (Tracer, nullTracer, traceWith)
 import           Data.Foldable (asum)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Set (Set)
@@ -88,11 +89,12 @@ import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.RethrowPolicy
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.PeerSelection.RootPeersDNS ( DomainAddress
-                                                              , resolveDomainAddresses
-                                                              , RelayAddress (..)
-                                                              )
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS ( resolveDomainAddresses
+                                                              , RelayAddress(..)
+                                                              , TraceLocalRootPeers(..)
+                                                              , TracePublicRootPeers(..)
+                                                              )
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types ( TracePeerSelection (..)
                                                                 , DebugPeerSelection (..)
@@ -132,9 +134,6 @@ import           Ouroboros.Network.NodeToNode ( ConnectionId (..)
                                               , nodeToNodeHandshakeCodec
                                               )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
-import           Ouroboros.Network.PeerSelection.RootPeersDNS ( TraceLocalRootPeers (..)
-                                                              , TracePublicRootPeers (..)
-                                                              )
 
 
 -- TODO: use LocalAddress where appropriate rather than 'path'.
@@ -266,7 +265,7 @@ nullTracers = DiffusionTracers {
 
 -- | Network Node argumets
 --
-data DiffusionArguments = DiffusionArguments {
+data DiffusionArguments m = DiffusionArguments {
       daIPv4Address  :: Maybe (Either Socket.Socket AddrInfo)
       -- ^ an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
     , daIPv6Address  :: Maybe (Either Socket.Socket AddrInfo)
@@ -278,9 +277,9 @@ data DiffusionArguments = DiffusionArguments {
       -- ^ selection targets for the peer governor
 
     , daStaticLocalRootPeers :: [(Socket.SockAddr, PeerAdvertise)]
-    , daLocalRootPeers       :: [(DomainAddress, PeerAdvertise)]
-    , daPublicRootPeers      :: [DomainAddress]
-    , daUseLedgerAfter       :: UseLedgerAfter
+    , daLocalRootPeersVar    :: StrictTVar m [(Int, Map RelayAddress PeerAdvertise)]
+    , daPublicRootPeersVar   :: StrictTVar m [RelayAddress]
+    , daUseLedgerAfterVar    :: StrictTVar m UseLedgerAfter
 
     , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
       -- ^ parameters for limiting number of accepted connections
@@ -568,7 +567,7 @@ type NodeToNodePeerSelectionActions (mode :: MuxMode) a =
 --
 runDataDiffusion
     :: DiffusionTracers
-    -> DiffusionArguments
+    -> DiffusionArguments IO
     -> DiffusionApplications
          RemoteAddress LocalAddress
          NodeToNodeVersionData NodeToClientVersionData
@@ -580,9 +579,9 @@ runDataDiffusion tracers
                                     , daLocalAddress
                                     , daPeerSelectionTargets
                                     , daStaticLocalRootPeers
-                                    , daLocalRootPeers
-                                    , daPublicRootPeers
-                                    , daUseLedgerAfter
+                                    , daLocalRootPeersVar
+                                    , daPublicRootPeersVar
+                                    , daUseLedgerAfterVar
                                     , daAcceptedConnectionsLimit
                                     , daDiffusionMode
                                     , daProtocolIdleTimeout
@@ -665,15 +664,6 @@ runDataDiffusion tracers
         -- it to the configured value after a delay.
         targetNumberOfActivePeers = min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
       }
-
-    daLocalRootPeersVar <- newTVarIO $
-                            ([( 1
-                              , Map.fromList $
-                                  map (\(d,p) -> (RelayDomain d, p))
-                                      daLocalRootPeers)])
-    -- ^ TODO: This is just a simple transformation
-    daPublicRootPeersVar <- newTVarIO $ map RelayDomain daPublicRootPeers
-    daUseLedgerAfterVar <- newTVarIO daUseLedgerAfter
 
     let -- snocket for remote communication.
         snocket :: SocketSnocket
