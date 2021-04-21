@@ -13,8 +13,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Protocol (
-    -- * Re-exports to keep 'Protocol.State' an internal module
+module Ouroboros.Consensus.HardFork.Combinator.Protocol
+  ( -- * Re-exports to keep 'Protocol.State' an internal module
     HardForkCanBeLeader
   , HardForkChainDepState
   , HardForkIsLeader
@@ -40,6 +40,8 @@ import           Ouroboros.Consensus.Util ((.:))
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP
 
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
+                     (RelativeTime)
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -145,12 +147,13 @@ data instance Ticked (HardForkChainDepState xs) =
       }
 
 tick :: CanHardFork xs
-     => ConsensusConfig (HardForkProtocol xs)
+     => RelativeTime
+     -> ConsensusConfig (HardForkProtocol xs)
      -> Ticked (HardForkLedgerView xs)
      -> SlotNo
      -> HardForkChainDepState xs
      -> Ticked (HardForkChainDepState xs)
-tick cfg@HardForkConsensusConfig{..}
+tick sysRelTime cfg@HardForkConsensusConfig{..}
      (TickedHardForkLedgerView transition ledgerView)
      slot
      chainDepState = TickedHardForkChainDepState {
@@ -165,6 +168,7 @@ tick cfg@HardForkConsensusConfig{..}
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     ei   = State.epochInfoPrecomputedTransitionInfo
+             sysRelTime
              hardForkConsensusConfigShape
              transition
              ledgerView

@@ -177,10 +177,11 @@ epochInfoPrecomputedTransitionInfo sysRelTime shape transition st =
 
 -- | Extend the telescope until the specified slot is within the era at the tip
 extendToSlot :: forall xs. CanHardFork xs
-             => HardForkLedgerConfig xs
+             => RelativeTime
+             -> HardForkLedgerConfig xs
              -> SlotNo
              -> HardForkState LedgerState xs -> HardForkState LedgerState xs
-extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
+extendToSlot sysRelTime ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
       HardForkState . unI
     . Telescope.extend
         ( InPairs.hmap (\f -> Require $ \(K t)
@@ -197,7 +198,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
   where
     pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
     cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
-    ei    = epochInfoLedger ledgerCfg ledgerSt
+    ei    = epochInfoLedger sysRelTime ledgerCfg ledgerSt
 
     -- Return the end of this era if we should transition to the next
     whenExtend :: SingleEraBlock              blk
