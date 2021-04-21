@@ -57,6 +57,9 @@ let
     tools = {
       ghcid = "0.8.7";
       cabal = "3.2.0.0";
+      hasktags = "0.71.2";
+      # https://hackage.haskell.org/package/graphmod
+      graphmod = "1.4.4";
       # todo: add back the build tools which are actually necessary
       # ghcide = "0.2.0";
       # hlint = "...";
