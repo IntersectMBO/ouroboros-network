@@ -1,4 +1,4 @@
-\chapter{Connection Management}
+\chapter{Multiplexing mini-protocols}
 \label{connection-management}
 
 \section{The Multiplexing Layer}
@@ -12,7 +12,7 @@ There is a fixed pairing of the mini protocol instances, i.e. each mini protocol
 communicates with its dual instance.
 
 \begin{figure}[ht]
-\pgfdeclareimage[height=5cm]{mux-diagram}{figure/mux-diagram.pdf}
+\pgfdeclareimage[height=7cm]{mux-diagram}{figure/mux.png}
 \begin{center}
 \pgfuseimage{mux-diagram}
 \end{center}
@@ -102,36 +102,36 @@ protocol and the MUX/DEMUX layer shuts down the connection to the peer.
 The size of the buffers is listed in Table~\ref{demux-buffers}.
 }
 
-\section{Setup, Shutdown and Management of Connections}
-\label{peer-setup-section}
-In addition to the exchange of blocks and transactions, as required by Ouroboros,
-the network layer also handles several administrative tasks.
-This section describes the parts of the protocol that deal with setting up, shutting down and
-managing a connection between two peers.
-In this section, we use the term {\bf connection} or {\bf bearer} for the multiplexing-layer object
-that manages the mini protocol threads, the buffers and the OS-level connection
-(for example TCP socket) that deals with one peer of the node.
-
-The multiplexing layer (Section~\ref{multiplexing-section}) is the central crossing between
-the mini protocols and the network channel.
-Therefore, the reference implementation takes the approach
-of implementing the functions for connection management in the same part of the source code
-that also implements the multiplexing layer itself.
-
-This section describes the protocol and sketches a possible implementation.
-Roughly the implementation performs the following tasks:
-\begin{itemize}
-\item Open a socket/ acquire resources from the OS.
-\item Negotiate the protocol version with the handshake mini protocol
-      (Section \ref{handshake-protocol}.
-\item Spawn the threads that run the mini protocols.
-\item Measure transmission times and amount of in-flight data.
-\item Catch exceptions that are thrown by the mini protocols.
-\item Shutdown the connection in case of an error.
-\item Handle a shutdown request from the peer.
-\item Shutdown the threads that run the mini protocols.
-\item Close Socket/ free resources.
-\end{itemize}
+%\section{Setup, Shutdown and Management of Connections}
+%\label{peer-setup-section}
+%In addition to the exchange of blocks and transactions, as required by Ouroboros,
+%the network layer also handles several administrative tasks.
+%This section describes the parts of the protocol that deal with setting up, shutting down and
+%managing a connection between two peers.
+%In this section, we use the term {\bf connection} or {\bf bearer} for the multiplexing-layer object
+%that manages the mini protocol threads, the buffers and the OS-level connection
+%(for example TCP socket) that deals with one peer of the node.
+%
+%The multiplexing layer (Section~\ref{multiplexing-section}) is the central crossing between
+%the mini protocols and the network channel.
+%Therefore, the reference implementation takes the approach
+%of implementing the functions for connection management in the same part of the source code
+%that also implements the multiplexing layer itself.
+%
+%This section describes the protocol and sketches a possible implementation.
+%Roughly the implementation performs the following tasks:
+%\begin{itemize}
+%\item Open a socket/ acquire resources from the OS.
+%\item Negotiate the protocol version with the handshake mini protocol
+%      (Section \ref{handshake-protocol}.
+%\item Spawn the threads that run the mini protocols.
+%\item Measure transmission times and amount of in-flight data.
+%\item Catch exceptions that are thrown by the mini protocols.
+%\item Shutdown the connection in case of an error.
+%\item Handle a shutdown request from the peer.
+%\item Shutdown the threads that run the mini protocols.
+%\item Close Socket/ free resources.
+%\end{itemize}
 
 \newcommand{\Larval}{\state{Larval}}
 \newcommand{\Connected}{\state{Connected}}
@@ -139,7 +139,7 @@ Roughly the implementation performs the following tasks:
 \newcommand{\Dying}{\state{Dying}}
 \newcommand{\Dead}{\state{Dead}}
 
-\section{Life Cycle of a Connection}
+\section{Life Cycle of a bearer}
 \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=1.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
   \node[state, initial]                           (Larval)       {\Larval};
@@ -177,12 +177,14 @@ A connection passes through several stages during its life cycle.
   \hline
   ID & Mini Protocol                         & NtN  & NtC \\ \hline
   0  & MUX-Control                           & Yes  & Yes \\ \hline
-  1  & DeltaQ                                & Yes  & Yes \\ \hline
+  % 1  & DeltaQ                                & Yes  & Yes \\ \hline
   2  & Chain-Sync instantiated to headers    & Yes  & No \\ \hline
   3  & Block-Fetch                           & Yes  & No  \\ \hline
   4  & TxSubmission                          & Yes  & No   \\ \hline
   5  & Chain-Sync instantiated to blocks     & No   & Yes  \\ \hline
   6  & Local TxSubmission                    & No   & Yes  \\ \hline
+  7  & Local State Query                     & No   & Yes \\\hline
+  8  & Keep-alive                            & Yes  & No  \\\hline
 \end{tabular}
 \caption{Mini Protocol IDs}
 \label{mini-protocol-id}

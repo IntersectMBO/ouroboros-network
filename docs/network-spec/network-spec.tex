@@ -1,4 +1,9 @@
 \documentclass{report}
+
+\usepackage[dvipsnames,x11names]{xcolor}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[british]{babel}
 \usepackage{etoolbox}
 \newbool{isRelease}
 \IfFileExists{.isRelease}{\booltrue{isRelease}}{\boolfalse{isRelease}}
@@ -12,6 +17,10 @@
 \ifbool{isRelease}
     {\usepackage[disable]{todonotes}}
     {\usepackage{todonotes}}
+
+\usepackage{amsmath}
+\usepackage{stmaryrd}
+\usepackage{colonequals}
 
 \usepackage{tikz}
 \usetikzlibrary{automata, positioning, arrows}
@@ -28,18 +37,9 @@
 
 
 \usepackage{microtype}
-\usepackage{graphicx,color}
+\usepackage{graphicx}
 
-\usepackage{hyperref}
-\hypersetup{
-  colorlinks=true,
-  linkcolor={blue},
-  citecolor={blue},
-  urlcolor={blue},
-  linkbordercolor={},
-  citebordercolor={},
-  urlbordercolor={}
-}
+\usepackage[colorlinks,citecolor=blue,linkcolor=blue,anchorcolor=blue,urlcolor=blue]{hyperref}
 \usepackage[capitalise,noabbrev,nameinlink]{cleveref}
 
 \usetikzlibrary{arrows}
@@ -91,12 +91,39 @@
 \DeclareMathOperator*{\minimum}{min}
 \DeclareMathOperator*{\maximum}{max}
 
+% ---- Connection Manager things
+\lstset{
+  xleftmargin=2pt,
+  stepnumber=1,
+  belowcaptionskip=\bigskipamount,
+  captionpos=b,
+  escapeinside={*'}{'*},
+  language=haskell,
+  tabsize=2,
+  emphstyle={\bf},
+  commentstyle=\it,
+  stringstyle=\mdseries\rmfamily,
+  showspaces=false,
+  keywordstyle=\bfseries\rmfamily,
+  columns=flexible,
+  basicstyle=\small\sffamily,
+  showstringspaces=false,
+  morecomment=[l]\%,
+}
+
+\definecolor{shadecolor}{rgb}{.6,0.6,0.8}
+\usetikzlibrary{arrows,calc,matrix,shapes}
+\tikzset{every scope/.style={>=triangle 60,thick}}
+\exhyphenpenalty 10000
+
+% -------
+
 \raggedbottom
 
 \begin{document}
 
 \title{The Shelley Networking Protocol \\
-  {\small (Version 1.0.0 , Revision \input{revisioncount})} \\
+  {\small (Version 1.2.0 , Revision \input{revisioncount})} \\
   {\large \sc An IOHK technical report}}
 \author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
                          {\small \texttt{duncan.coutts@iohk.io}}
@@ -112,7 +139,17 @@
 \maketitle
 
 \begin{abstract}
-  This document describes .....
+  This document provides technical specification of the implementation of the
+  \texttt{ouroboros-network} component of \texttt{cardano-node}. It provides specification of all
+  mini-protocols as well multiplexing and low level wire encoding.  It provides
+  necessary information about both node-to-node and node-to-client protocols.
+
+  The primary audience for this document are engineers wishing to build
+  clients interacting with a node via node-to-client or node-to-node protocols
+  or independent implementations of a node.  Although the original
+  implementation of \texttt{ouroboros-network} is done \texttt{Haskell}, this specification is
+  made language agnostic. We may provide some implementation details which are
+  \texttt{Haskell} specific.
 \end{abstract}
 
 \tableofcontents
@@ -121,14 +158,19 @@
 
 \begin{description}
 \item[Version 1.0.0 Nov 2019, State machines and wire format for Ouroboros-Network-1.0.0.]
+\item[Version 1.1.0 Apr 2021, Connection Manager for Ouroboros-Network-Framework.]
+\item[Version 1.2.0 Apr 2021, TxSubmission2 protocol, LocalStateQuery protocol, KeepAlive protocol]
 \end{description}
 % \include{intro}
 \include{architecture}
 \include{miniprotocols}
 \include{mux}
+\include{connection-manager}
 % \include{rest}
+
 \appendix
 \include{cddl}
+
 \bibliographystyle{apalike}
 \bibliography{references}
 

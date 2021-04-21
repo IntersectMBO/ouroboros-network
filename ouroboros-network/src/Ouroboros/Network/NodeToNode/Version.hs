@@ -30,7 +30,6 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable block size hints for Byron headers in ChainSync
-    -- * Enable Keep-Alive miniprotocol
     -- * Enable @CardanoNodeToNodeVersion2@, i.e., Shelley
     | NodeToNodeV_3
     -- ^ Changes:

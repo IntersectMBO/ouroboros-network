@@ -1,3 +1,28 @@
+@book{stevens2003unix,
+  title={UNIX Network Programming},
+  volume={1},
+  series={Addison-Wesley Professional Computing Series},
+  author={Stevens, W.R. and Fenner, B. and Rudoff, A.M.},
+  year={2003},
+  publisher={Addison-Wesley Professional},
+  isbn={0131411551},
+  note={\url{https://learning.oreilly.com/library/view/the-sockets-networking/0131411551}}
+}
+@techreport{RFC1122,
+  author = {Robert Braden},
+  title = {Requirements for Internet Hosts - Communication Layers},
+  howpublished = {Internet Requests for Comments},
+  type = {STD},
+  number = {3},
+  year = {1989},
+  month = {October},
+  issn = {2070-1721},
+  publisher = {RFC Editor},
+  institution = {RFC Editor},
+  url = {http://www.rfc-editor.org/rfc/rfc1122.txt},
+  note = {\url{http://www.rfc-editor.org/rfc/rfc1122.txt}},
+}
+
 @misc{ouroboros-classic,
     author = {Aggelos Kiayias and Alexander Russell and Bernardo David and Roman Oliynykov},
     title = {Ouroboros: A Provably Secure Proof-of-Stake Blockchain Protocol},
@@ -44,21 +69,14 @@
   bibsource = {dblp computer science bibliography, https://dblp.org}
 }
 
+
 @InProceedings{stm:harris2006,
   author = {Harris, Tim and Peyton Jones, Simon},
   title = {Transactional memory with data invariants},
-  booktitle = {First ACM SIGPLAN Workshop on Languages, Compilers, and Hardware Support for Trans
-  actional Computing (TRANSACT'06)},
+  booktitle = {First ACM SIGPLAN Workshop on Languages, Compilers, and Hardware Support for Transactional Computing (TRANSACT'06)},
   year = {2006},
   month = {June},
-  abstract = {This paper introduces a mechanism for asserting invariants that are maintained by a
-   program that uses atomic memory transactions. The idea is simple: a programmer writes check E 
-  where E is an expression that should be preserved by every atomic update for the remainder of t
-  he program's execution. We have extended STM Haskell to dynamically evaluate check statements a
-  tomically with the user's updates: the result is that we can identify precisely which update is
-   the first one to break an invariant.},
-  url = {https://www.microsoft.com/en-us/research/publication/transactional-memory-data-invariant
-  s/},
-  edition = {First ACM SIGPLAN Workshop on Languages, Compilers, and Hardware Support for Transac
-  tional Computing (TRANSACT'06)},
-}%                                                                                             
+  abstract = {This paper introduces a mechanism for asserting invariants that are maintained by a program that uses atomic memory transactions. The idea is simple: a programmer writes check E where E is an expression that should be preserved by every atomic update for the remainder of the program's execution. We have extended STM Haskell to dynamically evaluate check statements atomically with the user's updates: the result is that we can identify precisely which update is the first one to break an invariant.},
+  url = {https://www.microsoft.com/en-us/research/publication/transactional-memory-data-invariants/},
+  edition = {First ACM SIGPLAN Workshop on Languages, Compilers, and Hardware Support for Transactional Computing (TRANSACT'06)},
+}

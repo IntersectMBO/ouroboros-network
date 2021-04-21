@@ -13,6 +13,7 @@ category:            Network
 build-type:          Simple
 extra-source-files:
   ChangeLog.md
+data-files:
   test/messages.cddl
 cabal-version:       >=1.10
 
