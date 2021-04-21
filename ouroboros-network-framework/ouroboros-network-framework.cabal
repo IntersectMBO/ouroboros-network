@@ -128,6 +128,7 @@ test-suite test
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
                        Test.Ouroboros.Network.RateLimiting
+                       Test.Ouroboros.Network.IOSim
 
   build-depends:       base
                      , bytestring
@@ -143,6 +144,7 @@ test-suite test
                      , quiet
 
                      , QuickCheck
+                     , quickcheck-instances
                      , tasty
                      , tasty-quickcheck
 
