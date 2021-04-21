@@ -672,6 +672,7 @@ runDataDiffusion tracers
                                   map (\(d,p) -> (RelayDomain d, p))
                                       daLocalRootPeers)])
     -- ^ TODO: This is just a simple transformation
+    daPublicRootPeersVar <- newTVarIO daPublicRootPeers
 
     let -- snocket for remote communication.
         snocket :: SocketSnocket
@@ -853,7 +854,7 @@ runDataDiffusion tracers
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
                       daLocalRootPeersVar
-                      daPublicRootPeers
+                      daPublicRootPeersVar
                       peerStateActions
                       (putTMVar ledgerPeersReq)
                       (takeTMVar ledgerPeersRsp)
@@ -964,7 +965,7 @@ runDataDiffusion tracers
                       (readTVar peerSelectionTargetsVar)
                       (Map.fromList daStaticLocalRootPeers)
                       daLocalRootPeersVar
-                      daPublicRootPeers
+                      daPublicRootPeersVar
                       peerStateActions
                       (putTMVar ledgerPeersReq)
                       (takeTMVar ledgerPeersRsp)

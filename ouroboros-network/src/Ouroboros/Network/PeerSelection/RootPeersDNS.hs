@@ -424,14 +424,15 @@ data TracePublicRootPeers =
   deriving Show
 
 -- |
---
+-- TODO track PeerAdvertise
 publicRootPeersProvider :: Tracer IO TracePublicRootPeers
                         -> TimeoutFn IO
                         -> DNS.ResolvConf
-                        -> [DomainAddress]
+                        -> StrictTVar IO [DomainAddress]
                         -> ((Int -> IO (Set Socket.SockAddr, DiffTime)) -> IO a)
                         -> IO a
-publicRootPeersProvider tracer timeout resolvConf domains action = do
+publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
+    domains <- atomically $ readTVar domainsVar
     traceWith tracer (TracePublicRootDomains domains)
 #if !defined(mingw32_HOST_OS)
     rr <- resolverResource resolvConf
@@ -444,6 +445,8 @@ publicRootPeersProvider tracer timeout resolvConf domains action = do
     requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
                            -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
+        domains <- atomically $ readTVar domainsVar
+        traceWith tracer (TracePublicRootDomains domains)
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr
         atomically $ writeTVar resourceVar rr'

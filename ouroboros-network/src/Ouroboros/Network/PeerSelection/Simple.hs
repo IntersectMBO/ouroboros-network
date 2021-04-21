@@ -39,7 +39,7 @@ withPeerSelectionActions
   -- ^ static local root peers
   -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
-  -> [DomainAddress]
+  -> StrictTVar IO [DomainAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
   -> (NumberOfPeers -> STM IO ())
@@ -49,7 +49,7 @@ withPeerSelectionActions
   -- (only if local root peers where non-empty).
   -> IO a
 withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets staticLocalRootPeers
-  localRootPeersVar publicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
+  localRootPeersVar publicRootPeersVar peerStateActions reqLedgerPeers getLedgerPeers k = do
     localRootsVar <- newTVarIO []
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
@@ -91,5 +91,5 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets st
     -- https://github.com/input-output-hk/cardano-node/issues/731
     requestPublicRootPeers :: Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers n =
-      publicRootPeersProvider publicRootTracer timeout DNS.defaultResolvConf publicRootPeers ($ n)
+      publicRootPeersProvider publicRootTracer timeout DNS.defaultResolvConf publicRootPeersVar ($ n)
 
