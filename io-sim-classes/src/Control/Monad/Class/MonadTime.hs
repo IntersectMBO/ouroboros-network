@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 
 module Control.Monad.Class.MonadTime (
     MonadTime(..)
@@ -21,6 +22,7 @@ import           Data.Time.Clock (DiffTime, NominalDiffTime, UTCTime,
                    addUTCTime, diffUTCTime)
 import qualified Data.Time.Clock as Time
 import           Data.Word (Word64)
+import           GHC.Generics (Generic (..))
 
 -- | A point in time in a monotonic clock.
 --
@@ -29,7 +31,7 @@ import           Data.Word (Word64)
 -- program runs. It is represented as the 'DiffTime' from this arbitrary epoch.
 --
 newtype Time = Time DiffTime
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
 -- | The time duration between two points in time (positive or negative).
 diffTime :: Time -> Time -> DiffTime
