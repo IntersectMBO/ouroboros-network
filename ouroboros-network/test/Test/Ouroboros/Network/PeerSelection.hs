@@ -287,7 +287,7 @@ takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 -- Live examples
 --
 
-_governorFindingPublicRoots :: Int -> StrictTVar IO [DomainAddress] -> IO Void
+_governorFindingPublicRoots :: Int -> StrictTVar IO [RelayAddress] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers domainsVar =
     withTimeoutSerial $ \timeout ->
     publicRootPeersProvider

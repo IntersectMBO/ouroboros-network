@@ -672,7 +672,7 @@ runDataDiffusion tracers
                                   map (\(d,p) -> (RelayDomain d, p))
                                       daLocalRootPeers)])
     -- ^ TODO: This is just a simple transformation
-    daPublicRootPeersVar <- newTVarIO daPublicRootPeers
+    daPublicRootPeersVar <- newTVarIO $ map RelayDomain daPublicRootPeers
     daUseLedgerAfterVar <- newTVarIO daUseLedgerAfter
 
     let -- snocket for remote communication.

@@ -39,7 +39,7 @@ withPeerSelectionActions
   -- ^ static local root peers
   -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
-  -> StrictTVar IO [DomainAddress]
+  -> StrictTVar IO [RelayAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
   -> (NumberOfPeers -> STM IO ())

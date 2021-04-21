@@ -417,7 +417,8 @@ localRootPeersProvider tracer
 --
 
 data TracePublicRootPeers =
-       TracePublicRootDomains [DomainAddress]
+       TracePublicRootRelayAddresses [RelayAddress]
+     | TracePublicRootDomains [DomainAddress]
      | TracePublicRootResult  DNS.Domain [(IPv4, DNS.TTL)]
      | TracePublicRootFailure DNS.Domain DNS.DNSError
        --TODO: classify DNS errors, config error vs transitory
@@ -428,12 +429,12 @@ data TracePublicRootPeers =
 publicRootPeersProvider :: Tracer IO TracePublicRootPeers
                         -> TimeoutFn IO
                         -> DNS.ResolvConf
-                        -> StrictTVar IO [DomainAddress]
+                        -> StrictTVar IO [RelayAddress]
                         -> ((Int -> IO (Set Socket.SockAddr, DiffTime)) -> IO a)
                         -> IO a
 publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
     domains <- atomically $ readTVar domainsVar
-    traceWith tracer (TracePublicRootDomains domains)
+    traceWith tracer (TracePublicRootRelayAddresses domains)
 #if !defined(mingw32_HOST_OS)
     rr <- resolverResource resolvConf
 #else
@@ -446,7 +447,7 @@ publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
                            -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
         domains <- atomically $ readTVar domainsVar
-        traceWith tracer (TracePublicRootDomains domains)
+        traceWith tracer (TracePublicRootRelayAddresses domains)
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr
         atomically $ writeTVar resourceVar rr'
@@ -456,7 +457,7 @@ publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
           Right resolver -> do
             let lookups =
                   [ (,) domain <$> lookupAWithTTL timeout resolvConf resolver (daDomain domain)
-                  |  domain <- domains ]
+                  | RelayDomain domain <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.
@@ -470,7 +471,9 @@ publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
                             | (DomainAddress {daPortNumber}, Right ipttls) <- results
                             , (ip, ipttl) <- ipttls
                             ]
-                !ips      = Set.fromList  (map fst successes)
+                !domainsIps = [ IP.toSockAddr (ip, port)
+                              | RelayAddress ip port <- domains ]
+                !ips      = Set.fromList  (map fst successes ++ domainsIps)
                 !ttl      = ttlForResults (map snd successes)
             -- If all the lookups failed we'll return an empty set with a minimum
             -- TTL, and the governor will invoke its exponential backoff.
