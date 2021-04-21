@@ -16,10 +16,10 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node
+import           Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 
