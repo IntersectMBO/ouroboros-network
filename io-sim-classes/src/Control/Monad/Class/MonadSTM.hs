@@ -50,6 +50,8 @@ module Control.Monad.Class.MonadSTM
   , newTQueueDefault
   , readTQueueDefault
   , tryReadTQueueDefault
+  , peekTQueueDefault
+  , tryPeekTQueueDefault
   , writeTQueueDefault
   , isEmptyTQueueDefault
 
@@ -59,6 +61,8 @@ module Control.Monad.Class.MonadSTM
   , newTBQueueDefault
   , readTBQueueDefault
   , tryReadTBQueueDefault
+  , peekTBQueueDefault
+  , tryPeekTBQueueDefault
   , writeTBQueueDefault
   , isEmptyTBQueueDefault
   , isFullTBQueueDefault
@@ -151,12 +155,16 @@ class ( Monad stm
   newTQueue      :: stm (tqueue a)
   readTQueue     :: tqueue a -> stm a
   tryReadTQueue  :: tqueue a -> stm (Maybe a)
+  peekTQueue     :: tqueue a -> stm a
+  tryPeekTQueue  :: tqueue a -> stm (Maybe a)
   writeTQueue    :: tqueue a -> a -> stm ()
   isEmptyTQueue  :: tqueue a -> stm Bool
 
   newTBQueue     :: Natural -> stm (tbqueue a)
   readTBQueue    :: tbqueue a -> stm a
   tryReadTBQueue :: tbqueue a -> stm (Maybe a)
+  peekTBQueue    :: tbqueue a -> stm a
+  tryPeekTBQueue :: tbqueue a -> stm (Maybe a)
   flushTBQueue   :: tbqueue a -> stm [a]
   writeTBQueue   :: tbqueue a -> a -> stm ()
   -- | @since 0.2.0.0
@@ -395,12 +403,16 @@ instance MonadSTMTx STM.STM STM.TVar STM.TMVar STM.TQueue STM.TBQueue where
   newTQueue      = STM.newTQueue
   readTQueue     = STM.readTQueue
   tryReadTQueue  = STM.tryReadTQueue
+  peekTQueue     = STM.peekTQueue
+  tryPeekTQueue  = STM.tryPeekTQueue
   flushTBQueue   = STM.flushTBQueue
   writeTQueue    = STM.writeTQueue
   isEmptyTQueue  = STM.isEmptyTQueue
   newTBQueue     = STM.newTBQueue
   readTBQueue    = STM.readTBQueue
   tryReadTBQueue = STM.tryReadTBQueue
+  peekTBQueue    = STM.peekTBQueue
+  tryPeekTBQueue = STM.tryPeekTBQueue
   writeTBQueue   = STM.writeTBQueue
   lengthTBQueue  = STM.lengthTBQueue
   isEmptyTBQueue = STM.isEmptyTBQueue
@@ -612,6 +624,20 @@ tryReadTQueueDefault (TQueue read write) = do
           writeTVar read zs
           return (Just z)
 
+peekTQueueDefault :: MonadSTM m => TQueueDefault m a -> STM m a
+peekTQueueDefault (TQueue read _write) = do
+    xs <- readTVar read
+    case xs of
+      (x:_) -> return x
+      _     -> retry
+
+tryPeekTQueueDefault :: MonadSTM m => TQueueDefault m a -> STM m (Maybe a)
+tryPeekTQueueDefault (TQueue read _write) = do
+    xs <- readTVar read
+    case xs of
+      (x:_) -> return (Just x)
+      _     -> return Nothing
+
 isEmptyTQueueDefault :: MonadSTMTx (STM m)
                                    (TVar m) (TMVar m)
                                    (TQueue m) (TBQueue m)
@@ -683,6 +709,20 @@ tryReadTBQueueDefault (TBQueue rsize read _wsize write _size) = do
           writeTVar write []
           writeTVar read zs
           return (Just z)
+
+peekTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m a
+peekTBQueueDefault (TBQueue _rsize read _wsize _write _size) = do
+    xs <- readTVar read
+    case xs of
+      (x:_) -> return x
+      _     -> retry
+
+tryPeekTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m (Maybe a)
+tryPeekTBQueueDefault (TBQueue _rsize read _wsize _write _size) = do
+    xs <- readTVar read
+    case xs of
+      (x:_) -> return (Just x)
+      _     -> return Nothing
 
 writeTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> a -> STM m ()
 writeTBQueueDefault (TBQueue rsize _read wsize write _size) a = do
