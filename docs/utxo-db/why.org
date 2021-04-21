@@ -1,0 +1,86 @@
+#+TITLE: Why
+
+The utxodb will consume CPU, memory, disk space, and IO bandwidth. We will
+assume a fixed memory budget, say M bytes, and that negligible CPU will be
+consumed. It's important to account for expected disk space use, however we do
+not expect this to factor into the choice of implementation. We expect most
+interesting to be IO bandwidth, measured in IO-ops(IO operations per second).
+TODO: Differentitate between IO-operations and IO-operations per second
+We will be interested in both Read IO-ops and Write IO-ops.
+
+To understand the performance of the utxodb, consider two important cases:
+
+- (1) An alert node is operating as normal, validating blocks and choosing chains
+- (2) A node is syncing a chain.
+
+
+We will analyze a proposed solution in the case of (1), being primarily
+interested in IO-ops If we assume that (2) will be implemented in the natural
+way, by the same algorithm that an alert node uses to validate a new block,
+then, for a given piece of disk hardware, with a maximum specified IO-ops rating
+I, we can obtain a lower bound on the "speedup factor" relative to real time.
+
+For example, say we learn that
+
+a solution A
+
+will require 200 IO-ops
+
+while alert, to validate and mint new blocks. Then, for an SSD rated to offer
+
+5x10^5 IO-ops
+
+Will run no faster than (5x10^5 / 200) = 2500x real time. I.e. 2500 seconds of
+blockchain data must take at least 1 second to sync.
+
+Of course actually obtaining this bound would likely require significant
+performance tuning, ensuring that the SSD was fully saturated with parallel
+operations.
+
+Let us fix some variables:
+
+T: Transactions per second = 100
+T_i: Average TxIn per transaction = 2
+T_o: Average TxOut per transaction = 2.1
+
+Assuming that the transaction is valid:
+
+In the average case, validating a transaction will require T_i reads from the
+utxodb to ensure that the TxIns exist, T_i writes to the utxodb to delete those
+TxIns, and T_o writes to the utxodb to record the new TxOuts. How many IO-op s
+will this require? If none of the TxIns are resident in any caches (which we
+expect to be normal case), and the TxIns are all in separate pages on disk
+(which we expect to be the normal case), then this must take at least T_i read
+IO-ops. Write IO-ops is harder to analyse, as there is more opportunity for a
+solution to optimise here. It is easy to imagine a solution that writes the
+TxOuts to disk in large batches, and so is able to use a single write IO-op to
+account for many transactions.
+
+So then, we'd expect at least T * T_i = 200 read IO-ops. Then today's high end
+consumer SSD must take at least 3.5 hours to sync 1 year of blockchain.
+
+Time in hours to sync 1 year = 365*24*(Max IO-ops)/(T * T_i)
+
+Many (all) candidate solutions will not be able to obtain this lower bound of
+T_i read IO-ops per transaction. One would expect read-ops per transaction to
+be O(log(|UTxO|))
+
+TODO: this assumes read/write IO-ops are fungible
+Any solution that is not able to efficiently batch writes to the utxodb, as
+described above, will require an additional (T_i+T_o) write IO-ops per
+transaction. Then on today's high end consumer SSD it must take at least 10.5
+hours to sync 1 year of blockchain data.
+
+Must we use the same algorithm to sync the chain as we do to stay alert?
+====
+Mostly yes. We must validate the chain.
+
+Research could give us some magic to trust other's syncing work
+
+When validating we could run with more memory, and try to cache some of the
+utxodb in memory. We don't expect good locality here, so this caching will not
+be efficient. Potentially there is some time-locality where new UTxOs are more
+likely to be consumed than old UTxOs, but this requires investigation.
+
+A user could rent a high spec server to sync the chain, then switch to a lower
+spec server to run their node.

@@ -28,7 +28,6 @@ There are two interesting modes of operations:
  - The node is catching up on the chain. Transactions are applied to the ledger state sequentially, until we are caught up
  - The node is alert and up to date. Transactions are applied to the ledger state as required by the ledger rules and the consensus algorithm
 
-
 * Integration
 The existing UTxO database is modelled in the cardano node as a Data.Map
  - cardano-ledger-specs/shelley/chain-and-ledger/executable-spec/src/Shelley/Spec/Ledger/UTxO.hs
@@ -49,10 +48,23 @@ For the purposes of discussion, let's collect the interface to the UTxO db as:
 #+begin_src haskell
 data UTxODB era m = UTxODB
   { lookup :: TxIn (Crypto era) -> m (Maybe (TxOut era))
+  k
   -- etc
   }
 
 #+end_src
+
+** TODO need full detail on these operations
+What do we do with spent outputs? Do we need to remember they used to exist
+
+Outputs are no longer spend-once once we consider script inputs in Alonzo:
+if a script input fails to validate then (apart from the fee? TODO understand) inputs are not consumed
+
+** TODO better name, it's not just UTxO
+
+** Consensus will need to use the new API
+** Ledger Rules will need to use the new API
+** Cardano Client will need to use the new API
 
 * Cost
 
@@ -88,6 +100,10 @@ We must estimate the costs of each of the solutions. From this information we ca
 - The urgency of the project. We must have a replacement in place before the costs of the status quo become untenable
 - The tradeoffs inherent in the choice of datastore. What do we get for a more complex solution?
 
+It's not clear what the complexity changes between a B+ tree and an LSM are
+I think we're looking at how sophisticated the LSM will need to be. e.g.
+ - batching IO
+
 ** Do nothing.
 ** Use an external key/value store. e.g. RocksDB
 ** B+ tree on disk
@@ -96,3 +112,7 @@ We must estimate the costs of each of the solutions. From this information we ca
 
 * Notes
 When rolling forward, we know that there are no rollbacks. Only once we are alert are rollbacks possible.
+* References
+** TODO Monkey
+** TODO B+Trees
+** TODO Consensus Spec
