@@ -26,8 +26,11 @@ module Control.Monad.IOSim (
   traceEvents,
   traceResult,
   selectTraceEvents,
+  selectTraceEvents',
   selectTraceEventsDynamic,
+  selectTraceEventsDynamic',
   selectTraceEventsSay,
+  selectTraceEventsSay',
   printTraceEventsSay,
   -- * Eventlog
   EventlogEvent(..),
@@ -68,6 +71,19 @@ selectTraceEvents fn = go
     go (TraceDeadlock      _   threads) = throw (FailureDeadlock threads)
     go (TraceMainReturn    _ _ _)       = []
 
+selectTraceEvents'
+    :: (TraceEvent -> Maybe b)
+    -> Trace a
+    -> [b]
+selectTraceEvents' fn = go
+  where
+    go (Trace _ _ _ ev trace) = case fn ev of
+      Just x  -> x : go trace
+      Nothing ->     go trace
+    go (TraceMainException _ _ _) = []
+    go (TraceDeadlock      _ _)   = []
+    go (TraceMainReturn    _ _ _) = []
+
 -- | Select all the traced values matching the expected type. This relies on
 -- the sim's dynamic trace facility.
 --
@@ -80,12 +96,32 @@ selectTraceEventsDynamic = selectTraceEvents fn
     fn (EventLog dyn) = fromDynamic dyn
     fn _              = Nothing
 
+-- | Like 'selectTraceEventsDynamic' but returns partial trace if an excpetion
+-- is found in it.
+--
+selectTraceEventsDynamic' :: forall a b. Typeable b => Trace a -> [b]
+selectTraceEventsDynamic' = selectTraceEvents' fn
+  where
+    fn :: TraceEvent -> Maybe b
+    fn (EventLog dyn) = fromDynamic dyn
+    fn _              = Nothing
+
 -- | Get a trace of 'EventSay'.
 --
 -- For convenience, this throws exceptions for abnormal sim termination.
 --
 selectTraceEventsSay :: Trace a -> [String]
 selectTraceEventsSay = selectTraceEvents fn
+  where
+    fn :: TraceEvent -> Maybe String
+    fn (EventSay s) = Just s
+    fn _            = Nothing
+
+-- | Like 'selectTraceEventsSay' but return partial trace if an exception is
+-- found in it.
+--
+selectTraceEventsSay' :: Trace a -> [String]
+selectTraceEventsSay' = selectTraceEvents' fn
   where
     fn :: TraceEvent -> Maybe String
     fn (EventSay s) = Just s
