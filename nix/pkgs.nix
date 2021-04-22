@@ -1,4 +1,6 @@
 # our packages overlay
+localConfig:
+
 pkgs: _: with pkgs; {
   ouroborosNetworkHaskellPackages = import ./haskell.nix {
     inherit config
@@ -7,6 +9,7 @@ pkgs: _: with pkgs; {
       stdenv
       haskell-nix
       buildPackages
+      localConfig
       ;
   };
 

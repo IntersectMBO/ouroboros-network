@@ -4,6 +4,7 @@
 , sourcesOverride ? { }
 }:
 let
+  localConfig = import ./local-config.nix;
   sources = import ./sources.nix { pkgs = import nixpkgs { }; }
     // sourcesOverride;
   iohkNixMain = import sources.iohk-nix { };
@@ -40,7 +41,7 @@ let
         // { inherit overlays sources; };
       })
       # And, of course, our haskell-nix-ified cabal project:
-      (import ./pkgs.nix)
+      (import ./pkgs.nix localConfig)
     ];
 
   pkgs = import nixpkgs {
