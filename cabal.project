@@ -1,4 +1,4 @@
-index-state: 2021-02-15T00:00:00Z
+index-state: 2021-04-15T00:00:00Z
 
 packages: ./typed-protocols
           ./typed-protocols-examples
@@ -203,11 +203,3 @@ source-repository-package
   location: https://github.com/input-output-hk/cardano-crypto/
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
-
--- The r0 revision of this quickcheck-state-machine-0.7 on Hackage adds a lower
--- bound on the text package: >=1.2.4.0. However, 1.2.4.0 doesn't support GHC
--- 8.10, 1.2.4.1 will, but that hasn't been released yet. GHC 8.10 is bundled
--- with 1.2.3.2, so override quickcheck-state-machine's lower bound to support
--- an "older" version of text. See
--- https://github.com/advancedtelematic/quickcheck-state-machine/issues/371
-allow-older: quickcheck-state-machine:text
