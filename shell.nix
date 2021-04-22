@@ -9,7 +9,7 @@
 }:
 with pkgs;
 let
-  ghcVersion = "ghc8104";
+  ghcVersion = import ./nix/ghc-version.nix;
 
   # Both stylish-haskell and Haskell-language-server are pulled in with niv
   # directly from their repositories at specific commits because the versions we

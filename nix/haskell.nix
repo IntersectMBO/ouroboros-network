@@ -7,13 +7,12 @@
 , haskell-nix
 , buildPackages
 , config ? { }
-  # GHC attribute name
-, compiler ? config.haskellNix.compiler or "ghc8104"
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
 , libsodium ? pkgs.libsodium
 }:
 let
+  compiler = import ./ghc-version.nix;
   src = haskell-nix.haskellLib.cleanGit {
     name = "ouroboros-network-src";
     src = ../.;
