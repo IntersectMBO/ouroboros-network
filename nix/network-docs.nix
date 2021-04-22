@@ -31,7 +31,7 @@ pkgs.runCommand "ouroboros-network-docs"
     })
   ];
 } ''
-  for d in network-design network-spec connection-manager-spec; do
+  for d in network-design network-spec; do
     mkdir -p docs/$d
     ln -s ${src}/$d/* docs/$d/
   done
@@ -50,12 +50,6 @@ pkgs.runCommand "ouroboros-network-docs"
   (
     cd docs/network-spec
     make all
-    cp -a *.pdf $out/
-  )
-
-  (
-    cd docs/connection-manager-spec
-    latexmk -pdf -pdflatex="pdflatex -interaction=nonstopmode"
     cp -a *.pdf $out/
   )
 
