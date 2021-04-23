@@ -50,11 +50,6 @@ data StakeHolder =
 newtype StakeDist = StakeDist { stakeDistToMap :: Map CoreNodeId Rational }
   deriving (Show, Eq, Serialise, NoThunks)
 
--- | Ticked stake distribution
-newtype instance Ticked StakeDist = TickedStakeDist {
-      tickedStakeDistToMap :: Map CoreNodeId Rational
-    }
-
 stakeWithDefault :: Rational -> CoreNodeId -> StakeDist -> Rational
 stakeWithDefault d n = Map.findWithDefault d n . stakeDistToMap
 

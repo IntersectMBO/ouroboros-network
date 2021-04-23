@@ -29,22 +29,25 @@ protocolInfoPraosRule :: Monad m
                       -> PraosParams
                       -> HardFork.EraParams
                       -> LeaderSchedule
+                      -> PraosEvolvingStake
                       -> ProtocolInfo m MockPraosRuleBlock
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
                       eraParams
-                      schedule =
+                      schedule
+                      evolvingStake =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
           topLevelConfigProtocol = WLSConfig {
               wlsConfigSchedule = schedule
             , wlsConfigP        = PraosConfig
-                { praosParams       = params
-                , praosSignKeyVRF   = NeverUsedSignKeyVRF
-                , praosInitialEta   = 0
-                , praosInitialStake = genesisStakeDist addrDist
-                , praosVerKeys      = verKeys
+                { praosParams        = params
+                , praosSignKeyVRF    = NeverUsedSignKeyVRF
+                , praosInitialEta    = 0
+                , praosInitialStake  = genesisStakeDist addrDist
+                , praosEvolvingStake = evolvingStake
+                , praosVerKeys       = verKeys
                 }
             , wlsConfigNodeId   = nid
             }

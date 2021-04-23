@@ -22,9 +22,11 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , HotKeyEvolutionError (..)
   , Praos
   , PraosChainDepState (..)
+  , PraosEvolvingStake (..)
   , PraosExtraFields (..)
   , PraosFields (..)
   , PraosParams (..)
+  , emptyPraosEvolvingStake
   , evolveKey
   , forgePraosFields
     -- * Tags
@@ -71,6 +73,7 @@ import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Cardano.Slotting.EpochInfo
 
+import           Data.Maybe (fromMaybe)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -90,7 +93,6 @@ data PraosFields c toSign = PraosFields {
   deriving (Generic)
 
 instance (PraosCrypto c, Typeable toSign) => NoThunks (PraosFields c toSign)
-  -- use generic instance
 
 -- | Fields that should be included in the signature
 data PraosExtraFields c = PraosExtraFields {
@@ -101,7 +103,6 @@ data PraosExtraFields c = PraosExtraFields {
   deriving (Generic)
 
 instance PraosCrypto c => NoThunks (PraosExtraFields c)
-  -- use generic instance
 
 data PraosValidateView c =
     forall signed. Cardano.Crypto.KES.Class.Signable (PraosKES c) signed
@@ -128,7 +129,6 @@ data HotKey c =
   deriving (Generic)
 
 instance PraosCrypto c => NoThunks (HotKey c)
-
 deriving instance PraosCrypto c => Show (HotKey c)
 
 -- | The 'HotKey' could not be evolved to the given 'Period'.
@@ -184,6 +184,37 @@ forgePraosFields PraosProof{..} hotKey mkToSign =
       }
 
 {-------------------------------------------------------------------------------
+  Mock stake distribution
+-------------------------------------------------------------------------------}
+
+-- | An association from epoch to stake distributions.
+--
+-- Should be used when checking if someone is the leader of a particular slot.
+-- This is sufficiently good for a mock protocol as far as consensus is
+-- concerned. It is not strictly necessary that the stake distribution is
+-- computed from previous epochs, as we just need to consider that:
+--
+-- 1) an attacker cannot influence it.
+-- 2) all the nodes agree on the same value for each Slot.
+--
+-- Each pair stores the stake distribution established by the end of the epoch
+-- in the first item of the pair. See 'latestEvolvedStakeDistAsOfEpoch' for the
+-- intended interface.
+--
+-- If no value is returned, that means we are checking the stake before any
+-- changes have happened so we should consult instead the 'praosInitialStake'.
+newtype PraosEvolvingStake = PraosEvolvingStake (Map EpochNo StakeDist)
+  deriving stock Show
+  deriving newtype NoThunks
+
+emptyPraosEvolvingStake :: PraosEvolvingStake
+emptyPraosEvolvingStake = PraosEvolvingStake Map.empty
+
+latestEvolvedStakeDistAsOfEpoch :: PraosEvolvingStake -> EpochNo -> Maybe StakeDist
+latestEvolvedStakeDistAsOfEpoch (PraosEvolvingStake x) e =
+  fmap snd . Map.lookupMax . fst $ Map.split e x
+
+{-------------------------------------------------------------------------------
   Praos specific types
 -------------------------------------------------------------------------------}
 
@@ -191,17 +222,10 @@ data VRFType = NONCE | TEST
     deriving (Show, Eq, Ord, Generic, NoThunks)
 
 instance Serialise VRFType
-  -- use generic instance
 
 instance ToCBOR VRFType where
   -- This is a cheat, and at some point we probably want to decide on Serialise/ToCBOR
   toCBOR = encode
-
-deriving instance PraosCrypto c => Show (PraosExtraFields c)
-deriving instance PraosCrypto c => Eq   (PraosExtraFields c)
-
-deriving instance PraosCrypto c => Show (PraosFields c toSign)
-deriving instance PraosCrypto c => Eq   (PraosFields c toSign)
 
 data PraosProof c = PraosProof {
       praosProofRho :: CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType)
@@ -225,9 +249,8 @@ deriving instance PraosCrypto c => Show (PraosValidationError c)
 deriving instance PraosCrypto c => Eq   (PraosValidationError c)
 
 data BlockInfo c = BlockInfo
-    { biSlot  :: !SlotNo
-    , biRho   :: !(CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType))
-    , biStake :: !StakeDist
+    { biSlot :: !SlotNo
+    , biRho  :: !(CertifiedVRF (PraosVRF c) (Natural, SlotNo, VRFType))
     }
   deriving (Generic)
 
@@ -250,11 +273,12 @@ data PraosParams = PraosParams {
   deriving (Generic, NoThunks)
 
 data instance ConsensusConfig (Praos c) = PraosConfig
-  { praosParams       :: !PraosParams
-  , praosInitialEta   :: !Natural
-  , praosInitialStake :: !StakeDist
-  , praosSignKeyVRF   :: !(SignKeyVRF (PraosVRF c))
-  , praosVerKeys      :: !(Map CoreNodeId (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
+  { praosParams        :: !PraosParams
+  , praosInitialEta    :: !Natural
+  , praosInitialStake  :: !StakeDist
+  , praosEvolvingStake :: !PraosEvolvingStake
+  , praosSignKeyVRF    :: !(SignKeyVRF (PraosVRF c))
+  , praosVerKeys       :: !(Map CoreNodeId (VerKeyKES (PraosKES c), VerKeyVRF (PraosVRF c)))
   }
   deriving (Generic)
 
@@ -280,7 +304,7 @@ data instance Ticked (PraosChainDepState c) = TickedPraosChainDepState {
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type LedgerView    (Praos c) = StakeDist
+  type LedgerView    (Praos c) = ()
   type IsLeader      (Praos c) = PraosProof           c
   type ValidationErr (Praos c) = PraosValidationError c
   type ValidateView  (Praos c) = PraosValidateView    c
@@ -297,7 +321,6 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
       else Nothing
     where
       (rho', y', t) = rhoYT cfg (praosHistory cds) slot nid
-
       rho = evalCertified () rho' praosSignKeyVRF
       y   = evalCertified () y'   praosSignKeyVRF
 
@@ -306,9 +329,9 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   updateChainDepState cfg@PraosConfig{..}
                       (PraosValidateView PraosFields{..} toSign)
                       slot
-                      (TickedPraosChainDepState (TickedStakeDist sd) cds) = do
-    let PraosExtraFields{..} = praosExtraFields
-        nid                  = praosCreator
+                      (TickedPraosChainDepState TickedTrivial cds) = do
+    let PraosExtraFields {..} = praosExtraFields
+        nid = praosCreator
 
     -- check that the new block advances time
     case praosHistory cds of
@@ -358,10 +381,10 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
         throwError $ PraosInsufficientStake t $
                        getOutputVRFNatural (certifiedOutput praosY)
 
+    -- "store" a block by adding it to the chain dependent state
     let !bi = BlockInfo
             { biSlot  = slot
             , biRho   = praosRho
-            , biStake = StakeDist sd
             }
 
     return $ PraosChainDepState $ bi : praosHistory cds
@@ -369,12 +392,11 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
   reupdateChainDepState _
                         (PraosValidateView PraosFields{..} _)
                         slot
-                        (TickedPraosChainDepState (TickedStakeDist sd) cds) =
+                        (TickedPraosChainDepState TickedTrivial cds) =
     let PraosExtraFields{..} = praosExtraFields
         !bi = BlockInfo
             { biSlot  = slot
             , biRho   = praosRho
-            , biStake = StakeDist sd
             }
     in PraosChainDepState $ bi : praosHistory cds
 
@@ -433,7 +455,7 @@ infosStake s@PraosConfig{..} xs e = case ys of
     ys = dropWhile (\b -> blockInfoEpoch s b > e') xs
 
 phi :: ConsensusConfig (Praos c) -> Rational -> Double
-phi PraosConfig{..} r = 1 - (1 - praosLeaderF) ** fromRational r
+phi PraosConfig{..} alpha = 1 - (1 - praosLeaderF) ** fromRational alpha
   where
     PraosParams{..} = praosParams
 
@@ -443,10 +465,17 @@ leaderThreshold :: forall c. PraosCrypto c
                 -> SlotNo
                 -> CoreNodeId
                 -> Double
-leaderThreshold st xs s n =
-    let a = stakeWithDefault 0 n $ infosStake st xs (slotEpoch st s)
-    in  2 ^ (sizeHash (Proxy :: Proxy (PraosHash c)) * 8) * phi st a
+leaderThreshold config _blockInfos s n =
+    let
+      alpha = stakeWithDefault 0 n
+        $ fromMaybe (praosInitialStake config)
+        $ latestEvolvedStakeDistAsOfEpoch (praosEvolvingStake config) (slotEpoch config s)
+    in
+      -- 2^(l_VRF * 8) * ϕ_f(αᵢ)
+      -- the 8 factor converts from bytes to bits.
+      2 ^ (sizeHash (Proxy :: Proxy (PraosHash c)) * 8) * phi config alpha
 
+-- |Compute the rho, y and Tᵢ parameters for a given slot.
 rhoYT :: PraosCrypto c
       => ConsensusConfig (Praos c)
       -> [BlockInfo c]
@@ -508,16 +537,14 @@ instance PraosCrypto c => Condense (PraosFields c toSign) where
 
 instance PraosCrypto c => Serialise (BlockInfo c) where
   encode BlockInfo {..} = mconcat
-    [ encodeListLen 3
+    [ encodeListLen 2
     , encode biSlot
     , toCBOR biRho
-    , encode biStake
     ]
   decode = do
-    decodeListLenOf 3
+    decodeListLenOf 2
     biSlot  <- decode
     biRho   <- fromCBOR
-    biStake <- decode
     return BlockInfo {..}
 
 instance SignableRepresentation (Natural, SlotNo, VRFType) where
