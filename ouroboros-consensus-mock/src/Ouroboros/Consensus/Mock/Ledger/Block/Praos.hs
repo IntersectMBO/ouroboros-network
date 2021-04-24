@@ -38,7 +38,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Forge
-import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
@@ -120,24 +119,10 @@ instance ( SimpleCrypto c
          , PraosCrypto c'
          , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => LedgerSupportsProtocol (SimplePraosBlock c c') where
-  protocolLedgerView   cfg _  = pretendTicked $ stakeDist cfg
-  ledgerViewForecastAt cfg st = constantForecastOf
-                                 (pretendTicked $ stakeDist cfg)
+  protocolLedgerView   _ _  = TickedTrivial
+  ledgerViewForecastAt _ st = constantForecastOf
+                                 TickedTrivial
                                  (getTipSlot st)
-
--- | Praos needs a ledger that can give it the "active stake distribution"
---
--- TODO: Currently our mock ledger does not do this, and just assumes that all
--- the leaders have equal stake at all times. In a way this is not wrong: it
--- is just a different instantiation of the same consensus algorithm (see
--- documentation of 'LedgerView'). Ideally we'd change this however, but it
--- may not be worth it; it would be a bit of work, and after we have integrated
--- the Shelley rules, we'll have a proper instance anyway.
-stakeDist :: LedgerConfig (SimplePraosBlock c c') -> StakeDist
-stakeDist = equalStakeDist . simpleMockLedgerConfig
-
-pretendTicked :: StakeDist -> Ticked StakeDist
-pretendTicked (StakeDist sd) = TickedStakeDist sd
 
 {-------------------------------------------------------------------------------
   Forging

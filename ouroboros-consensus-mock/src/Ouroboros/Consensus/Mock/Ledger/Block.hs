@@ -187,6 +187,8 @@ instance Serialise SimpleBody where
   Working with 'SimpleBlock'
 -------------------------------------------------------------------------------}
 
+-- | Create a header by hashing the header without hash and adding to the
+-- resulting value.
 mkSimpleHeader :: SimpleCrypto c
                => (ext' -> CBOR.Encoding)
                -> SimpleStdHeader c ext

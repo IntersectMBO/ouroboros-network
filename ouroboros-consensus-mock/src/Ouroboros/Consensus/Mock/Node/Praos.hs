@@ -36,16 +36,18 @@ protocolInfoPraos :: IOLike m
                   -> PraosParams
                   -> HardFork.EraParams
                   -> Natural
+                  -> PraosEvolvingStake
                   -> ProtocolInfo m MockPraosBlock
-protocolInfoPraos numCoreNodes nid params eraParams eta0 =
+protocolInfoPraos numCoreNodes nid params eraParams eta0 evolvingStakeDist =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PraosConfig {
-                praosParams       = params
-              , praosSignKeyVRF   = signKeyVRF nid
-              , praosInitialEta   = eta0
-              , praosInitialStake = genesisStakeDist addrDist
-              , praosVerKeys      = verKeys
+                praosParams        = params
+              , praosSignKeyVRF    = signKeyVRF nid
+              , praosInitialEta    = eta0
+              , praosInitialStake  = genesisStakeDist addrDist
+              , praosEvolvingStake = evolvingStakeDist
+              , praosVerKeys       = verKeys
               }
           , topLevelConfigLedger  = SimpleLedgerConfig addrDist eraParams
           , topLevelConfigBlock   = SimpleBlockConfig
