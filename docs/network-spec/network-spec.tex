@@ -110,6 +110,16 @@
   showstringspaces=false,
   morecomment=[l]\%,
 }
+\lstdefinelanguage{cddl}{
+  morekeywords={bool,uint,nint,int,float16,float32,float64,float,bstr,bytes,tstr,text},
+  morecomment=[l]{;},
+  morestring=[b]",
+}
+\lstdefinestyle{cddl}{
+  numbers=left,
+  language=cddl,
+  columns=fixed,
+}
 
 \definecolor{shadecolor}{rgb}{.6,0.6,0.8}
 \usetikzlibrary{arrows,calc,matrix,shapes}
@@ -170,7 +180,9 @@
 % \include{rest}
 
 \appendix
-\include{cddl}
+\chapter{Common CDDL definitions}
+\label{cddl-common}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/common.cddl}
 
 \bibliographystyle{apalike}
 \bibliography{references}

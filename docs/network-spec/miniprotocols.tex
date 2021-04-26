@@ -241,6 +241,11 @@ following pieces of information:
     {ouroboros-network/src/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
     {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
 
+\section{CBOR and CDDL}
+All mini-protocols are encoded using coincise binary object representation
+(CBOR), see~\url{https://cbor.io}.  Each codec comes along with a specification
+written in CDDL,
+see~\url{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}.
 
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for
@@ -409,8 +414,9 @@ Messages of the protocol:
   \Confirm    & \AcceptVersion     & $(versionNumber,extraParameters)$ & \Done \\ \hline
   \Confirm    & \Refuse            & $reason$                     & \Done \\ \hline
 \end{tabular}
+
 \subsection{Client and Server Implementation}
-Section~\ref{included-cddl} contains the CDDL-specification of the binary format of the handshake messages.
+Section~\ref{handshake-cddl} contains the CDDL-specification of the binary format of the handshake messages.
 The version table is encoded as a CBOR table with the version number as key
 and the protocol parameters as value.
 The handshake protocol requires that the version numbers ( i.e. the keys) in the version table are unique
@@ -477,8 +483,7 @@ client protocol.
 \subsubsection{Node to client handshake mini-protocol}
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/handshake-node-to-client.cddl}
 
-
-\section{Chain Synchronisation Protocol}
+\section{Chain-Sync Protocol}
 \label{chain-sync-protocol}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
 \newcommand{\CanAwait}{\state{CanAwait}}
@@ -743,6 +748,10 @@ Here are some cases to consider:
     chain-sync protocol.
 \end{description}
 
+\subsection{CDDL encoding specification}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/chain-sync.cddl}
+See appendix \ref{cddl-common} for common definitions.
+
 \section{Block Fetch Protocol}
 \label{block-fetch-protocol}
 
@@ -815,7 +824,11 @@ Transition table:
   \Streaming   & \BatchDone          &                        & \Idle       \\ \hline
 \end{tabular}
 
-\section{Transaction Submission Protocol}
+\subsection{CDDL encoding specification}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/block-fetch.cddl}
+See appendix \ref{cddl-common} for common definitions.
+
+\section{TxSubmission Protocol}
 \subsection{Version 1}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Type.hs}
 \label{tx-submission-protocol}
@@ -906,6 +919,10 @@ Messages of the protocol:
   \Txs              & \ReplyTxs           & $\langle txs \rangle$         & \Idle             \\ \hline
   \RequestTxIdsB    & \MsgDone            &                               & \Done             \\ \hline
 \end{tabular}
+\subsubsection{CDDL encoding specification}\label{tx-submission-cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/tx-submission.cddl}
+See appendix \ref{cddl-common} for common definitions.
+
 \subsection{Version 2}
 \hsref{ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
 \label{tx-submission-protocol2}
@@ -967,6 +984,10 @@ Messages of the protocol:
   \Txs              & \ReplyTxs           & $\langle txs \rangle$         & \Idle             \\ \hline
   \RequestTxIdsB    & \MsgDone            &                               & \Done             \\ \hline
 \end{tabular}
+\subsubsection{CDDL encoding specification}\label{tx-submission2-cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/tx-submission2.cddl}
+See version 1 of the mini-protocol in section~\ref{tx-submission-cddl} and
+appendix \ref{cddl-common} for common definitions.
 
 \subsection{Client and Server Implementation}
 The protocol has two design goals: It must diffuse transactions with high efficiency
@@ -1058,6 +1079,9 @@ measurments.
 \item [\MsgDone]
   Terminating message.
 \end{description}
+
+\subsection{CDDL encoding specification}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/keep-alive.cddl}
 
 \section{Local Transaction Submission Mini Protocol}
 \hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
@@ -1181,6 +1205,10 @@ ledger state.
 
 where $AcquireFailure$ is either $AcquireFailurePointTooOld$ or
 $AcquireFailurePointNotOnChain$.
+
+\subsection{CDDL encoding specification}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/local-state-query.cddl}
+See appendix \ref{cddl-common} for common definitions.
 
 \section{Pipelining of Mini Protocols}
 \label{pipelining}
