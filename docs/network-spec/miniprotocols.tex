@@ -409,6 +409,73 @@ Messages of the protocol:
   \Confirm    & \AcceptVersion     & $(versionNumber,extraParameters)$ & \Done \\ \hline
   \Confirm    & \Refuse            & $reason$                     & \Done \\ \hline
 \end{tabular}
+\subsection{Client and Server Implementation}
+Section~\ref{included-cddl} contains the CDDL-specification of the binary format of the handshake messages.
+The version table is encoded as a CBOR table with the version number as key
+and the protocol parameters as value.
+The handshake protocol requires that the version numbers ( i.e. the keys) in the version table are unique
+and appear in ascending order.
+(Note, that CDDL is not expressive enough to precisely specify that requirement on the keys of the CBOR
+table. Therefor the CDDL-specification uses a table with keys from 1 to 4 as an example.)
+
+In a run of the handshake mini protocol the peers exchange only two messages:
+The client requests to connect with a \ProposeVersions{} message that contains information about
+all protocol versions it wants to support.
+The server replies either with an \AcceptVersion{} message containing the negotiated
+version number and extra parameters or a \Refuse{} message.
+The \Refuse{} message contains one of three alternative refuse reasons:
+\VersionMismatch{}, \HandshakeDecodeError{} or just \Refused{}.
+
+When a server receives a \ProposeVersions{} message it uses the following algorithm to
+compute the response:
+\begin{enumerate}
+\item
+  Compute the intersection of the set of protocol version numbers that the server support
+  and the version numbers requested by the client.
+\item
+  If the intersection is empty:
+  Reply with \Refuse(\VersionMismatch) and the list of protocol numbers the server supports.
+\item
+  Otherwise:
+  Select the protocol with the highest version number in the intersection.
+\item
+  Run the protocol specific decoder on the CBOR term that contains the protocol parameters.
+\item
+  If the decoder fails:
+  Reply with \Refuse(\HandshakeDecodeError), the selected version number and an error message.
+\item
+  Otherwise: Test the proposed protocol parameters of the selected protocol version
+\item
+  If the test refuses the parameters:
+  Reply with \Refuse(\Refused), the selected version number and an error message.
+\item
+  Otherwise:
+  Encode the extra parameters and
+  reply with \AcceptVersion, the selected version number and the extra parameters.
+\end{enumerate}
+Note, that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
+for set of protocols that the server supports.
+The handshake protocol is designed,
+such that a server can always handle requests for protocol versions that it does not support.
+The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
+version.
+
+The handshake mini protocol runs before the MUX/DEMUX itself is initialised.
+Each message is transmitted within a single MUX segment, i.e. with a proper
+segment header, but, as the MUX/DEMUX is not yet running the messages must not
+be split into multiple segments.  These MUX segments are using a reserved
+protocol id $0$ (\texttt{Muxcontrol}).
+
+\subsection{CDDL encoding specification}\label{handshake-cddl}
+There are two flavours of the mini-protocol which only differ with type
+instatiations, e.g. different protocol versions and version data carried in
+messages.  First one is used by the node to node protocol the other by node to
+client protocol.
+
+\subsubsection{Node to node handshake mini-protocol}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/handshake-node-to-node.cddl}
+\subsubsection{Node to client handshake mini-protocol}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/handshake-node-to-client.cddl}
 
 
 \section{Chain Synchronisation Protocol}
@@ -943,63 +1010,6 @@ otherwise a non-blocking request.
 The producer must reply immediately (i.e. within a small timeout) to a non-blocking request.
 It replies with not more then the requested number of ids (possible with an empty list).
 A blocking request on the other side, waits until at least one transaction is available.
-
-\subsection{Client and Server Implementation}
-Section~\ref{included-cddl} contains the CDDL-specification of the binary format of the handshake messages.
-The version table is encoded as a CBOR table with the version number as key
-and the protocol parameters as value.
-The handshake protocol requires that the version numbers ( i.e. the keys) in the version table are unique
-and appear in ascending order.
-(Note, that CDDL is not expressive enough to precisely specify that requirement on the keys of the CBOR
-table. Therefor the CDDL-specification uses a table with keys from 1 to 4 as an example.)
-
-In a run of the handshake mini protocol the peers exchange only two messages:
-The client requests to connect with a \ProposeVersions{} message that contains information about
-all protocol versions it wants to support.
-The server replies either with an \AcceptVersion{} message containing the negotiated
-version number and extra parameters or a \Refuse{} message.
-The \Refuse{} message contains one of three alternative refuse reasons:
-\VersionMismatch{}, \HandshakeDecodeError{} or just \Refused{}.
-
-When a server receives a \ProposeVersions{} message it uses the following algorithm to
-compute the response:
-\begin{enumerate}
-\item
-  Compute the intersection of the set of protocol version numbers that the server support
-  and the version numbers requested by the client.
-\item
-  If the intersection is empty:
-  Reply with \Refuse(\VersionMismatch) and the list of protocol numbers the server supports.
-\item
-  Otherwise:
-  Select the protocol with the highest version number in the intersection.
-\item
-  Run the protocol specific decoder on the CBOR term that contains the protocol parameters.
-\item
-  If the decoder fails:
-  Reply with \Refuse(\HandshakeDecodeError), the selected version number and an error message.
-\item
-  Otherwise: Test the proposed protocol parameters of the selected protocol version
-\item
-  If the test refuses the parameters:
-  Reply with \Refuse(\Refused), the selected version number and an error message.
-\item
-  Otherwise:
-  Encode the extra parameters and
-  reply with \AcceptVersion, the selected version number and the extra parameters.
-\end{enumerate}
-Note, that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
-for set of protocols that the server supports.
-The handshake protocol is designed,
-such that a server can always handle requests for protocol versions that it does not support.
-The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
-version.
-
-The handshake mini protocol runs before the MUX/DEMUX itself is initialised.
-Each message is transmitted within a single MUX segment, i.e. with a proper
-segment header, but, as the MUX/DEMUX is not yet running the messages must not
-be split into multiple segments.  These MUX segments are using a reserved
-protocol id $0$ (\texttt{Muxcontrol}).
 
 \section{Keep Alive Mini Protocol}
 \hsref{src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
