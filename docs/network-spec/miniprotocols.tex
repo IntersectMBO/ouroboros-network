@@ -252,7 +252,7 @@ Dummy protocols are only used for testing and are not needed either for
 Node-to-Node nor for the Node-to-Client protocols.
 \subsection{Ping-Pong Protocol}
 \label{ping-pong-protocol}
-\hsref{typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
+\haddockref{Network.TypedProtocol.PingPong.Type}{typed-protocols-examples/Network-TypedProtocol-PingPong-Type\#t:PingPong}
 \newcommand{\Ping}{\msg{MsgPing}}
 \newcommand{\Pong}{\msg{MsgPong}}
 
@@ -303,6 +303,7 @@ The messages of the Ping-Pong protocol do not carry any data.
 
 \subsection{Request Response Protocol}
 \label{request-response-protocol}
+\haddockref{Network.TypedProtocol.ReqResp.Type}{typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 \renewcommand{\StIdle}{\state{StIdle}}
 \renewcommand{\StBusy}{\state{StBusy}}
 \renewcommand{\StDone}{\state{StDone}}
@@ -315,7 +316,6 @@ This means that there are different possible applications of this protocol and t
 application of the protocol determines the types of the requests and responses.
 
 \subsubsection{State machine}
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
 
 \begin{tabular}{|l|l|}
   \hline
@@ -350,7 +350,7 @@ The protocol uses the following messages.
 \end{tabular}
 
 \section{Handshake Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+\haddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type\#t:Handshake}
 \label{handshake-protocol}
 \newcommand{\StPropose}{\state{StPropose}}
 \newcommand{\StConfirm}{\state{StConfirm}}
@@ -410,9 +410,9 @@ Messages of the protocol:
 \begin{tabular}{|l|l|l|l|} \hline
 \multicolumn{4}{|c|}{Transition table} \\ \hline
   from        & message/event      & parameters                   & to          \\ \hline\hline
-  \StPropose    & \MsgProposeVersions   & $versionTable$              & \StConfirm    \\ \hline
+  \StPropose    & \MsgProposeVersions   & $versionTable$          & \StConfirm    \\ \hline
   \StConfirm    & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
-  \StConfirm    & \MsgRefuse            & $reason$                     & \StDone \\ \hline
+  \StConfirm    & \MsgRefuse            & $reason$                & \StDone \\ \hline
 \end{tabular}
 
 \subsection{Client and Server Implementation}
@@ -485,7 +485,7 @@ client protocol.
 
 \section{Chain-Sync Protocol}
 \label{chain-sync-protocol}
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
+\haddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}
 \newcommand{\StCanAwait}{\state{StCanAwait}}
 \newcommand{\StMustReply}{\state{StMustReply}}
 \newcommand{\StIntersect}{\state{StIntersect}}
@@ -754,8 +754,8 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Block Fetch Protocol}
 \label{block-fetch-protocol}
+\haddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}
 
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
 \renewcommand{\StIdle}{\state{StIdle}}
 \renewcommand{\StBusy}{\state{StBusy}}
 \newcommand{\StStreaming}{\state{StStreaming}}
@@ -830,7 +830,7 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{TxSubmission Protocol}
 \subsection{Version 1}
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Type.hs}
+\haddockref{Ouroboros.Network.Protocol.TxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type\#t:TxSubmission}
 \label{tx-submission-protocol}
 \newcommand{\TxIdsBlocking}   {\state{StTxIdsBlocking}}
 \newcommand{\TxIdsNonBlocking}{\state{StTxIdsNonBlocking}}
@@ -924,7 +924,7 @@ Messages of the protocol:
 See appendix \ref{cddl-common} for common definitions.
 
 \subsection{Version 2}
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
+\haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}
 \label{tx-submission-protocol2}
 \newcommand{\Hello}  {\state{Hello}}
 \newcommand{\MsgHello} {\trans{MsgHello}}
@@ -1033,7 +1033,7 @@ It replies with not more then the requested number of ids (possible with an empt
 A blocking request on the other side, waits until at least one transaction is available.
 
 \section{Keep Alive Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
+\haddockref{Ouroboros.Network.Protocol.KeepAlive.Type}{ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type\#t:KeepAlive}
 \label{keep-alive-protocol}
 \subsection{Description}
 Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
@@ -1084,7 +1084,7 @@ measurments.
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/keep-alive.cddl}
 
 \section{Local Transaction Submission Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+\haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}
 \label{local-tx-submission-protocol}
 \subsection{Description}
 The local transaction submission mini protocol is used by local clients,
@@ -1139,8 +1139,8 @@ Messages of the protocol:
 \end{description}
 
 \section{Local State Query Mini Protocol}
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
 \label{local-state-query-protocol}
+\haddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}
 \newcommand{\StAcquiring}{\state{Acquiring}}
 \newcommand{\StAcquired}{\state{Acquired}}
 \newcommand{\StQuerying}{\state{Querying}}
@@ -1243,8 +1243,8 @@ The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
 }
 
 \section{Node-to-node protocol}
-\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode.hs}\newline
-\hsref{ouroboros-network/src/Ouroboros/Network/NodeToNode/Version.hs}\newline
+\haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}\newline
+\haddockref{Ouroboros.Network.NodeToNode.Version}{ouroboros-network/Ouroboros-Network-NodeToNode-Version}\newline
 
 The node-to-node protocol consists of the following protocols:
 
@@ -1270,8 +1270,8 @@ Currently there are the following versions of the node-to-node protocol:
 \end{figure}
 
 \section{Node-to-client protocol}
-\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient.hs}\newline
-\hsref{ouroboros-network/src/Ouroboros/Network/NodeToClient/Version.hs}\newline
+\haddockref{Ouroboros.Network.NodeToClient}{ouroboros-network/Ouroboros-Network-NodeToClient}\newline
+\haddockref{Ouroboros.Network.NodeToClient.Version}{ouroboros-network/Ouroboros-Network-NodeToClient-Version}\newline
 
 The node-to-client protocol consists of the following protocols:
 \begin{itemize}

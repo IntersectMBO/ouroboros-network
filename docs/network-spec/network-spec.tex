@@ -60,17 +60,17 @@
 
 \ifbool{isRelease}
        {
-         \newcommand{\hsref}[1]{}
          \newcommand{\wip}[1]{}
          \newcommand{\hide}[1]{}
        }
        {
-         \newcommand{\hsref}[1]
-                    {\href{https://github.com/input-output-hk/ouroboros-network/blob/master/#1}
-                      {\emph{Haskell source: #1}}}
          \newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
          \newcommand{\hide}[1]{}
        }
+\newcommand{\haddockref}[2]
+           {\href{https://input-output-hk.github.io/ouroboros-network/#2}
+                 {\emph{haddock documentation}: \texttt{#1}}
+           }
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
 \newcommand{\msg}[1]{\texttt{#1}}
