@@ -247,7 +247,7 @@ Dummy protocols are only used for testing and are not needed either for
 Node-to-Node nor for the Node-to-Client protocols.
 \subsection{Ping-Pong Protocol}
 \label{ping-pong-protocol}
-\hsref{typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
+\hsref{typed-protocols-examples/src/Network/TypedProtocol/PingPong/Type.hs}
 \newcommand{\Ping}{\msg{Ping}}
 \newcommand{\Pong}{\msg{Pong}}
 
@@ -310,7 +310,7 @@ This means that there are different possible applications of this protocol and t
 application of the protocol determines the types of the requests and responses.
 
 \subsubsection{State machine}
-\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/ReqResp/Type.hs}
+\hsref{typed-protocols-examples/src/Network/TypedProtocol/ReqResp/Type.hs}
 
 \begin{tabular}{|l|l|}
   \hline
@@ -345,7 +345,7 @@ The protocol uses the following messages.
 \end{tabular}
 
 \section{Handshake Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/Handshake/Type.hs}
+\hsref{ouroboros-network-framework/src/Ouroboros/Network/Protocol/Handshake/Type.hs}
 \label{handshake-protocol}
 \newcommand{\Propose}{\state{Propose}}
 \newcommand{\Confirm}{\state{Confirm}}
@@ -1002,7 +1002,7 @@ be split into multiple segments.  These MUX segments are using a reserved
 protocol id $0$ (\texttt{Muxcontrol}).
 
 \section{Keep Alive Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
+\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
 \label{keep-alive-protocol}
 \subsection{Description}
 Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
@@ -1050,7 +1050,7 @@ measurments.
 \end{description}
 
 \section{Local Transaction Submission Mini Protocol}
-\hsref{src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
+\hsref{ouroboros-network/src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
 \label{local-tx-submission-protocol}
 \subsection{Description}
 The local transaction submission mini protocol is used by local clients,
