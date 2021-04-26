@@ -1,0 +1,38 @@
+;
+; LocalStateQuery mini-protocol.
+;
+
+localStateQueryMessage
+  = msgAcquire
+  / msgAcquired
+  / msgFailure
+  / msgQuery
+  / msgResult
+  / msgRelease
+  / msgReAcquire
+  / lsqMsgDone
+
+acquireFailurePointTooOld     = 0
+acquireFailurePointNotOnChain = 1
+
+failure      = acquireFailurePointTooOld
+             / acquireFailurePointNotOnChain
+
+; 'query' and 'result' encodings are not specified; The values are only used
+; for compatibility with
+; 'Ouroboros.Network.Protocol.LocalStateQuery.Test.codec'
+query        = null
+result       = []
+             / [point]
+
+msgAcquire   = [0, point]
+             / [8] 
+msgAcquired  = [1]
+msgFailure   = [2, failure]
+msgQuery     = [3, query]
+msgResult    = [4, result]
+msgRelease   = [5]
+msgReAcquire = [6, point]
+             / [9]
+lsqMsgDone   = [7]
+

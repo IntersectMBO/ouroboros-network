@@ -5,7 +5,7 @@ let
     src = ../.;
     subDir = "docs";
   };
-  message-cddl = ../ouroboros-network/test/messages.cddl;
+  cddl-specs = ../ouroboros-network/test-cddl/specs;
 in
 pkgs.runCommand "ouroboros-network-docs"
 {
@@ -36,8 +36,8 @@ pkgs.runCommand "ouroboros-network-docs"
     ln -s ${src}/$d/* docs/$d/
   done
 
-  mkdir -p ouroboros-network/test
-  cp ${message-cddl} ouroboros-network/test/messages.cddl
+  mkdir -p ouroboros-network/test-cddl/specs
+  cp ${cddl-specs}/*.cddl ouroboros-network/test-cddl/specs
 
   mkdir -p $out
 
