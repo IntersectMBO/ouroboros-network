@@ -49,7 +49,7 @@ import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 -------------------------------------------------------------------------------}
 
 data Tracers' remotePeer localPeer blk f = Tracers
-  { chainSyncClientTracer         :: f (TraceChainSyncClientEvent blk)
+  { chainSyncClientTracer         :: f (TraceLabelPeer remotePeer (TraceChainSyncClientEvent blk))
   , chainSyncServerHeaderTracer   :: f (TraceChainSyncServerEvent blk)
   , chainSyncServerBlockTracer    :: f (TraceChainSyncServerEvent blk)
   , blockFetchDecisionTracer      :: f [TraceLabelPeer remotePeer (FetchDecision [Point (Header blk)])]
