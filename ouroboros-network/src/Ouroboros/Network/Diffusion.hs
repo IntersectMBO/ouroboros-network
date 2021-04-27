@@ -35,6 +35,7 @@ module Ouroboros.Network.Diffusion
   , ConnectionManagerTrace (..)
   , ConnectionHandlerTrace (..)
   , ServerTrace (..)
+  , InboundGovernorCounters (..)
   , InboundGovernorTrace (..)
   )
   where
@@ -86,6 +87,7 @@ import           Ouroboros.Network.RethrowPolicy
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import           Ouroboros.Network.InboundGovernor.State (InboundGovernorCounters (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS ( resolveDomainAccessPoint
                                                               , RelayAccessPoint(..)
                                                               , TraceLocalRootPeers(..)
