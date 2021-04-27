@@ -32,7 +32,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
 import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
-import           Ouroboros.Consensus.Config (topLevelConfigLedger)
+import           Ouroboros.Consensus.Config (TopLevelConfig(topLevelConfigLedger))
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
@@ -95,10 +95,12 @@ queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
         blockVersion
         (SomeSecond blockQuery)
       GetPartialLedgerConfig ->
-        error "TODO queryEncodeNodeToClient not implemented for GetPartialLedgerConfig"
+        encodeTag 1
 
 queryDecodeNodeToClient ::
-     forall blk. SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+    forall blk. (
+      SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+    )
   => CodecConfig blk
   -> QueryVersion
   -> BlockNodeToClientVersion blk
@@ -108,12 +110,17 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
       TopLevelQueryDisabled -> decodeBlockQuery
   where
     decodeBlockQuery = do
-      SomeSecond blockQuery <- decodeNodeToClient
-        @blk
-        @(SomeSecond BlockQuery blk)
-        codecConfig
-        blockVersion
-      return (SomeSecond (BlockQuery blockQuery))
+      tag <- decodeTag
+      case tag of
+        0 -> do
+          SomeSecond x <- decodeNodeToClient
+              @blk
+              @(SomeSecond BlockQuery blk)
+              codecConfig
+              blockVersion
+          return (SomeSecond (BlockQuery x))
+        1 -> return (SomeSecond GetPartialLedgerConfig)
+        _ -> fail $ "SomeSecond Query blk: unknown tag " ++ show tag
 
 instance SerialiseNodeToClient blk (SomeSecond BlockQuery blk) => SerialiseNodeToClient blk (SomeSecond Query blk) where
   encodeNodeToClient codecConfig blockVersion (SomeSecond query)
@@ -151,6 +158,7 @@ instance ( SerialiseResult blk (BlockQuery blk)
   decodeResult codecConfig blockVersion query = case query of
     BlockQuery blockQuery -> decodeResult codecConfig blockVersion blockQuery
     GetPartialLedgerConfig -> decodeNodeToClient codecConfig blockVersion
+
 
 queryEncodeResult ::
      forall blk result. SerialiseResult blk (BlockQuery blk)
