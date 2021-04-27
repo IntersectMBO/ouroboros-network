@@ -640,7 +640,7 @@ data AbstractState
 -- | Counters for tracing and analysis purposes
 --
 data ConnectionManagerCounters = ConnectionManagerCounters {
-  numberConns   :: !Int, -- ^ number of connections relevant for pruning
+  nConnsPruning :: !Int, -- ^ number of connections relevant for pruning
   duplexConns   :: !Int, -- ^ number of negotiated duplex connections (including DuplexState connections)
   uniConns      :: !Int, -- ^ number of negotiated unidirectional connections
   incomingConns :: !Int, -- ^ number of inbound connections
