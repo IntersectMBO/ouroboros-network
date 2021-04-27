@@ -16,6 +16,7 @@ module Ouroboros.Network.InboundGovernor.Event
   , Terminated (..)
   , firstMiniProtocolToFinish
   , firstPeerPromotedToWarm
+  , firstPeerPromotedToHot
   , firstPeerDemotedToCold
   ) where
 
@@ -25,7 +26,9 @@ import           Control.Monad.Class.MonadThrow hiding (handle)
 
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>))
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 
 import qualified Network.Mux as Mux
 import           Network.Mux.Types ( MiniProtocolStatus (..),
@@ -59,6 +62,12 @@ data Event (muxMode :: MuxMode) peerAddr m a b
     -- | Transition from 'RemoteEstablished' to 'RemoteIdle'.
     --
     | WaitIdleRemote         !(ConnectionId peerAddr)
+
+    -- | We track remote @warm → hot@ transitions.  The @hot → warm@ transition
+    -- is tracked by 'MiniProtocolTerminated' when
+    -- a any hot mini-protocol terminates.
+    --
+    | RemotePromotedToHot    !(ConnectionId peerAddr)
 
     -- | Transition from 'RemoteIdle' to 'RemoteCold'.
     --
@@ -94,11 +103,11 @@ firstMuxToFinish InboundGovernorState { igsConnections } =
 -- restart a mini-protocol and to do the restart.
 --
 data Terminated muxMode peerAddr m a b = Terminated {
-    tConnId       :: !(ConnectionId peerAddr),
-    tMux          :: !(Mux.Mux muxMode m),
-    tMiniProtocol :: !(MiniProtocol muxMode ByteString m a b),
-    tDataFlow     :: !DataFlow,
-    tResult       :: !(Either SomeException b)
+    tConnId           :: !(ConnectionId peerAddr),
+    tMux              :: !(Mux.Mux muxMode m),
+    tMiniProtocolData :: !(MiniProtocolData muxMode m a b),
+    tDataFlow         :: !DataFlow,
+    tResult           :: !(Either SomeException b)
   }
 
 
@@ -121,12 +130,13 @@ firstMiniProtocolToFinish InboundGovernorState { igsConnections } =
         Map.foldrWithKey
           (\miniProtocolNum completionAction inner ->
                 (\tResult -> Terminated {
-                    tConnId       = connId,
-                    tMux          = csMux,
-                    tMiniProtocol = csMiniProtocolMap Map.! miniProtocolNum,
-                    tDataFlow     = csDataFlow,
-                    tResult
-                  })
+                      tConnId           = connId,
+                      tMux              = csMux,
+                      tMiniProtocolData = csMiniProtocolMap Map.! miniProtocolNum,
+                      tDataFlow         = csDataFlow,
+                      tResult
+                    }
+                )
             <$> completionAction
             <|> inner
           )
@@ -153,7 +163,9 @@ firstPeerPromotedToWarm
     -> STM m (ConnectionId peerAddr)
 firstPeerPromotedToWarm InboundGovernorState { igsConnections } =
     Map.foldrWithKey
-      (\connId ConnectionState { csMux, csRemoteState } outer ->
+      (\connId ConnectionState { csMux,
+                                 csRemoteState
+                               } outer ->
         case csRemoteState of
           -- the connection is already in 'RemoteEstablished' state.
           RemoteEstablished -> outer
@@ -167,10 +179,9 @@ firstPeerPromotedToWarm InboundGovernorState { igsConnections } =
           -- for p2p nodes for which we start all mini-protocols on demand.
           -- Using 'miniProtocolStatusVar' is ok for unidirectional connection,
           -- as we never restart the protocols for them.  They transition to
-          -- 'RemoteEstablished' as soon the connection is accepted.  This
-          -- is because for eagerly started mini-protocols mux puts them in
-          -- 'StatusRunning' as soon as mini-protocols are set in place by
-          -- 'runMiniProtocol'.
+          -- 'RemoteWarm' as soon the connection is accepted.  This is because
+          -- for eagerly started mini-protocols mux puts them in 'StatusRunning'
+          -- as soon as mini-protocols are set in place by 'runMiniProtocol'.
           RemoteCold ->
             Map.foldrWithKey
               (fn connId)
@@ -204,6 +215,63 @@ firstPeerPromotedToWarm InboundGovernorState { igsConnections } =
                 )
             <|> inner
 
+
+-- | Detect when a first warm peer is promoted to hot (all established and hot
+-- mini-protocols run running).
+--
+firstPeerPromotedToHot
+    :: forall muxMode peerAddr m a b. MonadSTM m
+    => InboundGovernorState muxMode peerAddr m a b
+    -> STM m (ConnectionId peerAddr)
+firstPeerPromotedToHot InboundGovernorState { igsConnections } =
+    Map.foldrWithKey
+      (\connId connState@ConnectionState { csRemoteState } outer ->
+        case csRemoteState of
+          RemoteHot     -> outer
+          RemoteWarm    ->
+                Map.foldr
+                  (fn connId)
+                  (return connId)
+                  (hotMiniProtocolStateMap connState)
+            <|> outer
+          RemoteCold    -> 
+              Map.foldr
+                (fn connId)
+                (return connId)
+                (hotMiniProtocolStateMap connState)
+            <|> outer
+          RemoteIdle {} -> outer
+      )
+      empty
+      igsConnections
+  where
+    -- only hot or established mini-protocols;
+    hotMiniProtocolStateMap :: ConnectionState muxMode peerAddr m a b
+                            -> Map (MiniProtocolNum, MiniProtocolDir)
+                                   (STM m MiniProtocolStatus)
+    hotMiniProtocolStateMap ConnectionState { csMux, csMiniProtocolMap } =
+       Mux.miniProtocolStateMap csMux
+       `Map.restrictKeys`
+       ( Set.map (,ResponderDir)
+       . Map.keysSet
+       . Map.filter
+           (\MiniProtocolData { mpdMiniProtocolTemp } ->
+                mpdMiniProtocolTemp == Hot
+             || mpdMiniProtocolTemp == Established
+           )
+       $ csMiniProtocolMap
+       )
+
+    fn :: ConnectionId peerAddr
+       -> STM m MiniProtocolStatus
+       -> STM m (ConnectionId peerAddr)
+       -> STM m (ConnectionId peerAddr)
+    fn connId miniProtocolStatus inner =
+         inner
+      >> miniProtocolStatus >>= \case
+           StatusIdle          -> retry
+           StatusStartOnDemand -> retry
+           StatusRunning       -> return connId
 
 
 -- | Await for first peer demoted to cold, i.e. detect the
