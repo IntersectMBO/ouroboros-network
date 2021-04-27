@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
-import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))
+import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..), PartialLedgerConfig)
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node ()
@@ -153,6 +153,9 @@ unNestedCtxt_B2C (NestedCtxt_B2C ctxt) = ctxt
 
 type instance HeaderHash ByronToCardano = HeaderHash ByronBlock
 type instance ApplyTxErr ByronToCardano = ApplyTxErr ByronBlock
+
+newtype ByronToCardanoLedgerConfig = LedgerConfigB2C ()
+type instance PartialLedgerConfig ByronToCardano = ByronToCardanoLedgerConfig
 
 instance HasNetworkProtocolVersion ByronToCardano
 
@@ -362,6 +365,10 @@ instance SerialiseNodeToClient ByronToCardano (SomeSecond BlockQuery ByronToCard
                          (Proxy @(SomeSecond BlockQuery))
                          (\(SomeSecond (QueryIfCurrentByron q)) -> SomeSecond (QueryB2C q))
 
+instance SerialiseNodeToClient ByronToCardano ByronToCardanoLedgerConfig where
+  encodeNodeToClient _ _ (LedgerConfigB2C ()) = mempty
+  decodeNodeToClient _ _ = return (LedgerConfigB2C ())
+
 instance SerialiseResult ByronToCardano (BlockQuery ByronToCardano) where
   encodeResult (CodecConfigB2C ccfg) () (QueryB2C q) r =
       encodeResult ccfg byronNodeToClientVersion q r
@@ -434,6 +441,9 @@ unNestedCtxt_C2B (NestedCtxt_C2B ctxt) = ctxt
 
 type instance HeaderHash CardanoToByron = HeaderHash ByronBlock
 type instance ApplyTxErr CardanoToByron = ApplyTxErr ByronBlock
+
+newtype CardanoToByronLedgerConfig = LedgerConfigC2B ()
+type instance PartialLedgerConfig CardanoToByron = CardanoToByronLedgerConfig
 
 instance HasNetworkProtocolVersion CardanoToByron
 
@@ -646,6 +656,10 @@ instance SerialiseNodeToClient CardanoToByron (SomeSecond BlockQuery CardanoToBy
       decodeNodeToClientC2B
         (Proxy @(SomeSecond BlockQuery))
         (\(SomeSecond q) -> SomeSecond (QueryC2B q))
+
+instance SerialiseNodeToClient CardanoToByron CardanoToByronLedgerConfig where
+  encodeNodeToClient _ _ (LedgerConfigC2B ()) = mempty
+  decodeNodeToClient _ _ = return (LedgerConfigC2B ())
 
 instance SerialiseResult CardanoToByron (BlockQuery CardanoToByron) where
   encodeResult (CodecConfigC2B ccfg) () (QueryC2B q) (r :: result) =

@@ -1,6 +1,11 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# OPTIONS_GHC -Wno-orphans  #-}
 
 -- | Genesis config for the spec
 --
@@ -8,8 +13,8 @@
 --
 -- > import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis (ByronSpecGenesis)
 -- > import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
-module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
-    ByronSpecGenesis (..)
+module Ouroboros.Consensus.ByronSpec.Ledger.Genesis
+  ( ByronSpecGenesis (..)
   , modFeeParams
   , modPBftThreshold
   , modPParams
@@ -20,10 +25,13 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
   , toChainEnv
   ) where
 
+import           Codec.Serialise (decode, encode)
 import           Data.Coerce (coerce)
 import           Data.Set (Set)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
 import           Numeric.Natural (Natural)
+
+import           Cardano.Binary
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
@@ -54,6 +62,42 @@ data ByronSpecGenesis = ByronSpecGenesis {
     }
   deriving stock (Show)
   deriving NoThunks via AllowThunk ByronSpecGenesis
+
+
+
+
+
+-- TODO serialisation tests!!!!!!
+
+
+
+
+instance FromCBOR ByronSpecGenesis where
+  fromCBOR = do
+    enforceSize "ByronSpecGenesis" 5
+    ByronSpecGenesis
+      <$> fromCBOR @(Set Spec.VKeyGenesis)
+      <*> decode @Spec.UTxO
+      <*> decode @Spec.PParams
+      <*> fromCBOR @Spec.BlockCount
+      <*> fromCBOR @Natural
+
+instance ToCBOR ByronSpecGenesis where
+  toCBOR (ByronSpecGenesis delegators utxo pparams k slotLength) = mconcat
+    [ encodeListLen 5
+    , toCBOR delegators
+    , encode utxo
+    , encode pparams
+    , toCBOR k
+    , toCBOR slotLength
+    ]
+
+-- TODO remove instances when they have been merged upstream
+deriving newtype instance FromCBOR Spec.BlockCount
+deriving newtype instance ToCBOR Spec.BlockCount
+deriving newtype instance FromCBOR Spec.VKeyGenesis
+deriving newtype instance FromCBOR Spec.VKey
+deriving newtype instance FromCBOR Spec.Owner
 
 modPBftThreshold :: (Double -> Double)
                  -> ByronSpecGenesis -> ByronSpecGenesis

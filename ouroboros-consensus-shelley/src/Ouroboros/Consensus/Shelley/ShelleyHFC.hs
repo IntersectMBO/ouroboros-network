@@ -55,10 +55,13 @@ import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import           Shelley.Spec.Ledger.BaseTypes
 
+import           Ouroboros.Consensus.Node.Serialisation
+                     (SerialiseNodeToClient (..))
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
 import           Ouroboros.Consensus.Shelley.Node ()
+import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
 
 {-------------------------------------------------------------------------------
@@ -197,8 +200,13 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
     }
   deriving (Generic, NoThunks)
 
+instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (ShelleyPartialLedgerConfig era) where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
+
+type instance PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era
+
 instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
-  type PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era
 
   -- Replace the dummy 'EpochInfo' with the real one
   completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =

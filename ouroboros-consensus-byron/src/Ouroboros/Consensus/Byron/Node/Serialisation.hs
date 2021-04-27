@@ -37,6 +37,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Protocol
+import qualified Cardano.Chain.Genesis as Genesis
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk
@@ -176,6 +177,10 @@ instance SerialiseNodeToClient ByronBlock CC.ApplyMempoolPayloadErr where
 instance SerialiseNodeToClient ByronBlock (SomeSecond BlockQuery ByronBlock) where
   encodeNodeToClient _ _ (SomeSecond q) = encodeByronQuery q
   decodeNodeToClient _ _               = decodeByronQuery
+
+instance SerialiseNodeToClient ByronBlock (Genesis.Config) where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
 
 instance SerialiseResult ByronBlock (BlockQuery ByronBlock) where
   encodeResult _ _ = encodeByronResult

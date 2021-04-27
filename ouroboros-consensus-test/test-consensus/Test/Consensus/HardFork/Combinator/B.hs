@@ -17,8 +17,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Consensus.HardFork.Combinator.B (
-    BlockB (..)
+module Test.Consensus.HardFork.Combinator.B
+  ( BlockB (..)
   , ProtocolB
   , blockForgingB
   , safeZoneB
@@ -212,6 +212,8 @@ instance LedgerSupportsProtocol BlockB where
   ledgerViewForecastAt _   = trivialForecast
 
 instance HasPartialConsensusConfig ProtocolB
+
+type instance PartialLedgerConfig BlockB = ()
 
 instance HasPartialLedgerConfig BlockB
 
@@ -429,6 +431,7 @@ instance Serialise (SerialisedHeader BlockB) where
 instance SerialiseNodeToClient BlockB BlockB
 instance SerialiseNodeToClient BlockB (Serialised BlockB)
 instance SerialiseNodeToClient BlockB (GenTx BlockB)
+instance SerialiseNodeToClient BlockB ()
 
 instance SerialiseNodeToClient BlockB Void where
   encodeNodeToClient _ _ = absurd

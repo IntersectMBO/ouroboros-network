@@ -17,8 +17,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Shelley.Node (
-    MaxMajorProtVer (..)
+{-# LANGUAGE UndecidableInstances     #-}
+module Ouroboros.Consensus.Shelley.Node
+  ( MaxMajorProtVer (..)
   , ProtocolParamsAllegra (..)
   , ProtocolParamsMary (..)
   , ProtocolParamsShelley (..)
@@ -379,6 +380,10 @@ instance ShelleyBasedEra era => BlockSupportsMetrics (ShelleyBlock era) where
          SelfIssued    -> IsSelfIssued
          NotSelfIssued -> IsNotSelfIssued
 
+-- TODO It's annoying that I have to put a SerialiseNodeToClient constraint
+-- here.
+--
+-- Can I make this non-orphaned or put this instance next to PartialLedgerConfig?
 instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
