@@ -36,6 +36,7 @@ module Ouroboros.Network.Diffusion
   , ConnectionHandlerTrace (..)
   , ConnectionManagerCounters (..)
   , ServerTrace (..)
+  , InboundGovernorCounters (..)
   , InboundGovernorTrace (..)
   )
   where
@@ -91,6 +92,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS ( DomainAddress
                                                               , resolveDomainAddresses
                                                               )
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import           Ouroboros.Network.InboundGovernor.State (InboundGovernorCounters (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types ( TracePeerSelection (..)
                                                                 , DebugPeerSelection (..)
