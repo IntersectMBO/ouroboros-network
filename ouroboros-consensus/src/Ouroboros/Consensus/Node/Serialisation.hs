@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 
 {-------------------------------------------------------------------------------
   NodeToNode
@@ -156,3 +157,10 @@ instance SerialiseNodeToClient blk (ApplyTxErr     blk)
       encodeNodeToClient cfg version h
   decodeNodeToClient cfg version =
       WrapApplyTxErr <$> decodeNodeToClient cfg version
+
+instance SerialiseNodeToClient blk (LedgerConfig     blk)
+      => SerialiseNodeToClient blk (WrapLedgerConfig blk) where
+  encodeNodeToClient cfg version (WrapLedgerConfig h) =
+      encodeNodeToClient cfg version h
+  decodeNodeToClient cfg version =
+      WrapLedgerConfig <$> decodeNodeToClient cfg version
