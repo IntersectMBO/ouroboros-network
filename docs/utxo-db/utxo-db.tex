@@ -1,0 +1,166 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{todonotes}
+\usepackage{microtype}
+\usepackage{amssymb,amsmath}
+\usepackage{mathpazo}
+\usepackage{longtable,booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage[capitalise,noabbrev,nameinlink]{cleveref}
+\hypersetup{
+  pdftitle={Storing the Cardano ledger state on disk: analysis and design options},
+  pdfborder={0 0 0},
+  breaklinks=true
+}
+
+\begin{document}
+
+\title{Storing the Cardano ledger state on disk: \\
+       analysis and design options \\
+       {\large \sc An IOHK technical report}
+  }
+\date{Version 0.9, April 2021}
+\author{Douglas Wilson     \\ {\small \texttt{douglas@well-typed.com}} \\
+   \and Duncan Coutts      \\ {\small \texttt{duncan@well-typed.com}} \\
+                              {\small \texttt{duncan.coutts@iohk.io}}
+   }
+
+\maketitle
+
+%\listoftodos
+
+\section{Introduction}
+\label{introduction}
+
+The project is intended to solve the following problem: the Cardano node keeps
+its ledger state within memory (RAM) and as Cardano scales up this will not be
+sustainable because the ledger state will eventually grow too big.
+
+The solution that this project is focused on is to move the bulk of the ledger
+state from memory to disk. This will involved developing and then integrating
+new infrastructure in the Cardano node (ledger and consensus layers) to allow
+large parts of the ledger state to be kept on disk rather than in memory.
+
+This document is intended to capture the business and technical requirements,
+to present a small set of candidate solutions, and to evaluate and justify a
+preferred solution among those candidates. That solution should be justified in
+complexity by the captured requirements.
+
+\tableofcontents
+
+\section{Summary}
+\label{summary}
+
+Memory (RAM) is very fast but memory space is relatively small and expensive.
+Disks -- even SSDs -- are relatively slow, but disk space is relatively
+plentiful and cheap.
+
+Thus the challenge when adapting a design from memory to disk is to maintain
+adequate performance. For blockchains generally, and Cardano specifically, this
+is not a trivial problem. For example for a long time Ethereum node performance
+was bottlenecked on disk I/O performance. We must consider performance in the
+design analysis or we will face the same problem.
+
+Best case estimates indicate that the stretch goal of 200 TPS is \emph{very}
+hard to achieve if one also wants the time to synchronise the chain to be
+reasonable (e.g. the first time Daedalus is used). Even threshold or mid
+targets of 20 and 50 TPS will be a challenge, while keeping sync times
+reasonable.
+
+Overall this points to the next major scaling bottleneck being synchronisation
+performance. Though it is out of scope for this project, it will likely be
+worth developing solutions that do not require all nodes (e.g. Daedalus nodes)
+to download and validate the entire chain.
+
+The simplified optimistic estimate is as follows:
+\begin{itemize}
+\item Assume the 200 TPS stretch goal.
+\item Assume the typical 2 inputs and 2 outputs per tx.
+\item Assume the UTxO is the only part of the ledger state of interest. This is
+      a simplifying assumption. In reality there are other parts of the ledger
+      state that will make these estimates worse.
+\item Assume the UTxO mostly does not fit in memory.
+\item Assume the UTxO read access pattern has poor temporal and physical
+      locality, and thus each lookup will typically require at least one
+      ``random'' disk read.
+\item Assume a DB read amplification factor of 1.5. (This is a rosy assumption.)
+\item Thus 200 TPS translates to $200 * 2 * 1.5 = 600$ disk I/O operations per
+      second (IOPS).
+\item Assume a mid-range SSD rated at 10,000 IOPS for random reads at queue
+      depth 1, and 100,000 IOPS for random reads at queue depth 32.
+\item Assume that we can fully utilise the parallel performance of the SSD,
+      i.e. use queue depth 32.
+\item The ratio of SSD performance IOPS (100,000) to live system IOPS (600)
+      gives the sync speed ratio, i.e. the factor that syncing the chain would
+      be compared to real time. This is a factor of $100,000 / 600 = 167$ in
+      our example.
+\item Thus for a chain growing at 200 TPS for a year, the time to sync that
+      chain would be $1/167$ of a year, which is 52.5 hours, more than two days.
+\end{itemize}
+
+As we can see in this estimate, the chain sync times are not reasonable.
+The example illustrates that the crucial factors are:
+\begin{enumerate}
+\item The target TPS
+\item The read amplification factor
+\item The SSD random read performance
+\end{enumerate}
+Thus if we reduce the target TPS by a factor of 10, we reduce the sync time
+correspondingly. With 20 rather than 200 TPS we could expect 5 hours of syncing
+to catch up a year of the chain.
+
+A read amplification factor of only 1.5 is itself a challenge, and requires a
+good database choice.
+
+Modern SSDs IOPS for random read range from 100,000 to 1,000,000 for the
+extreme end of the consumer market. Achieving these levels of performance
+requires utilising parallel I/O. If only serial I/O is used, one is limited to
+the approximately 10,000 -- 20,000 IOPS. Using parallel I/O requires a more
+complex design and developing other additional software infrastructure.
+
+So as we can see, even with 20 TPS, to achieve reasonable sync times will
+require a sophisticated choice of database, and the development effort needed
+to take advantage of parallel I/O. Or it requires relaxing the assumption that
+most of the ledger state does not fit in memory: allowing users with lots of
+memory to sync quickly, while other users sync slowly.
+
+The recommended development path is to assume that initially (e.g. 12 months)
+the TPS will remain relatively low, and that the size of the ledger state will
+remain only somewhat bigger than memory. In this case it may be possible to
+develop a solution that does not initially use a very sophisticated database
+and does not use parallel I/O, but follows a design that can be extended to do
+so.
+
+\section{Requirements and targets}
+\label{requirements}
+
+
+\section{Related components}
+\label{components}
+
+
+\section{Technical constraints}
+\label{constraints}
+
+
+\section{Design options}
+\label{options}
+
+
+\section{Design analysis}
+\label{analysis}
+
+
+\section{Preferred option}
+\label{preferred}
+
+
+%\addcontentsline{toc}{section}{References}
+%\bibliographystyle{alpha}
+%\bibliography{utxo}
+
+\end{document}
