@@ -29,8 +29,6 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Cardano.Binary
 import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
-import           Ouroboros.Consensus.Config (topLevelConfigLedger)
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (HasNetworkProtocolVersion (..), NodeToClientVersion (..))
@@ -116,7 +114,7 @@ queryEncodeNodeToClient ::
   => CodecConfig blk
   -> NodeToClientVersion
   -> BlockNodeToClientVersion blk
-  -> (SomeSecond Query blk)
+  -> SomeSecond Query blk
   -> Encoding
 queryEncodeNodeToClient codecConfig version blockVersion (SomeSecond query)
   | not (version >= NodeToClientV_9)
