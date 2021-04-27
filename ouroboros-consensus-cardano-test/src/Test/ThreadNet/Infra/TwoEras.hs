@@ -33,7 +33,6 @@ module Test.ThreadNet.Infra.TwoEras (
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad.Identity (Identity (runIdentity))
 import           Data.Functor ((<&>))
 import qualified Data.Map as Map
 import           Data.Maybe (isJust)
@@ -305,15 +304,12 @@ secondEraOverlaySlots numSlots (NumSlots numFirstEraSlots) d secondEraEpochSize 
         Set.fromList $
         -- Note: this is only correct if each epoch uses the same value for @d@
         SL.overlaySlots
-          (runIdentity $ epochInfoFirst epochInfo (EpochNo i))
+          -- Suitable only for this narrow context
+          (fixedEpochInfoFirst secondEraEpochSize (EpochNo i))
           -- notably contains setupD
           d
             -- NB 0 <-> the first epoch of the second era
-          (runIdentity $ epochInfoSize epochInfo (EpochNo i))
-
-    -- Suitable only for this narrow context
-    epochInfo :: EpochInfo Identity
-    epochInfo = fixedSizeEpochInfo secondEraEpochSize
+          secondEraEpochSize
 
 tabulatePartitionPosition ::
      NumSlots -> Partition -> Bool -> Property -> Property

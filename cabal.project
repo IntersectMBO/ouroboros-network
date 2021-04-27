@@ -161,8 +161,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 4b4c866436fc9ad345f3d6badb02ff65b7fe5579
-  --sha256: 1w8qpfkrl64mvn4ga5pqavljk2bm5rh52f1hr56vlvl35q5ja5hv
+  tag: 47db5b818ca4fa051f2e44cdf5e7c5c18c1fb0bf
+  --sha256: 0fr0r5dwfmsp15j19xh20js8nzsqyhwx4q797rxsvpyjfabb2y11
   subdir:
     binary
     binary/test
@@ -174,8 +174,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 7a24a6e752a24ccbca30a0f16af8fd868d3b6933
-  --sha256: 1xss7a3q9yznb1qq5rm8w2j1jsa5rmr96pnplrg1ixy55jqsdhly
+  tag: e8f19bcc9c8f405131cb95ca6ada26b2b4eac638
+  --sha256: 1v36d3lyhmadzj0abdfsppjna7n7llzqzp9ikx5yq28l2kda2f1p
   subdir:
     byron/chain/executable-spec
     byron/crypto
@@ -203,11 +203,3 @@ source-repository-package
   location: https://github.com/input-output-hk/cardano-crypto/
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
-
--- The r0 revision of this quickcheck-state-machine-0.7 on Hackage adds a lower
--- bound on the text package: >=1.2.4.0. However, 1.2.4.0 doesn't support GHC
--- 8.10, 1.2.4.1 will, but that hasn't been released yet. GHC 8.10 is bundled
--- with 1.2.3.2, so override quickcheck-state-machine's lower bound to support
--- an "older" version of text. See
--- https://github.com/advancedtelematic/quickcheck-state-machine/issues/371
-allow-older: quickcheck-state-machine:text

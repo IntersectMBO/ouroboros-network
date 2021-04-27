@@ -51,6 +51,7 @@ import           GHC.Stack (HasCallStack)
 
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Time (mkSlotLength)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -294,7 +295,10 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer
 
     epochInfo :: EpochInfo Identity
-    epochInfo = fixedSizeEpochInfo $ SL.sgEpochLength genesis
+    epochInfo =
+        fixedEpochInfo
+          (SL.sgEpochLength genesis)
+          (mkSlotLength $ SL.sgSlotLength genesis)
 
     tpraosParams :: TPraosParams
     tpraosParams = mkTPraosParams maxMajorProtVer initialNonce genesis

@@ -56,6 +56,7 @@ import           Numeric.Natural (Natural)
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Time (SystemStart (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -197,6 +198,8 @@ data TPraosParams = TPraosParams {
       -- the Shelley 'ChainDepState', at which point we'll need access to the
       -- initial nonce at runtime. TODO #2326.
     , tpraosInitialNonce      :: !SL.Nonce
+      -- | The system start, as projected from the chain's genesis block.
+    , tpraosSystemStart       :: !SystemStart
     }
   deriving (Generic, NoThunks)
 
@@ -215,9 +218,11 @@ mkTPraosParams maxMajorPV initialNonce genesis = TPraosParams {
     , tpraosSecurityParam     = securityParam
     , tpraosMaxMajorPV        = maxMajorPV
     , tpraosInitialNonce      = initialNonce
+    , tpraosSystemStart       = systemStart
     }
   where
     securityParam = SecurityParam $ SL.sgSecurityParam genesis
+    systemStart   = SystemStart   $ SL.sgSystemStart   genesis
 
 data TPraosCanBeLeader c = TPraosCanBeLeader {
       -- | Certificate delegating rights from the stake pool cold key (or
@@ -248,6 +253,11 @@ instance PraosCrypto c => NoThunks (TPraosIsLeader c)
 data instance ConsensusConfig (TPraos c) = TPraosConfig {
       tpraosParams    :: !TPraosParams
     , tpraosEpochInfo :: !(EpochInfo Identity)
+
+      -- it's useful for this record to be EpochInfo and one other thing,
+      -- because the one other thing can then be used as the
+      -- PartialConsensConfig in the HFC instance.
+
     }
   deriving (Generic)
 
@@ -414,7 +424,7 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
 
       SL.GenDelegs dlgMap = SL.lvGenDelegs lv
 
-  tickChainDepState TPraosConfig{..}
+  tickChainDepState cfg@TPraosConfig{..}
                     (TickedPraosLedgerView lv)
                     slot
                     (TPraosState lastSlot st) =
@@ -428,9 +438,9 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
               lv
               (isNewEpoch tpraosEpochInfo lastSlot slot)
               st
-      shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
+      shelleyGlobals = mkShelleyGlobals cfg
 
-  updateChainDepState TPraosConfig{..} b slot cs =
+  updateChainDepState cfg b slot cs =
       TPraosState (NotOrigin slot) <$>
         SL.updateChainDepState
           shelleyGlobals
@@ -438,10 +448,10 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
           b
           (tickedTPraosStateChainDepState cs)
     where
-      shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
+      shelleyGlobals = mkShelleyGlobals cfg
       lv = getTickedPraosLedgerView (tickedTPraosStateLedgerView cs)
 
-  reupdateChainDepState TPraosConfig{..} b slot cs =
+  reupdateChainDepState cfg b slot cs =
       TPraosState (NotOrigin slot) $
         SL.reupdateChainDepState
           shelleyGlobals
@@ -449,12 +459,12 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
           b
           (tickedTPraosStateChainDepState cs)
     where
-      shelleyGlobals = mkShelleyGlobals tpraosEpochInfo tpraosParams
+      shelleyGlobals = mkShelleyGlobals cfg
       lv = getTickedPraosLedgerView (tickedTPraosStateLedgerView cs)
 
-mkShelleyGlobals :: EpochInfo Identity -> TPraosParams -> SL.Globals
-mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
-      epochInfo                     = epochInfo
+mkShelleyGlobals :: ConsensusConfig (TPraos c) -> SL.Globals
+mkShelleyGlobals TPraosConfig{..} = SL.Globals {
+      epochInfo                     = tpraosEpochInfo
     , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
     , stabilityWindow               = SL.computeStabilityWindow               k tpraosLeaderF
     , randomnessStabilisationWindow = SL.computeRandomnessStabilisationWindow k tpraosLeaderF
@@ -465,9 +475,11 @@ mkShelleyGlobals epochInfo TPraosParams {..} = SL.Globals {
     , maxLovelaceSupply             = tpraosMaxLovelaceSupply
     , activeSlotCoeff               = tpraosLeaderF
     , networkId                     = tpraosNetworkId
+    , systemStart                   = tpraosSystemStart
     }
   where
-    SecurityParam k = tpraosSecurityParam
+    SecurityParam k  = tpraosSecurityParam
+    TPraosParams{..} = tpraosParams
 
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold ::

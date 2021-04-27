@@ -12,7 +12,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Hash (ShortHash)
-import           Cardano.Slotting.EpochInfo (fixedSizeEpochInfo)
+import           Cardano.Slotting.EpochInfo (fixedEpochInfo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -369,5 +369,5 @@ prop_simple_real_tpraos_convergence TestSetup
         ledgerConfig :: LedgerConfig (ShelleyBlock Era)
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
-            (fixedSizeEpochInfo epochSize)
+            (fixedEpochInfo epochSize tpraosSlotLength)
             (MaxMajorProtVer 1000) -- TODO
