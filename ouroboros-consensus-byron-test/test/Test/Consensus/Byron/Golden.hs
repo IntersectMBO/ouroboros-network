@@ -4,6 +4,7 @@ module Test.Consensus.Byron.Golden (tests) where
 
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node ()
+import           Ouroboros.Consensus.Cardano.CanHardFork ()
 
 import           Test.Tasty
 

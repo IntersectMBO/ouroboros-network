@@ -1,9 +1,13 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Shelley.Node.Serialisation () where
+module Ouroboros.Consensus.Shelley.Node.Serialisation
+  (
+  ) where
 
 import           Control.Exception (Exception, throw)
 import qualified Data.ByteString.Lazy as Lazy
@@ -128,6 +132,7 @@ data ShelleyEncoderException era =
 
 instance Typeable era => Exception (ShelleyEncoderException era)
 
+-- TODO why do I need the SerialiseNodeToClient constraint?
 instance ShelleyBasedEra era => SerialiseNodeToClientConstraints (ShelleyBlock era)
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the

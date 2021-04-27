@@ -4,6 +4,7 @@ module Test.Consensus.Shelley.Golden (tests) where
 
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node ()
+import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
 
 import           Test.Tasty
 

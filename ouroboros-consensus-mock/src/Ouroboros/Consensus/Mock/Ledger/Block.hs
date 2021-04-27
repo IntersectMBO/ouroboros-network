@@ -100,6 +100,9 @@ import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Ouroboros.Consensus.HardFork.Combinator
+                     (HasPartialLedgerConfig, PartialLedgerConfig)
+import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToClient)
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 {-------------------------------------------------------------------------------
@@ -339,6 +342,25 @@ deriving instance NoThunks (MockLedgerConfig c ext)
                => NoThunks (SimpleLedgerConfig c ext)
 
 type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
+
+type instance PartialLedgerConfig (SimpleBlock' c ext ext') = LedgerConfig (SimpleBlock' c ext ext')
+
+instance UpdateLedger (SimpleBlock' c ext ext') => HasPartialLedgerConfig (SimpleBlock' c ext ext')
+
+instance Serialise (MockLedgerConfig c ext) => Serialise (SimpleLedgerConfig c ext) where
+  encode (SimpleLedgerConfig cfg eraParams) = mconcat [
+        CBOR.encodeListLen 2
+      , encode cfg
+      , encode eraParams
+      ]
+  decode = do
+      CBOR.decodeListLenOf 2
+      cfg  <- decode
+      eraParams <- decode
+      return (SimpleLedgerConfig cfg eraParams)
+
+instance Serialise (MockLedgerConfig c ext)
+  => SerialiseNodeToClient (SimpleBlock c ext) (SimpleLedgerConfig c ext)
 
 instance GetTip (LedgerState (SimpleBlock c ext)) where
   getTip (SimpleLedgerState st) = castPoint $ mockTip st

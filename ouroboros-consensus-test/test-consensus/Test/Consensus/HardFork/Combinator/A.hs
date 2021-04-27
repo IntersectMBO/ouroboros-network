@@ -257,9 +257,9 @@ instance LedgerSupportsProtocol BlockA where
 
 instance HasPartialConsensusConfig ProtocolA
 
-instance HasPartialLedgerConfig BlockA where
-  type PartialLedgerConfig BlockA = PartialLedgerConfigA
+type instance PartialLedgerConfig BlockA = PartialLedgerConfigA
 
+instance HasPartialLedgerConfig BlockA where
   completeLedgerConfig _ ei pcfg = (History.toPureEpochInfo ei, pcfg)
 
 data TxPayloadA = InitiateAtoB
@@ -575,6 +575,10 @@ instance Serialise (SerialisedHeader BlockA) where
 instance SerialiseNodeToClient BlockA BlockA
 instance SerialiseNodeToClient BlockA (Serialised BlockA)
 instance SerialiseNodeToClient BlockA (GenTx BlockA)
+
+instance SerialiseNodeToClient blk PartialLedgerConfigA where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
 
 instance SerialiseNodeToClient BlockA Void where
   encodeNodeToClient _ _ = absurd
