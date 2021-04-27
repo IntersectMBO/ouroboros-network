@@ -66,6 +66,7 @@ import           Network.Mux.Types ( muxBearerAsChannel, MiniProtocolDir(..), Mu
                                    , RemoteClockModel(..) )
 import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Pipe
+import qualified Debug.Trace as Debug
 
 tests :: TestTree
 tests =
@@ -110,8 +111,8 @@ activeTracer :: forall m a. MonadSay m => Tracer m a
 activeTracer = nullTracer
 --activeTracer = showTracing _sayTracer
 
-_sayTracer :: MonadSay m => Tracer m String
-_sayTracer = Tracer say
+_sayTracer :: (MonadSay m, Show a) => Tracer m a
+_sayTracer = Tracer (say . show)
 
 --
 -- Generators
@@ -986,6 +987,10 @@ prop_demux_sdu :: forall m.
                  => ArbitrarySDU
                  -> m Property
 prop_demux_sdu a = do
+    Debug.traceM $ concat
+                 [ "START: "
+                 , show a
+                 ]
     r <- run a
     return $ tabulate "SDU type" [stateLabel a] $
              tabulate "SDU Violation " [violationLabel a] r
@@ -1010,7 +1015,7 @@ prop_demux_sdu a = do
 
         _ <- atomically waitServerRes
         stopMux mux
-        res <- wait said
+        res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
@@ -1034,7 +1039,8 @@ prop_demux_sdu a = do
 
         _ <- atomically waitServerRes
         stopMux mux
-        res <- wait said
+        Debug.traceM "WAITING: server"
+        res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
@@ -1063,28 +1069,35 @@ prop_demux_sdu a = do
         -- having the responder succed after reading 0 bytes.
         atomically $ putTMVar stopVar $ BL.replicate (max (fromIntegral $ isLength badSdu) 1) 0xa
 
-        _ <- atomically waitServerRes
-        stopMux mux
-        res <- wait said
+        Debug.traceM "WAITING"
+        -- _ <- atomically waitServerRes
+          -- `catch` \(e :: SomeException) -> do
+            -- say $ "caught: " ++ show e
+            -- return (Left e)
+
+        -- stopMux mux
+        res <- waitCatch said
+        Debug.traceM ("RESULT: " ++ show res)
         case res of
             Left e  ->
                 case fromException e of
                     Just me -> return $ Compat.errorType me === err
-                    Nothing -> return $ property False
-            Right _ -> return $ property False
+                    Nothing -> return $ counterexample ("unexpected: " ++ show e) False
+            Right _ -> return $ counterexample "expected an exception" False
 
     plainServer serverApp server_mp = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
         let serverBearer = queuesAsMuxBearer serverTracer server_w server_r 1280
-            serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
+            serverTracer = contramap (Compat.WithMuxBearer "server") _sayTracer -- activeTracer
 
         serverMux <- newMux $ MiniProtocolBundle [serverApp]
         serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
                  StartEagerly server_mp
 
-        said <- async $ try $ runMux serverTracer serverMux serverBearer
+        said <- async $ (runMux serverTracer serverMux serverBearer
+                         `finally` Debug.traceM ("SERVER: DONE"))
         return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.

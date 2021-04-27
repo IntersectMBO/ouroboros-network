@@ -124,8 +124,8 @@ demuxer ptcls bearer =
           if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
               then writeTVar q $ BL.append buf (msBlob sdu)
               else throwSTM $ MuxError MuxIngressQueueOverRun
-                                (printf "Ingress Queue overrun on %s %s"
-                                (show $ msNum sdu) (show $ msDir sdu))
+                                (printf "Ingress Queue overrun on %s %s (%d)"
+                                (show $ msNum sdu) (show $ msDir sdu) qMax)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum

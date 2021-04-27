@@ -47,11 +47,14 @@ module Network.Mux (
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
+import           Data.Foldable (traverse_)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (mapMaybe)
 
 import           Control.Applicative
 import qualified Control.Concurrent.JobPool as JobPool
+import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -200,15 +203,26 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
   where
     muxerJob egressQueue =
       JobPool.Job (muxer egressQueue bearer)
-                  MuxerException "muxer"
+                  (\e -> 
+                    case fromException e of
+                      Just (SomeAsyncException _) -> throwIO e
+                      Nothing -> do
+                        return $ MuxerException e)
+                  "muxer"
 
     demuxerJob =
       JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearer)
-                  DemuxerException "demuxer"
+                  (\e ->
+                    case fromException e of
+                      Just (SomeAsyncException _) -> throwIO e
+                      Nothing -> do
+                        return $ DemuxerException e)
+                  "demuxer"
 
 miniProtocolJob
   :: forall mode m.
-     ( MonadSTM m
+     ( MonadCatch m
+     , MonadSTM   m
      , MonadThrow (STM m)
      )
   => Tracer m MuxTrace
@@ -228,9 +242,10 @@ miniProtocolJob tracer egressQueue
                 }
                 (MiniProtocolAction protocolAction completionVar) =
     JobPool.Job jobAction
-                (MiniProtocolException miniProtocolNum miniProtocolDirEnum)
+                jobHandler
                 (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
   where
+    jobAction :: m MuxJobResult
     jobAction = do
       w       <- newTVarIO BL.empty
       let chan = muxChannel tracer egressQueue (Wanton w)
@@ -255,6 +270,15 @@ miniProtocolJob tracer egressQueue
 
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
+    jobHandler :: SomeException -> m MuxJobResult
+    jobHandler e = do
+      atomically $
+        putTMVar completionVar (Left e)
+        `orElse`
+        throwSTM (MuxError (MuxBlockedOnCompletionVar miniProtocolNum)
+                           ("when caught: " ++ show e))
+      return (MiniProtocolException miniProtocolNum miniProtocolDirEnum e)
+
     miniProtocolDirEnum :: MiniProtocolDir
     miniProtocolDirEnum = protocolDirEnum miniProtocolDir
 
@@ -273,6 +297,10 @@ data MiniProtocolAction m where
                         -> StrictTMVar m (Either SomeException a)    -- ^ Completion var
                         -> MiniProtocolAction m
 
+data CompletionVar m where
+    CompletionVar :: StrictTMVar m (Either SomeException a)
+                  -> CompletionVar m
+
 -- | The monitoring loop does two jobs:
 --
 --  1. it waits for mini-protocol threads to terminate
@@ -286,13 +314,40 @@ monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m, MonadThrow (ST
         -> TQueue m (ControlCmd mode m)
         -> StrictTVar m MuxStatus
         -> m ()
-monitor tracer jobpool egressQueue cmdQueue muxStatus =
-    go Map.empty
+monitor tracer jobpool egressQueue cmdQueue muxStatus = do
+    completionVars <- atomically $ do
+      acc <- peekAll cmdQueue 
+      let completionVars =
+              Map.fromList
+            . mapMaybe
+                (\cmd -> case cmd of
+                   CmdStartProtocolThread _ ptclState
+                                          (MiniProtocolAction _ completionVar)
+                     -> Just (protocolKey ptclState, CompletionVar completionVar)
+                   _ -> Nothing
+                )
+            $ acc
+      return completionVars
+    go Map.empty completionVars
   where
+    peekAll :: TQueue m a -> STM m [a]
+    peekAll q = peekAll_ []
+      where
+        peekAll_ !acc = do
+          r <- tryReadTQueue q
+          case r of
+            Nothing -> do
+              let acc' = reverse acc
+              traverse_ (writeTQueue q) acc'
+              return acc'
+            Just a -> peekAll_ (a : acc)
+
     go :: Map (MiniProtocolNum, MiniProtocolDir)
               (MiniProtocolState mode m, MiniProtocolAction m)
+       -> Map (MiniProtocolNum, MiniProtocolDir)
+              (CompletionVar m)
        -> m ()
-    go !ptclsStartOnDemand = do
+    go !ptclsStartOnDemand !completionVars = do
       result <- atomically $
             -- wait for a mini-protocol thread to terminate
             (EventJobResult <$> JobPool.collect jobpool)
@@ -311,7 +366,7 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
         -- Protocols that runs to completion are not automatically restarted.
         EventJobResult (MiniProtocolShutdown pnum pmode) -> do
           traceWith tracer (MuxTraceCleanExit pnum pmode)
-          go ptclsStartOnDemand
+          go ptclsStartOnDemand completionVars
 
         EventJobResult (MiniProtocolException pnum pmode e) -> do
           traceWith tracer (MuxTraceState Dead)
@@ -324,12 +379,12 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
+          atomically $ traverse_ (\(CompletionVar v) -> tryPutTMVar v (Left e)) completionVars
           traceWith tracer (MuxTraceState Dead)
-          atomically $ writeTVar muxStatus $ MuxFailed e
           throwIO e
         EventJobResult (DemuxerException e) -> do
+          atomically $ traverse_ (\(CompletionVar v) -> tryPutTMVar v (Left e)) completionVars
           traceWith tracer (MuxTraceState Dead)
-          atomically $ writeTVar muxStatus $ MuxFailed e
           throwIO e
 
         EventControlCmd (CmdStartProtocolThread
@@ -340,7 +395,7 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
                                miniProtocolDir
                              }
                            }
-                           ptclAction) -> do
+                           ptclAction@(MiniProtocolAction _ completionVar)) -> do
           traceWith tracer (MuxTraceStartEagerly miniProtocolNum
                              (protocolDirEnum miniProtocolDir))
           JobPool.forkJob jobpool $
@@ -349,7 +404,11 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
               egressQueue
               ptclState
               ptclAction
-          go ptclsStartOnDemand
+          let completionVars' = Map.insert (protocolKey ptclState)
+                                           (CompletionVar completionVar)
+                                           completionVars
+          go ptclsStartOnDemand completionVars'
+                         
 
         EventControlCmd (CmdStartProtocolThread
                            StartOnDemand
@@ -365,11 +424,10 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
                                                ptclsStartOnDemand
           traceWith tracer (MuxTraceStartedOnDemand miniProtocolNum
                              (protocolDirEnum miniProtocolDir))
-          go ptclsStartOnDemand'
+          go ptclsStartOnDemand' completionVars
 
         EventControlCmd CmdShutdown -> do
           traceWith tracer MuxTraceShutdown
-          atomically $ writeTVar muxStatus MuxStopped
 
         -- Data has arrived on a channel for a mini-protocol for which we have
         -- an on-demand-start protocol thread. So we start it now.
@@ -390,9 +448,9 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
               egressQueue
               ptclState
               ptclAction
-          go (Map.delete (miniProtocolNum, miniProtocolDirEnum) ptclsStartOnDemand)
-          where
-            miniProtocolDirEnum = protocolDirEnum miniProtocolDir
+          let ptclsStartOnDemand' = Map.delete (protocolKey ptclState)
+                                               ptclsStartOnDemand
+          go ptclsStartOnDemand' completionVars
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
@@ -531,7 +589,7 @@ runMiniProtocol :: forall mode m a.
                 -> StartOnDemandOrEagerly
                 -> (Channel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
-runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
+runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue}
                 ptclNum ptclDir startMode protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
@@ -559,7 +617,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
           ptclState
           (MiniProtocolAction protocolAction completionVar)
 
-      return $ completionAction completionVar
+      return (readTMVar completionVar)
 
     -- It is a programmer error to get the wrong protocol, but this is also
     -- very easy to avoid.
@@ -568,22 +626,3 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
          ++ show ptclNum ++ " " ++ show ptclDir'
   where
     ptclDir' = protocolDirEnum ptclDir
-
-    -- Wait for the miniprotocol to complete.
-    -- If the mux was stopped through a call to 'stopMux' (MuxStopped)
-    -- or in case of an error (MuxFailed) we return the result of
-    -- the miniprotocol, or a `MuxError` if it was still running.
-    completionAction completionVar = do
-      st <- readTVar muxStatus
-      case st of
-           MuxReady -> readTMVar completionVar
-           MuxStopped -> (readTMVar completionVar)
-             <|> (return $ Left $ toException (MuxError MuxCleanShutdown ""))
-           MuxFailed e -> (readTMVar completionVar)
-             <|> (return $ Left $ toException $
-                   case fromException e of
-                     Just e'@MuxError { errorType } ->
-                       e' { errorType = MuxShutdown (Just errorType) }
-                     Nothing ->
-                       MuxError (MuxShutdown Nothing) (show e))
-
