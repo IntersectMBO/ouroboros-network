@@ -40,8 +40,8 @@ module Ouroboros.Consensus.Shelley.Node (
   , validateGenesis
   ) where
 
+import           Control.Monad.Except (Except)
 import           Data.Bifunctor (first)
-import           Data.Functor.Identity (Identity)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
@@ -56,6 +56,7 @@ import           Cardano.Slotting.Time (mkSlotLength)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -294,7 +295,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     ledgerConfig :: LedgerConfig (ShelleyBlock era)
     ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer
 
-    epochInfo :: EpochInfo Identity
+    epochInfo :: EpochInfo (Except History.PastHorizonException)
     epochInfo =
         fixedEpochInfo
           (SL.sgEpochLength genesis)

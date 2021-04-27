@@ -7,9 +7,11 @@ module Ouroboros.Consensus.HardFork.History.EpochInfo (
     dummyEpochInfo
   , snapshotEpochInfo
   , summaryToEpochInfo
+  , toPureEpochInfo
   ) where
 
-import           Data.Functor.Identity
+import           Control.Exception (throw)
+import           Control.Monad.Except (Except, runExcept, throwError)
 import           GHC.Stack
 
 import           Cardano.Slotting.EpochInfo.API
@@ -48,26 +50,36 @@ summaryToEpochInfo =
 --
 -- When a particular request fails with a 'PastHorizon' error, we throw the
 -- error as a /pure/ exception. Such an exception would indicate a bug.
-snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo Identity
+snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo (Except PastHorizonException)
 snapshotEpochInfo summary = EpochInfo {
-      epochInfoSize_  = \e -> runQueryPure' (epochToSize  e)
-    , epochInfoFirst_ = \e -> runQueryPure' (epochToSlot' e)
-    , epochInfoEpoch_ = \s -> runQueryPure' (fst <$> slotToEpoch' s)
+      epochInfoSize_  = \e -> runQuery' (epochToSize  e)
+    , epochInfoFirst_ = \e -> runQuery' (epochToSlot' e)
+    , epochInfoEpoch_ = \s -> runQuery' (fst <$> slotToEpoch' s)
 
     , epochInfoSlotToRelativeTime_ = \s ->
-        runQueryPure' (fst <$> slotToWallclock s)
+        runQuery' (fst <$> slotToWallclock s)
     }
   where
-    runQueryPure' :: HasCallStack => Qry a -> Identity a
-    runQueryPure' = Identity . flip runQueryPure summary
+    runQuery' :: HasCallStack => Qry a -> Except PastHorizonException a
+    runQuery' q = either throwError pure $ runQuery q summary
 
 -- | A dummy 'EpochInfo' that always throws an 'error'.
 --
 -- To be used as a placeholder before a summary is available.
-dummyEpochInfo :: EpochInfo Identity
+dummyEpochInfo :: EpochInfo (Except PastHorizonException)
 dummyEpochInfo = EpochInfo {
       epochInfoSize_               = \_ -> error "dummyEpochInfo used"
     , epochInfoFirst_              = \_ -> error "dummyEpochInfo used"
     , epochInfoEpoch_              = \_ -> error "dummyEpochInfo used"
     , epochInfoSlotToRelativeTime_ = \_ -> error "dummyEpochInfo used"
     }
+
+-- | Interpret the 'PastHorizonException' as a _pure exception_ via 'throw'
+--
+-- As per usual, this should only be used when the pure exception would
+-- indicate a bug.
+toPureEpochInfo ::
+     Applicative f
+  => EpochInfo (Except PastHorizonException)
+  -> EpochInfo f
+toPureEpochInfo = hoistEpochInfo (either throw pure . runExcept)

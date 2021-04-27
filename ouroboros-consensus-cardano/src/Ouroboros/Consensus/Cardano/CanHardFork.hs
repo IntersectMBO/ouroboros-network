@@ -28,7 +28,7 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   ) where
 
 import           Control.Monad
-import           Control.Monad.Except (Except, runExcept, throwError)
+import           Control.Monad.Except (runExcept, throwError)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy

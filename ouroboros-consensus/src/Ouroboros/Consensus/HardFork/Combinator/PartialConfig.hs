@@ -13,16 +13,18 @@ module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
   , WrapPartialLedgerConfig (..)
     -- * Convenience re-exports
   , EpochInfo (..)
-  , Identity (..)
+  , Except
+  , PastHorizonException
   ) where
 
-import           Data.Functor.Identity
+import           Control.Monad.Except (Except)
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks)
 
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
@@ -38,12 +40,12 @@ class ( ConsensusProtocol p
   -- See comments for 'completeLedgerConfig' for some details about the
   -- 'EpochInfo'.
   completeConsensusConfig :: proxy p
-                          -> EpochInfo Identity
+                          -> EpochInfo (Except PastHorizonException)
                           -> PartialConsensusConfig p -> ConsensusConfig p
 
   default completeConsensusConfig :: (PartialConsensusConfig p ~ ConsensusConfig p)
                                   => proxy p
-                                  -> EpochInfo Identity
+                                  -> EpochInfo (Except PastHorizonException)
                                   -> PartialConsensusConfig p -> ConsensusConfig p
   completeConsensusConfig _ _ = id
 
@@ -61,14 +63,12 @@ class ( UpdateLedger blk
   -- The horizon is determined by the tip of the ledger /state/ (not view)
   -- from which the 'EpochInfo' is derived.
   --
-  -- TODO: This should not be Identity;
-  -- see <https://github.com/input-output-hk/ouroboros-network/issues/2126>
   completeLedgerConfig :: proxy blk
-                       -> EpochInfo Identity
+                       -> EpochInfo (Except PastHorizonException)
                        -> PartialLedgerConfig blk  -> LedgerConfig blk
   default completeLedgerConfig :: (PartialLedgerConfig blk ~ LedgerConfig blk)
                                => proxy blk
-                               -> EpochInfo Identity
+                               -> EpochInfo (Except PastHorizonException)
                                -> PartialLedgerConfig blk  -> LedgerConfig blk
   completeLedgerConfig _ _ = id
 
