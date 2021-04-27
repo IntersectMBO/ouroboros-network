@@ -44,9 +44,11 @@ import           Control.Tracer (Tracer, traceWith)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 import           Data.List (sortOn)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified System.Random as Rnd
+import           Data.Bool (bool)
 
 import qualified Network.Mux as Mux
 
@@ -60,6 +62,7 @@ import           Ouroboros.Network.InboundGovernor.Event
 import           Ouroboros.Network.InboundGovernor.State
 import           Ouroboros.Network.InboundGovernor.ControlChannel (ServerControlChannel)
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
+import           Network.Mux.Types (MiniProtocolStatus (..))
 
 
 -- | Run the server, which consists of the following components:
@@ -95,11 +98,105 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
 inboundGovernor tracer serverControlChannel protocolIdleTimeout
                 connectionManager observableStateVar = do
     let state = InboundGovernorState {
-            igsConnections   = Map.empty,
-            igsObservableVar = observableStateVar
+            igsConnections        = Map.empty,
+            igsObservableVar      = observableStateVar,
+            igsRemoteTemperatures = Map.empty,
+            igsCounters           = InboundGovernorCounters 0 0 0
           }
     inboundGovernorLoop state
   where
+    localCounterWithTemp
+      :: ConnectionId peerAddr
+      -> Map (ConnectionId peerAddr) ProtocolTemperature
+      -> Maybe ProtocolTemperature
+      -> InboundGovernorCounters
+    localCounterWithTemp cid m t =
+      case (Map.lookup cid m, t) of
+        -- ( Previous remote temperature, Current remote temperature)
+        (Nothing          , Nothing)          -> InboundGovernorCounters 0    0    0
+        (Nothing          , Just Established) -> InboundGovernorCounters 1    0    0
+        (Nothing          , Just Warm)        -> InboundGovernorCounters 0    1    0
+        (Nothing          , Just Hot)         -> InboundGovernorCounters 0    0    1
+
+        (Just Established , Nothing)          -> InboundGovernorCounters (-1) 0    0
+        (Just Established , Just Established) -> InboundGovernorCounters 0    0    0
+        (Just Established , Just Warm)        -> InboundGovernorCounters (-1) 1    0
+        (Just Established , Just Hot)         -> InboundGovernorCounters (-1) 0    1
+
+        (Just Warm        , Nothing)          -> InboundGovernorCounters 0    (-1) 0
+        (Just Warm        , Just Established) -> InboundGovernorCounters 1    (-1) 0
+        (Just Warm        , Just Warm)        -> InboundGovernorCounters 0    0    0
+        (Just Warm        , Just Hot)         -> InboundGovernorCounters 0    (-1) 1
+
+        (Just Hot         , Nothing)          -> InboundGovernorCounters 0    0    (-1)
+        (Just Hot         , Just Established) -> InboundGovernorCounters 1    0    (-1)
+        (Just Hot         , Just Warm)        -> InboundGovernorCounters 0    1    (-1)
+        (Just Hot         , Just Hot)         -> InboundGovernorCounters 0    0    0
+
+    connectionIdToCounter
+      :: ConnectionId peerAddr
+      -> InboundGovernorState muxMode peerAddr m a b
+      -> m (InboundGovernorCounters, Maybe ProtocolTemperature)
+    connectionIdToCounter connId InboundGovernorState
+                                  { igsConnections
+                                  , igsRemoteTemperatures
+                                  , igsCounters } = do
+      (establishedProtocolsStatus, warmProtocolsStatus, hotProtocolsStatus) <-
+        atomically $
+          (,,) <$> getTempProtocolsStatus connId Established igsConnections
+               <*> getTempProtocolsStatus connId Warm        igsConnections
+               <*> getTempProtocolsStatus connId Hot         igsConnections
+
+      let
+          ePeerRemote :: Int
+          ePeerRemote = bool 0 1 $ all (== StatusRunning) establishedProtocolsStatus
+          wPeerRemote :: Int
+          wPeerRemote = bool 0 1 $ all (== StatusRunning) warmProtocolsStatus
+          hPeerRemote :: Int
+          hPeerRemote = bool 0 1 $ all (== StatusRunning) hotProtocolsStatus
+          total       = ePeerRemote + wPeerRemote + hPeerRemote
+
+      return $
+        case Map.lookup connId igsConnections of
+          Nothing -> ( igsCounters <> localCounterWithTemp connId igsRemoteTemperatures Nothing
+                     , Nothing )
+          Just _ ->
+            -- Either there should be only one state or none
+            assert (total == 1 || total == 0) $
+              let maybeCurrentTemp =
+                    case (ePeerRemote, wPeerRemote, hPeerRemote) of
+                      (0, 0, 0) -> Nothing
+                      (1, 0, 0) -> Just Established
+                      (0, 1, 0) -> Just Warm
+                      (0, 0, 1) -> Just Hot
+                      x         -> error ("impossible happened! " ++ show x)
+               in ( igsCounters
+                   <> localCounterWithTemp connId igsRemoteTemperatures maybeCurrentTemp
+                  , maybeCurrentTemp )
+      where
+        getTempProtocolsStatus :: ConnectionId peerAddr
+                               -> ProtocolTemperature
+                               -> Map (ConnectionId peerAddr) (ConnectionState mode peerAddr m a b)
+                               -> STM m [MiniProtocolStatus]
+        getTempProtocolsStatus cid temp m =
+          case Map.lookup cid m of
+            Nothing -> return [StatusIdle]
+            Just cs -> sequence $
+                      let tempProtocols = Map.keys . Map.filter ((== temp) . snd)
+                       in Map.elems
+                        . Map.filterWithKey (\(num, _) _ -> num `elem` tempProtocols (csMiniProtocolMap cs) )
+                        . Mux.miniProtocolStateMap
+                        . csMux
+                        $ cs
+
+    updateState :: InboundGovernorState muxMode peerAddr m a b
+                -> ConnectionId peerAddr
+                -> m (InboundGovernorState muxMode peerAddr m a b)
+    updateState newState connId = do
+      (igsCounters, mCurTemp) <- connectionIdToCounter connId newState
+      let newRemoteConnsMap = Map.alter (const mCurTemp) connId (igsRemoteTemperatures newState)
+      return $ newState { igsCounters , igsRemoteTemperatures = newRemoteConnsMap }
+
     -- The inbound protocol governor recursive loop.  The 'igsConnections' is
     -- updated as we recurs.
     --
@@ -107,6 +204,8 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
       :: InboundGovernorState muxMode peerAddr m a b
       -> m Void
     inboundGovernorLoop !state = do
+      traceWith tracer (TrInboundGovernorCounters (igsCounters state))
+
       event
         <- atomically $
                 (uncurry MuxFinished    <$> firstMuxToFinish state)
@@ -128,24 +227,30 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
 
               traceWith tracer (TrNewConnection provenance connId)
 
-              -- update state and continue the recursive loop
-              (\igsConnections -> inboundGovernorLoop state { igsConnections })
-                =<< Map.alterF
+              igsConnections <- Map.alterF
                       (\case
                         -- connection
                         Nothing -> do
-                          let csMiniProtocolMap =
-                                foldr
-                                  (\miniProtocol ->
-                                    Map.insert (miniProtocolNum miniProtocol)
-                                                miniProtocol)
-                                  Map.empty
-                                  (concat muxBundle)
+                          let csMPMHot =
+                                [ (miniProtocolNum mpH, (mpH, Hot))
+                                | mpH <- projectBundle TokHot muxBundle
+                                ]
+                              csMPMWarm =
+                                [ (miniProtocolNum mpW, (mpW, Warm))
+                                | mpW <- projectBundle TokWarm muxBundle
+                                ]
+                              csMPMEstablished =
+                                [ (miniProtocolNum mpE, (mpE, Established))
+                                | mpE <- projectBundle TokEstablished muxBundle
+                                ]
+                              csMiniProtocolMap =
+                                  Map.fromList
+                                  (csMPMHot ++ csMPMWarm ++ csMPMEstablished)
 
                           mCompletionMap
                             <-
                             foldM
-                              (\acc miniProtocol -> do
+                              (\acc (miniProtocol, _) -> do
                                  result <- runResponder
                                              csMux miniProtocol
                                              Mux.StartOnDemand
@@ -206,12 +311,20 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                       connId
                       (igsConnections state)
 
+
+              -- update state and continue the recursive loop
+              newState <- updateState (state { igsConnections }) connId
+              inboundGovernorLoop newState
+
         MuxFinished connId merr -> do
+
           case merr of
             Nothing  -> traceWith tracer (TrMuxCleanExit connId)
             Just err -> traceWith tracer (TrMuxErrored connId err)
+
           -- the connection manager does should realise this on itself.
-          inboundGovernorLoop (unregisterConnection connId state)
+          newState <- updateState (unregisterConnection connId state) connId
+          inboundGovernorLoop newState
 
         MiniProtocolTerminated
           Terminated {
@@ -228,10 +341,9 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
               -- forget the connection from 'InboundGovernorState'.
               traceWith tracer $
                 TrResponderErrored tConnId num e
-              inboundGovernorLoop
-                (unregisterConnection
-                  tConnId
-                  state)
+
+              newState <- updateState (unregisterConnection tConnId state) tConnId
+              inboundGovernorLoop newState
 
             Right _ -> do
               result
@@ -239,16 +351,20 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
               case result of
                 Right completionAction -> do
                   traceWith tracer (TrResponderRestarted tConnId num)
-                  inboundGovernorLoop
-                    (updateMiniProtocol tConnId num completionAction state)
+
+                  newState <- updateState (updateMiniProtocol tConnId num completionAction state)
+                                          tConnId
+                  inboundGovernorLoop newState
+
                 Left err -> do
                   -- there is no way to recover from such errors; we stop
                   -- mux which allows to recover resources held by
                   -- connection manager as well.
                   traceWith tracer (TrResponderStartFailure tConnId num err)
                   Mux.stopMux tMux
-                  inboundGovernorLoop
-                    (unregisterConnection tConnId state)
+
+                  newState <- updateState (unregisterConnection tConnId state) tConnId
+                  inboundGovernorLoop newState
 
         WaitIdleRemote connId -> do
           -- @
@@ -261,10 +377,10 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
           v <- registerDelay protocolIdleTimeout
           let timeoutSTM :: STM m ()
               !timeoutSTM = LazySTM.readTVar v >>= check
-          inboundGovernorLoop
-            (updateRemoteState connId
-                               (RemoteIdle timeoutSTM)
-                               state)
+
+          newState <- updateState (updateRemoteState connId (RemoteIdle timeoutSTM) state)
+                                  connId
+          inboundGovernorLoop newState
 
         -- @
         --    PromotedToWarm^{Duplex}_{Remote}
@@ -278,18 +394,17 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
           res <- promotedToWarmRemote connectionManager
                                       (remoteAddress connId)
           traceWith tracer (TrPromotedToWarmRemote connId res)
-          assert (resultInState res /= UnknownConnectionSt) $
-            inboundGovernorLoop
-              (updateRemoteState connId
-                                 RemoteEstablished
-                                 state)
+          assert (resultInState res /= UnknownConnectionSt) $ do
+            newState <- updateState (updateRemoteState connId RemoteEstablished state)
+                                    connId
+            inboundGovernorLoop newState
 
         CommitRemote connId -> do
           res <- unregisterInboundConnection connectionManager
                                              (remoteAddress connId)
           traceWith tracer $ TrDemotedToColdRemote connId res
           case res of
-            UnsupportedState {} ->
+            UnsupportedState {} -> do
               -- 'inState' can be either:
               -- @'UnknownConnection'@,
               -- @'InReservedOutboundState'@,
@@ -297,28 +412,28 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
               -- @'InOutboundState' 'Unidirectional'@,
               -- @'InTerminatingState'@,
               -- @'InTermiantedState'@.
-              inboundGovernorLoop
-                (unregisterConnection connId state)
+              newState <- updateState (unregisterConnection connId state) connId
+              inboundGovernorLoop newState
 
             OperationSuccess transition ->
               case transition of
                 -- the following two cases are when the connection was not used
                 -- by p2p-governor, the connection will be closed.
-                CommitTr ->
+                CommitTr -> do
                   -- @
                   --    Commit^{dataFlow}_{Remote} : InboundIdleState dataFlow
                   --                               → TerminatingState
                   -- @
-                  inboundGovernorLoop
-                    (unregisterConnection connId state)
+                  newState <- updateState (unregisterConnection connId state) connId
+                  inboundGovernorLoop newState
 
-                DemotedToColdRemoteTr ->
+                DemotedToColdRemoteTr -> do
                   -- @
                   --    Commit^{dataFlow}_{Remote} : InboundIdleState dataFlow
                   --                               → TerminatingState
                   -- @
-                  inboundGovernorLoop
-                    (unregisterConnection connId state)
+                  newState <- updateState (unregisterConnection connId state) connId
+                  inboundGovernorLoop newState
 
                 -- the connection is still used by p2p-governor, carry on but put
                 -- it in 'RemoteCold' state.  This will ensure we keep ready to
@@ -337,9 +452,10 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                 -- edge triggered. The server state is updated once protocol
                 -- idleness expires rather than as soon as the connection
                 -- manager was requested outbound connection.
-                KeepTr ->
-                  inboundGovernorLoop
-                    (updateRemoteState connId RemoteCold state)
+                KeepTr -> do
+                  newState <- updateState (updateRemoteState connId RemoteCold state)
+                                          connId
+                  inboundGovernorLoop newState
 
 
 -- | Run a responder mini-protocol.
@@ -437,4 +553,5 @@ data InboundGovernorTrace peerAddr
     | TrWaitIdleRemote              !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrMuxCleanExit                !(ConnectionId peerAddr)
     | TrMuxErrored                  !(ConnectionId peerAddr) SomeException
+    | TrInboundGovernorCounters     !InboundGovernorCounters
   deriving Show
