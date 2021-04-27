@@ -87,6 +87,10 @@ The simplified optimistic estimate is as follows:
 \item Assume the UTxO read access pattern has poor temporal and physical
       locality, and thus each lookup will typically require at least one
       ``random'' disk read.
+\item Assume that writes to the database are able to be efficiently dispatched
+        in batches such that they are insignificant in cost relative to reads.
+        Note that this is a rosy assumption that may be mostly true for LSM trees,
+        but would not be true for many other data structures (e.g. B+ trees)
 \item Assume a DB read amplification factor of 1.5. (This is a rosy assumption.)
 \item Thus 200 TPS translates to $200 * 2 * 1.5 = 600$ disk I/O operations per
       second (IOPS).
@@ -107,6 +111,7 @@ The example illustrates that the crucial factors are:
 \begin{enumerate}
 \item The target TPS
 \item The read amplification factor
+\item a database that can efficently batch writes
 \item The SSD random read performance
 \end{enumerate}
 Thus if we reduce the target TPS by a factor of 10, we reduce the sync time
