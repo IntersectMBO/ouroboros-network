@@ -9,6 +9,7 @@
 module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
     HasPartialConsensusConfig (..)
   , HasPartialLedgerConfig (..)
+  , PartialLedgerConfig
     -- * Newtype wrappers
   , WrapPartialConsensusConfig (..)
   , WrapPartialLedgerConfig (..)
@@ -52,13 +53,15 @@ class ( ConsensusProtocol p
                                   -> PartialConsensusConfig p -> ConsensusConfig p
   completeConsensusConfig _ _ = id
 
+-- | A partial variant of @LedgerConfig blk@. Typically this is just equal to
+-- @LedgerConfig blk@ or it is some a variant of @Ledgerconfig blk@ with the
+-- @EpochInfo@ removed.
+type family PartialLedgerConfig blk :: Type
+
 -- | Partial ledger config
 class ( UpdateLedger blk
       , NoThunks (PartialLedgerConfig blk)
       ) => HasPartialLedgerConfig blk where
-  type PartialLedgerConfig blk :: Type
-  type PartialLedgerConfig blk = LedgerConfig blk
-
   -- | Construct 'LedgerConfig' from 'PartialLedgerCfg'
   --
   -- NOTE: The 'EpochInfo' provided will have limited range, any attempt to

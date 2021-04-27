@@ -226,6 +226,14 @@ reapply (WrapLedgerConfig cfg) (Pair (I block) (Comp st)) =
 instance CanHardFork xs => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
+  HasPartialLedgerConfig
+-------------------------------------------------------------------------------}
+
+type instance PartialLedgerConfig (HardForkBlock xs) = LedgerConfig (HardForkBlock xs)
+
+instance CanHardFork xs => HasPartialLedgerConfig (HardForkBlock xs) where
+
+{-------------------------------------------------------------------------------
   HasHardForkHistory
 -------------------------------------------------------------------------------}
 

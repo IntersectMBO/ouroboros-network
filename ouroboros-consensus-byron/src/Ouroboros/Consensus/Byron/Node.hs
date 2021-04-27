@@ -1,13 +1,15 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Node (
-    PBftSignatureThreshold (..)
+module Ouroboros.Consensus.Byron.Node
+  ( PBftSignatureThreshold (..)
   , ProtocolParamsByron (..)
   , byronBlockForging
   , defaultPBftSignatureThreshold
@@ -284,4 +286,7 @@ instance NodeInitStorage ByronBlock where
 instance BlockSupportsMetrics ByronBlock where
   isSelfIssued = isSelfIssuedConstUnknown
 
+-- Note the use of the @SerialiseNodeToClientConstraints@ constraints even
+-- though there is no polymorphism. This is because the relevant instance is an
+-- orphan instance in the ouroboros-consensus-cardano package i.e. out of scope.
 instance RunNode ByronBlock

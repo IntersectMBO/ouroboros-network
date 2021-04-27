@@ -18,8 +18,8 @@
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE UndecidableInstances     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Cardano.CanHardFork (
-    ByronPartialLedgerConfig (..)
+module Ouroboros.Consensus.Cardano.CanHardFork
+  ( ByronPartialLedgerConfig (..)
   , CardanoHardForkConstraints
   , TriggerHardFork (..)
     -- * Re-exports of Shelley code
@@ -82,6 +82,8 @@ import           Cardano.Ledger.Mary.Translation ()
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Node.Serialisation
+                     (SerialiseNodeToClient (..))
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -253,11 +255,14 @@ instance FromCBOR ByronPartialLedgerConfig where
       <$> fromCBOR @(LedgerConfig ByronBlock)
       <*> fromCBOR @TriggerHardFork
 
+type instance PartialLedgerConfig ByronBlock = ByronPartialLedgerConfig
+
 instance HasPartialLedgerConfig ByronBlock where
-
-  type PartialLedgerConfig ByronBlock = ByronPartialLedgerConfig
-
   completeLedgerConfig _ _ = byronLedgerConfig
+
+instance SerialiseNodeToClient ByronBlock ByronPartialLedgerConfig where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
 
 {-------------------------------------------------------------------------------
   CanHardFork

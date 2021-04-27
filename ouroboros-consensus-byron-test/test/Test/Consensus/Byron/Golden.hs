@@ -9,6 +9,7 @@ import           Ouroboros.Consensus.Ledger.Query (QueryVersion)
 
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node ()
+import           Ouroboros.Consensus.Cardano.CanHardFork ()
 
 import           Test.Tasty
 
