@@ -10,8 +10,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Mock.Node (
-    CodecConfig (..)
+module Ouroboros.Consensus.Mock.Node
+  ( CodecConfig (..)
   , simpleBlockForging
   ) where
 
@@ -32,6 +32,9 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
+import           Ouroboros.Consensus.HardFork.Combinator
+                     (PartialLedgerConfig)
+import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToClient)
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
 {-------------------------------------------------------------------------------
@@ -60,6 +63,8 @@ instance ( LedgerSupportsProtocol      (SimpleBlock SimpleMockCrypto ext)
          , Show (CannotForge           (SimpleBlock SimpleMockCrypto ext))
          , Show (ForgeStateInfo        (SimpleBlock SimpleMockCrypto ext))
          , Show (ForgeStateUpdateError (SimpleBlock SimpleMockCrypto ext))
+         , SerialiseNodeToClient       (SimpleBlock SimpleMockCrypto ext)
+                                       (PartialLedgerConfig (SimpleBlock SimpleMockCrypto ext))
          , Serialise ext
          , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext)

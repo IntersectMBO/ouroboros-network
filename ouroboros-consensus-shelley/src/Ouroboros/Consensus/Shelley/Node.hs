@@ -75,6 +75,8 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
+import           Ouroboros.Consensus.HardFork.Combinator (PartialLedgerConfig)
+import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToClient)
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
@@ -384,7 +386,11 @@ instance ShelleyBasedEra era => BlockSupportsMetrics (ShelleyBlock era) where
 -- here.
 --
 -- Can I make this non-orphaned or put this instance next to PartialLedgerConfig?
-instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
+instance ( ShelleyBasedEra era
+         , SerialiseNodeToClient
+            (ShelleyBlock era)
+            (PartialLedgerConfig (ShelleyBlock era))
+         ) => RunNode (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
   Register genesis staking

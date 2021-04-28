@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 
+import           Ouroboros.Consensus.HardFork.Combinator (PartialLedgerConfig)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- | Local shorthand to make the instances more readable
@@ -99,7 +100,9 @@ instance SerialiseNodeToNode (MockBlock ext) (GenTxId (MockBlock ext))
   possible.
 -------------------------------------------------------------------------------}
 
-instance Serialise ext => SerialiseNodeToClientConstraints (MockBlock ext)
+instance ( SerialiseNodeToClient (MockBlock ext) (PartialLedgerConfig (MockBlock ext))
+         , Serialise ext
+         ) => SerialiseNodeToClientConstraints (MockBlock ext)
 
 instance Serialise ext => SerialiseNodeToClient (MockBlock ext) (MockBlock ext) where
   encodeNodeToClient _ _ = defaultEncodeCBORinCBOR

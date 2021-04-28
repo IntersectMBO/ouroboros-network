@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -5,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -37,6 +39,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Consensus.HardFork.Combinator (PartialLedgerConfig)
 import qualified Cardano.Chain.Genesis as Genesis
 
 {-------------------------------------------------------------------------------
@@ -149,7 +152,8 @@ instance SerialiseNodeToNode ByronBlock (GenTxId ByronBlock) where
   SerialiseNodeToClient
 -------------------------------------------------------------------------------}
 
-instance SerialiseNodeToClientConstraints ByronBlock
+instance SerialiseNodeToClient ByronBlock (PartialLedgerConfig ByronBlock)
+  => SerialiseNodeToClientConstraints ByronBlock
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.

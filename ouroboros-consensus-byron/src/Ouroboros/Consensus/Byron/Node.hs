@@ -289,4 +289,4 @@ instance BlockSupportsMetrics ByronBlock where
 -- Note the use of the @SerialiseNodeToClientConstraints@ constraints even
 -- though there is no polymorphism. This is because the relevant instance is an
 -- orphan instance in the ouroboros-consensus-cardano package i.e. out of scope.
-instance RunNode ByronBlock
+instance SerialiseNodeToClientConstraints ByronBlock => RunNode ByronBlock
