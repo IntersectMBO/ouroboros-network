@@ -28,9 +28,9 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
 import           Cardano.Binary
+import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
 import           Ouroboros.Consensus.Config (topLevelConfigLedger)
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (HasNetworkProtocolVersion (..), NodeToClientVersion (..))
@@ -178,7 +178,7 @@ queryEncodeResult codecConfig version blockNodeToClientVersion query result
         encodeTag 1
 
 queryDecodeResult ::
-     forall blk result. SerialiseResult blk (BlockQuery blk)
+     forall blk result. (SerialiseResult blk (BlockQuery blk), SerialiseNodeToClient blk (PartialLedgerConfig blk))
   => CodecConfig blk
   -> NodeToClientVersion
   -> BlockNodeToClientVersion blk
@@ -190,9 +190,35 @@ queryDecodeResult codecConfig version blockNodeToClientVersion query
   | otherwise
   = do
     tag <- decodeTag
-    case (tag, query) of
-      (0, BlockQuery blockQuery) -> decodeResult codecConfig blockNodeToClientVersion blockQuery
-      _ -> fail $ "Query blk: " ++ show tag ++ " but does not match query"
+    case query of
+      BlockQuery blockQuery
+        | tag /= 0 -> fail $ "Query blk: BlockQuery: Expected tag 0 but got " ++ show tag
+        | otherwise -> decodeResult codecConfig blockNodeToClientVersion blockQuery
+      GetPartialLedgerConfig
+        | tag /= 1 -> fail $ "Query blk: GetPartialLedgerConfig: Expected tag 1 but got " ++ show tag
+        | otherwise -> decodeNodeToClient codecConfig blockNodeToClientVersion
+
+-- instance ( SerialiseResult blk (BlockQuery blk)
+--          , SerialiseNodeToClient blk (PartialLedgerConfig blk)
+--          ) => SerialiseResult blk (Query blk) where
+--   encodeResult codecConfig blockNodeToClientVersion query result
+--     = case query of
+--         BlockQuery blockQuery ->
+--           encodeTag 0
+--           <> encodeResult codecConfig blockNodeToClientVersion blockQuery result
+--         GetPartialLedgerConfig ->
+--           encodeTag 1
+--           <> encodeNodeToClient codecConfig blockNodeToClientVersion result
+--   decodeResult codecConfig blockNodeToClientVersion query
+--     = do
+--       tag <- decodeTag
+--       case query of
+--         BlockQuery blockQuery
+--           | tag /= 0 -> fail $ "Query blk (BlockQuery): Expected tag 0 but got " ++ show tag
+--           | otherwise -> decodeResult codecConfig blockNodeToClientVersion blockQuery
+--         GetPartialLedgerConfig
+--           | tag /= 1 -> fail $ "Query blk (GetPartialLedgerConfig): Expected tag 1 but got " ++ show tag
+--           | otherwise -> decodeNodeToClient codecConfig blockNodeToClientVersion
 
 instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
   sameDepIndex (BlockQuery blockQueryA) (BlockQuery blockQueryB)
