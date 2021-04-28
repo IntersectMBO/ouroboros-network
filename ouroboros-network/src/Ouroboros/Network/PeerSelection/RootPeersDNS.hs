@@ -41,6 +41,7 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import qualified Data.IntMap.Strict as IntMap
 import           Data.Void (Void)
 
 import           Control.Applicative ((<|>))
@@ -273,6 +274,7 @@ newResolverResource resolvConf = go
 
 data TraceLocalRootPeers =
        TraceLocalRootDomains [(Int, Map RelayAddress PeerAdvertise)]
+       -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAddress DiffTime
      | TraceLocalRootResult  DomainAddress [(IPv4, DNS.TTL)]
      | TraceLocalRootFailure DomainAddress DNSorIOError
@@ -303,33 +305,38 @@ localRootPeersProvider tracer
   let
       -- Flatten the local root peers groups and associate a group index to each
       -- DomainAddress to be monitorized.
-      addresses = [ (group, address, pa)
-                  | (group, (_, m)) <- zip [0..] domainsGroups
-                  , (address, pa) <- Map.toList m ]
+      domains :: [(Int, DomainAddress, PeerAdvertise)]
       domains = [ (group, domain, pa)
-                | (group, RelayDomain domain, pa) <- addresses ]
-      ipsAddr = [ (group, IP.toSockAddr (ip, port), pa)
-                | (group, RelayAddress ip port, pa) <- addresses ]
-
+                  | (group, (_, m)) <- zip [0..] domainsGroups
+                  , (RelayDomain domain, pa) <- Map.toList m ]
       -- Since we want to preserve the number of groups, the targets, and
       -- the addresses within each group, we fill the TVar with
       -- a placeholder list, in order for each monitored DomainAddress to
       -- be updated in the correct group.
-      placeholder = map (\(t, _) -> (t, Map.empty)) domainsGroups
-      placeholder' =
-        foldr (\(group, addr, pa) ph
-                -> let (target, entry) = ph !! group
-                   in updateList group (target, Map.insert addr pa entry) ph)
-              placeholder
-              ipsAddr
+      rootPeersGroups :: [(Int, Map Socket.SockAddr PeerAdvertise)]
+      rootPeersGroups = map (\(target, m) -> (target, f m)) domainsGroups
+        where
+           f :: Map RelayAddress PeerAdvertise -> Map Socket.SockAddr PeerAdvertise
+           f =   Map.mapKeys
+                   (\k -> case k of
+                     RelayAddress ip port ->
+                       IP.toSockAddr (ip, port)
+                     _ ->
+                       error "localRootPeersProvider: impossible happend"
+                   )
+               . Map.filterWithKey
+                   (\k _ -> case k of
+                     RelayAddress {} -> True
+                     RelayDomain {}  -> False
+                   )
 
   atomically $
-    writeTVar rootPeersGroupsVar placeholder'
+    writeTVar rootPeersGroupsVar rootPeersGroups
 
   -- Launch DomainAddress monitoring threads and
   -- wait for threads to return or for local config changes
   withAsyncAll (map (monitorDomain rr) domains) $ \as ->
-    atomically $ do
+    atomically $
         void (waitAnySTM as) <|> waitConfigChanged domainsGroups
 
   -- Recursive call to remonitor all new/updated local root peers
@@ -344,12 +351,6 @@ localRootPeersProvider tracer
     waitConfigChanged dg = do
       dg' <- readTVar domainsGroupsVar
       check (dg /= dg')
-
-    updateList :: Int -> a -> [a] -> [a]
-    updateList at v l =
-      case splitAt at l of
-        (before, _:after) -> before ++ v:after
-        _ -> l
 
     resolveDomain
       :: DNS.Resolver
@@ -397,12 +398,15 @@ localRootPeersProvider tracer
             Right results -> do
               atomically $ do
                 rootPeersGroups <- readTVar rootPeersGroupsVar
-                let (target, entry) = rootPeersGroups !! group
-                    resultsMap      = Map.fromList (map fst results)
-                    newEntry        = Map.union entry resultsMap
-                    newRootPeers    = updateList group
-                                                 (target, newEntry)
-                                                 rootPeersGroups
+                let rootPeersGroups' = IntMap.fromList $ zip [0,1..] rootPeersGroups
+                    (target, entry)  = rootPeersGroups' IntMap.! group
+                    resultsMap       = Map.fromList (map fst results)
+                    entry'           = entry <> resultsMap
+                    newRootPeers     =
+                      IntMap.elems $
+                      IntMap.adjust (const (target, entry'))
+                                    group
+                                    rootPeersGroups'
 
                 -- Only overwrite if it changed:
                 when (entry /= resultsMap) $
