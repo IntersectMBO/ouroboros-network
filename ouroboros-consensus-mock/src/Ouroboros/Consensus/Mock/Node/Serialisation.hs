@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecideableInstances #-} -- TODO check if this is appropriate
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
