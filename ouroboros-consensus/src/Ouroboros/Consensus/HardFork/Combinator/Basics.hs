@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -15,8 +16,8 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Basics (
-    -- * Hard fork protocol, block, and ledger state
+module Ouroboros.Consensus.HardFork.Combinator.Basics
+  ( -- * Hard fork protocol, block, and ledger state
     HardForkBlock (..)
   , HardForkProtocol
   , LedgerState (..)
@@ -61,6 +62,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.Node.Serialisation
+                     (SerialiseNodeToClient (..))
 
 {-------------------------------------------------------------------------------
   Hard fork protocol, block, and ledger state
@@ -166,6 +169,10 @@ instance
       HardForkLedgerConfig
         <$> fromCBOR @(History.Shape xs)
         <*> fromCBOR @(PerEraLedgerConfig xs)
+
+instance SerialiseNodeToClient (HardForkBlock xs) (HardForkLedgerConfig xs) where
+  encodeNodeToClient = undefined
+  decodeNodeToClient = undefined
 
 instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
 type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig xs

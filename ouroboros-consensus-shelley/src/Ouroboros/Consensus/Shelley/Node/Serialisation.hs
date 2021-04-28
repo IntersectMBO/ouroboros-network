@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.HardFork.Combinator (PartialLedgerConfig)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
@@ -133,7 +134,10 @@ data ShelleyEncoderException era =
 instance Typeable era => Exception (ShelleyEncoderException era)
 
 -- TODO why do I need the SerialiseNodeToClient constraint?
-instance ShelleyBasedEra era => SerialiseNodeToClientConstraints (ShelleyBlock era)
+instance
+  ( ShelleyBasedEra era
+  , SerialiseNodeToClient (ShelleyBlock era) (PartialLedgerConfig (ShelleyBlock era))
+  ) => SerialiseNodeToClientConstraints (ShelleyBlock era)
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
