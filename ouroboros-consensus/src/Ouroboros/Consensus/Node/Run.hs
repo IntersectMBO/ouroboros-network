@@ -33,6 +33,8 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy)
 
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
+                     (PartialLedgerConfig)
 import           Ouroboros.Consensus.Storage.ChainDB
                      (ImmutableDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
@@ -70,6 +72,7 @@ class ( ConvertRawHash blk
       , SerialiseNodeToClient blk (GenTx blk)
       , SerialiseNodeToClient blk (ApplyTxErr blk)
       , SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+      , SerialiseNodeToClient blk (PartialLedgerConfig blk)
       , SerialiseResult       blk (BlockQuery blk)
       ) => SerialiseNodeToClientConstraints blk
 
