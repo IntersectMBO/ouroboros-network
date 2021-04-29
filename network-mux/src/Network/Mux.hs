@@ -230,7 +230,7 @@ miniProtocolJob tracer egressQueue
                 }
                 (MiniProtocolAction protocolAction completionVar) =
     JobPool.Job jobAction
-                (return . MiniProtocolException miniProtocolNum miniProtocolDirEnum)
+                jobHandler
                 (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
@@ -256,6 +256,15 @@ miniProtocolJob tracer egressQueue
             pure ()
 
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
+
+    jobHandler :: SomeException -> m MuxJobResult
+    jobHandler e = do
+      atomically $
+        putTMVar completionVar (Left e)
+        `orElse`
+        throwSTM (MuxError (MuxBlockedOnCompletionVar miniProtocolNum)
+                           ("when caught: " ++ show e))
+      return (MiniProtocolException miniProtocolNum miniProtocolDirEnum e)
 
     miniProtocolDirEnum :: MiniProtocolDir
     miniProtocolDirEnum = protocolDirEnum miniProtocolDir
