@@ -1178,6 +1178,7 @@ instance Arbitrary DummyApp where
 
 data DummyApps =
     DummyResponderApps [DummyApp]
+  | DummyResponderAppsKillMux [DummyApp]
   | DummyInitiatorApps [DummyApp]
   | DummyInitiatorResponderApps [DummyApp]
   deriving Show
@@ -1189,13 +1190,19 @@ instance Arbitrary DummyApps where
         mode <- arbitrary
         case mode of
              InitiatorMode          -> return $ DummyInitiatorApps apps
-             ResponderMode          -> return $ DummyResponderApps apps
+             ResponderMode          -> frequency [ (3, return $ DummyResponderApps apps)
+                                                 , (1, return $ DummyResponderAppsKillMux apps)
+                                                 ]
              InitiatorResponderMode -> return $ DummyInitiatorResponderApps apps
 
       where
         genApp num = DummyApp num <$> arbitrary <*> arbitrary <*> arbitrary
 
     shrink (DummyResponderApps apps) = [ DummyResponderApps apps'
+                                       | apps' <- filter (not . null) $ shrinkList (const []) apps
+                                       ]
+    shrink (DummyResponderAppsKillMux apps)
+                                     = [ DummyResponderAppsKillMux apps'
                                        | apps' <- filter (not . null) $ shrinkList (const []) apps
                                        ]
     shrink (DummyInitiatorApps apps) = [ DummyResponderApps apps'
@@ -1529,6 +1536,30 @@ prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
     void $ waitCatch mux_aid
 
     return (conjoin $ map fst rc)
+
+prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runTime = do
+    -- Start a mini-protocol on demand, but kill mux before the application is
+    -- triggered.  This test assures that mini-protocol completion action does
+    -- not deadlocks.
+    let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
+
+    mux <- newMux $ MiniProtocolBundle minis
+    mux_aid <- async $ runMux verboseTracer mux bearer
+    getRes <- sequence [ runMiniProtocol
+                           mux
+                          (daNum app)
+                          ResponderDirectionOnly
+                          StartOnDemand
+                          (dummyAppToChannel app)
+                       | app <- apps
+                       ]
+
+    killer <- async $ threadDelay runTime
+                   >> cancel mux_aid
+    _ <- traverse atomically getRes
+    wait killer
+
+    return (property True)
 
 prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runTime = do
     let initMinis = map (appToInfo InitiatorDirection) apps

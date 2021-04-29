@@ -52,6 +52,7 @@ import qualified Data.Map.Strict as Map
 
 import           Control.Applicative
 import qualified Control.Concurrent.JobPool as JobPool
+import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -189,14 +190,22 @@ runMux :: forall m mode.
 runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
     egressQueue <- atomically $ newTBQueue 100
 
-    JobPool.withJobPool $ \jobpool -> do
-      JobPool.forkJob jobpool (muxerJob egressQueue)
-      JobPool.forkJob jobpool demuxerJob
-      traceWith tracer (MuxTraceState Mature)
+    JobPool.withJobPool
+      (\jobpool -> do
+        JobPool.forkJob jobpool (muxerJob egressQueue)
+        JobPool.forkJob jobpool demuxerJob
+        traceWith tracer (MuxTraceState Mature)
 
-      -- Wait for someone to shut us down by calling muxStop or an error.
-      -- Outstaning jobs are shut down Upon completion of withJobPool.
-      monitor tracer jobpool egressQueue muxControlCmdQueue muxStatus
+        -- Wait for someone to shut us down by calling muxStop or an error.
+        -- Outstaning jobs are shut down Upon completion of withJobPool.
+        monitor tracer jobpool egressQueue muxControlCmdQueue muxStatus
+      )
+    -- Only handle async exceptions, 'monitor' sets 'muxStatus' before throwing
+    -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
+    -- deadlock of mini-protocol completion action.
+    `catch` \(SomeAsyncException e) -> do
+      atomically $ writeTVar muxStatus (MuxFailed $ toException e)
+      throwIO e
   where
     muxerJob egressQueue =
       JobPool.Job (muxer egressQueue bearer)
