@@ -7,13 +7,12 @@
 , haskell-nix
 , buildPackages
 , config ? { }
-  # GHC attribute name
-, compiler ? config.haskellNix.compiler or "ghc8104"
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
 , libsodium ? pkgs.libsodium
 }:
 let
+  compiler-nix-name = pkgs.localConfig.ghcVersion;
   src = haskell-nix.haskellLib.cleanGit {
     name = "ouroboros-network-src";
     src = ../.;
@@ -21,15 +20,13 @@ let
 
   projectPackages = lib.attrNames (haskell-nix.haskellLib.selectProjectPackages
     (haskell-nix.cabalProject {
-      inherit src;
-      compiler-nix-name = compiler;
+      inherit compiler-nix-name src;
     }));
 
   # This creates the Haskell package set.
   # https://input-output-hk.github.io/haskell.nix/user-guide/projects/
   pkgSet = haskell-nix.cabalProject {
-    inherit src;
-    compiler-nix-name = compiler;
+    inherit compiler-nix-name src;
     modules = [
 
       # Compile all local packages with -Werror:

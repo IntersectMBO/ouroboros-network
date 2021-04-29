@@ -9,8 +9,6 @@
 }:
 with pkgs;
 let
-  ghcVersion = "ghc8104";
-
   # Both stylish-haskell and Haskell-language-server are pulled in with niv
   # directly from their repositories at specific commits because the versions we
   # want are not yet in Hackage. Right now we are using stylish-haskell at
@@ -29,8 +27,8 @@ let
   # and it can be removed with `niv drop hls-released` or `niv drop
   # stylish-haskell` (or manually removing the relevant entries from
   # `sources.json`).
-  stylish-haskell = import ./nix/stylish-haskell.nix { inherit pkgs ghcVersion; };
-  hls = import ./nix/hls.nix { inherit pkgs ghcVersion; };
+  stylish-haskell = import ./nix/stylish-haskell.nix { inherit pkgs; };
+  hls = import ./nix/hls.nix { inherit pkgs; };
 
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
