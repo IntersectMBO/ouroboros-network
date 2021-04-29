@@ -587,14 +587,14 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
     completionAction completionVar = do
       st <- readTVar muxStatus
       case st of
-           MuxReady -> readTMVar completionVar
-           MuxStopped -> (readTMVar completionVar)
-             <|> (return $ Left $ toException (MuxError MuxCleanShutdown ""))
-           MuxFailed e -> (readTMVar completionVar)
-             <|> (return $ Left $ toException $
-                   case fromException e of
-                     Just e'@MuxError { errorType } ->
-                       e' { errorType = MuxShutdown (Just errorType) }
-                     Nothing ->
-                       MuxError (MuxShutdown Nothing) (show e))
+           MuxReady    -> readTMVar completionVar
+           MuxStopped  -> readTMVar completionVar
+                      <|> return (Left $ toException (MuxError MuxCleanShutdown "Mux stopped"))
+           MuxFailed e -> readTMVar completionVar
+                      <|> return (Left $ toException $
+                            case fromException e of
+                              Just e'@MuxError { errorType } ->
+                                e' { errorType = MuxShutdown (Just errorType) }
+                              Nothing ->
+                                MuxError (MuxShutdown Nothing) (show e))
 
