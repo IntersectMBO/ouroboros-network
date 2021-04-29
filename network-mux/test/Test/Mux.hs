@@ -42,8 +42,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.IOSim ( runSimStrictShutdown, runSimTrace, selectTraceEventsSay
-                                     , traceResult )
+import           Control.Monad.IOSim
 import           Control.Tracer
 
 #if defined(mingw32_HOST_OS)
@@ -1010,7 +1009,7 @@ prop_demux_sdu a = do
 
         _ <- atomically waitServerRes
         stopMux mux
-        res <- wait said
+        res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
@@ -1034,7 +1033,7 @@ prop_demux_sdu a = do
 
         _ <- atomically waitServerRes
         stopMux mux
-        res <- wait said
+        res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
@@ -1065,13 +1064,13 @@ prop_demux_sdu a = do
 
         _ <- atomically waitServerRes
         stopMux mux
-        res <- wait said
+        res <- waitCatch said
         case res of
             Left e  ->
                 case fromException e of
                     Just me -> return $ Compat.errorType me === err
-                    Nothing -> return $ property False
-            Right _ -> return $ property False
+                    Nothing -> return $ counterexample ("unexpected: " ++ show e) False
+            Right _ -> return $ counterexample "expected an exception" False
 
     plainServer serverApp server_mp = do
         server_w <- atomically $ newTBQueue 10
@@ -1084,7 +1083,7 @@ prop_demux_sdu a = do
         serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
                  StartEagerly server_mp
 
-        said <- async $ try $ runMux serverTracer serverMux serverBearer
+        said <- async $ runMux serverTracer serverMux serverBearer
         return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.
@@ -1298,7 +1297,7 @@ prop_mux_start_mX apps runTime = do
     checkRes :: StartOnDemandOrEagerly
              -> DiffTime
              -> ((STM m (Either SomeException ())), DummyApp)
-             -> m (Bool, Either SomeException ())
+             -> m (Property, Either SomeException ())
     checkRes startStrat minRunTime (get,da) = do
         let totTime = case startStrat of
                            StartOnDemand -> daRunTime da + daStartAfter da
@@ -1307,12 +1306,18 @@ prop_mux_start_mX apps runTime = do
         case daAction da of
              DummyAppSucceed ->
                  case r of
-                      Left _  -> return (minRunTime <= totTime, r)
-                      Right _ -> return (minRunTime >= totTime, r)
+                      Left _  -> return (counterexample
+                                          (printf "%s ≰ %s" (show minRunTime) (show totTime))
+                                          (minRunTime <= totTime)
+                                        , r)
+                      Right _ -> return (counterexample
+                                          (printf "%s ≱ %s" (show minRunTime) (show totTime))
+                                          (minRunTime >= totTime)
+                                        , r)
              DummyAppFail ->
                  case r of
-                      Left _  -> return (True, r)
-                      Right _ -> return (False, r)
+                      Left _  -> return (property True, r)
+                      Right _ -> return (counterexample "not-failed" False, r)
 
 prop_mux_restart_m :: forall m.
                        ( MonadAsync m
@@ -1475,7 +1480,7 @@ prop_mux_start_m :: forall m.
                     -> (    StartOnDemandOrEagerly
                          -> DiffTime
                          -> ((STM m (Either SomeException ())), DummyApp)
-                         -> m (Bool, Either SomeException ())
+                         -> m (Property, Either SomeException ())
                        )
                     -> DummyApps
                     -> DiffTime
@@ -1499,7 +1504,7 @@ prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime = do
     wait killer
     void $ waitCatch mux_aid
 
-    return (property $ and $ map fst rc)
+    return (conjoin $ map fst rc)
 
 prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
     let MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
@@ -1523,7 +1528,7 @@ prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime = do
     mapM_ cancel triggers
     void $ waitCatch mux_aid
 
-    return (property $ and $ map fst rc)
+    return (conjoin $ map fst rc)
 
 prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runTime = do
     let initMinis = map (appToInfo InitiatorDirection) apps
@@ -1557,27 +1562,30 @@ prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runT
     mapM_ cancel triggers
     void $ waitCatch mux_aid
 
-    return (property $ (and $ map fst rcInit ++ map fst rcResp))
+    return (property $ (conjoin $ map fst rcInit ++ map fst rcResp))
 
 -- | Verify starting and stopping of miniprotocols. Both normal exits and by exception.
 prop_mux_start :: DummyApps -> DiffTime -> Property
-prop_mux_start apps runTime = do
-  let (_output, r_e) = (selectTraceEventsSay &&& traceResult True) (runSimTrace $ prop_mux_start_mX apps runTime)
-  ioProperty $ do
-    -- mapM_ (printf "%s\n") _output
-    case r_e of
-       Left  _ -> return $ property False
-       Right r -> return r
+prop_mux_start apps runTime =
+  let (trace, r_e) = (traceEvents &&& traceResult True)
+                      (runSimTrace $ prop_mux_start_mX apps runTime)
+  in counterexample ( unlines
+                    . ("*** TRACE ***" :)
+                    . map show
+                    $ trace) $
+       case r_e of
+         Left  e -> counterexample (show e) False
+         Right r -> r
 
 -- | Verify restarting of miniprotocols.
 prop_mux_restart :: DummyRestartingApps -> Property
-prop_mux_restart apps = do
-  let (_output, r_e) = (selectTraceEventsSay &&& traceResult True) (runSimTrace $ prop_mux_restart_m apps)
-  ioProperty $ do
-    -- mapM_ (printf "%s\n") _output
-    case r_e of
-       Left  _ -> return $ property False
-       Right r -> return r
+prop_mux_restart apps =
+  let (trace, r_e) = (traceEvents &&& traceResult True)
+                       (runSimTrace $ prop_mux_restart_m apps)
+  in counterexample (unlines . map show $ trace) $
+       case r_e of
+          Left  e -> counterexample (show e) False
+          Right r -> r
 
 
 
