@@ -23,7 +23,7 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC (
   ) where
 
 import           Control.Monad (guard)
-import           Control.Monad.Except (Except, throwError)
+import           Control.Monad.Except (throwError)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.SOP.Strict
@@ -40,7 +40,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
-import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
+import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
+                     toPureEpochInfo)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -198,7 +199,7 @@ instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
   completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
       cfg {
           shelleyLedgerGlobals = (shelleyLedgerGlobals cfg) {
-              SL.epochInfo = epochInfo
+              SL.epochInfo = toPureEpochInfo epochInfo
             }
         }
 

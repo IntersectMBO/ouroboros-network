@@ -43,6 +43,7 @@ import           Control.Monad.Except
 import qualified Data.Binary as B
 import           Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor.Identity (Identity)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -244,7 +245,7 @@ instance HasPartialConsensusConfig ProtocolA
 instance HasPartialLedgerConfig BlockA where
   type PartialLedgerConfig BlockA = PartialLedgerConfigA
 
-  completeLedgerConfig _ = (,)
+  completeLedgerConfig _ ei pcfg = (History.toPureEpochInfo ei, pcfg)
 
 data TxPayloadA = InitiateAtoB
   deriving (Show, Eq, Generic, NoThunks, Serialise)

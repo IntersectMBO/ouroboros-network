@@ -267,7 +267,7 @@ instance Isomorphic TopLevelConfig where
         (project      $ configCodec     tlc)
         (project      $ configStorage   tlc)
     where
-      ei :: EpochInfo Identity
+      ei :: EpochInfo (Except PastHorizonException)
       ei = noHardForksEpochInfo $ project tlc
 
       auxLedger :: LedgerConfig (HardForkBlock '[blk]) -> LedgerConfig blk
@@ -448,7 +448,7 @@ instance Functor m => Isomorphic (BlockForging m) where
       }
     where
       injTickedChainDepSt ::
-           EpochInfo Identity
+           EpochInfo (Except PastHorizonException)
         -> Ticked (ChainDepState (BlockProtocol blk))
         -> Ticked (ChainDepState (HardForkProtocol '[blk]))
       injTickedChainDepSt ei =

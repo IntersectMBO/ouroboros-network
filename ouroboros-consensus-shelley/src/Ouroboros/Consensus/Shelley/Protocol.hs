@@ -42,10 +42,9 @@ module Ouroboros.Consensus.Shelley.Protocol (
 
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
-import           Control.Monad.Except (throwError)
+import           Control.Monad.Except (Except, throwError)
 import           Data.Coerce (coerce)
 import           Data.Function (on)
-import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Ord (Down (..))
 import           Data.Word (Word64)
@@ -59,6 +58,7 @@ import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Time (SystemStart (..))
 
 import           Ouroboros.Consensus.Block
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
@@ -252,7 +252,7 @@ instance PraosCrypto c => NoThunks (TPraosIsLeader c)
 -- | Static configuration
 data instance ConsensusConfig (TPraos c) = TPraosConfig {
       tpraosParams    :: !TPraosParams
-    , tpraosEpochInfo :: !(EpochInfo Identity)
+    , tpraosEpochInfo :: !(EpochInfo (Except History.PastHorizonException))
 
       -- it's useful for this record to be EpochInfo and one other thing,
       -- because the one other thing can then be used as the
@@ -412,7 +412,10 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
       lv         = getTickedPraosLedgerView $ tickedTPraosStateLedgerView cs
       d          = SL.lvD lv
       asc        = tpraosLeaderF $ tpraosParams cfg
-      firstSlot  = firstSlotOfEpochOfSlot (tpraosEpochInfo cfg) slot
+      firstSlot  =
+          firstSlotOfEpochOfSlot
+            (History.toPureEpochInfo $ tpraosEpochInfo cfg)
+            slot
       gkeys      = Map.keysSet dlgMap
       eta0       = SL.ticknStateEpochNonce $ SL.csTickn chainState
       vkhCold    = SL.hashKey tpraosCanBeLeaderColdVerKey
@@ -436,7 +439,11 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
       st' = SL.tickChainDepState
               shelleyGlobals
               lv
-              (isNewEpoch tpraosEpochInfo lastSlot slot)
+              ( isNewEpoch
+                  (History.toPureEpochInfo tpraosEpochInfo)
+                  lastSlot
+                  slot
+              )
               st
       shelleyGlobals = mkShelleyGlobals cfg
 
@@ -464,7 +471,7 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
 
 mkShelleyGlobals :: ConsensusConfig (TPraos c) -> SL.Globals
 mkShelleyGlobals TPraosConfig{..} = SL.Globals {
-      epochInfo                     = tpraosEpochInfo
+      epochInfo                     = History.toPureEpochInfo tpraosEpochInfo
     , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
     , stabilityWindow               = SL.computeStabilityWindow               k tpraosLeaderF
     , randomnessStabilisationWindow = SL.computeRandomnessStabilisationWindow k tpraosLeaderF
