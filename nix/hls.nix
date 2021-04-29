@@ -2,13 +2,12 @@
 # Prepare Haskell-language-server to be added as a buildInput
 ################################################
 { pkgs
-, ghcVersion
 }:
 let
   inherit (pkgs.commonLib) sources;
 
   planConfig = {
-    compiler-nix-name = ghcVersion;
+    compiler-nix-name = pkgs.localConfig.ghcVersion;
     # get the sources from niv
     src = sources.hls-released;
     configureArgs = "--disable-benchmarks";

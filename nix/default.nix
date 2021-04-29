@@ -4,7 +4,6 @@
 , sourcesOverride ? { }
 }:
 let
-  localConfig = import ./local-config.nix;
   sources = import ./sources.nix { pkgs = import nixpkgs { }; }
     // sourcesOverride;
   iohkNixMain = import sources.iohk-nix { };
@@ -41,7 +40,16 @@ let
         // { inherit overlays sources; };
       })
       # And, of course, our haskell-nix-ified cabal project:
-      (import ./pkgs.nix localConfig)
+      (import ./pkgs.nix)
+    ]
+    ++ [
+      # This overlay adds a field localConfig to the pkgs that will be used
+      # afterwards to retrieve the locally defined values for building the
+      # environment, like ghcVersion.
+      (self: super: {
+        localConfig = (super.localConfig or { })
+        // import ./local-config.nix;
+      })
     ];
 
   pkgs = import nixpkgs {

@@ -10,10 +10,9 @@
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
 , libsodium ? pkgs.libsodium
-, localConfig
 }:
 let
-  compiler-nix-name = localConfig.ghcVersion;
+  compiler-nix-name = pkgs.localConfig.ghcVersion;
   src = haskell-nix.haskellLib.cleanGit {
     name = "ouroboros-network-src";
     src = ../.;
