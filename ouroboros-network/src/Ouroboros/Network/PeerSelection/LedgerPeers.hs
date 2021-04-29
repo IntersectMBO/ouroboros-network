@@ -25,6 +25,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
 
 
 import           Control.DeepSeq (NFData (..))
+import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
@@ -151,11 +152,27 @@ accPoolStake pl =
 -- | Not all stake pools have valid \/ usable relay information. This means that we need to
 -- recalculate the relative stake for each pool.
 --
+-- The relative stake is scaled by the square root in order to increase the number
+-- of down stream peers smaller pools are likely to get.
+-- https://en.wikipedia.org/wiki/Penrose_method
+--
 reRelativeStake :: [(PoolStake, NonEmpty RelayAddress)]
                 -> [(PoolStake, NonEmpty RelayAddress)]
 reRelativeStake pl =
-    let total = sum $ map fst pl in
-    map (\(s, rls) -> (s / total, rls)) pl
+    let total = foldl' (+) 0 $ map (adjustment . fst) pl
+        pl' = map  (\(s, rls) -> (adjustment s / total, rls)) pl
+        total' = sum $ map fst pl' in
+    assert (total == 0 || (total' > (PoolStake $ 999999 % 1000000) &&
+            total' < (PoolStake $ 1000001 % 1000000))) pl'
+
+  where
+    -- We do loose some precisioun in the conversion. However we care about precision
+    -- in the order of 1 block per year and for that a Double is good enough.
+    adjustment :: PoolStake -> PoolStake
+    adjustment (PoolStake s) =
+      let d = fromRational s ::Double in
+      PoolStake $ toRational $ sqrt d
+
 
 -- | Try to pick n random peers.
 pickPeers :: forall m. Monad m
