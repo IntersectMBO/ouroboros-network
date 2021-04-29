@@ -1,3 +1,5 @@
+% -*- fill-column: 80 -*-
+
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[margin=2.5cm]{geometry}
@@ -111,11 +113,11 @@ The example illustrates that the crucial factors are:
 \begin{enumerate}
 \item The target TPS
 \item The read amplification factor
-\item a database that can efficently batch writes
+\item a database that can efficiently batch writes
 \item The SSD random read performance
 \end{enumerate}
-Thus if we reduce the target TPS by a factor of 10, we reduce the sync time
-correspondingly. With 20 rather than 200 TPS we could expect 5 hours of syncing
+Thus if we reduce the target TPS by a factor of 10, we reduce the sync time bound
+correspondingly. With 20 rather than 200 TPS we could expect at best 5 hours of syncing
 to catch up a year of the chain.
 
 A read amplification factor of only 1.5 is itself a challenge, and requires a
@@ -143,25 +145,267 @@ so.
 \section{Requirements and targets}
 \label{requirements}
 
+Here we describe what the chosen solution must achieve.
+
+\subsection{Blockchain scope Targets}
+
+Here we describe just how large a blockchain the solution should comfortably serve.
+
+
+\subsubsection{Transaction Rate}
+
+The average transactions per second. This is a crude measure of the rate that
+data is added to the Cardano blockchain. At time of writing, the current
+transaction rate is \todo{find and cite current transaction rate}.
+200 T/s
+
+\todo{Stake Delegation growth?}
+
+
+\subsection{Cardano Node Resource Requirements}
+
+The resource requirements of the Cardano node should not significantly increase,
+except perhaps for disk space, and in particular the memory reqirements should
+decrease.  The resource requirements currently are:
+
+\paragraph{current cardano requirements}
+CPU: ?
+Memory: 8GB
+Disk: ?
+\todo{fill in current resource requirements}
+
+
+Once the solution is implemented we would expect the Memory requirements to drop
+to 4GB and for the Disk space requirements to no more than double.
+
+\subsection{Performance Requirements}
+\label{Performance Requirements}
+As described in \todo{link}, we expect the sync time to be the most important performance measure.
+
+1 day to sync 1 year of a 20 T/s blockchain
+
+\subsection{Functional Requirements}
+
+The ledger state consists of small complicated parts and large simple parts. The
+large simple parts are:
+
+UTxO: A set of all unspent transaction outputs
+Stake Delegation: \todo {stake delegation}
+Stake Aggregation: \todo {stake aggregation}
+
+The solution must store all of the UTxO and Stake Delegation on disk.  The
+solution should store Stake Aggregation on disk, although this will likely be
+more difficult, and there is less urgency here. If this is not delivered there
+must be a clear path towards it.
 
 \section{Related components}
 \label{components}
 
+\subsection{Ledger}
+
+Accesses to UTxO will need to adjust to new API
+For all ledger types
+
+\subsection{Consensus}
+
+Accesses to UTxO will need to adjust to new API
+Integrate with consensus tests
+
+
+\subsection{DBSync + Cardano API clients}
 
 \section{Technical constraints}
 \label{constraints}
 
+\subsubsection{workload}
+\label{workload}
+The workload, for the UTxO storage in particular, is write heavy. In the usual case, we would expect three operations on an UTxO during it's lifetime:
+
+\begin{enumerate}
+\item One INSERT operation when the UTxO is created
+\item One LOOKUP operation during the validation of the block in which the UTxO is spent
+\item One DELETE operation when that block is added to a chain
+\end{enumerate}
+
+Note that some UTxOs will be read more often, if validation of a block fails, or if a block is validated multiple times. From Alonzo era forward, an UTxO may be present in multiple blocks if it is part of a script transaction that fails to validate.
+
+Nevertheless, we expect the vast majority of UTxOs to be validated once, and this applies moreso while syncing, where we do not expect validation to fail.
+
+\subsection{integrate with io-sim}
+
+\subsection{minimize changes to STS}
+STS is expensive to change
+
+
+\subsection{Batching IO}
+Must allow for batching reads and batching writes
+* not a hard constraint, assumes scalablity  is  a requirement
+
+in general, what do the requirements entail?
+
+* which bits of ledger state are large, and so must be on disk
+* what operations do we need
+
+\subsection{Operations}
+\label{Operations}
+
+INSERT
+LOOKUP
+DELETE
+RANGEQUERY
+ROLLBACK
+UPDATE
+
+\subsection{Locality}
+
+Many data structures exploit locality in their data. For example, a time series database will store together values that are adjacent in time. In this way, queries which inspect values that are close in time (most all queries to a time series database!) are able to read a single disk page, and obtain many values of interest.
+
+There are two obvious dimensions in locality for UTxOs: Time of creation and Id (A hash).
+
+We can expect no locality in the ID. IDs are effectively random, and there is no reason to think that two UTxOs with similar IDs would be accessed together.
+
+Less obviously, indeed empirically, there is little temporal locality in blockchains \todo{cite}.
+Thus we have a pessimistic towards applying a caching to the Ledger State data structure. Nevertheless, see \ref{Caching Layer}
 
 \section{Design options}
 \label{options}
 
+It's clear we will need to implement an disk Key-Value Store capable of serving
+the ledger state. The natural choice in the literature for this problem is the Log Structured Merge Tree \todo{cite LSM}. \todo{describe LSM?, liberate a diagram from somewhere?}
 
-\section{Design analysis}
-\label{analysis}
 
+
+\subsection{Off-the-shelf Key-Value Store}
+
+\todo{incorporate into text}
+High chance of ``mostly working''
+Unlikely to be as reliable as the rest of cardano node
+Will likely increase deployment complexity (logging/monitoring/backups/etc)
+Good for benchmarking
+
+One might ask why not use an existing on-disk Key-Value store, such as
+RocksDB \todo{cite RocksDB}, or \todo{cite sqlite}? There are two
+reasons that we might expect this to be unsatisfactory:
+
+\subsubsection{io-sim testing}
+The Ledger and Consensus codebases have achieved impressive quality
+and reliability, in no small part due to their use of the io-sim
+Haskell library to test against a broad array of failure modes. This
+relies upon integrating at the Haskell source level, so these
+reliability tools would not be available to an off-the-shelf Key Value
+Store.
+
+\subsection{workload}
+We have an unusual workload, which is very write heavy. Moreover, we are likely
+to be primarily bound in performance (time) in the syncing operation by read
+performance. Perhaps an off-the-shelf solution could be tuned for this, although
+it would introduce risk of failure to a task likely to be scheduled late (see \todo{ref recommended delivery plan})
+
+\subsection{Existing Haskell Libraries}
+
+There are no mature LSM libraries on hackage. There does exist a B+-tree
+implementation \todo{cite https://hackage.haskell.org/package/haskey-btree},
+which we could likely turn to our needs.
+
+A B+-tree will not scale as far as a LSM, but for existing transaction rates it
+may suffice.
+
+Implementing the On-disk Ledger State with this library would allow us to ship a
+solution with significantly less effort than writing an On-Disk data structure
+from scratch. We would also expect less risk of delivery failure. We would be
+able to leverage the io-sim library to give confidence of quality.
+
+Note however that a solution based on B+-trees is unlikely to satisfy the requirements \ref{Performance Requirements}.
+
+\subsection{Bespoke LSM Tree}
+
+Since no sufficient on disk data structure exists, we could create on. We would
+plan to follow the blueprint laid out in \todo{cite monkey}.
+
+This solution carries a higher risk of failure, as it carries the most unknowns.
+
+Were we to implement this, there are several choices that we would have:
+
+\todo{move this}
+\subsubsection{Batched IO}
+\label{Batched IO}
+As noted in \todo{add ref}, we expect that exploiting the IO queue depth on SSDs
+will be critical in achieving reasonable sync times. Nevertheless we do
+
+\subsection{Interface Style}
+
+The decision for which on disk data structure to use, and how to implement it,
+is largely orthogonal to the decisions around what the interface to that data
+structure should look like.
+
+A naive ``CRUD'' interface to the data structure would be simpler to work with,
+and would likely ease the integration of the data structure into the Cardano
+codebases. However we expect this would impede our exploitation of \ref{Batched IO}.
+
+Instead, we recommend an interface which allows the data structure to read/write
+many values in parallel. Note that committing to this interface does not require
+us to implementing parallel operations immediately. A parallel interface could
+be implemented using an internal ``CRUD'' interface.
+
+e.g.
+readUTxOs :: [TxIn] -> (Map TxIn TxOut -> m a) -> m a
+writeUTxOs :: [(TxIn, Maybe TxOut)] -> m ()
+
+\todo{code? delete or format properly}
+
+Note: We intend to elaborate on this interface, and propose a design, in a
+following document.
+
+\subsection{Caching Layer}
+\label{Caching Layer}
+
+Although we expect caching to perform poorly over this data structure, due to the
+lack of locality \ref{Locality}, perhaps a poor cache would be significantly
+better than nothing.
+
+One option to mitigate long sync times may be to allow users to add a large
+in-memory cache over the data structure while syncing. In this way, users could
+sync on a large cloud machine (Say 64GB RAM), save their state to disk, then run
+their node on a smaller cloud machine using that synced state.
+
+
+\subsection{Hybrid options}
+
+We are not bound to a single choice of those above. Although we will recommend that
+a bespoke LSM tree should be the long term goal, it may be the case that delivery of a
+working solution, that does not meet the performance requirements as such, is
+the best first step.
+
+We should aim to specify an interface with can be served by any of the three
+options above.
 
 \section{Preferred option}
 \label{preferred}
+
+* Draft Interface and agree with stakeholders
+
+* Implement ``IORef (Map TxIn TxOut)''
+
+* Implement ``b+ tree''
+  This will be shippable, and solve short term problem
+
+* Implement ``LSM Tree''
+  Iterating in complexity
+
+
+\section{Risks}
+
+likely
+
+* risks
+
+API design
+
+Development plan
+* riskiest things first
+* iterative delivery
+- feature complete
+- meet NFRs
 
 
 %\addcontentsline{toc}{section}{References}
