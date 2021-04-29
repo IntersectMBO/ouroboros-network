@@ -108,8 +108,8 @@ jobGossip PeerSelectionActions{requestPeerGossip}
            PeerSelectionPolicy{..} =
     \peers -> Job (jobPhase1 peers) (handler peers) "gossipPhase1"
   where
-    handler :: [peeraddr] -> SomeException -> Completion m peeraddr peerconn
-    handler peers e =
+    handler :: [peeraddr] -> SomeException -> m (Completion m peeraddr peerconn)
+    handler peers e = return $
       Completion $ \st _ ->
       Decision {
         decisionTrace = TraceGossipResults [ (p, Left e) | p <- peers ],

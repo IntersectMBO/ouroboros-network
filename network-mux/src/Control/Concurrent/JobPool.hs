@@ -28,7 +28,7 @@ data JobPool m a = JobPool {
        completionQueue :: !(TQueue m a)
      }
 
-data Job m a = Job (m a) (SomeException -> a) String
+data Job m a = Job (m a) (SomeException -> m a) String
 
 withJobPool :: forall m a b.
                (MonadAsync m, MonadThrow m)
@@ -64,7 +64,7 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler label) =
       jobAsync <- async $ do
         tid <- myThreadId
         labelThread tid label
-        !res <- handleJust notAsyncExceptions (return . handler) $
+        !res <- handleJust notAsyncExceptions handler $
                  restore action
         atomically $ do
           writeTQueue completionQueue res

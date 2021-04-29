@@ -200,11 +200,13 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
   where
     muxerJob egressQueue =
       JobPool.Job (muxer egressQueue bearer)
-                  MuxerException "muxer"
+                  (return . MuxerException)
+                  "muxer"
 
     demuxerJob =
       JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearer)
-                  DemuxerException "demuxer"
+                  (return . DemuxerException)
+                  "demuxer"
 
 miniProtocolJob
   :: forall mode m.
@@ -228,7 +230,7 @@ miniProtocolJob tracer egressQueue
                 }
                 (MiniProtocolAction protocolAction completionVar) =
     JobPool.Job jobAction
-                (MiniProtocolException miniProtocolNum miniProtocolDirEnum)
+                (return . MiniProtocolException miniProtocolNum miniProtocolDirEnum)
                 (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
