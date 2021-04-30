@@ -5,13 +5,13 @@
 
 module Ouroboros.Consensus.HardFork.Simple (TriggerHardFork (..)) where
 
-import           Cardano.Binary (FromCBOR(..), ToCBOR(..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Slot (EpochNo)
+import           Codec.CBOR.Decoding (decodeTag)
+import           Codec.CBOR.Encoding (encodeTag)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-import           Codec.CBOR.Decoding (decodeTag)
-import           Codec.CBOR.Encoding (encodeTag)
 
 -- | The trigger condition that will cause the hard fork transition.
 data TriggerHardFork =

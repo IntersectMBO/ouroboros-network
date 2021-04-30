@@ -22,7 +22,7 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC (
   , translateLedgerViewAcrossShelley
   ) where
 
-import           Cardano.Binary (ToCBOR(..), FromCBOR(..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Control.Monad (guard)
 import           Control.Monad.Except (throwError)
 import qualified Data.Map.Strict as Map
@@ -43,7 +43,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      toPureEpochInfo)
-import           Ouroboros.Consensus.HardFork.History.EpochInfo(dummyEpochInfo)
+import           Ouroboros.Consensus.HardFork.History.EpochInfo (dummyEpochInfo)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
