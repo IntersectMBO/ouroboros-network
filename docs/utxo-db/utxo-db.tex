@@ -318,7 +318,14 @@ RANGEQUERY
 ROLLBACK
 UPDATE
 
-\subsection{Locality}
+
+\subsection{workload}
+We have an unusual workload, which is very write heavy. Moreover, we are likely
+to be primarily bound in performance (time) in the syncing operation by read
+performance. Perhaps an off-the-shelf solution could be tuned for this, although
+it would introduce risk of failure to a task likely to be scheduled late (see \todo{ref recommended delivery plan})
+
+\subsubsection{Locality}
 
 Many data structures exploit locality in their data. For example, a time series database will store together values that are adjacent in time. In this way, queries which inspect values that are close in time (most all queries to a time series database!) are able to read a single disk page, and obtain many values of interest.
 
@@ -356,12 +363,6 @@ Haskell library to test against a broad array of failure modes. This
 relies upon integrating at the Haskell source level, so these
 reliability tools would not be available to an off-the-shelf Key Value
 Store.
-
-\subsection{workload}
-We have an unusual workload, which is very write heavy. Moreover, we are likely
-to be primarily bound in performance (time) in the syncing operation by read
-performance. Perhaps an off-the-shelf solution could be tuned for this, although
-it would introduce risk of failure to a task likely to be scheduled late (see \todo{ref recommended delivery plan})
 
 \subsection{Existing Haskell Libraries}
 
