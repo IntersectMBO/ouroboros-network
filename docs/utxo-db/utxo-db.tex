@@ -402,6 +402,11 @@ options above.
 * Implement ``LSM Tree''
   Iterating in complexity
 
+Development plan
+* riskiest things first
+* iterative delivery
+- feature complete
+- meet NFRs
 
 \section{Risks}
 
@@ -417,14 +422,15 @@ related components can start, however this risks increasing the costs, or
 rendering impossible,  incorporating learnings from experience implementing the
 data structure into the design of the final API.
 
-
-
-Development plan
-* riskiest things first
-* iterative delivery
-- feature complete
-- meet NFRs
-
+\subsection{Performance of Chain Sync}
+As discussed in \todo{ref section} there is reason to expect that any solution
+will have sync times in the order of days per chain-year at even moderate
+Transaction rates. This is the critical constraint that guides the majority of
+our design. There is some opportunity to mitigate this e.g. \ref{Caching Layer},
+but this will remain a looming threat if transaction rates increase
+substantially. We recommend that IOHK direct it's researchers to investigate
+ways that nodes can sync a chain without having to validate the entire history
+of the chain.
 
 \addcontentsline{toc}{section}{References}
 \bibliographystyle{plainnat}
