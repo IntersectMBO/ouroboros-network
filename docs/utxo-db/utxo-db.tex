@@ -392,21 +392,37 @@ options above.
 \section{Preferred option}
 \label{preferred}
 
-* Draft Interface and agree with stakeholders
+Our preferred option is a hybrid, seeking to fail early, minimize delivery risk,
+deliver some improvement early, and giving the option of pausing work before
+completion. We will design the API early and implement several iterations of the
+data structure, each with more complexity and better performance than the
+previous.
 
-* Implement ``IORef (Map TxIn TxOut)''
+Firstly, we would deliver a Draft API for agreement with stakeholders (Ledger
+and Consensus). This would be prioritised immediately. Once agreed, we would
+deliver a trivial implementation of a data store that was still entirely in
+memory, using the existing algorithms, but which is interacted with through the
+newly agreed API.
 
-* Implement ``b+ tree''
-  This will be shippable, and solve short term problem
+Ledger and Consensus will then be unblocked from beginning to integrate, i.e.
+modifying their code to use the new API.
 
-* Implement ``LSM Tree''
-  Iterating in complexity
+In parallel with this, we will begin implementing a B+-tree. The focus will
+be to produce a working solution, not to achieve good performance. We
+will verify the correctness of this implementation with io-sim. The intention
+will be to use this as a skeleton with with to implement an LSM tree.
 
-Development plan
-* riskiest things first
-* iterative delivery
-- feature complete
-- meet NFRs
+Once the B+-tree is feature complete, and Related Components have completed
+their integration, we would have the option to tune the performance of the
+B+-tree so that it could be deployed into production. Whether we would do this
+or not would depend on the urgency of lowering the memory footprint of Cardano
+Node.
+
+We will then replace the B+-tree in the previous solution with a bespoke LSM tree.
+Our implementation will be written to use batched IO from the outset. We will
+verify it's correctness with the test suite developed against the B+tree
+implementation. We will iterate on this LSM tree, improving it's performance
+as required.
 
 \section{Risks}
 
