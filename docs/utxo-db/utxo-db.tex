@@ -155,22 +155,70 @@ so.
 \section{Requirements and targets}
 \label{requirements}
 
-Here we describe what the chosen solution must achieve.
+\subsection{Transaction Rate (TPS)}
 
-\subsection{Blockchain scope Targets}
+The transaction rate is the average number of \emph{transactions per second}
+(TPS). It is a measure of the rate that data is added to a blockchain and is
+often used to compare different systems. It is a crude measure because it does
+not take account of the transaction size, which can vary wildly. Nevertheless,
+because it is the measure used to compare systems, our targets are also
+expressed in TPS.
 
-Here we describe just how large a blockchain the solution should comfortably serve.
+Our targets are
 
+\begin{center}
+\begin{tabular}[]{lr}
+  Target    & TPS \\
+  \toprule
+  Threshold &  20 \\
+  Middle    &  50 \\
+  Stretch   & 200
+\end{tabular}
+\end{center}
+%
+For comparison, these are the current transaction rates of Cardano and
+comparable systems%
+\footnote{\url{https://blockchair.com/bitcoin/charts/transactions-per-second}}%
+\footnote{\url{https://blockchair.com/ethereum/charts/transactions-per-second}}.
 
-\subsubsection{Transaction Rate}
+\begin{center}
+\begin{tabular}[]{lr}
+  System    & TPS (approx) \\
+  \toprule
+  Bitcoin                  & 4   \\
+  Ethereum, peak           & 17  \\
+  Cardano, mainnet typical & 1   \\
+  Cardano, mainnet max     & 7   \\
+  Cardano, benchmarks max  & \textgreater 50   \\
+\end{tabular}
+\end{center}
 
-The average transactions per second. This is a crude measure of the rate that
-data is added to the Cardano blockchain. At time of writing, the current
-transaction rate is \todo{find and cite current transaction rate}.
-200 T/s
+It is out of scope for this storage project to demonstrate the node running at
+50 or 200 TPS. It is within scope to demonstrate that the storage system would
+not be a bottleneck that would prevent the node running at 50 or 200 TPS.
 
-\todo{Stake Delegation growth?}
+\subsection{Ledger state size}
 
+Cardano currently has approximately 2 million UTxO entries. For comparison,
+Bitcoin currently has approximately 75 million UTxO entries%
+\footnote{\url{https://www.blockchain.com/charts/utxo-count}}.
+
+Cardano also has delegation. The current ratio between UTxO entries
+and registered stake keys is 5:1. We will assume this 5:1 persists.
+
+Our targets for UTxO sizes are
+
+\begin{center}
+\begin{tabular}[]{lrr}
+  Target (millions) & UTxO entries & Stake keys \\
+  \toprule
+  Threshold &  10  &  2 \\
+  Middle    &  50  & 10 \\
+  Stretch   & 100  & 20
+\end{tabular}
+\end{center}
+
+We assume the number of registered stake pools will remain in the low thousands.
 
 \subsection{Cardano Node Resource Requirements}
 
