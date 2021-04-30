@@ -104,7 +104,7 @@ The simplified optimistic estimate is as follows:
         Note that this is a rosy assumption that may be mostly true for LSM trees,
         but would not be true for many other data structures (e.g. B+ trees)
 \item Assume a DB read amplification factor of 1.5. (This is a rosy assumption.)
-\item Thus 200 TPS translates to $200 * 2 * 1.5 = 600$ disk I/O operations per
+\item Thus 200 TPS translates to $200 \times 2 \times 1.5 = 600$ disk I/O operations per
       second (IOPS).
 \item Assume a mid-range SSD rated at 10,000 IOPS for random reads at queue
       depth 1, and 100,000 IOPS for random reads at queue depth 32.
@@ -365,18 +365,77 @@ all three large parts of the ledger state to be kept on disk.
 \section{Related components}
 \label{components}
 
-\subsection{Ledger}
-
-Accesses to UTxO will need to adjust to new API
-For all ledger types
+The related components are from the consensus and ledger layers.
 
 \subsection{Consensus}
 
-Accesses to UTxO will need to adjust to new API
-Integrate with consensus tests
+The components that any new code would have to integrate with directly are from
+the consensus layer. The consensus layer already has three subcomponents that
+manage on-disk data structures as part of its storage subsystem, for storing:
+\begin{itemize}
+\item the old immutable part of the block chain
+\item the recent volatile part of the block chain
+\item snapshots of the ledger state
+\end{itemize}
+Storing parts of the ``live'' ledger state would add a fourth such subcomponent.
 
+The consensus layer performs all the state management on behalf of the ledger
+layer. Changes will be required in this state management to accomodate keeping
+parts of the ledger state on disk.
 
-\subsection{DBSync + Cardano API clients}
+The design of the interface between the main consensus code and the extra
+storage subcomponent will be crucial for the success of the project: both for
+the effort and disruption to the consensus code and also the performance
+possiblities or limitations.
+
+The (extensive) automated consensus tests rely on being able to mock out the
+underlying file system used by the storage components, replacing it with a
+simulted file system. The simulted file system supports deliberate scripted
+fault injection. The tests rely on this to be able to test that the storage
+components and the consensus layer as a whole is fully robust in the face of
+I/O failures and disk corruption. The existing storage components are written
+in terms of a file system interface, which allows both the real file system for
+production, and a mock file system instance for the tests.
+
+To maintain the ability to test that integration of the whole consensus layer
+is robust to file system failure and corruption, will require that new storage
+components are also written against the file system interface, rather than using
+the file system directly.
+
+\subsection{Ledger}
+
+Although the ledger layer does not interact with disk storage directly, the
+design of the storage system is heavily influenced by the needs and structure
+of the ledger layer. The consensus and ledger components share an interface,
+enabling the consensus layer to perform all the state management on behalf of
+the ledger. Currently this interface relies on the full ledger state being kept
+in memory. This interface will have to be adjusted to enable the consensus
+layer to be able to keep the large parts of the ledger state on disk. This
+interface change will obviously have an impact on the ledger code.
+
+The design of this interface will also be crucial to success of the project:
+both for the effort and disruption to the ledger code and also the performance
+opportunities or limitations.
+
+\subsection{Cardano DB-Sync \& Cardano API clients}
+
+The Cardano node provides an interface for other client applications to access
+the blockchain data. Some client applications also need access to the ledger
+state as they process the blockchain. In particular the DB-Sync component
+makes use of this. More generally the Cardano API is in the process of being
+extended to make it easier to write client applications that make use of the
+ledger state. Currently these client applications keep their own copy of the
+ledger state in memory.
+
+Eventually it will be necessary for these client applications, and DB-Sync in
+particular, to also transition to keeping their copies of the ledger state on
+disk. The need for this transition is less urgent for applications like DB-Sync
+than it is for the node itself, because these applications are typically hosted
+only on servers with more plentiful resources, whereas the node is intended to
+be deployed in more locations where the resource limits are tighter.
+
+It would save development effort overall if client applications can reuse the
+ledger state storage components developed for the node.
 
 \section{Technical constraints}
 \label{constraints}
