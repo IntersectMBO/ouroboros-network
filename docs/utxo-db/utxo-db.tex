@@ -290,6 +290,15 @@ Note that some UTxOs will be read more often, if validation of a block fails, or
 Nevertheless, we expect the vast majority of UTxOs to be validated once, and this applies moreso while syncing, where we do not expect validation to fail.
 
 \subsection{integrate with io-sim}
+\label{io-sim}
+The Ledger and Consensus codebases have achieved impressive quality
+and reliability, in no small part due to their use of the io-sim
+Haskell library to test against a broad array of failure modes. This
+relies upon integrating at the Haskell source level.
+
+The solution should similarly demonstrate it's correctness with an io-sim test
+suite. This is not a strict requirement, however it is difficult to see how one
+could be confident in the correctness of the solution without it.
 
 \subsection{minimize changes to STS}
 STS is expensive to change
@@ -357,12 +366,8 @@ RocksDB \todo{cite RocksDB}, or \todo{cite sqlite}? There are two
 reasons that we might expect this to be unsatisfactory:
 
 \subsubsection{io-sim testing}
-The Ledger and Consensus codebases have achieved impressive quality
-and reliability, in no small part due to their use of the io-sim
-Haskell library to test against a broad array of failure modes. This
-relies upon integrating at the Haskell source level, so these
-reliability tools would not be available to an off-the-shelf Key Value
-Store.
+The tooling described \ref{io-sim} would be difficult or impossible to use with
+an Off-the-shelf Key-Value Store.
 
 \subsection{Existing Haskell Libraries}
 
