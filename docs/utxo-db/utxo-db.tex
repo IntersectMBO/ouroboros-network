@@ -319,16 +319,34 @@ blockchain will need to exploit Batching IO to achieve this.
 
 \subsection{Operations}
 \label{Operations}
+Here we describe the operations the Ledger state on-disk data store should
+support.
 
-INSERT
-LOOKUP
-DELETE
-RANGEQUERY
-ROLLBACK
-UPDATE
+\begin{enumerate}
+  \item INSERT
+        The data store must be able to store data against a key. There will be
+        some flexibility in how updates to data are applied. Stake delegation
+        and aggregation may benefit from some more specialised operations,
+        though likely a simple INSERT with the new value would suffice.
+  \item LOOKUP
+        The data store must be able to retrieve the data previously stored
+        against a key
+  \item DELETE
+        The data store must be able to delete a key and the data stored against
+        it. This is important for storing UTxOs, because the growth of unspent
+        transaction outputs grows much more slowly than the total historical
+        transaction outputs, and so deleting spent transactions will lighten the
+        load on the data store manyfold.
+  \item ROLLBACK
+        \label{ROLLBACK}
+        The consensus layer will rollback ledger state whenever it switches
+        chain forks. The data store must support this in some way.
+  \item
 
+\end{enumerate}
 
 \subsection{workload}
+\label{workload}
 We have an unusual workload, which is very write heavy. Moreover, we are likely
 to be primarily bound in performance (time) in the syncing operation by read
 performance. Perhaps an off-the-shelf solution could be tuned for this, although
@@ -383,7 +401,8 @@ solution with significantly less effort than writing an On-Disk data structure
 from scratch. We would also expect less risk of delivery failure. We would be
 able to leverage the io-sim library to give confidence of quality.
 
-Note however that a solution based on B+-trees is unlikely to satisfy the requirements \ref{Performance Requirements}.
+Note however that a solution based on B+-trees is unlikely to satisfy the
+requirements \ref{Performance Requirements}.
 
 \subsection{Bespoke LSM Tree}
 
@@ -396,14 +415,13 @@ structure in the literature, the LSM Tree \cite{monkey}, is appropriate. It offe
         with the disk, meaning the program never needs to wait for the disk to be ready.
   \item A snapshotting mechanism
         In normal operation the Cardano Node frequently needs to roll back the
-        ledger state. This happens whenever consensus switches chains. While we could
-        build this on top of any data structure, the simplicity with which we can do it
-        with an LSM tree serves to ease implementation effort and delivery risk.
-  \item A well specified recipe for tuning to various workloads
-        Our workload is quite unusual, being very write heavy. We would be able
-        to tune the LSM tree to match that workload, and moreover, if the workload
-        changes in the future as Cardano evolves, we will have the opportunity to
-        revisit these decisions without reworking the entire data structure.
+        ledger state, see \ref{ROLLBACK}.
+  \item Workload
+        There is a  well specified recipe in \cite{monkey} for tuning  the data
+        structure to various workloads. Our workload \ref{workload} is quite unusual. We
+        would be able to tune the LSM tree to match that workload, and moreover, if the
+        workload changes in the future as Cardano evolves, we will have the opportunity
+        to revisit these decisions without reworking the entire data structure.
 \end{enumerate}
 
 We would plan to follow the blueprint laid out by \cite{monkey}. This approach
