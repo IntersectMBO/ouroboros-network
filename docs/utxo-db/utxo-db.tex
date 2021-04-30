@@ -335,11 +335,13 @@ the ledger state. The natural choice in the literature for this problem is the L
 
 \subsection{Off-the-shelf Key-Value Store}
 
-\todo{incorporate into text}
+\todo[inline]{
 High chance of ``mostly working''
 Unlikely to be as reliable as the rest of cardano node
 Will likely increase deployment complexity (logging/monitoring/backups/etc)
 Good for benchmarking
+Add that Cardano used to use RocksDB, and it was problematic
+}
 
 One might ask why not use an existing on-disk Key-Value store, such as
 RocksDB \todo{cite RocksDB}, or \todo{cite sqlite}? There are two
@@ -377,15 +379,30 @@ Note however that a solution based on B+-trees is unlikely to satisfy the requir
 
 \subsection{Bespoke LSM Tree}
 
-Since no sufficient on disk data structure exists, we could create on. We would
-plan to follow the blueprint laid out by \cite{monkey}.
+Since no sufficient on disk data structure exists, we could create one. A data
+structure in the literature, the LSM Tree \cite{monkey}, is appropriate. It offers:
 
-This solution carries a higher risk of failure, as it carries the most unknowns.
+\begin{enumerate}
+  \item Append only writes to disk
+        This is critical for good write performance. There no need to ``sync''
+        with the disk, meaning the program never needs to wait for the disk to be ready.
+  \item A snapshotting mechanism
+        In normal operation the Cardano Node frequently needs to roll back the
+        ledger state. This happens whenever consensus switches chains. While we could
+        build this on top of any data structure, the simplicity with which we can do it
+        with an LSM tree serves to ease implementation effort and delivery risk.
+  \item A well specified recipe for tuning to various workloads
+        Our workload is quite unusual, being very write heavy. We would be able
+        to tune the LSM tree to match that workload, and moreover, if the workload
+        changes in the future as Cardano evolves, we will have the opportunity to
+        revisit these decisions without reworking the entire data structure.
+\end{enumerate}
 
-Were we to implement this, there are several choices that we would have:
+We would plan to follow the blueprint laid out by \cite{monkey}. This approach
+does carry a higher risk of failure, as a greenfield project with many unknowns.
 
 \todo{move this}
-\subsubsection{Batched IO}
+\subsection{Batched IO}
 \label{Batched IO}
 Modern SSDs achieve IO-ops/S in the hundreds of thousands operating concurrently.
 Typically they will server up to 32 operations at the same time. For software to
