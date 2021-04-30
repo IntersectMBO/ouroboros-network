@@ -326,7 +326,7 @@ performance. Perhaps an off-the-shelf solution could be tuned for this, although
 it would introduce risk of failure to a task likely to be scheduled late (see \todo{ref recommended delivery plan})
 
 \subsubsection{Locality}
-
+\label{Locality}
 Many data structures exploit locality in their data. For example, a time series database will store together values that are adjacent in time. In this way, queries which inspect values that are close in time (most all queries to a time series database!) are able to read a single disk page, and obtain many values of interest.
 
 There are two obvious dimensions in locality for UTxOs: Time of creation and Id (A hash).
@@ -419,7 +419,7 @@ structure should look like.
 
 A naive ``CRUD'' interface to the data structure would be simpler to work with,
 and would perhaps ease integration of the data structure into the Related Components
-codebases. However this would impede our exploitation of \ref{Batched IO}.
+codebases. However this would impede our exploitation of Batched IO. \ref{Batching IO}.
 
 Instead, we recommend an interface which allows the data structure to read/write
 many values in parallel. Note that committing to this interface does not require
