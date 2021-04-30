@@ -64,7 +64,7 @@ plentiful and cheap.
 
 Thus the challenge when adapting a design from memory to disk is to maintain
 adequate performance. For blockchains generally, and Cardano specifically, this
-is not a trivial problem. For example for a long time Ethereum node performance
+is not a trivial problem. For example, for a long time Ethereum node performance
 was bottlenecked on disk I/O performance. We must consider performance in the
 design analysis or we will face the same problem.
 
@@ -178,8 +178,8 @@ Our targets are
 %
 For comparison, these are the current transaction rates of Cardano and
 comparable systems%
-\footnote{\url{https://blockchair.com/bitcoin/charts/transactions-per-second}}%
-\footnote{\url{https://blockchair.com/ethereum/charts/transactions-per-second}}.
+\footnote{Bitcoin TPS charts \url{https://blockchair.com/bitcoin/charts/transactions-per-second}\\
+Ethereum TPS charts \url{https://blockchair.com/ethereum/charts/transactions-per-second}}.
 
 \begin{center}
 \begin{tabular}[]{lr}
@@ -198,13 +198,14 @@ It is out of scope for this storage project to demonstrate the node running at
 not be a bottleneck that would prevent the node running at 50 or 200 TPS.
 
 \subsection{Ledger state size}
+\label{ledger-state-size}
 
 Cardano currently has approximately 2 million UTxO entries. For comparison,
 Bitcoin currently has approximately 75 million UTxO entries%
-\footnote{\url{https://www.blockchain.com/charts/utxo-count}}.
+\footnote{Bitcoin UTxO size charts \url{https://www.blockchain.com/charts/utxo-count}}.
 
 Cardano also has delegation. The current ratio between UTxO entries
-and registered stake keys is 5:1. We will assume this 5:1 persists.
+and registered stake keys is 5:1. We will assume this 5:1 ratio persists.
 
 Our targets for UTxO sizes are
 
