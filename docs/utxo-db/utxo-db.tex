@@ -220,41 +220,157 @@ Our targets for UTxO sizes are
 
 We assume the number of registered stake pools will remain in the low thousands.
 
-\subsection{Cardano Node Resource Requirements}
+\subsection{Resource Requirements}
+\label{resource-requirements}
 
-The resource requirements of the Cardano node should not significantly increase,
-except perhaps for disk space, and in particular the memory reqirements should
-decrease.  The resource requirements currently are:
+The resource requirements of the Cardano node need to remain reasonable, to
+allow nodes runing on end user systems with Daedalus, and to keep hosting costs
+for SPOs reasonable. The purpose of this project is to limit the growth in the
+memory (RAM) requirement, while allowing for a substantial increase in size of
+the ledger state generally by keeping most of it on disk. So the memory
+requirement should remain steady or decrease while the disk requirements must
+increase.
 
-\paragraph{current cardano requirements}
-CPU: ?
-Memory: 8GB
-Disk: ?
-\todo{fill in current resource requirements}
+At the time of writing, the published requirements for the Cardano node%
+\footnote{\url{https://github.com/input-output-hk/cardano-node/releases/tag/1.26.2}}
+and for Daedalus%
+\footnote{\url{https://iohk.zendesk.com/hc/en-us/articles/360010496553-Daedalus-System-Requirements}}
+are:
 
+\begin{center}
+\begin{tabular}[]{lp{6cm}p{5cm}}
+  Resource    & Node & Node + Daedalus \\
+  \toprule
+  CPU         &  x86 processor, 2+ cores at 1.6GHz (2GHz for a stake pool or relay)  & 64-bit dual core processor \\
+  Memory      &  8 GB  & 8 GB \\
+  Disk space  & 10 GB, 20 GB for a stake pool & 15 GB
+\end{tabular}
+\end{center}
 
-Once the solution is implemented we would expect the Memory requirements to drop
-to 4GB and for the Disk space requirements to no more than double.
+These published requirements are not completely coherent, since the Daedalus
+case includes the node, wallet backend and the Daedalus frontend, all of which
+take resources.
+
+No change in CPU requirement is expected. The memory requirement is expected
+to remain steady or decrease:
+\begin{center}
+\begin{tabular}[]{lr}
+  Memory target & GB \\
+  \toprule
+  Threshold &  8 \\
+  Middle    &  4 \\
+  Stretch   &  2
+\end{tabular}
+\end{center}
+The crucial disk requirement will be disk random read performance (IOPS) not
+disk space. The proposed requirements are
+\begin{center}
+\begin{tabular}[]{lr}
+  Random 4k reads & IOPS \\
+  \toprule
+  Queue depth 1  &  10,000 \\
+  Queue depth 32 & 100,000 \\
+\end{tabular}
+\end{center}
+This implies a requirement for an SSD. Spinning disks cannot achieve these IOPS
+requirements.
+
+There are also disk space requirements for storing the ledger state on an SSD.
+Given the target of 10--100 million UTxO entries, and corresponding stake keys,
+and three stake distribution snapshots, the expected disk requirement for the
+ledger state are
+\begin{center}
+\begin{tabular}[]{lrr}
+  Target  & UTxO entries (millions) & SSD disk space (GB) \\
+  \toprule
+  Threshold &  10  &  20 \\
+  Middle    &  50  & 100 \\
+  Stretch   & 100  & 200
+\end{tabular}
+\end{center}
+In addition, disk space is needed to store the block chain itself. This does
+not require an SSD and can use cheaper spinning magnetic disk. The disk space
+needed grows continuously, at a rate that depends on the TPS.
+\begin{center}
+\begin{tabular}[]{lrrr}
+                      & TPS & disk space per day (MB) & per year (GB) \\
+  \toprule
+  Mainnet typical     &   1 &    39 &    14 \\
+  Mainnet current max &   7 &   270 &    96 \\
+  Threshold target    &  20 &   770 &   275 \\
+  Middle target       &  50 & 1,929 &   687 \\
+  Stretch target      & 200 & 7,714 & 2,750
+\end{tabular}
+\end{center}
+It is worth noting that the upper end is completely impractical for a public
+system where all partipants download and retain the entire chain as it would
+require everyone running a node to buy extra multi-terabyte hard drives per
+year.
 
 \subsection{Performance Requirements}
-\label{Performance Requirements}
-As described in \todo{link}, we expect the sync time to be the most important performance measure.
+\label{performance-requirements}
 
-1 day to sync 1 year of a 20 T/s blockchain
+As described in the summary, we expect the time to synchronise the whole chain
+to be the hardest performance requirement to achieve. This is because it
+involves doing the same thing as the node does to validate the chain normally,
+but 100s of times faster, so that the node can sync in a reasonable time frame.
+
+We have no specific requirements for sync time, but reasonable values would be
+\begin{center}
+\begin{tabular}[]{lrr}
+  Target    & faster than real time & hours to sync 1 year \\
+  \toprule
+  Threshold &  100$\times$ &  88 hours \\
+  Stretch   & 1000$\times$ & 8.8 hours
+\end{tabular}
+\end{center}
+To get a sense of what these means as a requirement for the storage system, it
+is useful to look at the effective TPS that would be needed to be able to sync
+100 or 1000 times faster than real time.
+\begin{center}
+\begin{tabular}[]{rrr}
+  Target TPS & target sync factor & effective TPS \\
+  \toprule
+   20 TPS &   100$\times$ &   2,000 TPS \\
+   20 TPS &  1000$\times$ &  20,000 TPS \\
+  200 TPS &  1000$\times$ & 200,000 TPS
+\end{tabular}
+\end{center}
 
 \subsection{Functional Requirements}
 
-The ledger state consists of small complicated parts and large simple parts. The
-large simple parts are:
+The storage system must support the needs of the consensus and ledger for
+storing the bulk of the ledger state on disk. It must support all the operations
+that these components need to interact with the selected parts of the ledger
+state that are kept on disk.
 
-UTxO: A set of all unspent transaction outputs
-Stake Delegation: \todo {stake delegation}
-Stake Aggregation: \todo {stake aggregation}
+The ledger state consists of small complicated parts and large simple parts.
+Analysis indicates that to meet the memory requirements, only the large simple
+parts of the ledger state need to be kept on disk. It is acceptable to keep the
+other parts of the ledger state in memory.
 
-The solution must store all of the UTxO and Stake Delegation on disk.  The
-solution should store Stake Aggregation on disk, although this will likely be
-more difficult, and there is less urgency here. If this is not delivered there
-must be a clear path towards it.
+The large parts of the ledger state that must be kept on disk are:
+\begin{description}
+\item[UTxO]
+    The collection of all unspent transaction outputs.
+\item[Stake addresses \& delegation]
+    The collection of all registered stake addresses, their corresponding
+    reward account balances, and their choice of delegation to a stake pool.
+\item[Stake distribution]
+    An aggregation of the UTxO by stake address, recording for each state
+    address the amount of stake controlled by that address.
+
+    Three snapshots of this stake distribution are required.
+\end{description}
+The storage system must support all the operations the consensus and ledger
+layers need for interacting with these parts of the ledger state.
+
+For an incremental delivery of a solution, it would be acceptable to start with
+the UTxO and then proceede to the two stake collections. The UTxO is the largest
+of the collections, but the two stake collections are also of a substantial
+size. To achieve the ledger size requirements from \cref{ledger-state-size}
+within the memory requirements from \cref{resource-requirements} will require
+all three large parts of the ledger state to be kept on disk.
 
 \section{Related components}
 \label{components}
