@@ -396,11 +396,19 @@ options above.
 
 \section{Risks}
 
+Here we call out specific risks we see in the project, and in our preferred option in particular
 likely
 
-* risks
+\subsection{API design}
+The design of the API will have far reaching impact on the success of the
+project. We need to carefully balance the need to integrate smoothly with Ledger
+and Consensus and the requirement that the API can be implemented with Parallel
+IO. This points one towards fixing the API early, so that integration in the
+related components can start, however this risks increasing the costs, or
+rendering impossible,  incorporating learnings from experience implementing the
+data structure into the design of the final API.
 
-API design
+
 
 Development plan
 * riskiest things first
