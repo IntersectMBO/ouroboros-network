@@ -296,13 +296,17 @@ STS is expensive to change
 
 
 \subsection{Batching IO}
-Must allow for batching reads and batching writes
-* not a hard constraint, assumes scalablity  is  a requirement
+\label{Batching IO}
+Modern SSDs achieve IO-ops/S in the hundreds of thousands operating concurrently.
+Typically they will server up to 32 operations at the same time. For software to
+saturate the bandwidth of the disk, that software must be prepared to issue many
+operations simultaneously. There is a trade-off here between performance and
+complexity. To saturate the bandwidth of the disk, as we expect to be necessary
+to achieve reasonable sync times \todo{add ref}, will require more complexity in
+the solution.
 
-in general, what do the requirements entail?
-
-* which bits of ledger state are large, and so must be on disk
-* what operations do we need
+It is very likely that a solution required to perform well with a growing
+blockchain will need to exploit Batching IO to achieve this.
 
 \subsection{Operations}
 \label{Operations}
@@ -330,8 +334,6 @@ Thus we have a pessimistic towards applying a caching to the Ledger State data s
 
 It's clear we will need to implement an disk Key-Value Store capable of serving
 the ledger state. The natural choice in the literature for this problem is the Log Structured Merge Tree \todo{cite LSM}. \todo{describe LSM?, liberate a diagram from somewhere?}
-
-
 
 \subsection{Off-the-shelf Key-Value Store}
 
@@ -401,16 +403,12 @@ structure in the literature, the LSM Tree \cite{monkey}, is appropriate. It offe
 We would plan to follow the blueprint laid out by \cite{monkey}. This approach
 does carry a higher risk of failure, as a greenfield project with many unknowns.
 
-\todo{move this}
 \subsection{Batched IO}
-\label{Batched IO}
-Modern SSDs achieve IO-ops/S in the hundreds of thousands operating concurrently.
-Typically they will server up to 32 operations at the same time. For software to
-saturate the bandwidth of the disk, that software must be prepared to issue many
-operations simultaneously. There is a trade-off here between performance and
-complexity. To saturate the bandwidth of the disk, as we expect to be necessary
-to achieve reasonable sync times \todo{add ref}, will require more complexity in
-the solution.
+As described in \ref{Batching IO}, we will have the option to use Batching IO,
+at the cost of additional complexity in the implementation. While a scalable
+solution will likely need to do this, it is likely wise to start with a simpler,
+slower IO model, and then add Batching IO once we have demonstrated the
+correctness of that simpler implementation.
 
 \subsection{Interface Style}
 
