@@ -11,6 +11,7 @@
 \usepackage{longtable,booktabs}
 \usepackage{dcolumn}
 \usepackage{graphicx}
+\usepackage{natbib}
 \usepackage{hyperref}
 \usepackage[capitalise,noabbrev,nameinlink]{cleveref}
 \hypersetup{
@@ -320,7 +321,7 @@ Note however that a solution based on B+-trees is unlikely to satisfy the requir
 \subsection{Bespoke LSM Tree}
 
 Since no sufficient on disk data structure exists, we could create on. We would
-plan to follow the blueprint laid out in \todo{cite monkey}.
+plan to follow the blueprint laid out by \cite{monkey}.
 
 This solution carries a higher risk of failure, as it carries the most unknowns.
 
@@ -408,8 +409,8 @@ Development plan
 - meet NFRs
 
 
-%\addcontentsline{toc}{section}{References}
-%\bibliographystyle{alpha}
-%\bibliography{utxo}
+\addcontentsline{toc}{section}{References}
+\bibliographystyle{plainnat}
+\bibliography{utxo-db}
 
 \end{document}
