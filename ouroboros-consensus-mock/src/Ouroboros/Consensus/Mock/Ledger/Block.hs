@@ -51,6 +51,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
     -- * 'ApplyTx' (mempool support)
   , GenTx (..)
   , TxId (..)
+  , Validated (..)
   , mkSimpleGenTx
   , txSize
     -- * Crypto
@@ -415,6 +416,11 @@ data instance GenTx (SimpleBlock c ext) = SimpleGenTx {
   deriving stock    (Generic, Eq, Ord)
   deriving anyclass (Serialise)
 
+newtype instance Validated (GenTx (SimpleBlock c ext)) = ValidatedSimpleGenTx {
+      forgetValidatedSimpleGenTx :: GenTx (SimpleBlock c ext)
+    }
+  deriving newtype (Generic, Eq, Ord)
+
 instance (Typeable c, Typeable ext)
     => ShowProxy (GenTx (SimpleBlock c ext)) where
 
@@ -422,13 +428,18 @@ type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
 instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where
-  applyTx   = const updateSimpleUTxO
-  reapplyTx = const updateSimpleUTxO
+  applyTx _cfg slot tx st = do
+      st' <- updateSimpleUTxO slot tx st
+      return (st', ValidatedSimpleGenTx tx)
+  reapplyTx _cfg slot vtx st =
+      updateSimpleUTxO slot (forgetValidatedSimpleGenTx vtx) st
 
   -- Large value so that the Mempool tests never run out of capacity when they
   -- don't override it.
   maxTxCapacity = const 1000000000
   txInBlockSize = txSize
+
+  txForgetValidated = forgetValidatedSimpleGenTx
 
 newtype instance TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId {
       unSimpleGenTxId :: Mock.TxId
@@ -445,8 +456,11 @@ instance HasTxId (GenTx (SimpleBlock c ext)) where
 instance (Typeable p, Typeable c) => NoThunks (GenTx (SimpleBlock p c)) where
   showTypeOf _ = show $ typeRep (Proxy @(GenTx (SimpleBlock p c)))
 
+instance (Typeable p, Typeable c) => NoThunks (Validated (GenTx (SimpleBlock p c))) where
+  showTypeOf _ = show $ typeRep (Proxy @(Validated (GenTx (SimpleBlock p c))))
+
 instance HasTxs (SimpleBlock c ext) where
-  extractTxs = map mkSimpleGenTx . simpleTxs . simpleBody
+  extractTxs = map (ValidatedSimpleGenTx . mkSimpleGenTx) . simpleTxs . simpleBody
 
 instance Mock.HasMockTxs (GenTx (SimpleBlock p c)) where
   getMockTxs = Mock.getMockTxs . simpleGenTx
@@ -456,6 +470,9 @@ instance Condense (GenTx (SimpleBlock p c)) where
 
 instance Show (GenTx (SimpleBlock p c)) where
     show = show . simpleGenTx
+
+instance Show (Validated (GenTx (SimpleBlock p c))) where
+    show = show . forgetValidatedSimpleGenTx
 
 instance Condense (GenTxId (SimpleBlock p c)) where
     condense = condense . unSimpleGenTxId

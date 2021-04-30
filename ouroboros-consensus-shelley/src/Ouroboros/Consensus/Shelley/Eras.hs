@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
@@ -15,6 +17,7 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardShelley
     -- * Shelley-based era
   , ShelleyBasedEra (..)
+  , WrapTxInBlock (..)
     -- * Type synonyms for convenience
   , EraCrypto
     -- * Re-exports
@@ -24,23 +27,27 @@ module Ouroboros.Consensus.Shelley.Eras (
 import           Data.Default.Class (Default)
 import           Data.Text (Text)
 import           GHC.Records
+import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
-
 
 import           Cardano.Ledger.Allegra (AllegraEra)
 import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
+import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
 
 import           Cardano.Binary (FromCBOR, ToCBOR)
+import           Cardano.Ledger.Allegra.Translation ()
 import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Era as SL (TranslateEra (..), TxInBlock)
+import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.Serialization as SL
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -68,6 +75,7 @@ type EraCrypto era = Crypto era
 {-------------------------------------------------------------------------------
   Era polymorphism
 -------------------------------------------------------------------------------}
+
 -- | The ledger already defines 'SL.ShelleyBasedEra' as /the/ top-level
 -- constraint on an era, however, consensus often needs some more functionality
 -- than the ledger currently provides.
@@ -97,21 +105,32 @@ type EraCrypto era = Crypto era
 -- and Mary) this type is set to SL.WitnessSet. This will eventually change,
 -- most likely with Alonzo, thus this equivalence will no longer be valid.
 class ( SL.ShelleyBasedEra era
+
       , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
       , Default (State (LC.EraRule "PPUP" era))
+
       , HasField "_maxBHSize" (LC.PParams era) Natural
       , HasField "_maxTxSize" (LC.PParams era) Natural
       , HasField "_a0" (LC.PParams era) Rational
       , HasField "_nOpt" (LC.PParams era) Natural
       , HasField "_rho" (LC.PParams era) SL.UnitInterval
       , HasField "_tau" (LC.PParams era) SL.UnitInterval
-      , HasField "_protocolVersion" (SL.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
-      , SL.AdditionalGenesisConfig era ~ ()
       , FromCBOR (LC.PParams era)
-      , FromCBOR (SL.PParamsDelta era)
       , ToCBOR (LC.PParams era)
-      , SL.TxSeq era ~ TxSeq era
+
+      , HasField "_protocolVersion" (SL.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
+      , FromCBOR (SL.PParamsDelta era)
+
+      , SL.AdditionalGenesisConfig era ~ ()
+
       , Core.Witnesses era ~ SL.WitnessSet era
+
+      , SL.ToCBORGroup (TxSeq era)
+
+      , Eq (SL.TxInBlock era)
+      , NoThunks (SL.TxInBlock era)
+      , Show (SL.TxInBlock era)
+
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.
@@ -125,3 +144,21 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
 
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
+
+{-------------------------------------------------------------------------------
+  TxInBlock wrapper
+-------------------------------------------------------------------------------}
+
+-- | Wrapper for partially applying 'SL.TxInBlock'
+--
+-- For generality, Consensus uses that type family as eg the index of
+-- 'SL.TranslateEra'. We thus need to partially apply it.
+newtype WrapTxInBlock era = WrapTxInBlock {unwrapTxInBlock :: SL.TxInBlock era}
+
+instance ShelleyBasedEra (AllegraEra c) => SL.TranslateEra (AllegraEra c) WrapTxInBlock where
+  type TranslationError (AllegraEra c) WrapTxInBlock = SL.TranslationError (AllegraEra c) SL.Tx
+  translateEra ctxt = fmap WrapTxInBlock . SL.translateEra ctxt . unwrapTxInBlock
+
+instance ShelleyBasedEra (MaryEra c) => SL.TranslateEra (MaryEra c) WrapTxInBlock where
+  type TranslationError (MaryEra c) WrapTxInBlock = SL.TranslationError (MaryEra c) SL.Tx
+  translateEra ctxt = fmap WrapTxInBlock . SL.translateEra ctxt . unwrapTxInBlock

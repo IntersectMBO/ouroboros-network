@@ -813,7 +813,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -> BlockNo
             -> SlotNo
             -> TickedLedgerState blk
-            -> [GenTx blk]
+            -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk
           customForgeBlock origBlockForging cfg' currentBno currentSlot tickedLdgSt txs prf = do
@@ -1569,6 +1569,7 @@ type TracingConstraints blk =
   , Show (ApplyTxErr blk)
   , Show (Header blk)
   , Show (GenTx blk)
+  , Show (Validated (GenTx blk))
   , Show (GenTxId blk)
   , Show (ForgeStateInfo blk)
   , Show (ForgeStateUpdateError blk)

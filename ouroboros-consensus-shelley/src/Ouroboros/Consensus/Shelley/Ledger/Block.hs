@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE)
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.Crypto (Crypto, HASH)
+import qualified Cardano.Ledger.Era as SL (hashTxSeq)
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -127,7 +128,7 @@ instance ShelleyBasedEra era => GetHeader (ShelleyBlock era) where
   blockMatchesHeader hdr blk =
       -- Compute the hash the body of the block (the transactions) and compare
       -- that against the hash of the body stored in the header.
-      SL.bbHash txs == SL.bhash hdrBody
+      SL.hashTxSeq @era txs == SL.bhash hdrBody
     where
       ShelleyHeader { shelleyHeaderRaw = SL.BHeader hdrBody _ } = hdr
       ShelleyBlock  { shelleyBlockRaw  = SL.Block _ txs }       = blk

@@ -113,6 +113,7 @@ nullTracers = Tracers
 
 showTracers :: ( Show blk
                , Show (GenTx blk)
+               , Show (Validated (GenTx blk))
                , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , Show (Header blk)
@@ -313,17 +314,17 @@ data TraceForgeEvent blk
 
     -- | We adopted the block we produced, we also trace the transactions
     -- that were adopted.
-  | TraceAdoptedBlock SlotNo blk [GenTx blk]
+  | TraceAdoptedBlock SlotNo blk [Validated (GenTx blk)]
 
 deriving instance ( LedgerSupportsProtocol blk
                   , Eq blk
-                  , Eq (GenTx blk)
+                  , Eq (Validated (GenTx blk))
                   , Eq (ForgeStateUpdateError blk)
                   , Eq (CannotForge blk)
                   ) => Eq (TraceForgeEvent blk)
 deriving instance ( LedgerSupportsProtocol blk
                   , Show blk
-                  , Show (GenTx blk)
+                  , Show (Validated (GenTx blk))
                   , Show (ForgeStateUpdateError blk)
                   , Show (CannotForge blk)
                   ) => Show (TraceForgeEvent blk)

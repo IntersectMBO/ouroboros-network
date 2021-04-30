@@ -284,9 +284,17 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
       $ TCons Nil
       $ TNil
   hardForkInjectTxs =
-        PCons (ignoringBoth cannotInjectTx)
-      $ PCons (ignoringBoth translateTxShelleyToAllegraWrapper)
-      $ PCons (ignoringBoth translateTxAllegraToMaryWrapper)
+        PCons (ignoringBoth $ Pair2 cannotInjectTx cannotInjectValidatedTx)
+      $ PCons (   ignoringBoth
+                $ Pair2
+                    translateTxShelleyToAllegraWrapper
+                    translateValidatedTxShelleyToAllegraWrapper
+              )
+      $ PCons (   ignoringBoth
+                $ Pair2
+                    translateTxAllegraToMaryWrapper
+                    translateValidatedTxAllegraToMaryWrapper
+              )
       $ PNil
 
 {-------------------------------------------------------------------------------
@@ -474,6 +482,14 @@ translateTxShelleyToAllegraWrapper ::
 translateTxShelleyToAllegraWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
+translateValidatedTxShelleyToAllegraWrapper ::
+     PraosCrypto c
+  => InjectValidatedTx
+       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (AllegraEra c))
+translateValidatedTxShelleyToAllegraWrapper = InjectValidatedTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+
 {-------------------------------------------------------------------------------
   Translation from Shelley to Allegra
 -------------------------------------------------------------------------------}
@@ -496,4 +512,12 @@ translateTxAllegraToMaryWrapper ::
        (ShelleyBlock (AllegraEra c))
        (ShelleyBlock (MaryEra c))
 translateTxAllegraToMaryWrapper = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+
+translateValidatedTxAllegraToMaryWrapper ::
+     PraosCrypto c
+  => InjectValidatedTx
+       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (MaryEra c))
+translateValidatedTxAllegraToMaryWrapper = InjectValidatedTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp

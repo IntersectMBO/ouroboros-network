@@ -173,6 +173,10 @@ instance Isomorphic WrapGenTxId where
   project = defaultProjectNS
   inject  = defaultInjectNS
 
+instance Isomorphic WrapValidatedGenTx where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
 instance Isomorphic I where
   project = defaultProjectNS
   inject  = defaultInjectNS
@@ -443,7 +447,7 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    bno
                                    sno
                                    (unComp (inject (Comp tickedLgrSt)))
-                                   (inject <$> txs)
+                                   (inject' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (inject' (Proxy @(WrapIsLeader blk)) isLeader)
       }
     where
@@ -486,7 +490,7 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    bno
                                    sno
                                    (unComp (project (Comp tickedLgrSt)))
-                                   (project <$> txs)
+                                   (project' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (project' (Proxy @(WrapIsLeader blk)) isLeader)
       }
     where

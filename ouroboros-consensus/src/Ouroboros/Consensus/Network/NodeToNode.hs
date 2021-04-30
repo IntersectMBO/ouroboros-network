@@ -76,6 +76,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.TxSubmission.Inbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                     (mapTxSubmissionMempoolReader)
 import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
@@ -195,14 +197,14 @@ mkHandlers
           txSubmissionOutbound
             (contramap (TraceLabelPeer peer) (Node.txOutboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
-            (getMempoolReader getMempool)
+            (mapTxSubmissionMempoolReader txForgetValidated $ getMempoolReader getMempool)
             version
             controlMessageSTM
       , hTxSubmissionServer = \version peer ->
           txSubmissionInbound
             (contramap (TraceLabelPeer peer) (Node.txInboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
-            (getMempoolReader getMempool)
+            (mapTxSubmissionMempoolReader txForgetValidated $ getMempoolReader getMempool)
             (getMempoolWriter getMempool)
             version
       , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers) keepAliveRng

@@ -37,6 +37,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Product2 (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
@@ -289,7 +291,7 @@ hardForkForgeBlock ::
   -> BlockNo
   -> SlotNo
   -> TickedLedgerState (HardForkBlock xs)
-  -> [GenTx (HardForkBlock xs)]
+  -> [Validated (GenTx (HardForkBlock xs))]
   -> HardForkIsLeader xs
   -> m (HardForkBlock xs)
 hardForkForgeBlock blockForging
@@ -305,7 +307,7 @@ hardForkForgeBlock blockForging
           forgeBlockOne
           cfgs
           (OptNP.toNP blockForging)
-      $ injectTxs (map (getOneEraGenTx . getHardForkGenTx) txs)
+      $ injectValidatedTxs (map (getOneEraValidatedGenTx . getHardForkValidatedGenTx) txs)
       -- We know both NSs must be from the same era, because they were all
       -- produced from the same 'BlockForging'. Unfortunately, we can't enforce
       -- it statically.
@@ -325,24 +327,25 @@ hardForkForgeBlock blockForging
         "impossible: current era lacks block forging but we have an IsLeader proof "
         <> show eraIndex
 
-    injectTxs ::
-         [NS GenTx xs]
+    injectValidatedTxs ::
+         [NS WrapValidatedGenTx xs]
       -> NS f xs
-      -> NS (Product f ([] :.: GenTx)) xs
-    injectTxs = noMismatches .: flip (matchTxsNS injTxs)
+      -> NS (Product f ([] :.: WrapValidatedGenTx)) xs
+    injectValidatedTxs = noMismatches .: flip (matchValidatedTxsNS injTxs)
       where
-        injTxs :: InPairs InjectTx xs
+        injTxs :: InPairs InjectValidatedTx xs
         injTxs =
-            InPairs.requiringBoth
-              (hmap (WrapLedgerConfig . configLedger) cfgs)
-              hardForkInjectTxs
+              InPairs.hmap (\(Pair2 _ x) -> x)
+            $ InPairs.requiringBoth
+                (hmap (WrapLedgerConfig . configLedger) cfgs)
+                hardForkInjectTxs
 
         -- | We know the transactions must be valid w.r.t. the given ledger
         -- state, the Mempool maintains that invariant. That means they are
         -- either from the same era, or can be injected into that era.
         noMismatches ::
-             ([Match.Mismatch GenTx f xs], NS (Product f ([] :.: GenTx)) xs)
-           -> NS (Product f ([] :.: GenTx)) xs
+             ([Match.Mismatch WrapValidatedGenTx f xs], NS (Product f ([] :.: WrapValidatedGenTx)) xs)
+           -> NS (Product f ([] :.: WrapValidatedGenTx)) xs
         noMismatches ([], xs)   = xs
         noMismatches (_errs, _) = error "unexpected unmatchable transactions"
 
@@ -355,7 +358,7 @@ hardForkForgeBlock blockForging
            (Product
               WrapIsLeader
               (Ticked :.: LedgerState))
-           ([] :.: GenTx)
+           ([] :.: WrapValidatedGenTx)
            blk
       -> m blk
     forgeBlockOne index
@@ -372,5 +375,5 @@ hardForkForgeBlock blockForging
           bno
           sno
           ledgerState'
-          txs'
+          (map unwrapValidatedGenTx txs')
           isLeader'
