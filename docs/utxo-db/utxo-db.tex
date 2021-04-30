@@ -339,8 +339,13 @@ Were we to implement this, there are several choices that we would have:
 \todo{move this}
 \subsubsection{Batched IO}
 \label{Batched IO}
-As noted in \todo{add ref}, we expect that exploiting the IO queue depth on SSDs
-will be critical in achieving reasonable sync times. Nevertheless we do
+Modern SSDs achieve IO-ops/S in the hundreds of thousands operating concurrently.
+Typically they will server up to 32 operations at the same time. For software to
+saturate the bandwidth of the disk, that software must be prepared to issue many
+operations simultaneously. There is a trade-off here between performance and
+complexity. To saturate the bandwidth of the disk, as we expect to be necessary
+to achieve reasonable sync times \todo{add ref}, will require more complexity in
+the solution.
 
 \subsection{Interface Style}
 
@@ -349,8 +354,8 @@ is largely orthogonal to the decisions around what the interface to that data
 structure should look like.
 
 A naive ``CRUD'' interface to the data structure would be simpler to work with,
-and would likely ease the integration of the data structure into the Cardano
-codebases. However we expect this would impede our exploitation of \ref{Batched IO}.
+and would perhaps ease integration of the data structure into the Related Components
+codebases. However this would impede our exploitation of \ref{Batched IO}.
 
 Instead, we recommend an interface which allows the data structure to read/write
 many values in parallel. Note that committing to this interface does not require
