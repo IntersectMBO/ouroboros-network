@@ -277,7 +277,8 @@ Integrate with consensus tests
 
 \subsubsection{workload}
 \label{workload}
-The workload, for the UTxO storage in particular, is write heavy. In the usual case, we would expect three operations on an UTxO during it's lifetime:
+The workload, for the UTxO storage in particular, is write heavy. In the usual
+case, we would expect three operations on an UTxO during it's lifetime:
 
 \begin{enumerate}
 \item One INSERT operation when the UTxO is created
@@ -285,9 +286,17 @@ The workload, for the UTxO storage in particular, is write heavy. In the usual c
 \item One DELETE operation when that block is added to a chain
 \end{enumerate}
 
-Note that some UTxOs will be read more often, if validation of a block fails, or if a block is validated multiple times. From Alonzo era forward, an UTxO may be present in multiple blocks if it is part of a script transaction that fails to validate.
+Note that some UTxOs will be read more often, if validation of a block fails, or
+if a block is validated multiple times. From Alonzo era forward, an UTxO may be
+present in multiple blocks if it is part of a script transaction that fails to
+validate. Nevertheless, we expect the vast majority of UTxOs to be validated
+once, and this applies moreso while syncing, where we do not expect validation
+to fail. By definition, UTxOs will be written at most twice.
 
-Nevertheless, we expect the vast majority of UTxOs to be validated once, and this applies moreso while syncing, where we do not expect validation to fail.
+Despite the 2:1 write:read ratio elaborated above, we are likely to be primarily
+bottle-necked the syncing operation by read performance. This is because we
+expect to be able to easily batch many writes together. Batching reads is more
+difficult, with the lack of locality in our data \ref{Locality}.
 
 \subsection{integrate with io-sim}
 \label{io-sim}
@@ -301,8 +310,19 @@ suite. This is not a strict requirement, however it is difficult to see how one
 could be confident in the correctness of the solution without it.
 
 \subsection{minimize changes to STS}
-STS is expensive to change
 
+The Cardano Ledger rules are implemented are formulated as executable
+specifications (STS). \todo{right? citation?}. While the Byron ledger rules have
+a separate implementation that is verified against the executable specification,
+Shelley (and the following era's) use the executable specification directly.
+This was a pragmatic choice at the time it was made, however it does introduce
+tensions. The Ledger team are limited in their ability to modifying the
+implementation of those rules to meet business requirements, because changing
+the executable specification risks introducing unsoundness to the ledger rules.
+
+The solution should minimise disruption to the implementation of the ledger
+rules. This may require us to separate the implementation of the Shelley (and
+forward) ledger rules from their executable specification.
 
 \subsection{Batching IO}
 \label{Batching IO}
@@ -344,13 +364,6 @@ support.
   \item
 
 \end{enumerate}
-
-\subsection{workload}
-\label{workload}
-We have an unusual workload, which is very write heavy. Moreover, we are likely
-to be primarily bound in performance (time) in the syncing operation by read
-performance. Perhaps an off-the-shelf solution could be tuned for this, although
-it would introduce risk of failure to a task likely to be scheduled late (see \todo{ref recommended delivery plan})
 
 \subsubsection{Locality}
 \label{Locality}
