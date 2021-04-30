@@ -74,6 +74,15 @@ reasonable (e.g. the first time Daedalus is used). Even threshold or mid
 targets of 20 and 50 TPS will be a challenge, while keeping sync times
 reasonable.
 
+The reason for this is clear: if we were to aim for syncing being 1000 times
+faster than real time, then a year's worth of chain data would take just under
+9 hours to validate. End users would have to wait 9 hours for each year that
+the chain had been operating at this rate. Arguably, even this is unreasonably
+slow, and yet note that this already requires syncing to be 1000 times faster.
+So if our target were 200 TPS, then the requirement for syncing would be
+200,000 TPS. It is intuitively clear that 20,000 or 200,000 TPS is a hard
+target indeed.
+
 Overall this points to the next major scaling bottleneck being synchronisation
 performance. Though it is out of scope for this project, it will likely be
 worth developing solutions that do not require all nodes (e.g. Daedalus nodes)
