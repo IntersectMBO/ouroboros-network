@@ -656,6 +656,18 @@ instance Arbitrary TestSetupWithTxInMempool where
     , tx' <- testInitialTxs testSetup'
     ]
 
+data TestSetupWithTxsInMempool = TestSetupWithTxsInMempool TestSetup [TestTx]
+  deriving (Show)
+
+instance Arbitrary TestSetupWithTxsInMempool where
+  arbitrary = do
+    TestSetupWithTxs { testSetup } <-
+      arbitrary `suchThat` (not . null . testInitialTxs . testSetup)
+    txs <- sublistOf (testInitialTxs testSetup)
+    return $ TestSetupWithTxsInMempool testSetup txs
+
+  -- TODO shrink
+
 {-------------------------------------------------------------------------------
   TestMempool: a mempool with random contents
 -------------------------------------------------------------------------------}

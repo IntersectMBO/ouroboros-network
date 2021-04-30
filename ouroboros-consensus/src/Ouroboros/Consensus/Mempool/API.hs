@@ -1,25 +1,28 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE UndecidableSuperClasses    #-}
 
 module Ouroboros.Consensus.Mempool.API (
-    ForgeLedgerState (..)
-  , Mempool (..)
+    -- * Mempool
+    Mempool (..)
   , MempoolAddTxResult (..)
-  , MempoolCapacityBytes (..)
-  , MempoolSize (..)
-  , MempoolSnapshot (..)
-  , TraceEventMempool (..)
-  , addTxs
   , isMempoolTxAdded
   , isMempoolTxRejected
   , mempoolTxAddedToMaybe
+    -- * Mempool Snapshot
+  , ForgeLedgerState (..)
+  , MempoolSnapshot (..)
+    -- * Mempool size and capacity
+  , MempoolCapacityBytes (..)
+  , MempoolCapacityBytesOverride (..)
+  , MempoolSize (..)
+  , computeMempoolCapacity
+    -- * Tracing support
+  , TraceEventMempool (..)
+  , addTxs
     -- * Re-exports
   , TxSizeInBytes
   ) where
@@ -28,17 +31,21 @@ import           Data.Word (Word32)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
-import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Block (SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.IOLike
+
+{-------------------------------------------------------------------------------
+  Mempool API
+-------------------------------------------------------------------------------}
 
 -- | Mempool
 --
 -- The mempool is the set of transactions that should be included in the next
 -- block. In principle this is a /set/ of all the transactions that we receive
 -- from our peers. In order to avoid flooding the network with invalid
--- transactions,  however, we only want to keep /valid/ transactions in the
+-- transactions, however, we only want to keep /valid/ transactions in the
 -- mempool. That raises the question: valid with respect to which ledger state?
 --
 -- We opt for a very simple answer to this: the mempool will be interpreted
@@ -51,6 +58,17 @@ import           Ouroboros.Consensus.Util.IOLike
 --   of transactions that fits in a block.
 -- * It supports wallets that submit dependent transactions (where later
 --   transaction depends on outputs from earlier ones).
+--
+-- When only one thread is operating on the mempool, operations that mutate the
+-- state based on the input arguments (tryAddTxs and removeTxs) will produce the
+-- same result whether they process transactions one by one or all in one go, so
+-- this equality holds:
+--
+-- > void (tryAddTxs txs) === forM_ txs (tryAddTxs . (:[]))
+-- > void (trAddTxs [x,y]) === tryAddTxs x >> void (tryAddTxs y)
+--
+-- This shows that 'tryAddTxs' is an homomorphism from '++' and '>>', which
+-- informally makes these operations "distributive".
 data Mempool m blk idx = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
@@ -83,12 +101,11 @@ data Mempool m blk idx = Mempool {
       --      'MempoolTxRejected' value. These transactions are not in the
       --      Mempool.
       --
-      -- 2. A list containing the transactions that have not yet been added
-      --    yet, as the capacity of the Mempool has been reached. I.e., there
-      --    is no space in the Mempool to add the first transaction in this
-      --    list. Note that we won't try to add smaller transactions after
-      --    that first transaction because they might depend on the first
-      --    transaction.
+      -- 2. A list containing the transactions that have not yet been added, as
+      --    the capacity of the Mempool has been reached. I.e., there is no
+      --    space in the Mempool to add the first transaction in this list. Note
+      --    that we won't try to add smaller transactions after that first
+      --    transaction because they might depend on the first transaction.
       --
       -- POSTCONDITION:
       -- > let prj = \case
@@ -179,6 +196,10 @@ data Mempool m blk idx = Mempool {
     , zeroIdx        :: idx
     }
 
+{-------------------------------------------------------------------------------
+  Result of adding a transaction to the mempool
+-------------------------------------------------------------------------------}
+
 -- | The result of attempting to add a transaction to the mempool.
 data MempoolAddTxResult blk
   = MempoolTxAdded !(Validated (GenTx blk))
@@ -208,9 +229,7 @@ isMempoolTxRejected _                   = False
 -- This function does not sync the Mempool contents with the ledger state in
 -- case the latter changes, it relies on the background thread to do that.
 --
--- POSTCONDITON:
--- > processed <- addTxs mpEnv txs
--- > map fst processed == txs
+-- See the necessary invariants on the Haddock for 'API.tryAddTxs'.
 addTxs
   :: forall m blk idx. MonadSTM m
   => Mempool m blk idx
@@ -243,6 +262,10 @@ addTxs mempool = \txs -> do
       (added, toAdd) <- tryAddTxs mempool txs
       go (added:acc) toAdd
 
+{-------------------------------------------------------------------------------
+  Ledger state considered for forging
+-------------------------------------------------------------------------------}
+
 -- | The ledger state wrt to which we should produce a block
 --
 -- The transactions in the mempool will be part of the body of a block, but a
@@ -268,12 +291,44 @@ data ForgeLedgerState blk =
     -- they will end up in the slot after the slot at the tip of the ledger.
   | ForgeInUnknownSlot (LedgerState blk)
 
+{-------------------------------------------------------------------------------
+  Mempool capacity in bytes
+-------------------------------------------------------------------------------}
+
 -- | Represents the maximum number of bytes worth of transactions that a
 -- 'Mempool' can contain.
 newtype MempoolCapacityBytes = MempoolCapacityBytes {
       getMempoolCapacityBytes :: Word32
     }
   deriving (Eq, Show, NoThunks)
+
+-- | An override for the default 'MempoolCapacityBytes' which is 2x the
+-- maximum transaction capacity (see 'MaxTxCapacityOverride')
+data MempoolCapacityBytesOverride
+  = NoMempoolCapacityBytesOverride
+    -- ^ Use 2x the maximum transaction capacity of a block. This will change
+    -- dynamically with the protocol parameters adopted in the current ledger.
+  | MempoolCapacityBytesOverride !MempoolCapacityBytes
+    -- ^ Use the following 'MempoolCapacityBytes'.
+  deriving (Eq, Show)
+
+
+-- | If no override is provided, calculate the default mempool capacity as 2x
+-- the current ledger's maximum transaction capacity of a block.
+computeMempoolCapacity
+  :: LedgerSupportsMempool blk
+  => TickedLedgerState blk
+  -> MempoolCapacityBytesOverride
+  -> MempoolCapacityBytes
+computeMempoolCapacity st = \case
+    NoMempoolCapacityBytesOverride        -> noOverride
+    MempoolCapacityBytesOverride override -> override
+  where
+    noOverride = MempoolCapacityBytes (maxTxCapacity st * 2)
+
+{-------------------------------------------------------------------------------
+  Snapshot of the mempool
+-------------------------------------------------------------------------------}
 
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual
@@ -322,6 +377,10 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
   , snapshotLedgerState :: TickedLedgerState blk
   }
 
+{-------------------------------------------------------------------------------
+  Size of the mempool
+-------------------------------------------------------------------------------}
+
 -- | The size of a mempool.
 data MempoolSize = MempoolSize
   { msNumTxs   :: !Word32
@@ -336,6 +395,10 @@ instance Semigroup MempoolSize where
 instance Monoid MempoolSize where
   mempty = MempoolSize { msNumTxs = 0, msNumBytes = 0 }
   mappend = (<>)
+
+{-------------------------------------------------------------------------------
+  Tracing support for the mempool operations
+-------------------------------------------------------------------------------}
 
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
