@@ -436,7 +436,7 @@ data Decision m peeraddr peerconn = Decision {
        -- a further 'Decision'. This gives a state update to apply upon
        -- completion, but also allows chaining further job actions.
        --
-       decisionJobs  :: [Job m (Completion m peeraddr peerconn)]
+       decisionJobs  :: [Job () m (Completion m peeraddr peerconn)]
      }
 
 -- | Decision which has access to the current time, rather than the time when

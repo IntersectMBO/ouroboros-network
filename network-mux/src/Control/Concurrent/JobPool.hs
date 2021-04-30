@@ -9,7 +9,9 @@ module Control.Concurrent.JobPool (
     withJobPool,
     forkJob,
     readSize,
-    collect
+    readGroupSize,
+    collect,
+    cancelGroup
   ) where
 
 import           Data.Map.Strict (Map)
@@ -21,22 +23,23 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadThread (..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad (when)
 
 
-data JobPool m a = JobPool {
-       jobsVar         :: !(TVar m (Map (ThreadId m) (Async m ()))),
+data JobPool group m a = JobPool {
+       jobsVar         :: !(TVar m (Map (group, ThreadId m) (Async m ()))),
        completionQueue :: !(TQueue m a)
      }
 
-data Job m a = Job (m a) (SomeException -> m a) String
+data Job group m a = Job (m a) (SomeException -> m a) group String
 
-withJobPool :: forall m a b.
+withJobPool :: forall group m a b.
                (MonadAsync m, MonadThrow m)
-            => (JobPool m a -> m b) -> m b
+            => (JobPool group m a -> m b) -> m b
 withJobPool =
     bracket create close
   where
-    create :: m (JobPool m a)
+    create :: m (JobPool group m a)
     create =
       atomically $
         JobPool <$> newTVar Map.empty
@@ -49,17 +52,19 @@ withJobPool =
     -- delivered, e.g. deadlock in an ffi call or a tight loop which does not
     -- allocate (which is not a deadlock per se, but rather a rare unfortunate
     -- condition).
-    close :: JobPool m a -> m ()
+    close :: JobPool group m a -> m ()
     close JobPool{jobsVar} = do
       jobs <- atomically (readTVar jobsVar)
       mapM_ uninterruptibleCancel jobs
 
-forkJob :: forall m a.
-           (MonadAsync m, MonadMask m)
-        => JobPool m a
-        -> Job     m a
+forkJob :: forall group m a.
+           ( MonadAsync m, MonadMask m
+           , Ord group
+           )
+        => JobPool group m a
+        -> Job     group m a
         -> m ()
-forkJob JobPool{jobsVar, completionQueue} (Job action handler label) =
+forkJob JobPool{jobsVar, completionQueue} (Job action handler group label) =
     mask $ \restore -> do
       jobAsync <- async $ do
         tid <- myThreadId
@@ -68,10 +73,11 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler label) =
                  restore action
         atomically $ do
           writeTQueue completionQueue res
-          modifyTVar' jobsVar (Map.delete tid)
+          modifyTVar' jobsVar (Map.delete (group, tid))
 
       let !tid = asyncThreadId (Proxy :: Proxy m) jobAsync
-      atomically $ modifyTVar' jobsVar (Map.insert tid jobAsync)
+      atomically $ modifyTVar' jobsVar (Map.insert (group, tid) jobAsync)
+      return ()
   where
     notAsyncExceptions :: SomeException -> Maybe SomeException
     notAsyncExceptions e
@@ -79,9 +85,32 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler label) =
                   = Nothing
       | otherwise = Just e
 
-readSize :: MonadSTM m => JobPool m a -> STM m Int
+readSize :: MonadSTM m => JobPool group m a -> STM m Int
 readSize JobPool{jobsVar} = Map.size <$> readTVar jobsVar
 
-collect :: MonadSTM m => JobPool m a -> STM m a
+readGroupSize :: ( MonadSTM m
+                 , Eq group
+                 )
+              => JobPool group m a -> group -> STM m Int
+readGroupSize JobPool{jobsVar} group =
+      Map.size
+    . Map.filterWithKey (\(group', _) _ -> group' == group)
+  <$> readTVar jobsVar
+
+collect :: MonadSTM m => JobPool group m a -> STM m a
 collect JobPool{completionQueue} = readTQueue completionQueue
+
+cancelGroup :: ( MonadAsync m
+               , Eq group
+               )
+            => JobPool group m a -> group -> m ()
+cancelGroup JobPool { jobsVar } group = do
+    jobs <- atomically (readTVar jobsVar)
+    _ <- Map.traverseWithKey (\(group', _) thread ->
+                               when (group' == group) $
+                                 cancel thread
+                             )
+                             jobs
+    return ()
+
 

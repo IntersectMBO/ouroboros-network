@@ -140,6 +140,13 @@ stopMux Mux{muxControlCmdQueue} =
     atomically $ writeTQueue muxControlCmdQueue CmdShutdown
 
 
+-- | Mux classification of 'Job's
+--
+data MuxGroup = MuxJob
+              | MiniProtocolJob
+  deriving (Eq, Ord)
+
+
 -- | runMux starts a mux bearer for the specified protocols corresponding to
 -- one of the provided Versions.
 --
@@ -210,11 +217,13 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
     muxerJob egressQueue =
       JobPool.Job (muxer egressQueue bearer)
                   (return . MuxerException)
+                  MuxJob
                   "muxer"
 
     demuxerJob =
       JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearer)
                   (return . DemuxerException)
+                  MuxJob
                   "demuxer"
 
 miniProtocolJob
@@ -226,7 +235,7 @@ miniProtocolJob
   -> EgressQueue m
   -> MiniProtocolState mode m
   -> MiniProtocolAction m
-  -> JobPool.Job m MuxJobResult
+  -> JobPool.Job MuxGroup m MuxJobResult
 miniProtocolJob tracer egressQueue
                 MiniProtocolState {
                   miniProtocolInfo =
@@ -240,6 +249,7 @@ miniProtocolJob tracer egressQueue
                 (MiniProtocolAction protocolAction completionVar) =
     JobPool.Job jobAction
                 jobHandler
+                MiniProtocolJob
                 (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
@@ -301,7 +311,7 @@ data MiniProtocolAction m where
 --
 monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m, MonadThrow (STM m))
         => Tracer m MuxTrace
-        -> JobPool.JobPool m MuxJobResult
+        -> JobPool.JobPool MuxGroup m MuxJobResult
         -> EgressQueue m
         -> TQueue m (ControlCmd mode m)
         -> StrictTVar m MuxStatus
