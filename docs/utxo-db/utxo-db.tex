@@ -88,6 +88,7 @@ performance. Though it is out of scope for this project, it will likely be
 worth developing solutions that do not require all nodes (e.g. Daedalus nodes)
 to download and validate the entire chain.
 
+\subsection{Example estimate}
 The simplified optimistic estimate is as follows:
 \begin{itemize}
 \item Assume the 200 TPS stretch goal.
@@ -118,7 +119,8 @@ The simplified optimistic estimate is as follows:
       chain would be $1/167$ of a year, which is 52.5 hours, more than two days.
 \end{itemize}
 
-As we can see in this estimate, the chain sync times are not reasonable.
+\subsection{Crucial factors}
+As we can see in the estimate above, the chain sync times are not reasonable.
 The example illustrates that the crucial factors are:
 \begin{enumerate}
 \item The target TPS
@@ -145,6 +147,7 @@ to take advantage of parallel I/O. Or it requires relaxing the assumption that
 most of the ledger state does not fit in memory: allowing users with lots of
 memory to sync quickly, while other users sync slowly.
 
+\subsection{Recommendation}
 The recommended development path is to assume that initially (e.g. 12 months)
 the TPS will remain relatively low, and that the size of the ledger state will
 remain only somewhat bigger than memory. In this case it may be possible to
