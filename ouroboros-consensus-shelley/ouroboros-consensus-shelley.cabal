@@ -41,6 +41,7 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.TPraos
                        Ouroboros.Consensus.Shelley.Node
                        Ouroboros.Consensus.Shelley.Node.Serialisation
+                       Ouroboros.Consensus.Shelley.Orphans
                        Ouroboros.Consensus.Shelley.Protocol
                        Ouroboros.Consensus.Shelley.Protocol.Crypto
                        Ouroboros.Consensus.Shelley.Protocol.HotKey
@@ -67,6 +68,7 @@ library
                      , transformers
 
                        -- cardano-ledger-specs
+                     , cardano-ledger-alonzo
                      , cardano-ledger-shelley-ma
                      , shelley-spec-ledger
                      , shelley-spec-non-integral

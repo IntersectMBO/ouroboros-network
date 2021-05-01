@@ -262,6 +262,7 @@ prop_simple_allegraMary_convergence TestSetup
                             (coreNodes !! fromIntegral nid)]
                       }
                     (SL.ProtVer majorVersion1 0)
+                    ()
                     (SL.ProtVer majorVersion2 0)
                     ProtocolParamsTransition {
                         transitionTrigger = TriggerHardForkAtVersion majorVersion2
@@ -351,7 +352,7 @@ prop_simple_allegraMary_convergence TestSetup
     finalBlockEra =
         if rsEra2Blocks reachesEra2
         then "Allegra"
-        else "Shelley"
+        else "Mary"
 
     finalIntersectionDepth :: Word64
     finalIntersectionDepth = depth

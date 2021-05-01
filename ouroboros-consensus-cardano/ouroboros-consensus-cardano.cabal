@@ -57,6 +57,7 @@ library
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-shelley
+                     , cardano-ledger-alonzo
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -78,6 +79,7 @@ executable db-analyser
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
+                     , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-core
                      , cardano-ledger-shelley-ma

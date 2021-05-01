@@ -54,7 +54,7 @@ let
 
     tools = {
       ghcid = "0.8.7";
-      cabal = "3.2.0.0";
+      cabal = "3.4.0.0";
       hasktags = "0.71.2";
       # https://hackage.haskell.org/package/graphmod
       graphmod = "1.4.4";
@@ -65,7 +65,7 @@ let
 
     # Prevents cabal from choosing alternate plans, so that
     # *all* dependencies are provided by Nix.
-    exactDeps = true;
+    exactDeps = false;
 
     inherit withHoogle;
   };

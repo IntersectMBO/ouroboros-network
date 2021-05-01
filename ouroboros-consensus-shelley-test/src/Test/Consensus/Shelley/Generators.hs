@@ -37,7 +37,7 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
 import           Test.Cardano.Ledger.Allegra ()
 import           Test.Cardano.Ledger.Mary ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
-import           Test.Consensus.Shelley.MockCrypto (CanMock)
+import           Test.Consensus.Shelley.MockCrypto (CanMock, CanMockOld)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators ()
@@ -50,16 +50,16 @@ import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
   necessarily valid
 -------------------------------------------------------------------------------}
 
-instance CanMock era => Arbitrary (ShelleyBlock era) where
+instance CanMockOld era => Arbitrary (ShelleyBlock era) where
   arbitrary = mkShelleyBlock <$> arbitrary
 
-instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
+instance CanMockOld era => Arbitrary (Header (ShelleyBlock era)) where
   arbitrary = getHeader <$> arbitrary
 
 instance SL.Mock c => Arbitrary (ShelleyHash c) where
   arbitrary = ShelleyHash <$> arbitrary
 
-instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
+instance CanMockOld era => Arbitrary (GenTx (ShelleyBlock era)) where
   arbitrary = mkShelleyTx <$> arbitrary
 
 instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where

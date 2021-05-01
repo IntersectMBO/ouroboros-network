@@ -3,16 +3,21 @@
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE OverloadedStrings       #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
     AllegraEra
+  , AlonzoEra
   , MaryEra
   , ShelleyEra
     -- * Eras instantiated with standard crypto
   , StandardAllegra
+  , StandardAlonzo
   , StandardMary
   , StandardShelley
     -- * Shelley-based era
@@ -30,7 +35,11 @@ import           GHC.Records
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+
 import           Cardano.Ledger.Allegra (AllegraEra)
+import           Cardano.Ledger.Alonzo (AlonzoEra)
+import qualified Cardano.Ledger.Alonzo.PParams as Alonzo
 import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
 import           Cardano.Ledger.Mary (MaryEra)
@@ -38,16 +47,17 @@ import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
 
-import           Cardano.Binary (FromCBOR, ToCBOR)
 import           Cardano.Ledger.Allegra.Translation ()
-import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Era as SL (TranslateEra (..), TxInBlock)
+import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
+import qualified Cardano.Ledger.Era as SL (TranslationContext, TranslateEra (..), TxInBlock)
 import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.Constraints as SL
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Serialization as SL
+
+import           Ouroboros.Consensus.Shelley.Orphans ()
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -61,6 +71,9 @@ type StandardAllegra = AllegraEra StandardCrypto
 
 -- | The Mary era with standard crypto
 type StandardMary = MaryEra StandardCrypto
+
+-- | The Alonzo era with standard crypto
+type StandardAlonzo = AlonzoEra StandardCrypto
 
 {-------------------------------------------------------------------------------
   Type synonyms for convenience
@@ -115,6 +128,7 @@ class ( SL.ShelleyBasedEra era
       , HasField "_nOpt" (LC.PParams era) Natural
       , HasField "_rho" (LC.PParams era) SL.UnitInterval
       , HasField "_tau" (LC.PParams era) SL.UnitInterval
+
       , FromCBOR (LC.PParams era)
       , ToCBOR (LC.PParams era)
 
@@ -123,13 +137,15 @@ class ( SL.ShelleyBasedEra era
 
       , SL.AdditionalGenesisConfig era ~ ()
 
-      , Core.Witnesses era ~ SL.WitnessSet era
-
       , SL.ToCBORGroup (TxSeq era)
 
       , Eq (SL.TxInBlock era)
       , NoThunks (SL.TxInBlock era)
       , Show (SL.TxInBlock era)
+
+      , ToCBOR (LC.Witnesses era)
+
+      , NoThunks (SL.TranslationContext era)
 
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
@@ -145,6 +161,9 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
 
+instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
+  shelleyBasedEraName _ = "Alonzo"
+
 {-------------------------------------------------------------------------------
   TxInBlock wrapper
 -------------------------------------------------------------------------------}
@@ -153,6 +172,12 @@ instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
 --
 -- For generality, Consensus uses that type family as eg the index of
 -- 'SL.TranslateEra'. We thus need to partially apply it.
+--
+-- @cardano-ledger-specs@ also declares such a newtype, but currently it's only
+-- defined in the Alonzo translation module, which seems somewhat inappropriate
+-- to use for previous eras. Also, we use a @Wrap@ prefix in Consensus. Hence
+-- this minor mediating definition. TODO I'm not even fully persuading myself
+-- with this justification.
 newtype WrapTxInBlock era = WrapTxInBlock {unwrapTxInBlock :: SL.TxInBlock era}
 
 instance ShelleyBasedEra (AllegraEra c) => SL.TranslateEra (AllegraEra c) WrapTxInBlock where
@@ -162,3 +187,10 @@ instance ShelleyBasedEra (AllegraEra c) => SL.TranslateEra (AllegraEra c) WrapTx
 instance ShelleyBasedEra (MaryEra c) => SL.TranslateEra (MaryEra c) WrapTxInBlock where
   type TranslationError (MaryEra c) WrapTxInBlock = SL.TranslationError (MaryEra c) SL.Tx
   translateEra ctxt = fmap WrapTxInBlock . SL.translateEra ctxt . unwrapTxInBlock
+
+instance ShelleyBasedEra (AlonzoEra c) => SL.TranslateEra (AlonzoEra c) WrapTxInBlock where
+  type TranslationError (AlonzoEra c) WrapTxInBlock = SL.TranslationError (AlonzoEra c) Alonzo.TxInBlock
+  translateEra ctxt =
+        fmap (\(Alonzo.TxInBlock tx) -> WrapTxInBlock tx)
+      . SL.translateEra @(AlonzoEra c) ctxt
+      . Alonzo.TxInBlock . unwrapTxInBlock

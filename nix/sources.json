@@ -5,17 +5,17 @@
         "homepage": "https://input-output-hk.github.io/haskell.nix",
         "owner": "input-output-hk",
         "repo": "haskell.nix",
-        "rev": "1b9b05beed75a1be98405501fbb33ac1f080069e",
-        "sha256": "0679ymbjm7z3qbiv9wf7f22rxdwzkpk0jlh1by0rswdmbwqi5786",
+        "rev": "542670ef5551d5c28f156646c161bca242c4fee2",
+        "sha256": "0p9qjpd42xzzwmrskfnz2qvh1gywnsipzpckz1s43690lyr2qiww",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/1b9b05beed75a1be98405501fbb33ac1f080069e.tar.gz",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/542670ef5551d5c28f156646c161bca242c4fee2.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "hls-released": {
         "branch": "1.1.0",
+        "builtin": false,
         "description": "Successor of ghcide & haskell-ide-engine. One IDE to rule them all.",
         "homepage": "",
-        "builtin": false,
         "owner": "haskell",
         "repo": "haskell-language-server",
         "rev": "f1c096927186a93d8e3ccd4fe8385cc1b070350b",
@@ -30,10 +30,10 @@
         "homepage": null,
         "owner": "input-output-hk",
         "repo": "iohk-nix",
-        "rev": "4efc38924c64c23a582c84950c8c25f72ff049cc",
-        "sha256": "0nhwyrd0xc72yj5q3jqa2wl4khp4g7n72i45cxy2rgn9nrp8wqh0",
+        "rev": "0ce3abcfed803ed77472488f30b299fda9d941b1",
+        "sha256": "1bwwjh7cixyvl6pyisw109q9j3w5j5v1py8b0laaz3bpgg1bjar4",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/iohk-nix/archive/4efc38924c64c23a582c84950c8c25f72ff049cc.tar.gz",
+        "url": "https://github.com/input-output-hk/iohk-nix/archive/0ce3abcfed803ed77472488f30b299fda9d941b1.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "niv": {
@@ -50,15 +50,15 @@
     },
     "stylish-haskell": {
         "branch": "main",
+        "builtin": false,
         "description": "Haskell code prettifier",
         "homepage": "",
-        "builtin": false,
         "owner": "haskell",
         "repo": "stylish-haskell",
-        "rev": "3d5348041e2efbcae95f1c62ace5ac0ffd9629d2",
-        "sha256": "1rms68fll6w1rzdg9ppjs9g246mbgxi5589vxb8r8pcn5v1ncfj2",
+        "rev": "d78618774bb93d9ddd813b3aab3e6511711c8184",
+        "sha256": "0dgrxvdpd39lgy5xy53qqasqqfl84k2vfl4xkr1dixxw9ydlk31w",
         "type": "tarball",
-        "url": "https://github.com/haskell/stylish-haskell/archive/3d5348041e2efbcae95f1c62ace5ac0ffd9629d2.tar.gz",
+        "url": "https://github.com/haskell/stylish-haskell/archive/d78618774bb93d9ddd813b3aab3e6511711c8184.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
