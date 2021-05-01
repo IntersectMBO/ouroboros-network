@@ -159,6 +159,7 @@ so.
 \label{requirements}
 
 \subsection{Transaction Rate (TPS)}
+\label{requirements-tps}
 
 The transaction rate is the average number of \emph{transactions per second}
 (TPS). It is a measure of the rate that data is added to a blockchain and is
@@ -235,6 +236,8 @@ the ledger state generally by keeping most of it on disk. So the memory
 requirement should remain steady or decrease while the disk requirements must
 increase.
 
+\subsubsection{Existing system requirements}
+
 At the time of writing, the published requirements for the Cardano node%
 \footnote{\url{https://github.com/input-output-hk/cardano-node/releases/tag/1.26.2}}
 and for Daedalus%
@@ -250,13 +253,17 @@ are:
   Disk space  & 10 GB, 20 GB for a stake pool & 15 GB
 \end{tabular}
 \end{center}
-
 These published requirements are not completely coherent, since the Daedalus
 case includes the node, wallet backend and the Daedalus frontend, all of which
 take resources.
 
-No change in CPU requirement is expected. The memory requirement is expected
-to remain steady or decrease:
+\subsubsection{CPU requirements}
+
+No change in CPU requirement is expected.
+
+\subsubsection{Memory requirements}
+
+The memory requirement is expected to remain steady or decrease:
 \begin{center}
 \begin{tabular}[]{lr}
   Memory target & GB \\
@@ -266,6 +273,9 @@ to remain steady or decrease:
   Stretch   &  2
 \end{tabular}
 \end{center}
+
+\subsubsection{Disk performance requirements}
+
 The crucial disk requirement will be disk random read performance (IOPS) not
 disk space. The proposed requirements are
 \begin{center}
@@ -278,6 +288,8 @@ disk space. The proposed requirements are
 \end{center}
 This implies a requirement for an SSD. Spinning disks cannot achieve these IOPS
 requirements.
+
+\subsubsection{Disk space requirements}
 
 There are also disk space requirements for storing the ledger state on an SSD.
 Given the target of 10--100 million UTxO entries, and corresponding stake keys,
