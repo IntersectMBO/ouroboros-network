@@ -65,7 +65,7 @@ let
 
     # Prevents cabal from choosing alternate plans, so that
     # *all* dependencies are provided by Nix.
-    exactDeps = true;
+    exactDeps = false;
 
     inherit withHoogle;
   };

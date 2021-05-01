@@ -57,6 +57,7 @@ library
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-shelley
+                     , cardano-ledger-alonzo
 
   default-language:    Haskell2010
   ghc-options:         -Wall

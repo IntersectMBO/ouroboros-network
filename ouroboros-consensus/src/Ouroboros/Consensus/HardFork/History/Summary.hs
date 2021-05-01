@@ -57,7 +57,6 @@ import           Data.SOP.Strict (SListI, lengthSList)
 import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Stack
 import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
 
 import           Cardano.Binary (enforceSize)
@@ -100,11 +99,11 @@ mkEraEnd :: EraParams
 mkEraEnd params lo = maybe EraUnbounded (EraEnd . mkUpperBound params lo)
 
 -- | Compute upper bound given just the epoch number and era parameters
-mkUpperBound :: HasCallStack
-             => EraParams
-             -> Bound    -- ^ Lower bound
-             -> EpochNo  -- ^ Upper bound
-             -> Bound
+mkUpperBound ::
+     EraParams
+  -> Bound    -- ^ Lower bound
+  -> EpochNo  -- ^ Upper bound
+  -> Bound
 mkUpperBound EraParams{..} lo hiEpoch = Bound {
       boundTime  = addRelTime inEraTime  $ boundTime lo
     , boundSlot  = addSlots   inEraSlots $ boundSlot lo
