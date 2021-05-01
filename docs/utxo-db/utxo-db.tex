@@ -440,41 +440,58 @@ ledger state storage components developed for the node.
 \section{Technical constraints}
 \label{constraints}
 
-\subsubsection{workload}
+\subsection{UTxO access pattern}
 \label{workload}
-The workload, for the UTxO storage in particular, is write heavy. In the usual
-case, we would expect three operations on an UTxO during it's lifetime:
 
+The access pattern for the UTxO data structure is \emph{very} write heavy. In
+the usual case, we expect exactly three operations for each UTxO entry over its
+lifetime:
 \begin{enumerate}
-\item One INSERT operation when the UTxO is created
-\item One LOOKUP operation during the validation of the block in which the UTxO is spent
-\item One DELETE operation when that block is added to a chain
+\item One {\sc insert} operation when the UTxO entry is created.
+\item One {\sc lookup} operation when validating the block in which the UTxO
+      entry is spent.
+\item One {\sc delete} operation when the block that spends the UTxO entry is
+      added to the chain.
 \end{enumerate}
+This means that processing a typical transaction with 2 inputs and 2 outputs
+will entail:
+\begin{itemize}
+\setlength{\itemsep}{0pt}%
+\setlength{\parskip}{1pt}%
+\item Two {\sc lookup} operations: one for each input.
+\item Two {\sc delete} operations: one for each input.
+\item Two {\sc insert} operations: one for each output.
+\end{itemize}
+This gives us a 1:2 read:write ratio; for each {\sc lookup} there is one
+{\sc insert} and {\sc delete}. This is very write heavy, and is very different
+from typical database applications that are read heavy (e.g. a 10:1 read:write
+ratio). Mainstream database designs are optimised for read heavy workloads.
+There are totally different database designs optimised for write heavy
+workloads.
 
-Note that some UTxOs will be read more often, if validation of a block fails, or
-if a block is validated multiple times. From Alonzo era forward, an UTxO may be
-present in multiple blocks if it is part of a script transaction that fails to
-validate. Nevertheless, we expect the vast majority of UTxOs to be validated
-once, and this applies moreso while syncing, where we do not expect validation
-to fail. By definition, UTxOs will be written at most twice.
+Note that some UTxOs will be read more often -- if validation of a block fails
+-- or if a block is validated multiple times. We expect the vast majority of
+UTxOs to be read exactly once, and this applies moreso while syncing, where we
+do not expect validation to fail. By definition, UTxOs will be written at most
+twice: once to create and once to delete.
 
-Despite the 2:1 write:read ratio elaborated above, we are likely to be primarily
-bottle-necked the syncing operation by read performance. This is because we
-expect to be able to easily batch many writes together. Batching reads is more
-difficult, with the lack of locality in our data \ref{Locality}.
-
-\todo[inline]{I've just copied this. I think it's the right place, but can't
-immediately see how to make the prose flow}
-To get a sense of what these means as a requirement for the storage system, it
-is useful to look at the effective TPS that would be needed to be able to sync
-100 or 1000 times faster than real time.
+Given the targets for TPS in \cref{requirements-tps} and sync speed in
+\cref{performance-requirements}, it is useful to see these means as a
+requirement for the storage system. It is illustrative to look at the effective
+TPS that would be needed to be able to sync 100 or 1000 times faster than real
+time, for different TPS targets. The table below also shows the corresponding
+number of {\sc lookup} and {\sc insert}/{\sc delete} operations per second,
+assuming the typical transaction of 2 inputs and 2 outputs.
 \begin{center}
-\begin{tabular}[]{rrr}
-  Target TPS & target sync factor & effective TPS \\
+\begin{tabular}[]{rrrrr}
+  Target TPS & target sync factor
+             & effective TPS
+             & {\sc lookup} ops/s
+             & {\sc insert}/{\sc delete} ops/s \\
   \toprule
-   20 TPS &   100$\times$ &   2,000 TPS \\
-   20 TPS &  1000$\times$ &  20,000 TPS \\
-  200 TPS &  1000$\times$ & 200,000 TPS
+   20 TPS &   100$\times$ &   2,000 TPS &   4,000 &   8,000 \\
+   20 TPS &  1000$\times$ &  20,000 TPS &  40,000 &  80,000 \\
+  200 TPS &  1000$\times$ & 200,000 TPS & 400,000 & 800,000
 \end{tabular}
 \end{center}
 
