@@ -358,7 +358,7 @@ The large parts of the ledger state that must be kept on disk are:
 \begin{description}
 \item[UTxO]
     The collection of all unspent transaction outputs.
-\item[Stake addresses \& delegation]
+\item[Stake addresses and delegation]
     The collection of all registered stake addresses, their corresponding
     reward account balances, and their choice of delegation to a stake pool.
 \item[Stake distribution]
@@ -392,7 +392,7 @@ manage on-disk data structures as part of its storage subsystem, for storing:
 \item the recent volatile part of the block chain
 \item snapshots of the ledger state
 \end{itemize}
-Storing parts of the ``live'' ledger state would add a fourth such subcomponent.
+Storing parts of the `live' ledger state would add a fourth such subcomponent.
 
 The consensus layer performs all the state management on behalf of the ledger
 layer. Changes will be required in this state management to accomodate keeping
@@ -432,7 +432,7 @@ The design of this interface will also be crucial to success of the project:
 both for the effort and disruption to the ledger code and also the performance
 opportunities or limitations.
 
-\subsection{Cardano DB-Sync \& Cardano API clients}
+\subsection{Cardano DB-Sync and Cardano API clients}
 
 The Cardano node provides an interface for other client applications to access
 the blockchain data. Some client applications also need access to the ledger
