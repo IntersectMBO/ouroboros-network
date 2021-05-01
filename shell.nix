@@ -28,7 +28,7 @@ let
   # stylish-haskell` (or manually removing the relevant entries from
   # `sources.json`).
   stylish-haskell = import ./nix/stylish-haskell.nix { inherit pkgs; };
-  hls = import ./nix/hls.nix { inherit pkgs; };
+#  hls = import ./nix/hls.nix { inherit pkgs; };
 
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
@@ -47,14 +47,14 @@ let
       pkgconfig
       nixpkgs-fmt
       stylish-haskell
-      hls.hls
-      hls.hls-wrapper
-      hls.implicit-hie
+#      hls.hls
+#      hls.hls-wrapper
+#      hls.implicit-hie
     ];
 
     tools = {
       ghcid = "0.8.7";
-      cabal = "3.2.0.0";
+      cabal = "3.4.0.0";
       hasktags = "0.71.2";
       # https://hackage.haskell.org/package/graphmod
       graphmod = "1.4.4";

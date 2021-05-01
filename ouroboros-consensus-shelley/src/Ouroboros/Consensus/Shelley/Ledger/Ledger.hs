@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.Core as Ledger.Core
+import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 
@@ -101,10 +102,11 @@ instance ShelleyBasedEra era => NoThunks (ShelleyLedgerError era)
 -------------------------------------------------------------------------------}
 
 data ShelleyLedgerConfig era = ShelleyLedgerConfig {
-      shelleyLedgerCompactGenesis :: !(CompactGenesis era)
+      shelleyLedgerCompactGenesis     :: !(CompactGenesis era)
       -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
       -- because it used very often.
-    , shelleyLedgerGlobals        :: !SL.Globals
+    , shelleyLedgerGlobals            :: !SL.Globals
+    , shelleyLedgerTranslationContext :: !(SL.TranslationContext era)
     }
   deriving (Generic, NoThunks)
 
@@ -135,17 +137,19 @@ shelleyEraParamsNeverHardForks genesis = HardFork.EraParams {
 
 mkShelleyLedgerConfig
   :: SL.ShelleyGenesis era
+  -> SL.TranslationContext era
   -> EpochInfo (Except HardFork.PastHorizonException)
   -> MaxMajorProtVer
   -> ShelleyLedgerConfig era
-mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
+mkShelleyLedgerConfig genesis transCtxt epochInfo (MaxMajorProtVer maxMajorPV) =
     ShelleyLedgerConfig {
-        shelleyLedgerCompactGenesis = compactGenesis genesis
-      , shelleyLedgerGlobals        =
+        shelleyLedgerCompactGenesis     = compactGenesis genesis
+      , shelleyLedgerGlobals            =
           SL.mkShelleyGlobals
             genesis
             (HardFork.toPureEpochInfo epochInfo)
             maxMajorPV
+      , shelleyLedgerTranslationContext = transCtxt
       }
 
 type instance LedgerCfg (LedgerState (ShelleyBlock era)) = ShelleyLedgerConfig era

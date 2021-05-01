@@ -216,12 +216,13 @@ examples ::
      , Core.PParams era ~ SL.PParams era
      , SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
      )
-  => (Core.Tx era -> SL.TxInBlock era)
+  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
+  -> (Core.Tx era -> SL.TxInBlock era)
   -> Core.Value era
   -> Core.TxBody era
   -> Core.AuxiliaryData era
   -> Golden.Examples (ShelleyBlock era)
-examples mkValidatedTx value txBody auxiliaryData = Golden.Examples {
+examples mkWitnesses mkValidatedTx value txBody auxiliaryData = Golden.Examples {
       exampleBlock            = unlabelled blk
     , exampleSerialisedBlock  = unlabelled exampleSerialisedBlock
     , exampleHeader           = unlabelled (getHeader blk)
@@ -238,7 +239,7 @@ examples mkValidatedTx value txBody auxiliaryData = Golden.Examples {
     , exampleExtLedgerState   = unlabelled (exampleExtLedgerState value)
     }
   where
-    tx = exampleTx txBody auxiliaryData
+    tx = exampleTx mkWitnesses txBody auxiliaryData
     exampleGenTx = mkShelleyTx tx
     blk = exampleBlock (mkValidatedTx tx)
 
@@ -277,9 +278,22 @@ examples mkValidatedTx value txBody auxiliaryData = Golden.Examples {
         (mkKeyHash 0)
         (SL.emptyPParamsUpdate {SL._keyDeposit = SJust (SL.Coin 100)})
 
+mkWitnessesSAM ::
+     ShelleyBasedEra era
+  => Proxy era
+  -> Core.TxBody era
+  -> KeyPairWits era
+  -> SL.WitnessSet era
+mkWitnessesSAM _ txBody keyPairWits =
+    mempty {
+      SL.addrWits =
+        SL.makeWitnessesVKey (coerce (SL.hashAnnotated txBody)) keyPairWits
+    }
+
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
 examplesShelley =
     examples
+      (mkWitnessesSAM (Proxy @StandardShelley))
       id
       exampleCoin
       exampleTxBodyShelley
@@ -288,6 +302,7 @@ examplesShelley =
 examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
 examplesAllegra =
     examples
+      (mkWitnessesSAM (Proxy @StandardAllegra))
       id
       exampleCoin
       exampleTxBodyAllegra
@@ -296,13 +311,14 @@ examplesAllegra =
 examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
 examplesMary =
     examples
+      (mkWitnessesSAM (Proxy @StandardMary))
       id
       exampleMultiAssetValue
       exampleTxBodyMary
       exampleAuxiliaryDataMA
 
 examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
-examplesAlonzo = emptyExamples   -- TODO
+examplesAlonzo = mempty   -- TODO
 
 {-------------------------------------------------------------------------------
   Era-specific individual examples
@@ -493,27 +509,25 @@ exampleHeaderHash ::
   -> HeaderHash (ShelleyBlock era)
 exampleHeaderHash _ = coerce $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 0
 
+type KeyPairWits era = [SL.KeyPair 'SL.Witness (EraCrypto era)]
+
 -- | This is not a valid transaction. We don't care, we are only interested in
 -- serialisation, not validation.
 exampleTx ::
      forall era. ShelleyBasedEra era
-  => Core.TxBody era
+  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
+  -> Core.TxBody era
   -> Core.AuxiliaryData era
   -> SL.Tx era
-exampleTx txBody auxiliaryData = SL.Tx txBody witnessSet (SJust auxiliaryData)
+exampleTx mkWitnesses txBody auxiliaryData =
+    SL.Tx txBody (mkWitnesses txBody keyPairWits) (SJust auxiliaryData)
   where
-    witnessSet :: SL.WitnessSet era
-    witnessSet = mempty {
-          SL.addrWits =
-            SL.makeWitnessesVKey (coerce (SL.hashAnnotated txBody)) witnesses
-        }
-      where
-        witnesses :: [SL.KeyPair 'SL.Witness (EraCrypto era)]
-        witnesses = [
-              SL.asWitness examplePayKey
-            , SL.asWitness exampleStakeKey
-            , SL.asWitness $ SL.cold (exampleKeys @(EraCrypto era) @'SL.StakePool)
-            ]
+    keyPairWits :: KeyPairWits era
+    keyPairWits = [
+          SL.asWitness examplePayKey
+        , SL.asWitness exampleStakeKey
+        , SL.asWitness $ SL.cold (exampleKeys @(EraCrypto era) @'SL.StakePool)
+        ]
 
 -- TODO incomplete, this type has tons of constructors that can all change.
 -- <https://github.com/input-output-hk/ouroboros-network/issues/1896.

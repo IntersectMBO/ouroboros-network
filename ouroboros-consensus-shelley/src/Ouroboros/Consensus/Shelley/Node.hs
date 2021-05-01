@@ -26,11 +26,10 @@ module Ouroboros.Consensus.Shelley.Node (
   , ProtocolParamsShelleyBased (..)
   , SL.Nonce (..)
   , SL.ProtVer (..)
-  , protocolClientInfoShelley
   , SL.ShelleyGenesis (..)
   , SL.ShelleyGenesisStaking (..)
-  , SL.emptyGenesisStaking
   , TPraosLeaderCredentials (..)
+  , SL.emptyGenesisStaking
   , protocolClientInfoShelley
   , protocolInfoShelley
   , protocolInfoShelleyBased
@@ -70,6 +69,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Cardano.Ledger.Alonzo.Translation as SL (AlonzoGenesis)
+import qualified Cardano.Ledger.Era as SL (TranslationContext)
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Shelley.Spec.Ledger.API as SL
@@ -248,7 +249,8 @@ data ProtocolParamsMary = ProtocolParamsMary {
 
 -- | Parameters needed to run Alonzo
 data ProtocolParamsAlonzo = ProtocolParamsAlonzo {
-      alonzoProtVer :: SL.ProtVer
+      alonzoGenesis :: SL.AlonzoGenesis
+    , alonzoProtVer :: SL.ProtVer
     }
 
 protocolInfoShelley ::
@@ -260,11 +262,12 @@ protocolInfoShelley protocolParamsShelleyBased
                     ProtocolParamsShelley {
                         shelleyProtVer = protVer
                       } =
-    protocolInfoShelleyBased protocolParamsShelleyBased protVer
+    protocolInfoShelleyBased protocolParamsShelleyBased () protVer
 
 protocolInfoShelleyBased ::
      forall m era. (IOLike m, ShelleyBasedEra era)
   => ProtocolParamsShelleyBased era
+  -> SL.TranslationContext era
   -> SL.ProtVer
   -> ProtocolInfo m (ShelleyBlock era)
 protocolInfoShelleyBased ProtocolParamsShelleyBased {
@@ -272,6 +275,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
                            , shelleyBasedInitialNonce      = initialNonce
                            , shelleyBasedLeaderCredentials = credentialss
                            }
+                         transCtxt
                          protVer =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
@@ -300,7 +304,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
       }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock era)
-    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer
+    ledgerConfig = mkShelleyLedgerConfig genesis transCtxt epochInfo maxMajorProtVer
 
     epochInfo :: EpochInfo (Except History.PastHorizonException)
     epochInfo =

@@ -28,11 +28,11 @@ import           Data.SOP.Strict
 
 import           Test.QuickCheck
 
-import           Cardano.Ledger.Alonzo.Data (AuxiliaryData)
-import           Cardano.Ledger.Alonzo.PParams (PParams)
-import           Cardano.Ledger.Alonzo.Scripts (Script)
-import           Cardano.Ledger.Alonzo.TxBody (TxBody, TxOut)
+import           Cardano.Crypto.KES.Class (Signable)
+import           Cardano.Crypto.Util (SignableRepresentation)
+
 import qualified Cardano.Ledger.Crypto as CryptoClass
+import           Test.Cardano.Ledger.Alonzo.Serialisation.Generators ()
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (Mock)
 import           Test.Shelley.Spec.Ledger.Generator.EraGen (EraGen (..))
 import           Test.Shelley.Spec.Ledger.Generator.ScriptClass
@@ -64,30 +64,13 @@ import           Test.Util.Serialisation.Roundtrip (WithVersion (..))
 import           Test.Consensus.Byron.Generators
 
 import           Test.Consensus.Shelley.Generators
-import           Test.Consensus.Shelley.MockCrypto (CanMock)
 
 import           Test.Consensus.Cardano.MockCrypto
 
+
 {-------------------------------------------------------------------------------
-  Disk
+  TODO: Alonzo Stubs
 -------------------------------------------------------------------------------}
-
-
--- | Orphans
-instance Arbitrary (TxOut (AlonzoEra c)) where
-  arbitrary = undefined
-
-instance Arbitrary (Script (AlonzoEra c)) where
-  arbitrary = undefined
-
-instance Arbitrary (TxBody (AlonzoEra c)) where
-  arbitrary = undefined
-
-instance Arbitrary (PParams (AlonzoEra c)) where
-  arbitrary = undefined
-
-instance Arbitrary (AuxiliaryData (AlonzoEra c)) where
-  arbitrary = undefined
 
 instance (CryptoClass.Crypto c) => ScriptClass (AlonzoEra c) where
   isKey = undefined
@@ -101,13 +84,90 @@ instance (CryptoClass.Crypto c, Mock c) => EraGen (AlonzoEra c) where
   genEraAuxiliaryData = undefined
   updateEraTxBody = undefined
 
+data AlonzoBlockRecipe c = AlonzoBlockRecipe
+
+instance Arbitrary (AlonzoBlockRecipe c) where
+  arbitrary = undefined
+
+mkBlockAlonzo :: AlonzoBlockRecipe c -> CardanoBlock c
+mkBlockAlonzo AlonzoBlockRecipe = undefined
+
+data AlonzoHeaderRecipe c = AlonzoHeaderRecipe
+
+instance Arbitrary (AlonzoHeaderRecipe c) where
+  arbitrary = undefined
+
+mkHeaderAlonzo :: AlonzoHeaderRecipe c -> CardanoHeader c
+mkHeaderAlonzo AlonzoHeaderRecipe = undefined
+
+data AlonzoGenTxRecipe c = AlonzoGenTxRecipe
+
+instance Arbitrary (AlonzoGenTxRecipe c) where
+  arbitrary = undefined
+
+mkGenTxAlonzo :: AlonzoGenTxRecipe c -> GenTx (CardanoBlock c)
+mkGenTxAlonzo AlonzoGenTxRecipe = undefined
+
+data AlonzoGenTxIdRecipe c = AlonzoGenTxIdRecipe
+
+instance Arbitrary (AlonzoGenTxIdRecipe c) where
+  arbitrary = undefined
+
+mkGenTxIdAlonzo :: AlonzoGenTxIdRecipe c -> TxId (GenTx (CardanoBlock c))
+mkGenTxIdAlonzo AlonzoGenTxIdRecipe = undefined
+
+data AlonzoAnytimeQueryRecipe c x = AlonzoAnytimeQueryRecipe
+
+instance Arbitrary (Some (AlonzoAnytimeQueryRecipe c)) where
+  arbitrary = undefined
+
+mkQueryAnytimeAlonzo :: AlonzoAnytimeQueryRecipe c x -> CardanoQuery c x
+mkQueryAnytimeAlonzo AlonzoAnytimeQueryRecipe = undefined
+
+data AlonzoIfCurrentQueryRecipe c x = AlonzoIfCurrentQueryRecipe
+
+instance Arbitrary (SomeSecond AlonzoIfCurrentQueryRecipe c) where
+  arbitrary = undefined
+
+mkQueryIfCurrentAlonzo :: AlonzoIfCurrentQueryRecipe c x -> CardanoQuery c x
+mkQueryIfCurrentAlonzo AlonzoIfCurrentQueryRecipe = undefined
+
+data AlonzoIfCurrentResultRecipe c = AlonzoIfCurrentResultRecipe
+
+instance Arbitrary (AlonzoIfCurrentResultRecipe c) where
+  arbitrary = undefined
+
+mkAlonzoIfCurrentSomeResult :: AlonzoIfCurrentResultRecipe c -> SomeResult (CardanoBlock c)
+mkAlonzoIfCurrentSomeResult AlonzoIfCurrentResultRecipe = undefined
+
+data AlonzoApplyTxErrRecipe c = AlonzoApplyTxErrRecipe
+
+instance Arbitrary (AlonzoApplyTxErrRecipe c) where
+  arbitrary = undefined
+
+mkApplyTxErrAlonzo :: AlonzoApplyTxErrRecipe c -> CardanoApplyTxErr c
+mkApplyTxErrAlonzo AlonzoApplyTxErrRecipe = undefined
+
+{-------------------------------------------------------------------------------
+  Disk
+-------------------------------------------------------------------------------}
+
 instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
-  arbitrary = HardForkBlock . OneEraBlock <$> arbitrary
+  arbitrary =
+      oneof [
+        BlockAllegra  <$> arbitrary
+      , mkBlockAlonzo <$> arbitrary
+      , BlockByron    <$> arbitrary
+      , BlockMary     <$> arbitrary
+      , BlockShelley  <$> arbitrary
+      ]
 
 instance Arbitrary (CardanoHeader MockCryptoCompatByron) where
   arbitrary = getHeader <$> arbitrary
 
-instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
+instance ( Signable (CryptoClass.KES c) ~ SignableRepresentation
+         , CardanoHardForkConstraints c
+         )
       => Arbitrary (OneEraHash (CardanoEras c)) where
   arbitrary = inj <$> arbitrary
     where
@@ -250,19 +310,19 @@ instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoBlock c)) where
   arbitrary =
-    arbitraryNodeToNode BlockByron BlockShelley BlockAllegra BlockMary BlockAlonzo
+    arbitraryNodeToNode BlockByron BlockShelley BlockAllegra BlockMary mkBlockAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoHeader c)) where
   arbitrary =
-    arbitraryNodeToNode HeaderByron HeaderShelley HeaderAllegra HeaderMary HeaderAlonzo
+    arbitraryNodeToNode HeaderByron HeaderShelley HeaderAllegra HeaderMary mkHeaderAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoGenTx c)) where
   arbitrary =
-    arbitraryNodeToNode GenTxByron GenTxShelley GenTxAllegra GenTxMary GenTxAlonzo
+    arbitraryNodeToNode GenTxByron GenTxShelley GenTxAllegra GenTxMary mkGenTxAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
@@ -272,7 +332,7 @@ instance c ~ MockCryptoCompatByron
                         GenTxIdShelley
                         GenTxIdAllegra
                         GenTxIdMary
-                        GenTxIdAlonzo
+                        mkGenTxIdAlonzo
 
 {-------------------------------------------------------------------------------
   NodeToClient
@@ -424,22 +484,23 @@ arbitraryNodeToClient injByron injShelley injAllegra injMary injAlonzo = oneof
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (CardanoBlock c)) where
-  arbitrary = arbitraryNodeToClient BlockByron BlockShelley BlockAllegra BlockMary BlockAlonzo
+  arbitrary = arbitraryNodeToClient BlockByron BlockShelley BlockAllegra BlockMary mkBlockAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (CardanoGenTx c)) where
-  arbitrary = arbitraryNodeToClient GenTxByron GenTxShelley GenTxAllegra GenTxMary GenTxAlonzo
+  arbitrary = arbitraryNodeToClient GenTxByron GenTxShelley GenTxAllegra GenTxMary mkGenTxAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (CardanoApplyTxErr c)) where
   arbitrary = frequency
-      [ (8, arbitraryNodeToClient ApplyTxErrByron ApplyTxErrShelley ApplyTxErrAllegra ApplyTxErrMary ApplyTxErrAlonzo)
+      [ (8, arbitraryNodeToClient ApplyTxErrByron ApplyTxErrShelley ApplyTxErrAllegra ApplyTxErrMary mkApplyTxErrAlonzo)
       , (2, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (HardForkApplyTxErrWrongEra <$> arbitrary))
       ]
+{-   TODO
   shrink = traverse aux
     where
       aux :: CardanoApplyTxErr MockCryptoCompatByron
@@ -448,6 +509,7 @@ instance c ~ MockCryptoCompatByron
           HardForkApplyTxErrFromEra . OneEraApplyTxErr <$> shrink x
       aux (HardForkApplyTxErrWrongEra x) =
           HardForkApplyTxErrWrongEra <$> shrink x
+-}
 
 instance Arbitrary (Some QueryAnytime) where
   arbitrary = return $ Some GetEraStart
@@ -486,17 +548,17 @@ instance c ~ MockCryptoCompatByron
       , (1, fmap injHardFork <$> arbitrary)
       ]
     where
-      injByron          (SomeSecond query) = SomeSecond (QueryIfCurrentByron   query)
-      injShelley        (SomeSecond query) = SomeSecond (QueryIfCurrentShelley query)
-      injAllegra        (SomeSecond query) = SomeSecond (QueryIfCurrentAllegra query)
-      injMary           (SomeSecond query) = SomeSecond (QueryIfCurrentMary    query)
-      injAlonzo         (SomeSecond query) = SomeSecond (QueryIfCurrentAlonzo  query)
-      injAnytimeByron   (Some      query)  = SomeSecond (QueryAnytimeByron     query)
-      injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley   query)
-      injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra   query)
-      injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary      query)
-      injAnytimeAlonzo  (Some      query)  = SomeSecond (QueryAnytimeAlonzo    query)
-      injHardFork       (Some      query)  = SomeSecond (QueryHardFork         query)
+      injByron          (SomeSecond query) = SomeSecond (QueryIfCurrentByron     query)
+      injShelley        (SomeSecond query) = SomeSecond (QueryIfCurrentShelley   query)
+      injAllegra        (SomeSecond query) = SomeSecond (QueryIfCurrentAllegra   query)
+      injMary           (SomeSecond query) = SomeSecond (QueryIfCurrentMary      query)
+      injAlonzo         (SomeSecond query) = SomeSecond (mkQueryIfCurrentAlonzo  query)
+      injAnytimeByron   (Some      query)  = SomeSecond (QueryAnytimeByron       query)
+      injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley     query)
+      injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra     query)
+      injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary        query)
+      injAnytimeAlonzo  (Some      query)  = SomeSecond (mkQueryAnytimeAlonzo    query)
+      injHardFork       (Some      query)  = SomeSecond (QueryHardFork           query)
 
 instance Arbitrary History.EraEnd where
   arbitrary = oneof
@@ -560,7 +622,7 @@ instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (SomeResult (CardanoBlock c))) where
   arbitrary = frequency
-      [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary injAlonzo)
+      [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary mkAlonzoIfCurrentSomeResult)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryIfCurrentResultEraMismatch)
@@ -584,11 +646,10 @@ instance c ~ MockCryptoCompatByron
               <*> genQueryHardForkResult)
       ]
     where
-      injByron   (SomeResult q r) = SomeResult (QueryIfCurrentByron   q) (QueryResultSuccess r)
-      injShelley (SomeResult q r) = SomeResult (QueryIfCurrentShelley q) (QueryResultSuccess r)
-      injAllegra (SomeResult q r) = SomeResult (QueryIfCurrentAllegra q) (QueryResultSuccess r)
-      injMary    (SomeResult q r) = SomeResult (QueryIfCurrentMary    q) (QueryResultSuccess r)
-      injAlonzo  (SomeResult q r) = SomeResult (QueryIfCurrentAlonzo  q) (QueryResultSuccess r)
+      injByron   (SomeResult q r) = SomeResult (QueryIfCurrentByron     q) (QueryResultSuccess r)
+      injShelley (SomeResult q r) = SomeResult (QueryIfCurrentShelley   q) (QueryResultSuccess r)
+      injAllegra (SomeResult q r) = SomeResult (QueryIfCurrentAllegra   q) (QueryResultSuccess r)
+      injMary    (SomeResult q r) = SomeResult (QueryIfCurrentMary      q) (QueryResultSuccess r)
 
       -- In practice, when sending a Byron query you'll never get a mismatch
       -- saying that your query is from the Shelley era while the ledger is

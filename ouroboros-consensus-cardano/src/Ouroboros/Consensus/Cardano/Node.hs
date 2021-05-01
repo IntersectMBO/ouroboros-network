@@ -10,7 +10,9 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Cardano.Node (
     CardanoHardForkConstraints
   , MaxMajorProtVer (..)
@@ -441,7 +443,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         maryProtVer = protVerMary
                       }
                     ProtocolParamsAlonzo {
-                        alonzoProtVer = protVerAlonzo
+                        alonzoGenesis = transCtxtAlonzo
+                      , alonzoProtVer = protVerAlonzo
                       }
                     ProtocolParamsTransition {
                         transitionTrigger = triggerHardForkByronShelley
@@ -517,6 +520,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
           genesisShelley
+          ()
           maxMajorProtVer
           triggerHardForkShelleyAllegra
 
@@ -543,6 +547,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigAllegra =
         mkPartialLedgerConfigShelley
           genesisAllegra
+          ()
           maxMajorProtVer
           triggerHardForkAllegraMary
 
@@ -566,12 +571,13 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigMary =
         mkPartialLedgerConfigShelley
           genesisMary
+          ()
           maxMajorProtVer
           triggerHardForkMaryAlonzo
 
     -- Alonzo
     genesisAlonzo :: ShelleyGenesis (AlonzoEra c)
-    genesisAlonzo = SL.translateEra' () genesisMary
+    genesisAlonzo = SL.translateEra' transCtxtAlonzo genesisMary
 
     blockConfigAlonzo :: BlockConfig (ShelleyBlock (AlonzoEra c))
     blockConfigAlonzo =
@@ -588,6 +594,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigAlonzo =
         mkPartialLedgerConfigShelley
           genesisAlonzo
+          transCtxtAlonzo
           maxMajorProtVer
           TriggerHardForkNever
 
@@ -755,14 +762,16 @@ protocolClientInfoCardano epochSlots = ProtocolClientInfo {
 
 mkPartialLedgerConfigShelley ::
      ShelleyGenesis era
+  -> SL.TranslationContext era
   -> MaxMajorProtVer
   -> TriggerHardFork
   -> PartialLedgerConfig (ShelleyBlock era)
-mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFork =
+mkPartialLedgerConfigShelley genesisShelley transCtxt maxMajorProtVer shelleyTriggerHardFork =
     ShelleyPartialLedgerConfig {
           shelleyLedgerConfig =
             Shelley.mkShelleyLedgerConfig
               genesisShelley
+              transCtxt
               -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
               -- in the partial ledger config with the correct one.
               History.dummyEpochInfo

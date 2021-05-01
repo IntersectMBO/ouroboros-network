@@ -44,16 +44,16 @@ import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
 
-import           Cardano.Binary (FromCBOR, ToCBOR)
 import           Cardano.Ledger.Allegra.Translation ()
-import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Era as SL (TranslateEra (..), TxInBlock)
+import qualified Cardano.Ledger.Era as SL (TranslationContext, TranslateEra (..), TxInBlock)
 import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Serialization as SL
+
+import           Ouroboros.Consensus.Shelley.Orphans ()
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -133,13 +133,15 @@ class ( SL.ShelleyBasedEra era
 
       , SL.AdditionalGenesisConfig era ~ ()
 
-      , Core.Witnesses era ~ SL.WitnessSet era
-
       , SL.ToCBORGroup (TxSeq era)
 
       , Eq (SL.TxInBlock era)
       , NoThunks (SL.TxInBlock era)
       , Show (SL.TxInBlock era)
+
+      , ToCBOR (LC.Witnesses era)
+
+      , NoThunks (SL.TranslationContext era)
 
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,

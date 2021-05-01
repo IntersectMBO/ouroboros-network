@@ -1,40 +1,39 @@
 {
-    "haskell.nix": {
-        "branch": "master",
-        "description": "Alternative Haskell Infrastructure for Nixpkgs",
-        "homepage": "https://input-output-hk.github.io/haskell.nix",
-        "owner": "input-output-hk",
-        "repo": "haskell.nix",
-        "rev": "1b9b05beed75a1be98405501fbb33ac1f080069e",
-        "sha256": "0679ymbjm7z3qbiv9wf7f22rxdwzkpk0jlh1by0rswdmbwqi5786",
-        "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/1b9b05beed75a1be98405501fbb33ac1f080069e.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    "hackage.nix": {
+      "branch": "master",
+      "description": "Automatically generated Nix expressions for Hackage",
+      "homepage": "",
+      "owner": "input-output-hk",
+      "repo": "hackage.nix",
+      "rev": "b3c99d7f13df89a9a918c835ecb7114098912962",
+      "sha256": "1i5vg92s6g9zh0i35dm4a6hax7mdsqxbw8w2x63j0y6w57msv70g",
+      "type": "tarball",
+      "url": "https://github.com/input-output-hk/hackage.nix/archive/9f61382fad98e24fe8678db2ffb0c51a863a6023.tar.gz",
+      "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
-    "hls-released": {
-        "branch": "1.1.0",
-        "description": "Successor of ghcide & haskell-ide-engine. One IDE to rule them all.",
-        "homepage": "",
-        "builtin": false,
-        "owner": "haskell",
-        "repo": "haskell-language-server",
-        "rev": "f1c096927186a93d8e3ccd4fe8385cc1b070350b",
-        "sha256": "0kviq3kinm3i0qm4r26rdnlkwbs1s3r1rqiqdry517rgkgnjpcp5",
-        "type": "tarball",
-        "url": "https://github.com/haskell/haskell-language-server/archive/f1c096927186a93d8e3ccd4fe8385cc1b070350b.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    "haskell.nix": {
+      "branch": "master",
+      "description": "Alternative Haskell Infrastructure for Nixpkgs",
+      "homepage": "https://input-output-hk.github.io/haskell.nix",
+      "owner": "input-output-hk",
+      "repo": "haskell.nix",
+      "rev": "962ecfed3a4fb656b5a91d89159291e00ed766bc",
+      "sha256": "1avhrr9yp6wx586358602dghghi6w4phl94n1nikjlz22i2fqr3c",
+      "type": "tarball",
+      "url": "https://github.com/input-output-hk/haskell.nix/archive/962ecfed3a4fb656b5a91d89159291e00ed766bc.tar.gz",
+      "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "iohk-nix": {
-        "branch": "master",
-        "description": "nix scripts shared across projects",
-        "homepage": null,
-        "owner": "input-output-hk",
-        "repo": "iohk-nix",
-        "rev": "4efc38924c64c23a582c84950c8c25f72ff049cc",
-        "sha256": "0nhwyrd0xc72yj5q3jqa2wl4khp4g7n72i45cxy2rgn9nrp8wqh0",
-        "type": "tarball",
-        "url": "https://github.com/input-output-hk/iohk-nix/archive/4efc38924c64c23a582c84950c8c25f72ff049cc.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+      "branch": "master",
+      "description": "nix scripts shared across projects",
+      "homepage": null,
+      "owner": "input-output-hk",
+      "repo": "iohk-nix",
+      "rev": "60fe72cf807a4ec4409a53883d5c3af77f60f721",
+      "sha256": "0hpn4fsmnrrqzpj7j3fcmrjm5d3fb15vvbhjn825ipknjjvz6zwd",
+      "type": "tarball",
+      "url": "https://github.com/input-output-hk/iohk-nix/archive/60fe72cf807a4ec4409a53883d5c3af77f60f721.tar.gz",
+      "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "niv": {
         "branch": "iohk",

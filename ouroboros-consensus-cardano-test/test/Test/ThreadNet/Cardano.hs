@@ -508,7 +508,8 @@ mkProtocolCardanoAndHardForkTxs
             maryProtVer    = SL.ProtVer maryMajorVersion    0
           }
         ProtocolParamsAlonzo {
-            alonzoProtVer    = SL.ProtVer alonzoMajorVersion    0
+            alonzoGenesis    = undefined
+          , alonzoProtVer    = SL.ProtVer alonzoMajorVersion    0
           }
         protocolParamsByronShelley
         ProtocolParamsTransition {

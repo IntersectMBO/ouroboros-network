@@ -308,10 +308,12 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
                     translateTxAllegraToMaryWrapper
                     translateValidatedTxAllegraToMaryWrapper
               )
-      $ PCons (   ignoringBoth
-                $ Pair2
-                    translateTxMaryToAlonzoWrapper
-                    translateValidatedTxMaryToAlonzoWrapper
+      $ PCons (RequireBoth $ \_cfgMary cfgAlonzo ->
+                 let ctxt = getAlonzoTranslationContext cfgAlonzo
+                 in
+                 Pair2
+                   (translateTxMaryToAlonzoWrapper          ctxt)
+                   (translateValidatedTxMaryToAlonzoWrapper ctxt)
               )
       $ PNil
 
@@ -524,18 +526,9 @@ translateLedgerStateAllegraToMaryWrapper =
       Translate $ \_epochNo ->
         unComp . SL.translateEra' () . Comp
 
-translateLedgerStateMaryToAlonzoWrapper ::
-     PraosCrypto c
-  => RequiringBoth
-       WrapLedgerConfig
-       (Translate LedgerState)
-       (ShelleyBlock (MaryEra c))
-       (ShelleyBlock (AlonzoEra c))
-translateLedgerStateMaryToAlonzoWrapper =
-    ignoringBoth $
-      Translate $ \_epochNo ->
-        unComp . SL.translateEra' () . Comp
-
+{-------------------------------------------------------------------------------
+  Translation from Allegra to Mary
+-------------------------------------------------------------------------------}
 
 translateTxAllegraToMaryWrapper ::
      PraosCrypto c
@@ -554,18 +547,46 @@ translateValidatedTxAllegraToMaryWrapper ::
 translateValidatedTxAllegraToMaryWrapper = InjectValidatedTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
+{-------------------------------------------------------------------------------
+  Translation from Mary to Alonzo
+-------------------------------------------------------------------------------}
+
+translateLedgerStateMaryToAlonzoWrapper ::
+     PraosCrypto c
+  => RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (AlonzoEra c))
+translateLedgerStateMaryToAlonzoWrapper =
+    RequireBoth $ \_cfgMary cfgAlonzo ->
+      Translate $ \_epochNo ->
+        unComp . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo) . Comp
+
+getAlonzoTranslationContext ::
+     WrapLedgerConfig (ShelleyBlock (AlonzoEra c))
+  -> Alonzo.AlonzoGenesis
+getAlonzoTranslationContext =
+    shelleyLedgerTranslationContext . unwrapLedgerConfig
+
 translateTxMaryToAlonzoWrapper ::
      PraosCrypto c
-  => InjectTx
+  => Alonzo.AlonzoGenesis
+  -> InjectTx
        (ShelleyBlock (MaryEra c))
        (ShelleyBlock (AlonzoEra c))
-translateTxMaryToAlonzoWrapper = InjectTx $
-    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+translateTxMaryToAlonzoWrapper ctxt = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
 
 translateValidatedTxMaryToAlonzoWrapper ::
+     forall c.
      PraosCrypto c
-  => InjectValidatedTx
+  => Alonzo.AlonzoGenesis
+  -> InjectValidatedTx
        (ShelleyBlock (MaryEra c))
        (ShelleyBlock (AlonzoEra c))
-translateValidatedTxMaryToAlonzoWrapper = InjectValidatedTx $
-    fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp    TODO
+translateValidatedTxMaryToAlonzoWrapper ctxt = InjectValidatedTx $
+      fmap (\(Alonzo.TxInBlock tx) -> WrapValidatedGenTx (mkShelleyValidatedTx tx))
+    . eitherToMaybe . runExcept
+    . SL.translateEra @(AlonzoEra c) ctxt
+    . (\(WrapValidatedGenTx (ShelleyValidatedTx _txId tx)) -> Alonzo.TxInBlock tx)

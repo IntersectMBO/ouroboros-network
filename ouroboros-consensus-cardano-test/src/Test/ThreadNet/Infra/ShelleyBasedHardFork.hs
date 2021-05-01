@@ -128,6 +128,7 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
 
+  , SL.TranslationContext era1 ~ ()
   , SL.TranslationContext era2 ~ ()
   )
 
@@ -237,6 +238,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     protocolInfo1 =
         protocolInfoShelleyBased
           protocolParamsShelleyBased
+          ()
           protVer1
 
     eraParams1 :: History.EraParams
@@ -265,6 +267,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
             , shelleyBasedInitialNonce
             , shelleyBasedLeaderCredentials
             }
+          ()
           protVer2
 
     eraParams2 :: History.EraParams

@@ -1,27 +1,21 @@
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# OPTIONS_GHC -Wno-orphans            #-}
-module Ouroboros.Consensus.Shelley.Orphans where
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies       #-}
 
-import           Cardano.Ledger.Era (TranslateEra (..), PreviousEra, TranslationContext)
-import           Cardano.Ledger.Alonzo (AlonzoEra)
-import           Cardano.Ledger.Mary (MaryEra)
-import           Cardano.Ledger.Crypto (Crypto)
-import qualified Shelley.Spec.Ledger.API as SL
+{-# OPTIONS_GHC -Wno-orphans #-}
 
-{-------------------------------------------------------------------------------
-  Orphaned instance, TODO: remove this once correct definitions are available
-  on the ledger-spec side
--------------------------------------------------------------------------------}
-type instance PreviousEra (AlonzoEra c) = MaryEra c
-type instance TranslationContext (AlonzoEra c) = ()
+module Ouroboros.Consensus.Shelley.Orphans () where
 
-instance Crypto c => TranslateEra (AlonzoEra c) SL.ShelleyGenesis where
-  translateEra _ctxt _genesis = undefined
+import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 
-instance Crypto c => TranslateEra (AlonzoEra c) SL.Tx where
-  translateEra _ctxt _genesis = undefined
+import           Cardano.Ledger.Alonzo.Translation (AlonzoGenesis (..))
+import qualified Cardano.Ledger.Era as SL (TranslationContext)
+import           Cardano.Ledger.Shelley (ShelleyEra)
 
-instance Crypto c => TranslateEra (AlonzoEra c) SL.NewEpochState where
-  translateEra _ctxt _genesis = undefined
+deriving instance Generic AlonzoGenesis
+
+deriving instance NoThunks AlonzoGenesis
+
+type instance SL.TranslationContext (ShelleyEra c) = ()

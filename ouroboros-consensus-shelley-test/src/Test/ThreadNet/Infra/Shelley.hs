@@ -553,6 +553,7 @@ mkAllegraSetDecentralizationParamTxs ::
      , Cardano.Ledger.Core.Value  era ~ SL.Coin
      , Cardano.Ledger.Core.PParams era ~ SL.PParams era
      , SL.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
+     , Cardano.Ledger.Core.Witnesses era ~ SL.WitnessSet era
      )
   => [CoreNode (Cardano.Ledger.Era.Crypto era)]
   -> ProtVer   -- ^ The proposed protocol version
