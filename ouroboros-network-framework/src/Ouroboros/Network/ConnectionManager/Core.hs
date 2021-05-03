@@ -483,7 +483,7 @@ withConnectionManager ConnectionManagerArguments {
     countConnections :: ConnectionManagerState peerAddr handle handleError version m
                      -> STM m Int
     countConnections =
-        (numberConns . connectionManagerStateToCounters <$>) . traverse readTVar
+        (nConnsPruning . connectionManagerStateToCounters <$>) . traverse readTVar
 
     -- Start connection thread and run connection handler on it.
     --

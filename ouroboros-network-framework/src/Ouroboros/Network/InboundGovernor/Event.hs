@@ -123,7 +123,7 @@ firstMiniProtocolToFinish InboundGovernorState { igsConnections } =
                 (\tResult -> Terminated {
                     tConnId       = connId,
                     tMux          = csMux,
-                    tMiniProtocol = csMiniProtocolMap Map.! miniProtocolNum,
+                    tMiniProtocol = fst (csMiniProtocolMap Map.! miniProtocolNum),
                     tDataFlow     = csDataFlow,
                     tResult
                   })

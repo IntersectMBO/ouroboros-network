@@ -14,6 +14,7 @@ module Ouroboros.Network.InboundGovernor.State
   -- * Internals
   , InboundGovernorState (..)
   , ConnectionState (..)
+  , InboundGovernorCounters (..)
   , unregisterConnection
   , updateMiniProtocol
   , RemoteState (..)
@@ -89,7 +90,16 @@ data InboundGovernorState muxMode peerAddr m a b =
 
         -- | PRNG available to 'PrunePolicy'.
         --
-        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState)
+        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState),
+
+        -- | Map of connection ids and respective remote temperature
+        --
+        igsRemoteTemperatures :: !(Map (ConnectionId peerAddr)
+                                       ProtocolTemperature),
+
+        -- | Cached metric counters
+        --
+        igsCounters :: !InboundGovernorCounters
       }
 
 
@@ -104,10 +114,12 @@ data ConnectionState muxMode peerAddr m a b = ConnectionState {
       --
       csDataFlow        :: !DataFlow,
 
-      -- | All supported mini-protocols.
+      -- | All supported mini-protocols and respective
+      -- 'ProtocolTemperature'
       --
       csMiniProtocolMap :: !(Map MiniProtocolNum
-                                (MiniProtocol muxMode ByteString m a b)),
+                                ( MiniProtocol muxMode ByteString m a b
+                                , ProtocolTemperature )),
 
       -- | Map of all running mini-protocol completion STM actions.
       --
@@ -120,6 +132,17 @@ data ConnectionState muxMode peerAddr m a b = ConnectionState {
 
     }
 
+-- | Counters for tracing and analysis purposes
+--
+data InboundGovernorCounters = InboundGovernorCounters {
+  establishedPeersRemote :: !Int, -- ^ number of remote peers that have the local peer as established
+  warmPeersRemote        :: !Int, -- ^ number of remote peers that have the local peer as warm
+  hotPeersRemote         :: !Int  -- ^ number of remote peers that have the local peer as hot
+  } deriving Show
+
+instance Semigroup InboundGovernorCounters where
+    InboundGovernorCounters e w h <> InboundGovernorCounters e' w' h' =
+      InboundGovernorCounters (e + e') (w + w') (h + h')
 
 --
 -- State management functions
