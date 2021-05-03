@@ -381,7 +381,13 @@ envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
 envEventCredits (TraceEnvPeersDemote Noop   _) = 10
 envEventCredits (TraceEnvPeersDemote ToWarm _) = 30
 envEventCredits (TraceEnvPeersDemote ToCold _) = 30
-envEventCredits (TraceEnvPeersStatus _)        = 0
+
+envEventCredits  TraceEnvPeersStatus{}         = 0
+-- These events are visible in the environment but are the result of actions
+-- initiated by the governor, hence the get no credit.
+envEventCredits  TraceEnvRootsResult{}         = 0
+envEventCredits  TraceEnvGossipRequest{}       = 0
+envEventCredits  TraceEnvGossipResult{}        = 0
 
 
 
