@@ -178,6 +178,10 @@ data TraceMockEnv = TraceEnvAddPeers       PeerGraph
                   | TraceEnvGossipTTL      PeerAddr
                   | TraceEnvSetTargets     PeerSelectionTargets
                   | TraceEnvPeersDemote    AsyncDemotion PeerAddr
+
+                  | TraceEnvRootsResult    [PeerAddr]
+                  | TraceEnvGossipRequest  PeerAddr (Maybe ([PeerAddr], GossipTime))
+                  | TraceEnvGossipResult   PeerAddr [PeerAddr]
                   | TraceEnvPeersStatus    (Map PeerAddr PeerStatus)
   deriving Show
 
@@ -268,18 +272,23 @@ mockPeerSelectionActions' tracer
       _ <- async $ do
         threadDelay ttl
         traceWith tracer TraceEnvPublicRootTTL
+      traceWith tracer (TraceEnvRootsResult (Set.toList publicRootPeers))
       return (publicRootPeers, ttl)
 
     requestPeerGossip addr = do
+      let Just (gossipScript, _) = Map.lookup addr scripts
+      mgossip <- stepScript gossipScript
+      traceWith tracer (TraceEnvGossipRequest addr mgossip)
       _ <- async $ do
         threadDelay policyGossipRetryTime
         traceWith tracer (TraceEnvGossipTTL addr)
-      let Just (gossipScript, _) = Map.lookup addr scripts
-      mgossip <- stepScript gossipScript
       case mgossip of
-        Nothing                -> fail "no peers"
+        Nothing                -> do
+          traceWith tracer (TraceEnvGossipResult addr [])
+          fail "no peers"
         Just (peeraddrs, time) -> do
           threadDelay (interpretGossipTime time)
+          traceWith tracer (TraceEnvGossipResult addr peeraddrs)
           return peeraddrs
 
     establishPeerConnection :: PeerAddr -> m (PeerConn m)
