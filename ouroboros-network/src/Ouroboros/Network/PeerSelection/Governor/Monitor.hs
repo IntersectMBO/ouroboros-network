@@ -88,11 +88,13 @@ jobs jobPool st =
 --
 reconnectDelay :: DiffTime
 reconnectDelay = 10
+--TODO: make this a policy param
 
 -- | Activation delay after a peer was asynchronously demoted to warm state.
 --
 activateDelay :: DiffTime
 activateDelay = 60
+--TODO: make this a policy param
 
 
 -- | Monitor connections.
