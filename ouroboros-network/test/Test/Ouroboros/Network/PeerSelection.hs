@@ -475,13 +475,13 @@ allTraceNames =
 -- must find all the reachable ones, or if the target for the number of known
 -- peers to find is too low then it should at least find the target number.
 --
-prop_governor_gossip_1hr :: GovernorMockEnvironmentWithoutAsyncDemotion -> Property
-prop_governor_gossip_1hr (GovernorMockEnvironmentWAD env@GovernorMockEnvironment{
-                              peerGraph,
-                              localRootPeers,
-                              publicRootPeers,
-                              targets
-                            }) =
+prop_governor_gossip_1hr :: GovernorMockEnvironment -> Property
+prop_governor_gossip_1hr env@GovernorMockEnvironment {
+                               peerGraph,
+                               localRootPeers,
+                               publicRootPeers,
+                               targets
+                             } =
     let trace      = selectPeerSelectionTraceEvents $
                        runGovernorInMockEnvironment env {
                          targets = singletonScript (targets', NoDelay)
