@@ -540,8 +540,8 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
 -- | Check the governor's view of connection status does not lag behind reality
 -- by too much.
 --
-prop_governor_connstatus :: GovernorMockEnvironmentWithoutAsyncDemotion -> Bool
-prop_governor_connstatus (GovernorMockEnvironmentWAD env) =
+prop_governor_connstatus :: GovernorMockEnvironment -> Bool
+prop_governor_connstatus env =
     let trace = takeFirstNHours 1
               . selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
@@ -559,12 +559,15 @@ prop_governor_connstatus (GovernorMockEnvironmentWAD env) =
         case (lastTrueStatus, lastTestStatus) of
           (Nothing, _)                       -> True
           (Just trueStatus, Just testStatus) -> trueStatus == testStatus
-          (Just _,          Nothing)         -> False
+          (Just trueStatus, Nothing)         -> trueStatus == Map.empty
       where
         lastTrueStatus =
           listToMaybe
-            [ status
+            [ Map.filter (not . isPeerCold) status
             | (_, MockEnvEvent (TraceEnvPeersStatus status)) <- reverse trace ]
+
+        isPeerCold PeerCold = True
+        isPeerCold _        = False
 
         lastTestStatus =
           listToMaybe
