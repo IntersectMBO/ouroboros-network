@@ -284,6 +284,7 @@ mockPeerSelectionActions' tracer
         traceWith tracer (TraceEnvGossipTTL addr)
       case mgossip of
         Nothing                -> do
+          threadDelay 1
           traceWith tracer (TraceEnvGossipResult addr [])
           fail "no peers"
         Just (peeraddrs, time) -> do
@@ -293,6 +294,7 @@ mockPeerSelectionActions' tracer
 
     establishPeerConnection :: PeerAddr -> m (PeerConn m)
     establishPeerConnection peeraddr = do
+      --TODO: add support for variable delays and synchronous failure
       threadDelay 1
       (conn@(PeerConn _ v), snapshot) <- atomically $ do
         conn  <- newTVar PeerWarm
