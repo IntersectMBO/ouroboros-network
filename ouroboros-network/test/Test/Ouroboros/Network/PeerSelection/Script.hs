@@ -112,6 +112,7 @@ playTimedScript :: (MonadAsync m, MonadTimer m)
                 => Tracer m a -> TimedScript a -> m (TVar m a)
 playTimedScript tracer (Script ((x0,d0) :| script)) = do
     v <- newTVarIO x0
+    traceWith tracer x0
     _ <- async $ do
            threadDelay (interpretScriptDelay d0)
            sequence_ [ do atomically (writeTVar v x)
