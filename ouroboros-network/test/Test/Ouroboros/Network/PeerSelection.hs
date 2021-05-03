@@ -125,6 +125,10 @@ tests =
 --   into a busy cycle. See also the "no excessive busyness" property for a
 --   more advanced version.
 --
+-- * A "no excessive busyness" property. This checks that the governor does not
+--   remain too busy for too long. It's quite easy to write bugs that don't
+--   cause the governor to fail, but cause it to go into fairly-busy cycles.
+--
 -- * A state consistency property that the governor's view of part of the state
 --   and the "true" state of the mock environment are maintained in an
 --   appropriate correspondence.
@@ -136,22 +140,20 @@ tests =
 -- * A cold peer gossip "reachable" property: that the governor either hits
 --   its target for the number of cold peers, or finds all the reachable peers.
 --
--- Properties that we would like to have:
+-- * A known peer target progress property: that the governor makes progress
+--   within a bounded time towards its known peers target, from below and above.
 --
--- * A "no excessive busyness" property. This checks that the governor does not
---   remain too busy for too long. It's quite easy to write bugs that don't
---   cause the governor to fail, but cause it to go into fairly-busy cycles.
+-- * An established peer target property: the same as above but for established
+--   peers.
+--
+-- * An active peer target property: the same as above but for active peers.
+--
+-- Properties that we would like to have:
 --
 -- * A public root peers target property: that the governor hits its target for
 --   for the number of public root peers (or as near as possible), and does
 --   note "grossly" overshoot. Since the public roots is a one sided target, but
 --   we don't want to overshoot excessively.
---
--- * A warm peer target property: that the governor hits its established peers
---   target (or as near as possible).
---
--- * A hot peer target property: that the governor hits its active peers
---   target (or as near as possible).
 --
 -- * A local root peers target property: that the governor hits it target for
 --   getting all its local root peers into the established state, and a target
@@ -159,8 +161,6 @@ tests =
 --
 -- Other properties we might like to think about
 --
--- * for vaguely stable envs, we do stablise at our target number of cold peers
--- * time to stabilise after a change is not crazy
 -- * time to find new nodes after a graph change is ok
 -- * targets or root peer set dynamic
 
