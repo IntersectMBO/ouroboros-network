@@ -52,7 +52,7 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Signal
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
 import           Test.Tasty.QuickCheck (testProperty)
 
 
@@ -61,15 +61,23 @@ tests =
   testGroup "Ouroboros.Network.PeerSelection"
   [ Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
   , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
-  , testGroup "safety"
+  , testGroup "basic"
     [ testProperty "has output"         prop_governor_hasoutput
     , testProperty "no failure"         prop_governor_nofail
     , testProperty "no livelock"        prop_governor_nolivelock
-    , testProperty "no excess busyness" prop_governor_nobusyness
+    ]
+
+    -- The no livelock property is needed to ensure other tests terminate
+  , after AllSucceed "Ouroboros.Network.PeerSelection.basic" $
+    testGroup "safety"
+    [ testProperty "no excess busyness" prop_governor_nobusyness
     , testProperty "event coverage"     prop_governor_trace_coverage
     , testProperty "connection status"  prop_governor_connstatus
     ]
-  , testGroup "progress"
+
+    -- The no livelock property is needed to ensure other tests terminate
+  , after AllSucceed "Ouroboros.Network.PeerSelection.basic" $
+    testGroup "progress"
     [ testProperty "gossip reachable"    prop_governor_gossip_1hr
 
 --  , testProperty "progresses towards public root peers target (from below)"
