@@ -352,7 +352,7 @@ minConnectTime KnownPeers { nextConnectTimes }
 
 
 setConnectTime :: Ord peeraddr
-               => Set peeraddr
+               => Set peeraddr --TODO: make this a single entry
                -> Time
                -> KnownPeers peeraddr
                -> KnownPeers peeraddr
