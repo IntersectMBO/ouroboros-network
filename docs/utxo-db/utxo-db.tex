@@ -843,6 +843,7 @@ operation per {\sc lookup} operation. We can then expect the performance
 bottleneck to be the hardware I/O random read performance.
 
 \subsection{Assessing I/O performance feasibility}
+\label{assessing-feasibility}
 
 Given the targets for TPS in \cref{requirements-tps} and sync speed in
 \cref{performance-requirements}, it is useful to see these means as a
@@ -897,18 +898,34 @@ performance of both simultaneously.
 
 \section{Additional design considerations}
 
-\subsection{Batching IO}
-\label{Batching IO}
-Modern SSDs achieve IO-ops/S in the hundreds of thousands operating concurrently.
-Typically they will server up to 32 operations at the same time. For software to
-saturate the bandwidth of the disk, that software must be prepared to issue many
-operations simultaneously. There is a trade-off here between performance and
-complexity. To saturate the bandwidth of the disk, as we expect to be necessary
-to achieve reasonable sync times \todo{add ref}, will require more complexity in
-the solution.
+\subsection{Utilising parallel I/O}
+\label{parallel-io}
+
+As discussed in \cref{ssd-performance}, modern SSDs can achieve IOPS in the
+hundreds of thousands by operating concurrently on many I/O requests at once.
+Without this concurrency they can achieve only tens of thousands of IOPS.
+Low end SSDs will typically scale well up to 8-016 operations at the same time,
+whereas high end SSDs will scale well up to 32, and up to 128 for some of the
+latest generation high end models.
+
+As we discussed in \cref{assessing-feasibility}, we expect saturating the disk
+bandwidth will be necessary to achieve reasonable sync times. For software to
+saturate the bandwidth of the disk however, that software must be designed to
+issue many operations in parallel. There is a trade-off here between
+performance and complexity, and hence development time. To saturate the
+bandwidth of the disk by issuing operations in parallel will require more
+complexity in the solution. This complexity is not confined to the storage
+subsystem. The opportunity for parallelism must be present in the consensus and
+ledger design and in the interface between the consensus and storage subsystem.
 
 It is very likely that a solution required to perform well with a growing
-blockchain will need to exploit Batching IO to achieve this.
+blockchain will need to exploit parallel I/O to achieve performance targets.
+Since the use of parallel I/O will significantly affect the design of the
+interface between the consensus layer and its storage subsystem, it makes sense
+to consider this in the design from the start, rather than to leave it to a
+later phase of development. Indeed even if the parallelism is not fully
+exploited initially, it probably still makes sense to design the interface to
+support parallel I/O.
 
 \subsection{Integration with {\tt io-sim}}
 \label{io-sim}
@@ -921,10 +938,9 @@ The solution should similarly demonstrate it's correctness with an io-sim test
 suite. This is not a strict requirement, however it is difficult to see how one
 could be confident in the correctness of the solution without it.
 
-\subsection{Changes to the ledger STS scheme}
+\subsection{Changes to the ledger scheme}
 
-The Cardano Ledger rules are implemented are formulated as executable
-specifications (STS). \todo{right? citation?}. While the Byron ledger rules have
+While the Byron ledger rules have
 a separate implementation that is verified against the executable specification,
 Shelley (and the following era's) use the executable specification directly.
 This was a pragmatic choice at the time it was made, however it does introduce
