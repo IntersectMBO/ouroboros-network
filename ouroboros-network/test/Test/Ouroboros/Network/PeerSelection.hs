@@ -1591,6 +1591,12 @@ selectEnvTargets f =
 -- Live examples
 --
 
+-- | Run the 'publicRootPeersProvider' in IO with a stdout tracer to observe
+-- what it does.
+--
+-- This is a manual test that runs in IO and has to be observed to see that it
+-- is doing something sensible. It is not run automatically.
+--
 _governorFindingPublicRoots :: Int -> [DomainAddress] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers domains =
     withTimeoutSerial $ \timeout ->
