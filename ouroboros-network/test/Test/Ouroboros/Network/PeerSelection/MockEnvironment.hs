@@ -452,6 +452,13 @@ data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr ())
                     | GovernorEvent    (TracePeerSelection PeerAddr)
                     | GovernorCounters PeerSelectionCounters
                     | MockEnvEvent     TraceMockEnv
+                   -- Warning: be careful with writing properties that rely
+                   -- on trace events from both the governor and from the
+                   -- environment. These events typically occur in separate
+                   -- threads and so are not casually ordered. It is ok to use
+                   -- them for timeout/eventually properties, but not for
+                   -- properties that check conditions synchronously.
+                   -- The governor debug vs other events are fully ordered.
   deriving Show
 
 tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
