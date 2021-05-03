@@ -176,9 +176,6 @@ interpretPickScript scriptVar available pickNum
   | pickNum <= 0
   = error "interpretPickScript: given invalid pickNum"
 
-  | Set.size available <= pickNum
-  = return available
-
   | otherwise
   = do pickmembers <- stepScriptSTM scriptVar
        return (interpretPickMembers pickmembers available pickNum)
