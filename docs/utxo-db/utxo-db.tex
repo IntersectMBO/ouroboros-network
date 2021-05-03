@@ -343,6 +343,7 @@ We have no specific requirements for sync time, but reasonable values would be
 
 
 \subsection{Functional Requirements}
+\label{functional-requirements}
 
 The storage system must support the needs of the consensus and ledger for
 storing the bulk of the ledger state on disk. It must support all the operations
@@ -361,6 +362,9 @@ The large parts of the ledger state that must be kept on disk are:
 \item[Stake addresses and delegation]
     The collection of all registered stake addresses, their corresponding
     reward account balances, and their choice of delegation to a stake pool.
+    The collection of stake addresses also needs to be indexed by `pointer':
+    the numerical index of the location on the chain where the stake address
+    was registered. This is needed to support pointer addresses.
 \item[Stake distribution]
     An aggregation of the UTxO by stake address, recording for each state
     address the amount of stake controlled by that address.
@@ -452,11 +456,165 @@ be deployed in more locations where the resource limits are tighter.
 It would save development effort overall if client applications can reuse the
 ledger state storage components developed for the node.
 
-\section{Technical constraints}
+\section{Analysis of on-disk data structures}
 \label{constraints}
 
+The most important design question is the choice of an appropriate on-disk data
+structure. This data structure must satisfy the functional requirements from
+\cref{functional-requirements}: the operations needed by the ledger rules and
+consensus layer. We should start therefore with a review of the operations
+required.
+
+Beyond that, it is clear from initial estimates that the most pressing
+constraints are performance constraints. We must therefore assess if the
+required rates of operations are feasible for an on-disk data structure, and if
+so what the options and trade-offs are.
+
+There is a fundamental trade-off in the performance of on-disk data structures
+between read performance, write performance and the amount of main memory used.
+\cite{rum-conjecture} describe this trade-off as the ``RUM conjecture'': for
+read vs update vs memory. To see where we fit in this trade-off we must analyse
+the expected mix of reads vs updates, and the amount of memory available vs the
+expected size of the dataset.
+
+Finally, to assess feasibility we need a quantitative -- albeit approximate
+-- assessment of the I/O performance for different general design options vs
+the hardware capabilities. This requires a brief review of hardware
+capabilities, i.e. SSD performance.
+
+We review these issues in turn in the remainder of this section.
+
+\subsection{Operations}
+\label{operations}
+
+Here we describe the operations the on-disk data store must support. These
+requirements are driven by the operation the ledger uses on those parts of
+the ledger state that we will move to disk. As a reminder, the functional
+requirements from \cref{functional-requirements} are that we must keep the
+following parts of the ledger state on disk
+\begin{itemize}
+\setlength{\itemsep}{0pt}%
+\setlength{\parskip}{1pt}%
+\item The UTxO
+\item Stake addresses and delegation choices
+\item Stake distribution
+\end{itemize}
+
+\subsubsection{UTxO operations}
+
+While processing transactions, the only operations on the UTxO are point
+{\sc lookup}, {\sc insert} and {\sc delete}.
+
+Depending on how the stake distribution is managed we may also require a
+bulk {\sc scan} over a stable snapshot of the UTxO.
+
+\subsubsection{Stake address operations}
+
+Transactions involving stake addresses can do the following: register,
+de-register, withdraw rewards and set the delegation choice. These only need
+{\sc lookup}, {\sc insert} and {\sc delete}.
+
+Maintaining an index of stake addresses by pointer also requires only
+{\sc lookup}, {\sc insert} and {\sc delete}.
+
+There is also a bulk {\sc insert} needed when paying out stake pool rewards.
+This can be implemented as multiple point {\sc insert} operations, but some
+data structures may have more efficient bulk operations.
+
+\subsubsection{Stake distribution operations}
+
+The ledger layer needs to change the way it manages the stake distribution --
+for scalability reasons unrelated to the disk storage. There are a couple of
+primary design options. Ideally the on-disk storage should support either of
+these primary design options.
+
+\begin{enumerate}
+\item One option is to compute the stake distribution by doing a bulk {\sc scan}
+      over the UTxO to aggregate the stake by the stake keys. This would
+      require a bulk {\sc scan} over a stable snapshot of the UTxO to produce a
+      new immutable table holding a stake distribution snapshot. This snapshot
+      would also need to support a bulk {\sc scan} to aggregate the stake pool
+      distribution.
+
+\item Another option is to maintain the current stake distribution incrementally
+      as each transaction changes the UTxO. This would involve an {\sc update}
+      operation, which could be implemented as a {\sc lookup} and {\sc insert},
+      or some data structures may support it directly more efficiently. This
+      design would also involve taking a stable snapshot of the stake
+      distribution, and performing a bulk {\sc scan} to aggregate the stake pool
+      distribution.
+\end{enumerate}
+
+\subsubsection{Consensus operations}
+
+In addition to the operations required by the ledger layer, the consensus layer
+has to do the overall state management and it has extra requirements.
+
+The consensus layer needs to be able to roll back to any ledger state within the
+last K blocks. For small K in particular this needs to be efficient since short
+forks are common. It is not necessary to support every single intermediate
+rollback point in the last K, since it is possible to roll forward from any
+point. So at minimum what is required is sparse rollback points, covering at
+least K blocks.
+
+It is also necessary to be able to snapshot the entire ledger state to disk
+from time to time. This is needed to be able to shut down and restart, without
+having to replay the chain from genesis. The consensus layer currently does
+this by writing out the whole in-memory ledger state to disk. With parts of
+the ledger state on disk and parts in memory, it will still be necessary to
+be able to construct consistent overall snapshots. The easiest way to do this
+would be for the on-disk storage to support cheap snapshots -- cheap in the
+sense that little time is needed to take the snapshot. There will only be a
+limited number of such snapshots, e.g. 3, so it is acceptable for these to
+incur extra storage costs.
+
+It is worth noting that the consensus layer does \emph{not} require the disk
+operations to be completely durable -- the D in ACID. The consensus layer can
+recover from data loss -- especially loss of recent data -- by replaying the
+chain or in the worst case by fetching the chain again from its peers. This is
+an important point for performance because achieving durability generally
+entails an {\tt fsync()} operation which impedes efficient use of write buffers
+and large sequential writes. The consensus layer already takes advantage of
+this for its other on-disk storage subcomponents.
+
+\subsubsection{Overall operations}
+
+Overall we require the following operations
+\begin{enumerate}
+  \item {\sc lookup}
+  \item {\sc insert}
+  \item {\sc delete}
+  \item {\sc update}: One of the design options for the stake distribution
+        would benefit from a update operation that performs an insert with
+        monoidial merge with any existing value. This can always be implemented
+        with a {\sc lookup} followed by an {\sc insert} operation, but some
+        data structures support a more efficient {\sc update} directly.
+  \item {\sc bulk update}: this is optional since it can always be implemented
+        as multiple {\sc update} operations, but some data structures may
+        support it directly.
+  \item {\sc snapshot}: preserving a consistent snapshot of the collection.
+  \item {\sc restore}: restoring from a previous a snapshot.
+  \item {\sc scan}: a bulk scan over a snapshot, or immutable table, in an
+        arbitrary order.
+  \item {\sc rollback}
+        \label{ROLLBACK}
+        The consensus layer will rollback ledger state whenever it switches
+        chain forks. The data store must support this in some way, with at
+        least sparse rollback points, covering at least K blocks. This could
+        be implemented in terms of {\sc snapshot} and {\sc restore} or more
+        directly. Rollback by a small number of blocks will be frequent and
+        needs to be efficient.
+\end{enumerate}
+While not strictly essential, development will be considerably simplified if
+a single on-disk data structure can support all operation for each of the
+three parts of the ledger state we need to store.
+
+There are three data collections to keep on disk. We will focus the analysis on
+the UTxO initially. The UTxO is the collection that is most frequently used, as
+it is consulted and updated for every single transaction.
+
 \subsection{UTxO access pattern}
-\label{workload}
+\label{utxo-access-pattern}
 
 The access pattern for the UTxO data structure is \emph{very} write heavy. In
 the usual case, we expect exactly three operations for each UTxO entry over its
@@ -480,9 +638,7 @@ will entail:
 This gives us a 1:2 read:write ratio; for each {\sc lookup} there is one
 {\sc insert} and {\sc delete}. This is very write heavy, and is very different
 from typical database applications that are read heavy (e.g. a 10:1 read:write
-ratio). Mainstream database designs are optimised for read heavy workloads.
-There are totally different database designs optimised for write heavy
-workloads.
+ratio).
 
 Note that some UTxOs will be read more often -- if validation of a block fails
 -- or if a block is validated multiple times. We expect the vast majority of
@@ -490,12 +646,210 @@ UTxOs to be read exactly once, and this applies moreso while syncing, where we
 do not expect validation to fail. By definition, UTxOs will be written at most
 twice: once to create and once to delete.
 
+\subsection{UTxO data access locality}
+\label{locality}
+
+Many data structures exploit locality in their data. For example, a time series
+database will store values together that are adjacent in time. In this way,
+queries which inspect values that are close in time (most all queries to a time
+series database!) are able to read a single disk page, and obtain many values
+of interest at once.
+
+There are two dimensions for locality for the UTxO: the time of creation and
+the key/identifier. The key/identifier in the UTxO is the pair of the
+transaction id -- which is a 32 byte cryptographic hash -- and the index of the
+unspent output within that transaction.
+
+We can expect no locality whatsoever in the identifier dimension. Indeed
+cryptographic hashes are the worst case for locality because by design they are
+effectively perfectly random. One might hope there is a small locality effect
+from accessing multiple outputs of the same transaction at the same time. This
+would only provide a small benefit, but in practice multiple outputs tend to be
+used independently because they tend to belong to different parties.
+
+Less obviously, there is apparently relatively little temporal locality in UTxO
+blockchains. The best available comparable data comes from bitcoin, for which
+there are charts\footnote{For example \url{https://hodlwave.com/}} of the age
+distribution of the UTxO set. Ideally we would like the distribution of the
+lifespan of UTxO entries, rather than the distribution of age of entries within
+the UTxO. So this is not the perfect indicator, but under reasonable assumptions
+it is indicative. For locality to be really effective in reducing I/O costs we
+would want to see a heavily skewed distribution with the bulk of the activity
+corresponding to a small fraction (e.g. 10\% or less) of the UTxO set. This is
+because that would enable keeping the small active fraction in memory which
+would avoid I/O costs. What the bitcoin age distribution indicates is that
+there is some temporal effect, but it is not strong.
+
+The conclusion we should draw is that there is little data locality to take
+advantage of. There may be limited temporal locality, but it is unlikely
+to be a decisive factor in choosing between design options. There are a few
+corollaries of this conclusion:
+\begin{itemize}
+\item Caching the UTxO data (as opposed to indexes) is not likely to be very
+      effective, unless the memory cache is a large fraction of the total data
+      size -- which is contrary to our requirements from
+      \cref{ledger-state-size,resource-requirements} for ledger state size and
+      memory use.
+\item We cannot expect to do better than 1 disk read per {\sc lookup} operation.
+      This is because due to the poor data locality we cannot expect each disk
+      read to fetch more than one element, and because our requirements from
+      \cref{ledger-state-size,resource-requirements} are to manage ledger states
+      that are substantially bigger than the available memory.
+\item Thus, no matter the choice of on-disk data structure, we can expect the
+      {\sc lookup} operation performance to be bounded by the I/O performance
+      of `random' reads.
+\end{itemize}
+
+\subsection{SSD performance}
+\label{ssd-performance}
+
+To assess feasibility we need a sense of typical SSD performance. We will
+include the performance of spinning disks but only to illustrate that their
+performance is so poor as to be out of the question.
+
+To make things concrete we look at the example of Samsung SSDs. Samsung
+manufacture a range medium to high end consumer and server SSDs. They helpfully
+publish rated performance numbers including low and high queue depth. We select
+a vaguely representative sample of their range, picking 500GB models where
+possible. For our spinning disk comparison we select a couple models from
+Western Digital. Western Digital do not consistently publish performance numbers
+for their disk drives, so some numbers below are taken from 3rd party reviews,
+or are omitted entirely.
+\begin{center}
+\begin{tabular}[]{llll}
+  Model & Capacity & Interface type & Comment \\
+  \toprule
+  WD Blue      & 1TB   & SATA        & Mainstream, low cost spinning disk \\
+  WD Black     & 1TB   & SATA        & `High performance' spinning disk  \\
+  870 QVO      & 1TB   & SATA        & Latest gen, high capacity, lower performance \\
+  860 PRO      & 512GB & SATA        & Previous gen high end SATA \\
+  960 EVO      & 512GB & NVMe PCIe 3 & Previous gen high end NVMe \\
+  970 EVO Plus & 500GB & NVMe PCIe 3 & Latest gen high end NVMe \\
+  980 PRO      & 500GB & NVMe PCIe 4 & Latest gen ultra-high performance NVMe
+\end{tabular}
+\end{center}
+The random read performance is given at ``queue depth 1'' and at ``queue depth
+32''. Queue depth 1 means issuing all I/O operations serially, whereas a high
+queue depth implies continuously issuing many I/O operations in parallel, so
+that the hardware it given 32 operations to do at any one time.
+\begin{center}
+\begin{tabular}[]{lrrr}
+  Model & 4k reads at QD1 & 4k reads at QD32 & QD32 speedup \\
+  \toprule
+  WD Blue      &    --       &     128 IOPS & -- \\
+  WB Black     &    200 IOPS &     500 IOPS & $2.5\times$ \\
+  870 QVO      & 11,000 IOPS &  98,000 IOPS & $9\times$ \\
+  860 PRO      & 11,000 IOPS & 100,000 IOPS & $9\times$ \\
+  960 EVO      & 14,000 IOPS & 330,000 IOPS & $23\times$ \\
+  970 EVO Plus & 19,000 IOPS & 480,000 IOPS & $25\times$ \\
+  980 PRO      & 22,000 IOPS & 800,000 IOPS & $35\times$
+\end{tabular}
+\end{center}
+On the write side, some on-disk data structures are sensitive to random writes,
+while others rely on sequential writes. The WD Blue model is omitted as the
+numbers are not readily available.
+\begin{center}
+\begin{tabular}[]{lrrr}
+  Model & 4k writes at QD1 & 4k writes at QD32 & sequential writes \\
+  \toprule
+  WB Black     &    450 IOPS &       460 IOPS &   176 MB/s \\
+  870 QVO      & 35,000 IOPS &    88,000 IOPS &   530 MB/s \\
+  860 PRO      & 43,000 IOPS &    90,000 IOPS &   530 MB/s \\
+  960 EVO      & 50,000 IOPS &   330,000 IOPS & 1,800 MB/s \\
+  970 EVO Plus & 60,000 IOPS &   550,000 IOPS & 3,200 MB/s \\
+  980 PRO      & 60,000 IOPS & 1,000,000 IOPS & 5,000 MB/s
+\end{tabular}
+\end{center}
+There are a number of things to note:
+\begin{itemize}
+\item These are all relatively high end and expensive SSDs. Minimum system
+      requirements can only be at the lower end of this range.
+\item There is huge difference between serial and parallel performance:
+      typically a factor of 10 to 20 times.
+\item Read performance at queue depth 1 has only slightly improved over time.
+\item Read performance at high queue depths continues to improve from one
+      generation to the next.
+\item Sequential write performance is even higher than random 4k writes at
+      high queue depth, typically by an extra 40--50\%.
+\item Spinning hard drives have extremely low random access performance, though
+      moderate sequential performance.
+\end{itemize}
+Real world numbers are less than the manufacturer rated numbers, once practical
+details like file systems and OS I/O APIs are taken into account. The authors
+have benchmarked a 960 EVO 250GB model under Linux using the ext4 file system
+on an encrypted block device, using the {\tt fio} benchmarking tool. While
+rated at 330,000 IOPS for random reads at queue depth 32, the {\tt fio}
+benchmark shows it achieves around 220,000 IOPS for random reads at queue depth
+32.
+
+Using parallel I/O would give us the opportunity to get an extra factor of
+\texttimes{}10--\texttimes{}20. It is likely to be necessary to take advantage
+of this parallel I/O to achieve the system performance requirements.
+
+\subsection{Memory vs data set size}
+\label{memory-vs-data-set-size}
+
+The requirements from \cref{ledger-state-size} are for a UTxO of 10--100 million
+entries, and 2--20 million stake addresses. The memory requirement from
+\cref{resource-requirements} are for the node overall to take from 2--8GB.
+Thus we can assume that we can dedicate at least 1GB of main memory as part of
+an on-disk data structure design.
+
+The UTxO entries are expected on the order of 100 bytes for most entries, and
+around 128 for EUTxO entries used by Plutus scripts. This means we can expect
+a 100 million UTxO to take around 9--11GB on disk.
+
+The UTxO is of course not the only on-disk data collection, but even if only
+half of the 1GB is dedicated to the UTxO then this gives us a rather favourable
+ratio of available main memory to the size of the data set on-disk. It is not
+enough to cache large parts of the data set, but is enough to enable a number
+of more memory intensive options for on-disk data structures.
+
+\subsection{The `RUM' trade-off}
+
+As described by \cite{rum-conjecture}, there is a `RUM' trade-off in the design
+of on-disk data structures between \emph{read} performance, \emph{update}
+performance, and amount of main \emph{memory} required. Understanding where we
+fit in this trade-off will help to assess and select appropriate design options.
+
+In \cref{utxo-access-pattern} we established that we have a very write heavy
+access pattern, with a read:write ratio of 1:2 for the UTxO. In
+\cref{memory-vs-data-set-size} we noted that we have a relatively generous
+amount of memory available compared to our data set size. Given this, the RUM
+trade-off immediately tells us that we should select an on-disk data structure
+that is optimised for writes at the expense of reads and at the expense of the
+amount of main memory used.
+
+There are write-optimised on-disk data structures that are able to batch all
+update operations into a small number of write I/O operations. For example this
+would pack 30--40 UTxO {\sc insert} operations, or over 100 UTxO {\sc delete}
+operations into a single 4k write. Furthermore, these can be large sequential
+writes rather than 4k random writes, making optimal use of SSD write
+performance.
+
+By contrast, many read-optimised data structures entail that each update
+operation (i.e. {\sc insert} and {\sc delete}) correspond to several small
+write I/O operations. Given our write-heavy workload, the bottleneck would be
+I/O write operations.
+
+On the other hand, as we established in \cref{locality}, we cannot expect to do
+better than a single read I/O operation for each {\sc lookup} operation. This
+would be the case even for read-optimised data structures.
+
+The RUM trade-off makes the choice clear: we should select a write-optimised
+design and use our generous memory to dataset ratio to tune the design to get
+the read cost as close as reasonably possible to the lower bound of 1 read I/O
+operation per {\sc lookup} operation. We can then expect the performance
+bottleneck to be the hardware I/O random read performance.
+
+\subsection{Assessing I/O performance feasibility}
+
 Given the targets for TPS in \cref{requirements-tps} and sync speed in
 \cref{performance-requirements}, it is useful to see these means as a
 requirement for the storage system. It is illustrative to look at the effective
 TPS that would be needed to be able to sync 100 or 1000 times faster than real
 time, for different TPS targets. The table below also shows the corresponding
-number of {\sc lookup} and {\sc insert}/{\sc delete} operations per second,
+number of UTxO {\sc lookup} and {\sc insert}/{\sc delete} operations per second,
 assuming the typical transaction of 2 inputs and 2 outputs.
 \begin{center}
 \begin{tabular}[]{rrrrr}
@@ -510,31 +864,38 @@ assuming the typical transaction of 2 inputs and 2 outputs.
 \end{tabular}
 \end{center}
 
-\subsection{integrate with io-sim}
-\label{io-sim}
-The Ledger and Consensus codebases have achieved impressive quality
-and reliability, in no small part due to their use of the io-sim
-Haskell library to test against a broad array of failure modes. This
-relies upon integrating at the Haskell source level.
+If we assume a write-optimised data structure that can use sequential writes
+then we are interested in the raw data rate of the UTxO operations. Assuming
+128 bytes for {\sc insert} and 36 bytes {\sc delete} operations, the raw data
+rate for the last row of the table would be only 63MB/s. In reality,
+write-optimised data structures have to write each data item on average several
+times, but even a factor of 5 would still keep us well within the capabilities
+of the sequential write speed of low end SATA SSDs. In short, with a
+write-optimised data store, write performance will be well within the hardware
+performance capabilities of SSDs from \cref{ssd-performance}.
 
-The solution should similarly demonstrate it's correctness with an io-sim test
-suite. This is not a strict requirement, however it is difficult to see how one
-could be confident in the correctness of the solution without it.
+On the read side, if we assume we can get relatively close to the lower bound
+of 1 read I/O operation per {\sc lookup} operation, e.g. perhaps
+1.2--1.5$\times$, then we can see that the last row of the table would
+correspond to 500,000--600,000 IOPS which is outside the capability of all but
+the latest and most expensive desktop or server NVMe PCIe4 SSDs, and when using
+parallel I/O to utilise a high queue depth.
 
-\subsection{minimize changes to STS}
+Dropping down by a factor of 10 to the middle row gives us something that is
+within the realms of possibility for mainstream SSDs, but only when using
+parallel I/O to utilise a high queue depth.
 
-The Cardano Ledger rules are implemented are formulated as executable
-specifications (STS). \todo{right? citation?}. While the Byron ledger rules have
-a separate implementation that is verified against the executable specification,
-Shelley (and the following era's) use the executable specification directly.
-This was a pragmatic choice at the time it was made, however it does introduce
-tensions. The Ledger team are limited in their ability to modifying the
-implementation of those rules to meet business requirements, because changing
-the executable specification risks introducing unsoundness to the ledger rules.
+Dropping down by a factor of 10 to the first row gives us something that is
+well within the realms of possibility for mainstream SSDs, even when not using
+parallel I/O, and so using only queue depth 1.
 
-The solution should minimise disruption to the implementation of the ledger
-rules. This may require us to separate the implementation of the Shelley (and
-forward) ledger rules from their executable specification.
+Finally we should be aware of some caveats. This analysis only covers the UTxO
+and not the other components, so we must keep in mind that some I/O bandwidth
+is needed for the other data stores. We must also remember that SSD read and
+write bandwidth compete with each other, so we cannot use the full rated
+performance of both simultaneously.
+
+\section{Additional design considerations}
 
 \subsection{Batching IO}
 \label{Batching IO}
@@ -549,44 +910,31 @@ the solution.
 It is very likely that a solution required to perform well with a growing
 blockchain will need to exploit Batching IO to achieve this.
 
-\subsection{Operations}
-\label{Operations}
-Here we describe the operations the Ledger state on-disk data store should
-support.
+\subsection{Integration with {\tt io-sim}}
+\label{io-sim}
+The Ledger and Consensus codebases have achieved impressive quality
+and reliability, in no small part due to their use of the {\tt io-sim}
+Haskell library to test against a broad array of failure modes. This
+relies upon integrating at the Haskell source level.
 
-\begin{enumerate}
-  \item INSERT
-        The data store must be able to store data against a key. There will be
-        some flexibility in how updates to data are applied. Stake delegation
-        and aggregation may benefit from some more specialised operations,
-        though likely a simple INSERT with the new value would suffice.
-  \item LOOKUP
-        The data store must be able to retrieve the data previously stored
-        against a key
-  \item DELETE
-        The data store must be able to delete a key and the data stored against
-        it. This is important for storing UTxOs, because the growth of unspent
-        transaction outputs grows much more slowly than the total historical
-        transaction outputs, and so deleting spent transactions will lighten the
-        load on the data store manyfold.
-  \item ROLLBACK
-        \label{ROLLBACK}
-        The consensus layer will rollback ledger state whenever it switches
-        chain forks. The data store must support this in some way.
-  \item
+The solution should similarly demonstrate it's correctness with an io-sim test
+suite. This is not a strict requirement, however it is difficult to see how one
+could be confident in the correctness of the solution without it.
 
-\end{enumerate}
+\subsection{Changes to the ledger STS scheme}
 
-\subsubsection{Locality}
-\label{Locality}
-Many data structures exploit locality in their data. For example, a time series database will store together values that are adjacent in time. In this way, queries which inspect values that are close in time (most all queries to a time series database!) are able to read a single disk page, and obtain many values of interest.
+The Cardano Ledger rules are implemented are formulated as executable
+specifications (STS). \todo{right? citation?}. While the Byron ledger rules have
+a separate implementation that is verified against the executable specification,
+Shelley (and the following era's) use the executable specification directly.
+This was a pragmatic choice at the time it was made, however it does introduce
+tensions. The Ledger team are limited in their ability to modifying the
+implementation of those rules to meet business requirements, because changing
+the executable specification risks introducing unsoundness to the ledger rules.
 
-There are two obvious dimensions in locality for UTxOs: Time of creation and Id (A hash).
-
-We can expect no locality in the ID. IDs are effectively random, and there is no reason to think that two UTxOs with similar IDs would be accessed together.
-
-Less obviously, indeed empirically, there is little temporal locality in blockchains \todo{cite}.
-Thus we have a pessimistic towards applying a caching to the Ledger State data structure. Nevertheless, see \ref{Caching Layer}
+The solution should minimise disruption to the implementation of the ledger
+rules. This may require us to separate the implementation of the Shelley (and
+forward) ledger rules from their executable specification.
 
 \section{Design options}
 \label{options}
@@ -643,7 +991,7 @@ structure in the literature, the LSM Tree \cite{monkey}, is appropriate. It offe
         ledger state, see \ref{ROLLBACK}.
   \item Workload
         There is a  well specified recipe in \cite{monkey} for tuning  the data
-        structure to various workloads. Our workload \ref{workload} is quite unusual. We
+        structure to various workloads. Our workload \ref{utxo-access-pattern} is quite unusual. We
         would be able to tune the LSM tree to match that workload, and moreover, if the
         workload changes in the future as Cardano evolves, we will have the opportunity
         to revisit these decisions without reworking the entire data structure.
@@ -687,7 +1035,7 @@ following document.
 \label{Caching Layer}
 
 Although we expect caching to perform poorly over this data structure, due to the
-lack of locality \ref{Locality}, perhaps a poor cache would be significantly
+lack of locality \ref{locality}, perhaps a poor cache would be significantly
 better than nothing.
 
 One option to mitigate long sync times may be to allow users to add a large
