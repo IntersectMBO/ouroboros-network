@@ -269,6 +269,7 @@ test-suite test
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
 
+                       Data.Signal
                        Test.AnchoredFragment
                        Test.Chain
                        Test.LedgerPeers
@@ -289,6 +290,7 @@ test-suite test
                        Test.Socket
                        Test.PeerState
                        Test.Version
+                       Test.QuickCheck.Signal
                        Test.QuickCheck.Utils
   default-language:    Haskell2010
   build-depends:       base,
@@ -301,6 +303,7 @@ test-suite test
                        containers,
                        directory,
                        dns,
+                       deque,
                        fingertree,
                        hashable,
                        iproute,
@@ -308,6 +311,7 @@ test-suite test
                        network,
                        pipes,
                        process,
+                       pqueue,
                        psqueues,
                        random,
                        serialise,
