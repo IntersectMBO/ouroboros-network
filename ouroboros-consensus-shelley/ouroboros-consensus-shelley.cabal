@@ -38,6 +38,7 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                        Ouroboros.Consensus.Shelley.Ledger.Query
                        Ouroboros.Consensus.Shelley.Ledger.PeerSelection
+                       Ouroboros.Consensus.Shelley.Ledger.Stub
                        Ouroboros.Consensus.Shelley.Ledger.TPraos
                        Ouroboros.Consensus.Shelley.Node
                        Ouroboros.Consensus.Shelley.Node.Serialisation
@@ -56,6 +57,7 @@ library
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
+                     , deepseq
                      , data-default-class
                      , measures
                      , mtl               >=2.2   && <2.3

@@ -81,6 +81,7 @@ import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
+import           Ouroboros.Consensus.Shelley.Ledger.Stub
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
@@ -290,11 +291,13 @@ instance ShelleyBasedEra era
   -- + 'applyLedgerBlock': executes the @BBODY@ transition
   --
   applyLedgerBlock =
+      seq (stubComputation stubComputationArg) $
       applyHelper $
         -- Apply the BBODY transition using the ticked state
         withExcept BBodyError ..: SL.applyBlock
 
   reapplyLedgerBlock = runIdentity ...:
+      seq (stubComputation stubComputationArg) $
       applyHelper $
         -- Reapply the BBODY transition using the ticked state
         Identity ..: SL.reapplyBlock
