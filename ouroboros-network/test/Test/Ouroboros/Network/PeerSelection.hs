@@ -540,13 +540,13 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
 -- | Check the governor's view of connection status does not lag behind reality
 -- by too much.
 --
-prop_governor_connstatus :: GovernorMockEnvironment -> Bool
+prop_governor_connstatus :: GovernorMockEnvironment -> Property
 prop_governor_connstatus env =
     let trace = takeFirstNHours 1
               . selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
         --TODO: check any actually get a true status output and try some deliberate bugs
-     in all ok (groupBy ((==) `on` fst) trace)
+     in conjoin (map ok (groupBy ((==) `on` fst) trace))
   where
     -- We look at events when the environment's view of the state of all the
     -- peer connections changed, and check that before simulated time advances
@@ -554,14 +554,15 @@ prop_governor_connstatus env =
     --
     -- We do that by finding the env events and then looking for the last
     -- governor state event before time moves on.
-    ok :: [(Time, TestTraceEvent)] -> Bool
+    ok :: [(Time, TestTraceEvent)] -> Property
     ok trace =
-        case (lastTrueStatus, lastTestStatus) of
-          (Nothing, _)                       -> True
-          (Just trueStatus, Just testStatus) -> trueStatus == testStatus
-          (Just trueStatus, Nothing)         -> trueStatus == Map.empty
+        counterexample ("last few events:\n" ++ (unlines . map show) trace) $
+        case (lastEnvStatus, lastGovStatus) of
+          (Nothing, _)                     -> property True
+          (Just envStatus, Just govStatus) -> envStatus === govStatus
+          (Just envStatus, Nothing)        -> envStatus === Map.empty
       where
-        lastTrueStatus =
+        lastEnvStatus =
           listToMaybe
             [ Map.filter (not . isPeerCold) status
             | (_, MockEnvEvent (TraceEnvPeersStatus status)) <- reverse trace ]
@@ -569,7 +570,7 @@ prop_governor_connstatus env =
         isPeerCold PeerCold = True
         isPeerCold _        = False
 
-        lastTestStatus =
+        lastGovStatus =
           listToMaybe
             [ Governor.establishedPeersStatus st
             | (_, GovernorDebug (TraceGovernorState _ _ st)) <- reverse trace ]
