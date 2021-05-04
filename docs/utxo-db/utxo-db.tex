@@ -578,6 +578,14 @@ entails an {\tt fsync()} operation which impedes efficient use of write buffers
 and large sequential writes. The consensus layer already takes advantage of
 this for its other on-disk storage subcomponents.
 
+\subsubsection{Cardano API clients operations}
+
+Most Cardano API clients simply iterate the ledger state forward, and hence use
+the same operations as needed by the ledger. Some also need to follow the live
+chain through rollbacks and hence need the same operations as consensus does.
+Some API clients may also need bulk {\sc scan}s over a snapshot of the UTxO,
+or other collections.
+
 \subsubsection{Overall operations}
 
 Overall we require the following operations
@@ -605,11 +613,7 @@ Overall we require the following operations
         be implemented in terms of {\sc snapshot} and {\sc restore} or more
         directly. Rollback by a small number of blocks will be frequent and
         needs to be efficient.
-
-
 \end{enumerate}
-\todo{DUNCAN: should this be included above ?}
-Cardano API clients will require bulk {\sc scan}s over all historical UTxOs.
 While not strictly essential, development will be considerably simplified if
 a single on-disk data structure can support all operation for each of the
 three parts of the ledger state we need to store.
