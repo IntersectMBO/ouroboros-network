@@ -966,19 +966,26 @@ rules. This may require us to separate the implementation of the Shelley (and
 forward) ledger rules from their executable specification.
 
 \section{Design choices}
-\label{options}
+\label{design-choices}
 
-It's clear we will need to implement an disk Key-Value Store capable of serving
-the ledger state, and supporting the operations in \ref{operations}. It should
-be take take advantage of sequential writes, random reads, and exploit generous
-RAM budgets \ref{rum}. The natural choice in the literature for this problem is
-the Log Structured Merge Tree \todo{monkey}.
+It is clear we will need to integrate an on-disk key-value store capable of
+serving the ledger state, and supporting the operations in \cref{operations}.
 
 There are many choices in the design space, trading off development effort,
-delivery risk, and scalability into the future.
-
-We have factored these into a set of mostly independent choices below, where we
-discuss how each choice affects our ability to meet our requirements.
+delivery risk, and scalability into the future. We have factored these into a
+set of mostly independent choices:
+\begin{itemize}
+\item The choice of the on-disk data structure: B+ tree vs. LSM tree vs. other.
+\item The choice to reuse an existing on-disk data structure implementation or
+      to implement one bespoke.
+\item The choice in the style of interface between the consensus layer and
+      the new ledger state storage subsystem.
+\item The choice to use serial or parallel I/O.
+\item The option to add a special caching layer to optionally take advantage
+      of large amounts of memory to increase performance.
+\end{itemize}
+In the remainder of this section we discuss each choice and how affects our
+ability to meet our requirements.
 
 \subsection{Off-the-shelf or Bespoke}
 
