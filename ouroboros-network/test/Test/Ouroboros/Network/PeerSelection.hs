@@ -780,8 +780,16 @@ prop_governor_target_known_1_valid_subset env =
 
         envKnownPeersSig :: Signal (Set PeerAddr)
         envKnownPeersSig =
-            environmentAllKnownPeers
-              (LocalRootPeers.keysSet (localRootPeers env))
+            Signal.nubBy ((==) `on` Set.size)
+          . Signal.scanl Set.union Set.empty
+          . Signal.fromChangeEvents Set.empty
+          . Signal.selectEvents
+              (\case
+                  TraceEnvSetLocalRoots  x -> Just (LocalRootPeers.keysSet x)
+                  TraceEnvRootsResult    x -> Just (Set.fromList x)
+                  TraceEnvGossipResult _ x -> Just (Set.fromList x)
+                  _                        -> Nothing
+              )
           . selectEnvEvents
           $ events
 
@@ -799,43 +807,6 @@ prop_governor_target_known_1_valid_subset env =
         signalProperty 20 show (uncurry validState) $
           (,) <$> envKnownPeersSig
               <*> govKnownPeersSig
-
-
--- | Look at the trace of events from the mock environment and produce a
--- derived trace of the set of peers that could in principle be known by the
--- governor at any point in time. It is maximal in the sense it is all such
--- peers, without respect for any governor targets as limits.
---
--- This trace depends on what the governor actually does, it is not about what
--- it could do. The set starts with the root peers and is extended each time
--- the governor successfully gossips with a peer and finds new peers.
---
--- This trace transformer assumes the root peers do not change. It will need
--- to be adjusted when the the mock environment is extended with dynamic root
--- peers.
---
-environmentAllKnownPeers :: Set PeerAddr
-                         -> Events TraceMockEnv
-                         -> Signal (Set PeerAddr)
-environmentAllKnownPeers localRootPeers =
-  --TODO: implement this as a generic signalScanl style combinator
-    Signal.fromChangeEvents localRootPeers
-  . Signal.primitiveTransformEvents (go localRootPeers)
-  where
-    go :: Set PeerAddr -> [E TraceMockEnv] -> [E (Set PeerAddr)]
-    go !_ [] = []
-
-    go !known (E t (TraceEnvRootsResult peeraddrs) : es)
-      | let known' = Set.union known (Set.fromList peeraddrs)
-      , Set.size known' > Set.size known
-      = E t known' : go known' es
-
-    go !known (E t (TraceEnvGossipResult _ peeraddrs) : es)
-      | let known' = Set.union known (Set.fromList peeraddrs)
-      , Set.size known' > Set.size known
-      = E t known' : go known' es
-
-    go !known (_ : es) = go known es
 
 
 -- | If the governor is below target and has the opportunity to gossip then
@@ -1001,6 +972,8 @@ recentGossipActivity :: DiffTime
 recentGossipActivity d =
     Signal.fromChangeEvents (Nothing, Set.empty)
   . Signal.primitiveTransformEvents (go Set.empty PSQ.empty)
+    --TODO: we should be able to avoid primitiveTransformEvents and express
+    -- this as some combo of keyed linger and keyed until.
   where
     go :: Set PeerAddr
        -> PSQ.OrdPSQ PeerAddr Time ()
