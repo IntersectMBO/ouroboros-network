@@ -26,12 +26,14 @@ module Data.Signal (
   truncateAt,
   stable,
   nub,
+  nubBy,
 
   -- * Temporal operations
   linger,
   timeout,
   until,
   difference,
+  scanl,
 
   -- * Set-based temporal operations
   keyedTimeout,
@@ -40,7 +42,7 @@ module Data.Signal (
 
   ) where
 
-import           Prelude hiding (until)
+import           Prelude hiding (until, scanl)
 
 import           Data.Maybe (maybeToList)
 import           Data.List (groupBy)
@@ -211,12 +213,15 @@ truncateAt horizon (Signal x txs) =
 -- 'Eq' instance is true equality).
 --
 nub :: Eq a => Signal a -> Signal a
-nub (Signal x0 xs0) =
+nub = nubBy (==)
+
+nubBy :: (a -> a -> Bool) -> Signal a -> Signal a
+nubBy eq (Signal x0 xs0) =
     Signal x0 (go x0 xs0)
   where
     go _ [] = []
     go x (E t x' : xs)
-      | x == x'   = go x xs
+      | x `eq` x' = go x xs
       | otherwise = E t x' : go x' xs
 
 
@@ -400,6 +405,16 @@ difference diff (Signal x0 txs0) =
                                : E (TS t (i+1)) Nothing
                                : go x' txs
 
+
+scanl :: (b -> a -> b) -> b -> Signal a -> Signal b
+scanl f z (Signal x0 txs0) =
+    let a0 = f z x0 in
+    Signal a0 (go a0 txs0)
+  where
+    go !_ []             = []
+    go !a (E ts x : txs) = E ts a' : go a' txs
+                          where
+                            a' = f a x
 
 
 --
