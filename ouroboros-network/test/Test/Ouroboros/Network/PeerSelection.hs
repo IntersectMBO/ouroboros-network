@@ -793,7 +793,10 @@ prop_governor_target_known_1_valid_subset env =
         validState knownPeersEnv knownPeersGov =
           knownPeersGov `Set.isSubsetOf` knownPeersEnv
 
-     in signalProperty 20 show (uncurry validState) $
+     in counterexample
+          "Signal key: (environment known peers, governor known peers)" $
+
+        signalProperty 20 show (uncurry validState) $
           (,) <$> envKnownPeersSig
               <*> govKnownPeersSig
 
@@ -816,8 +819,7 @@ environmentAllKnownPeers :: Set PeerAddr
                          -> Signal (Set PeerAddr)
 environmentAllKnownPeers localRootPeers =
   --TODO: implement this as a generic signalScanl style combinator
-    Signal.stable
-  . Signal.fromChangeEvents localRootPeers
+    Signal.fromChangeEvents localRootPeers
   . Signal.primitiveTransformEvents (go localRootPeers)
   where
     go :: Set PeerAddr -> [E TraceMockEnv] -> [E (Set PeerAddr)]
