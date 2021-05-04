@@ -987,6 +987,43 @@ set of mostly independent choices:
 In the remainder of this section we discuss each choice and how affects our
 ability to meet our requirements.
 
+\subsection{Data Structure}
+\label{data-structure}
+
+We have identified LSM trees \cite{monkey} as the on-disk data structure most
+suitable for our workload \ref{rum}. It offers:
+
+\begin{enumerate}
+  \item Append only writes to disk
+        This is critical for good write performance. There no need to ``sync''
+        with the disk, meaning the program never needs to wait for the disk to be ready.
+  \item A snapshotting mechanism
+        In normal operation the Cardano Node frequently needs to roll back the
+        ledger state, see \ref{ROLLBACK}.
+  \item Workload
+        There is a  well specified recipe in \cite{monkey} for tuning  the data
+        structure to various workloads. Our workload \ref{utxo-access-pattern} is quite unusual. We
+        would be able to tune the LSM tree to match that workload, and moreover, if the
+        workload changes in the future as Cardano evolves, we will have the opportunity
+        to revisit these decisions without reworking the entire data structure.
+\end{enumerate}
+
+There are no suitable implementations of an LSM tree available on hackage, and
+few Off-the-Shelf solutions (RocksDB, levelDB). Were we to develop a bespoke LSM
+tree we would plan to follow the blueprint laid out by \cite{monkey}.
+
+Rather than an LSM tree, one might use a B+-tree \todo{cite}. This is the basis
+for the primary on-disk data structure used by most databases. (e.g. sqlite,
+postgresql). There is an existing Haskell implementation on hackage
+\footnote{https://hackage.haskell.org/package/haskey}.
+
+We don't expect to be able to meet the performance threshold
+\ref{performance-requirements} with a B+-tree based solution, however it may be
+a useful stepping stone to the final delivery. Building a version on top of
+haskey, and even delivering it to production, would solve the immediate problem
+of the ledger state not fitting in memory, and may have acceptable sync times in
+the short term, while the chain is still not too large.
+
 \subsection{Off-the-shelf or Bespoke}
 
 There are many existing battle-tested on disk data stores. For example, RocksDB
@@ -1035,42 +1072,6 @@ RocksDB, or levelDB.
 
 A bespoke solution will be built to seamlessly integrate with the Cardano node.
 
-\subsection{Data Structure}
-\label{data-structure}
-
-We have identified LSM trees \cite{monkey} as the on-disk data structure most
-suitable for our workload \ref{rum}. It offers:
-
-\begin{enumerate}
-  \item Append only writes to disk
-        This is critical for good write performance. There no need to ``sync''
-        with the disk, meaning the program never needs to wait for the disk to be ready.
-  \item A snapshotting mechanism
-        In normal operation the Cardano Node frequently needs to roll back the
-        ledger state, see \ref{ROLLBACK}.
-  \item Workload
-        There is a  well specified recipe in \cite{monkey} for tuning  the data
-        structure to various workloads. Our workload \ref{utxo-access-pattern} is quite unusual. We
-        would be able to tune the LSM tree to match that workload, and moreover, if the
-        workload changes in the future as Cardano evolves, we will have the opportunity
-        to revisit these decisions without reworking the entire data structure.
-\end{enumerate}
-
-There are no suitable implementations of an LSM tree available on hackage, and
-few Off-the-Shelf solutions (RocksDB, levelDB). Were we to develop a bespoke LSM
-tree we would plan to follow the blueprint laid out by \cite{monkey}.
-
-Rather than an LSM tree, one might use a B+-tree \todo{cite}. This is the basis
-for the primary on-disk data structure used by most databases. (e.g. sqlite,
-postgresql). There is an existing Haskell implementation on hackage
-\footnote{https://hackage.haskell.org/package/haskey}.
-
-We don't expect to be able to meet the performance threshold
-\ref{performance-requirements} with a B+-tree based solution, however it may be
-a useful stepping stone to the final delivery. Building a version on top of
-haskey, and even delivering it to production, would solve the immediate problem
-of the ledger state not fitting in memory, and may have acceptable sync times in
-the short term, while the chain is still not too large.
 
 \subsection{Parallel or Serial IO}
 
