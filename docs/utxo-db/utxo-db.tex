@@ -1080,14 +1080,11 @@ codebases. However this would impede our exploitation of Batched IO. \ref{parall
 Instead, we recommend an interface which allows the data structure to read/write
 many values in parallel. Note that committing to this interface does not require
 us to implementing parallel operations immediately. A parallel interface could
-be implemented using an internal ``CRUD'' interface.
-
-e.g.
-readUTxOs :: [TxIn] -> (Map TxIn TxOut -> m a) -> m a
+be implemented using an internal ``CRUD'' interface. e.g.
+\begin{verbatim}
+readUTxOs  :: [TxIn] -> (Map TxIn TxOut -> m a) -> m a
 writeUTxOs :: [(TxIn, Maybe TxOut)] -> m ()
-
-\todo{code? delete or format properly}
-
+\end{verbatim}
 Note: We intend to elaborate on this interface, and propose a design, in a
 following document.
 
