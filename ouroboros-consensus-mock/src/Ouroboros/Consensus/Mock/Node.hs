@@ -30,12 +30,9 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.....:))
-import           Ouroboros.Consensus.Util.IOLike (MonadInto (..))
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
-
-import           Cardano.Prelude (Identity)
 
 {-------------------------------------------------------------------------------
   RunNode instance for the mock ledger
@@ -68,15 +65,16 @@ instance ( LedgerSupportsProtocol      (SimpleBlock SimpleMockCrypto ext)
 
 -- | Can be used when 'CanBeLeader' is static
 simpleBlockForging ::
-     forall c ext.
+     forall c ext m.
      ( RunMockBlock c ext
      , CannotForge           (SimpleBlock c ext) ~ Void
      , ForgeStateInfo        (SimpleBlock c ext) ~ ()
      , ForgeStateUpdateError (SimpleBlock c ext) ~ Void
+     , Monad m
      )
   => CanBeLeader (BlockProtocol (SimpleBlock c ext))
-  -> ForgeExt c ext Identity
-  -> BlockForging Identity (SimpleBlock c ext)
+  -> ForgeExt c ext m
+  -> BlockForging m (SimpleBlock c ext)
 simpleBlockForging canBeLeader forgeExt = BlockForging {
       forgeLabel       = "simpleBlockForging"
     , canBeLeader      = canBeLeader

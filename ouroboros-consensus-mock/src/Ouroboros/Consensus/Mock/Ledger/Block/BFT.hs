@@ -31,7 +31,6 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Util
-import           Cardano.Prelude (Identity)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -123,12 +122,13 @@ type instance ForgeStateInfo (SimpleBftBlock c c') = ()
 
 type instance ForgeStateUpdateError (SimpleBftBlock c c') = Void
 
-forgeBftExt :: forall c c'.
+forgeBftExt :: forall c c' m.
                ( SimpleCrypto c
                , BftCrypto c'
                , Signable (BftDSIGN c') (SignedSimpleBft c c')
+               , Monad m
                )
-            => ForgeExt c (SimpleBftExt c c') Identity
+            => ForgeExt c (SimpleBftExt c c') m
 forgeBftExt = ForgeExt $ \cfg _ SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
         ext :: SimpleBftExt c c' = SimpleBftExt $

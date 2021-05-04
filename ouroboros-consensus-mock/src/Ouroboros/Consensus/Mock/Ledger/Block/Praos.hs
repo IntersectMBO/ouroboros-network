@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE FlexibleContexts           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -150,13 +151,14 @@ type instance ForgeStateInfo (SimplePraosBlock c c') = HotKey c'
 type instance ForgeStateUpdateError (SimplePraosBlock c c') =
   HotKeyEvolutionError
 
-forgePraosExt :: forall c c'.
+forgePraosExt :: forall c c' m.
                  ( SimpleCrypto c
                  , PraosCrypto c'
                  , Signable (PraosKES c') (SignedSimplePraos c c')
+                 , Cardano.Crypto.KES.KESSignAlgorithm m (PraosKES c')
                  )
               => HotKey c'
-              -> ForgeExt c (SimplePraosExt c c') (SignKeyAccessKES (PraosKES c'))
+              -> ForgeExt c (SimplePraosExt c c') m
 forgePraosExt hotKey = ForgeExt $ \_cfg isLeader SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
 

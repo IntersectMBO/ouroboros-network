@@ -14,18 +14,14 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node
-import           Ouroboros.Consensus.Mock.Protocol.Praos (PraosKES)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import           Cardano.Crypto.KES.Class (SignKeyAccessKES)
-import           Ouroboros.Consensus.Util.IOLike (MonadInto (..))
-import           Ouroboros.Consensus.Block.Forging (hoistBlockForging)
-import           Cardano.Prelude (Identity)
 
 type MockBftBlock = SimpleBftBlock SimpleMockCrypto BftMockCrypto
 
-protocolInfoBft :: NumCoreNodes
+protocolInfoBft :: (Monad m)
+                => NumCoreNodes
                 -> CoreNodeId
                 -> SecurityParam
                 -> HardFork.EraParams
@@ -51,7 +47,7 @@ protocolInfoBft numCoreNodes nid securityParam eraParams =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState ())
-      , pInfoBlockForging = return [hoistBlockForging $ simpleBlockForging nid forgeBftExt]
+      , pInfoBlockForging = return [simpleBlockForging nid forgeBftExt]
       }
   where
     signKey :: CoreNodeId -> SignKeyDSIGN MockDSIGN

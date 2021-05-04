@@ -20,16 +20,16 @@ import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
-import           Cardano.Prelude (Identity)
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 
-protocolInfoPraosRule :: NumCoreNodes
+protocolInfoPraosRule :: Monad m
+                      => NumCoreNodes
                       -> CoreNodeId
                       -> PraosParams
                       -> HardFork.EraParams
                       -> LeaderSchedule
-                      -> ProtocolInfo Identity MockPraosRuleBlock
+                      -> ProtocolInfo m MockPraosRuleBlock
 protocolInfoPraosRule numCoreNodes
                       nid
                       params

@@ -96,7 +96,6 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 =
 
 praosBlockForging ::
      ( IOLike m
-     , SignKeyAccessKES (PraosKES PraosMockCrypto) ~ Identity
      )
   => CoreNodeId
   -> HotKey PraosMockCrypto
@@ -114,7 +113,7 @@ praosBlockForging cid initHotKey = do
       , forgeBlock       = \cfg bno sno tickedLedgerSt txs isLeader -> do
                                hotKey <- readMVar varHotKey
                                forgeSimple
-                                 (hoistForgeExt into $ forgePraosExt hotKey)
+                                 (forgePraosExt hotKey)
                                  cfg
                                  bno sno
                                  tickedLedgerSt

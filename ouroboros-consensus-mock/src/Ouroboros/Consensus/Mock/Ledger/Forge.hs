@@ -18,7 +18,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word
 
 import           Cardano.Crypto.Hash (hashWithSerialiser)
-import           Cardano.Crypto.KES.Class (SignKeyAccessKES)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

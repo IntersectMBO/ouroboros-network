@@ -17,16 +17,9 @@ import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
-import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Mock.Node.BFT
 import           Ouroboros.Consensus.Mock.Node.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
-import           Ouroboros.Consensus.Util.IOLike
-
-import           Cardano.Crypto.KES.Class
-import           Cardano.Crypto.KES.Mock
-import           Cardano.Crypto.KES.Simple
-import           Cardano.Crypto.KES.NeverUsed
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.TxGen.Mock ()

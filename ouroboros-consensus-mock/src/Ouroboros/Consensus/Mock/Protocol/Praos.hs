@@ -142,10 +142,12 @@ newtype HotKeyEvolutionError = HotKeyEvolutionError Period
 -- it, but we currently do. In real TPraos we check this in
 -- 'tpraosCheckCanForge'.
 evolveKey ::
-     PraosCrypto c
+     ( PraosCrypto c
+     , Cardano.Crypto.KES.Class.KESSignAlgorithm m (PraosKES c)
+     )
   => SlotNo
   -> HotKey c
-  -> SignKeyAccessKES (PraosKES c) (HotKey c, UpdateInfo (HotKey c) HotKeyEvolutionError)
+  -> m (HotKey c, UpdateInfo (HotKey c) HotKeyEvolutionError)
 evolveKey slotNo hotKey = case hotKey of
     HotKey keyPeriod oldKey
       | keyPeriod >= targetPeriod
@@ -165,11 +167,12 @@ evolveKey slotNo hotKey = case hotKey of
 forgePraosFields :: ( PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     , HasCallStack
+                    , Cardano.Crypto.KES.Class.KESSignAlgorithm m (PraosKES c)
                     )
                  => PraosProof c
                  -> HotKey c
                  -> (PraosExtraFields c -> toSign)
-                 -> SignKeyAccessKES (PraosKES c) (PraosFields c toSign)
+                 -> m (PraosFields c toSign)
 forgePraosFields PraosProof{..} hotKey mkToSign = do
     case hotKey of
       HotKey kesPeriod key -> do

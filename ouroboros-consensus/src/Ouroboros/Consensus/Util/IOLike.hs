@@ -7,9 +7,6 @@
 module Ouroboros.Consensus.Util.IOLike (
     IOLike(..)
 
-    -- *** MonadInto
-  , MonadInto (..)
-
     -- * Re-exports
     -- *** MonadThrow
   , MonadThrow(..)
@@ -86,14 +83,5 @@ class ( Monad                   m
       , forall a. NoThunks a => NoThunks (StrictTVar m a)
       , forall a. NoThunks a => NoThunks (StrictMVar m a)
       ) => IOLike m where
-
-class MonadInto m n where
-  into :: m a -> n a
-
-instance Monad m => MonadInto Identity m where
-  into = return . runIdentity
-
-instance MonadInto IO IO where
-  into = id
 
 instance IOLike IO where

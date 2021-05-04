@@ -37,8 +37,7 @@ import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
-                     MonadMonotonicTime (..), StrictMVar, StrictTVar,
-                     MonadInto (..))
+                     MonadMonotonicTime (..), StrictMVar, StrictTVar)
 
 {-------------------------------------------------------------------------------
   Basic definitions

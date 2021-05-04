@@ -43,7 +43,7 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           Test.QuickCheck
 
-import           Control.Monad.IOSim (IOSim, runSimOrThrow, setCurrentTime)
+import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 
 import qualified Ouroboros.Network.MockChain.Chain as MockChain
 

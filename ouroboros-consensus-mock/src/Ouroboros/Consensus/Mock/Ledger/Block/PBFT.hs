@@ -31,7 +31,7 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import           Cardano.Crypto.Util
-import           Cardano.Crypto.KES.Class (SignKeyAccessKES)
+import qualified Cardano.Crypto.KES
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
@@ -141,14 +141,15 @@ type instance ForgeStateInfo (SimplePBftBlock c c') = ()
 
 type instance ForgeStateUpdateError (SimplePBftBlock c c') = Void
 
-forgePBftExt :: forall c c'.
+forgePBftExt :: forall c c' m.
                 ( SimpleCrypto c
                 , PBftCrypto c'
                 , Signable (PBftDSIGN c') (SignedSimplePBft c c')
                 , ContextDSIGN (PBftDSIGN c') ~ ()
-                , Monad (SignKeyAccessKES (PraosKES c))
+                , Monad m
+                -- , Cardano.Crypto.KES.KESSignAlgorithm m (PraosKES c)
                 )
-             => ForgeExt c (SimplePBftExt c c') (SignKeyAccessKES (PraosKES c))
+             => ForgeExt c (SimplePBftExt c c') m
 forgePBftExt = ForgeExt $ \_cfg isLeader SimpleBlock{..} -> do
     let SimpleHeader{..} = simpleHeader
         ext :: SimplePBftExt c c' = SimplePBftExt $

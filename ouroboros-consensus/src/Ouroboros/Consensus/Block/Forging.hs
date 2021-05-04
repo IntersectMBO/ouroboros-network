@@ -18,7 +18,6 @@ module Ouroboros.Consensus.Block.Forging (
   , BlockForging(..)
   , ShouldForge(..)
   , checkShouldForge
-  , hoistBlockForging
     -- * 'UpdateInfo'
   , UpdateInfo (..)
   ) where
@@ -34,7 +33,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util.IOLike (MonadInto (..))
 
 -- | Information about why we /cannot/ forge a block, although we are a leader
 --
@@ -146,16 +144,6 @@ data BlockForging m blk = BlockForging {
         -> [GenTx blk]                  -- Contents of the mempool
         -> IsLeader (BlockProtocol blk) -- Proof we are leader
         -> m blk
-    }
-
-hoistBlockForging :: MonadInto m m' => BlockForging m blk -> BlockForging m' blk
-hoistBlockForging bf =
-  BlockForging
-    { forgeLabel = forgeLabel bf
-    , canBeLeader = canBeLeader bf
-    , updateForgeState = \a b c -> into $ updateForgeState bf a b c
-    , checkCanForge = checkCanForge bf
-    , forgeBlock = \a b c d e f -> into $ forgeBlock bf a b c d e f
     }
 
 data ShouldForge blk =
