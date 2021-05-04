@@ -508,6 +508,7 @@ While processing transactions, the only operations on the UTxO are point
 Depending on how the stake distribution is managed we may also require a
 bulk {\sc scan} over a stable snapshot of the UTxO.
 
+
 \subsubsection{Stake address operations}
 
 Transactions involving stake addresses can do the following: register,
@@ -604,7 +605,11 @@ Overall we require the following operations
         be implemented in terms of {\sc snapshot} and {\sc restore} or more
         directly. Rollback by a small number of blocks will be frequent and
         needs to be efficient.
+
+
 \end{enumerate}
+\todo{DUNCAN: should this be included above ?}
+Cardano API clients will require bulk {\sc scan}s over all historical UTxOs.
 While not strictly essential, development will be considerably simplified if
 a single on-disk data structure can support all operation for each of the
 three parts of the ledger state we need to store.
@@ -806,6 +811,7 @@ enough to cache large parts of the data set, but is enough to enable a number
 of more memory intensive options for on-disk data structures.
 
 \subsection{The `RUM' trade-off}
+\label{rum}
 
 As described by \cite{rum-conjecture}, there is a `RUM' trade-off in the design
 of on-disk data structures between \emph{read} performance, \emph{update}
@@ -904,7 +910,7 @@ performance of both simultaneously.
 As discussed in \cref{ssd-performance}, modern SSDs can achieve IOPS in the
 hundreds of thousands by operating concurrently on many I/O requests at once.
 Without this concurrency they can achieve only tens of thousands of IOPS.
-Low end SSDs will typically scale well up to 8-016 operations at the same time,
+Low end SSDs will typically scale well up to 8-16 operations at the same time,
 whereas high end SSDs will scale well up to 32, and up to 128 for some of the
 latest generation high end models.
 
@@ -952,51 +958,74 @@ The solution should minimise disruption to the implementation of the ledger
 rules. This may require us to separate the implementation of the Shelley (and
 forward) ledger rules from their executable specification.
 
-\section{Design options}
+\section{Design choices}
 \label{options}
 
 It's clear we will need to implement an disk Key-Value Store capable of serving
-the ledger state. The natural choice in the literature for this problem is the Log Structured Merge Tree \todo{cite LSM}. \todo{describe LSM?, liberate a diagram from somewhere?}
+the ledger state, and supporting the operations in \ref{operations}. It should
+be take take advantage of sequential writes, random reads, and exploit generous
+RAM budgets \ref{rum}. The natural choice in the literature for this problem is
+the Log Structured Merge Tree \todo{monkey}.
 
-\subsection{Off-the-shelf Key-Value Store}
+There are many choices in the design space, trading off development effort,
+delivery risk, and scalability into the future.
 
-\todo[inline]{
-High chance of ``mostly working''
-Unlikely to be as reliable as the rest of cardano node
-Will likely increase deployment complexity (logging/monitoring/backups/etc)
-Good for benchmarking
-Add that Cardano used to use RocksDB, and it was problematic
-}
+We have factored these into a set of mostly independent choices below, where we
+discuss how each choice affects our ability to meet our requirements.
 
-One might ask why not use an existing on-disk Key-Value store, such as
-RocksDB \todo{cite RocksDB}, or \todo{cite sqlite}? There are two
-reasons that we might expect this to be unsatisfactory:
+\subsection{Off-the-shelf or Bespoke}
 
-\subsubsection{io-sim testing}
-The tooling described \ref{io-sim} would be difficult or impossible to use with
-an Off-the-shelf Key-Value Store.
+There are many existing battle-tested on disk data stores. For example, RocksDB
+\todo{cite}, levelDB \todo{cit}, sqlite3 \todo{cite}, postresql \todo{cite}. We
+could build our data store on one of these technologies, or alternatively, we
+could develop a bespoke data store, either from scratch or on top of a lower
+level technology.
 
-\subsection{Existing Haskell Libraries}
+The consequences are as follows:
 
-There are no mature LSM libraries on hackage. There does exist a B+-tree
-implementation \todo{cite https://hackage.haskell.org/package/haskey-btree},
-which we could likely turn to our needs.
+\subsubsection{Development time}
+We would expect any solution utilising an existing, mature, technology to
+consume much less development time than developing a bespoke solution.
+Significant work would remain in cleanly integrating and testing the technology
+with our related components.
 
-A B+-tree will not scale as far as a LSM, but for existing transaction rates it
-may suffice.
+\subsubsection{Quality}
+A solution built using an Off-the-Shelf data store would not have access to
+\ref{io-sim}.  This would impact our ability to be confident in the quality of
+the implementation, both at initial delivery and during the life of the
+resulting software.
 
-Implementing the On-disk Ledger State with this library would allow us to ship a
-solution with significantly less effort than writing an On-Disk data structure
-from scratch. We would also expect less risk of delivery failure. We would be
-able to leverage the io-sim library to give confidence of quality.
+\todo[inline]{Should we cite IOHK RocksDB history?}
 
-Note however that a solution based on B+-trees is unlikely to satisfy the
-requirements \ref{performance-requirements}.
+A bespoke data store, developed in haskell, would have access to io-sim tooling,
+and would integrate cleanly into the existing io-sim test suite of consensus.
 
-\subsection{Bespoke LSM Tree}
+\todo[inline]{Address ability to meet changing requirements going forward? Likely more constrained by Off-the-Shelf}
 
-Since no sufficient on disk data structure exists, we could create one. A data
-structure in the literature, the LSM Tree \cite{monkey}, is appropriate. It offers:
+\subsubsection{Data Structure and Workload}
+As described in \ref{rum}, we have a clear idea of the trade-offs to which the
+data store should be tuned. Below \ref{data-structure}, we describe the choices we
+have in data structure. For any Off-the-Shelf solution we well be constrained to
+on-disk data structures that solution implements. We will be constrained to tune
+that solution only with the tune-ables offered by that solution.
+
+A bespoke data store will allow us the greatest flexibility in choosing and
+tuning the on-disk data structure to handle our specific workload.
+
+\subsubsection{Deployment Complexity}
+Integrating an Off-the-Shelf data store will, for some choices of that data
+store, introduce additional complexity to the deployment and operation of the
+Cardano Node. For this reason, we can likely rule out a full database (e.g.
+postgresql), and limit our choices to embeddeble solutions such as sqlite3,
+RocksDB, or levelDB.
+
+A bespoke solution will be built to seamlessly integrate with the Cardano node.
+
+\subsection{Data Structure}
+\label{data-structure}
+
+We have identified LSM trees \cite{monkey} as the on-disk data structure most
+suitable for our workload \ref{rum}. It offers:
 
 \begin{enumerate}
   \item Append only writes to disk
@@ -1013,15 +1042,30 @@ structure in the literature, the LSM Tree \cite{monkey}, is appropriate. It offe
         to revisit these decisions without reworking the entire data structure.
 \end{enumerate}
 
-We would plan to follow the blueprint laid out by \cite{monkey}. This approach
-does carry a higher risk of failure, as a greenfield project with many unknowns.
+There are no suitable implementations of an LSM tree available on hackage, and
+few Off-the-Shelf solutions (RocksDB, levelDB). Were we to develop a bespoke LSM
+tree we would plan to follow the blueprint laid out by \cite{monkey}.
 
-\subsection{Batched IO}
-As described in \ref{Batching IO}, we will have the option to use Batching IO,
+Rather than an LSM tree, one might use a B+-tree \todo{cite}. This is the basis
+for the primary on-disk data structure used by most databases. (e.g. sqlite,
+postgresql). There is an existing Haskell implementation on hackage
+\footnote{https://hackage.haskell.org/package/haskey}.
+
+We don't expect to be able to meet the performance threshold
+\ref{performance-requirements} with a B+-tree based solution, however it may be
+a useful stepping stone to the final delivery. Building a version on top of
+haskey, and even delivering it to production, would solve the immediate problem
+of the ledger state not fitting in memory, and may have acceptable sync times in
+the short term, while the chain is still not too large.
+
+\subsection{Parallel or Serial IO}
+
+As described in \ref{parallel}, we will have the choice to use Parallel IO,
 at the cost of additional complexity in the implementation. While a scalable
-solution will likely need to do this, it is likely wise to start with a simpler,
-slower IO model, and then add Batching IO once we have demonstrated the
-correctness of that simpler implementation.
+solution that meets the performance threshold \ref{performance-requirements}
+will certainly need to exploit Parallel IO, it is possible to start
+with a simpler, Serial IO implementation, and then add Parallel IO once we have
+demonstrated the correctness of that simpler implementation.
 
 \subsection{Interface Style}
 
@@ -1031,7 +1075,7 @@ structure should look like.
 
 A naive ``CRUD'' interface to the data structure would be simpler to work with,
 and would perhaps ease integration of the data structure into the Related Components
-codebases. However this would impede our exploitation of Batched IO. \ref{Batching IO}.
+codebases. However this would impede our exploitation of Batched IO. \ref{parallel-io}.
 
 Instead, we recommend an interface which allows the data structure to read/write
 many values in parallel. Note that committing to this interface does not require
@@ -1050,7 +1094,7 @@ following document.
 \subsection{Caching Layer}
 \label{Caching Layer}
 
-Although we expect caching to perform poorly over this data structure, due to the
+Although we expect caching to perform poorly over our data structure, due to the
 lack of locality \ref{locality}, perhaps a poor cache would be significantly
 better than nothing.
 
@@ -1059,6 +1103,8 @@ in-memory cache over the data structure while syncing. In this way, users could
 sync on a large cloud machine (Say 64GB RAM), save their state to disk, then run
 their node on a smaller cloud machine using that synced state.
 
+This is somewhat speculative, and is included here due to the lack of other
+options for improving sync times.
 
 \subsection{Hybrid options}
 
@@ -1067,8 +1113,7 @@ a bespoke LSM tree should be the long term goal, it may be the case that deliver
 working solution, that does not meet the performance requirements as such, is
 the best first step.
 
-We should aim to specify an interface with can be served by any of the three
-options above.
+We should aim to specify an interface with can be served by any choices above.
 
 \section{Preferred option}
 \label{preferred}
