@@ -5,7 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Ouroboros.Consensus.Util.IOLike (
-    IOLike(..)
+    IOLike
 
     -- * Re-exports
     -- *** MonadThrow
@@ -46,10 +46,6 @@ module Ouroboros.Consensus.Util.IOLike (
   ) where
 
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Crypto.KES (KESAlgorithm, SignKeyKES)
-import qualified Cardano.Crypto.KES as KES
-import           Cardano.Prelude (Identity (..))
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog

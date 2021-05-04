@@ -36,7 +36,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
+import           Ouroboros.Consensus.Util.IOLike (IOLike,
                      MonadMonotonicTime (..), StrictMVar, StrictTVar)
 
 {-------------------------------------------------------------------------------
