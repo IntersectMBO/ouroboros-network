@@ -152,10 +152,10 @@ tests =
 --
 -- * A public root peers target property: that the governor hits its target for
 --   for the number of public root peers (or as near as possible), and does
---   note "grossly" overshoot. Since the public roots is a one sided target, but
+--   not "grossly" overshoot. Since the public roots is a one sided target, but
 --   we don't want to overshoot excessively.
 --
--- * A local root peers target property: that the governor hits it target for
+-- * A local root peers target property: that the governor hits its target for
 --   getting all its local root peers into the established state, and a target
 --   number of them into the active state (or as near as possible).
 --
@@ -445,6 +445,8 @@ prop_governor_trace_coverage env =
      in coverTable "trace events" [ (n, 1) | n <- Map.elems allTraceNames ] $
         tabulate   "trace events" (Map.elems traceNamesSeen)
         True
+        --TODO: use cover to check we do indeed get them all. There are a few
+        -- cases we do not cover yet. These should be fixed first.
 
 collectTraces :: [(Time, TestTraceEvent)] -> Set Int
 collectTraces trace =
