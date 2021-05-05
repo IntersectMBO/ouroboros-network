@@ -351,7 +351,7 @@ prop_simple_allegraMary_convergence TestSetup
     finalBlockEra =
         if rsEra2Blocks reachesEra2
         then "Allegra"
-        else "Shelley"
+        else "Mary"
 
     finalIntersectionDepth :: Word64
     finalIntersectionDepth = depth
