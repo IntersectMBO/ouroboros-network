@@ -1012,7 +1012,7 @@ There are no suitable implementations of an LSM tree available on hackage, and
 few Off-the-Shelf solutions (RocksDB, levelDB). Were we to develop a bespoke LSM
 tree we would plan to follow the blueprint laid out by \cite{monkey}.
 
-Rather than an LSM tree, one might use a B+-tree \todo{cite}. This is the basis
+Rather than an LSM tree, one might use a B+-tree \cite{journals/csur/Comer79}, the basis
 for the primary on-disk data structure used by most databases. (e.g. sqlite,
 postgresql). There is an existing Haskell implementation on hackage
 \footnote{https://hackage.haskell.org/package/haskey}.
@@ -1023,11 +1023,13 @@ a useful stepping stone to the final delivery. Building a version on top of
 haskey, and even delivering it to production, would solve the immediate problem
 of the ledger state not fitting in memory, and may have acceptable sync times in
 the short term, while the chain is still not too large.
-
 \subsection{Off-the-shelf or Bespoke}
 
 There are many existing battle-tested on disk data stores. For example, RocksDB
-\todo{cite}, levelDB \todo{cit}, sqlite3 \todo{cite}, postresql \todo{cite}. We
+\footnote{https://rocksdb.org/}, levelDB
+\footnote{https://github.com/google/leveldb}, sqlite3
+\footnote{https://www.sqlite.org/index.html}, postresql
+\footnote{https://www.postgresql.org/}. We
 could build our data store on one of these technologies, or alternatively, we
 could develop a bespoke data store, either from scratch or on top of a lower
 level technology.
@@ -1177,7 +1179,7 @@ rendering impossible, the incorporation of learnings from our experience
 implementing the data structure into the design of the final API.
 
 \subsection{Performance of Chain Sync}
-As discussed in \todo{ref section} there is reason to expect that any solution
+As discussed in \ref{assessing-feasibility} there is reason to expect that any solution
 will have sync times in the order of days per chain-year at even moderate
 Transaction rates. This is the critical constraint that guides the majority of
 our design. There is some opportunity to mitigate this e.g. \ref{Caching Layer},
