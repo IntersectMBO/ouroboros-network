@@ -21,9 +21,11 @@ library
   -- other-modules:
   -- other-extensions:
   exposed-modules:     LedgerOnDisk
-                       LedgerOnDisk.API
+                       LedgerOnDisk.Class
   build-depends:       base,
-                       containers
+                       unordered-containers,
+                       transformers,
+                       mtl
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
