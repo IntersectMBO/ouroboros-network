@@ -22,6 +22,7 @@ packages: ./typed-protocols
           ./io-sim-classes
           ./ntp-client
           ./cardano-client
+          ./ledger-ondisk
 
 constraints:
   ip < 1.5,
