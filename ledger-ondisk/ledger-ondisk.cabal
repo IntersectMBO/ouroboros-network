@@ -20,8 +20,10 @@ extra-source-files:  CHANGELOG.md
 library
   -- other-modules:
   -- other-extensions:
-  exposed-modules:     Lib
-  build-depends:       base
+  exposed-modules:     LedgerOnDisk
+                       LedgerOnDisk.API
+  build-depends:       base,
+                       containers
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
