@@ -15,6 +15,7 @@ Currently the team consists of:
 * [Nicolas Frisby](https://github.com/nfrisby)
 * [Pawel Szulc](https://github.com/EncodePanda)
 * [Edsko de Vries](https://github.com/edsko) (8 hours a week)
+* [Javier Sagredo](https://github.com/Jasagredo)
 
 ### Join our slack channels
 
@@ -39,12 +40,17 @@ You'll eventually also need to be in the `CODEOWNERS` file.
 
 ## Create your first PR!
 
-* Create new branch - convention is `/github_nickname/meaningful_name`
+* Create new branch - convention is `github_nickname/meaningful_name`
 * Modify `ouroboros-consensus/docs/IOHKOnboarding.md` by adding yourself to the `## Meet the team` section
 * Commit, push and make a PR
 * Find some one to review it by the end of the day
 * Merge it! - note that we use `bors` to merge our PRs
-
+    * Issuing `bors` commands requires certains permissions.
+    * First, someone with permissions to do so must give you write access in
+      [the repository
+      settings](https://github.com/input-output-hk/ouroboros-network/settings/access).
+    * Then, someone with permissions to do so must click the "Update" in [the
+      `bors` settings](https://bors-ng.aws.iohkdev.io/repositories/8/settings).
 
 The general IOHK onboarding should have discussed establishing hardware-based
 Two Factor Authentication on your GitHub account; that's another prerequisite.

@@ -1,0 +1,31 @@
+;
+; NodeToNode Handshake, v4 or higher
+;
+
+handshakeMessage
+    = msgProposeVersions
+    / msgAcceptVersion
+    / msgRefuse
+
+msgProposeVersions = [0, versionTable]
+msgAcceptVersion   = [1, versionNumber, nodeToNodeVersionData]
+msgRefuse          = [2, refuseReason]
+
+versionTable = { * versionNumber => nodeToNodeVersionData }
+
+versionNumber = 4 / 5 / 6 / 7
+
+nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode ]
+
+; range between 0 and 0xffffffff
+networkMagic = 0..4294967295
+initiatorAndResponderDiffusionMode = bool
+
+refuseReason
+    = refuseReasonVersionMismatch
+    / refuseReasonHandshakeDecodeError
+    / refuseReasonRefused
+
+refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
+refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
+refuseReasonRefused              = [2, versionNumber, tstr]

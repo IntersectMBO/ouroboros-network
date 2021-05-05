@@ -15,7 +15,6 @@ module Block.Shelley (
   ) where
 
 import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
 import           Data.Sequence.Strict (StrictSeq)
@@ -23,8 +22,8 @@ import           GHC.Records (HasField, getField)
 import           Options.Applicative
 
 import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Era as CL
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
@@ -44,14 +43,15 @@ instance ( ShelleyBasedEra era
          , HasField "outputs" (Core.TxBody era) (StrictSeq (SL.TxOut era))
          ) => HasAnalysis (ShelleyBlock era) where
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
-      SL.Block _ (SL.TxSeq txs) -> sum $ fmap countOutputs txs
+      SL.Block _ body -> sum $ fmap countOutputs (CL.fromTxSeq @era body)
     where
-      countOutputs :: SL.Tx era -> Int
-      countOutputs = length . getField @"outputs" . SL._body
+      countOutputs :: CL.TxInBlock era -> Int
+      countOutputs = length . getField @"outputs" . getField @"body"
 
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
-      SL.Block _ (SL.TxSeq txs) ->
-        toList $ fmap (fromIntegral . BL.length . SL.txFullBytes) txs
+      SL.Block _ body ->
+          toList
+        $ fmap (fromIntegral . (getField @"txsize")) (CL.fromTxSeq @era body)
 
   knownEBBs = const Map.empty
 

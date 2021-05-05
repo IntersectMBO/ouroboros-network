@@ -5,10 +5,23 @@
         "homepage": "https://input-output-hk.github.io/haskell.nix",
         "owner": "input-output-hk",
         "repo": "haskell.nix",
-        "rev": "958e9d3e9ec53fbce72ac720b10a6418f3b477f0",
-        "sha256": "0j9p3xyck636gv87rwd6yl7w9ssv3jwrfqyxvhpchszkj097qwi6",
+        "rev": "1b9b05beed75a1be98405501fbb33ac1f080069e",
+        "sha256": "0679ymbjm7z3qbiv9wf7f22rxdwzkpk0jlh1by0rswdmbwqi5786",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/958e9d3e9ec53fbce72ac720b10a6418f3b477f0.tar.gz",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/1b9b05beed75a1be98405501fbb33ac1f080069e.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "hls-released": {
+        "branch": "1.1.0",
+        "description": "Successor of ghcide & haskell-ide-engine. One IDE to rule them all.",
+        "homepage": "",
+        "builtin": false,
+        "owner": "haskell",
+        "repo": "haskell-language-server",
+        "rev": "f1c096927186a93d8e3ccd4fe8385cc1b070350b",
+        "sha256": "0kviq3kinm3i0qm4r26rdnlkwbs1s3r1rqiqdry517rgkgnjpcp5",
+        "type": "tarball",
+        "url": "https://github.com/haskell/haskell-language-server/archive/f1c096927186a93d8e3ccd4fe8385cc1b070350b.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "iohk-nix": {
@@ -35,16 +48,17 @@
         "url": "https://github.com/input-output-hk/niv/archive/89da7b2e7ae0779fd351618fc74df1b1da5e6214.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
-    "nixpkgs": {
-        "branch": "nixpkgs-20.09-darwin",
-        "description": "Nix Packages collection",
-        "homepage": null,
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "fbc078d2451d67b3091ead72ddece78a3d48c226",
-        "sha256": "01fysh7bnbwr135qn0j9rs77widi4isznj8arda5f6dpab24pyki",
+    "stylish-haskell": {
+        "branch": "main",
+        "description": "Haskell code prettifier",
+        "homepage": "",
+        "builtin": false,
+        "owner": "haskell",
+        "repo": "stylish-haskell",
+        "rev": "3d5348041e2efbcae95f1c62ace5ac0ffd9629d2",
+        "sha256": "1rms68fll6w1rzdg9ppjs9g246mbgxi5589vxb8r8pcn5v1ncfj2",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/fbc078d2451d67b3091ead72ddece78a3d48c226.tar.gz",
+        "url": "https://github.com/haskell/stylish-haskell/archive/3d5348041e2efbcae95f1c62ace5ac0ffd9629d2.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

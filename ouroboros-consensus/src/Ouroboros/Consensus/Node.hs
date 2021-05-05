@@ -110,7 +110,7 @@ import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
                      ValidationPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (defaultDiskPolicy)
+                     (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
@@ -462,9 +462,7 @@ mkChainDbArgs
   chunkInfo
   defArgs
   = defArgs {
-      ChainDB.cdbDiskPolicy     = defaultDiskPolicy k
-
-    , ChainDB.cdbTopLevelConfig = cfg
+      ChainDB.cdbTopLevelConfig = cfg
     , ChainDB.cdbChunkInfo      = chunkInfo
     , ChainDB.cdbCheckIntegrity = nodeCheckIntegrity (configStorage cfg)
     , ChainDB.cdbGenesis        = return initLedger
@@ -472,8 +470,6 @@ mkChainDbArgs
 
     , ChainDB.cdbRegistry       = registry
     }
-  where
-    k = configSecurityParam cfg
 
 mkNodeKernelArgs
   :: forall m addrNTN addrNTC blk. (RunNode blk, IOLike m)
@@ -618,6 +614,7 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
   , srnBfcMaxConcurrencyDeadline   :: Maybe Word
   , srnChainDbValidateOverride     :: Bool
     -- ^ If @True@, validate the ChainDB on init no matter what
+  , srnSnapshotInterval            :: SnapshotInterval
   , srnDatabasePath                :: FilePath
     -- ^ Location of the DBs
   , srnDiffusionArguments          :: DiffusionArguments
@@ -652,7 +649,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnCustomiseHardForkBlockchainTimeArgs = id
       , llrnKeepAliveRng
       , llrnChainDbArgsDefaults =
-          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS
+          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy
       , llrnCustomiseChainDbArgs = id
       , llrnCustomiseNodeKernelArgs
       , llrnRunDataDiffusion =
@@ -678,6 +675,12 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
           InFuture.defaultClockSkew
       }
   where
+    diskPolicy =
+      let
+        cfg = pInfoConfig rnProtocolInfo
+        k   = configSecurityParam cfg
+      in defaultDiskPolicy k srnSnapshotInterval
+
     mkHasFS :: ChainDB.RelativeMountPoint -> SomeHasFS IO
     mkHasFS = stdMkChainDbHasFS srnDatabasePath
 

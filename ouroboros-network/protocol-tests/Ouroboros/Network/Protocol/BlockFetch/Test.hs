@@ -41,7 +41,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 import           Test.ChainGenerators (TestChainAndPoints (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     splits2, splits3)
+                     prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -50,33 +50,36 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Protocol.BlockFetch"
-  [ testProperty "direct"              prop_direct
-  , testProperty "directPipelined 1"   prop_directPipelined1
-  , testProperty "directPipelined 2"   prop_directPipelined2
-  , testProperty "connect"             prop_connect
-  , testProperty "connect_pipelined 1" prop_connect_pipelined1
-  , testProperty "connect_pipelined 2" prop_connect_pipelined2
-  , testProperty "connect_pipelined 3" prop_connect_pipelined3
-  , testProperty "connect_pipelined 4" prop_connect_pipelined4
-  , testProperty "connect_pipelined 5" prop_connect_pipelined5
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
-  , testProperty "pipe IO"             prop_pipe_IO
-  , testProperty "codec"               prop_codec_BlockFetch
-  , testProperty "codec 2-splits"      prop_codec_splits2_BlockFetch
-  , testProperty "codec 3-splits"    $ withMaxSuccess 30
-                                       prop_codec_splits3_BlockFetch
-  , testProperty "codec cbor"          prop_codec_cbor_BlockFetch
+  testGroup "Ouroboros.Network.Protocol"
+    [ testGroup "BlockFetch"
+        [ testProperty "direct"              prop_direct
+        , testProperty "directPipelined 1"   prop_directPipelined1
+        , testProperty "directPipelined 2"   prop_directPipelined2
+        , testProperty "connect"             prop_connect
+        , testProperty "connect_pipelined 1" prop_connect_pipelined1
+        , testProperty "connect_pipelined 2" prop_connect_pipelined2
+        , testProperty "connect_pipelined 3" prop_connect_pipelined3
+        , testProperty "connect_pipelined 4" prop_connect_pipelined4
+        , testProperty "connect_pipelined 5" prop_connect_pipelined5
+        , testProperty "channel ST"          prop_channel_ST
+        , testProperty "channel IO"          prop_channel_IO
+        , testProperty "pipe IO"             prop_pipe_IO
+        , testProperty "codec"               prop_codec_BlockFetch
+        , testProperty "codec 2-splits"      prop_codec_splits2_BlockFetch
+        , testProperty "codec 3-splits"    $ withMaxSuccess 30
+                                             prop_codec_splits3_BlockFetch
+        , testProperty "codec cbor"          prop_codec_cbor_BlockFetch
+        , testProperty "codec valid cbor"    prop_codec_valid_cbor_BlockFetch
 
-  , testProperty "codecSerialised"                   prop_codec_BlockFetchSerialised
-  , testProperty "codecSerialised 2-splits"          prop_codec_splits2_BlockFetchSerialised
-  , testProperty "codecSerialised 3-splits"        $ withMaxSuccess 30
-                                                     prop_codec_splits3_BlockFetchSerialised
-  , testProperty "codecSerialised cbor"              prop_codec_cbor_BlockFetchSerialised
-  , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_BlockFetch_BlockFetchSerialised
-  , testProperty "codecSerialised/codec bin compat"  prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
-  ]
+        , testProperty "codecSerialised"                   prop_codec_BlockFetchSerialised
+        , testProperty "codecSerialised 2-splits"          prop_codec_splits2_BlockFetchSerialised
+        , testProperty "codecSerialised 3-splits"        $ withMaxSuccess 30
+                                                           prop_codec_splits3_BlockFetchSerialised
+        , testProperty "codecSerialised cbor"              prop_codec_cbor_BlockFetchSerialised
+        , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_BlockFetch_BlockFetchSerialised
+        , testProperty "codecSerialised/codec bin compat"  prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
+        ]
+    ]
 
 
 --
@@ -396,6 +399,11 @@ prop_codec_cbor_BlockFetch
   -> Bool
 prop_codec_cbor_BlockFetch msg =
   runST (prop_codec_cborM codec msg)
+
+prop_codec_valid_cbor_BlockFetch
+  :: AnyMessageAndAgency (BlockFetch Block (Point Block))
+  -> Property
+prop_codec_valid_cbor_BlockFetch = prop_codec_valid_cbor_encoding codec
 
 prop_codec_BlockFetchSerialised
   :: AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))

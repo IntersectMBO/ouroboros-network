@@ -1,0 +1,27 @@
+
+; The Codecs are polymorphic in the data types for blocks, points, slot
+; numbers etc..
+
+block           = [blockHeader, blockBody]
+
+blockHeader     = [headerHash, chainHash, headerSlot, headerBlockNo, headerBodyHash]
+headerHash      = int
+chainHash       = genesisHash / blockHash
+genesisHash     = []
+blockHash       = [int]
+blockBody       = tstr
+headerSlot      = word64
+headerBlockNo   = word64
+headerBodyHash  = int
+
+point           = origin / blockHeaderHash
+origin          = []
+blockHeaderHash = [slotNo, int]
+slotNo          = word64
+
+transaction  = int
+rejectReason = int
+
+word16 = 0..65535
+word32 = 0..4294967295
+word64 = 0..18446744073709551615

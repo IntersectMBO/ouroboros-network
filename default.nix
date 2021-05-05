@@ -1,6 +1,6 @@
 { system ? builtins.currentSystem
 , crossSystem ? null
-  # allows to cutomize haskellNix (ghc and profiling, see ./nix/haskell.nix)
+  # allows to cutomize haskellNix (profiling, see ./nix/ouroboros-network.nix)
 , config ? { }
   # allows to override dependencies of the project without modifications,
   # eg. to test build against local checkout of nixpkgs and iohk-nix:

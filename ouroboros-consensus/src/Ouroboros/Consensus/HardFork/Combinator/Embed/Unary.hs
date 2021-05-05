@@ -173,6 +173,10 @@ instance Isomorphic WrapGenTxId where
   project = defaultProjectNS
   inject  = defaultInjectNS
 
+instance Isomorphic WrapValidatedGenTx where
+  project = defaultProjectNS
+  inject  = defaultInjectNS
+
 instance Isomorphic I where
   project = defaultProjectNS
   inject  = defaultInjectNS
@@ -267,7 +271,7 @@ instance Isomorphic TopLevelConfig where
         (project      $ configCodec     tlc)
         (project      $ configStorage   tlc)
     where
-      ei :: EpochInfo Identity
+      ei :: EpochInfo (Except PastHorizonException)
       ei = noHardForksEpochInfo $ project tlc
 
       auxLedger :: LedgerConfig (HardForkBlock '[blk]) -> LedgerConfig blk
@@ -443,12 +447,12 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    bno
                                    sno
                                    (unComp (inject (Comp tickedLgrSt)))
-                                   (inject <$> txs)
+                                   (inject' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (inject' (Proxy @(WrapIsLeader blk)) isLeader)
       }
     where
       injTickedChainDepSt ::
-           EpochInfo Identity
+           EpochInfo (Except PastHorizonException)
         -> Ticked (ChainDepState (BlockProtocol blk))
         -> Ticked (ChainDepState (HardForkProtocol '[blk]))
       injTickedChainDepSt ei =
@@ -486,7 +490,7 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    bno
                                    sno
                                    (unComp (project (Comp tickedLgrSt)))
-                                   (project <$> txs)
+                                   (project' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (project' (Proxy @(WrapIsLeader blk)) isLeader)
       }
     where

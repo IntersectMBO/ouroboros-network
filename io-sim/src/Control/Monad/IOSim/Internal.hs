@@ -360,12 +360,16 @@ instance MonadSTMTx (STM s) where
   newTQueue         = newTQueueDefault
   readTQueue        = readTQueueDefault
   tryReadTQueue     = tryReadTQueueDefault
+  peekTQueue        = peekTQueueDefault
+  tryPeekTQueue     = tryPeekTQueueDefault
   writeTQueue       = writeTQueueDefault
   isEmptyTQueue     = isEmptyTQueueDefault
 
   newTBQueue        = newTBQueueDefault
   readTBQueue       = readTBQueueDefault
   tryReadTBQueue    = tryReadTBQueueDefault
+  peekTBQueue       = peekTBQueueDefault
+  tryPeekTBQueue    = tryPeekTBQueueDefault
   flushTBQueue      = flushTBQueueDefault
   writeTBQueue      = writeTBQueueDefault
   lengthTBQueue     = lengthTBQueueDefault

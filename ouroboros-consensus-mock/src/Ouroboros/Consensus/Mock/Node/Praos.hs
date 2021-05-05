@@ -22,6 +22,7 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -36,16 +37,18 @@ protocolInfoPraos :: IOLike m
                   -> PraosParams
                   -> HardFork.EraParams
                   -> Natural
+                  -> PraosEvolvingStake
                   -> ProtocolInfo m MockPraosBlock
-protocolInfoPraos numCoreNodes nid params eraParams eta0 =
+protocolInfoPraos numCoreNodes nid params eraParams eta0 evolvingStakeDist =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = PraosConfig {
-                praosParams       = params
-              , praosSignKeyVRF   = signKeyVRF nid
-              , praosInitialEta   = eta0
-              , praosInitialStake = genesisStakeDist addrDist
-              , praosVerKeys      = verKeys
+                praosParams        = params
+              , praosSignKeyVRF    = signKeyVRF nid
+              , praosInitialEta    = eta0
+              , praosInitialStake  = genesisStakeDist addrDist
+              , praosEvolvingStake = evolvingStakeDist
+              , praosVerKeys       = verKeys
               }
           , topLevelConfigLedger  = SimpleLedgerConfig addrDist eraParams
           , topLevelConfigBlock   = SimpleBlockConfig
@@ -111,6 +114,6 @@ praosBlockForging cid initHotKey = do
                                    cfg
                                    bno sno
                                    tickedLedgerSt
-                                   txs
+                                   (map txForgetValidated txs)
                                    isLeader
       }

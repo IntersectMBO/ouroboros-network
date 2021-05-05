@@ -139,7 +139,7 @@ type LgrDbSerialiseConstraints blk =
 -------------------------------------------------------------------------------}
 
 data LgrDbArgs f m blk = LgrDbArgs {
-      lgrDiskPolicy     :: HKD f DiskPolicy
+      lgrDiskPolicy     :: DiskPolicy
     , lgrGenesis        :: HKD f (m (ExtLedgerState blk))
     , lgrHasFS          :: SomeHasFS m
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
@@ -148,9 +148,13 @@ data LgrDbArgs f m blk = LgrDbArgs {
     }
 
 -- | Default arguments
-defaultArgs :: Applicative m => SomeHasFS m -> LgrDbArgs Defaults m blk
-defaultArgs lgrHasFS = LgrDbArgs {
-      lgrDiskPolicy     = NoDefault
+defaultArgs ::
+     Applicative m
+  => SomeHasFS m
+  -> DiskPolicy
+  -> LgrDbArgs Defaults m blk
+defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
+      lgrDiskPolicy     = diskPolicy
     , lgrGenesis        = NoDefault
     , lgrHasFS
     , lgrTopLevelConfig = NoDefault

@@ -56,7 +56,8 @@ import           GHC.Stack
 import           System.Random (mkStdGen)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
+                     TraceLabelPeer (..))
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
@@ -705,7 +706,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbImmutableDbValidation  = ImmutableDB.ValidateAllChunks
         , cdbVolatileDbValidation   = VolatileDB.ValidateAll
         , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-        , cdbDiskPolicy             = LgrDB.defaultDiskPolicy (configSecurityParam cfg)
+        , cdbDiskPolicy             = LgrDB.defaultDiskPolicy (configSecurityParam cfg) LgrDB.DefaultSnapshotInterval
           -- Integration
         , cdbTopLevelConfig         = cfg
         , cdbChunkInfo              = ImmutableDB.simpleChunkInfo epochSize0
@@ -812,7 +813,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -> BlockNo
             -> SlotNo
             -> TickedLedgerState blk
-            -> [GenTx blk]
+            -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk
           customForgeBlock origBlockForging cfg' currentBno currentSlot tickedLdgSt txs prf = do
@@ -912,7 +913,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
                 { chainSyncClientTracer = Tracer $ \case
-                    CSClient.TraceDownloadedHeader hdr
+                    TraceLabelPeer _ (CSClient.TraceDownloadedHeader hdr)
                       -> case blockPoint hdr of
                             GenesisPoint   -> pure ()
                             BlockPoint s h ->
@@ -1055,6 +1056,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
     customNodeToNodeCodecs
       :: TopLevelConfig blk
+      -> NodeToNodeVersion
       -> NTN.Codecs blk CodecError m
            Lazy.ByteString
            Lazy.ByteString
@@ -1063,7 +1065,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
            (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
            (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
            (AnyMessage KeepAlive)
-    customNodeToNodeCodecs cfg = NTN.Codecs
+    customNodeToNodeCodecs cfg ntnVersion = NTN.Codecs
         { cChainSyncCodec =
             mapFailureCodec (CodecBytesFailure "ChainSync") $
               NTN.cChainSyncCodec binaryProtocolCodecs
@@ -1087,7 +1089,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               NTN.cKeepAliveCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion
+        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion ntnVersion
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
@@ -1323,7 +1325,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           _ -> pure ()
       where
         codec =
-            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion
+            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion version
 
 -- | Variant of 'createConnectChannels' with intermediate queues for
 -- delayed-but-in-order messages
@@ -1567,6 +1569,7 @@ type TracingConstraints blk =
   , Show (ApplyTxErr blk)
   , Show (Header blk)
   , Show (GenTx blk)
+  , Show (Validated (GenTx blk))
   , Show (GenTxId blk)
   , Show (ForgeStateInfo blk)
   , Show (ForgeStateUpdateError blk)

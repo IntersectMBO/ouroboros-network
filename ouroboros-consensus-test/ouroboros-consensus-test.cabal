@@ -98,6 +98,7 @@ library
                      , random
                      , serialise         >=0.2   && <0.3
                      , sop-core
+                     , strict-containers
                      , tasty
                      , tasty-golden
                      , tasty-hunit
@@ -221,8 +222,10 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ImmutableDB.Primary
                        Test.Ouroboros.Storage.ImmutableDB.StateMachine
                        Test.Ouroboros.Storage.LedgerDB
+                       Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk
+                       Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
                        Test.Ouroboros.Storage.Orphans
                        Test.Ouroboros.Storage.TestBlock
                        Test.Ouroboros.Storage.VolatileDB
@@ -251,6 +254,7 @@ test-suite test-storage
                      , quiet
                      , random
                      , serialise
+                     , strict-containers
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck

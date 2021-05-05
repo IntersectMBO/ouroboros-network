@@ -34,6 +34,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Test.Util.QuickCheck
 import           Test.Util.TestBlock
 
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
+
 tests :: TestTree
 tests = testGroup "InMemory" [
       testGroup "Serialisation" [
@@ -379,11 +381,3 @@ instance Arbitrary SwitchSetup where
         | ssNumRollback' <- shrink ssNumRollback
         ]
       ]
-
-{-------------------------------------------------------------------------------
-  Orphan Arbitrary instances
--------------------------------------------------------------------------------}
-
-instance Arbitrary SecurityParam where
-  arbitrary = SecurityParam <$> choose (0, 6)
-  shrink (SecurityParam k) = SecurityParam <$> shrink k

@@ -10,6 +10,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -41,6 +42,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , StorageConfig (..)
   , Ticked (..)
   , TxId (..)
+  , Validated (..)
     -- * Serialisation
   , decodeDualBlock
   , decodeDualGenTx
@@ -261,7 +263,7 @@ class (
   updateBridgeWithBlock :: DualBlock m a
                         -> BridgeLedger m a -> BridgeLedger m a
 
-  updateBridgeWithTx :: GenTx (DualBlock m a)
+  updateBridgeWithTx :: Validated (GenTx (DualBlock m a))
                      -> BridgeLedger m a -> BridgeLedger m a
 
 {-------------------------------------------------------------------------------
@@ -524,6 +526,13 @@ data instance GenTx (DualBlock m a) = DualGenTx {
     }
   deriving NoThunks via AllowThunk (GenTx (DualBlock m a))
 
+data instance Validated (GenTx (DualBlock m a)) = ValidatedDualGenTx {
+      vDualGenTxMain   :: Validated (GenTx m)
+    , vDualGenTxAux    :: Validated (GenTx a)
+    , vDualGenTxBridge :: BridgeTx m a
+    }
+  deriving NoThunks via AllowThunk (Validated (GenTx (DualBlock m a)))
+
 instance (Typeable m, Typeable a)
     => ShowProxy (GenTx (DualBlock m a)) where
 
@@ -532,9 +541,9 @@ type instance ApplyTxErr (DualBlock m a) = DualGenTxErr m a
 instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   applyTx DualLedgerConfig{..}
           slot
-          tx@DualGenTx{..}
+          DualGenTx{..}
           TickedDualLedgerState{..} = do
-      (main', aux') <-
+      ((main', mainVtx), (aux', auxVtx)) <-
         agreeOnError DualGenTxErr (
             applyTx
               dualLedgerConfigMain
@@ -547,30 +556,35 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
               dualGenTxAux
               tickedDualLedgerStateAux
           )
-      return $ TickedDualLedgerState {
+      let vtx = ValidatedDualGenTx {
+                vDualGenTxMain   = mainVtx
+              , vDualGenTxAux    = auxVtx
+              , vDualGenTxBridge = dualGenTxBridge
+              }
+      return $ flip (,) vtx $ TickedDualLedgerState {
           tickedDualLedgerStateMain    = main'
         , tickedDualLedgerStateAux     = aux'
         , tickedDualLedgerStateAuxOrig = tickedDualLedgerStateAuxOrig
         , tickedDualLedgerStateBridge  = updateBridgeWithTx
-                                           tx
+                                           vtx
                                            tickedDualLedgerStateBridge
         }
 
   reapplyTx DualLedgerConfig{..}
             slot
-            tx@DualGenTx{..}
+            tx@ValidatedDualGenTx{..}
             TickedDualLedgerState{..} = do
       (main', aux') <-
         agreeOnError DualGenTxErr (
             reapplyTx
               dualLedgerConfigMain
               slot
-              dualGenTxMain
+              vDualGenTxMain
               tickedDualLedgerStateMain
           , reapplyTx
               dualLedgerConfigAux
               slot
-              dualGenTxAux
+              vDualGenTxAux
               tickedDualLedgerStateAux
           )
       return $ TickedDualLedgerState {
@@ -585,6 +599,19 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   maxTxCapacity = maxTxCapacity . tickedDualLedgerStateMain
   txInBlockSize = txInBlockSize . dualGenTxMain
 
+  txForgetValidated vtx =
+      DualGenTx {
+          dualGenTxMain   = txForgetValidated vDualGenTxMain
+        , dualGenTxAux    = txForgetValidated vDualGenTxAux
+        , dualGenTxBridge = vDualGenTxBridge
+        }
+    where
+      ValidatedDualGenTx {
+            vDualGenTxMain
+          , vDualGenTxAux
+          , vDualGenTxBridge
+          } = vtx
+
 -- We don't need a pair of IDs, as long as we can unique ID the transaction
 newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {
       dualGenTxIdMain :: GenTxId m
@@ -598,6 +625,7 @@ instance Bridge m a => HasTxId (GenTx (DualBlock m a)) where
   txId = DualGenTxId . txId . dualGenTxMain
 
 deriving instance Bridge m a => Show (GenTx (DualBlock m a))
+deriving instance Bridge m a => Show (Validated (GenTx (DualBlock m a)))
 deriving instance Bridge m a => Show (DualGenTxErr m a)
 
 deriving instance Show (GenTxId m) => Show (TxId (GenTx (DualBlock m a)))

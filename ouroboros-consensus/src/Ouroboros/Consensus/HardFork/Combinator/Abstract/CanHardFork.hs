@@ -16,6 +16,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Product2)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
                      RequiringBoth)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
@@ -29,7 +31,13 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 class (All SingleEraBlock xs, Typeable xs, IsNonEmpty xs) => CanHardFork xs where
   hardForkEraTranslation :: EraTranslation xs
   hardForkChainSel       :: Tails AcrossEraSelection xs
-  hardForkInjectTxs      :: InPairs (RequiringBoth WrapLedgerConfig InjectTx) xs
+  hardForkInjectTxs      ::
+    InPairs
+      ( RequiringBoth
+          WrapLedgerConfig
+          (Product2 InjectTx InjectValidatedTx)
+      )
+      xs
 
 instance SingleEraBlock blk => CanHardFork '[blk] where
   hardForkEraTranslation = trivialEraTranslation

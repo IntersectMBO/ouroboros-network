@@ -43,6 +43,7 @@ import           Control.Monad.Except
 import qualified Data.Binary as B
 import           Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor.Identity (Identity)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -86,7 +87,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util (repeatedlyM, (.....:))
+import           Ouroboros.Consensus.Util (repeatedlyM, (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -215,7 +216,7 @@ instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
         fmap setTip
       . repeatedlyM
-          (applyTx cfg (blockSlot blk))
+          (fmap fst .: applyTx cfg (blockSlot blk))
           (blkA_body blk)
     where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
@@ -244,7 +245,7 @@ instance HasPartialConsensusConfig ProtocolA
 instance HasPartialLedgerConfig BlockA where
   type PartialLedgerConfig BlockA = PartialLedgerConfigA
 
-  completeLedgerConfig _ = (,)
+  completeLedgerConfig _ ei pcfg = (History.toPureEpochInfo ei, pcfg)
 
 data TxPayloadA = InitiateAtoB
   deriving (Show, Eq, Generic, NoThunks, Serialise)
@@ -283,7 +284,8 @@ blockForgingA = BlockForging {
    , canBeLeader      = ()
    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
    , checkCanForge    = \_ _ _ _ _ -> return ()
-   , forgeBlock       = return .....: forgeBlockA
+   , forgeBlock       = \cfg bno slot st txs proof -> return $
+       forgeBlockA cfg bno slot st (fmap txForgetValidated txs) proof
    }
 
 -- | See 'Ouroboros.Consensus.HardFork.History.EraParams.safeFromTip'
@@ -303,18 +305,25 @@ data instance GenTx BlockA = TxA {
   deriving (Show, Eq, Generic, Serialise)
   deriving NoThunks via OnlyCheckWhnfNamed "TxA" (GenTx BlockA)
 
+newtype instance Validated (GenTx BlockA) = ValidatedGenTxA { forgetValidatedGenTxA :: GenTx BlockA }
+  deriving stock (Show)
+  deriving newtype (Generic, Eq)
+  deriving anyclass (NoThunks)
+
 type instance ApplyTxErr BlockA = Void
 
 instance LedgerSupportsMempool BlockA where
-  applyTx _ sno (TxA _ tx) (TickedLedgerStateA st) =
-      case tx of
+  applyTx _ sno tx@(TxA _ payload) (TickedLedgerStateA st) =
+      case payload of
         InitiateAtoB -> do
-          return $ TickedLedgerStateA $ st { lgrA_transition = Just sno }
+          return (TickedLedgerStateA $ st { lgrA_transition = Just sno }, ValidatedGenTxA tx)
 
-  reapplyTx = applyTx
+  reapplyTx cfg slot = fmap fst .: (applyTx cfg slot . forgetValidatedGenTxA)
 
   maxTxCapacity _ = maxBound
   txInBlockSize _ = 0
+
+  txForgetValidated = forgetValidatedGenTxA
 
 newtype instance TxId (GenTx BlockA) = TxIdA Int
   deriving stock   (Show, Eq, Ord, Generic)
@@ -465,7 +474,7 @@ instance SingleEraBlock BlockA where
             (boundEpoch eraStart)
 
 instance HasTxs BlockA where
-  extractTxs = blkA_body
+  extractTxs = fmap ValidatedGenTxA . blkA_body
 
 {-------------------------------------------------------------------------------
   Condense
