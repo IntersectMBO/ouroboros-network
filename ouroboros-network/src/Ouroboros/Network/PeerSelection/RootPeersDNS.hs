@@ -45,7 +45,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Text (Text)
 import qualified Data.Text as Text
+import           Text.Read (readMaybe)
 import           Data.Void (Void)
 
 import           Control.Applicative ((<|>))

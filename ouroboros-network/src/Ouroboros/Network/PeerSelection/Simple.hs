@@ -16,7 +16,6 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Tracer (Tracer)
 
 import           Data.Map (Map)
-import qualified Data.Map as Map
 import           Data.Set (Set)
 import           Data.Void (Void)
 
@@ -35,8 +34,6 @@ withPeerSelectionActions
   -> Tracer IO TracePublicRootPeers
   -> TimeoutFn IO
   -> STM IO PeerSelectionTargets
-  -> Map Socket.SockAddr PeerAdvertise
-  -- ^ static local root peers
   -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
   -> StrictTVar IO [RelayAddress]
@@ -48,20 +45,12 @@ withPeerSelectionActions
   -- ^ continuation, recieves a handle to the local roots peer provider thread
   -- (only if local root peers where non-empty).
   -> IO a
-withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets staticLocalRootPeers
+withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets
   localRootPeersVar publicRootPeersVar peerStateActions reqLedgerPeers getLedgerPeers k = do
     localRootsVar <- newTVarIO []
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
-            readLocalRootPeers = do
-              localRoots <- readTVar localRootsVar
-
-              -- TODO: Config support
-              -- For now use 1 target per ipaddress/domain name.
-              let staticLocalRootPeers' = map (\(sa, a) ->
-                    (1, Map.singleton sa a)) $ Map.toList staticLocalRootPeers
-
-              pure $ staticLocalRootPeers' ++ localRoots,
+            readLocalRootPeers = readTVar localRootsVar,
             requestPublicRootPeers = requestLedgerPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions
