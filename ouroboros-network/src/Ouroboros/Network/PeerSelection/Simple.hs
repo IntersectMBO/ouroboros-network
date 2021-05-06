@@ -10,6 +10,7 @@ module Ouroboros.Network.PeerSelection.Simple
   ) where
 
 
+import           Data.Foldable (toList)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSTM.Strict
@@ -47,10 +48,10 @@ withPeerSelectionActions
   -> IO a
 withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets
   localRootPeersVar publicRootPeersVar peerStateActions reqLedgerPeers getLedgerPeers k = do
-    localRootsVar <- newTVarIO []
+    localRootsVar <- newTVarIO mempty
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
-            readLocalRootPeers = readTVar localRootsVar,
+            readLocalRootPeers = toList <$> readTVar localRootsVar,
             requestPublicRootPeers = requestLedgerPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions

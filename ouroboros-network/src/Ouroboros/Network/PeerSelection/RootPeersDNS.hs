@@ -43,7 +43,8 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.IntMap.Strict as IntMap
+import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import           Data.Text (Text)
 import qualified Data.Text as Text
@@ -333,7 +334,7 @@ localRootPeersProvider
   :: Tracer IO TraceLocalRootPeers
   -> TimeoutFn IO
   -> DNS.ResolvConf
-  -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
+  -> StrictTVar IO (Seq (Int, Map Socket.SockAddr PeerAdvertise))
   -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
   -> IO Void
 localRootPeersProvider tracer
@@ -349,18 +350,20 @@ localRootPeersProvider tracer
   let rr = newResolverResource resolvConf
 #endif
   let
-      -- Flatten the local root peers groups and associate a group index to each
+      -- Flatten the local root peers groups and associate its index to each
       -- DomainAddress to be monitorized.
+      -- NOTE: We need to pair the index because the resulting list can be
+      -- sparse.
       domains :: [(Int, DomainAddress, PeerAdvertise)]
-      domains = [ (group, domain, pa)
-                  | (group, (_, m)) <- zip [0..] domainsGroups
-                  , (RelayDomain domain, pa) <- Map.toList m ]
+      domains = [ (index, domain, pa)
+                | (index, (_, m)) <- zip [0..] domainsGroups
+                , (RelayDomain domain, pa) <- Map.toList m ]
       -- Since we want to preserve the number of groups, the targets, and
       -- the addresses within each group, we fill the TVar with
       -- a placeholder list, in order for each monitored DomainAddress to
       -- be updated in the correct group.
-      rootPeersGroups :: [(Int, Map Socket.SockAddr PeerAdvertise)]
-      rootPeersGroups = map (\(target, m) -> (target, f m)) domainsGroups
+      rootPeersGroups :: Seq (Int, Map Socket.SockAddr PeerAdvertise)
+      rootPeersGroups = Seq.fromList $ map (\(target, m) -> (target, f m)) domainsGroups
         where
            f :: Map RelayAddress PeerAdvertise -> Map Socket.SockAddr PeerAdvertise
            f =   Map.mapKeys
@@ -425,7 +428,7 @@ localRootPeersProvider tracer
       :: Resource DNSorIOError DNS.Resolver
       -> (Int, DomainAddress, PeerAdvertise)
       -> IO Void
-    monitorDomain rr0 (group, domain, advertisePeer) =
+    monitorDomain rr0 (index, domain, advertisePeer) =
         go rr0 0
       where
         go :: Resource DNSorIOError DNS.Resolver -> DiffTime -> IO Void
@@ -444,19 +447,17 @@ localRootPeersProvider tracer
             Right results -> do
               atomically $ do
                 rootPeersGroups <- readTVar rootPeersGroupsVar
-                let rootPeersGroups' = IntMap.fromList $ zip [0,1..] rootPeersGroups
-                    (target, entry)  = rootPeersGroups' IntMap.! group
+                let (target, entry)  = rootPeersGroups `Seq.index` index
                     resultsMap       = Map.fromList (map fst results)
-                    entry'           = entry <> resultsMap
-                    newRootPeers     =
-                      IntMap.elems $
-                      IntMap.adjust (const (target, entry'))
-                                    group
-                                    rootPeersGroups'
+                    entry'           = resultsMap <> entry
+                    rootPeersGroups' =
+                      Seq.update index
+                                 (target, entry')
+                                 rootPeersGroups
 
                 -- Only overwrite if it changed:
                 when (entry /= resultsMap) $
-                  writeTVar rootPeersGroupsVar newRootPeers
+                  writeTVar rootPeersGroupsVar rootPeersGroups'
 
               go rrNext (ttlForResults (map snd results))
 
