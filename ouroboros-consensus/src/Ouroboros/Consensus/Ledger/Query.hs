@@ -21,6 +21,8 @@ module Ouroboros.Consensus.Ledger.Query (
   , queryEncodeNodeToClient
   , queryEncodeResult
   , queryDecodeResult
+  , queryEncodeNodeToClient
+  , queryEncodeResult
   ) where
 
 import           Codec.CBOR.Decoding
@@ -34,6 +36,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
 import           Ouroboros.Consensus.Config (topLevelConfigLedger)
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
+import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion

@@ -49,8 +49,7 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..),
-                     QueryVersion, queryDecodeNodeToClient, queryEncodeNodeToClient)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..), QueryVersion)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
@@ -121,8 +120,8 @@ roundtrip_all
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
 
-    , Show (BlockNodeToNodeVersion   blk)
-    , Show (BlockNodeToClientVersion blk)
+     , Show (BlockNodeToNodeVersion   blk)
+     , Show (BlockNodeToClientVersion blk)
 
      , StandardHash blk
      , GetHeader    blk
