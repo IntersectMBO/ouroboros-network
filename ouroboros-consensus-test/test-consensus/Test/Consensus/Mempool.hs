@@ -65,7 +65,7 @@ tests = testGroup "Mempool"
       ]
   , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
   , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
-  , testProperty "addTxs txs == mapM (addTxs . pure) txs"  prop_Mempool_addTxs_one_vs_multiple
+  , testProperty "addTxs [..] == forM [..] addTxs"         prop_Mempool_semigroup_addTxs
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
   , testProperty "result of getCapacity"                   prop_Mempool_getCapacity
@@ -75,6 +75,7 @@ tests = testGroup "Mempool"
   , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
   , testProperty "idx consistency"                         prop_Mempool_idx_consistency
   , testProperty "removeTxs"                               prop_Mempool_removeTxs
+  , testProperty "removeTxs [..] == forM [..] removeTxs"   prop_Mempool_semigroup_removeTxs
   ]
 
 {-------------------------------------------------------------------------------
@@ -99,15 +100,24 @@ prop_Mempool_addTxs_getTxs setup =
       return $ counterexample (ppTxs (txs setup)) $
         validTxs setup `isSuffixOf` map (txForgetValidated . fst) snapshotTxs
 
--- | Same as 'prop_Mempool_addTxs_getTxs', but add the transactions one-by-one
--- instead of all at once.
-prop_Mempool_addTxs_one_vs_multiple :: TestSetupWithTxs -> Property
-prop_Mempool_addTxs_one_vs_multiple setup =
-    withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
-      forM_ (allTxs setup) $ \tx -> addTxs mempool [tx]
-      MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
-      return $ counterexample (ppTxs (txs setup)) $
-        validTxs setup `isSuffixOf` map (txForgetValidated . fst) snapshotTxs
+-- | Test that both adding the transactions one by one and adding them in one go
+-- produce the same result.
+prop_Mempool_semigroup_addTxs :: TestSetupWithTxs -> Property
+prop_Mempool_semigroup_addTxs setup =
+  withTestMempool (testSetup setup) $ \TestMempool {mempool = mempool1} -> do
+  _ <- addTxs mempool1 (allTxs setup)
+  snapshot1 <- atomically $ getSnapshot mempool1
+
+  return $ withTestMempool (testSetup setup) $ \TestMempool {mempool = mempool2} -> do
+    forM_ (allTxs setup) $ \tx -> addTxs mempool2 [tx]
+    snapshot2 <- atomically $ getSnapshot mempool2
+
+    return $ counterexample
+      ("Transactions after adding in one go: " <> show (snapshotTxs snapshot1)
+       <> "\nTransactions after adding one by one: " <> show (snapshotTxs snapshot2)) $
+        snapshotTxs snapshot1 === snapshotTxs snapshot2 .&&.
+        snapshotMempoolSize snapshot1 === snapshotMempoolSize snapshot2 .&&.
+        snapshotSlotNo snapshot1 === snapshotSlotNo snapshot1
 
 -- | Test that the result of adding transaction to a 'Mempool' matches our
 -- expectation: invalid transactions have errors associated with them and
@@ -155,6 +165,25 @@ prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup txToRemove) =
         ("Transactions in the mempool after removing (" <>
          show txToRemove <> "): " <> show txsInMempoolAfter)
         (txToRemove `notElem` map txForgetValidated txsInMempoolAfter)
+
+-- | Test that both removing transactions one by one and removing them in one go
+-- produce the same result.
+prop_Mempool_semigroup_removeTxs :: TestSetupWithTxsInMempool -> Property
+prop_Mempool_semigroup_removeTxs (TestSetupWithTxsInMempool testSetup txsToRemove) =
+  withTestMempool testSetup $ \TestMempool {mempool = mempool1} -> do
+  removeTxs mempool1 $ map txId txsToRemove
+  snapshot1 <- atomically (getSnapshot mempool1)
+
+  return $ withTestMempool testSetup $ \TestMempool {mempool = mempool2} -> do
+    forM_ (map txId txsToRemove) (removeTxs mempool2 . (:[]))
+    snapshot2 <- atomically (getSnapshot mempool2)
+
+    return $ counterexample
+      ("Transactions after removing in one go: " <> show (snapshotTxs snapshot1)
+       <> "\nTransactions after removing one by one: " <> show (snapshotTxs snapshot2)) $
+        snapshotTxs snapshot1 === snapshotTxs snapshot2 .&&.
+        snapshotMempoolSize snapshot1 === snapshotMempoolSize snapshot2 .&&.
+        snapshotSlotNo snapshot1 === snapshotSlotNo snapshot1
 
 -- | Test that 'getCapacity' returns the 'MempoolCapacityBytes' value that the
 -- mempool was initialized with.
@@ -650,7 +679,7 @@ instance Arbitrary TestSetupWithTxInMempool where
     return $ TestSetupWithTxInMempool testSetup tx
 
   shrink (TestSetupWithTxInMempool testSetup _tx) =
-    [ TestSetupWithTxInMempool testSetup tx'
+    [ TestSetupWithTxInMempool testSetup' tx'
     | testSetup' <- shrink testSetup
     , not . null . testInitialTxs $ testSetup'
     , tx' <- testInitialTxs testSetup'
