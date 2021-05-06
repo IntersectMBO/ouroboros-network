@@ -43,7 +43,8 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query, queryDecodeNodeToClient, queryEncodeNodeToClient)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query,
+                     queryDecodeNodeToClient, queryEncodeNodeToClient)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -54,7 +55,6 @@ import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
-
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -112,8 +112,8 @@ roundtrip_all
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
 
-    , Show (BlockNodeToNodeVersion   blk)
-    , Show (BlockNodeToClientVersion blk)
+     , Show (BlockNodeToNodeVersion   blk)
+     , Show (BlockNodeToClientVersion blk)
 
      , StandardHash blk
      , GetHeader    blk
