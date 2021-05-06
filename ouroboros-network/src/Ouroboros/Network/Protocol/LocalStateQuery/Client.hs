@@ -22,6 +22,8 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client (
 
       -- * Utilities
     , mapLocalStateQueryClient
+    , mapQueryOnLocalStateQueryClient
+
     , Some (..)
     ) where
 
@@ -34,11 +36,15 @@ import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some(..))
 
-
 newtype LocalStateQueryClient block point (query :: Type -> Type) m a =
     LocalStateQueryClient {
       runLocalStateQueryClient :: m (ClientStIdle block point query m a)
     }
+
+mapQueryOnLocalStateQueryClient :: Monad m => (forall r. query r -> query' r) -> LocalStateQueryClient block point query m a -> LocalStateQueryClient block point query' m a
+mapQueryOnLocalStateQueryClient f localStateQueryClient = LocalStateQueryClient
+  { runLocalStateQueryClient = mapQueryOnClientStIdle f <$> runLocalStateQueryClient localStateQueryClient
+  }
 
 localStateQueryClientNull :: MonadTimer m => LocalStateQueryClient block point query m a
 localStateQueryClientNull =
@@ -59,6 +65,11 @@ data ClientStIdle block point query (m :: Type -> Type) a where
   SendMsgDone    :: a
                  -> ClientStIdle      block point query m a
 
+mapQueryOnClientStIdle :: Monad m => (forall r . query r -> query' r) -> ClientStIdle block point query m a -> ClientStIdle block point query' m a
+mapQueryOnClientStIdle f client = case client of
+  SendMsgAcquire mPoint clientStAcquiring -> SendMsgAcquire mPoint (mapQueryOnClientStAcquiring f clientStAcquiring)
+  SendMsgDone a -> SendMsgDone a
+
 -- | In the 'StAcquiring' protocol state, the client does not have agency.
 -- Instead it is waiting for:
 --
@@ -73,6 +84,12 @@ data ClientStAcquiring block point query m a = ClientStAcquiring {
       recvMsgFailure  :: AcquireFailure
                       -> m (ClientStIdle  block point query m a)
     }
+
+mapQueryOnClientStAcquiring :: Monad m => (forall r . query r -> query' r) -> ClientStAcquiring block point query m a -> ClientStAcquiring block point query' m a
+mapQueryOnClientStAcquiring f acquiring = ClientStAcquiring
+  { recvMsgAcquired = fmap (mapQueryOnClientStAcquired f) (recvMsgAcquired acquiring)
+  , recvMsgFailure = fmap (mapQueryOnClientStIdle f) . recvMsgFailure acquiring
+  }
 
 -- | In the 'StAcquired' protocol state, the client has agency and must send:
 --
@@ -92,6 +109,13 @@ data ClientStAcquired block point query m a where
   SendMsgRelease   :: m (ClientStIdle   block point query m a)
                    -> ClientStAcquired  block point query m a
 
+mapQueryOnClientStAcquired :: Monad m => (forall r . query r -> query' r) -> ClientStAcquired block point query m a -> ClientStAcquired block point query' m a
+mapQueryOnClientStAcquired f clientStAcquired = case clientStAcquired of
+  SendMsgQuery queryResult clientStQuerying -> SendMsgQuery (f queryResult) (mapQueryOnClientStQuerying f clientStQuerying)
+  SendMsgReAcquire mPoint clientStAcquiring -> SendMsgReAcquire mPoint (mapQueryOnClientStAcquiring f clientStAcquiring)
+  SendMsgRelease runClientStIdle -> SendMsgRelease (mapQueryOnClientStIdle f <$> runClientStIdle)
+
+
 -- | In the 'StQuerying' protocol state, the client does not have agency.
 -- Instead it is waiting for:
 --
@@ -100,6 +124,11 @@ data ClientStAcquired block point query m a where
 data ClientStQuerying block point query m a result = ClientStQuerying {
       recvMsgResult :: result -> m (ClientStAcquired block point query m a)
     }
+
+mapQueryOnClientStQuerying :: Monad m => (forall r. query r -> query' r) -> ClientStQuerying block point query m a result -> ClientStQuerying block point query' m a result
+mapQueryOnClientStQuerying f clientStQuerying = ClientStQuerying
+  { recvMsgResult = fmap (mapQueryOnClientStAcquired f) . recvMsgResult clientStQuerying
+  }
 
 -- | Transform a 'LocalStateQueryClient' by mapping over the query and query
 -- result values.
