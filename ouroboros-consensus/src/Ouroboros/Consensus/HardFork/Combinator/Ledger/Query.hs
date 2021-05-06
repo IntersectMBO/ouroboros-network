@@ -62,6 +62,8 @@ import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
+                     (SystemStart)
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -74,6 +76,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..), mustMatchNS)
+import qualified Ouroboros.Consensus.Config.SupportsNode as SN
 
 instance Typeable xs => ShowProxy (BlockQuery (HardForkBlock xs)) where
 
@@ -112,7 +115,7 @@ data instance BlockQuery (HardForkBlock xs) :: Type -> Type where
     => QueryHardFork (x ': xs) result
     -> BlockQuery (HardForkBlock (x ': xs)) result
 
-instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
+instance (All SingleEraBlock xs, SN.ConfigSupportsNode (HardForkBlock xs)) => QueryLedger (HardForkBlock xs) where
   answerBlockQuery
     (ExtLedgerCfg cfg)
     query
@@ -131,7 +134,7 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
             hardForkState
         QueryHardFork queryHardFork ->
           interpretQueryHardFork
-            lcfg
+            cfg
             queryHardFork
             st
     where
@@ -312,12 +315,14 @@ answerQueryAnytime HardForkLedgerConfig{..} =
 data QueryHardFork xs result where
   GetInterpreter :: QueryHardFork xs (History.Interpreter xs)
   GetCurrentEra  :: QueryHardFork xs (EraIndex xs)
+  GetSystemStart :: QueryHardFork xs SystemStart
 
 deriving instance Show (QueryHardFork xs result)
 
 instance All SingleEraBlock xs => ShowQuery (QueryHardFork xs) where
   showResult GetInterpreter = show
   showResult GetCurrentEra  = show
+  showResult GetSystemStart = show
 
 instance SameDepIndex (QueryHardFork xs) where
   sameDepIndex GetInterpreter GetInterpreter =
@@ -328,19 +333,26 @@ instance SameDepIndex (QueryHardFork xs) where
       Just Refl
   sameDepIndex GetCurrentEra _ =
       Nothing
+  sameDepIndex GetSystemStart GetSystemStart =
+      Just Refl
+  sameDepIndex GetSystemStart _ =
+      Nothing
 
 interpretQueryHardFork ::
      All SingleEraBlock xs
-  => HardForkLedgerConfig xs
+  => SN.ConfigSupportsNode (HardForkBlock xs)
+  => TopLevelConfig (HardForkBlock xs)
   -> QueryHardFork xs result
   -> LedgerState (HardForkBlock xs)
   -> result
 interpretQueryHardFork cfg query st =
     case query of
       GetInterpreter ->
-        History.mkInterpreter $ hardForkSummary cfg st
+        History.mkInterpreter $ hardForkSummary (configLedger cfg) st
       GetCurrentEra  ->
         eraIndexFromNS $ State.tip $ hardForkLedgerStatePerEra st
+      GetSystemStart  ->
+        SN.getSystemStart (configBlock cfg)
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -371,6 +383,7 @@ encodeQueryHardForkResult ::
 encodeQueryHardForkResult = \case
     GetInterpreter -> encode
     GetCurrentEra  -> encode
+    GetSystemStart -> encode
 
 decodeQueryHardForkResult ::
      SListI xs
@@ -378,6 +391,7 @@ decodeQueryHardForkResult ::
 decodeQueryHardForkResult = \case
     GetInterpreter -> decode
     GetCurrentEra  -> decode
+    GetSystemStart -> decode
 
 {-------------------------------------------------------------------------------
   Auxiliary

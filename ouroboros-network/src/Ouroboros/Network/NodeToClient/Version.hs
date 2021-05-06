@@ -4,8 +4,8 @@
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-  , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , nodeToClientCodecCBORTerm
   ) where
 
 import           Data.Bits (clearBit, setBit, testBit)

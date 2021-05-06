@@ -26,6 +26,8 @@ import           Ouroboros.Consensus.HardFork.History.Summary (Bound, Summary,
                      initBound, neverForksSummary)
 import           Ouroboros.Consensus.Util.SOP
 
+import           Ouroboros.Consensus.Config (TopLevelConfig, configBlock)
+import qualified Ouroboros.Consensus.Config.SupportsNode as SN
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -97,12 +99,14 @@ forwardCompatQuery f = go
 -- is using the HFC but with a single era only.
 singleEraCompatQuery ::
        forall m blk era. (Monad m, HardForkIndices blk ~ '[era])
-    => EpochSize
+    => SN.ConfigSupportsNode blk
+    => TopLevelConfig blk
+    -> EpochSize
     -> SlotLength
     -> (forall result. BlockQuery blk result -> m result)
     -- ^ Submit a query through the LocalStateQuery protocol.
     -> (forall result. HardForkCompatQuery blk result -> m result)
-singleEraCompatQuery epochSize slotLen f = go
+singleEraCompatQuery cfg epochSize slotLen f = go
   where
     go :: HardForkCompatQuery blk result -> m result
     go (CompatIfCurrent qry)    = f qry
@@ -115,6 +119,7 @@ singleEraCompatQuery epochSize slotLen f = go
     goHardFork :: QueryHardFork '[era] result -> m result
     goHardFork GetInterpreter = return $ Qry.mkInterpreter summary
     goHardFork GetCurrentEra  = return $ eraIndexZero
+    goHardFork GetSystemStart = return $ SN.getSystemStart (configBlock cfg)
 
     summary :: Summary '[era]
     summary = neverForksSummary epochSize slotLen

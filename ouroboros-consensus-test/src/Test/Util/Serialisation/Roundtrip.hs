@@ -43,8 +43,7 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query,
-                     queryDecodeNodeToClient, queryEncodeNodeToClient)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -327,9 +326,7 @@ roundtrip_SerialiseNodeToClient ccfg =
     , rt (Proxy @(GenTx blk))                 "GenTx"
     , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
     , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
-    , rtWith (Proxy @(SomeSecond Query blk))  "Query"
-                                              (queryEncodeNodeToClient ccfg maxBound)
-                                              (queryDecodeNodeToClient ccfg maxBound)
+    , rt (Proxy @(SomeSecond Query blk))      "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
@@ -368,23 +365,10 @@ roundtrip_SerialiseNodeToClient ccfg =
          , SerialiseNodeToClient blk a
          )
        => Proxy a -> String -> TestTree
-    rt p name = rtWith p name enc dec
-
-    rtWith
-      :: forall a.
-         ( Arbitrary (WithVersion (BlockNodeToClientVersion blk) a)
-         , Eq a
-         , Show a
-         )
-       => Proxy a
-       -> String
-       -> (BlockNodeToClientVersion blk -> a -> Encoding)
-       -> (BlockNodeToClientVersion blk -> forall s. Decoder s a)
-       -> TestTree
-    rtWith _ name enc' dec' =
+    rt _ name =
       testProperty ("roundtrip " <> name) $
         \(WithVersion version a) ->
-          roundtrip @a (enc' version) (dec' version) a
+          roundtrip @a (enc version) (dec version) a
 
 {-------------------------------------------------------------------------------
   Checking envelopes
