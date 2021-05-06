@@ -5,6 +5,7 @@
 {-# LANGUAGE DisambiguateRecordFields   #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -40,6 +41,9 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , encodeShelleyHeaderState
   , encodeShelleyLedgerState
   ) where
+
+import           GHC.Prim
+import           GHC.Types (Int(I#))
 
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
@@ -290,17 +294,27 @@ instance ShelleyBasedEra era
   --    - 'updateChainDepState': executes the @PRTCL@ transition
   -- + 'applyLedgerBlock': executes the @BBODY@ transition
   --
-  applyLedgerBlock =
-      seq (stubComputation stubComputationArg) $
-      applyHelper $
+  applyLedgerBlock x y z =
+      seq (stubComputation (stubComputationArg
+                             + I# (reallyUnsafePtrEquality# x x)
+                             + I# (reallyUnsafePtrEquality# y y)
+                             + I# (reallyUnsafePtrEquality# z z))) $
+      applyHelper
         -- Apply the BBODY transition using the ticked state
-        withExcept BBodyError ..: SL.applyBlock
+        (withExcept BBodyError ..: SL.applyBlock)
+        x y z
 
-  reapplyLedgerBlock = runIdentity ...:
-      seq (stubComputation stubComputationArg) $
-      applyHelper $
-        -- Reapply the BBODY transition using the ticked state
-        Identity ..: SL.reapplyBlock
+  reapplyLedgerBlock x y z =
+    ((seq (stubComputation (stubComputationArg
+                             + I# (reallyUnsafePtrEquality# x x)
+                             + I# (reallyUnsafePtrEquality# y y)
+                             + I# (reallyUnsafePtrEquality# z z)))
+      .
+      runIdentity) ...:
+      applyHelper)
+         -- Reapply the BBODY transition using the ticked state
+         (Identity ..: SL.reapplyBlock)
+         x y z
 
 applyHelper ::
      (ShelleyBasedEra era, Monad m)

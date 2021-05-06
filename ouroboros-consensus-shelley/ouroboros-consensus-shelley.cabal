@@ -59,6 +59,7 @@ library
                      , containers        >=0.5   && <0.7
                      , deepseq
                      , data-default-class
+                     , ghc-prim
                      , measures
                      , mtl               >=2.2   && <2.3
                      , nothunks
