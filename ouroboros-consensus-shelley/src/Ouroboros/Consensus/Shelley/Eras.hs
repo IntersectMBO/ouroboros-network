@@ -3,9 +3,12 @@
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE OverloadedStrings       #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+
 module Ouroboros.Consensus.Shelley.Eras (
     -- * Eras based on the Shelley ledger
     AllegraEra
@@ -45,15 +48,16 @@ import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
 
 import           Cardano.Ledger.Allegra.Translation ()
+import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
 import qualified Cardano.Ledger.Era as SL (TranslationContext, TranslateEra (..), TxInBlock)
 import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.Constraints as SL
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Serialization as SL
 
 import           Ouroboros.Consensus.Shelley.Orphans ()
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -168,6 +172,12 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
 --
 -- For generality, Consensus uses that type family as eg the index of
 -- 'SL.TranslateEra'. We thus need to partially apply it.
+--
+-- @cardano-ledger-specs@ also declares such a newtype, but currently it's only
+-- defined in the Alonzo translation module, which seems somewhat inappropriate
+-- to use for previous eras. Also, we use a @Wrap@ prefix in Consensus. Hence
+-- this minor mediating definition. TODO I'm not even fully persuading myself
+-- with this justification.
 newtype WrapTxInBlock era = WrapTxInBlock {unwrapTxInBlock :: SL.TxInBlock era}
 
 instance ShelleyBasedEra (AllegraEra c) => SL.TranslateEra (AllegraEra c) WrapTxInBlock where
@@ -177,3 +187,10 @@ instance ShelleyBasedEra (AllegraEra c) => SL.TranslateEra (AllegraEra c) WrapTx
 instance ShelleyBasedEra (MaryEra c) => SL.TranslateEra (MaryEra c) WrapTxInBlock where
   type TranslationError (MaryEra c) WrapTxInBlock = SL.TranslationError (MaryEra c) SL.Tx
   translateEra ctxt = fmap WrapTxInBlock . SL.translateEra ctxt . unwrapTxInBlock
+
+instance ShelleyBasedEra (AlonzoEra c) => SL.TranslateEra (AlonzoEra c) WrapTxInBlock where
+  type TranslationError (AlonzoEra c) WrapTxInBlock = SL.TranslationError (AlonzoEra c) Alonzo.TxInBlock
+  translateEra ctxt =
+        fmap (\(Alonzo.TxInBlock tx) -> WrapTxInBlock tx)
+      . SL.translateEra @(AlonzoEra c) ctxt
+      . Alonzo.TxInBlock . unwrapTxInBlock

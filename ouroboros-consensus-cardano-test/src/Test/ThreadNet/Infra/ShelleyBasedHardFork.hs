@@ -129,7 +129,6 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
 
   , SL.TranslationContext era1 ~ ()
-  , SL.TranslationContext era2 ~ ()
   )
 
 instance ShelleyBasedHardForkConstraints era1 era2
@@ -150,8 +149,8 @@ instance ShelleyBasedHardForkConstraints era1 era2
              (HFC.Translate LedgerState)
              (ShelleyBlock era1)
              (ShelleyBlock era2)
-      translateLedgerState = InPairs.ignoringBoth $ HFC.Translate $ \_epochNo ->
-          unComp . SL.translateEra' () . Comp
+      translateLedgerState = InPairs.RequireBoth $ \_cfg1 cfg2 -> HFC.Translate $ \_epochNo ->
+          unComp . SL.translateEra' (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2)) . Comp
 
       translateLedgerView ::
            InPairs.RequiringBoth
@@ -167,21 +166,27 @@ instance ShelleyBasedHardForkConstraints era1 era2
 
   hardForkInjectTxs =
         InPairs.mk2
-      $ InPairs.ignoringBoth
-      $ Pair2 (InjectTx translateTx) (InjectValidatedTx translateValidatedTx)
+      $ InPairs.RequireBoth $ \_cfg1 cfg2 ->
+        let ctxt = shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2)
+        in
+          Pair2
+            (InjectTx (translateTx ctxt))
+            (InjectValidatedTx (translateValidatedTx ctxt))
     where
       translateTx ::
-                  GenTx (ShelleyBlock era1)
+           SL.TranslationContext era2
+        ->        GenTx (ShelleyBlock era1)
         -> Maybe (GenTx (ShelleyBlock era2))
-      translateTx =
-          fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+      translateTx ctxt =
+          fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
 
       translateValidatedTx ::
-                  WrapValidatedGenTx (ShelleyBlock era1)
+           SL.TranslationContext era2
+        ->        WrapValidatedGenTx (ShelleyBlock era1)
         -> Maybe (WrapValidatedGenTx (ShelleyBlock era2))
-      translateValidatedTx =
+      translateValidatedTx ctxt =
             fmap unComp
-          . eitherToMaybe . runExcept . SL.translateEra ()
+          . eitherToMaybe . runExcept . SL.translateEra ctxt
           . Comp
 
 instance ShelleyBasedHardForkConstraints era1 era2
@@ -204,11 +209,13 @@ protocolInfoShelleyBasedHardFork ::
      forall m era1 era2. (IOLike m, ShelleyBasedHardForkConstraints era1 era2)
   => ProtocolParamsShelleyBased era1
   -> SL.ProtVer
+  -> SL.TranslationContext era2
   -> SL.ProtVer
   -> ProtocolParamsTransition (ShelleyBlock era1) (ShelleyBlock era2)
   -> ProtocolInfo m (ShelleyBasedHardForkBlock era1 era2)
 protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
                                  protVer1
+                                 transCtxt
                                  protVer2
                                  protocolParamsTransition =
     protocolInfoBinary
@@ -257,7 +264,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     -- Era 2
 
     genesis2 :: SL.ShelleyGenesis era2
-    genesis2 = SL.translateEra' () genesis1
+    genesis2 = SL.translateEra' transCtxt genesis1
 
     protocolInfo2 :: ProtocolInfo m (ShelleyBlock era2)
     protocolInfo2 =
@@ -267,7 +274,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
             , shelleyBasedInitialNonce
             , shelleyBasedLeaderCredentials
             }
-          ()
+          transCtxt
           protVer2
 
     eraParams2 :: History.EraParams

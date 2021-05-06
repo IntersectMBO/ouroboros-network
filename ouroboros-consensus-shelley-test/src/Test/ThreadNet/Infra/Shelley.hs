@@ -75,6 +75,7 @@ import qualified Cardano.Ledger.Era
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
+import qualified Cardano.Ledger.Val as SL
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Shelley.Spec.Ledger.API as SL
@@ -550,7 +551,6 @@ mkAllegraSetDecentralizationParamTxs ::
      forall era.
      ( ShelleyBasedEra era
      , Cardano.Ledger.Core.TxBody era ~ MA.TxBody era
-     , Cardano.Ledger.Core.Value  era ~ SL.Coin
      , Cardano.Ledger.Core.PParams era ~ SL.PParams era
      , SL.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
      , Cardano.Ledger.Core.Witnesses era ~ SL.WitnessSet era
@@ -614,7 +614,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
             }
         update'  = SL.SJust update
         adHash   = SL.SNothing
-        mint     = SL.Coin 0
+        mint     = SL.inject $ SL.Coin 0
 
     -- Every Shelley transaction requires one input.
     --
@@ -632,7 +632,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
             addr = SL.Addr networkId
                 (mkCredential (cnDelegateKey cn))
                 (SL.StakeRefBase (mkCredential (cnStakingKey cn)))
-            coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+            coin = SL.inject $ SL.Coin $ fromIntegral initialLovelacePerCoreNode
 
     -- One replicant of the parameter update per each node.
     update :: SL.Update era

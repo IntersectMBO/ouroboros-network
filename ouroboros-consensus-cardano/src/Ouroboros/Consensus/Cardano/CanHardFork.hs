@@ -82,7 +82,6 @@ import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 
-
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
 
@@ -586,7 +585,7 @@ translateValidatedTxMaryToAlonzoWrapper ::
        (ShelleyBlock (MaryEra c))
        (ShelleyBlock (AlonzoEra c))
 translateValidatedTxMaryToAlonzoWrapper ctxt = InjectValidatedTx $
-      fmap (\(Alonzo.TxInBlock tx) -> WrapValidatedGenTx (mkShelleyValidatedTx tx))
+      fmap (\(WrapTxInBlock tx) -> WrapValidatedGenTx (mkShelleyValidatedTx tx))
     . eitherToMaybe . runExcept
     . SL.translateEra @(AlonzoEra c) ctxt
-    . (\(WrapValidatedGenTx (ShelleyValidatedTx _txId tx)) -> Alonzo.TxInBlock tx)
+    . (\(WrapValidatedGenTx (ShelleyValidatedTx _txId tx)) -> WrapTxInBlock tx)

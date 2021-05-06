@@ -28,6 +28,7 @@ library
                        Test.ThreadNet.Infra.TwoEras
 
                        Test.ThreadNet.TxGen.Allegra
+                       Test.ThreadNet.TxGen.Alonzo
                        Test.ThreadNet.TxGen.Cardano
                        Test.ThreadNet.TxGen.Mary
 
@@ -85,9 +86,10 @@ test-suite test
                        Test.Consensus.Cardano.ByronCompatibility
                        Test.Consensus.Cardano.Golden
                        Test.Consensus.Cardano.Serialisation
-                       Test.ThreadNet.Cardano
-                       Test.ThreadNet.ShelleyAllegra
                        Test.ThreadNet.AllegraMary
+                       Test.ThreadNet.Cardano
+                       Test.ThreadNet.MaryAlonzo
+                       Test.ThreadNet.ShelleyAllegra
 
   build-depends:       base
                      , bytestring
@@ -107,6 +109,7 @@ test-suite test
                      , tasty-quickcheck
                      , time
 
+                     , cardano-ledger-alonzo
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
 

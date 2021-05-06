@@ -262,6 +262,7 @@ prop_simple_allegraMary_convergence TestSetup
                             (coreNodes !! fromIntegral nid)]
                       }
                     (SL.ProtVer majorVersion1 0)
+                    ()
                     (SL.ProtVer majorVersion2 0)
                     ProtocolParamsTransition {
                         transitionTrigger = TriggerHardForkAtVersion majorVersion2

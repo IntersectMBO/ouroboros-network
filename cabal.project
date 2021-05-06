@@ -175,11 +175,11 @@ source-repository-package
 source-repository-package
   type: git
   location: /home/nifr/cardano-ledger-specs
-  tag: 8982aa122d648620a858158eb3e422a67bea4fb2
-  --sha256: 1x33cqicp4xh2rh5drsgcv7l35n7zbway88kf9y6hdsygl7ba9fd
+  tag: 3691e4ebb6b28cb21ff9810d28e3c6734c3a85ae
+  --sha256: 1c1n5y3yfy25wz2h98m5nlfvq9fkbssvqbw41vgh3jvyxkz5q3iv
   subdir:
     alonzo/impl
-    alonzo/impl/test
+    alonzo/test
     byron/chain/executable-spec
     byron/crypto
     byron/crypto/test

@@ -14,7 +14,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.ThreadNet.ShelleyAllegra (tests) where
+module Test.ThreadNet.MaryAlonzo (tests) where
 
 import           Control.Monad (replicateM)
 import qualified Data.Map as Map
@@ -42,9 +42,9 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
+import qualified Cardano.Ledger.Alonzo.Scripts as SL
+import           Cardano.Ledger.Alonzo.Translation (AlonzoGenesis (..))
+import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Node
@@ -72,16 +72,16 @@ import           Test.Consensus.Shelley.MockCrypto (MockCrypto)
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Infra.ShelleyBasedHardFork
 import           Test.ThreadNet.TxGen
-import           Test.ThreadNet.TxGen.Allegra ()
-import           Test.ThreadNet.TxGen.Shelley
+import           Test.ThreadNet.TxGen.Mary ()
+import           Test.ThreadNet.TxGen.Alonzo ()
 
 import           Test.ThreadNet.Infra.TwoEras
 
 -- | No Byron era, so our crypto can be trivial.
 type Crypto = MockCrypto ShortHash
 
-type ShelleyAllegraBlock =
-  ShelleyBasedHardForkBlock (ShelleyEra Crypto) (AllegraEra Crypto)
+type MaryAlonzoBlock =
+  ShelleyBasedHardForkBlock (MaryEra Crypto) (AlonzoEra Crypto)
 
 -- | The varying data of this test
 --
@@ -100,7 +100,7 @@ data TestSetup = TestSetup
   , setupPartition    :: Partition
   , setupSlotLength   :: SlotLength
   , setupTestConfig   :: TestConfig
-  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion ShelleyAllegraBlock)
+  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion MaryAlonzoBlock)
   }
   deriving (Show)
 
@@ -134,7 +134,7 @@ instance Arbitrary TestSetup where
 
     setupVersion   <- genVersionFiltered
                         isHardForkNodeToNodeEnabled
-                        (Proxy @ShelleyAllegraBlock)
+                        (Proxy @MaryAlonzoBlock)
 
     pure TestSetup
       { setupD
@@ -159,16 +159,16 @@ oneTenthTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ n `div` 10
 
 tests :: TestTree
-tests = testGroup "ShelleyAllegra ThreadNet" $
+tests = testGroup "MaryAlonzo ThreadNet" $
     [ let name = "simple convergence" in
       askIohkNightlyEnabled $ \enabled ->
       (if enabled then id else adjustOption oneTenthTestCount) $
       testProperty name $ \setup ->
-        prop_simple_shelleyAllegra_convergence setup
+        prop_simple_allegraAlonzo_convergence setup
     ]
 
-prop_simple_shelleyAllegra_convergence :: TestSetup -> Property
-prop_simple_shelleyAllegra_convergence TestSetup
+prop_simple_allegraAlonzo_convergence :: TestSetup -> Property
+prop_simple_allegraAlonzo_convergence TestSetup
   { setupD
   , setupHardFork
   , setupInitialNonce
@@ -220,14 +220,6 @@ prop_simple_shelleyAllegra_convergence TestSetup
         , pgaTestConfigB         = testConfigB
         }
 
-    txGenExtra = ShelleyTxGenExtra
-      { stgeGenEnv  = mkGenEnv DoNotGeneratePPUs coreNodes
-        -- We don't generate any transactions before the transaction
-        -- carrying the proposal because they might consume its inputs
-        -- before it does, thereby rendering it invalid.
-      , stgeStartAt = SlotNo 1
-      }
-
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
       , future       =
@@ -244,18 +236,18 @@ prop_simple_shelleyAllegra_convergence TestSetup
       , messageDelay = mkMessageDelay setupPartition
       , nodeJoinPlan = trivialNodeJoinPlan numCoreNodes
       , nodeRestarts = noRestarts
-      , txGenExtra   = WrapTxGenExtra txGenExtra :* WrapTxGenExtra () :* Nil
+      , txGenExtra   = WrapTxGenExtra () :* WrapTxGenExtra () :* Nil
       , version      = setupVersion
       }
 
-    testOutput :: TestOutput ShelleyAllegraBlock
+    testOutput :: TestOutput MaryAlonzoBlock
     testOutput = runTestNetwork setupTestConfig testConfigB TestConfigMB {
           nodeInfo = \(CoreNodeId nid) ->
             TestNodeInitialization {
                 tniCrucialTxs   =
                   if not setupHardFork then [] else
                   fmap GenTxShelley1 $
-                  Shelley.mkSetDecentralizationParamTxs
+                  Shelley.mkAllegraSetDecentralizationParamTxs
                     coreNodes
                     (SL.ProtVer majorVersion2 0)
                     (SlotNo $ unNumSlots numSlots)   -- never expire
@@ -263,14 +255,14 @@ prop_simple_shelleyAllegra_convergence TestSetup
               , tniProtocolInfo =
                   protocolInfoShelleyBasedHardFork
                     ProtocolParamsShelleyBased {
-                        shelleyBasedGenesis           = genesisShelley
+                        shelleyBasedGenesis           = genesisMary
                       , shelleyBasedInitialNonce      = setupInitialNonce
                       , shelleyBasedLeaderCredentials =
                           [Shelley.mkLeaderCredentials
                             (coreNodes !! fromIntegral nid)]
                       }
                     (SL.ProtVer majorVersion1 0)
-                    ()
+                    alonzoGenesis
                     (SL.ProtVer majorVersion2 0)
                     ProtocolParamsTransition {
                         transitionTrigger = TriggerHardForkAtVersion majorVersion2
@@ -296,8 +288,8 @@ prop_simple_shelleyAllegra_convergence TestSetup
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * Shelley.initialLovelacePerCoreNode
 
-    genesisShelley :: ShelleyGenesis (ShelleyEra Crypto)
-    genesisShelley =
+    genesisMary :: ShelleyGenesis (MaryEra Crypto)
+    genesisMary =
         Shelley.mkGenesisConfig
           (SL.ProtVer majorVersion1 0)
           setupK
@@ -308,10 +300,20 @@ prop_simple_shelleyAllegra_convergence TestSetup
           (Shelley.mkKesConfig (Proxy @Crypto) numSlots)
           coreNodes
 
+    alonzoGenesis :: AlonzoGenesis
+    alonzoGenesis = AlonzoGenesis {
+          adaPerUTxOWord  = SL.Coin 0
+        , costmdls        = Map.empty
+        , prices          = SL.Prices (SL.Coin 0) (SL.Coin 0)
+        , maxTxExUnits    = mempty
+        , maxBlockExUnits = mempty
+        , maxValSize      = 0
+        }
+
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
     -- does not randomize it
     epochSize :: EpochSize
-    epochSize = sgEpochLength genesisShelley
+    epochSize = sgEpochLength genesisMary
 
     firstEraSize :: EraSize
     firstEraSize = EraSize numFirstEraEpochs
@@ -349,7 +351,7 @@ prop_simple_shelleyAllegra_convergence TestSetup
         secondEraOverlaySlots
           numSlots
           (NumSlots numFirstEraSlots)
-          (SL._d (sgProtocolParams genesisShelley))
+          (SL._d (sgProtocolParams genesisMary))
           epochSize
 
     numFirstEraSlots :: Word64
@@ -359,8 +361,8 @@ prop_simple_shelleyAllegra_convergence TestSetup
     finalBlockEra :: String
     finalBlockEra =
         if rsEra2Blocks reachesEra2
-        then "Allegra"
-        else "Shelley"
+        then "Mary"
+        else "Alonzo"
 
     finalIntersectionDepth :: Word64
     finalIntersectionDepth = depth
