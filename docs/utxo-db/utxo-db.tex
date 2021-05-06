@@ -587,6 +587,7 @@ Some API clients may also need bulk {\sc scan}s over a snapshot of the UTxO,
 or other collections.
 
 \subsubsection{Overall operations}
+\label{overall-operations}
 
 Overall we require the following operations
 \begin{enumerate}
@@ -606,7 +607,6 @@ Overall we require the following operations
   \item {\sc scan}: a bulk scan over a snapshot, or immutable table, in an
         arbitrary order.
   \item {\sc rollback}
-        \label{ROLLBACK}
         The consensus layer will rollback ledger state whenever it switches
         chain forks. The data store must support this in some way, with at
         least sparse rollback points, covering at least K blocks. This could
@@ -968,149 +968,276 @@ forward) ledger rules from their executable specification.
 \section{Design choices}
 \label{design-choices}
 
-It is clear we will need to integrate an on-disk key-value store capable of
-serving the ledger state, and supporting the operations in \cref{operations}.
+It is clear that we will need to integrate an on-disk key-value store capable
+of serving the ledger state, and supporting the operations identified in
+\cref{operations}.
 
-There are many choices in the design space, trading off development effort,
-delivery risk, and scalability into the future. We have factored these into a
-set of mostly independent choices:
+There are many choices in the design space that trade off development effort,
+delivery risk and scalability. We have factored these into a set of
+semi-independent choices:
 \begin{itemize}
-\item The choice of the on-disk data structure: B+ tree vs. LSM tree vs. other.
+\item The choice of the class of on-disk data structure: e.g. B+ tree vs.
+      LSM tree vs. other.
 \item The choice to reuse an existing on-disk data structure implementation or
       to implement one bespoke.
-\item The choice in the style of interface between the consensus layer and
+\item The choice of the style of interface between the consensus layer and
       the new ledger state storage subsystem.
 \item The choice to use serial or parallel I/O.
-\item The option to add a special caching layer to optionally take advantage
+\item The option to add a special caching scheme to optionally take advantage
       of large amounts of memory to increase performance.
 \end{itemize}
-In the remainder of this section we discuss each choice and how affects our
-ability to meet our requirements.
+In the remainder of this section we discuss each choice and how it affects our
+ability to meet our requirements. In the following section we discussed the
+preferred option, which is a combination of these choices.
 
 \subsection{Data Structure}
 \label{data-structure}
 
-We have identified LSM trees \cite{monkey} as the on-disk data structure most
-suitable for our workload \ref{rum}. It offers:
+In \cref{rum} we came to the following conclusion:
+\begin{quote}
+The RUM trade-off makes the choice clear: we should select a write-optimised
+design and use our generous memory to dataset ratio to tune the design to get
+the read cost as close as reasonably possible to the lower bound of 1 read I/O
+operation per {\sc lookup} operation.
+\end{quote}
+This conclusion is based solely on scalability and meeting the middle to higher
+end of the performance targets. There are also other choices with different
+trade-offs for development effort.
 
+\subsubsection{LSM trees}
+We have identified LSM trees \citep{monkey} as the on-disk data structure most
+suitable for our workload (see \cref{rum}). LSM trees are the most widely used
+design for write-optimised key value stores. They are used for example by the
+main bitcoin implementation for storing the UTxO. LSM trees offer:
 \begin{enumerate}
-  \item Append only writes to disk
-        This is critical for good write performance. There no need to ``sync''
-        with the disk, meaning the program never needs to wait for the disk to be ready.
-  \item A snapshotting mechanism
-        In normal operation the Cardano Node frequently needs to roll back the
-        ledger state, see \ref{ROLLBACK}.
+  \item Append-only writes to disk.
+
+        This enables very good write performance. It also means that the slow
+        {\tt fsync()} operation is not needed to ensure data consistency. It
+        would only be needed for prompt durability guarantees -- which we do
+        not require.
+
+  \item A cheap snapshotting mechanism.
+
+        Both the ledger rules and the consensus layer need to be able to take
+        snapshots of parts or all of the ledger state. It is helpful if this
+        operation can be cheap.
+
+  \item A cheap rollback mechanism.
+
+        In normal operation the Cardano node needs to be able to roll back the
+        ledger state to an earlier point within the last K blocks, see
+        \cref{overall-operations}.
+
   \item Workload
-        There is a  well specified recipe in \cite{monkey} for tuning  the data
-        structure to various workloads. Our workload \ref{utxo-access-pattern} is quite unusual. We
-        would be able to tune the LSM tree to match that workload, and moreover, if the
-        workload changes in the future as Cardano evolves, we will have the opportunity
-        to revisit these decisions without reworking the entire data structure.
+
+        There is a  well specified recipe, described by \cite{monkey}, for
+        tuning the data structure to various workloads. Our workload is quite
+        unusual (see \cref{utxo-access-pattern}) . We would be able to tune the
+        LSM tree to match that workload, and moreover, if the workload changes
+        in the future as Cardano evolves, we will have the opportunity to
+        revisit these decisions without reworking the entire data structure.
+
+  \item Efficient monoidial {\sc update} operation.
+
+        The {\sc update} operation can be implemented as a write operation
+        without needing a {\sc lookup}. This would be a major benefit if it
+        needs to be used frequently because {\sc lookup} operations are the
+        performance bottleneck. We would use this at a very high frequency if
+        we choose to maintain the stake distribution incrementally.
 \end{enumerate}
 
-There are no suitable implementations of an LSM tree available on hackage, and
-few Off-the-Shelf solutions (RocksDB, levelDB). Were we to develop a bespoke LSM
-tree we would plan to follow the blueprint laid out by \cite{monkey}.
+There are no existing suitable Haskell implementations of LSM trees available
+on hackage. There are existing non-Haskell implementations including LevelDB
+and RocksDB . Were we to develop a bespoke LSM tree we would follow the
+blueprint laid out by \cite{monkey}.
 
-Rather than an LSM tree, one might use a B+-tree \cite{journals/csur/Comer79}, the basis
-for the primary on-disk data structure used by most databases. (e.g. sqlite,
-postgresql). There is an existing Haskell implementation on hackage
-\footnote{https://hackage.haskell.org/package/haskey}.
+\subsubsection{B+ trees}
+Rather than an LSM tree, one might use a B+ tree \citep{journals/csur/Comer79}.
+B+ trees are the main on-disk data structures used by most traditional
+databases, including for example SQLite and PostgreSQL. There is also an
+existing Haskell implementation of a B+ tree on hackage%
+\footnote{\url{https://hackage.haskell.org/package/haskey}}.
 
-We don't expect to be able to meet the performance threshold
-\ref{performance-requirements} with a B+-tree based solution, however it may be
-a useful stepping stone to the final delivery. Building a version on top of
-haskey, and even delivering it to production, would solve the immediate problem
-of the ledger state not fitting in memory, and may have acceptable sync times in
-the short term, while the chain is still not too large.
-\subsection{Off-the-shelf or Bespoke}
+We do not expect to be able to meet the minimum performance targets (see 
+\cref{performance-requirements}) with a B+ tree based solution. The ability to
+reuse an existing implementation is a clear benefit for development time. This
+could therefore be a useful interim solution, on route to the final delivery.
 
-There are many existing battle-tested on disk data stores. For example, RocksDB
-\footnote{https://rocksdb.org/}, levelDB
-\footnote{https://github.com/google/leveldb}, sqlite3
-\footnote{https://www.sqlite.org/index.html}, postresql
-\footnote{https://www.postgresql.org/}. We
-could build our data store on one of these technologies, or alternatively, we
-could develop a bespoke data store, either from scratch or on top of a lower
+\subsection{Off-the-shelf or bespoke}
+
+There are many existing on-disk data stores, for example:
+SQLite\footnote{\url{https://www.sqlite.org/}},
+PostgreSQL\footnote{\url{https://www.postgresql.org/}},
+LevelDB\footnote{\url{https://github.com/google/leveldb}}
+and RocksDB\footnote{\url{https://rocksdb.org/}} to name just a few.
+We could build our data store on one of these technologies, or alternatively,
+we could develop a bespoke data store, either from scratch or on top of a lower
 level technology.
 
-The consequences are as follows:
+The trade-offs are as follows.
 
 \subsubsection{Development time}
-We would expect any solution utilising an existing, mature, technology to
-consume much less development time than developing a bespoke solution.
-Significant work would remain in cleanly integrating and testing the technology
-with our related components.
+
+We would expect most solutions utilising an existing, mature, technology to
+consume less development time than developing a bespoke solution. Though there
+is clearly a saving on developing the actual data store, significant work would
+remain in cleanly integrating and testing the technology with our related
+components.
+
+\subsubsection{Integration time and complexity}
+
+Integrating an Off-the-Shelf data store will, for some choices of that data
+store, introduce additional complexity to the deployment and operation of the
+Cardano Node. For this reason, we can rule out out-of-process database, such as
+PostgreSQL, and limit our choices to embeddable solutions such as SQLite,
+RocksDB, or LevelDB.
+
+A bespoke solution could be designed and built to integrate seamlessly with the
+Cardano node.
 
 \subsubsection{Quality}
-A solution built using an Off-the-Shelf data store would not have access to
-\ref{io-sim}.  This would impact our ability to be confident in the quality of
-the implementation, both at initial delivery and during the life of the
-resulting software.
+\label{quality}
 
-\todo[inline]{Should we cite IOHK RocksDB history?}
+A solution built using a non-Haskell data store would preclude the ability to
+use the simulation-based testing technique used by the existing consensus
+automated test suite (see \cref{io-sim}). The existing technique ensures two
+things:
+\begin{enumerate}
+\item that the integration of the on-disk data stores works in normal operation;
+      and
+\item that the combination of consensus components is robust in the presence of
+      I/O failures and silent disk corruption.
+\end{enumerate}
+The first aspect could be covered by new integration tests, with an obvious
+development and ongoing maintenance cost. The second point is exceedingly hard
+to replicate without the ability to simulate a file system with fault injection.
 
-A bespoke data store, developed in haskell, would have access to io-sim tooling,
-and would integrate cleanly into the existing io-sim test suite of consensus.
+The previous Cardano node implementation ({\tt cardano-sl}) used an
+off-the-shelf data store (RocksDB) and lacked this style of testing. Throughout
+its lifetime the previous node implementation suffered from unrecoverable disk
+corruption problems. These problems occurred in production with users
+relatively frequently but were nevertheless extremely hard to reproduce in a
+development setting -- precisely because they depend on rare I/O faults
+occurring at particular times. This had a high cost on users and the technical
+support team, and generated a poor reputation for Daedalus amongst users. These
+problems were fully resolved by the new node implementation which was designed
+and developed along with the simulation and fault injection testing framework.
 
-\todo[inline]{Address ability to meet changing requirements going forward? Likely more constrained by Off-the-Shelf}
+Loosing this testing would mean we could no longer be confident that the node
+can recover from disk problems. As the {\tt cardano-sl} history makes clear,
+this would be a significant retrograde step.
 
-\subsubsection{Data Structure and Workload}
-As described in \ref{rum}, we have a clear idea of the trade-offs to which the
-data store should be tuned. Below \ref{data-structure}, we describe the choices we
-have in data structure. For any Off-the-Shelf solution we well be constrained to
-on-disk data structures that solution implements. We will be constrained to tune
-that solution only with the tune-ables offered by that solution.
+Certain existing data stores written entirely in Haskell -- and any bespoke
+data store developed in Haskell -- would have access to the {\tt io-sim}
+tooling, and would integrate cleanly into the existing consensus test suite.
+Existing Haskell implementations would need to support replacing their disk
+data access layer and to be run in a caller-supplied monad. This is true of the
+{\tt haskey} library for example but is not true of any of the Haskell bindings
+to external libraries such as RocksDB.
+
+\subsubsection{Data structure and workload}
+
+As described in \cref{rum}, we have a clear idea of the trade-offs to which the
+data store should be tuned. In \cref{data-structure} above, we described the
+main choices we have in data structure. For any off-the-shelf solution we will
+be constrained to the on-disk data structure that implementation provides. We
+will be constrained to tune that implementation only with the adjustable
+parameters offered by that implementation.
 
 A bespoke data store will allow us the greatest flexibility in choosing and
 tuning the on-disk data structure to handle our specific workload.
 
-\subsubsection{Deployment Complexity}
-Integrating an Off-the-Shelf data store will, for some choices of that data
-store, introduce additional complexity to the deployment and operation of the
-Cardano Node. For this reason, we can likely rule out a full database (e.g.
-postgresql), and limit our choices to embeddeble solutions such as sqlite3,
-RocksDB, or levelDB.
+\subsection{Parallel or serial I/O}
 
-A bespoke solution will be built to seamlessly integrate with the Cardano node.
+As described in \cref{parallel-io}, we have the choice to use parallel I/O,
+at the cost of additional complexity in the implementation. A scalable solution
+that meets the performance targets (\cref{performance-requirements})
+will certainly require parallel I/O. It may be possible and reasonable to start
+with a simpler, serial I/O implementation, and then add parallel I/O once we
+have demonstrated the correctness of that simpler implementation.
 
+An off-the-shelf implementation comes with a pre-existing fixed choice of
+serial or parallel I/O. Thus, demanding parallel I/O restricts our choice of
+off-the-shelf implementations. Using parallel I/O in an existing implementation
+will likely require using the database interface in a particular way to expose
+the opportunities for parallelism, which would likely increase integration
+complexity.
 
-\subsection{Parallel or Serial IO}
+A bespoke implementation would require extra effort to take advantage of
+parallel I/O, but the interface could be designed to minimise the integration
+complexity.
 
-As described in \ref{parallel-io}, we will have the choice to use Parallel IO,
-at the cost of additional complexity in the implementation. While a scalable
-solution that meets the performance threshold \ref{performance-requirements}
-will certainly need to exploit Parallel IO, it is possible to start
-with a simpler, Serial IO implementation, and then add Parallel IO once we have
-demonstrated the correctness of that simpler implementation.
+\subsection{Interface style}
+\label{interface-style}
 
-\subsection{Interface Style}
+There will be an interface between the consensus layer and the new storage
+subsystem. There are a few main styles for this interface:
+\begin{itemize}
+\setlength{\itemsep}{0pt}%
+\setlength{\parskip}{1pt}%
+\item A na\"ive `CRUD' interface
+\item A batch mode `CRUD' interface
+\item A non-standard `pipelined' interface
+\end{itemize}
 
-The decision for which on disk data structure to use, and how to implement it,
-is largely orthogonal to the decisions around what the interface to that data
-structure should look like.
+One of the important considerations for development time is the changes that
+would be needed to the consensus or ledger code bases to be able to adapt to
+using the on-disk storage. These are both large and complex code bases, and
+hence minimising the changes to them can be a very substantial saving. It could
+be worth using a non-standard interface if it enables less invasive changes in
+the existing components.
 
-A naive ``CRUD'' interface to the data structure would be simpler to work with,
-and would perhaps ease integration of the data structure into the Related Components
-codebases. However this would impede our exploitation of Batched IO. \ref{parallel-io}.
+A na\"ive `CRUD' interface to the data structure would be simple to provide on
+top of any existing or bespoke underlying data store. A significant
+disadvantage to this style however is that it precludes the use of parallel I/O
+because the interface is incapable of exposing any parallelism of read
+operations to the underlying data store.
 
-Instead, we recommend an interface which allows the data structure to read/write
-many values in parallel. Note that committing to this interface does not require
-us to implementing parallel operations immediately. A parallel interface could
-be implemented using an internal ``CRUD'' interface. e.g.
-\begin{verbatim}
-readUTxOs  :: [TxIn] -> (Map TxIn TxOut -> m a) -> m a
-writeUTxOs :: [(TxIn, Maybe TxOut)] -> m ()
-\end{verbatim}
-Note: We intend to elaborate on this interface, and propose a design, in a
-following document.
+A batch mode `CRUD' interface allows homogeneous batches of {\sc lookup}
+operations, batches of {\sc insert} operations etc. This enables the use of
+parallel I/O to some degree, if the underlying data store is capable of it. It
+cannot necessarily fully utilise the full parallel I/O capacity of the hardware
+because the homogeneous nature of the batches limits their size, and there are
+always gaps between batches.
 
-\subsection{Caching Layer}
-\label{Caching Layer}
+A disadvantage to both `CRUD' style interfaces is that it requires the ledger
+rules to be written to make the {\sc lookup}, {\sc insert} and {\sc delete}
+operations explicit. This would be a significant change to the way the ledger
+rules are written. The ledger rules are currently expressed as pure functions.
+In addition to the development cost of a change in style, there are good reasons
+for the existing design as simple pure functions: it greatly simplifies testing
+and auditing against the specification. The consensus design also takes
+advantage of the fact that the ledger rules are pure functions.
 
-Although we expect caching to perform poorly over our data structure, due to the
-lack of locality \ref{locality}, perhaps a poor cache would be significantly
-better than nothing.
+Instead, we recommend a non-standard `pipelined' interface which:
+\begin{itemize}
+\item allows the ledger state changes to remain as pure functions; and
+\item exposes arbitrary amounts of pipeline style parallelism in the operations.
+\end{itemize}
+The essential idea of this interface is that in advance of processing a
+transaction or block, we identify all the keys that will need to be accessed --
+such as the transaction inputs which are the keys of the UTxO -- and perform
+the disk reads in advance to bring the results into memory. Based on these
+read sets, the transactions are processed wholly in memory using pure functions.
+The result of the transaction processing includes the \emph{differences} to the
+on-disk tables, and these differences are then flushed out to disk afterwards.
+This would still involve some changes to the ledger rules to output the
+differences in the large mappings rather than the whole mappings. This is a
+relatively mechanical change and keeps the general style as pure functions.
+We intend to elaborate on this interface, and propose a design, in a following
+document.
+
+Note that committing to this interface does not require us to implement
+parallel I/O operations immediately. The interface simply makes it possible by
+exposing the opportunity for parallelism.
+
+\subsection{Caching layer}
+\label{caching-layer}
+
+Although we expect caching to perform poorly over our data structure, due to
+the lack of data access locality (see \cref{locality}), perhaps a poor cache
+would be significantly better than nothing.
 
 One option to mitigate long sync times may be to allow users to add a large
 in-memory cache over the data structure while syncing. In this way, users could
@@ -1120,73 +1247,121 @@ their node on a smaller cloud machine using that synced state.
 This is somewhat speculative, and is included here due to the lack of other
 options for improving sync times.
 
-\subsection{Hybrid options}
-
-We are not bound to a single choice of those above. Although we will recommend that
-a bespoke LSM tree should be the long term goal, it may be the case that delivery of a
-working solution, that does not meet the performance requirements as such, is
-the best first step.
-
-We should aim to specify an interface with can be served by any choices above.
-
 \section{Preferred option}
 \label{preferred}
 
-Our preferred option is a hybrid, seeking to fail early, minimize delivery risk,
-deliver some improvement early, and giving the option of pausing work before
-completion. We will design the API early and implement several iterations of the
-data structure, each with more complexity and better performance than the
+Our preferred option is a hybrid, seeking to balance our ability to meet the
+performance targets in the long term with developing an interim solution that
+lets us start to scale up the size of the ledger state.
+\begin{itemize}
+\item We recommend the non-standard `pipelined' style of interface (see
+      \cref{interface-style}) between the consensus and storage subsystem.
+      This should minimise the necessary changes in the consensus and ledger
+      layers and keep open the opportunity to take advantage of parallel I/O.
+      The choice of interface is hard to change later so it is best to pick the
+      final best choice, rather than taking an interim approach.
+
+\item We recommend an in-Haskell implementation of the on-disk data structure.
+      As discussed in \cref{quality}, choice of an in-Haskell implementation
+      preserves the investment in the consensus testing infrastructure and
+      assures that the node remains robust in the presence of disk I/O failures.
+
+\item We recommend trying the existing {\tt haskey} B+ tree implementation as
+      an interim solution, and a bespoke LSM tree implementation as a eventual
+      solution. This balances the time to develop a first working version term
+      with the need to meet the performance targets in the long term.
+
+\item We recommend that it will be necessary eventually to add support for
+      parallel I/O to scale to higher transaction rate targets while
+      maintaining acceptable bulk sync times. This will buy us approximately a
+      factor of 10 in performance (throughput or sync times).
+\end{itemize}
+
+Building a version on top of {\tt haskey}, and even delivering it to production,
+would solve the upcoming problem of the ledger state not fitting in memory,
+and may have acceptable sync times in the short term, assuming that the chain
+is still not too large and transaction rates are not too high.
+
+This preferred option will \emph{not} meet the performance targets in the short
+term. With this option they would only start to be met once the bespoke LSM
+tree is in place, and fully met once parallel I/O is implemented.
+
+
+\section{Preferred development approach}
+
+Our preferred development approach seeks to minimize delivery risk, deliver
+some improvement early, and give the option to pause some of the work before
+completion. We will design the API early and implement several iterations of
+the data structure, each with more complexity and better performance than the
 previous.
 
-Firstly, we would deliver a Draft API for agreement with stakeholders (Ledger
-and Consensus). This would be prioritised immediately. Once agreed, we would
-deliver a trivial implementation of a data store that was still entirely in
-memory, using the existing algorithms, but which is interacted with through the
-newly agreed API.
+A key strategic question is early or late integration. Early integration would
+be clearly preferable to minimise risks. On the other hand early integration
+may require too much attention from the teams responsible for the components
+involved in the integration (ledger and consensus teams) at a time when their
+attention is necessarily elsewhere.
 
-Ledger and Consensus will then be unblocked from beginning to integrate, i.e.
-modifying their code to use the new API.
+\paragraph{Early integration} In an early integration approach we would
+immediately prioritise a draft API for agreement with stakeholders (ledger
+and consensus teams). Once agreed, we would deliver a trivial implementation of
+a data store that was still entirely in memory, using the existing in-memory
+representations, but which uses the newly agreed API to interact with the data.
+The next phase would be the integration of that interface, driven primarily by
+the teams responsible for the existing components, including the necessary
+changes to the ledger rules to use `difference' types for output.
 
-In parallel with this, we will begin implementing a B+-tree. The focus will
-be to produce a working solution, not to achieve good performance. We
-will verify the correctness of this implementation with io-sim. The intention
-will be to use this as a skeleton with with to implement an LSM tree.
+\paragraph{Late integration} In a late integration approach we would still
+prioritise a draft API for agreement with stakeholders. Once agreed however we
+would do prototype and exploratory integrations without significant input from
+the teams responsible for the existing components. This would reduce but not
+eliminate the risks of integration problems later.
 
-Once the B+-tree is feature complete, and Related Components have completed
+\paragraph{Store development}
+Irrespective of the early or late integration strategy, in parallel with the
+actual or exploratory integration, we will begin implementing a B+ tree.
+Preferably this will be done by reusing or modifying and reusing the existing
+{\tt haskey} B+ tree library. The focus will be to produce a working solution,
+not to achieve good performance. We will verify the correctness of this
+implementation with QuickCheck property tests and {\tt io-sim} where
+appropriate. The intention will be to use these tests as a basis to test an LSM
+tree later.
+
+Once the B+ tree is feature complete, and the related components have completed
 their integration, we would have the option to tune the performance of the
-B+-tree so that it could be deployed into production. Whether we would do this
-or not would depend on the urgency of lowering the memory footprint of Cardano
-Node.
+B+ tree so that it could be deployed into production. Whether we would do this
+or not would depend on the urgency of lowering the memory footprint of the
+Cardano node.
 
-We will then replace the B+-tree in the previous solution with a bespoke LSM tree.
-Our implementation will be written to use batched IO from the outset. We will
-verify it's correctness with the test suite developed against the B+tree
-implementation. We will iterate on this LSM tree, improving it's performance
-as required.
+We will then replace the B+ tree in the previous solution with a bespoke LSM
+tree. Our implementation will be designed with parallel I/O in mind from the
+outset. We will verify its correctness with the test suite developed for the
+B+~tree implementation. We will iterate on this LSM tree, improving its
+performance as required, including by using parallel I/O.
 
 \section{Risks}
 
-Here we call out specific risks we see in the project, and in our preferred option in particular
-likely
+There are a numbers of risks in the project, and in the preferred option in
+particular.
 
 \subsection{API design}
-The design of the API will have far reaching impact on the success of the
-project. We need to carefully balance the need to integrate smoothly with Ledger
-and Consensus and the requirement that the API can be implemented with Parallel
-IO. This points one towards fixing the API early, so that integration in the
-related components can start, however this risks increasing the costs, or
-rendering impossible, the incorporation of learnings from our experience
+The design of the API between the consensus layer, ledger layer and the new
+storage subsystem will have far reaching impact on the success of the project.
+We need to carefully balance the need to integrate smoothly with the ledger
+and consensus layers and the requirement that the API will be able to support
+parallel I/O. This points one towards fixing the API early, so that integration
+in the related components can start, however this risks increasing the costs,
+or may render impossible, incorporating the outcome of our experience
 implementing the data structure into the design of the final API.
 
-\subsection{Performance of Chain Sync}
-As discussed in \ref{assessing-feasibility} there is reason to expect that any solution
-will have sync times in the order of days per chain-year at even moderate
-Transaction rates. This is the critical constraint that guides the majority of
-our design. There is some opportunity to mitigate this e.g. \ref{Caching Layer},
-but this will remain a looming threat if transaction rates increase
-substantially. We recommend that IOHK direct it's researchers to investigate
-ways that nodes can sync a chain without having to validate the entire history
-of the chain.
+\subsection{Performance of bulk chain synchronisation}
+As discussed in \cref{assessing-feasibility} there is reason to expect that any
+solution will have sync times in the order of days per chain-year at even
+moderate transaction rates. This is the critical constraint that guides the
+majority of our design. There is some opportunity to mitigate this (see e.g.
+\cref{caching-layer}), but this will remain a looming threat if transaction
+rates increase substantially. We recommend pursuing research to investigate
+ways that nodes can catch up with the blockchain without having to validate the
+entire history of the chain.
 
 \addcontentsline{toc}{section}{References}
 \bibliographystyle{plainnat}
