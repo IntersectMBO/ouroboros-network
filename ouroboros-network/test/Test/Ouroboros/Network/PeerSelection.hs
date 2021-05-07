@@ -22,7 +22,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
 
-import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
+import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
 
@@ -289,14 +289,14 @@ takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 -- Live examples
 --
 
-_governorFindingPublicRoots :: Int -> StrictTVar IO [RelayAddress] -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers domainsVar =
+_governorFindingPublicRoots :: Int -> STM IO [RelayAddress] -> IO Void
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
       timeout
       DNS.defaultResolvConf
-      domainsVar $ \requestPublicRootPeers ->
+      readDomains $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer

@@ -115,13 +115,11 @@ genIPv6 =
              <*> arbitrary
 
 instance Arbitrary RelayAddress where
-  arbitrary = do
-    isDomain <- arbitrary
-    if isDomain
-      then RelayDomain <$> arbitrary
-      else RelayAddress
-             <$> oneof [genIPv4, genIPv6]
-             <*> (fromIntegral <$> (arbitrary :: Gen Int))
+  arbitrary =
+      oneof [ RelayDomain  <$> arbitrary
+            , RelayAddress <$> oneof [genIPv4, genIPv6]
+                           <*> (fromIntegral <$> (arbitrary :: Gen Int))
+            ]
 
 prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =

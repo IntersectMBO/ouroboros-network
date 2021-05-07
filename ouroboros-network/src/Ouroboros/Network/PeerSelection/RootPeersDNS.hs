@@ -335,14 +335,14 @@ localRootPeersProvider
   -> TimeoutFn IO
   -> DNS.ResolvConf
   -> StrictTVar IO (Seq (Int, Map Socket.SockAddr PeerAdvertise))
-  -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
+  -> STM IO [(Int, Map RelayAddress PeerAdvertise)]
   -> IO Void
 localRootPeersProvider tracer
                        timeout
                        resolvConf
                        rootPeersGroupsVar
-                       domainsGroupsVar = do
-  domainsGroups <- atomically $ readTVar domainsGroupsVar
+                       readDomainsGroups = do
+  domainsGroups <- atomically readDomainsGroups
   traceWith tracer (TraceLocalRootDomains domainsGroups)
 #if !defined(mingw32_HOST_OS)
   rr <- asyncResolverResource resolvConf
@@ -393,12 +393,12 @@ localRootPeersProvider tracer
                          timeout
                          resolvConf
                          rootPeersGroupsVar
-                         domainsGroupsVar
+                         readDomainsGroups
 
   where
     waitConfigChanged :: [(Int, Map RelayAddress PeerAdvertise)] -> STM IO ()
     waitConfigChanged dg = do
-      dg' <- readTVar domainsGroupsVar
+      dg' <- readDomainsGroups
       check (dg /= dg')
 
     resolveDomain
@@ -479,11 +479,11 @@ data TracePublicRootPeers =
 publicRootPeersProvider :: Tracer IO TracePublicRootPeers
                         -> TimeoutFn IO
                         -> DNS.ResolvConf
-                        -> StrictTVar IO [RelayAddress]
+                        -> STM IO [RelayAddress]
                         -> ((Int -> IO (Set Socket.SockAddr, DiffTime)) -> IO a)
                         -> IO a
-publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
-    domains <- atomically $ readTVar domainsVar
+publicRootPeersProvider tracer timeout resolvConf readDomains action = do
+    domains <- atomically readDomains
     traceWith tracer (TracePublicRootRelayAddresses domains)
 #if !defined(mingw32_HOST_OS)
     rr <- resolverResource resolvConf
@@ -496,7 +496,7 @@ publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
     requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
                            -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
-        domains <- atomically $ readTVar domainsVar
+        domains <- atomically readDomains
         traceWith tracer (TracePublicRootRelayAddresses domains)
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr

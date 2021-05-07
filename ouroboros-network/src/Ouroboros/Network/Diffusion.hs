@@ -275,9 +275,9 @@ data DiffusionArguments m = DiffusionArguments {
     , daPeerSelectionTargets :: PeerSelectionTargets
       -- ^ selection targets for the peer governor
 
-    , daLocalRootPeersVar    :: StrictTVar m [(Int, Map RelayAddress PeerAdvertise)]
-    , daPublicRootPeersVar   :: StrictTVar m [RelayAddress]
-    , daUseLedgerAfterVar    :: StrictTVar m UseLedgerAfter
+    , daReadLocalRootPeers  :: STM m [(Int, Map RelayAddress PeerAdvertise)]
+    , daReadPublicRootPeers :: STM m [RelayAddress]
+    , daReadUseLedgerAfter  :: STM m UseLedgerAfter
 
     , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
       -- ^ parameters for limiting number of accepted connections
@@ -576,9 +576,9 @@ runDataDiffusion tracers
                                     , daIPv6Address
                                     , daLocalAddress
                                     , daPeerSelectionTargets
-                                    , daLocalRootPeersVar
-                                    , daPublicRootPeersVar
-                                    , daUseLedgerAfterVar
+                                    , daReadLocalRootPeers
+                                    , daReadPublicRootPeers
+                                    , daReadUseLedgerAfter
                                     , daAcceptedConnectionsLimit
                                     , daDiffusionMode
                                     , daProtocolIdleTimeout
@@ -754,7 +754,7 @@ runDataDiffusion tracers
             (runLedgerPeers
               ledgerPeersRng
               dtLedgerPeersTracer
-              daUseLedgerAfterVar
+              daReadUseLedgerAfter
               daLedgerPeersCtx
               (resolveDomainAddresses
                 dtTracePublicRootPeersTracer
@@ -840,8 +840,8 @@ runDataDiffusion tracers
                       dtTracePublicRootPeersTracer
                       timeout
                       (readTVar peerSelectionTargetsVar)
-                      daLocalRootPeersVar
-                      daPublicRootPeersVar
+                      daReadLocalRootPeers
+                      daReadPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)
                       (takeTMVar ledgerPeersRsp)
@@ -950,8 +950,8 @@ runDataDiffusion tracers
                       dtTracePublicRootPeersTracer
                       timeout
                       (readTVar peerSelectionTargetsVar)
-                      daLocalRootPeersVar
-                      daPublicRootPeersVar
+                      daReadLocalRootPeers
+                      daReadPublicRootPeers
                       peerStateActions
                       (putTMVar ledgerPeersReq)
                       (takeTMVar ledgerPeersRsp)
