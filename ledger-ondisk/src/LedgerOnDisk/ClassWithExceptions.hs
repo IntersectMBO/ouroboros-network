@@ -11,7 +11,7 @@ import qualified LedgerOnDisk.Class as Class
 import Control.Monad.Catch
 
 import Data.HashMap.Strict(HashMap,(!))
-import qualified Data.HashMap.Strict as HashMap
+-- import qualified Data.HashMap.Strict as HashMap
 
 -- for reexport
 import LedgerOnDisk.Class as X(ResultSet, Err, DiffItem(..), querySingle, QueryScope)

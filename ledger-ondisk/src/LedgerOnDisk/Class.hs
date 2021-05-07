@@ -13,6 +13,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DefaultSignatures #-}
 module LedgerOnDisk.Class where
 
 import Data.HashMap.Strict(HashMap, (!))
@@ -25,7 +26,7 @@ import Control.Monad
 import Test.QuickCheck
 import Data.TreeDiff.Class
 import Test.QuickCheck.Instances.UnorderedContainers ()
-import Data.Proxy
+-- import Data.Proxy
 
 newtype QueryScope k = QueryScope (HashSet k)
   deriving stock (Show)
@@ -55,17 +56,22 @@ data KVBaseError where
 
 
 class (Eq k, Hashable k, Monad m) => MonadKV k v m | m -> k v where
+  type Err m
+  type Err m = KVBaseError
   data ResultSet m
-  data Err m
   prepareOperation :: QueryScope k -> m (ResultSet m)
   submitOperation :: ResultSet m -> (HashMap k (Maybe v) -> (OperationResult k v, a)) -> m (Either (Err m) a)
   fromKVBaseError :: proxy m -> KVBaseError -> Err m
+  default fromKVBaseError :: Coercible KVBaseError (Err m) => proxy m -> KVBaseError -> Err m
+  fromKVBaseError _ = coerce
   toKVBaseError :: proxy m -> Err m -> Maybe KVBaseError
+  default toKVBaseError :: Coercible KVBaseError (Err m) => proxy m -> Err m -> Maybe KVBaseError
+  toKVBaseError _ = Just . coerce
   -- close :: ResultSet m -> m (_)
 
-pattern KVBaseError :: forall k v m. MonadKV k v m => () => KVBaseError -> Err m
-pattern KVBaseError e <-  (toKVBaseError (Proxy @ m) -> Just e) where
-  KVBaseError e = fromKVBaseError (Proxy @ m) e
+-- pattern KVBaseError :: forall k v m e. (MonadKV k v m, Err m ~ e) => () => KVBaseError -> e
+-- pattern KVBaseError e <-  (toKVBaseError (Proxy @ m) -> Just e) where
+--   KVBaseError e = fromKVBaseError (Proxy @ m) e
 
 
 submitOperation_ :: MonadKV k v m => ResultSet m -> (HashMap k (Maybe v) -> OperationResult k v) -> m (Maybe (Err m))

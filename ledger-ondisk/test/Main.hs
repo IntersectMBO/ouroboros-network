@@ -1,19 +1,22 @@
+
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Main (main) where
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-import           Test.QuickCheck.Instances.UnorderedContainers
-import qualified LedgerOnDisk
+import           Test.QuickCheck.Instances.UnorderedContainers ()
 import Data.Maybe
 
+import qualified LedgerOnDisk
+import qualified LedgerOnDisk.QSM.Suite
 main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
 tests = testGroup "ledger-ondisk"
   [ testProperty "SimpleT lookup idempotent" $ monadKVSimple prop_kv_lookup_idempotent
+  , LedgerOnDisk.QSM.Suite.tests
   ]
   -- TODO simple properties for simple implemetnation, i.e. insert, delete
 

@@ -18,6 +18,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE UndecidableInstances #-}
 module LedgerOnDisk.QSM.Model where
 
 import GHC.Generics
@@ -147,7 +148,7 @@ kvRunMock cmd s = case cmd of
   KVPrepare qs -> case mockAddQuery qs s of
     (h, s') -> (KVSuccessHandle h, s')
   KVSubmit (KVMockHandle i) (Fn f) -> case HashMap.lookup i $ queries s of
-    Nothing -> (KVError . KVBaseError $ KVEBadResultSet, s)
+    Nothing -> (KVError . fromKVBaseError (Proxy @ m) $ KVEBadResultSet, s)
     Just qs -> let
         op_map = HashMap.mapWithKey (\k _ -> HashMap.lookup k (modelMap s)) (HashSet.toMap . coerce $ qs)
         apply_diff_item k = Endo . \case

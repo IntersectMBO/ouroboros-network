@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -5,6 +6,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RecordWildCards #-}
 module LedgerOnDisk.Simple where
 
 
@@ -17,6 +20,7 @@ import Data.IORef
 import Control.Monad.Reader
 import Data.Coerce
 import Data.Monoid
+import Control.Monad.Except
 
 type SimpleKey = Int
 type SimpleValue = Int
@@ -24,37 +28,68 @@ type SimpleMap = HashMap SimpleKey SimpleValue
 type SimpleSet = HashSet SimpleKey
 type SimpleMonadKV = MonadKV SimpleKey SimpleValue
 
-newtype SimpleT m a = SimpleT { unSimpleT :: ReaderT (IORef SimpleMap) m a }
-  deriving newtype (Functor, Applicative, Monad, MonadFail)
+data SimpleState = SimpleState
+  { backingStore :: !SimpleMap
+  , activeQueries :: !(HashSet Int)
+  , nextQueryId :: !Int
+  }
+
+initialState :: SimpleMap -> SimpleState
+initialState m = SimpleState m mempty 0
+
+newtype SimpleT m a = SimpleT { unSimpleT :: ReaderT (IORef SimpleState) m a }
+  deriving newtype (Functor, Applicative, Monad, MonadFail, MonadTrans)
+
+hoistSimpleT :: (m a -> n b) -> SimpleT m a -> SimpleT n b
+hoistSimpleT f (SimpleT m ) = SimpleT $ mapReaderT f m
+
+askSimpleT :: MonadIO m => SimpleT m (IORef SimpleState)
+askSimpleT = SimpleT ask
 
 runSimpleT :: MonadIO m => SimpleT m a -> SimpleMap -> m (SimpleMap, a)
 runSimpleT m kv = do
-  ref <- liftIO $ newIORef kv
+  ref <- liftIO . newIORef $ initialState kv
   r <- runReaderT (unSimpleT m) ref
   kv' <- liftIO $ readIORef ref
-  pure (kv', r)
+  pure (backingStore kv', r)
 
-withMap :: MonadIO m => (SimpleMap -> m (SimpleMap, a)) -> SimpleT m a
-withMap f = SimpleT $ do
+runSimpleTWithIORef :: SimpleT m a -> IORef SimpleState -> m a
+runSimpleTWithIORef = runReaderT . unSimpleT
+
+withState :: MonadIO m => (SimpleState -> m (SimpleState, a)) -> SimpleT m a
+withState f = SimpleT $ do
   ref <- ask
   (m', r) <- liftIO (readIORef ref) >>= lift . f
   liftIO $ writeIORef ref m'
   pure r
 
-askMap :: MonadIO m => SimpleT m SimpleMap
-askMap = SimpleT $ ask >>= liftIO . readIORef
+-- askMap :: MonadIO m => SimpleT m SimpleMap
+-- askMap = SimpleT $ ask >>= liftIO . readIORef
 
 instance MonadIO m => MonadKV SimpleKey SimpleValue (SimpleT m) where
-  newtype ResultSet (SimpleT m) = SimpleResultSet { unSimpleResultSet :: SimpleSet }
-  data Err (SimpleT m) = Err
-  prepareOperation = pure . coerce
-  submitOperation (SimpleResultSet set) f = do
-    withMap $ \full_map -> let
-      restricted_map = HashMap.mapWithKey (\k _ -> HashMap.lookup k full_map) $ HashSet.toMap set
-    -- TODO check size restricted_map == size set
-      (updates, r) = f restricted_map
-      go k = Endo . \case
+  data ResultSet (SimpleT m) = SimpleResultSet
+      { resultSetId :: !Int
+      , resultSetQuery :: !(QueryScope SimpleKey)
+      }
+    deriving stock (Show, Eq)
+
+  prepareOperation q = withState $ \s@SimpleState{..} -> pure (s
+    { nextQueryId = nextQueryId + 1
+    , activeQueries = HashSet.insert nextQueryId activeQueries
+    }, SimpleResultSet nextQueryId q)
+
+  submitOperation SimpleResultSet {..} f = hoistSimpleT runExceptT $ do
+    withState $ \s@SimpleState{..} ->  do
+      unless (HashSet.member resultSetId activeQueries) $ throwError KVEBadResultSet
+      let
+        restricted_map = HashMap.mapWithKey (\k _ -> HashMap.lookup k backingStore) $ HashSet.toMap . coerce $ resultSetQuery
+        -- TODO check size restricted_map == size set
+        (updates, r) = f restricted_map
+        go k = Endo . \case
           DIUpdate v' -> HashMap.insert k v'
           DIRemove -> HashMap.delete k
-      new_map = appEndo (HashMap.foldMapWithKey go updates) full_map
-      in pure (new_map, pure r)
+        new_map = appEndo (HashMap.foldMapWithKey go updates) backingStore
+      pure (s
+        { activeQueries = HashSet.delete resultSetId activeQueries
+        , backingStore = new_map
+        }, r)
