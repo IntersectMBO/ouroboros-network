@@ -12,6 +12,7 @@ import qualified Test.PeerState (tests)
 import qualified Test.Version (tests)
 import qualified Test.Ouroboros.Network.MockNode (tests)
 import qualified Test.Ouroboros.Network.BlockFetch (tests)
+import qualified Test.Ouroboros.Network.Diffusion.Policies (tests)
 import qualified Test.Ouroboros.Network.KeepAlive (tests)
 import qualified Test.Ouroboros.Network.NodeToNode.Version (tests)
 import qualified Test.Ouroboros.Network.NodeToClient.Version (tests)
@@ -64,6 +65,7 @@ tests =
   , Test.Ouroboros.Network.NodeToNode.Version.tests
   , Test.Ouroboros.Network.NodeToClient.Version.tests
   , Test.LedgerPeers.tests
+  , Test.Ouroboros.Network.Diffusion.Policies.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests
