@@ -960,8 +960,8 @@ fixupSchedule =
          if hasInbound || hasOutbound
          -- ignore an inbound connection if:
          --
-         -- * there is a running inbound connection or;
-         -- * an outbound connection.  For outbound connection we allow to have
+         -- - there is a running inbound connection or;
+         -- - an outbound connection.  For outbound connection we allow to have
          --   inbound connection started at the same time as outbound one, this
          --   simulates race condition that the connection manager can resolve.
          then go s acc as
