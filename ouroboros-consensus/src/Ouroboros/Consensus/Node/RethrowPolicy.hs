@@ -7,7 +7,6 @@ import           Data.Typeable (Typeable)
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 
-import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Consensus.Block (StandardHash)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
@@ -28,6 +27,8 @@ import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException,
                      TempRegistryException)
+
+import           Ouroboros.Network.RethrowPolicy
 
 -- Exception raised during interaction with the peer
 --
