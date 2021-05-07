@@ -79,6 +79,7 @@ library
                        Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.LocalRootPeers
                        Ouroboros.Network.PeerSelection.PeerStateActions
+                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.PeerSelection.Simple
@@ -283,6 +284,7 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection
                        Test.Ouroboros.Network.PeerSelection.Instances
                        Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+                       Test.Ouroboros.Network.PeerSelection.RootPeerDNS
                        Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
