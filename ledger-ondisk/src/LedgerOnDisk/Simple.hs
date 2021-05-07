@@ -83,7 +83,6 @@ instance MonadIO m => MonadKV SimpleKey SimpleValue (SimpleT m) where
       unless (HashSet.member resultSetId activeQueries) $ throwError KVEBadResultSet
       let
         restricted_map = HashMap.mapWithKey (\k _ -> HashMap.lookup k backingStore) $ HashSet.toMap . coerce $ resultSetQuery
-        -- TODO check size restricted_map == size set
         (updates, r) = f restricted_map
         go k = Endo . \case
           DIUpdate v' -> HashMap.insert k v'
