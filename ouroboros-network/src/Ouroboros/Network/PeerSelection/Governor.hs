@@ -35,6 +35,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     PeerSelectionCounters(..),
     nullPeerSelectionTargets,
     emptyPeerSelectionState,
+    ChurnMode (..)
 ) where
 
 import           Data.Cache
