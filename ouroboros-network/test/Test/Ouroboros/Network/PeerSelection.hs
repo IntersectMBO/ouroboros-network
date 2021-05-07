@@ -25,8 +25,9 @@ import           Data.Void (Void)
 import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
+import           Control.Exception (IOException)
 
-import qualified Network.DNS as DNS (defaultResolvConf)
+import qualified Network.DNS as DNS (defaultResolvConf, Resolver)
 import           Network.Socket (SockAddr)
 import           Network.Mux.Timeout
 
@@ -296,7 +297,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
       tracer
       timeout
       DNS.defaultResolvConf
-      readDomains $ \requestPublicRootPeers ->
+      readDomains
+      dnsActions $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer
@@ -305,6 +307,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
   where
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
+
+    dnsActions :: DNSActions ResolvConf DNS.Resolver IOException IO
+    dnsActions = DNSActions {
+            dnsResolverResource = resolverResource,
+            dnsAsyncResolverResource = asyncResolverResource,
+            dnsLookupAWithTTL = lookupAWithTTL
+    }
 
     actions :: PeerSelectionActions SockAddr () IO
     actions = PeerSelectionActions {

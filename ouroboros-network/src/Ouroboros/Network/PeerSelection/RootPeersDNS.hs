@@ -11,6 +11,18 @@
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Ouroboros.Network.PeerSelection.RootPeersDNS (
+    -- * DNS based actions for local and public root providers
+    DNSActions (..),
+
+    -- * DNS resolver IO auxiliar functions
+    constantResource,
+    resolverResource,
+    asyncResolverResource,
+#if defined(mingw32_HOST_OS)
+    newResolverResource,
+#endif
+    lookupAWithTTL,
+
     -- * DNS based provider for local root peers
     localRootPeersProvider,
     DomainAddress (..),
@@ -134,17 +146,18 @@ toRelayAddress address port =
 -- | Evolving resource; We use it to reinitialise the dns library if the
 -- `/etc/resolv.conf` file was modified.
 --
-data Resource err a = Resource {
-    withResource :: IO (Either err a, Resource err a)
+data Resource m err a = Resource {
+    withResource :: m (Either err a, Resource m err a)
   }
 
 -- | Like 'withResource' but retries untill success.
 --
-withResource' :: Tracer IO err
+withResource' :: MonadDelay m
+              => Tracer m err
               -> NonEmpty DiffTime
               -- ^ delays between each re-try
-              -> Resource err a
-              -> IO (a, Resource err a)
+              -> Resource m err a
+              -> m (a, Resource m err a)
 withResource' tracer delays0 = go delays0
   where
     dropHead :: NonEmpty a -> NonEmpty a
@@ -162,15 +175,15 @@ withResource' tracer delays0 = go delays0
           pure (r, resource')
 
 
-constantResource :: a -> Resource err a
+constantResource :: Applicative m => a -> Resource m err a
 constantResource a = Resource (pure (Right a, constantResource a))
 
-data DNSorIOError
+data DNSorIOError exception
     = DNSError !DNSError
-    | IOError  !IOException
+    | IOError  !exception
   deriving Show
 
-instance Exception DNSorIOError where
+instance Exception exception => Exception (DNSorIOError exception) where
 
 
 -- | Strict version of 'Maybe' adjusted to the needs ot
@@ -184,7 +197,7 @@ data TimedResolver
 --
 -- TODO: it could be useful for `publicRootPeersProvider`.
 --
-resolverResource :: DNS.ResolvConf -> IO (Resource DNSorIOError DNS.Resolver)
+resolverResource :: DNS.ResolvConf -> IO (Resource IO (DNSorIOError IOException) DNS.Resolver)
 resolverResource resolvConf = do
     rs <- DNS.makeResolvSeed resolvConf
     case DNS.resolvInfo resolvConf of
@@ -197,8 +210,8 @@ resolverResource resolvConf = do
     handlers :: FilePath
              -> TimedResolver
              -> [Handler IO
-                  ( Either DNSorIOError DNS.Resolver
-                  , Resource DNSorIOError DNS.Resolver)]
+                  ( Either (DNSorIOError IOException) DNS.Resolver
+                  , Resource IO (DNSorIOError IOException) DNS.Resolver)]
     handlers filePath tr =
       [ Handler $
           \(err :: IOException) ->
@@ -210,7 +223,7 @@ resolverResource resolvConf = do
 
     go :: FilePath
        -> TimedResolver
-       -> Resource DNSorIOError DNS.Resolver
+       -> Resource IO (DNSorIOError IOException) DNS.Resolver
     go filePath tr@NoResolver = Resource $
       do
         modTime <- getModificationTime filePath
@@ -236,7 +249,7 @@ resolverResource resolvConf = do
 -- | `Resource` which passes the 'DNS.Resolver' through a 'StrictTVar'.  Better
 -- than 'resolverResource' when using in multiple threads.
 --
-asyncResolverResource :: DNS.ResolvConf -> IO (Resource DNSorIOError DNS.Resolver)
+asyncResolverResource :: DNS.ResolvConf -> IO (Resource IO (DNSorIOError IOException) DNS.Resolver)
 asyncResolverResource resolvConf =
     case DNS.resolvInfo resolvConf of
       DNS.RCFilePath filePath -> do
@@ -248,8 +261,8 @@ asyncResolverResource resolvConf =
   where
     handlers :: FilePath -> StrictTVar IO TimedResolver
              -> [Handler IO
-                  ( Either DNSorIOError DNS.Resolver
-                  , Resource DNSorIOError DNS.Resolver)]
+                  ( Either (DNSorIOError IOException) DNS.Resolver
+                  , Resource IO (DNSorIOError IOException) DNS.Resolver)]
     handlers filePath resourceVar =
       [ Handler $
           \(err :: IOException) ->
@@ -260,7 +273,7 @@ asyncResolverResource resolvConf =
       ]
 
     go :: FilePath -> StrictTVar IO TimedResolver
-       -> Resource DNSorIOError DNS.Resolver
+       -> Resource IO (DNSorIOError IOException) DNS.Resolver
     go filePath resourceVar = Resource $ do
       r <- atomically (readTVar resourceVar)
       case r of
@@ -292,7 +305,7 @@ asyncResolverResource resolvConf =
 -- configuration has changed.  On /Windows/ the 'dns' library is using
 -- @GetNetworkParams@ win32 api call to get the list of default dns servers.
 --
-newResolverResource :: DNS.ResolvConf -> Resource DNSorIOError DNS.Resolver
+newResolverResource :: DNS.ResolvConf -> Resource IO DNSorIOError DNS.Resolver
 newResolverResource resolvConf = go
     where
       go = Resource $
@@ -314,40 +327,84 @@ newResolverResource resolvConf = go
         ]
 #endif
 
+-----------------------------------------------
+-- Dictionary of DNS actions vocabulary
+--
+data DNSActions resolver exception m = DNSActions {
+
+    -- |
+    --
+    -- TODO: it could be useful for `publicRootPeersProvider`.
+    --
+    dnsResolverResource      :: DNS.ResolvConf -> m (Resource m (DNSorIOError exception) resolver),
+
+    -- | `Resource` which passes the 'DNS.Resolver' (or abstract resolver type)
+    -- through a 'StrictTVar'. Better than 'resolverResource' when using in
+    -- multiple threads.
+    --
+    dnsAsyncResolverResource :: DNS.ResolvConf -> m (Resource m (DNSorIOError exception) resolver),
+
+#if defined(mingw32_HOST_OS)
+    -- | Returns a newly intiatialised 'DNS.Resolver' (or abstract resolver type)
+    -- at each step;  This is only
+    -- for Windows, where we don't have a way to check that the network
+    -- configuration has changed.  On /Windows/ the 'dns' library is using
+    -- @GetNetworkParams@ win32 api call to get the list of default dns servers.
+    --
+    dnsNewResolverResource   :: DNS.ResolvConf -> Resource m (DNSorIOError exception) resolver,
+#endif
+
+    -- | Like 'DNS.lookupA' but also return the TTL for the results.
+    --
+    -- DNS library timeouts do not work reliably on Windows (#1873), hence the
+    -- additional timeout.
+    --
+    dnsLookupAWithTTL        :: TimeoutFn m -> DNS.ResolvConf -> resolver -> DNS.Domain -> m (Either DNS.DNSError [(IPv4, DNS.TTL)])
+  }
 
 -----------------------------------------------
 -- local root peer set provider based on DNS
 --
 
-data TraceLocalRootPeers =
+data TraceLocalRootPeers exception =
        TraceLocalRootDomains [(Int, Map RelayAddress PeerAdvertise)]
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAddress DiffTime
      | TraceLocalRootResult  DomainAddress [(IPv4, DNS.TTL)]
-     | TraceLocalRootFailure DomainAddress DNSorIOError
+     | TraceLocalRootFailure DomainAddress (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
   deriving Show
 
 -- |
 --
 localRootPeersProvider
-  :: Tracer IO TraceLocalRootPeers
-  -> TimeoutFn IO
+  :: forall m resolver exception.
+    (MonadAsync m, MonadDelay m)
+  => Tracer m (TraceLocalRootPeers exception)
+  -> TimeoutFn m
   -> DNS.ResolvConf
-  -> StrictTVar IO (Seq (Int, Map Socket.SockAddr PeerAdvertise))
-  -> STM IO [(Int, Map RelayAddress PeerAdvertise)]
-  -> IO Void
+  -> StrictTVar m (Seq (Int, Map Socket.SockAddr PeerAdvertise))
+  -> STM m [(Int, Map RelayAddress PeerAdvertise)]
+  -> DNSActions resolver exception m
+  -> m Void
 localRootPeersProvider tracer
                        timeout
                        resolvConf
                        rootPeersGroupsVar
-                       readDomainsGroups = do
+                       readDomainsGroups
+                       dnsA@DNSActions {
+                        dnsAsyncResolverResource,
+#if defined(mingw32_HOST_OS)
+                        dnsNewResolverResource,
+#endif
+                        dnsLookupAWithTTL
+                       } = do
   domainsGroups <- atomically readDomainsGroups
   traceWith tracer (TraceLocalRootDomains domainsGroups)
 #if !defined(mingw32_HOST_OS)
-  rr <- asyncResolverResource resolvConf
+  rr <- dnsAsyncResolverResource resolvConf
 #else
-  let rr = newResolverResource resolvConf
+  let rr = dnsNewResolverResource resolvConf
 #endif
   let
       -- Flatten the local root peers groups and associate its index to each
@@ -371,7 +428,7 @@ localRootPeersProvider tracer
                      RelayAddress ip port ->
                        IP.toSockAddr (ip, port)
                      _ ->
-                       error "localRootPeersProvider: impossible happend"
+                       error "localRootPeersProvider: impossible happened"
                    )
                . Map.filterWithKey
                    (\k _ -> case k of
@@ -394,22 +451,23 @@ localRootPeersProvider tracer
                          resolvConf
                          rootPeersGroupsVar
                          readDomainsGroups
+                         dnsA
 
   where
-    waitConfigChanged :: [(Int, Map RelayAddress PeerAdvertise)] -> STM IO ()
+    waitConfigChanged :: [(Int, Map RelayAddress PeerAdvertise)] -> STM m ()
     waitConfigChanged dg = do
       dg' <- readDomainsGroups
       check (dg /= dg')
 
     resolveDomain
-      :: DNS.Resolver
+      :: resolver
       -> DomainAddress
       -> PeerAdvertise
-      -> IO (Either DNSError [((Socket.SockAddr, PeerAdvertise), DNS.TTL)])
+      -> m (Either DNS.DNSError [((Socket.SockAddr, PeerAdvertise), DNS.TTL)])
     resolveDomain resolver
                   domain@DomainAddress {daDomain, daPortNumber}
                   advertisePeer = do
-      reply <- lookupAWithTTL timeout resolvConf resolver daDomain
+      reply <- dnsLookupAWithTTL timeout resolvConf resolver daDomain
       case reply of
         Left  err -> do
           traceWith tracer (TraceLocalRootFailure domain (DNSError err))
@@ -425,13 +483,13 @@ localRootPeersProvider tracer
                          | (addr, _ttl) <- results ]
 
     monitorDomain
-      :: Resource DNSorIOError DNS.Resolver
+      :: Resource m (DNSorIOError exception) resolver
       -> (Int, DomainAddress, PeerAdvertise)
-      -> IO Void
+      -> m Void
     monitorDomain rr0 (index, domain, advertisePeer) =
         go rr0 0
       where
-        go :: Resource DNSorIOError DNS.Resolver -> DiffTime -> IO Void
+        go :: Resource m (DNSorIOError exception) resolver -> DiffTime -> m Void
         go !rr !ttl = do
           when (ttl > 0) $ do
             traceWith tracer (TraceLocalRootWaiting domain ttl)
@@ -476,25 +534,41 @@ data TracePublicRootPeers =
 
 -- |
 -- TODO track PeerAdvertise
-publicRootPeersProvider :: Tracer IO TracePublicRootPeers
-                        -> TimeoutFn IO
-                        -> DNS.ResolvConf
-                        -> STM IO [RelayAddress]
-                        -> ((Int -> IO (Set Socket.SockAddr, DiffTime)) -> IO a)
-                        -> IO a
-publicRootPeersProvider tracer timeout resolvConf readDomains action = do
+--
+publicRootPeersProvider
+  :: forall resolver exception a m.
+  (MonadThrow m, MonadAsync m, Exception exception)
+  => Tracer m TracePublicRootPeers
+  -> TimeoutFn m
+  -> DNS.ResolvConf
+  -> STM m [RelayAddress]
+  -> DNSActions resolver exception m
+  -> ((Int -> m (Set Socket.SockAddr, DiffTime)) -> m a)
+  -> m a
+publicRootPeersProvider tracer
+                        timeout
+                        resolvConf
+                        readDomains
+                        DNSActions {
+                          dnsResolverResource,
+#if defined(mingw32_HOST_OS)
+                          dnsNewResolverResource,
+#endif
+                          dnsLookupAWithTTL
+                        }
+                        action = do
     domains <- atomically readDomains
     traceWith tracer (TracePublicRootRelayAddresses domains)
 #if !defined(mingw32_HOST_OS)
-    rr <- resolverResource resolvConf
+    rr <- dnsResolverResource resolvConf
 #else
-    let rr = newResolverResource resolvConf
+    let rr = dnsNewResolverResource resolvConf
 #endif
     resourceVar <- newTVarIO rr
     action (requestPublicRootPeers resourceVar)
   where
-    requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
-                           -> Int -> IO (Set Socket.SockAddr, DiffTime)
+    requestPublicRootPeers :: StrictTVar m (Resource m (DNSorIOError exception) resolver)
+                           -> Int -> m (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
         domains <- atomically readDomains
         traceWith tracer (TracePublicRootRelayAddresses domains)
@@ -506,7 +580,7 @@ publicRootPeersProvider tracer timeout resolvConf readDomains action = do
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ (,) domain <$> lookupAWithTTL timeout resolvConf resolver (daDomain domain)
+                  [ (,) domain <$> dnsLookupAWithTTL timeout resolvConf resolver (daDomain domain)
                   | RelayDomain domain <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
@@ -531,23 +605,38 @@ publicRootPeersProvider tracer timeout resolvConf readDomains action = do
 
 -- | Provides DNS resulution functionality.
 --
-resolveDomainAddresses :: Tracer IO TracePublicRootPeers
-                       -> TimeoutFn IO
-                       -> DNS.ResolvConf
-                       -> [DomainAddress]
-                       -> IO (Map DomainAddress (Set Socket.SockAddr))
-resolveDomainAddresses tracer timeout resolvConf domains = do
+resolveDomainAddresses
+  :: forall exception m.
+  (MonadThrow m, MonadAsync m, Exception exception)
+  => Tracer m TracePublicRootPeers
+  -> TimeoutFn m
+  -> DNS.ResolvConf
+  -> DNSActions DNS.Resolver exception m
+  -> [DomainAddress]
+  -> m (Map DomainAddress (Set Socket.SockAddr))
+resolveDomainAddresses tracer
+                       timeout
+                       resolvConf
+                       DNSActions {
+                          dnsResolverResource,
+#if defined(mingw32_HOST_OS)
+                          dnsNewResolverResource,
+#endif
+                          dnsLookupAWithTTL
+                        }
+                       domains
+                       = do
     traceWith tracer (TracePublicRootDomains domains)
 #if !defined(mingw32_HOST_OS)
-    rr <- resolverResource resolvConf
+    rr <- dnsResolverResource resolvConf
 #else
-    let rr = newResolverResource resolvConf
+    let rr = dnsNewResolverResource resolvConf
 #endif
     resourceVar <- newTVarIO rr
     requestPublicRootPeers resourceVar
   where
-    requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
-                           -> IO (Map DomainAddress (Set Socket.SockAddr))
+    requestPublicRootPeers :: StrictTVar m (Resource m (DNSorIOError exception) DNS.Resolver)
+                           -> m (Map DomainAddress (Set Socket.SockAddr))
     requestPublicRootPeers resourceVar = do
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr
@@ -557,7 +646,7 @@ resolveDomainAddresses tracer timeout resolvConf domains = do
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ (,) domain <$> lookupAWithTTL timeout resolvConf resolver (daDomain domain)
+                  [ (,) domain <$> dnsLookupAWithTTL timeout resolvConf resolver (daDomain domain)
                   | domain <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
@@ -596,7 +685,7 @@ resolveDomainAddresses tracer timeout resolvConf domains = do
 
 -- | Like 'DNS.lookupA' but also return the TTL for the results.
 --
--- DNS library timeouts do not work reliably on Windows (#1873), hende the
+-- DNS library timeouts do not work reliably on Windows (#1873), hence the
 -- additional timeout.
 --
 lookupAWithTTL :: TimeoutFn IO
@@ -605,7 +694,7 @@ lookupAWithTTL :: TimeoutFn IO
                -> DNS.Domain
                -> IO (Either DNS.DNSError [(IPv4, DNS.TTL)])
 lookupAWithTTL timeout resolvConf resolver domain = do
-    reply <- timeout (microsecondsAsIntToDiffTime $ DNS.resolvTimeout resolvConf)  $ DNS.lookupRaw resolver domain DNS.A
+    reply <- timeout (microsecondsAsIntToDiffTime $ DNS.resolvTimeout resolvConf) $ DNS.lookupRaw resolver domain DNS.A
     case reply of
       Nothing -> return (Left DNS.TimeoutExpired)
       Just (Left  err) -> return (Left err)
@@ -644,7 +733,7 @@ clipTTLAbove, clipTTLBelow :: DiffTime -> DiffTime
 clipTTLBelow = max 60     -- between 1min
 clipTTLAbove = min 86400  -- and 24hrs
 
-withAsyncAll :: [IO a] -> ([Async IO a] -> IO b) -> IO b
+withAsyncAll :: MonadAsync m => [m a] -> ([Async m a] -> m b) -> m b
 withAsyncAll xs0 action = go [] xs0
   where
     go as []     = action as
