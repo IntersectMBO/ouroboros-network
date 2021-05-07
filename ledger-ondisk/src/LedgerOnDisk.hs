@@ -1,6 +1,8 @@
 -- |
 
-module LedgerOnDisk(foo) where
+module LedgerOnDisk
+  ( module X
+  ) where
 
-foo :: Bool
-foo = True
+import LedgerOnDisk.Class as X
+import LedgerOnDisk.Simple as X

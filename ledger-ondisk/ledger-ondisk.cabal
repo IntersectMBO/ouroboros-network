@@ -24,12 +24,17 @@ library
                        LedgerOnDisk.Class
                        LedgerOnDisk.Simple
                        LedgerOnDisk.ClassWithExceptions
+                       LedgerOnDisk.QSM.Model
   build-depends:       base,
                        unordered-containers,
                        transformers,
                        mtl,
                        hashable,
-                       exceptions
+                       exceptions,
+                       quickcheck-state-machine,
+                       quickcheck-instances,
+                       QuickCheck,
+                       tree-diff
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -42,5 +47,7 @@ test-suite ledger-ondisk-test
   build-depends:       base,
                        ledger-ondisk,
                        tasty,
-                       tasty-quickcheck
+                       tasty-quickcheck,
+                       QuickCheck,
+                       quickcheck-instances
   ghc-options:         -Wall
