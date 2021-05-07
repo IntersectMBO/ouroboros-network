@@ -334,8 +334,8 @@ genScheduleInbound size = do
 
 -- TODO: this generator needs to be tuned. We ought to have greater change for
 -- generating edge cases:
--- * race conditions between inbound / outbound connections
--- * ScheduleInbound should be refined to contains information when remote
+-- - race conditions between inbound / outbound connections
+-- - ScheduleInbound should be refined to contains information when remote
 --   promotions / demotions should happen.
 instance Arbitrary (ScheduleEntry ()) where
     arbitrary =
@@ -1181,8 +1181,8 @@ prop_generator_RefinedSchedule a@(Schedule schedule) =
            ]) $
 
     -- % of all connections which:
-    -- * are outbound and reuse an existing inbound connection
-    -- * are blocked on ongoing handshake of the inbound connection
+    -- - are outbound and reuse an existing inbound connection
+    -- - are blocked on ongoing handshake of the inbound connection
     (label $ concat
            [ "reuse-handshake blocking "
            , if cs > 0
@@ -1195,8 +1195,8 @@ prop_generator_RefinedSchedule a@(Schedule schedule) =
            ]) $
 
     -- % of all connections which:
-    -- * are outbound and reuse an existing inbound connection
-    -- * are not blocked on ongoing handshake of the inbound connection
+    -- - are outbound and reuse an existing inbound connection
+    -- - are not blocked on ongoing handshake of the inbound connection
     (label $ concat
            [ "reuse-handshake non-blocking "
            , if cs > 0
@@ -1816,6 +1816,7 @@ instance Arbitrary SkewedBool where
 --  transitions.
 --
 -- Possible extensions:
+--
 -- * test that resources are eventually closed;
 -- * we could check that every connection eventually ends in 'TerminatedState';
 -- * we can statically compute which transitions we will observe
