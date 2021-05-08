@@ -29,6 +29,25 @@ import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import           Ouroboros.Network.PeerSelection.Types
 
 
+-- | Peer information avialble in 'PickPolicy'.  The 'Ord' instance is
+-- important for correctness of policies implemented in
+-- "Ouroboros.Netowrk.Diffusion.Policies".
+--
+-- For promotion policies the 'Ord' instance will prioritise local root peers
+-- over root peers over gossip peers.  If there are two peers of the same
+-- origin a peer with lower connection count will be picked.   For demotion
+-- policies a reversed order is used (using 'Dual').
+--
+data PeerInfo = PeerInfo {
+    piSource    :: !PeerSource,
+    -- ^ source of the peer.
+    piFailCount :: !Int
+    -- ^ number of connection failures prior the promotion; note that it is
+    -- reset after first successful connection attempt.  This means that it
+    -- will not influence a demotion policy.
+  }
+  deriving (Eq, Ord)
+
 -- | A peer pick policy is an action that picks a subset of elements from a
 -- map of peers.
 --
@@ -38,28 +57,39 @@ import           Ouroboros.Network.PeerSelection.Types
 -- The post-condition is that the picked set is non-empty but must not be
 -- bigger than the requested number.
 --
-type PickPolicy peeraddr m = Map peeraddr PeerSource
+type PickPolicy peeraddr m = Map peeraddr PeerInfo
                           -> Int
                           -> STM m (Set peeraddr)
 
 enhanceAvailablePeers :: Ord peeraddr
                       => PeerSelectionState peeraddr peerconn
                       -> Set peeraddr
-                      -> Map peeraddr PeerSource
-enhanceAvailablePeers PeerSelectionState { localRootPeers, publicRootPeers } =
+                      -> Map peeraddr PeerInfo
+enhanceAvailablePeers PeerSelectionState { localRootPeers
+                                         , publicRootPeers
+                                         , knownPeers
+                                         } =
     Map.fromSet $ \peeraddr ->
-      fromMaybe PeerSourceGossip $
-            const PeerSourceLocalRoot <$>
-              peeraddr `Map.lookup` LocalRootPeers.toMap localRootPeers
-        <|> if peeraddr `Set.member` publicRootPeers
-              then Just PeerSourcePublicRoot
-              else Nothing
+      PeerInfo {
+          piSource =
+            fromMaybe PeerSourceGossip $
+                  const PeerSourceLocalRoot <$>
+                    peeraddr `Map.lookup` LocalRootPeers.toMap localRootPeers
+              <|> if peeraddr `Set.member` publicRootPeers
+                    then Just PeerSourcePublicRoot
+                    else Nothing,
+
+          piFailCount =
+              fromMaybe 0
+            . fmap KnownPeers.knownPeerFailCount
+            $ peeraddr `Map.lookup` KnownPeers.allPeers knownPeers 
+        }
 
 -- | Check pre-conditions and post-conditions on the pick policies
 pickPeers :: (Ord peeraddr, Functor m)
           => PeerSelectionState peeraddr peerconn
-          -> (Map peeraddr PeerSource -> Int -> m (Set peeraddr))
-          ->  Set peeraddr            -> Int -> m (Set peeraddr)
+          -> (Map peeraddr PeerInfo -> Int -> m (Set peeraddr))
+          ->  Set peeraddr          -> Int -> m (Set peeraddr)
 pickPeers state pick available num =
     assert precondition $
     fmap (\picked -> assert (postcondition picked) picked)

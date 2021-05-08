@@ -6,6 +6,7 @@
 module Ouroboros.Network.PeerSelection.KnownPeers (
     -- * Types
     KnownPeers,
+    KnownPeerInfo (..),
     invariant,
 
     -- * Basic container operations
@@ -14,6 +15,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     insert,
     delete,
     toSet,
+    allPeers,
 
     -- * Special operations
     setCurrentTime,

@@ -18,7 +18,6 @@ import           System.Random
 
 import           Network.Socket (SockAddr)
 
-import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -62,8 +61,8 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
      -- Add metrics and a random number in order to prevent ordering based on
      -- SockAddr
      -- TODO: upstreamyness is added here
-    addMetrics :: Map SockAddr PeerSource
-               -> STM m (Map SockAddr (PeerSource, Word32))
+    addMetrics :: Map SockAddr PeerInfo
+               -> STM m (Map SockAddr (PeerInfo, Word32))
     addMetrics available = do
       inRng <- readTVar rngVar
       let (inRng', available') =
@@ -79,12 +78,18 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
 
     simplePromotionPolicy :: PickPolicy SockAddr m
     simplePromotionPolicy available pickNum =
-           Set.fromList
-         . map fst
-         . take pickNum
-         . sortOn (\(_, info) -> info)
-         . Map.assocs
-       <$> addMetrics available
+             Set.fromList
+           . map fst
+           . take pickNum
+           . sortOn (\(_, (info, nonce)) -> (adjustInfo info, nonce))
+           . Map.assocs
+         <$> addMetrics available
+       where
+         adjustInfo :: PeerInfo -> PeerInfo
+         adjustInfo info@PeerInfo { piFailCount } =
+           -- Do not differentiate between peers for which failed connection
+           -- attempts which differ by less than 2.
+           info { piFailCount = piFailCount - piFailCount `mod` 2 }
 
     simpleDemotionPolicy :: PickPolicy SockAddr m
     simpleDemotionPolicy available pickNum =
