@@ -9,6 +9,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
 import           Data.List (sortOn)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Ord (Down (..))
 import qualified Data.Set as Set
@@ -58,10 +59,11 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
       policyGossipOverallTimeout    = 10    -- seconds
     }
   where
-
-     -- Add metrics and a random number in order to prevent ordering based on SockAddr
+     -- Add metrics and a random number in order to prevent ordering based on
+     -- SockAddr
      -- TODO: upstreamyness is added here
-    addMetrics :: Map.Map SockAddr PeerSource -> STM m (Map.Map SockAddr (PeerSource, Word32))
+    addMetrics :: Map SockAddr PeerSource
+               -> STM m (Map SockAddr (PeerSource, Word32))
     addMetrics available = do
       inRng <- readTVar rngVar
       let (inRng', available') =
@@ -76,22 +78,20 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
       return available'
 
     simplePromotionPolicy :: PickPolicy SockAddr m
-    simplePromotionPolicy available pickNum = do
-      available' <- addMetrics available
-      return $ Set.fromList
-             . map fst
-             . take pickNum
-             . sortOn (\(_, rn) -> rn)
-             . Map.assocs
-             $ available'
+    simplePromotionPolicy available pickNum =
+           Set.fromList
+         . map fst
+         . take pickNum
+         . sortOn (\(_, info) -> info)
+         . Map.assocs
+       <$> addMetrics available
 
     simpleDemotionPolicy :: PickPolicy SockAddr m
-    simpleDemotionPolicy available pickNum = do
-      available' <- addMetrics available
-      return $ Set.fromList
-             . map fst
-             . take pickNum
-             . sortOn (\(_, rn) -> Down rn)
-             . Map.assocs
-             $ available'
+    simpleDemotionPolicy available pickNum =
+          Set.fromList
+        . map fst
+        . take pickNum
+        . sortOn (\(_, info) -> Down info)
+        . Map.assocs
+      <$> addMetrics available
 
