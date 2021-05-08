@@ -590,7 +590,7 @@ peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
   threadDelay 3
   atomically increaseActivePeers
   endTs0 <- getMonotonicTime
-  fuzzyDelay inRng (Time $ diffTime endTs0 startTs0) >>= go
+  fuzzyDelay inRng (diffTime endTs0 startTs0) >>= go
 
   where
 
@@ -655,39 +655,39 @@ peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
         })
       endTs <- getMonotonicTime
 
-      fuzzyDelay rng (Time $ diffTime endTs startTs) >>= go
+      fuzzyDelay rng (diffTime endTs startTs) >>= go
 
     -- Randomly delay between churnInterval and churnInterval + maxFuzz seconds.
-    fuzzyDelay :: StdGen -> Time -> m StdGen
-    fuzzyDelay rng execTime = do
+    fuzzyDelay :: StdGen -> DiffTime -> m StdGen
+    fuzzyDelay rng execDelay = do
       mode <- atomically getFetchMode
       case mode of
-           FetchModeDeadline -> longDelay rng execTime
-           FetchModeBulkSync -> shortDelay rng execTime
+           FetchModeDeadline -> longDelay rng execDelay
+           FetchModeBulkSync -> shortDelay rng execDelay
 
-    fuzzyDelay' :: Time -> Double -> StdGen -> Time -> m StdGen
-    fuzzyDelay' baseDelay maxFuzz rng execTime = do
-      let (fuzz, rng') = randomR (0, maxFuzz :: Double) rng
-          !delay = realToFrac fuzz + diffTime baseDelay execTime
+    fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
+    fuzzyDelay' baseDelay maxFuzz rng execDelay = do
+      let (fuzz, !rng') = randomR (0, maxFuzz) rng
+          !delay = realToFrac fuzz + baseDelay - execDelay
       traceWith tracer $ TraceChurnWait delay
       threadDelay delay
       return rng'
 
 
-    longDelay :: StdGen -> Time -> m StdGen
+    longDelay :: StdGen -> DiffTime -> m StdGen
     longDelay = fuzzyDelay' churnInterval 600
 
 
-    shortDelay :: StdGen -> Time -> m StdGen
+    shortDelay :: StdGen -> DiffTime -> m StdGen
     shortDelay = fuzzyDelay' churnIntervalBulk 60
 
     -- The min time between running the churn governor.
-    churnInterval :: Time
-    churnInterval = Time 3300
+    churnInterval :: DiffTime
+    churnInterval = 3300
 
 
-    churnIntervalBulk :: Time
-    churnIntervalBulk = Time 300
+    churnIntervalBulk :: DiffTime
+    churnIntervalBulk = 300
 
     -- Replace 20% or at least on peer every churnInterval.
     decrease :: Int -> Int
