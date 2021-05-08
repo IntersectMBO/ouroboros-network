@@ -10,6 +10,7 @@ import           Control.Monad.Class.MonadTime
 
 import           Data.List (sortOn)
 import qualified Data.Map.Strict as Map
+import           Data.Ord (Down (..))
 import qualified Data.Set as Set
 import           Data.Word (Word32)
 import           System.Random
@@ -90,7 +91,7 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
       return $ Set.fromList
              . map fst
              . take pickNum
-             . sortOn (\(_, rn) -> rn)
+             . sortOn (\(_, rn) -> Down rn)
              . Map.assocs
              $ available'
 
