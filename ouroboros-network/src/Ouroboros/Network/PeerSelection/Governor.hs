@@ -590,7 +590,7 @@ peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
   threadDelay 3
   atomically increaseActivePeers
   endTs0 <- getMonotonicTime
-  fuzzyDelay inRng (diffTime endTs0 startTs0) >>= go
+  fuzzyThreadDelay inRng (diffTime endTs0 startTs0) >>= go
 
   where
 
@@ -655,37 +655,35 @@ peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
         })
       endTs <- getMonotonicTime
 
-      fuzzyDelay rng (diffTime endTs startTs) >>= go
+      fuzzyThreadDelay rng (diffTime endTs startTs) >>= go
 
     -- Randomly delay between churnInterval and churnInterval + maxFuzz seconds.
-    fuzzyDelay :: StdGen -> DiffTime -> m StdGen
-    fuzzyDelay rng execDelay = do
+    fuzzyThreadDelay :: StdGen -> DiffTime -> m StdGen
+    fuzzyThreadDelay rng execDelay = do
       mode <- atomically getFetchMode
       case mode of
            FetchModeDeadline -> longDelay rng execDelay
            FetchModeBulkSync -> shortDelay rng execDelay
 
-    fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
-    fuzzyDelay' baseDelay maxFuzz rng execDelay = do
+    longDelay :: StdGen -> DiffTime -> m StdGen
+    longDelay = fuzzyThreadDelay' churnInterval 600
+
+    shortDelay :: StdGen -> DiffTime -> m StdGen
+    shortDelay = fuzzyThreadDelay' churnIntervalBulk 60
+
+    fuzzyThreadDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
+    fuzzyThreadDelay' baseDelay maxFuzz rng execDelay = do
       let (fuzz, !rng') = randomR (0, maxFuzz) rng
           !delay = realToFrac fuzz + baseDelay - execDelay
       traceWith tracer $ TraceChurnWait delay
       threadDelay delay
       return rng'
 
-
-    longDelay :: StdGen -> DiffTime -> m StdGen
-    longDelay = fuzzyDelay' churnInterval 600
-
-
-    shortDelay :: StdGen -> DiffTime -> m StdGen
-    shortDelay = fuzzyDelay' churnIntervalBulk 60
-
-    -- The min time between running the churn governor.
+    -- Min time between running the churn governor.
     churnInterval :: DiffTime
     churnInterval = 3300
 
-
+    -- Min time between running the churn governor in bluk sync mode.
     churnIntervalBulk :: DiffTime
     churnIntervalBulk = 300
 
