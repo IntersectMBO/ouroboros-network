@@ -67,24 +67,15 @@ type CanMock era =
   , Arbitrary (Core.PParams era)
   , Arbitrary (Core.Script era)
   , Arbitrary (Core.TxBody era)
+  , Arbitrary (CL.TxInBlock era)
   , Arbitrary (Core.TxOut era)
   , Arbitrary (Core.Value era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
   )
 
--- | Cryptography that can easily be mocked
+-- | A stronger 'CanMock' that is incompatible with Alonzo
 type CanMockOld era =
-  ( ShelleyBasedEra era
-  , SL.EraGen era
-  , SL.Mock (EraCrypto era)
-  , SL.ValidateScript era
-  , Arbitrary (Core.AuxiliaryData era)
-  , Arbitrary (Core.PParams era)
-  , Arbitrary (Core.Script era)
-  , Arbitrary (Core.TxBody era)
-  , Arbitrary (Core.TxOut era)
-  , Arbitrary (Core.Value era)
-  , Arbitrary (PredicateFailure (SL.UTXOW era))
+  ( CanMock era
   , CL.TxSeq era ~ SL.TxSeq era
   , Core.Witnesses era ~ SL.WitnessSet era
   )

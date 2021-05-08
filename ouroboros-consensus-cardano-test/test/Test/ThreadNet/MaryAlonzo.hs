@@ -302,12 +302,14 @@ prop_simple_allegraAlonzo_convergence TestSetup
 
     alonzoGenesis :: AlonzoGenesis
     alonzoGenesis = AlonzoGenesis {
-          adaPerUTxOWord  = SL.Coin 0
-        , costmdls        = Map.empty
-        , prices          = SL.Prices (SL.Coin 0) (SL.Coin 0)
-        , maxTxExUnits    = mempty
-        , maxBlockExUnits = mempty
-        , maxValSize      = 0
+          adaPerUTxOWord       = SL.Coin 0
+        , collateralPercentage = 0
+        , costmdls             = Map.empty
+        , maxBlockExUnits      = mempty
+        , maxCollateralInputs  = 0
+        , maxTxExUnits         = mempty
+        , maxValSize           = 0
+        , prices               = SL.Prices (SL.Coin 0) (SL.Coin 0)
         }
 
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
