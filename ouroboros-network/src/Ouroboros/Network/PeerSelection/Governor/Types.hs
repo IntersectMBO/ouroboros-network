@@ -10,6 +10,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types where
 import           Data.Semigroup (Min(..))
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import           Data.Set (Set)
 
@@ -37,19 +38,32 @@ import           Ouroboros.Network.PeerSelection.Types
 -- The post-condition is that the picked set is non-empty but must not be
 -- bigger than the requested number.
 --
-type PickPolicy peeraddr m = Set peeraddr
+type PickPolicy peeraddr m = Map peeraddr PeerSource
                           -> Int
                           -> STM m (Set peeraddr)
 
+enhanceAvailablePeers :: Ord peeraddr
+                      => PeerSelectionState peeraddr peerconn
+                      -> Set peeraddr
+                      -> Map peeraddr PeerSource
+enhanceAvailablePeers PeerSelectionState { localRootPeers, publicRootPeers } =
+    Map.fromSet $ \peeraddr ->
+      fromMaybe PeerSourceGossip $
+            const PeerSourceLocalRoot <$>
+              peeraddr `Map.lookup` LocalRootPeers.toMap localRootPeers
+        <|> if peeraddr `Set.member` publicRootPeers
+              then Just PeerSourcePublicRoot
+              else Nothing
 
 -- | Check pre-conditions and post-conditions on the pick policies
 pickPeers :: (Ord peeraddr, Functor m)
-          => (Set peeraddr -> Int -> m (Set peeraddr))
-          ->  Set peeraddr -> Int -> m (Set peeraddr)
-pickPeers pick available num =
+          => PeerSelectionState peeraddr peerconn
+          -> (Map peeraddr PeerSource -> Int -> m (Set peeraddr))
+          ->  Set peeraddr            -> Int -> m (Set peeraddr)
+pickPeers state pick available num =
     assert precondition $
     fmap (\picked -> assert (postcondition picked) picked)
-         (pick available numClamped)
+         (pick (enhanceAvailablePeers state available) numClamped)
   where
     precondition         = not (Set.null available) && num > 0
     postcondition picked = not (Set.null picked)

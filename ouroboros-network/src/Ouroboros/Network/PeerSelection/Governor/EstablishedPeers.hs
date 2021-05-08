@@ -71,7 +71,7 @@ belowTarget actions
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -237,7 +237,7 @@ aboveTarget actions
                                 Set.\\ activePeers
                                 Set.\\ inProgressDemoteWarm
                                 Set.\\ inProgressPromoteWarm
-      selectedToDemote <- pickPeers
+      selectedToDemote <- pickPeers st
                             policyPickWarmPeersToDemote
                             availableToDemote
                             numPeersToDemote

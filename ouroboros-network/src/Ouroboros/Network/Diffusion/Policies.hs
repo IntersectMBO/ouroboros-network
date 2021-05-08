@@ -8,7 +8,7 @@ module Ouroboros.Network.Diffusion.Policies where
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
-import           Data.List (sortOn, unfoldr)
+import           Data.List (sortOn)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Word (Word32)
@@ -16,6 +16,7 @@ import           System.Random
 
 import           Network.Socket (SockAddr)
 
+import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -59,14 +60,18 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
 
      -- Add metrics and a random number in order to prevent ordering based on SockAddr
      -- TODO: upstreamyness is added here
-    addMetrics :: Set.Set SockAddr -> STM m (Map.Map SockAddr Word32)
+    addMetrics :: Map.Map SockAddr PeerSource -> STM m (Map.Map SockAddr (PeerSource, Word32))
     addMetrics available = do
       inRng <- readTVar rngVar
-
-      let (rng, rng') = split inRng
-          rns = take (Set.size available) $ unfoldr (Just . random)  rng :: [Word32]
-          available' = Map.fromList $ zip (Set.toList available) rns
-      writeTVar rngVar rng'
+      let (inRng', available') =
+            Map.mapAccum
+              (\rng peersource ->
+                let (nonce, rng') = random rng in
+                (rng', (peersource, nonce))
+              )
+              inRng
+              available
+      writeTVar rngVar inRng'
       return available'
 
     simplePromotionPolicy :: PickPolicy SockAddr m

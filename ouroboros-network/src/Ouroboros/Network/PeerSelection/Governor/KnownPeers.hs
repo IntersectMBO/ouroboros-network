@@ -59,7 +59,7 @@ belowTarget actions
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForGossip)
   = Guarded Nothing $ do
-      selectedForGossip <- pickPeers
+      selectedForGossip <- pickPeers st
                              policyPickKnownPeersForGossip
                              availableForGossip
                              numGossipReqsPossible
@@ -280,7 +280,7 @@ aboveTarget PeerSelectionPolicy {
   , not (Set.null availableToForget)
   = Guarded Nothing $ do
       let numPeersToForget = numKnownPeers - targetNumberOfKnownPeers
-      selectedToForget <- pickPeers
+      selectedToForget <- pickPeers st
                             policyPickColdPeersToForget
                             availableToForget
                             numPeersToForget

@@ -64,7 +64,7 @@ belowTarget actions
           numPeersToPromote  = targetNumberOfActivePeers
                              - numActivePeers
                              - numPromoteInProgress
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickWarmPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -196,7 +196,7 @@ aboveTarget actions
       let availableToDemote :: Set peeraddr
           availableToDemote = activePeers
                                 Set.\\ inProgressDemoteHot
-      selectedToDemote <- pickPeers
+      selectedToDemote <- pickPeers st
                             policyPickHotPeersToDemote
                             availableToDemote
                             numPeersToDemote

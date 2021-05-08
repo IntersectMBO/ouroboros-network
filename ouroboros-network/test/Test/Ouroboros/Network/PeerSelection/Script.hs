@@ -27,6 +27,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Map (Map)
+import qualified Data.Map as Map
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
@@ -134,21 +136,21 @@ instance Arbitrary PickMembers where
 
 interpretPickScript :: (MonadSTMTx stm tvar tmvar tqueue tbqueue, Ord peeraddr)
                     => tvar PickScript
-                    -> Set peeraddr
+                    -> Map peeraddr peersource
                     -> Int
                     -> stm (Set peeraddr)
 interpretPickScript scriptVar available pickNum
-  | Set.null available
+  | Map.null available
   = error "interpretPickScript: given empty map to pick from"
   | pickNum <= 0
   = error "interpretPickScript: given invalid pickNum"
 
-  | Set.size available <= pickNum
-  = return available
+  | Map.size available <= pickNum
+  = return (Map.keysSet available)
 
   | otherwise
   = do pickmembers <- stepScriptSTM scriptVar
-       return (interpretPickMembers pickmembers available pickNum)
+       return (interpretPickMembers pickmembers (Map.keysSet available) pickNum)
 
 interpretPickMembers :: Ord peeraddr
                      => PickMembers -> Set peeraddr -> Int -> Set peeraddr

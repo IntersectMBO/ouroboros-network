@@ -26,7 +26,7 @@ data PeerSource = PeerSourceLocalRoot
 --
 data PeerAdvertise = DoAdvertisePeer
                    | DoNotAdvertisePeer
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Ord, Show, Generic)
 
 
 data PeerStatus =

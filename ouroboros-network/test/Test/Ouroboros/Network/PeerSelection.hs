@@ -17,6 +17,8 @@ module Test.Ouroboros.Network.PeerSelection (tests) where
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
 import           Data.List (groupBy)
+import           Data.Map (Map)
+import qualified Data.Map as Map
 import           Data.Maybe (listToMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -340,5 +342,5 @@ _governorFindingPublicRoots targetNumberOfRootPeers domains =
                 policyGossipBatchWaitTime     = 0, -- seconds
                 policyGossipOverallTimeout    = 0  -- seconds
               }
-    pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
-    pickTrivially m n = pure . Set.take n $ m
+    pickTrivially :: Applicative m => Map SockAddr peersource -> Int -> m (Set SockAddr)
+    pickTrivially m n = pure . Set.take n . Map.keysSet $ m
