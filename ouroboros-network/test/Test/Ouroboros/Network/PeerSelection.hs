@@ -97,6 +97,13 @@ tests =
                    prop_governor_target_active_below
     , testProperty "progresses towards active peers target (from above)"
                    prop_governor_target_active_above
+
+    , testProperty "progresses towards established local root peers target"
+                   prop_governor_target_established_local
+    , testProperty "progresses towards active local root peers target (from below)"
+                   prop_governor_target_active_local_below
+    , testProperty "progresses towards active local root peers target (from above)"
+                   prop_governor_target_active_local_above
     ]
   ]
   --TODO: We should add separate properties to check that we do not overshoot
@@ -464,22 +471,23 @@ traceNum TraceGossipRequests{}        = 05
 traceNum TraceGossipResults{}         = 06
 traceNum TraceForgetColdPeers{}       = 07
 traceNum TracePromoteColdPeers{}      = 08
---traceNum TracePromoteColdLocalPeers{} = 09
+traceNum TracePromoteColdLocalPeers{} = 09
 traceNum TracePromoteColdFailed{}     = 10
 traceNum TracePromoteColdDone{}       = 11
 traceNum TracePromoteWarmPeers{}      = 12
---traceNum TracePromoteWarmLocalPeers{} = 13
+traceNum TracePromoteWarmLocalPeers{} = 13
 traceNum TracePromoteWarmFailed{}     = 14
 traceNum TracePromoteWarmDone{}       = 15
 traceNum TraceDemoteWarmPeers{}       = 16
 traceNum TraceDemoteWarmFailed{}      = 17
 traceNum TraceDemoteWarmDone{}        = 18
 traceNum TraceDemoteHotPeers{}        = 19
-traceNum TraceDemoteHotFailed{}       = 20
-traceNum TraceDemoteHotDone{}         = 21
-traceNum TraceDemoteAsynchronous{}    = 22
-traceNum TraceGovernorWakeup{}        = 23
-traceNum TraceChurnWait{}             = 24
+traceNum TraceDemoteLocalHotPeers{}   = 20
+traceNum TraceDemoteHotFailed{}       = 21
+traceNum TraceDemoteHotDone{}         = 22
+traceNum TraceDemoteAsynchronous{}    = 23
+traceNum TraceGovernorWakeup{}        = 24
+traceNum TraceChurnWait{}             = 25
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -493,22 +501,23 @@ allTraceNames =
    , (06, "TraceGossipResults")
    , (07, "TraceForgetColdPeers")
    , (08, "TracePromoteColdPeers")
--- , (09, "TracePromoteColdLocalPeers")
+   , (09, "TracePromoteColdLocalPeers")
    , (10, "TracePromoteColdFailed")
    , (11, "TracePromoteColdDone")
    , (12, "TracePromoteWarmPeers")
--- , (13, "TracePromoteWarmLocalPeers")
+   , (13, "TracePromoteWarmLocalPeers")
    , (14, "TracePromoteWarmFailed")
    , (15, "TracePromoteWarmDone")
    , (16, "TraceDemoteWarmPeers")
    , (17, "TraceDemoteWarmFailed")
    , (18, "TraceDemoteWarmDone")
    , (19, "TraceDemoteHotPeers")
-   , (20, "TraceDemoteHotFailed")
-   , (21, "TraceDemoteHotDone")
-   , (22, "TraceDemoteAsynchronous")
-   , (23, "TraceGovernorWakeup")
-   , (24, "TraceChurnWait")
+   , (20, "TraceDemoteLocalHotPeers")
+   , (21, "TraceDemoteHotFailed")
+   , (22, "TraceDemoteHotDone")
+   , (23, "TraceDemoteAsynchronous")
+   , (24, "TraceGovernorWakeup")
+   , (25, "TraceChurnWait")
    ]
 
 
@@ -1609,6 +1618,225 @@ prop_governor_target_active_above env =
                   <*> govActivePeersSig
                   <*> demotionOpportunities
                   <*> demotionOpportunitiesIgnoredTooLong)
+
+
+-- | A variant of 'prop_governor_target_established_below' but for the target
+-- that all local root peers should become established.
+--
+-- We do not need separate above and below variants of this property since it
+-- is not possible to exceed the target.
+--
+prop_governor_target_established_local :: GovernorMockEnvironment -> Property
+prop_governor_target_established_local env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govLocalRootPeersSig :: Signal (Set PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers)
+                         events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState
+            (EstablishedPeers.toSet . Governor.establishedPeers)
+            events
+
+        govEstablishedFailuresSig :: Signal (Set PeerAddr)
+        govEstablishedFailuresSig =
+            Signal.keyedLinger
+              180 -- 3 minutes  -- TODO: too eager to reconnect?
+              (fromMaybe Set.empty)
+          . Signal.fromEvents
+          . Signal.selectEvents
+              (\case TracePromoteColdFailed _ _ peer _ _ ->
+                       --TODO: the environment does not yet cause this to happen
+                       -- it requires synchronous failure in the establish action
+                       Just (Set.singleton peer)
+                     --TODO: what about TraceDemoteWarmDone ?
+                     -- these are also not immediate candidates
+                     -- why does the property not fail for not tracking these?
+                     TraceDemoteAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerCold) status)
+                     _ -> Nothing
+              )
+          . selectGovEvents
+          $ events
+
+        promotionOpportunities :: Signal (Set PeerAddr)
+        promotionOpportunities =
+          (\local established recentFailures ->
+              local Set.\\ established
+                    Set.\\ recentFailures
+          ) <$> govLocalRootPeersSig
+            <*> govEstablishedPeersSig
+            <*> govEstablishedFailuresSig
+
+        promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        promotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            promotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (local root peers, established peers, " ++
+           "recent failures, opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,) <$> govLocalRootPeersSig
+                  <*> govEstablishedPeersSig
+                  <*> govEstablishedFailuresSig
+                  <*> promotionOpportunities
+                  <*> promotionOpportunitiesIgnoredTooLong)
+
+
+-- | A variant of 'prop_governor_target_active_below' but for the target that
+-- certain numbers out of groups of local root peers should become active.
+--
+-- We do not need separate above and below variants of this property because
+-- the target for active local root peers is one-sided: it is ok if we are
+-- above target for any individual group. It is the overall active peers target
+-- that can cause us to demote local roots if that's possible for any group
+-- without going under target.
+--
+-- TODO: perhaps we do need a below property that we do not demote active peers
+-- causing us to undershoot the target for local root peers being active.
+--
+prop_governor_target_active_local_below :: GovernorMockEnvironment -> Property
+prop_governor_target_active_local_below env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState
+            (EstablishedPeers.toSet . Governor.establishedPeers)
+            events
+
+        govActivePeersSig :: Signal (Set PeerAddr)
+        govActivePeersSig =
+          selectGovState Governor.activePeers events
+
+        govActiveFailuresSig :: Signal (Set PeerAddr)
+        govActiveFailuresSig =
+            Signal.keyedLinger
+              180 -- 3 minutes  -- TODO: too eager to reconnect?
+              (fromMaybe Set.empty)
+          . Signal.fromEvents
+          . Signal.selectEvents
+              (\case TracePromoteWarmFailed _ _ peer _ ->
+                       --TODO: the environment does not yet cause this to happen
+                       -- it requires synchronous failure in the establish action
+                       Just (Set.singleton peer)
+                     --TODO
+                     TraceDemoteAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                     _ -> Nothing
+              )
+          . selectGovEvents
+          $ events
+
+        promotionOpportunities :: Signal (Set PeerAddr)
+        promotionOpportunities =
+          (\local established active recentFailures ->
+              Set.unions
+                [ -- There are no opportunities if we're at or above target
+                  if Set.size groupActive >= target
+                     then Set.empty
+                     else groupEstablished Set.\\ active
+                                           Set.\\ recentFailures
+                | (target, group) <- LocalRootPeers.toGroupSets local
+                , let groupActive      = group `Set.intersection` active
+                      groupEstablished = group `Set.intersection` established
+                ]
+          ) <$> govLocalRootPeersSig
+            <*> govEstablishedPeersSig
+            <*> govActivePeersSig
+            <*> govActiveFailuresSig
+
+        promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        promotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            promotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (local, established peers, active peers, " ++
+           "recent failures, opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                   <*> govEstablishedPeersSig
+                   <*> govActivePeersSig
+                   <*> govActiveFailuresSig
+                   <*> promotionOpportunities
+                   <*> promotionOpportunitiesIgnoredTooLong)
+
+
+prop_governor_target_active_local_above :: GovernorMockEnvironment -> Property
+prop_governor_target_active_local_above env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers events
+
+        govActivePeersSig :: Signal (Set PeerAddr)
+        govActivePeersSig =
+          selectGovState Governor.activePeers events
+
+        deomotionOpportunities :: Signal (Set PeerAddr)
+        deomotionOpportunities =
+          (\local active ->
+              Set.unions
+                [ -- There are no opportunities if we're at or below target
+                  if Set.size groupActive <= target
+                     then Set.empty
+                     else groupActive
+                | (target, group) <- LocalRootPeers.toGroupSets local
+                , let groupActive = group `Set.intersection` active
+                ]
+          ) <$> govLocalRootPeersSig
+            <*> govActivePeersSig
+
+        demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        demotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            deomotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (local peers, active peers, " ++
+           "demotion opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,toolong) -> Set.null toolong)
+          ((,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                 <*> govActivePeersSig
+                 <*> deomotionOpportunities
+                 <*> demotionOpportunitiesIgnoredTooLong)
 
 
 --
