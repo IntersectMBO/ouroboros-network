@@ -19,6 +19,7 @@ import           Control.Exception (SomeException)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -30,22 +31,136 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 -- | If we are below the target of /warm peers/ we promote /cold peers/
 -- according to 'policyPickColdPeersToPromote'.
 --
+-- There are two targets we are trying to hit here:
+--
+-- 1. a target for the overall number of established peers; and
+-- 2. the target that all local root peers are established peers.
+--
+-- These two targets overlap: the conditions and the actions overlap since local
+-- root peers are also known peers. Since they overlap, the order in which we
+-- consider these targets is important. We consider the local peers target
+-- /before/ the target for promoting other peers.
+--
+-- We will /always/ try to establish connections to the local root peers, even
+-- if that would put us over target for the number of established peers. If we
+-- do go over target then the action to demote will be triggered. The demote
+-- action never picks local root peers.
+--
 belowTarget :: forall peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
-belowTarget actions
-            PeerSelectionPolicy {
-              policyPickColdPeersToPromote
-            }
-            st@PeerSelectionState {
-              knownPeers,
-              establishedPeers,
-              inProgressPromoteCold,
-              targets = PeerSelectionTargets {
-                          targetNumberOfEstablishedPeers
-                        }
-            }
+belowTarget = belowTargetLocal <> belowTargetOther
+
+
+-- | For locally configured root peers we have the (implicit) target that they
+-- should all be warm peers all the time.
+--
+belowTargetLocal :: forall peeraddr peerconn m.
+                   (MonadSTM m, Ord peeraddr)
+                 => PeerSelectionActions peeraddr peerconn m
+                 -> MkGuardedDecision peeraddr peerconn m
+belowTargetLocal actions
+                 PeerSelectionPolicy {
+                   policyPickColdPeersToPromote
+                 }
+                 st@PeerSelectionState {
+                   localRootPeers,
+                   knownPeers,
+                   establishedPeers,
+                   inProgressPromoteCold
+                 }
+
+    -- Are we below the target for number of /local/ root peers that are
+    -- established? Our target for established local root peers is all of them!
+    -- However we still don't want to go over the number of established peers
+    -- or we'll end up in a cycle.
+  | numLocalEstablishedPeers + numLocalConnectInProgress
+  < targetNumberOfLocalPeers
+
+    -- Are there any /local/ root peers that are cold we could possibly pick to
+    -- connect to? We can subtract the local established ones because by
+    -- definition they are not cold and our invariant is that they are always
+    -- in the connect set. We can also subtract the in progress ones since they
+    -- are also already in the connect set and we cannot pick them again.
+  , numLocalAvailableToConnect - numLocalEstablishedPeers
+                               - numLocalConnectInProgress > 0
+  --TODO: switch style to checking if the set is empty
+  = Guarded Nothing $ do
+      -- The availableToPromote here is non-empty due to the second guard.
+      -- The known peers map restricted to the connect set is the same size as
+      -- the connect set (because it is a subset). The establishedPeers is a
+      -- subset of the connect set and we also know that there is no overlap
+      -- between inProgressPromoteCold and establishedPeers. QED.
+      --
+      -- The numPeersToPromote is positive based on the first guard.
+      --
+      let availableToPromote :: Set peeraddr
+          availableToPromote = localAvailableToConnect
+                                 Set.\\ localEstablishedPeers
+                                 Set.\\ localConnectInProgress
+
+          numPeersToPromote  = targetNumberOfLocalPeers
+                             - numLocalEstablishedPeers
+                             - numLocalConnectInProgress
+      selectedToPromote <- pickPeers
+                             policyPickColdPeersToPromote
+                             availableToPromote
+                             numPeersToPromote
+      return $ \_now -> Decision {
+        decisionTrace = TracePromoteColdLocalPeers
+                          targetNumberOfLocalPeers
+                          numLocalEstablishedPeers
+                          selectedToPromote,
+        decisionState = st {
+                          inProgressPromoteCold = inProgressPromoteCold
+                                               <> selectedToPromote
+                        },
+        decisionJobs  = [ jobPromoteColdPeer actions peer
+                        | peer <- Set.toList selectedToPromote ]
+      }
+
+    -- If we could connect to a local root peer except that there are no local
+    -- root peers currently available then we return the next wakeup time (if any)
+    -- TODO: Note that this may wake up too soon, since it considers non-local
+    -- known peers too for the purpose of the wakeup time.
+  | numLocalEstablishedPeers + numLocalConnectInProgress < targetNumberOfLocalPeers
+  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers)
+
+  | otherwise
+  = GuardedSkip Nothing
+  where
+    localRootPeersSet          = LocalRootPeers.keysSet localRootPeers
+    targetNumberOfLocalPeers   = LocalRootPeers.size localRootPeers
+
+    localEstablishedPeers      = EstablishedPeers.toSet establishedPeers
+                                  `Set.intersection` localRootPeersSet
+    localAvailableToConnect    = KnownPeers.availableToConnect knownPeers
+                                  `Set.intersection` localRootPeersSet
+    localConnectInProgress     = inProgressPromoteCold
+                                  `Set.intersection` localRootPeersSet
+
+    numLocalEstablishedPeers   = Set.size localEstablishedPeers
+    numLocalAvailableToConnect = Set.size localAvailableToConnect
+    numLocalConnectInProgress  = Set.size localConnectInProgress
+
+
+belowTargetOther :: forall peeraddr peerconn m.
+                    (MonadSTM m, Ord peeraddr)
+                 => PeerSelectionActions peeraddr peerconn m
+                 -> MkGuardedDecision peeraddr peerconn m
+belowTargetOther actions
+                 PeerSelectionPolicy {
+                   policyPickColdPeersToPromote
+                 }
+                 st@PeerSelectionState {
+                   knownPeers,
+                   establishedPeers,
+                   inProgressPromoteCold,
+                   targets = PeerSelectionTargets {
+                               targetNumberOfEstablishedPeers
+                             }
+                 }
     -- Are we below the target for number of established peers?
   | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
 
@@ -202,6 +317,7 @@ aboveTarget actions
               policyPickWarmPeersToDemote
             }
             st@PeerSelectionState {
+              localRootPeers,
               establishedPeers,
               activePeers,
               inProgressDemoteWarm,
@@ -217,6 +333,11 @@ aboveTarget actions
   | let numEstablishedPeers, numActivePeers, numPeersToDemote :: Int
         numEstablishedPeers = EstablishedPeers.size establishedPeers
         numActivePeers      = Set.size activePeers
+        numLocalWarmPeers   = Set.size localWarmPeers
+        localWarmPeers      = Set.intersection
+                                (LocalRootPeers.keysSet localRootPeers)
+                                (EstablishedPeers.toSet establishedPeers)
+                       Set.\\ activePeers
         -- One constraint on how many to demote is the difference in the
         -- number we have now vs the target. The other constraint is that
         -- we pick established peers that are not also active. These
@@ -226,6 +347,7 @@ aboveTarget actions
         numPeersToDemote    = min (numEstablishedPeers
                                    - targetNumberOfEstablishedPeers)
                                   (numEstablishedPeers
+                                   - numLocalWarmPeers
                                    - numActivePeers)
                             - Set.size inProgressDemoteWarm
                             - Set.size inProgressPromoteWarm
@@ -235,6 +357,7 @@ aboveTarget actions
       let availableToDemote :: Set peeraddr
           availableToDemote = EstablishedPeers.toSet establishedPeers
                                 Set.\\ activePeers
+                                Set.\\ LocalRootPeers.keysSet localRootPeers
                                 Set.\\ inProgressDemoteWarm
                                 Set.\\ inProgressPromoteWarm
       selectedToDemote <- pickPeers
