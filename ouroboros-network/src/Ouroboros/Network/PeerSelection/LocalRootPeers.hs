@@ -62,9 +62,9 @@ invariant (LocalRootPeers m gs) =
     -- The localRootPeers groups must not overlap with each other
  && Map.size m == sum [ Set.size g | (_, g) <- gs ]
 
-    -- Individual group targets must be zero or more and achievable given the
-    -- group sizes.
- && and [ 0 <= t && t <= Set.size g | (t, g) <- gs ]
+    -- Individual group targets must be greater than zero and achievable given
+    -- the group sizes.
+ && and [ 0 < t && t <= Set.size g | (t, g) <- gs ]
 
 
 empty :: LocalRootPeers peeraddr
@@ -110,11 +110,11 @@ fromGroups =
     -- The groups must not overlap; have achievable targets; and be non-empty.
     establishStructureInvariant !_ [] = []
     establishStructureInvariant !acc ((t, g): gs)
-      | not (Map.null g') = (t', g') : establishStructureInvariant acc' gs
-      | otherwise         =            establishStructureInvariant acc' gs
+      | t' > 0    = (t', g') : establishStructureInvariant acc' gs
+      | otherwise =            establishStructureInvariant acc' gs
       where
         !g'   = g `Map.withoutKeys` acc
-        !t'   = min (max 0 t) (Map.size g')
+        !t'   = min t (Map.size g')
         !acc' = acc <> Map.keysSet g
 
 -- | Inverse of 'fromGroups', for the subset of inputs to 'fromGroups' that
