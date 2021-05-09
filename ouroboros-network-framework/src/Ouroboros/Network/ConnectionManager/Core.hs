@@ -153,23 +153,48 @@ data ConnectionState peerAddr handle handleError version m =
   | TerminatedState                              !(Maybe handleError)
 
 -- | Perform counting from an 'AbstractState'
-connectionStateToCounters :: ConnectionState peerAddr handle handleError version m -> ConnectionManagerCounters
+connectionStateToCounters
+    :: ConnectionState peerAddr handle handleError version m
+    -> ConnectionManagerCounters
 connectionStateToCounters state =
     case state of
       ReservedOutboundState                 -> mempty
-      UnnegotiatedState Inbound _ _         -> conn <> incomingConn
+      UnnegotiatedState Inbound _ _         -> prunableConn
+                                            <> incomingConn
+
       UnnegotiatedState Outbound _ _        -> outgoingConn
-      OutboundUniState _ _ _                -> uniConn <> outgoingConn
-      OutboundDupState  _ _ _ _             -> conn <> duplexConn <> outgoingConn
-      InboundIdleState _ _ _ Unidirectional -> conn <> uniConn <> incomingConn
-      InboundIdleState _ _ _ Duplex         -> conn <> duplexConn  <> incomingConn
-      InboundState _ _ _ Unidirectional     -> conn <> uniConn <> incomingConn
-      InboundState _ _ _ Duplex             -> conn <> duplexConn <> incomingConn
-      DuplexState _ _ _                     -> conn <> duplexConn <> incomingConn <> outgoingConn
+      OutboundUniState _ _ _                -> uniConn
+                                            <> outgoingConn
+
+      OutboundDupState  _ _ _ _             -> prunableConn
+                                            <> duplexConn
+                                            <> outgoingConn
+
+      InboundIdleState _ _ _ Unidirectional -> prunableConn
+                                            <> uniConn
+                                            <> incomingConn
+
+      InboundIdleState _ _ _ Duplex         -> prunableConn
+                                            <> duplexConn
+                                            <> incomingConn
+
+      InboundState _ _ _ Unidirectional     -> prunableConn
+                                            <> uniConn
+                                            <> incomingConn
+
+      InboundState _ _ _ Duplex             -> prunableConn
+                                            <> duplexConn
+                                            <> incomingConn
+
+      DuplexState _ _ _                     -> prunableConn
+                                            <> duplexConn
+                                            <> incomingConn
+                                            <> outgoingConn
+
       TerminatingState _ _ _                -> mempty
       TerminatedState _                     -> mempty
   where
-    conn          = ConnectionManagerCounters 1 0 0 0 0
+    prunableConn  = ConnectionManagerCounters 1 0 0 0 0
     duplexConn    = ConnectionManagerCounters 0 1 0 0 0
     uniConn       = ConnectionManagerCounters 0 0 1 0 0
     incomingConn  = ConnectionManagerCounters 0 0 0 1 0
@@ -432,7 +457,7 @@ withConnectionManager ConnectionManagerArguments {
                       icmDemotedToColdRemote =
                         demotedToColdRemoteImpl stateVar,
                       icmNumberOfConnections =
-                        readTMVar stateVar >>= countConnections
+                        readTMVar stateVar >>= countPrunableConnections
                     })
 
             WithInitiatorResponderMode outboundHandler inboundHandler ->
@@ -454,7 +479,7 @@ withConnectionManager ConnectionManagerArguments {
                       icmDemotedToColdRemote =
                         demotedToColdRemoteImpl stateVar,
                       icmNumberOfConnections =
-                        readTMVar stateVar >>= countConnections
+                        readTMVar stateVar >>= countPrunableConnections
                     })
 
     k connectionManager
@@ -480,10 +505,13 @@ withConnectionManager ConnectionManagerArguments {
       mState <- atomically $ readTMVar stateVar >>= traverse readTVar
       traceWith tracer (TrConnectionManagerCounters (connectionManagerStateToCounters mState))
 
-    countConnections :: ConnectionManagerState peerAddr handle handleError version m
-                     -> STM m Int
-    countConnections =
-        (nConnsPruning . connectionManagerStateToCounters <$>) . traverse readTVar
+    countPrunableConnections
+        :: ConnectionManagerState peerAddr handle handleError version m
+        -> STM m Int
+    countPrunableConnections st =
+          prunableConns
+        . connectionManagerStateToCounters
+      <$> traverse readTVar st
 
     -- Start connection thread and run connection handler on it.
     --
@@ -1340,7 +1368,7 @@ withConnectionManager ConnectionManagerArguments {
                     tr = mkTransition connState connState'
                 writeTVar connVar connState'
 
-                numberOfConns <- countConnections state
+                numberOfConns <- countPrunableConnections state
                 let numberToPrune =
                         numberOfConns
                       - fromIntegral
