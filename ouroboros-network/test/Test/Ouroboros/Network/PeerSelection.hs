@@ -86,10 +86,7 @@ tests =
     , testProperty "progresses towards known peers target (from below)"
                    prop_governor_target_known_below
     , testProperty "progresses towards known peers target (from above)"
-                   (expectFailure prop_governor_target_known_above)
-                   --TODO: for the moment this correctly fails because it finds
-                   -- a nice corner case in the space, that we've not yet
-                   -- decided how we wish to resolve.
+                   prop_governor_target_known_above
 
     , testProperty "progresses towards established peers target (from below)"
                    prop_governor_target_established_below
@@ -102,6 +99,11 @@ tests =
                    prop_governor_target_active_above
     ]
   ]
+  --TODO: We should add separate properties to check that we do not overshoot
+  -- our targets: known peers from below can overshoot, but all the others
+  -- should be precise and not overshoot. The public root target from below
+  -- is a one-sided target and we can and will overshoot, but we should not
+  -- overshoot by too much.
 
 
 --
@@ -1198,60 +1200,85 @@ prop_governor_target_known_5_no_shrink_below env =
 --
 prop_governor_target_known_above :: GovernorMockEnvironment -> Property
 prop_governor_target_known_above env =
-    --TODO: this property is currently not true. There are cases involving
-    -- local root peers where we are over target for known peers, but the only
-    -- known peer that is not established is a local root peer, which we are
-    -- not allowed to forget. The established peer in this case is not a local
-    -- root, and if it were to be demoted then we would be able to forget it
-    -- instead. Alternatively if we promoted the local root peer to established
-    -- then things would also resolve (but promoting is of course something that
-    -- can fail so that's not a full solution).
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
+        envTargetsSig :: Signal PeerSelectionTargets
         envTargetsSig =
-          max <$> selectEnvTargets targetNumberOfKnownPeers events
-              <*> (Signal.fromChangeEvents 0
-                 . fmap LocalRootPeers.size
-                 . Signal.selectEvents (\case TraceEnvSetLocalRoots l -> Just l
-                                              _                       -> Nothing)
-                 . selectEnvEvents
-                 $ events)
+          selectEnvTargets id events
+
+        govLocalRootPeersSig :: Signal (Set PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers)
+                         events
+
+        govPublicRootPeersSig :: Signal (Set PeerAddr)
+        govPublicRootPeersSig =
+          selectGovState Governor.publicRootPeers events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
           selectGovState (KnownPeers.toSet . Governor.knownPeers) events
 
-        knownPeersShrinksSig :: Signal (Set PeerAddr)
-        knownPeersShrinksSig =
-            Signal.nub
-          . fmap (fromMaybe Set.empty)
-          $ Signal.difference
-              (\x x' -> x Set.\\ x')
-              govKnownPeersSig
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState (EstablishedPeers.toSet . Governor.establishedPeers)
+                         events
 
-        aboveTargetTooLong :: Signal Bool
-        aboveTargetTooLong =
-          Signal.timeout 15
-            (\(target, known, shrinks) ->
-                  Set.size known > target
-               && Set.null shrinks)
-            ((,,) <$> envTargetsSig
-                  <*> govKnownPeersSig
-                  <*> knownPeersShrinksSig)
+        -- There are no demotion opportunities if we're at or below target.
+        -- Otherwise, the opportunities for demotion are known peers that
+        -- are not currently established and are not local.
+        demotionOpportunity targets local public known established
+          | Set.size known <= targetNumberOfKnownPeers targets
+          = Set.empty
+
+         | otherwise
+         = known Set.\\ established
+                 Set.\\ local
+                 Set.\\ publicProtected
+          where
+            -- Furthermore, public roots are protected from demotion if we are
+            -- at or below target for roots peers.
+            publicProtected
+              | Set.size local + Set.size public
+                 <= targetNumberOfRootPeers targets
+              = public
+
+              | otherwise
+              = Set.empty
+
+        deomotionOpportunities :: Signal (Set PeerAddr)
+        deomotionOpportunities =
+          demotionOpportunity
+            <$> envTargetsSig
+            <*> govLocalRootPeersSig
+            <*> govPublicRootPeersSig
+            <*> govKnownPeersSig
+            <*> govEstablishedPeersSig
+
+        demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        demotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            deomotionOpportunities
 
      in counterexample
-          "\nSignal key: (target, known peers, shrinks, above target too long)" $
+          ("\nSignal key: (target (root, known), local peers, public peers, known peers, " ++
+           "established peers, demotion opportunities, ignored too long)") $
 
         signalProperty 20 show
-          (\(_,_,_,toolong) -> not toolong)
-          ((,,,) <$> envTargetsSig
-                 <*> govKnownPeersSig
-                 <*> knownPeersShrinksSig
-                 <*> aboveTargetTooLong)
+          (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,,) <$> ((\t -> (targetNumberOfRootPeers t,
+                                 targetNumberOfKnownPeers t)) <$> envTargetsSig)
+                    <*> govLocalRootPeersSig
+                    <*> govPublicRootPeersSig
+                    <*> govKnownPeersSig
+                    <*> govEstablishedPeersSig
+                    <*> deomotionOpportunities
+                    <*> demotionOpportunitiesIgnoredTooLong)
 
 
 -- | Check that the governor can hit (but not overshoot) its target for the
