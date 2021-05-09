@@ -231,7 +231,7 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
     Guarded Nothing $ do
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
-      -- practice so it's ok to resolve it arbitrarily using Map.take.
+      -- practice so it's ok to resolve it arbitrarily using clampToLimit.
       localRootPeersRaw <- readLocalRootPeers
       let localRootPeers' = LocalRootPeers.clampToLimit
                               targetNumberOfKnownPeers
