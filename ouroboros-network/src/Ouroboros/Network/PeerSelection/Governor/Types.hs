@@ -486,6 +486,8 @@ data TracePeerSelection peeraddr =
      | TraceForgetColdPeers    Int Int (Set peeraddr)
      -- | target established, actual established, selected peers
      | TracePromoteColdPeers   Int Int (Set peeraddr)
+     -- | target local established, actual local established, selected peers
+     | TracePromoteColdLocalPeers Int Int (Set peeraddr)
      -- | target established, actual established, peer, delay until next
      -- promotion, reason
      | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
@@ -493,6 +495,8 @@ data TracePeerSelection peeraddr =
      | TracePromoteColdDone    Int Int peeraddr
      -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
+     -- | local per-group (target active, actual active), selected peers
+     | TracePromoteWarmLocalPeers [(Int, Int)] (Set peeraddr)
      -- | target active, actual active, peer, reason
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
      -- | target active, actual active, peer
@@ -505,6 +509,8 @@ data TracePeerSelection peeraddr =
      | TraceDemoteWarmDone     Int Int peeraddr
      -- | target active, actual active, selected peers
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
+     -- | local per-group (target active, actual active), selected peers
+     | TraceDemoteLocalHotPeers [(Int, Int)] (Set peeraddr)
      -- | target active, actual active, peer, reason
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer
