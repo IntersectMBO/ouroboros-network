@@ -1230,6 +1230,7 @@ prop_governor_target_known_above env =
         -- There are no demotion opportunities if we're at or below target.
         -- Otherwise, the opportunities for demotion are known peers that
         -- are not currently established and are not local.
+        --
         demotionOpportunity targets local public known established
           | Set.size known <= targetNumberOfKnownPeers targets
           = Set.empty
@@ -1249,8 +1250,8 @@ prop_governor_target_known_above env =
               | otherwise
               = Set.empty
 
-        deomotionOpportunities :: Signal (Set PeerAddr)
-        deomotionOpportunities =
+        demotionOpportunities :: Signal (Set PeerAddr)
+        demotionOpportunities =
           demotionOpportunity
             <$> envTargetsSig
             <*> govLocalRootPeersSig
@@ -1263,7 +1264,7 @@ prop_governor_target_known_above env =
           Signal.keyedTimeout
             10 -- seconds
             id
-            deomotionOpportunities
+            demotionOpportunities
 
      in counterexample
           ("\nSignal key: (target (root, known), local peers, public peers, known peers, " ++
@@ -1277,7 +1278,7 @@ prop_governor_target_known_above env =
                     <*> govPublicRootPeersSig
                     <*> govKnownPeersSig
                     <*> govEstablishedPeersSig
-                    <*> deomotionOpportunities
+                    <*> demotionOpportunities
                     <*> demotionOpportunitiesIgnoredTooLong)
 
 
@@ -1354,15 +1355,20 @@ prop_governor_target_established_below env =
           . selectGovEvents
           $ events
 
+        -- There are no opportunities if we're at or above target
+        --
+        promotionOpportunity target known established recentFailures
+          | Set.size established >= target
+          = Set.empty
+
+          | otherwise
+          = known Set.\\ established
+                  Set.\\ recentFailures
+
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\target known established recentFailures ->
-              -- There are no opportunities if we're at or above target
-              if Set.size established >= target
-                then Set.empty
-                else known Set.\\ established
-                           Set.\\ recentFailures
-          ) <$> envTargetsSig
+          promotionOpportunity
+            <$> envTargetsSig
             <*> govKnownPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
@@ -1400,6 +1406,10 @@ prop_governor_target_active_below env =
         envTargetsSig =
           selectEnvTargets targetNumberOfActivePeers events
 
+        govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers events
+
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
@@ -1432,15 +1442,31 @@ prop_governor_target_active_below env =
           . selectGovEvents
           $ events
 
+        -- There are no opportunities if we're at or above target.
+        --
+        -- We define local root peers not to be promotion opportunities for
+        -- the purpose of the general target of active peers.
+        -- The local root peers have a separate target with a separate property.
+        -- And we cannot count local peers since we can have corner cases where
+        -- the only choices are local roots in a group that is already at target
+        -- but the general target is still higher. In such situations we do not
+        -- want to promote any, since we'd then be above target for the local
+        -- root peer group.
+        --
+        promotionOpportunity target local established active recentFailures
+          | Set.size active >= target
+          = Set.empty
+
+          | otherwise
+          = established Set.\\ active
+                        Set.\\ LocalRootPeers.keysSet local
+                        Set.\\ recentFailures
+
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\target established active recentFailures ->
-              -- There are no opportunities if we're at or above target
-              if Set.size active >= target
-                then Set.empty
-                else established Set.\\ active
-                                 Set.\\ recentFailures
-          ) <$> envTargetsSig
+          promotionOpportunity
+            <$> envTargetsSig
+            <*> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govActiveFailuresSig
@@ -1453,17 +1479,18 @@ prop_governor_target_active_below env =
             promotionOpportunities
 
      in counterexample
-          ("\nSignal key: (target, known peers, active peers, recent failures, " ++
-           "opportunities, ignored too long)") $
+          ("\nSignal key: (target, local peers, established peers, " ++
+           "active peers, recent failures, opportunities, ignored too long)") $
 
         signalProperty 20 show
-          (\(_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,) <$> envTargetsSig
-                   <*> govEstablishedPeersSig
-                   <*> govActivePeersSig
-                   <*> govActiveFailuresSig
-                   <*> promotionOpportunities
-                   <*> promotionOpportunitiesIgnoredTooLong)
+          (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,,) <$> envTargetsSig
+                    <*> govLocalRootPeersSig
+                    <*> govEstablishedPeersSig
+                    <*> govActivePeersSig
+                    <*> govActiveFailuresSig
+                    <*> promotionOpportunities
+                    <*> promotionOpportunitiesIgnoredTooLong)
 
 
 prop_governor_target_established_above :: GovernorMockEnvironment -> Property
@@ -1477,39 +1504,58 @@ prop_governor_target_established_above env =
         envTargetsSig =
           selectEnvTargets targetNumberOfEstablishedPeers events
 
+        govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers events
+
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
             (EstablishedPeers.toSet . Governor.establishedPeers)
             events
 
-        establishedPeersShrinksSig :: Signal (Set PeerAddr)
-        establishedPeersShrinksSig =
-            Signal.nub
-          . fmap (fromMaybe Set.empty)
-          $ Signal.difference
-              (\x x' -> x Set.\\ x')
-              govEstablishedPeersSig
+        govActivePeersSig :: Signal (Set PeerAddr)
+        govActivePeersSig =
+          selectGovState Governor.activePeers events
 
-        aboveTargetTooLong :: Signal Bool
-        aboveTargetTooLong =
-          Signal.timeout 15
-            (\(target, established, shrinks) ->
-                  Set.size established > target
-               && Set.null shrinks)
-            ((,,) <$> envTargetsSig
-                  <*> govEstablishedPeersSig
-                  <*> establishedPeersShrinksSig)
+        -- There are no demotion opportunities if we're at or below target.
+        -- Otherwise the demotion opportunities are the established peers that
+        -- are not active and not local root peers.
+        --
+        demotionOpportunity target local established active
+          | Set.size established <= target
+          = Set.empty
+
+          | otherwise
+          = established Set.\\ active
+                        Set.\\ LocalRootPeers.keysSet local
+        demotionOpportunities :: Signal (Set PeerAddr)
+        demotionOpportunities =
+          demotionOpportunity
+            <$> envTargetsSig
+            <*> govLocalRootPeersSig
+            <*> govEstablishedPeersSig
+            <*> govActivePeersSig
+
+        demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        demotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            demotionOpportunities
 
      in counterexample
-          "\nSignal key: (target, established peers, shrinks, above target too long)" $
+          ("\nSignal key: (target, local peers, established peers, active peers, " ++
+           "demotion opportunities, ignored too long)") $
 
         signalProperty 20 show
-          (\(_,_,_,toolong) -> not toolong)
-          ((,,,) <$> envTargetsSig
-                 <*> govEstablishedPeersSig
-                 <*> establishedPeersShrinksSig
-                 <*> aboveTargetTooLong)
+          (\(_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,) <$> envTargetsSig
+                   <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                   <*> govEstablishedPeersSig
+                   <*> govActivePeersSig
+                   <*> demotionOpportunities
+                   <*> demotionOpportunitiesIgnoredTooLong)
 
 
 prop_governor_target_active_above :: GovernorMockEnvironment -> Property
@@ -1523,37 +1569,46 @@ prop_governor_target_active_above env =
         envTargetsSig =
           selectEnvTargets targetNumberOfActivePeers events
 
+        govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers events
+
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
           selectGovState Governor.activePeers events
 
-        activePeersShrinksSig :: Signal (Set PeerAddr)
-        activePeersShrinksSig =
-            Signal.nub
-          . fmap (fromMaybe Set.empty)
-          $ Signal.difference
-              (\x x' -> x Set.\\ x')
-              govActivePeersSig
+        demotionOpportunity target local active
+          | Set.size active <= target
+          = Set.empty
 
-        aboveTargetTooLong :: Signal Bool
-        aboveTargetTooLong =
-          Signal.timeout 15
-            (\(target, active, shrinks) ->
-                  Set.size active > target
-               && Set.null shrinks)
-            ((,,) <$> envTargetsSig
-                  <*> govActivePeersSig
-                  <*> activePeersShrinksSig)
+          | otherwise
+          = active Set.\\ LocalRootPeers.keysSet local
+
+        demotionOpportunities :: Signal (Set PeerAddr)
+        demotionOpportunities =
+          demotionOpportunity
+            <$> envTargetsSig
+            <*> govLocalRootPeersSig
+            <*> govActivePeersSig
+
+        demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        demotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            demotionOpportunities
 
      in counterexample
-          "\nSignal key: (target, active peers, shrinks, above target too long)" $
+          ("\nSignal key: (target, local peers, active peers, " ++
+           "demotion opportunities, ignored too long)") $
 
         signalProperty 20 show
-          (\(_,_,_,toolong) -> not toolong)
-          ((,,,) <$> envTargetsSig
-                 <*> govActivePeersSig
-                 <*> activePeersShrinksSig
-                 <*> aboveTargetTooLong)
+          (\(_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,) <$> envTargetsSig
+                  <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                  <*> govActivePeersSig
+                  <*> demotionOpportunities
+                  <*> demotionOpportunitiesIgnoredTooLong)
 
 
 --
