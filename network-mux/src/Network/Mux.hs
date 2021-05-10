@@ -303,6 +303,15 @@ data MiniProtocolAction m where
                         -> StrictTMVar m (Either SomeException a)    -- ^ Completion var
                         -> MiniProtocolAction m
 
+
+data MonitorCtx m mode = MonitorCtx {
+    -- | Mini-Protocols started on deman and waiting to be scheduled.
+    --
+    mcOnDemandProtocols :: !(Map (MiniProtocolNum, MiniProtocolDir)
+                                 (MiniProtocolState mode m, MiniProtocolAction m))
+
+  }
+
 -- | The monitoring loop does two jobs:
 --
 --  1. it waits for mini-protocol threads to terminate
@@ -317,12 +326,10 @@ monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m, MonadThrow (ST
         -> StrictTVar m MuxStatus
         -> m ()
 monitor tracer jobpool egressQueue cmdQueue muxStatus =
-    go Map.empty
+    go (MonitorCtx Map.empty)
   where
-    go :: Map (MiniProtocolNum, MiniProtocolDir)
-              (MiniProtocolState mode m, MiniProtocolAction m)
-       -> m ()
-    go !ptclsStartOnDemand = do
+    go :: MonitorCtx m mode -> m ()
+    go !monitorCtx@MonitorCtx { mcOnDemandProtocols } = do
       result <- atomically $
             -- wait for a mini-protocol thread to terminate
             (EventJobResult <$> JobPool.collect jobpool)
@@ -335,13 +342,13 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
         <|> foldr (<|>) retry
               [ checkNonEmptyQueue (miniProtocolIngressQueue ptclState) >>
                 return (EventStartOnDemand ptclState ptclAction)
-              | (ptclState, ptclAction) <- Map.elems ptclsStartOnDemand ]
+              | (ptclState, ptclAction) <- Map.elems mcOnDemandProtocols ]
 
       case result of
         -- Protocols that runs to completion are not automatically restarted.
         EventJobResult (MiniProtocolShutdown pnum pmode) -> do
           traceWith tracer (MuxTraceCleanExit pnum pmode)
-          go ptclsStartOnDemand
+          go monitorCtx
 
         EventJobResult (MiniProtocolException pnum pmode e) -> do
           traceWith tracer (MuxTraceState Dead)
@@ -379,7 +386,7 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
               egressQueue
               ptclState
               ptclAction
-          go ptclsStartOnDemand
+          go monitorCtx
 
         EventControlCmd (CmdStartProtocolThread
                            StartOnDemand
@@ -390,12 +397,14 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
                              }
                            }
                            ptclAction) -> do
-          let ptclsStartOnDemand' = Map.insert (protocolKey ptclState)
-                                               (ptclState, ptclAction)
-                                               ptclsStartOnDemand
+          let monitorCtx' = monitorCtx { mcOnDemandProtocols =
+                                           Map.insert (protocolKey ptclState)
+                                                      (ptclState, ptclAction)
+                                                      mcOnDemandProtocols
+                                       }
           traceWith tracer (MuxTraceStartedOnDemand miniProtocolNum
                              (protocolDirEnum miniProtocolDir))
-          go ptclsStartOnDemand'
+          go monitorCtx'
 
         EventControlCmd CmdShutdown -> do
           traceWith tracer MuxTraceShutdown
@@ -420,9 +429,10 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
               egressQueue
               ptclState
               ptclAction
-          go (Map.delete (miniProtocolNum, miniProtocolDirEnum) ptclsStartOnDemand)
-          where
-            miniProtocolDirEnum = protocolDirEnum miniProtocolDir
+          let monitorCtx' = monitorCtx { mcOnDemandProtocols = Map.delete (protocolKey ptclState)
+                                                                          mcOnDemandProtocols
+                                       }
+          go monitorCtx'
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
