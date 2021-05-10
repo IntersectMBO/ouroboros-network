@@ -386,8 +386,12 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           atomically $ writeTVar muxStatus $ MuxFailed e
           throwIO e
 
-        -- These two cover internal and protocol errors, but always fatal, so propagate.
-        --TODO: decide if we should have exception wrappers here to identify
+        -- These two cover internal and protocol errors.  The muxer exception is
+        -- always fatal.  The demuxer exception 'MuxError BearerClosed' when all
+        -- mini-protocols stopped indicates a normal shutdown and thus it is not
+        -- propagated.
+        --
+        -- TODO: decide if we should have exception wrappers here to identify
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
@@ -396,8 +400,17 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           throwIO e
         EventJobResult (DemuxerException e) -> do
           traceWith tracer (MuxTraceState Dead)
-          atomically $ writeTVar muxStatus $ MuxFailed e
-          throwIO e
+          r <- atomically $ do
+            size <- JobPool.readGroupSize jobpool MiniProtocolJob
+            case size of
+              0  | Just (MuxError MuxBearerClosed _) <- fromException e
+                -> writeTVar muxStatus MuxStopped
+                >> return True
+              _ -> writeTVar muxStatus (MuxFailed e)
+                >> return False
+          if r
+            then return ()
+            else throwIO e
 
         EventControlCmd (CmdStartProtocolThread
                            StartEagerly
