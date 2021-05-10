@@ -7,7 +7,6 @@ module Network.Mux.Bearer.Queues
   ) where
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -15,7 +14,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
 import qualified Network.Mux as Mx
-import           Network.Mux.Types (MuxBearer)
+import           Network.Mux.Types (MuxBearer, SDUSize)
 import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Codec as Mx
 import           Network.Mux.Time as Mx
@@ -31,7 +30,7 @@ queuesAsMuxBearer
   => Tracer m Mx.MuxTrace
   -> TBQueue m BL.ByteString
   -> TBQueue m BL.ByteString
-  -> Word16
+  -> SDUSize
   -> MuxBearer m
 queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
       Mx.MuxBearer {

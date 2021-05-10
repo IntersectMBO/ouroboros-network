@@ -62,7 +62,7 @@ import qualified Network.Mux.Compat as Compat
 import           Network.Mux.Codec
 import           Network.Mux.Channel
 import           Network.Mux.Types ( muxBearerAsChannel, MiniProtocolDir(..), MuxSDU(..), MuxSDUHeader(..)
-                                   , RemoteClockModel(..) )
+                                   , RemoteClockModel(..), SDUSize (..) )
 import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Pipe
 
@@ -313,7 +313,7 @@ instance Arbitrary Uneven where
 prop_mux_snd_recv :: DummyRun
                   -> Property
 prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
-    let sduLen = 1260
+    let sduLen = SDUSize 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -375,7 +375,7 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
 prop_mux_snd_recv_bi :: DummyRun
                      -> Property
 prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
-    let sduLen = 1260
+    let sduLen = SDUSize 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -475,7 +475,7 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
 prop_mux_snd_recv_compat :: DummyTrace
                   -> Property
 prop_mux_snd_recv_compat messages = ioProperty $ do
-    let sduLen = 1260
+    let sduLen = SDUSize 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -708,7 +708,7 @@ runMuxApplication initApps initBearer respApps respBearer = do
 
 runWithQueues :: RunMuxApplications
 runWithQueues initApps respApps = do
-    let sduLen = 14000
+    let sduLen = SDUSize 14000
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     let server_w = client_r
@@ -834,9 +834,9 @@ prop_mux_2_minis_Pipe a b = ioProperty $ test_mux_2_minis runWithPipe a b
 prop_mux_starvation :: Uneven
                     -> Property
 prop_mux_starvation (Uneven response0 response1) =
-    let sduLen = 1260 in
-    (BL.length (unDummyPayload response0) > 2 * fromIntegral sduLen) &&
-    (BL.length (unDummyPayload response1) > 2 * fromIntegral sduLen) ==>
+    let sduLen = SDUSize 1260 in
+    (BL.length (unDummyPayload response0) > 2 * fromIntegral (getSDUSize sduLen)) &&
+    (BL.length (unDummyPayload response1) > 2 * fromIntegral (getSDUSize sduLen)) ==>
     ioProperty $ do
     let request       = DummyPayload $ BL.replicate 4 0xa
 
@@ -1076,7 +1076,7 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        let serverBearer = queuesAsMuxBearer serverTracer server_w server_r 1280
+        let serverBearer = queuesAsMuxBearer serverTracer server_w server_r (SDUSize 1280)
             serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
         serverMux <- newMux $ MiniProtocolBundle [serverApp]
@@ -1296,8 +1296,8 @@ prop_mux_start_mX :: forall m.
 prop_mux_start_mX apps runTime = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
-        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r (SDUSize 1234)
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w (SDUSize 1234)
     prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime
 
   where
@@ -1340,7 +1340,7 @@ prop_mux_restart_m :: forall m.
 prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r (SDUSize 1234)
         MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo InitiatorDirectionOnly . fst) apps
 
     mux <- newMux $ MiniProtocolBundle minis
@@ -1377,8 +1377,9 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
 prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
-        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+    let sduSize = SDUSize 1234
+        bearer = queuesAsMuxBearer nullTracer mux_w mux_r sduSize
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w sduSize
         apps = map fst rapps
         MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
 
@@ -1417,8 +1418,9 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
 prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
-        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+    let sduSize = SDUSize 1234
+        bearer = queuesAsMuxBearer nullTracer mux_w mux_r sduSize
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w sduSize
         apps = map fst rapps
         initMinis = map (appToInfo InitiatorDirection) apps
         respMinis = map (appToInfo ResponderDirection) apps
