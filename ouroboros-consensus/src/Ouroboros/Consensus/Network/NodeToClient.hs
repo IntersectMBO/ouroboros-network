@@ -305,7 +305,7 @@ nullTracers = Tracers {
 showTracers :: ( Show peer
                , Show (GenTx blk)
                , Show (ApplyTxErr blk)
-               , ShowQuery (Query blk)
+               , ShowQuery (BlockQuery blk)
                , HasHeader blk
                )
             => Tracer m String -> Tracers m peer blk e
