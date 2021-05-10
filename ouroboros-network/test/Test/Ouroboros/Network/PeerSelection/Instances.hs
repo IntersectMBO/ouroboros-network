@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -13,12 +14,16 @@ module Test.Ouroboros.Network.PeerSelection.Instances (
 
   ) where
 
+import           Data.Word (Word32)
+import           Data.Text.Encoding (encodeUtf8)
 
+import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAddress(..), RelayAddress(..))
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.Types
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Utils
+import qualified Data.IP as IP
 
 
 --
@@ -66,6 +71,40 @@ instance Arbitrary PeerSelectionTargets where
     , let targets' = PeerSelectionTargets r' k' e' a'
     , sanePeerSelectionTargets targets' ]
 
+instance Arbitrary DomainAddress where
+  arbitrary =
+    DomainAddress . encodeUtf8
+      <$> elements domains
+      <*> (fromIntegral <$> (arbitrary :: Gen Int))
+    where
+      domains = [ "test1"
+                , "test2"
+                , "test3"
+                , "test4"
+                , "test5"
+                ]
+
+genIPv4 :: Gen IP.IP
+genIPv4 =
+    IP.IPv4 . IP.toIPv4w <$> arbitrary
+
+genIPv6 :: Gen IP.IP
+genIPv6 =
+    IP.IPv6 . IP.toIPv6w <$> genFourWord32
+  where
+    genFourWord32 :: Gen (Word32, Word32, Word32, Word32)
+    genFourWord32 =
+       (,,,) <$> arbitrary
+             <*> arbitrary
+             <*> arbitrary
+             <*> arbitrary
+
+instance Arbitrary RelayAddress where
+  arbitrary =
+      oneof [ RelayDomain  <$> arbitrary
+            , RelayAddress <$> oneof [genIPv4, genIPv6]
+                           <*> (fromIntegral <$> (arbitrary :: Gen Int))
+            ]
 
 prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =

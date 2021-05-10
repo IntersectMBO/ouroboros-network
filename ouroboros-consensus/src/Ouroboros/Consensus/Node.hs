@@ -605,7 +605,7 @@ stdVersionDataNTC networkMagic = NodeToClientVersionData
 
 stdRunDataDiffusion ::
      DiffusionTracers
-  -> DiffusionArguments
+  -> DiffusionArguments IO
   -> DiffusionApplications
        RemoteAddress LocalAddress
        NodeToNodeVersionData NodeToClientVersionData
@@ -624,7 +624,7 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
     -- ^ If @True@, validate the ChainDB on init no matter what
   , srnDatabasePath                :: FilePath
     -- ^ Location of the DBs
-  , srnDiffusionArguments          :: DiffusionArguments
+  , srnDiffusionArguments          :: DiffusionArguments m
   , srnDiffusionTracers            :: DiffusionTracers
   , srnEnableInDevelopmentVersions :: Bool
     -- ^ If @False@, then the node will limit the negotiated NTN and NTC
