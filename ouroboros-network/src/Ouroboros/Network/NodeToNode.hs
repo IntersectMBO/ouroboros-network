@@ -579,7 +579,6 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         MuxSDUReadTimeout            -> Just (SuspendPeer shortDelay shortDelay)
                         MuxSDUWriteTimeout           -> Just (SuspendPeer shortDelay shortDelay)
                         MuxShutdown {}               -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxCleanShutdown             -> Just (SuspendPeer shortDelay shortDelay)
                         MuxBlockedOnCompletionVar {} -> Just (SuspendPeer shortDelay shortDelay)
 
           -- Error policy for TxSubmission protocol: outbound side (client role)
