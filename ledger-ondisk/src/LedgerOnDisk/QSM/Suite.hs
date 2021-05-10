@@ -50,7 +50,7 @@ prop_stateMachine_SimpleT :: SimpleMap -> Property
 prop_stateMachine_SimpleT initial_map = let
   !initial_state = initialState initial_map
   !ref = noinline . unsafePerformIO . newIORef $ initial_state
-  smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map  $ \x -> runSimpleTWithIORef x ref
+  smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runSimpleTWithIORef x ref
   smt = smt0
     { cleanup = \x -> cleanup smt0 x *> writeIORef ref initial_state
     }
@@ -72,7 +72,7 @@ arbSubkeys = fmap HashSet.fromList . sublistOf . HashMap.keys
 
 runMockM :: Testable prop => SimpleMap -> MockM (SimpleMap -> prop) -> Property
 runMockM s (MockM m) =  runStateT m (nonemptyMock s) & \case
-  Left e -> counterexample e False
+  Left e -> counterexample e False -- TODO is this the best way to fail?
   Right (f, Mock{modelMap}) -> property $ f modelMap
 
 prop_model_sees_restricted_map :: SimpleMap -> Property
@@ -147,6 +147,18 @@ prop_model_disallows_reuse_of_resultsets initial_map op@(OFn f) = runMockM initi
   KVBaseError BEBadResultSet <-  mockCmd . KVSubmit h $ op
   pure $ \_ -> r === (snd . f $ mempty)
 
+prop_out_of_order_queries_consistent :: SimpleMap -> Property
+prop_out_of_order_queries_consistent initial_map = length initial_map > 0 ==> do
+  k <- elements . HashMap.keys $ initial_map
+  pure $ runMockM initial_map $ do
+    KVSuccessHandle h1 <- mockCmd . KVPrepare $ querySingle k
+    KVSuccessHandle h2 <- mockCmd . KVPrepare $ mempty
+    KVSuccessResult _ <- mockCmd . KVSubmit h2 $ OFSet "delete" $ \_ -> (HashMap.fromList [ (k, DIRemove) ], 0)
+    KVSuccessResult r <- mockCmd . KVSubmit h1 $ OFSet "lookup" $ \m -> (mempty, maybe 1 (const 0) $ k `HashMap.lookup` m)
+    pure $ \final_map -> let
+      results_correct = r === 0
+      key_absent = not $ k `HashMap.member` final_map
+      in results_correct .&&. key_absent
 
 
 tests :: TestTree
@@ -159,6 +171,7 @@ tests = testGroup "quickcheck state machine"
     , testProperty "model disallows reuse of resultsets" prop_model_disallows_reuse_of_resultsets
     , testProperty "prop_model_sees_restricted_map" prop_model_sees_restricted_map
     , testProperty "generate no LookupAll_ s" prop_model_cmd_generator_valid
+    , testProperty "prop_out_of_order_queries_consistent"  prop_out_of_order_queries_consistent
     ]
   , testProperty "SimpleT" prop_stateMachine_SimpleT
   ]
