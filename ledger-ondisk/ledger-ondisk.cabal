@@ -23,6 +23,7 @@ library
   exposed-modules:     LedgerOnDisk
                        LedgerOnDisk.Class
                        LedgerOnDisk.Simple
+                       LedgerOnDisk.Pure
                        LedgerOnDisk.ClassWithExceptions
                        LedgerOnDisk.QSM.Model
                        LedgerOnDisk.QSM.Suite

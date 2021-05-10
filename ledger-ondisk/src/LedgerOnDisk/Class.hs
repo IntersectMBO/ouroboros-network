@@ -50,22 +50,22 @@ type OperationResult k v = HashMap k (DiffItem v)
 
 type KVOperation k v a = (HashMap k (Maybe v) -> (OperationResult k v, a))
 
-data KVBaseError where
-  KVEBadResultSet :: KVBaseError
+data BaseError where
+  BEBadResultSet :: BaseError
   deriving stock (Show, Eq)
 
 
 class (Eq k, Hashable k, Monad m) => MonadKV k v m | m -> k v where
   type Err m
-  type Err m = KVBaseError
+  type Err m = BaseError
   data ResultSet m
   prepareOperation :: QueryScope k -> m (ResultSet m)
   submitOperation :: ResultSet m -> (HashMap k (Maybe v) -> (OperationResult k v, a)) -> m (Either (Err m) a)
-  fromKVBaseError :: proxy m -> KVBaseError -> Err m
-  default fromKVBaseError :: Coercible KVBaseError (Err m) => proxy m -> KVBaseError -> Err m
+  fromKVBaseError :: proxy m -> BaseError -> Err m
+  default fromKVBaseError :: Coercible BaseError (Err m) => proxy m -> BaseError -> Err m
   fromKVBaseError _ = coerce
-  toKVBaseError :: proxy m -> Err m -> Maybe KVBaseError
-  default toKVBaseError :: Coercible KVBaseError (Err m) => proxy m -> Err m -> Maybe KVBaseError
+  toKVBaseError :: proxy m -> Err m -> Maybe BaseError
+  default toKVBaseError :: Coercible BaseError (Err m) => proxy m -> Err m -> Maybe BaseError
   toKVBaseError _ = Just . coerce
   -- close :: ResultSet m -> m (_)
 

@@ -10,6 +10,7 @@ import Data.Maybe
 
 import qualified LedgerOnDisk
 import qualified LedgerOnDisk.QSM.Suite
+
 main :: IO ()
 main = defaultMain tests
 

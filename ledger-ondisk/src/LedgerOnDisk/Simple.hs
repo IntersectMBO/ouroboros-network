@@ -1,47 +1,54 @@
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+
 module LedgerOnDisk.Simple where
 
-
-import LedgerOnDisk.Class
+import Control.Monad.Except
+import Control.Monad.Reader
+import Data.Coerce
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.IORef
-import Control.Monad.Reader
-import Data.Coerce
 import Data.Monoid
-import Control.Monad.Except
+import LedgerOnDisk.Class
+import LedgerOnDisk.Pure
+import Debug.Trace
 
 type SimpleKey = Int
+
 type SimpleValue = Int
+
 type SimpleMap = HashMap SimpleKey SimpleValue
+
 type SimpleSet = HashSet SimpleKey
+
 type SimpleMonadKV = MonadKV SimpleKey SimpleValue
 
+
 data SimpleState = SimpleState
-  { backingStore :: !SimpleMap
-  , activeQueries :: !(HashSet Int)
-  , nextQueryId :: !Int
+  { backingStore :: !SimpleMap,
+    activeQueries :: !(HashSet Int),
+    nextQueryId :: !Int
   }
 
 initialState :: SimpleMap -> SimpleState
 initialState m = SimpleState m mempty 0
 
-newtype SimpleT m a = SimpleT { unSimpleT :: ReaderT (IORef SimpleState) m a }
+newtype SimpleT m a = SimpleT {unSimpleT :: ReaderT (IORef SimpleState) m a}
   deriving newtype (Functor, Applicative, Monad, MonadFail, MonadTrans)
 
 hoistSimpleT :: (m a -> n b) -> SimpleT m a -> SimpleT n b
-hoistSimpleT f (SimpleT m ) = SimpleT $ mapReaderT f m
+hoistSimpleT f (SimpleT m) = SimpleT $ mapReaderT f m
 
 askSimpleT :: MonadIO m => SimpleT m (IORef SimpleState)
 askSimpleT = SimpleT ask
@@ -68,27 +75,28 @@ withState f = SimpleT $ do
 
 instance MonadIO m => MonadKV SimpleKey SimpleValue (SimpleT m) where
   data ResultSet (SimpleT m) = SimpleResultSet
-      { resultSetId :: !Int
-      , resultSetQuery :: !(QueryScope SimpleKey)
-      }
+    { resultSetId :: !Int,
+      resultSetQuery :: !(QueryScope SimpleKey)
+    }
     deriving stock (Show, Eq)
 
-  prepareOperation q = withState $ \s@SimpleState{..} -> pure (s
-    { nextQueryId = nextQueryId + 1
-    , activeQueries = HashSet.insert nextQueryId activeQueries
-    }, SimpleResultSet nextQueryId q)
+  prepareOperation q = withState $ \s@SimpleState {..} ->
+    pure
+      ( s
+          { nextQueryId = nextQueryId + 1,
+            activeQueries = nextQueryId `HashSet.insert`  activeQueries
+          },
+        SimpleResultSet nextQueryId q
+      )
 
   submitOperation SimpleResultSet {..} f = hoistSimpleT runExceptT $ do
-    withState $ \s@SimpleState{..} ->  do
-      unless (HashSet.member resultSetId activeQueries) $ throwError KVEBadResultSet
-      let
-        restricted_map = HashMap.mapWithKey (\k _ -> HashMap.lookup k backingStore) $ HashSet.toMap . coerce $ resultSetQuery
-        (updates, r) = f restricted_map
-        go k = Endo . \case
-          DIUpdate v' -> HashMap.insert k v'
-          DIRemove -> HashMap.delete k
-        new_map = appEndo (HashMap.foldMapWithKey go updates) backingStore
-      pure (s
-        { activeQueries = HashSet.delete resultSetId activeQueries
-        , backingStore = new_map
-        }, r)
+    withState $ \s@SimpleState {..} -> do
+      unless (resultSetId `HashSet.member` activeQueries) $ throwError BEBadResultSet
+      let (a, new_map) = pureApplyOperation (coerce resultSetQuery) f backingStore
+      pure
+        ( s
+            { activeQueries = resultSetId `HashSet.delete` activeQueries,
+              backingStore = new_map
+            },
+          a
+        )
