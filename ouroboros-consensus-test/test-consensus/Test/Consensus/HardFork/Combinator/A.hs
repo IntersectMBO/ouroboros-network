@@ -261,6 +261,7 @@ type instance PartialLedgerConfig BlockA = PartialLedgerConfigA
 
 instance HasPartialLedgerConfig BlockA where
   completeLedgerConfig _ ei pcfg = (History.toPureEpochInfo ei, pcfg)
+  toPartialLedgerConfig _ (_, partialLedgerConfig) = partialLedgerConfig
 
 data TxPayloadA = InitiateAtoB
   deriving (Show, Eq, Generic, NoThunks, Serialise)

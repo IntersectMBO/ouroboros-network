@@ -1,11 +1,12 @@
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -23,6 +24,7 @@ module Test.ThreadNet.Infra.ShelleyBasedHardFork (
   , protocolInfoShelleyBasedHardFork
   ) where
 
+import           Cardano.Binary (FromCBOR(..), ToCBOR(..))
 import           Control.Monad.Except (runExcept)
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
@@ -132,7 +134,9 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslationContext era1 ~ ()
   )
 
-instance ShelleyBasedHardForkConstraints era1 era2
+instance ( ShelleyBasedHardForkConstraints era1 era2
+         , FromCBOR (SL.TranslationContext era2)
+         , ToCBOR (SL.TranslationContext era2))
       => SerialiseHFC (ShelleyBasedHardForkEras era1 era2)
    -- use defaults
 
@@ -198,7 +202,9 @@ instance ShelleyBasedHardForkConstraints era1 era2
           . eitherToMaybe . runExcept . SL.translateEra transCtxt
           . Comp
 
-instance ShelleyBasedHardForkConstraints era1 era2
+instance (ShelleyBasedHardForkConstraints era1 era2
+         , FromCBOR (SL.TranslationContext era2)
+         , ToCBOR (SL.TranslationContext era2))
       => SupportedNetworkProtocolVersion (ShelleyBasedHardForkBlock era1 era2) where
   supportedNodeToNodeVersions _ = Map.fromList $
       [ (maxBound, ShelleyBasedHardForkNodeToNodeVersion1)

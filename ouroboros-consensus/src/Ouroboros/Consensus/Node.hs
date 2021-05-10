@@ -113,6 +113,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
+import Ouroboros.Consensus.HardFork.Combinator
 
 -- | Arguments expected from any invocation of 'runWith', whether by deployed
 -- code, tests, etc.
@@ -203,8 +204,9 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
     }
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
-run :: forall blk.
-     RunNode blk
+run :: forall blk. (
+      RunNode blk             -- TODO formatting
+    , HasPartialLedgerConfig blk)
   => RunNodeArgs IO RemoteAddress LocalAddress blk
   -> StdRunNodeArgs IO blk
   -> IO ()
@@ -220,6 +222,7 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
+     , HasPartialLedgerConfig blk
      )
   => RunNodeArgs m addrNTN addrNTC blk
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk

@@ -21,6 +21,7 @@ import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Update as CC.Update
 
+import           Ouroboros.Consensus.Byron.Node.Serialisation ()
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Serialisation ()

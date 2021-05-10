@@ -115,11 +115,10 @@ instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
 deriving instance Show (BlockQuery blk result) => Show (Query blk result)
 
 -- | Answer the given query about the extended ledger state.
-answerQuery :: QueryLedger blk => ExtLedgerCfg blk -> Query blk result -> ExtLedgerState blk -> result
+answerQuery :: forall blk result. (QueryLedger blk, HasPartialLedgerConfig blk) => ExtLedgerCfg blk -> Query blk result -> ExtLedgerState blk -> result
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
-  GetPartialLedgerConfig -> undefined "TODO_add_this_to_the_HasPartialLedgerConfig_class"
-    $ topLevelConfigLedger $ getExtLedgerCfg cfg
+  GetPartialLedgerConfig -> toPartialLedgerConfig (Proxy @blk) $ topLevelConfigLedger $ getExtLedgerCfg cfg
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type
