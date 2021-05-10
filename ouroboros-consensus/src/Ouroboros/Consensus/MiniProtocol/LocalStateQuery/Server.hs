@@ -8,12 +8,13 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (AcquireFailure (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util.IOLike
 
 localStateQueryServer ::
-     forall m blk. (IOLike m, QueryLedger blk)
+     forall m blk. (IOLike m, HasPartialLedgerConfig blk, QueryLedger blk)
   => ExtLedgerCfg blk
   -> STM m (Point blk)
      -- ^ Get tip point

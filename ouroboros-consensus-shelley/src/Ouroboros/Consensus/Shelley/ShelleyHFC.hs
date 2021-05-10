@@ -49,6 +49,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      dummyEpochInfo)
 import           Ouroboros.Consensus.HardFork.Simple
+import           Ouroboros.Consensus.HardFork.History.EpochInfo (toPureEpochInfo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -84,10 +85,6 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
       . shelleyLedgerGenesis
       . configLedger
   toPartialConsensusConfig _  = tpraosParams
-  toPartialLedgerConfig _ cfg = ShelleyPartialLedgerConfig {
-        shelleyLedgerConfig    = cfg
-      , shelleyTriggerHardFork = TriggerHardForkNever
-      }
 
 {-------------------------------------------------------------------------------
   SupportedNetworkProtocolVersion instance
@@ -96,7 +93,7 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
 -- | Forward to the ShelleyBlock instance. Only supports
 -- 'HardForkNodeToNodeDisabled', which is compatible with nodes running with
 -- 'ShelleyBlock'.
-instance ShelleyBasedEra era
+instance (ShelleyBasedEra era, FromCBOR (TranslationContext era), ToCBOR (TranslationContext era))
       => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
   supportedNodeToNodeVersions _ =
       Map.map HardForkNodeToNodeDisabled $
@@ -115,8 +112,8 @@ instance ShelleyBasedEra era
 -- | Use the default implementations. This means the serialisation of blocks
 -- includes an era wrapper. Each block should do this from the start to be
 -- prepared for future hard forks without having to do any bit twiddling.
-instance ShelleyBasedEra era => SerialiseHFC '[ShelleyBlock era]
-instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
+instance (ShelleyBasedEra era, FromCBOR (TranslationContext era), ToCBOR (TranslationContext era)) => SerialiseHFC '[ShelleyBlock era]
+instance (ShelleyBasedEra era, FromCBOR (TranslationContext era), ToCBOR (TranslationContext era)) => SerialiseConstraintsHFC (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
   Protocol type definition
@@ -203,13 +200,17 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
     }
   deriving (Generic, NoThunks)
 
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (ShelleyPartialLedgerConfig era) where
+instance (ShelleyBasedEra era, ToCBOR (TranslationContext era), FromCBOR (TranslationContext era)) => SerialiseNodeToClient (ShelleyBlock era) (ShelleyPartialLedgerConfig era) where
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
 type instance PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era
 
 instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
+  toPartialLedgerConfig _ cfg = ShelleyPartialLedgerConfig {
+        shelleyLedgerConfig    = cfg
+      , shelleyTriggerHardFork = TriggerHardForkNever
+      }
 
   -- Replace the dummy 'EpochInfo' with the real one
   completeLedgerConfig _ epochInfo' (ShelleyPartialLedgerConfig cfg _) =
@@ -234,7 +235,7 @@ instance (Era era, FromCBOR (TranslationContext era)) => FromCBOR (ShelleyPartia
               -- lambdas, but that's ok because it's value is known
               -- staticaly. It is always just `dummyEpochInfo` when inside
               -- a ShelleyPartialLedgerConfi
-              dummyEpochInfo
+              (toPureEpochInfo dummyEpochInfo)
               <$> fromCBOR @Word64
               <*> fromCBOR @Word64
               <*> fromCBOR @Word64

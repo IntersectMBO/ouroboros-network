@@ -61,6 +61,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -102,6 +103,7 @@ mkHandlers
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , HasPartialLedgerConfig blk
      , QueryLedger blk
      )
   => NodeKernelArgs m remotePeer localPeer blk

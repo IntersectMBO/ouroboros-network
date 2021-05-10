@@ -75,8 +75,18 @@ class ( UpdateLedger blk
   default completeLedgerConfig :: (PartialLedgerConfig blk ~ LedgerConfig blk)
                                => proxy blk
                                -> EpochInfo (Except PastHorizonException)
-                               -> PartialLedgerConfig blk  -> LedgerConfig blk
+                               -> PartialLedgerConfig blk
+                               -> LedgerConfig blk
   completeLedgerConfig _ _ = id
+
+  toPartialLedgerConfig :: proxy blk
+                        -> LedgerConfig blk
+                        -> PartialLedgerConfig blk
+  default toPartialLedgerConfig :: (PartialLedgerConfig blk ~ LedgerConfig blk)
+                                => proxy blk
+                                -> LedgerConfig blk
+                                -> PartialLedgerConfig blk
+  toPartialLedgerConfig _ = id
 
 {-------------------------------------------------------------------------------
   Newtype wrappers
