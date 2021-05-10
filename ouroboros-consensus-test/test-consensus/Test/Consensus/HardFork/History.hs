@@ -802,6 +802,8 @@ hardForkEpochInfo ArbitraryChain{..} for =
                  epochInfoSize_  = \_ -> throw err
                , epochInfoFirst_ = \_ -> throw err
                , epochInfoEpoch_ = \_ -> throw err
+
+               , epochInfoSlotToRelativeTime_ = \_ -> throw err
                }
            , "<out of range>"
            , "<out of range>"
@@ -812,7 +814,7 @@ hardForkEpochInfo ArbitraryChain{..} for =
                                  tickedHardForkLedgerViewTransition
                                  tickedHardForkLedgerViewPerEra
            in (
-             HF.snapshotEpochInfo reconstructed
+             HF.toPureEpochInfo (HF.snapshotEpochInfo reconstructed)
            , show view
            , show reconstructed
            )

@@ -1,3 +1,5 @@
+{-# LANGUAGE PatternSynonyms #-}
+
 -- | The hard fork combinator
 --
 -- Intended for unqualified import
@@ -90,7 +92,11 @@ import           Ouroboros.Consensus.HardFork.Combinator.State as X
 
 -- Definition of 'InjectTx' (required to define tx injections)
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs as X
-                     (InjectTx (..), cannotInjectTx)
+                     (InjectTx, InjectValidatedTx, cannotInjectTx,
+                     cannotInjectValidatedTx, pattern InjectTx,
+                     pattern InjectValidatedTx)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors as X
+                     (Product2 (..))
 
 -- Omitted from this export:
 --

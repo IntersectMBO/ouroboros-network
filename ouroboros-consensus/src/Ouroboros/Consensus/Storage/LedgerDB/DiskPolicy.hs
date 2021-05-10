@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE DeriveFunctor      #-}
+{-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE NumericUnderscores #-}
@@ -14,6 +15,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
 
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Word
+import           GHC.Generics
 import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
 
 import           Control.Monad.Class.MonadTime
@@ -29,7 +31,7 @@ import           Ouroboros.Consensus.Config.SecurityParam
 data SnapshotInterval =
     DefaultSnapshotInterval
   | RequestedSnapshotInterval DiffTime
-  deriving stock Show
+  deriving stock (Eq, Generic, Show)
 
 -- | On-disk policy
 --

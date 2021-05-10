@@ -76,6 +76,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.TxSubmission.Inbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                     (mapTxSubmissionMempoolReader)
 import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
@@ -104,7 +106,8 @@ import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
 -- | Protocol handlers for node-to-node (remote) communication
 data Handlers m peer blk = Handlers {
       hChainSyncClient
-        :: NodeToNodeVersion
+        :: peer
+        -> NodeToNodeVersion
         -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
@@ -171,12 +174,12 @@ mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
-        hChainSyncClient =
+        hChainSyncClient = \peer ->
           chainSyncClient
             (pipelineDecisionLowHighMark
               (chainSyncPipeliningLowMark  miniProtocolParameters)
               (chainSyncPipeliningHighMark miniProtocolParameters))
-            (Node.chainSyncClientTracer tracers)
+            (contramap (TraceLabelPeer peer) (Node.chainSyncClientTracer tracers))
             getTopLevelConfig
             (defaultChainDbView getChainDB)
       , hChainSyncServer = \_version ->
@@ -194,14 +197,14 @@ mkHandlers
           txSubmissionOutbound
             (contramap (TraceLabelPeer peer) (Node.txOutboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
-            (getMempoolReader getMempool)
+            (mapTxSubmissionMempoolReader txForgetValidated $ getMempoolReader getMempool)
             version
             controlMessageSTM
       , hTxSubmissionServer = \version peer ->
           txSubmissionInbound
             (contramap (TraceLabelPeer peer) (Node.txInboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
-            (getMempoolReader getMempool)
+            (mapTxSubmissionMempoolReader txForgetValidated $ getMempoolReader getMempool)
             (getMempoolWriter getMempool)
             version
       , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers) keepAliveRng
@@ -469,7 +472,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
       bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
         bracketChainSyncClient
-            (Node.chainSyncClientTracer (getTracers kernel))
+            (contramap (TraceLabelPeer them) (Node.chainSyncClientTracer (getTracers kernel)))
             (defaultChainDbView (getChainDB kernel))
             (getNodeCandidates kernel)
             them $ \varCandidate -> do
@@ -482,7 +485,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version controlMessageSTM varCandidate
+                  $ hChainSyncClient them version controlMessageSTM varCandidate
               return ((), trailing)
 
     aChainSyncServer

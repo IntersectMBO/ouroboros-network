@@ -1,5 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-
 module Ouroboros.Consensus.ByronSpec.Ledger.Forge (forgeByronSpecBlock) where
 
 import qualified Byron.Spec.Chain.STS.Block as Spec
@@ -24,7 +22,7 @@ import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 forgeByronSpecBlock :: BlockNo
                     -> SlotNo
                     -> Ticked (LedgerState ByronSpecBlock)
-                    -> [GenTx ByronSpecBlock]
+                    -> [Validated (GenTx ByronSpecBlock)]
                     -> Spec.VKey
                     -> ByronSpecBlock
 forgeByronSpecBlock curBlockNo curSlotNo (TickedByronSpecLedgerState _ st) txs vkey =
@@ -34,7 +32,9 @@ forgeByronSpecBlock curBlockNo curSlotNo (TickedByronSpecLedgerState _ st) txs v
       , byronSpecBlockHash = Spec.bhHash $ Spec._bHeader block
       }
   where
-    (ds, ts, us, vs) = GenTx.partition (map unByronSpecGenTx txs)
+    (ds, ts, us, vs) =
+        GenTx.partition
+          (map (unByronSpecGenTx . forgetValidatedByronSpecGenTx) txs)
 
     -- TODO: Don't take protocol version from ledger state
     -- <https://github.com/input-output-hk/ouroboros-network/issues/1495>

@@ -48,7 +48,6 @@ import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (unless)
 import           Control.Monad.Except (throwError)
-import           Control.Monad.Identity (runIdentity)
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -381,16 +380,15 @@ data instance ConsensusConfig (Praos c) = PraosConfig
 instance PraosCrypto c => NoThunks (ConsensusConfig (Praos c))
 
 slotEpoch :: ConsensusConfig (Praos c) -> SlotNo -> EpochNo
-slotEpoch PraosConfig{praosParams = PraosParams{..}} s =
-    runIdentity $ epochInfoEpoch epochInfo s
+slotEpoch PraosConfig{..} s =
+    fixedEpochInfoEpoch (EpochSize praosSlotsPerEpoch) s
   where
-    epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
+    PraosParams{..} = praosParams
 
 epochFirst :: ConsensusConfig (Praos c) -> EpochNo -> SlotNo
 epochFirst PraosConfig{..} e =
-    runIdentity $ epochInfoFirst epochInfo e
+    fixedEpochInfoFirst (EpochSize praosSlotsPerEpoch) e
   where
-    epochInfo = fixedSizeEpochInfo (EpochSize praosSlotsPerEpoch)
     PraosParams{..} = praosParams
 
 -- |The chain dependent state, in this case as it is a mock, we just will store

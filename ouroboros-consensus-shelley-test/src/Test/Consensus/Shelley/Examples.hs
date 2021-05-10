@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
+
 module Test.Consensus.Shelley.Examples (
     -- * Setup
     codecConfig
@@ -74,13 +75,13 @@ import qualified Cardano.Ledger.AuxiliaryData as SL (AuxiliaryDataHash (..))
 import qualified Cardano.Ledger.Coin as SL (DeltaCoin (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
+import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.SafeHash as SL
 import qualified Control.State.Transition.Extended as SL (PredicateFailure)
 import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (Seed (..),
                      mkNonceFromNumber, textToUrl)
-import qualified Shelley.Spec.Ledger.BlockChain as SL (TxSeq (..))
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
                      (IndividualPoolStake (..))
 import qualified Shelley.Spec.Ledger.EpochBoundary as SL (BlocksMade (..),
@@ -95,8 +96,6 @@ import qualified Shelley.Spec.Ledger.STS.Delegs as SL
                      (DelegsPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.STS.Ledger as SL
                      (LedgerPredicateFailure (..))
-import qualified Shelley.Spec.Ledger.STS.Ledgers as SL
-                     (LedgersPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.Tx as SL (addrWits)
 import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessesVKey)
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as SL
@@ -211,18 +210,17 @@ keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
 examples ::
      forall era.
      ( ShelleyBasedEra era
-     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
-       ~ SL.LedgerPredicateFailure era
      ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
        ~ SL.DelegsPredicateFailure era
      , Core.PParams era ~ SL.PParams era
      , SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
      )
-  => Core.Value era
+  => (Core.Tx era -> SL.TxInBlock era)
+  -> Core.Value era
   -> Core.TxBody era
   -> Core.AuxiliaryData era
   -> Golden.Examples (ShelleyBlock era)
-examples value txBody auxiliaryData = Golden.Examples {
+examples mkValidatedTx value txBody auxiliaryData = Golden.Examples {
       exampleBlock            = unlabelled blk
     , exampleSerialisedBlock  = unlabelled exampleSerialisedBlock
     , exampleHeader           = unlabelled (getHeader blk)
@@ -241,7 +239,7 @@ examples value txBody auxiliaryData = Golden.Examples {
   where
     tx = exampleTx txBody auxiliaryData
     exampleGenTx = mkShelleyTx tx
-    blk = exampleBlock tx
+    blk = exampleBlock (mkValidatedTx tx)
 
     queries = labelled [
           ("GetLedgerTip",              SomeSecond GetLedgerTip)
@@ -281,6 +279,7 @@ examples value txBody auxiliaryData = Golden.Examples {
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
 examplesShelley =
     examples
+      id
       exampleCoin
       exampleTxBodyShelley
       exampleAuxiliaryDataShelley
@@ -288,6 +287,7 @@ examplesShelley =
 examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
 examplesAllegra =
     examples
+      id
       exampleCoin
       exampleTxBodyAllegra
       exampleAuxiliaryDataMA
@@ -295,6 +295,7 @@ examplesAllegra =
 examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
 examplesMary =
     examples
+      id
       exampleMultiAssetValue
       exampleTxBodyMary
       exampleAuxiliaryDataMA
@@ -439,7 +440,7 @@ exampleProposedPPUpdates = SL.ProposedPPUpdates $
 -- serialisation, not validation.
 exampleBlock ::
      forall era. ShelleyBasedEra era
-  => SL.Tx era
+  => SL.TxInBlock era
   -> ShelleyBlock era
 exampleBlock tx = mkShelleyBlock $ SL.Block blockHeader blockBody
   where
@@ -462,13 +463,12 @@ exampleBlock tx = mkShelleyBlock $ SL.Block blockHeader blockBody
         , bheaderEta     = SL.mkCertifiedVRF (mkBytes 0) (fst $ SL.vrf keys)
         , bheaderL       = SL.mkCertifiedVRF (mkBytes 1) (fst $ SL.vrf keys)
         , bsize          = 2345
-        , bhash          = SL.bbHash blockBody
+        , bhash          = SL.hashTxSeq @era blockBody
         , bheaderOCert   = SL.mkOCert keys 0 (SL.KESPeriod 0)
         , bprotver       = SL.ProtVer 2 0
         }
 
-    blockBody :: SL.TxSeq era
-    blockBody = SL.TxSeq (StrictSeq.fromList [tx])
+    blockBody = SL.toTxSeq @era (StrictSeq.fromList [tx])
 
     mkBytes :: Int -> SL.Seed
     mkBytes = SL.Seed . mkDummyHash (Proxy @Blake2b_256)
@@ -513,8 +513,6 @@ exampleTx txBody auxiliaryData = SL.Tx txBody witnessSet (SJust auxiliaryData)
 exampleApplyTxErr ::
      forall era.
      ( ShelleyBasedEra era
-     ,   SL.PredicateFailure (Core.EraRule "LEDGER" era)
-       ~ SL.LedgerPredicateFailure era
      ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
        ~ SL.DelegsPredicateFailure era
      )
@@ -522,7 +520,6 @@ exampleApplyTxErr ::
 exampleApplyTxErr =
       ApplyTxError
     $ pure
-    $ SL.LedgerFailure
     $ SL.DelegsFailure
     $ SL.DelegateeNotRegisteredDELEG @era (mkKeyHash 1)
 

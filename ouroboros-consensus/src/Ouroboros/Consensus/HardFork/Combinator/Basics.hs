@@ -33,10 +33,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , distribTopLevelConfig
     -- ** Convenience re-exports
   , EpochInfo
-  , Identity
+  , Except
   ) where
 
-import           Data.Functor.Identity
 import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Typeable
@@ -152,7 +151,7 @@ type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig 
 
 completeLedgerConfig' :: forall blk.
                          HasPartialLedgerConfig blk
-                      => EpochInfo Identity
+                      => EpochInfo (Except PastHorizonException)
                       -> WrapPartialLedgerConfig blk
                       -> LedgerConfig blk
 completeLedgerConfig' ei =
@@ -161,7 +160,7 @@ completeLedgerConfig' ei =
 
 completeLedgerConfig'' :: forall blk.
                           HasPartialLedgerConfig blk
-                       => EpochInfo Identity
+                       => EpochInfo (Except PastHorizonException)
                        -> WrapPartialLedgerConfig blk
                        -> WrapLedgerConfig blk
 completeLedgerConfig'' ei =
@@ -171,7 +170,7 @@ completeLedgerConfig'' ei =
 
 completeConsensusConfig' :: forall blk.
                             HasPartialConsensusConfig (BlockProtocol blk)
-                         => EpochInfo Identity
+                         => EpochInfo (Except PastHorizonException)
                          -> WrapPartialConsensusConfig blk
                          -> ConsensusConfig (BlockProtocol blk)
 completeConsensusConfig' ei =
@@ -180,7 +179,7 @@ completeConsensusConfig' ei =
 
 completeConsensusConfig'' :: forall blk.
                              HasPartialConsensusConfig (BlockProtocol blk)
-                          => EpochInfo Identity
+                          => EpochInfo (Except PastHorizonException)
                           -> WrapPartialConsensusConfig blk
                           -> WrapConsensusConfig blk
 completeConsensusConfig'' ei =
@@ -190,7 +189,7 @@ completeConsensusConfig'' ei =
 
 distribLedgerConfig ::
      CanHardFork xs
-  => EpochInfo Identity
+  => EpochInfo (Except PastHorizonException)
   -> LedgerConfig (HardForkBlock xs)
   -> NP WrapLedgerConfig xs
 distribLedgerConfig ei cfg =
@@ -200,7 +199,7 @@ distribLedgerConfig ei cfg =
       (getPerEraLedgerConfig $ hardForkLedgerConfigPerEra cfg)
 
 distribTopLevelConfig :: All SingleEraBlock xs
-                      => EpochInfo Identity
+                      => EpochInfo (Except PastHorizonException)
                       -> TopLevelConfig (HardForkBlock xs)
                       -> NP TopLevelConfig xs
 distribTopLevelConfig ei tlc =

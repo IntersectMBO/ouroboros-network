@@ -41,6 +41,15 @@ let
       })
       # And, of course, our haskell-nix-ified cabal project:
       (import ./pkgs.nix)
+    ]
+    ++ [
+      # This overlay adds a field localConfig to the pkgs that will be used
+      # afterwards to retrieve the locally defined values for building the
+      # environment, like ghcVersion.
+      (self: super: {
+        localConfig = (super.localConfig or { })
+        // import ./local-config.nix;
+      })
     ];
 
   pkgs = import nixpkgs {

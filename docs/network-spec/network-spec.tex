@@ -60,23 +60,23 @@
 
 \ifbool{isRelease}
        {
-         \newcommand{\hsref}[1]{}
          \newcommand{\wip}[1]{}
          \newcommand{\hide}[1]{}
        }
        {
-         \newcommand{\hsref}[1]
-                    {\href{https://github.com/input-output-hk/ouroboros-network/blob/master/#1}
-                      {\emph{Haskell source: #1}}}
          \newcommand{\wip}[1]{\color{magenta}{#1}\color{black}}
          \newcommand{\hide}[1]{}
        }
+\newcommand{\haddockref}[2]
+           {\href{https://input-output-hk.github.io/ouroboros-network/#2}
+                 {\emph{haddock documentation}: \texttt{#1}}
+           }
 \newcommand{\trans}[1]{\texttt{#1}}
 \newcommand{\state}[1]{\texttt{#1}}
 \newcommand{\msg}[1]{\texttt{#1}}
-\newcommand{\Idle}{\state{Idle}}
-\newcommand{\Busy}{\state{Busy}}
-\newcommand{\Done}{\state{Done}}
+\newcommand{\StIdle}{\state{StIdle}}
+\newcommand{\StBusy}{\state{StBusy}}
+\newcommand{\StDone}{\state{StDone}}
 \newcommand{\MsgDone}{\msg{MsgDone}}
 
 % TODO: the document is using `\langle` and `\rangle` to denote lists, maybe
@@ -109,6 +109,16 @@
   basicstyle=\small\sffamily,
   showstringspaces=false,
   morecomment=[l]\%,
+}
+\lstdefinelanguage{cddl}{
+  morekeywords={bool,uint,nint,int,float16,float32,float64,float,bstr,bytes,tstr,text},
+  morecomment=[l]{;},
+  morestring=[b]",
+}
+\lstdefinestyle{cddl}{
+  numbers=left,
+  language=cddl,
+  columns=fixed,
 }
 
 \definecolor{shadecolor}{rgb}{.6,0.6,0.8}
@@ -170,7 +180,9 @@
 % \include{rest}
 
 \appendix
-\include{cddl}
+\chapter{Common CDDL definitions}
+\label{cddl-common}
+\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/common.cddl}
 
 \bibliographystyle{apalike}
 \bibliography{references}

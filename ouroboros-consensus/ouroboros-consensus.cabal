@@ -96,6 +96,7 @@ library
                        Ouroboros.Consensus.HardFork.Combinator.State.Types
                        Ouroboros.Consensus.HardFork.Combinator.Translation
                        Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
+                       Ouroboros.Consensus.HardFork.Combinator.Util.Functors
                        Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                        Ouroboros.Consensus.HardFork.Combinator.Util.Match
                        Ouroboros.Consensus.HardFork.Combinator.Util.Tails

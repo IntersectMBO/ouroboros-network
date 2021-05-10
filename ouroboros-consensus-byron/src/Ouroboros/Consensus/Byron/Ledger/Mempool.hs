@@ -1,15 +1,16 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE DerivingVia       #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TypeApplications  #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -18,6 +19,7 @@ module Ouroboros.Consensus.Byron.Ledger.Mempool (
     -- * Mempool integration
     GenTx (..)
   , TxId (..)
+  , Validated (..)
     -- * Transaction IDs
   , byronIdDlg
   , byronIdProp
@@ -95,6 +97,12 @@ data instance GenTx ByronBlock
 
 instance ShowProxy (GenTx ByronBlock) where
 
+newtype instance Validated (GenTx ByronBlock) = ValidatedByronTx {
+      forgetValidatedByronTx :: GenTx ByronBlock
+    }
+  deriving (Eq, Generic)
+  deriving anyclass (NoThunks)
+
 type instance ApplyTxErr ByronBlock = CC.ApplyMempoolPayloadErr
 
 -- orphaned instance
@@ -108,11 +116,14 @@ instance LedgerSupportsMempool ByronBlock where
     where
       tx' = toMempoolPayload tx
 
-  applyTx = applyByronGenTx validationMode
+  applyTx cfg slot tx st =
+          (\st' -> (st', ValidatedByronTx tx))
+      <$> applyByronGenTx validationMode cfg slot tx st
     where
       validationMode = CC.ValidationMode CC.BlockValidation Utxo.TxValidation
 
-  reapplyTx = applyByronGenTx validationMode
+  reapplyTx cfg slot vtx st =
+      applyByronGenTx validationMode cfg slot (forgetValidatedByronTx vtx) st
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
 
@@ -124,6 +135,8 @@ instance LedgerSupportsMempool ByronBlock where
     . Strict.length
     . CC.mempoolPayloadRecoverBytes
     . toMempoolPayload
+
+  txForgetValidated = forgetValidatedByronTx
 
 data instance TxId (GenTx ByronBlock)
   = ByronTxId             !Utxo.TxId
@@ -145,7 +158,7 @@ instance HasTxs ByronBlock where
   extractTxs blk = case byronBlockRaw blk of
     -- EBBs don't contain transactions
     CC.ABOBBoundary _ebb    -> []
-    CC.ABOBBlock regularBlk -> fromMempoolPayload <$>
+    CC.ABOBBlock regularBlk -> ValidatedByronTx . fromMempoolPayload <$>
         maybeToList proposal <> votes <> dlgs <> txs
       where
         body = CC.blockBody regularBlk
@@ -211,6 +224,9 @@ instance Condense (GenTxId ByronBlock) where
 
 instance Show (GenTx ByronBlock) where
   show = condense
+
+instance Show (Validated (GenTx ByronBlock)) where
+  show vtx = "Validated-" <> condense (forgetValidatedByronTx vtx)
 
 instance Show (GenTxId ByronBlock) where
   show = condense

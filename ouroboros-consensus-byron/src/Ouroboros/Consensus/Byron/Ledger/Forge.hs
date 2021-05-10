@@ -35,6 +35,7 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -50,7 +51,7 @@ forgeByronBlock
   -> BlockNo                         -- ^ Current block number
   -> SlotNo                          -- ^ Current slot number
   -> TickedLedgerState ByronBlock    -- ^ Current ledger
-  -> [GenTx ByronBlock]              -- ^ Txs to add in the block
+  -> [Validated (GenTx ByronBlock)]  -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> ByronBlock
 forgeByronBlock cfg = forgeRegularBlock (configBlock cfg)
@@ -125,7 +126,7 @@ forgeRegularBlock
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
-  -> [GenTx ByronBlock]                -- ^ Txs to add in the block
+  -> [Validated (GenTx ByronBlock)]    -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
 forgeRegularBlock cfg bno sno st txs isLeader =
@@ -139,7 +140,11 @@ forgeRegularBlock cfg bno sno st txs isLeader =
     epochSlots = byronEpochSlots cfg
 
     blockPayloads :: BlockPayloads
-    blockPayloads = foldr extendBlockPayloads initBlockPayloads txs
+    blockPayloads =
+        foldr
+          extendBlockPayloads
+          initBlockPayloads
+          (map txForgetValidated txs)
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)

@@ -1,6 +1,6 @@
 # our packages overlay
 pkgs: _: with pkgs; {
-  ouroborosNetworkHaskellPackages = import ./haskell.nix {
+  ouroborosNetworkHaskellPackages = import ./ouroboros-network.nix {
     inherit config
       pkgs
       lib

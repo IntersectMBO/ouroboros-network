@@ -123,6 +123,7 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslateEra       era2 SL.Tx
   , SL.TranslateEra       era2 SL.NewEpochState
   , SL.TranslateEra       era2 SL.ShelleyGenesis
+  , SL.TranslateEra       era2 WrapTxInBlock
 
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
@@ -163,13 +164,24 @@ instance ShelleyBasedHardForkConstraints era1 era2
 
   hardForkChainSel = Tails.mk2 SelectSameProtocol
 
-  hardForkInjectTxs = InPairs.mk2 $ InPairs.ignoringBoth (InjectTx translateTx)
+  hardForkInjectTxs =
+        InPairs.mk2
+      $ InPairs.ignoringBoth
+      $ Pair2 (InjectTx translateTx) (InjectValidatedTx translateValidatedTx)
     where
       translateTx ::
-           GenTx (ShelleyBlock era1)
+                  GenTx (ShelleyBlock era1)
         -> Maybe (GenTx (ShelleyBlock era2))
       translateTx =
           fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+
+      translateValidatedTx ::
+                  WrapValidatedGenTx (ShelleyBlock era1)
+        -> Maybe (WrapValidatedGenTx (ShelleyBlock era2))
+      translateValidatedTx =
+            fmap unComp
+          . eitherToMaybe . runExcept . SL.translateEra ()
+          . Comp
 
 instance ShelleyBasedHardForkConstraints era1 era2
       => SupportedNetworkProtocolVersion (ShelleyBasedHardForkBlock era1 era2) where

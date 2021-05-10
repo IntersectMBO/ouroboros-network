@@ -120,8 +120,8 @@ jobPromoteColdPeer PeerSelectionActions {
                    } peeraddr =
     Job job handler "promoteColdPeer"
   where
-    handler :: SomeException -> Completion m peeraddr peerconn
-    handler e =
+    handler :: SomeException -> m (Completion m peeraddr peerconn)
+    handler e = return $
       Completion $ \st@PeerSelectionState {
                       establishedPeers,
                       targets = PeerSelectionTargets {
@@ -272,8 +272,8 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
                          peeraddr peerconn =
     Job job handler "demoteEstablishedPeer"
   where
-    handler :: SomeException -> Completion m peeraddr peerconn
-    handler e =
+    handler :: SomeException -> m (Completion m peeraddr peerconn)
+    handler e = return $
       -- It's quite bad if closing fails, but the best we can do is revert to
       -- the state where we believed this peer is still warm, since then we
       -- can have another go or perhaps it'll be closed for other reasons and

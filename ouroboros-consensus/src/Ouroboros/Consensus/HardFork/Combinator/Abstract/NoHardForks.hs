@@ -3,6 +3,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks (
   , noHardForksEpochInfo
   ) where
 
+import           Data.Functor.Identity (runIdentity)
+
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -39,6 +41,14 @@ class SingleEraBlock blk => NoHardForks blk where
   toPartialLedgerConfig :: proxy blk
                         -> LedgerConfig blk -> PartialLedgerConfig blk
 
-noHardForksEpochInfo :: NoHardForks blk
-                     => TopLevelConfig blk -> EpochInfo Identity
-noHardForksEpochInfo = fixedSizeEpochInfo . History.eraEpochSize . getEraParams
+noHardForksEpochInfo :: (Monad m, NoHardForks blk)
+                     => TopLevelConfig blk
+                     -> EpochInfo m
+noHardForksEpochInfo cfg =
+      hoistEpochInfo (pure . runIdentity)
+    $ fixedEpochInfo
+        (History.eraEpochSize  params)
+        (History.eraSlotLength params)
+  where
+    params :: EraParams
+    params = getEraParams cfg

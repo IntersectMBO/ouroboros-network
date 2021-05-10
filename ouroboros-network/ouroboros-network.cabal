@@ -14,7 +14,15 @@ build-type:          Simple
 extra-source-files:
   ChangeLog.md
 data-files:
-  test/messages.cddl
+  test-cddl/specs/handshake-node-to-node.cddl
+  test-cddl/specs/handshake-node-to-client.cddl
+  test-cddl/specs/chain-sync.cddl
+  test-cddl/specs/block-fetch.cddl
+  test-cddl/specs/tx-submission.cddl
+  test-cddl/specs/tx-submission2.cddl
+  test-cddl/specs/keep-alive.cddl
+  test-cddl/specs/local-tx-submission.cddl
+  test-cddl/specs/local-state-query.cddl
 cabal-version:       >=1.10
 
 flag asserts
@@ -350,13 +358,17 @@ test-suite cddl
                        filepath,
                        fingertree,
                        hashable,
+                       mtl,
                        pipes,
                        process-extras,
                        serialise,
                        text,
+                       temporary,
 
                        QuickCheck,
+                       quickcheck-instances,
                        tasty,
+                       tasty-hunit,
                        tasty-quickcheck,
 
                        cardano-binary,

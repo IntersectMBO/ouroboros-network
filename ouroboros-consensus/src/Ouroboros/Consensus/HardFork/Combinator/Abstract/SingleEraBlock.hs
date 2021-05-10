@@ -68,6 +68,7 @@ class ( LedgerSupportsProtocol blk
       , BlockSupportsMetrics blk
         -- Instances required to support testing
       , Eq   (GenTx blk)
+      , Eq   (Validated (GenTx blk))
       , Eq   (ApplyTxErr blk)
       , Show blk
       , Show (Header blk)

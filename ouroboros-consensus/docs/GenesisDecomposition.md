@@ -115,7 +115,7 @@ in 2021 March using chapter 21 of the Consensus Report.
         should fail with "header invalid" instead of retry _when the header's
         slot is ahead of the wallclock_ (cf `BlockchainTime.getCurrentSlot`).
 
-  * Frisby document to carefullyl consider support for/compatibility with
+  * Frisby document to carefully consider support for/compatibility with
     low-density chains
 
       * current understanding: Genesis will not be blocked by low-density

@@ -56,7 +56,8 @@ import           GHC.Stack
 import           System.Random (mkStdGen)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
+                     TraceLabelPeer (..))
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
@@ -812,7 +813,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -> BlockNo
             -> SlotNo
             -> TickedLedgerState blk
-            -> [GenTx blk]
+            -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk
           customForgeBlock origBlockForging cfg' currentBno currentSlot tickedLdgSt txs prf = do
@@ -912,7 +913,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
                 { chainSyncClientTracer = Tracer $ \case
-                    CSClient.TraceDownloadedHeader hdr
+                    TraceLabelPeer _ (CSClient.TraceDownloadedHeader hdr)
                       -> case blockPoint hdr of
                             GenesisPoint   -> pure ()
                             BlockPoint s h ->
@@ -1568,6 +1569,7 @@ type TracingConstraints blk =
   , Show (ApplyTxErr blk)
   , Show (Header blk)
   , Show (GenTx blk)
+  , Show (Validated (GenTx blk))
   , Show (GenTxId blk)
   , Show (ForgeStateInfo blk)
   , Show (ForgeStateUpdateError blk)

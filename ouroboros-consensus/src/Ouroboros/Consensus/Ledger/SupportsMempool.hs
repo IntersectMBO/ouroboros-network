@@ -8,6 +8,7 @@ module Ouroboros.Consensus.Ledger.SupportsMempool (
   , HasTxs (..)
   , LedgerSupportsMempool (..)
   , TxId
+  , Validated
   ) where
 
 import           Control.Monad.Except
@@ -33,8 +34,10 @@ type family ApplyTxErr blk :: Type
 
 class ( UpdateLedger blk
       , NoThunks (GenTx blk)
+      , NoThunks (Validated (GenTx blk))
       , NoThunks (Ticked (LedgerState blk))
       , Show (GenTx blk)
+      , Show (Validated (GenTx blk))
       , Show (ApplyTxErr blk)
       ) => LedgerSupportsMempool blk where
 
@@ -42,14 +45,15 @@ class ( UpdateLedger blk
   txInvariant :: GenTx blk -> Bool
   txInvariant = const True
 
-  -- | Apply transaction we have not previously seen before
+  -- | Apply an unvalidated transaction
   applyTx :: LedgerConfig blk
           -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
           -> TickedLedgerState blk
-          -> Except (ApplyTxErr blk) (TickedLedgerState blk)
+          -> Except (ApplyTxErr blk) (TickedLedgerState blk, Validated (GenTx blk))
 
-  -- | Re-apply a transaction
+  -- | Apply a previously validated transaction to a potentially different
+  -- ledger state
   --
   -- When we re-apply a transaction to a potentially different ledger state
   -- expensive checks such as cryptographic hashes can be skipped, but other
@@ -57,7 +61,7 @@ class ( UpdateLedger blk
   reapplyTx :: HasCallStack
             => LedgerConfig blk
             -> SlotNo -- ^ Slot number of the block containing the tx
-            -> GenTx blk
+            -> Validated (GenTx blk)
             -> TickedLedgerState blk
             -> Except (ApplyTxErr blk) (TickedLedgerState blk)
 
@@ -88,6 +92,9 @@ class ( UpdateLedger blk
   -- implement more efficiently. E.g., by returning the length of the
   -- annotation.
   txInBlockSize :: GenTx blk -> Word32
+
+  -- | Discard the evidence that transaction has been previously validated
+  txForgetValidated :: Validated (GenTx blk) -> GenTx blk
 
 -- | A generalized transaction, 'GenTx', identifier.
 data family TxId tx :: Type
@@ -120,4 +127,4 @@ type GenTxId blk = TxId (GenTx blk)
 -- (and cannot, because we cannot give an instance for the dual ledger).
 class HasTxs blk where
   -- | Return the transactions part of the given block in no particular order.
-  extractTxs :: blk -> [GenTx blk]
+  extractTxs :: blk -> [Validated (GenTx blk)]
