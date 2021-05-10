@@ -278,6 +278,7 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection
                        Test.Ouroboros.Network.PeerSelection.Instances
                        Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+                       Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                        Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
@@ -314,6 +315,7 @@ test-suite test
                        tasty-hunit,
                        tasty-quickcheck,
                        text,
+                       time,
 
                        cardano-prelude,
                        cardano-slotting,

@@ -303,6 +303,7 @@ localRootPeersProvider tracer
             withResource' (TraceLocalRootFailure domain `contramap` tracer)
                           (1 :| [3, 6, 9, 12])
                           rr
+
           reply <- resolveDomain resolver domain advertisePeer
           case reply of
             Left err -> go rrNext rootPeersGroups (ttlForDnsError err ttl)
@@ -322,8 +323,8 @@ localRootPeersProvider tracer
 
                 return rootPeersGroups'
 
+              traceWith tracer (TraceLocalRootGroups rootPeersGroups')
               go rrNext rootPeersGroups' (ttlForResults (map snd results))
-
 
 ---------------------------------------------
 -- Public root peer set provider using DNS
