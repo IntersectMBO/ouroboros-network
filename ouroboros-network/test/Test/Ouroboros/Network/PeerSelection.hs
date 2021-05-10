@@ -29,7 +29,7 @@ import qualified Data.Signal as Signal
 import           Data.Signal (Signal, Events, E(E), TS(TS))
 import qualified Data.OrdPSQ as PSQ
 
-import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
+import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
 
@@ -47,6 +47,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+import qualified Test.Ouroboros.Network.PeerSelection.Json
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
@@ -106,6 +107,10 @@ tests =
     , testProperty "progresses towards active local root peers target (from above)"
                    prop_governor_target_active_local_above
     ]
+  , Test.Ouroboros.Network.PeerSelection.Json.tests
+  , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
+  , testProperty "governor connection status"       prop_governor_connstatus
+  , testProperty "governor no livelock"             prop_governor_nolivelock
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others
@@ -1893,14 +1898,14 @@ selectEnvTargets f =
 -- This is a manual test that runs in IO and has to be observed to see that it
 -- is doing something sensible. It is not run automatically.
 --
-_governorFindingPublicRoots :: Int -> StrictTVar IO [RelayAddress] -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers domainsVar =
+_governorFindingPublicRoots :: Int -> STM IO [RelayAddress] -> IO Void
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
       timeout
       DNS.defaultResolvConf
-      domainsVar $ \requestPublicRootPeers ->
+      readDomains $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer
