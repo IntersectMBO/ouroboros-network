@@ -32,9 +32,8 @@ import qualified Data.OrdPSQ as PSQ
 import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
-import           Control.Exception (IOException)
 
-import qualified Network.DNS as DNS (defaultResolvConf, Resolver)
+import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
 import           Network.Mux.Timeout
 
@@ -48,6 +47,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import qualified Test.Ouroboros.Network.PeerSelection.Json
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
@@ -63,6 +63,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
   [ Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
+  , Test.Ouroboros.Network.PeerSelection.RootPeersDNS.tests
   , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
   , testGroup "basic"
     [ testProperty "has output"         prop_governor_hasoutput
@@ -609,7 +610,8 @@ prop_governor_connstatus env =
     let trace = takeFirstNHours 1
               . selectPeerSelectionTraceEvents $
                   runGovernorInMockEnvironment env
-        --TODO: check any actually get a true status output and try some deliberate bugs
+        --TODO: check any actually get a true status output and try some
+        --      deliberate bugs
      in conjoin (map ok (groupBy ((==) `on` fst) trace))
   where
     -- We look at events when the environment's view of the state of all the
@@ -933,7 +935,6 @@ prop_governor_target_known_2_opportunity_taken env =
 governorEventuallyTakesGossipOpportunities
   :: Signal (Int, Set PeerAddr, Set PeerAddr, Maybe PeerAddr)
   -> Signal Bool
-
 governorEventuallyTakesGossipOpportunities =
     -- Time out and fail after 30 seconds if we enter and remain in a bad state
     fmap not
@@ -1188,8 +1189,6 @@ prop_governor_target_known_5_no_shrink_below env =
                  <*> knownPeersShrinksSig
                  <*> unexpectedShrink)
 
-
-
 -- | The governor should shrink its known peer set within a bounded time when
 -- it is above the target size.
 --
@@ -1409,8 +1408,6 @@ prop_governor_target_established_below env =
                    <*> promotionOpportunities
                    <*> promotionOpportunitiesIgnoredTooLong)
 
-
-
 prop_governor_target_active_below :: GovernorMockEnvironment -> Property
 prop_governor_target_active_below env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -1508,7 +1505,6 @@ prop_governor_target_active_below env =
                     <*> promotionOpportunities
                     <*> promotionOpportunitiesIgnoredTooLong)
 
-
 prop_governor_target_established_above :: GovernorMockEnvironment -> Property
 prop_governor_target_established_above env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -1573,7 +1569,6 @@ prop_governor_target_established_above env =
                    <*> demotionOpportunities
                    <*> demotionOpportunitiesIgnoredTooLong)
 
-
 prop_governor_target_active_above :: GovernorMockEnvironment -> Property
 prop_governor_target_active_above env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -1625,7 +1620,6 @@ prop_governor_target_active_above env =
                   <*> govActivePeersSig
                   <*> demotionOpportunities
                   <*> demotionOpportunitiesIgnoredTooLong)
-
 
 -- | A variant of 'prop_governor_target_established_below' but for the target
 -- that all local root peers should become established.
@@ -1797,7 +1791,6 @@ prop_governor_target_active_local_below env =
                    <*> promotionOpportunities
                    <*> promotionOpportunitiesIgnoredTooLong)
 
-
 prop_governor_target_active_local_above :: GovernorMockEnvironment -> Property
 prop_governor_target_active_local_above env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -1844,7 +1837,6 @@ prop_governor_target_active_local_above env =
                  <*> govActivePeersSig
                  <*> deomotionOpportunities
                  <*> demotionOpportunitiesIgnoredTooLong)
-
 
 --
 -- Utils for properties
@@ -1907,7 +1899,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
       timeout
       DNS.defaultResolvConf
       readDomains
-      dnsActions $ \requestPublicRootPeers ->
+      ioDNSActions $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer
@@ -1916,13 +1908,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
   where
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
-
-    dnsActions :: DNSActions ResolvConf DNS.Resolver IOException IO
-    dnsActions = DNSActions {
-            dnsResolverResource = resolverResource,
-            dnsAsyncResolverResource = asyncResolverResource,
-            dnsLookupAWithTTL = lookupAWithTTL
-    }
 
     actions :: PeerSelectionActions SockAddr () IO
     actions = PeerSelectionActions {
