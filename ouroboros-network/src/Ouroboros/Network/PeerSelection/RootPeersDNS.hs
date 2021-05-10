@@ -216,6 +216,7 @@ localRootPeersProvider tracer
                      RelayDomain {}  -> False
                    )
 
+  traceWith tracer (TraceLocalRootGroups rootPeersGroups)
   atomically $
     writeTVar rootPeersGroupsVar rootPeersGroups
 
@@ -279,11 +280,12 @@ localRootPeersProvider tracer
             withResource' (TraceLocalRootFailure domain `contramap` tracer)
                           (1 :| [3, 6, 9, 12])
                           rr
+
           reply <- resolveDomain resolver domain advertisePeer
           case reply of
             Left err -> go rrNext (ttlForDnsError err ttl)
             Right results -> do
-              atomically $ do
+              result <- atomically $ do
                 rootPeersGroups <- readTVar rootPeersGroupsVar
                 let (target, entry)  = rootPeersGroups `Seq.index` index
                     resultsMap       = Map.fromList (map fst results)
@@ -293,18 +295,14 @@ localRootPeersProvider tracer
                                  (target, entry')
                                  rootPeersGroups
 
-                    -- | Return temporary tracer to trace LocalRootGroups
-                    -- result, since we can not use our 'tracer' inside the
-                    -- 'STM m' action.
-                    tmpTracer =
-                      contramap (const $ TraceLocalRootGroups rootPeersGroups')
-                                tracer
                 -- Only overwrite if it changed:
                 when (entry /= resultsMap) $
                   writeTVar rootPeersGroupsVar rootPeersGroups'
 
-              go rrNext (ttlForResults (map snd results))
+                return rootPeersGroups'
 
+              traceWith tracer (TraceLocalRootGroups result)
+              go rrNext (ttlForResults (map snd results))
 
 ---------------------------------------------
 -- Public root peer set provider using DNS
