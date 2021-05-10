@@ -36,6 +36,7 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Binary
 import           Cardano.Prelude (Natural)
 import           Cardano.Slotting.EpochInfo (hoistEpochInfo)
+import           Cardano.Slotting.Time (SystemStart)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -83,10 +84,6 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
       . shelleyLedgerGenesis
       . configLedger
   toPartialConsensusConfig _  = tpraosParams
-  toPartialLedgerConfig _ cfg = ShelleyPartialLedgerConfig {
-        shelleyLedgerConfig    = cfg
-      , shelleyTriggerHardFork = TriggerHardForkNever
-      }
 
 {-------------------------------------------------------------------------------
   SupportedNetworkProtocolVersion instance
@@ -209,6 +206,10 @@ instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (Shelle
 type instance PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era
 
 instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
+  toPartialLedgerConfig _ cfg = ShelleyPartialLedgerConfig {
+        shelleyLedgerConfig    = cfg
+      , shelleyTriggerHardFork = TriggerHardForkNever
+      }
 
   -- Replace the dummy 'EpochInfo' with the real one
   completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
@@ -233,7 +234,7 @@ instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
               -- lambdas, but that's ok because it's value is known
               -- staticaly. It is always just `dummyEpochInfo` when inside
               -- a ShelleyPartialLedgerConfi
-              dummyEpochInfo
+              (toPureEpochInfo dummyEpochInfo)
               <$> fromCBOR @Word64
               <*> fromCBOR @Word64
               <*> fromCBOR @Word64
@@ -244,6 +245,7 @@ instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
               <*> fromCBOR @Word64
               <*> fromCBOR @ActiveSlotCoeff
               <*> fromCBOR @SL.Network
+              <*> fromCBOR @SystemStart
             )
       )
       <*> fromCBOR @TriggerHardFork
@@ -265,6 +267,7 @@ instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
           maxLovelaceSupply
           activeSlotCoeff
           networkId
+          systemStart
         )
       )
       triggerHardFork
@@ -284,6 +287,7 @@ instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
         <> toCBOR @Word64 maxLovelaceSupply
         <> toCBOR @ActiveSlotCoeff activeSlotCoeff
         <> toCBOR @SL.Network networkId
+        <> toCBOR @SystemStart systemStart
         -- TriggerHardFork
         <> toCBOR @TriggerHardFork triggerHardFork
 

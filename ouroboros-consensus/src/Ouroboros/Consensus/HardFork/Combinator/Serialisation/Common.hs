@@ -81,7 +81,7 @@ import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Word
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR, ToCBOR, enforceSize)
 
 import           Ouroboros.Network.Block (Serialised)
 
@@ -98,6 +98,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
@@ -262,6 +263,9 @@ pSHFC = Proxy
 --    currently provide any provisions to resolve these.
 class ( CanHardFork xs
       , All SerialiseConstraintsHFC xs
+        -- Required for `SerialiseNodeToClientConstraints (HardForkBlock xs)`
+      , All (Compose FromCBOR WrapPartialLedgerConfig) xs
+      , All (Compose ToCBOR   WrapPartialLedgerConfig) xs
         -- Required for HasNetworkProtocolVersion
       , All (Compose Show EraNodeToNodeVersion)   xs
       , All (Compose Eq   EraNodeToNodeVersion)   xs

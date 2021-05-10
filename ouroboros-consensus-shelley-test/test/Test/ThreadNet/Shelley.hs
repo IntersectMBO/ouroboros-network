@@ -15,12 +15,14 @@ import           Cardano.Crypto.Hash (ShortHash)
 import           Cardano.Slotting.EpochInfo (fixedEpochInfo)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Node.Serialisation ()
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Infra.Shelley

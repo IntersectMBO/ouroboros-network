@@ -170,9 +170,16 @@ instance
         <$> fromCBOR @(History.Shape xs)
         <*> fromCBOR @(PerEraLedgerConfig xs)
 
-instance SerialiseNodeToClient (HardForkBlock xs) (HardForkLedgerConfig xs) where
-  encodeNodeToClient = undefined
-  decodeNodeToClient = undefined
+-- instance SerialiseNodeToClient (HardForkBlock xs) (HardForkLedgerConfig xs) where
+
+instance
+  ( SListI xs
+  , Typeable xs
+  , ToCBOR (PerEraLedgerConfig xs)
+  , FromCBOR (PerEraLedgerConfig xs)
+  ) => SerialiseNodeToClient (HardForkBlock xs) (HardForkLedgerConfig xs) where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
 
 instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
 type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig xs
