@@ -49,6 +49,7 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (isNothing)
 
 import           Control.Applicative
 import qualified Control.Concurrent.JobPool as JobPool
@@ -59,7 +60,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Tracer
 
 import           Network.Mux.Channel
@@ -67,6 +68,7 @@ import           Network.Mux.Egress as Egress
 import           Network.Mux.Ingress as Ingress
 import           Network.Mux.Trace
 import           Network.Mux.Types
+import           Network.Mux.Timeout
 
 
 data Mux (mode :: MuxMode) m =
@@ -92,10 +94,25 @@ muxStopped Mux { muxStatus } =
     readTVar muxStatus >>= \status -> case status of
       MuxReady      -> retry
       MuxFailed err -> return (Just err)
+      MuxStopping   -> retry
       MuxStopped    -> return Nothing
 
 
-data MuxStatus = MuxReady | MuxFailed SomeException | MuxStopped
+data MuxStatus
+    -- | Initial mux state, mux is ready to accept requests.  It does not
+    -- indicate weather mux thread was started or not.
+    = MuxReady
+
+    -- | Mux failed with 'SomeException'
+    | MuxFailed SomeException
+
+    -- | Mux is beeing stopped; mux will not accept any new mini-protocols to
+    -- start.
+    | MuxStopping
+
+     -- | Mux stopped.
+    | MuxStopped
+
 
 newMux :: MonadSTM m  => MiniProtocolBundle mode -> m (Mux mode m)
 newMux (MiniProtocolBundle ptcls) = do
@@ -205,7 +222,13 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
 
         -- Wait for someone to shut us down by calling muxStop or an error.
         -- Outstaning jobs are shut down Upon completion of withJobPool.
-        monitor tracer jobpool egressQueue muxControlCmdQueue muxStatus
+        withTimeoutSerial $ \timeout ->
+          monitor tracer
+                  timeout
+                  jobpool
+                  egressQueue
+                  muxControlCmdQueue
+                  muxStatus
       )
     -- Only handle async exceptions, 'monitor' sets 'muxStatus' before throwing
     -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
@@ -303,12 +326,13 @@ data MiniProtocolAction m where
                         -> StrictTMVar m (Either SomeException a)    -- ^ Completion var
                         -> MiniProtocolAction m
 
+type MiniProtocolKey = (MiniProtocolNum, MiniProtocolDir)
 
-data MonitorCtx m mode = MonitorCtx {
+newtype MonitorCtx m mode = MonitorCtx {
     -- | Mini-Protocols started on deman and waiting to be scheduled.
     --
-    mcOnDemandProtocols :: !(Map (MiniProtocolNum, MiniProtocolDir)
-                                 (MiniProtocolState mode m, MiniProtocolAction m))
+    mcOnDemandProtocols :: (Map MiniProtocolKey
+                                (MiniProtocolState mode m, MiniProtocolAction m))
 
   }
 
@@ -318,14 +342,20 @@ data MonitorCtx m mode = MonitorCtx {
 --  2. it starts responder protocol threads on demand when the first
 --     incoming message arrives.
 --
-monitor :: forall mode m. (MonadSTM m, MonadAsync m, MonadMask m, MonadThrow (STM m))
+monitor :: forall mode m.
+           ( MonadSTM m
+           , MonadAsync m
+           , MonadMask m
+           , MonadThrow (STM m)
+           )
         => Tracer m MuxTrace
+        -> TimeoutFn m
         -> JobPool.JobPool MuxGroup m MuxJobResult
         -> EgressQueue m
         -> TQueue m (ControlCmd mode m)
         -> StrictTVar m MuxStatus
         -> m ()
-monitor tracer jobpool egressQueue cmdQueue muxStatus =
+monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
     go (MonitorCtx Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -408,7 +438,16 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
 
         EventControlCmd CmdShutdown -> do
           traceWith tracer MuxTraceShutdown
+          atomically $ writeTVar muxStatus MuxStopping
+          JobPool.cancelGroup jobpool MiniProtocolJob
+          -- wait for 2 seconds before the egress queue is drained
+          _ <- timeout 2 $
+            atomically $
+                  tryPeekTBQueue egressQueue
+              >>= check . isNothing
           atomically $ writeTVar muxStatus MuxStopped
+          -- by exiting the 'monitor' loop we let the job pool kill demuxer and
+          -- muxer threads
 
         -- Data has arrived on a channel for a mini-protocol for which we have
         -- an on-demand-start protocol thread. So we start it now.
@@ -429,8 +468,10 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
               egressQueue
               ptclState
               ptclAction
-          let monitorCtx' = monitorCtx { mcOnDemandProtocols = Map.delete (protocolKey ptclState)
-                                                                          mcOnDemandProtocols
+          let ptclKey = protocolKey ptclState
+              monitorCtx' = monitorCtx { mcOnDemandProtocols =
+                                           Map.delete ptclKey
+                                                      mcOnDemandProtocols
                                        }
           go monitorCtx'
 
@@ -439,6 +480,7 @@ monitor tracer jobpool egressQueue cmdQueue muxStatus =
       buf <- readTVar q
       check (not (BL.null buf))
 
+    protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
     protocolKey MiniProtocolState {
                   miniProtocolInfo = MiniProtocolInfo {
                     miniProtocolNum,
@@ -564,7 +606,9 @@ traceMuxBearerState tracer state =
 -- irrespective of the 'StartOnDemandOrEagerly' value.
 --
 runMiniProtocol :: forall mode m a.
-                   MonadSTM m
+                   ( MonadSTM   m
+                   , MonadThrow (STM m)
+                   )
                 => Mux mode m
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
@@ -579,6 +623,11 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
 
   = atomically $ do
+      st <- readTVar muxStatus
+      case st of
+        MuxStopping -> throwSTM (MuxError  (MuxShutdown Nothing) "mux stopping")
+        MuxStopped  -> throwSTM (MuxError  (MuxShutdown Nothing) "mux stopped")
+        _           -> return ()
 
       -- Make sure no thread is currently running, and update the status to
       -- indicate a thread is running (or ready to start on demand)
@@ -617,6 +666,8 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       st <- readTVar muxStatus
       case st of
            MuxReady    -> readTMVar completionVar
+           MuxStopping -> readTMVar completionVar
+                      <|> return (Left $ toException (MuxError MuxCleanShutdown "Mux stopped"))
            MuxStopped  -> readTMVar completionVar
                       <|> return (Left $ toException (MuxError MuxCleanShutdown "Mux stopped"))
            MuxFailed e -> readTMVar completionVar
