@@ -10,13 +10,13 @@ module Ouroboros.Network.PeerSelection.Simple
   ) where
 
 
+import           Data.Foldable (toList)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Tracer (Tracer)
 
 import           Data.Map (Map)
-import qualified Data.Map as Map
 import           Data.Set (Set)
 import           Data.Void (Void)
 
@@ -35,11 +35,9 @@ withPeerSelectionActions
   -> Tracer IO TracePublicRootPeers
   -> TimeoutFn IO
   -> STM IO PeerSelectionTargets
-  -> [(Int, Map RelayAddress PeerAdvertise)]
-  -- ^ static local root peers
-  -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
+  -> STM IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
-  -> StrictTVar IO [RelayAddress]
+  -> STM IO [RelayAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
   -> (NumberOfPeers -> STM IO ())
@@ -48,12 +46,12 @@ withPeerSelectionActions
   -- ^ continuation, recieves a handle to the local roots peer provider thread
   -- (only if local root peers where non-empty).
   -> IO a
-withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets staticLocalRootPeers
-  localRootPeersVar publicRootPeersVar peerStateActions reqLedgerPeers getLedgerPeers k = do
-    localRootsVar <- newTVarIO []
+withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets
+  readLocalRootPeers readPublicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
+    localRootsVar <- newTVarIO mempty
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
-            readLocalRootPeers = pure [],
+            readLocalRootPeers = toList <$> readTVar localRootsVar,
             requestPublicRootPeers = requestLedgerPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions
@@ -64,7 +62,7 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets st
         timeout
         DNS.defaultResolvConf
         localRootsVar
-        localRootPeersVar)
+        readLocalRootPeers)
       (\thread -> k (Just thread) peerSelectionActions)
   where
     -- We first try to get poublic root peers from the ledger, but if it fails
@@ -83,5 +81,5 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets st
     -- https://github.com/input-output-hk/cardano-node/issues/731
     requestPublicRootPeers :: Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers n =
-      publicRootPeersProvider publicRootTracer timeout DNS.defaultResolvConf publicRootPeersVar ($ n)
+      publicRootPeersProvider publicRootTracer timeout DNS.defaultResolvConf readPublicRootPeers ($ n)
 
