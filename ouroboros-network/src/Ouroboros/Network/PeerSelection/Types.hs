@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Ouroboros.Network.PeerSelection.Types (
     PeerSource(..),
@@ -7,6 +8,8 @@ module Ouroboros.Network.PeerSelection.Types (
   ) where
 
 import           GHC.Generics (Generic)
+import           Data.Aeson
+import           Data.Bool (bool)
 
 
 -- | Where did this peer come from? Policy functions can choose to treat
@@ -28,6 +31,13 @@ data PeerAdvertise = DoAdvertisePeer
                    | DoNotAdvertisePeer
   deriving (Eq, Show, Generic)
 
+instance FromJSON PeerAdvertise where
+  parseJSON = withBool "PeerAdvertise" $
+      return . bool DoNotAdvertisePeer DoAdvertisePeer
+
+instance ToJSON PeerAdvertise where
+  toJSON DoAdvertisePeer    = Bool True
+  toJSON DoNotAdvertisePeer = Bool False
 
 data PeerStatus =
        PeerCold
