@@ -965,6 +965,71 @@ The solution should minimise disruption to the implementation of the ledger
 rules. This may require us to separate the implementation of the Shelley (and
 forward) ledger rules from their executable specification.
 
+
+\section{Existing on-disk data structures}
+
+In the light of the RUM trade-off discussed in \cref{rum}, it is interesting to
+review the the existing on-disk data structures used in the node.
+
+The existing consensus layer contains three on-disk data structures. All three
+of these on-disk data structures are bespoke implementations. Two of them are
+special purpose key value stores.
+
+\paragraph{The immutable block database}
+This data structure stores the blocks from the old part of the chain: the
+blocks that are no longer at risk from being rolled back. It is a special
+purpose key value store. It maps the pair of a slot number and block hash to
+the serialised byte representation of the block itself. The design of this
+store trades away read performance to get minimum memory use: in general
+individual reads can take up to 3 I/O operations, but it does not require any
+in-memory indexes. This design trade-off makes sense because the chain itself
+is large and ever-growing, but we cannot dedicate an ever-growing amount of
+memory for indexes.
+
+The access pattern for blocks tends to be sequential, and so the design
+supports efficient sequential reads by placing blocks next to each other in the
+disk files. This substantially reduces the I/O cost for sequential reads.
+
+\paragraph{The volatile block database}
+This data structure stores the blocks from the new part of the chain, as well
+as blocks before they are added to the chain, and from forks that are no longer
+part of the chain. It is a special purpose key value store. It maps the pair of
+a slot number and block hash to the serialised byte representation of the block
+itself. It follows a very different design compared to the immutable block
+database. It is what is known in the literature as a log-structured hash table
+(LSH table). It keeps a full in-memory index of all the keys, mapping to the
+location on disk where the value can be found. This design of key value store
+trades-off memory use to minimise the read and write I/O costs. It use memory
+to keeps a full index in memory, but this allows reading with a singe I/O worst
+case, and all writes are sequential and append-only. This design choice is
+appropriate because read and write performance for recent blocks is important
+as these are the most frequently accessed ones, including in potentially
+adversarial situations. The memory cost is acceptable because the size of the
+volatile block database is relatively small.
+
+\paragraph{The ledger snapshot database}
+This on-disk store keeps relatively recent snapshots of the ledger state. Its
+purpose is to allow the node to recover its in-memory version of the ledger
+state without having to travers the whole blockchain from the start. It does
+not need to keep many snapshots because the ledger state can be recovered by
+replaying the chain from any snapshot.
+
+\paragraph{The RUM trade-off}
+For the two key value stores, it is interesting to note -- even though they
+both do the same thing of mapping slot/hash pairs to blocks -- that due to
+differing access patterns and dataset sizes they sit in different parts of the
+`RUM' trade-off space. The two designs are optimised for their different
+locations in the `RUM' trade-off space and are thus quite different from each
+other.
+
+\paragraph{Implementing bespoke on-disk data structures}
+It is worth reflecting on the fact that the node already contains two bespoke
+key value stores, optimised for different use cases. These were both developed
+in reasonable time and to a very high quality.
+
+The key value store for the large parts of the ledger state will be somewhat
+more complex as it needs to support more operations (see \cref{operations}).
+
 \section{Design choices}
 \label{design-choices}
 
