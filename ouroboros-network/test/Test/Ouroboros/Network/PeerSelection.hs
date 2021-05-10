@@ -40,6 +40,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import qualified Test.Ouroboros.Network.PeerSelection.Json
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
@@ -53,6 +54,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
   [ Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
+  , Test.Ouroboros.Network.PeerSelection.RootPeersDNS.tests
   , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
   , Test.Ouroboros.Network.PeerSelection.Json.tests
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
@@ -308,7 +310,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
 
-    dnsActions :: DNSActions ResolvConf DNS.Resolver IOException IO
+    dnsActions :: DNSActions DNS.Resolver IOException IO
     dnsActions = DNSActions {
             dnsResolverResource = resolverResource,
             dnsAsyncResolverResource = asyncResolverResource,
