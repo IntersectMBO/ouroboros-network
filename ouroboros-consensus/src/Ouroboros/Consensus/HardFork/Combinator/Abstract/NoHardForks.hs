@@ -10,7 +10,6 @@ import           Cardano.Slotting.EpochInfo
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
@@ -34,12 +33,6 @@ class SingleEraBlock blk => NoHardForks blk where
   toPartialConsensusConfig :: proxy blk
                            -> ConsensusConfig (BlockProtocol blk)
                            -> PartialConsensusConfig (BlockProtocol blk)
-
-  -- | Construct partial ledger config from full ledger config
-  --
-  -- See also 'toPartialConsensusConfig'
-  toPartialLedgerConfig :: proxy blk
-                        -> LedgerConfig blk -> PartialLedgerConfig blk
 
 noHardForksEpochInfo :: (Monad m, NoHardForks blk)
                      => TopLevelConfig blk

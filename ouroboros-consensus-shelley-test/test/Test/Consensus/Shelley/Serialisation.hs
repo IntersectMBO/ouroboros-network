@@ -17,6 +17,7 @@ import           Ouroboros.Consensus.Util (Dict (..))
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
+import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck

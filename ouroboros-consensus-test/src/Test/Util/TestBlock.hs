@@ -84,6 +84,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -181,6 +182,10 @@ data TestBlock = TestBlock {
   deriving anyclass (Serialise, NoThunks, ToExpr)
 
 instance ShowProxy TestBlock where
+
+type instance PartialLedgerConfig TestBlock = HardFork.EraParams
+
+instance HasPartialLedgerConfig TestBlock
 
 newtype instance Header TestBlock = TestHeader { testHeader :: TestBlock }
   deriving stock   (Eq, Show)

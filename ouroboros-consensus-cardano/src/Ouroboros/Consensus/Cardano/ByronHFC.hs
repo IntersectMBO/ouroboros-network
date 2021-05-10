@@ -36,11 +36,6 @@ type ByronBlockHFC = HardForkBlock '[ByronBlock]
 instance NoHardForks ByronBlock where
   getEraParams cfg =
       byronEraParamsNeverHardForks (byronGenesisConfig (configBlock cfg))
-  toPartialConsensusConfig _ = id
-  toPartialLedgerConfig _ cfg = ByronPartialLedgerConfig {
-        byronLedgerConfig    = cfg
-      , byronTriggerHardFork = TriggerHardForkNever
-      }
 
 {-------------------------------------------------------------------------------
   SupportedNetworkProtocolVersion instance

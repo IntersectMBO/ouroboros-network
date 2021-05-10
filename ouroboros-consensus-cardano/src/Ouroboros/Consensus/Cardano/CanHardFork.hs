@@ -258,6 +258,10 @@ type instance PartialLedgerConfig ByronBlock = ByronPartialLedgerConfig
 
 instance HasPartialLedgerConfig ByronBlock where
   completeLedgerConfig _ _ = byronLedgerConfig
+  toPartialLedgerConfig _ cfg = ByronPartialLedgerConfig {
+        byronLedgerConfig    = cfg
+      , byronTriggerHardFork = TriggerHardForkNever
+      }
 
 instance SerialiseNodeToClient ByronBlock ByronPartialLedgerConfig where
   encodeNodeToClient _ _ = toCBOR
