@@ -22,7 +22,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
 
-import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
+import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
 
@@ -39,6 +39,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+import qualified Test.Ouroboros.Network.PeerSelection.Json
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 
@@ -52,6 +53,7 @@ tests =
   testGroup "Ouroboros.Network.PeerSelection"
   [ Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
   , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
+  , Test.Ouroboros.Network.PeerSelection.Json.tests
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
@@ -287,14 +289,14 @@ takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 -- Live examples
 --
 
-_governorFindingPublicRoots :: Int -> StrictTVar IO [RelayAddress] -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers domainsVar =
+_governorFindingPublicRoots :: Int -> STM IO [RelayAddress] -> IO Void
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
       timeout
       DNS.defaultResolvConf
-      domainsVar $ \requestPublicRootPeers ->
+      readDomains $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer
