@@ -75,6 +75,7 @@ library
                        Network.Mux.Timeout
                        Network.Mux.Types
                        Network.Mux.Trace
+                       Network.Mux.Bearer.AttenuatedChannel
                        Network.Mux.Bearer.Pipe
                        Network.Mux.Bearer.Queues
                        Network.Mux.Bearer.Socket
