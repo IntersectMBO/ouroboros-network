@@ -84,7 +84,7 @@ belowTargetLocal actions
   = Guarded Nothing $ do
       selectedToPromote <-
         Set.unions <$> sequence
-          [ pickPeers
+          [ pickPeers st
               policyPickWarmPeersToPromote
               membersAvailableToPromote
               numMembersToPromote
@@ -165,7 +165,7 @@ belowTargetOther actions
   , not (Set.null availableToPromote)
   , numPeersToPromote > 0
   = Guarded Nothing $ do
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickWarmPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -320,7 +320,7 @@ aboveTargetLocal actions
   = Guarded Nothing $ do
       selectedToDemote <-
         Set.unions <$> sequence
-          [ pickPeers
+          [ pickPeers st
               policyPickHotPeersToDemote
               membersAvailableToDemote
               numMembersToDemote
@@ -383,7 +383,7 @@ aboveTargetOther actions
                               Set.\\ LocalRootPeers.keysSet localRootPeers
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
-      selectedToDemote <- pickPeers
+      selectedToDemote <- pickPeers st
                             policyPickHotPeersToDemote
                             availableToDemote
                             numPeersToDemote

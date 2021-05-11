@@ -11,6 +11,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     -- * Basic container operations
     empty,
     size,
+    member,
     insert,
     delete,
     toSet,
@@ -19,6 +20,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     setCurrentTime,
     incrementFailCount,
     resetFailCount,
+    lookupFailCount,
 
     -- ** Tracking when we can gossip
     minGossipTime,
@@ -143,6 +145,9 @@ empty =
 
 size :: KnownPeers peeraddr -> Int
 size = Map.size . allPeers
+
+member :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
+member peeraddr KnownPeers {allPeers} = Map.member peeraddr allPeers
 
 -- | /O(n)/
 toSet :: KnownPeers peeraddr -> Set peeraddr
@@ -289,6 +294,13 @@ resetFailCount peeraddr knownPeers@KnownPeers{allPeers} =
     knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownPeerFailCount = 0 })
                               peeraddr allPeers
                }
+
+lookupFailCount :: Ord peeraddr
+                => peeraddr
+                -> KnownPeers peeraddr
+                -> Maybe Int
+lookupFailCount peeraddr KnownPeers{allPeers} =
+    knownPeerFailCount <$> Map.lookup peeraddr allPeers
 
 
 -------------------------------
