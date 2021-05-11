@@ -118,6 +118,7 @@ applyOperationFunction = \case
 
 pattern OFn :: (HashMap k (Maybe v) -> (OperationResult k v, a)) -> OperationFunction k v a
 pattern OFn f <- (applyOperationFunction -> f)
+{-# COMPLETE OFn #-}
 
 data instance Cmd (MonadKVStateMachine m) h where
   KVPrepare :: QueryScope Int -> Cmd (MonadKVStateMachine m) h
@@ -219,9 +220,6 @@ kvRunMock cmd s@Mock {..} = case cmd of
                 queries = i `HashMap.delete` queries
               }
           )
-  -- Gives incomplete pattern warnings without this. I
-  -- believe it's because Fn isn't properly marked as COMPLETE
-  _ -> error "impossible"
 
 kvRunReal :: forall m. SimpleMonadKV m => (forall a. m a -> IO a) -> KVCmd m (KVRealHandle m) -> IO (KVResp m (KVRealHandle m))
 kvRunReal toIO = \case
