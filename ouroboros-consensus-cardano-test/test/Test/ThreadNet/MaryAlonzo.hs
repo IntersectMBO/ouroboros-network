@@ -42,8 +42,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
-import qualified Cardano.Ledger.Alonzo.Scripts as SL
-import           Cardano.Ledger.Alonzo.Translation (AlonzoGenesis (..))
+import           Cardano.Ledger.Alonzo.Translation (AlonzoGenesis)
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -69,6 +68,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
 import           Test.Consensus.Shelley.MockCrypto (MockCrypto)
+import qualified Test.ThreadNet.Infra.Alonzo as Alonzo
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Infra.ShelleyBasedHardFork
 import           Test.ThreadNet.TxGen
@@ -301,16 +301,7 @@ prop_simple_allegraAlonzo_convergence TestSetup
           coreNodes
 
     alonzoGenesis :: AlonzoGenesis
-    alonzoGenesis = AlonzoGenesis {
-          adaPerUTxOWord       = SL.Coin 0
-        , collateralPercentage = 0
-        , costmdls             = Map.empty
-        , maxBlockExUnits      = mempty
-        , maxCollateralInputs  = 0
-        , maxTxExUnits         = mempty
-        , maxValSize           = 0
-        , prices               = SL.Prices (SL.Coin 0) (SL.Coin 0)
-        }
+    alonzoGenesis = Alonzo.degenerateAlonzoGenesis
 
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
     -- does not randomize it

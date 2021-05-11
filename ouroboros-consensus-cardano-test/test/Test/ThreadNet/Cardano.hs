@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Cardano.Node
 
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 import           Test.ThreadNet.General
+import qualified Test.ThreadNet.Infra.Alonzo as Alonzo
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Network (NodeOutput (..),
@@ -508,8 +509,8 @@ mkProtocolCardanoAndHardForkTxs
             maryProtVer    = SL.ProtVer maryMajorVersion    0
           }
         ProtocolParamsAlonzo {
-            alonzoGenesis    = undefined
-          , alonzoProtVer    = SL.ProtVer alonzoMajorVersion    0
+            alonzoGenesis  = Alonzo.degenerateAlonzoGenesis
+          , alonzoProtVer  = SL.ProtVer alonzoMajorVersion  0
           }
         protocolParamsByronShelley
         ProtocolParamsTransition {
