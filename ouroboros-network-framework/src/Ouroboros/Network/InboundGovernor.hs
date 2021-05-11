@@ -30,7 +30,7 @@ module Ouroboros.Network.InboundGovernor
   , AcceptConnectionsPolicyTrace (..)
   ) where
 
-import           Control.Exception (assert)
+import           Control.Exception (SomeAsyncException (..), assert)
 import           Control.Applicative (Alternative (..), (<|>))
 import           Control.Monad (foldM)
 import           Control.Monad.Class.MonadAsync
@@ -150,11 +150,11 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                                              csMux miniProtocol
                                              Mux.StartOnDemand
                                  case result of
-
+                                   -- synchronous exceptions when starting
+                                   -- a mini-protocol are non-recoverable; we
+                                   -- close the connection and allow the server
+                                   -- to continue.
                                    Left err -> do
-                                     -- errors when starting a mini-protocol are
-                                     -- non-recoverable; we close the connection
-                                     -- and allow the server to continue.
                                      traceWith tracer (TrResponderStartFailure connId (miniProtocolNum miniProtocol) err)
                                      Mux.stopMux csMux
                                      return Nothing
@@ -242,9 +242,9 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                   inboundGovernorLoop
                     (updateMiniProtocol tConnId num completionAction state)
                 Left err -> do
-                  -- there is no way to recover from such errors; we stop
-                  -- mux which allows to recover resources held by
-                  -- connection manager as well.
+                  -- there is no way to recover from synchronous exceptions; we
+                  -- stop mux which allows to close resources held by
+                  -- connection manager.
                   traceWith tracer (TrResponderStartFailure tConnId num err)
                   Mux.stopMux tMux
                   inboundGovernorLoop
@@ -359,7 +359,10 @@ runResponder :: forall (mode :: MuxMode) m a b.
 runResponder mux
              MiniProtocol { miniProtocolNum, miniProtocolRun }
              startStrategy =
-    try $
+    -- do not catch asynchronous exceptions, which are non recoverable
+    tryJust (\e -> case fromException e of
+              Just (SomeAsyncException _) -> Nothing
+              Nothing                     -> Just e) $
       case miniProtocolRun of
         ResponderProtocolOnly responder ->
           Mux.runMiniProtocol
