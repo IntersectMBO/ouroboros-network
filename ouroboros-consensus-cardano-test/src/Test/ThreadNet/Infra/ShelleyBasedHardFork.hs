@@ -55,7 +55,8 @@ import           Ouroboros.Consensus.Cardano.CanHardFork
                      (ShelleyPartialLedgerConfig (..), forecastAcrossShelley,
                      translateChainDepStateAcrossShelley)
 import           Ouroboros.Consensus.Cardano.Node
-                     (ProtocolParamsTransition (..), TriggerHardFork (..))
+                     (ProtocolTransitionParamsShelleyBased (..),
+                     TriggerHardFork (..))
 
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.TxGen.Shelley ()
@@ -128,7 +129,7 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
 
-  , SL.TranslationContext era2 ~ ()
+  , SL.TranslationContext era1 ~ ()
   )
 
 instance ShelleyBasedHardForkConstraints era1 era2
@@ -149,8 +150,14 @@ instance ShelleyBasedHardForkConstraints era1 era2
              (HFC.Translate LedgerState)
              (ShelleyBlock era1)
              (ShelleyBlock era2)
-      translateLedgerState = InPairs.ignoringBoth $ HFC.Translate $ \_epochNo ->
-          unComp . SL.translateEra' () . Comp
+      translateLedgerState =
+          InPairs.RequireBoth
+        $ \_cfg1 cfg2 -> HFC.Translate
+        $ \_epochNo ->
+              unComp
+            . SL.translateEra'
+                (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
+            . Comp
 
       translateLedgerView ::
            InPairs.RequiringBoth
@@ -166,21 +173,29 @@ instance ShelleyBasedHardForkConstraints era1 era2
 
   hardForkInjectTxs =
         InPairs.mk2
-      $ InPairs.ignoringBoth
-      $ Pair2 (InjectTx translateTx) (InjectValidatedTx translateValidatedTx)
+      $ InPairs.RequireBoth $ \_cfg1 cfg2 ->
+        let ctxt = shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2)
+        in
+          Pair2
+            (InjectTx          (translateTx          ctxt))
+            (InjectValidatedTx (translateValidatedTx ctxt))
     where
       translateTx ::
-                  GenTx (ShelleyBlock era1)
+           SL.TranslationContext era2
+        ->        GenTx (ShelleyBlock era1)
         -> Maybe (GenTx (ShelleyBlock era2))
-      translateTx =
-          fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+      translateTx transCtxt =
+          fmap unComp
+        . eitherToMaybe . runExcept . SL.translateEra transCtxt
+        . Comp
 
       translateValidatedTx ::
-                  WrapValidatedGenTx (ShelleyBlock era1)
+           SL.TranslationContext era2
+        ->        WrapValidatedGenTx (ShelleyBlock era1)
         -> Maybe (WrapValidatedGenTx (ShelleyBlock era2))
-      translateValidatedTx =
+      translateValidatedTx transCtxt =
             fmap unComp
-          . eitherToMaybe . runExcept . SL.translateEra ()
+          . eitherToMaybe . runExcept . SL.translateEra transCtxt
           . Comp
 
 instance ShelleyBasedHardForkConstraints era1 era2
@@ -204,12 +219,12 @@ protocolInfoShelleyBasedHardFork ::
   => ProtocolParamsShelleyBased era1
   -> SL.ProtVer
   -> SL.ProtVer
-  -> ProtocolParamsTransition (ShelleyBlock era1) (ShelleyBlock era2)
+  -> ProtocolTransitionParamsShelleyBased era2
   -> ProtocolInfo m (ShelleyBasedHardForkBlock era1 era2)
 protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
                                  protVer1
                                  protVer2
-                                 protocolParamsTransition =
+                                 protocolTransitionParams =
     protocolInfoBinary
       -- Era 1
       protocolInfo1
@@ -237,12 +252,16 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     protocolInfo1 =
         protocolInfoShelleyBased
           protocolParamsShelleyBased
+          ()  -- trivial translation context
           protVer1
 
     eraParams1 :: History.EraParams
     eraParams1 = shelleyEraParams genesis1
 
-    ProtocolParamsTransition { transitionTrigger } = protocolParamsTransition
+    ProtocolTransitionParamsShelleyBased {
+        transitionTranslationContext = transCtxt2
+      , transitionTrigger
+      } = protocolTransitionParams
 
     toPartialLedgerConfig1 ::
          LedgerConfig (ShelleyBlock era1)
@@ -255,7 +274,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     -- Era 2
 
     genesis2 :: SL.ShelleyGenesis era2
-    genesis2 = SL.translateEra' () genesis1
+    genesis2 = SL.translateEra' transCtxt2 genesis1
 
     protocolInfo2 :: ProtocolInfo m (ShelleyBlock era2)
     protocolInfo2 =
@@ -265,6 +284,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
             , shelleyBasedInitialNonce
             , shelleyBasedLeaderCredentials
             }
+          transCtxt2
           protVer2
 
     eraParams2 :: History.EraParams

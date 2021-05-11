@@ -52,7 +52,8 @@ import           Ouroboros.Consensus.Shelley.Node
 
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
-                     (ProtocolParamsTransition (..), TriggerHardFork (..))
+                     (ProtocolTransitionParamsShelleyBased (..),
+                     TriggerHardFork (..))
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network (NodeOutput (..),
@@ -263,8 +264,10 @@ prop_simple_allegraMary_convergence TestSetup
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
-                    ProtocolParamsTransition {
-                        transitionTrigger = TriggerHardForkAtVersion majorVersion2
+                    ProtocolTransitionParamsShelleyBased {
+                        transitionTranslationContext = ()
+                      , transitionTrigger            =
+                          TriggerHardForkAtVersion majorVersion2
                       }
               }
           , mkRekeyM = Nothing

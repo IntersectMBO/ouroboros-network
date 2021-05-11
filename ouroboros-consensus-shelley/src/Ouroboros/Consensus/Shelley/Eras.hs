@@ -36,7 +36,7 @@ import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Allegra.Translation ()
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
-import qualified Cardano.Ledger.Era as Core (TranslateEra (..), TxInBlock)
+import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
 import           Cardano.Ledger.Shelley (ShelleyEra)
@@ -129,6 +129,8 @@ class ( SL.ShelleyBasedEra era
       , Eq (Core.TxInBlock era)
       , NoThunks (Core.TxInBlock era)
       , Show (Core.TxInBlock era)
+
+      , NoThunks (Core.TranslationContext era)
 
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,

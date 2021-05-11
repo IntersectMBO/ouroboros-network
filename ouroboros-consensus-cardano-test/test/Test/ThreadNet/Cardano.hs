@@ -46,7 +46,6 @@ import           Ouroboros.Consensus.Byron.Node
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff)
 
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -257,8 +256,10 @@ prop_simple_cardano_convergence TestSetup
                   genesisShelley
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
-                  ProtocolParamsTransition {
-                      transitionTrigger = TriggerHardForkAtVersion shelleyMajorVersion
+                  ProtocolTransitionParamsShelleyBased {
+                      transitionTranslationContext = ()
+                    , transitionTrigger            =
+                        TriggerHardForkAtVersion shelleyMajorVersion
                     }
             , mkRekeyM = Nothing
             }
@@ -454,9 +455,7 @@ mkProtocolCardanoAndHardForkTxs
   -> SL.Nonce
   -> Shelley.CoreNode c
      -- HardForks
-  -> ProtocolParamsTransition
-       ByronBlock
-       (ShelleyBlock (ShelleyEra c))
+  -> ProtocolTransitionParamsShelleyBased (ShelleyEra c)
   -> TestNodeInitialization m (CardanoBlock c)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
@@ -508,11 +507,15 @@ mkProtocolCardanoAndHardForkTxs
             maryProtVer    = SL.ProtVer maryMajorVersion    0
           }
         protocolParamsByronShelley
-        ProtocolParamsTransition {
-            transitionTrigger = TriggerHardForkAtVersion allegraMajorVersion
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext = ()
+          , transitionTrigger            =
+              TriggerHardForkAtVersion allegraMajorVersion
           }
-        ProtocolParamsTransition {
-            transitionTrigger = TriggerHardForkAtVersion maryMajorVersion
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext = ()
+          , transitionTrigger            =
+              TriggerHardForkAtVersion maryMajorVersion
           }
 
     -- Byron
