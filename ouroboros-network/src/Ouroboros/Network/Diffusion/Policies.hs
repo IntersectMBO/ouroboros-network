@@ -70,7 +70,7 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
       return available'
 
     simplePromotionPolicy :: PickPolicy SockAddr m
-    simplePromotionPolicy available pickNum = do
+    simplePromotionPolicy _ _ available pickNum = do
       available' <- addMetrics available
       return $ Set.fromList
              . map fst
@@ -80,7 +80,7 @@ simplePeerSelectionPolicy rngVar = PeerSelectionPolicy {
              $ available'
 
     simpleDemotionPolicy :: PickPolicy SockAddr m
-    simpleDemotionPolicy available pickNum = do
+    simpleDemotionPolicy _ _ available pickNum = do
       available' <- addMetrics available
       return $ Set.fromList
              . map fst
