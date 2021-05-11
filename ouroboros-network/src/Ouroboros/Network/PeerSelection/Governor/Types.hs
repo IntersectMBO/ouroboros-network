@@ -75,22 +75,6 @@ type PickPolicy peeraddr m = Set peeraddr
                           -> STM m (Set peeraddr)
 
 
--- | Check pre-conditions and post-conditions on the pick policies
-pickPeers :: (Ord peeraddr, Functor m)
-          => (Set peeraddr -> Int -> m (Set peeraddr))
-          ->  Set peeraddr -> Int -> m (Set peeraddr)
-pickPeers pick available num =
-    assert precondition $
-    fmap (\picked -> assert (postcondition picked) picked)
-         (pick available numClamped)
-  where
-    precondition         = not (Set.null available) && num > 0
-    postcondition picked = not (Set.null picked)
-                        && Set.size picked <= numClamped
-                        && picked `Set.isSubsetOf` available
-    numClamped           = min num (Set.size available)
-
-
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 
        policyPickKnownPeersForGossip :: PickPolicy peeraddr m,
@@ -429,6 +413,25 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
     Map.fromSet (\_ -> PeerHot)  activePeers
  <> Map.fromSet (\_ -> PeerWarm) (EstablishedPeers.toSet establishedPeers)
 
+
+--------------------------------
+-- PickPolicy wrapper function
+--
+
+-- | Check pre-conditions and post-conditions on the pick policies
+pickPeers :: (Ord peeraddr, Functor m)
+          => (Set peeraddr -> Int -> m (Set peeraddr))
+          ->  Set peeraddr -> Int -> m (Set peeraddr)
+pickPeers pick available num =
+    assert precondition $
+    fmap (\picked -> assert (postcondition picked) picked)
+         (pick available numClamped)
+  where
+    precondition         = not (Set.null available) && num > 0
+    postcondition picked = not (Set.null picked)
+                        && Set.size picked <= numClamped
+                        && picked `Set.isSubsetOf` available
+    numClamped           = min num (Set.size available)
 
 
 ---------------------------
