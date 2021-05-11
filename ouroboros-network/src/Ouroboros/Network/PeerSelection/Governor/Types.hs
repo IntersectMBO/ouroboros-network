@@ -38,6 +38,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , DebugPeerSelection (..)
   )where
 
+import           Data.Maybe (fromMaybe)
 import           Data.Semigroup (Min(..))
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
@@ -70,9 +71,14 @@ import           Ouroboros.Network.PeerSelection.Types
 -- The post-condition is that the picked set is non-empty but must not be
 -- bigger than the requested number.
 --
-type PickPolicy peeraddr m = Set peeraddr
-                          -> Int
-                          -> STM m (Set peeraddr)
+type PickPolicy peeraddr m =
+         -- Extra peer attributes available to use in the picking policy.
+         -- As more attributes are needed, extend this with more such functions.
+         (peeraddr -> PeerSource) -- Where the peer is known from
+      -> (peeraddr -> Int)        -- Connection failure count
+      -> Set peeraddr             -- The set to pick from
+      -> Int                      -- Max number to choose, fewer is ok.
+      -> STM m (Set peeraddr)     -- The set picked.
 
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
@@ -418,20 +424,41 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 -- PickPolicy wrapper function
 --
 
--- | Check pre-conditions and post-conditions on the pick policies
+-- | Check pre-conditions and post-conditions on the pick policies,
+-- and supply additional peer atributes from the current state.
+--
 pickPeers :: (Ord peeraddr, Functor m)
-          => (Set peeraddr -> Int -> m (Set peeraddr))
-          ->  Set peeraddr -> Int -> m (Set peeraddr)
-pickPeers pick available num =
+          => PeerSelectionState peeraddr peerconn
+          -> (   (peeraddr -> PeerSource)
+              -> (peeraddr -> Int)
+              -> Set peeraddr -> Int -> m (Set peeraddr))
+          -> Set peeraddr -> Int -> m (Set peeraddr)
+pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
+          pick available num =
     assert precondition $
     fmap (\picked -> assert (postcondition picked) picked)
-         (pick available numClamped)
+         (pick peerSource peerConnectFailCount
+               available numClamped)
   where
     precondition         = not (Set.null available) && num > 0
     postcondition picked = not (Set.null picked)
                         && Set.size picked <= numClamped
                         && picked `Set.isSubsetOf` available
     numClamped           = min num (Set.size available)
+
+    peerSource p
+      | LocalRootPeers.member p localRootPeers = PeerSourceLocalRoot
+      | Set.member p publicRootPeers           = PeerSourcePublicRoot
+      | KnownPeers.member p knownPeers         = PeerSourceGossip
+      | otherwise                              = errorUnavailable
+
+    peerConnectFailCount p =
+        fromMaybe errorUnavailable $
+          KnownPeers.lookupFailCount p knownPeers
+
+    errorUnavailable =
+        error $ "A pick policy requested an attribute for peer address "
+             ++ " which is outside of the set given to pick from"
 
 
 ---------------------------
