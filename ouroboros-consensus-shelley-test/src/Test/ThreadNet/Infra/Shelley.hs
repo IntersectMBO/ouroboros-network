@@ -69,13 +69,12 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
-import qualified Cardano.Ledger.Core
+import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
-import qualified Cardano.Ledger.Era
+import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
-import qualified Cardano.Ledger.Shelley.Constraints as SL
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
@@ -549,12 +548,12 @@ networkId = SL.Testnet
 mkAllegraSetDecentralizationParamTxs ::
      forall era.
      ( ShelleyBasedEra era
-     , Cardano.Ledger.Core.TxBody era ~ MA.TxBody era
-     , Cardano.Ledger.Core.Value  era ~ SL.Coin
-     , Cardano.Ledger.Core.PParams era ~ SL.PParams era
-     , SL.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
+     , Core.TxBody era ~ MA.TxBody era
+     , Core.Value  era ~ SL.Coin
+     , Core.PParams era ~ SL.PParams era
+     , Core.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
      )
-  => [CoreNode (Cardano.Ledger.Era.Crypto era)]
+  => [CoreNode (Core.Crypto era)]
   -> ProtVer   -- ^ The proposed protocol version
   -> SlotNo   -- ^ The TTL
   -> DecentralizationParam   -- ^ The new value
@@ -578,7 +577,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 
     -- Every node signs the transaction body, since it includes a " vote " from
     -- every node.
-    signatures :: Set (SL.WitVKey 'SL.Witness (Cardano.Ledger.Era.Crypto era))
+    signatures :: Set (SL.WitVKey 'SL.Witness (Core.Crypto era))
     signatures =
         SL.makeWitnessesVKey
           (eraIndTxBodyHash' body)
@@ -620,7 +619,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     -- We use the input of the first node, but we just put it all right back.
     --
     -- ASSUMPTION: This transaction runs in the first slot.
-    touchCoins :: (SL.TxIn (Cardano.Ledger.Era.Crypto era), SL.TxOut era)
+    touchCoins :: (SL.TxIn (Core.Crypto era), SL.TxOut era)
     touchCoins = case coreNodes of
         []   -> error "no nodes!"
         cn:_ ->

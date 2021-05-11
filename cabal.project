@@ -24,10 +24,10 @@ packages: ./typed-protocols
           ./cardano-client
 
 constraints:
-  ip < 1.5,
-  hedgehog >= 1.0,
-  bimap >= 0.4.0,
-  ListLike >= 4.7.3
+    ip < 1.5
+  , hedgehog >= 1.0
+  , bimap >= 0.4.0
+  , ListLike >= 4.7.3
 
 package Win32-network
   tests: True
@@ -161,8 +161,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 47db5b818ca4fa051f2e44cdf5e7c5c18c1fb0bf
-  --sha256: 0fr0r5dwfmsp15j19xh20js8nzsqyhwx4q797rxsvpyjfabb2y11
+  tag: 0f409343c3655c4bacd7fab385d392ec5d5cca98
+  --sha256: 0js76inb7avg8c39c9k2zsr77sycg2vadylgvsswdsba808p6hr9
   subdir:
     binary
     binary/test
@@ -174,8 +174,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: e8f19bcc9c8f405131cb95ca6ada26b2b4eac638
-  --sha256: 1v36d3lyhmadzj0abdfsppjna7n7llzqzp9ikx5yq28l2kda2f1p
+  tag: 22f53f75e80a70243bd0fa41f570a9a2715d76cc
+  --sha256: 033qarxg1cifv1y7km170q08idznhygi3xwi3dral5cchi3gdwgm
   subdir:
     byron/chain/executable-spec
     byron/crypto
@@ -200,6 +200,6 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/cardano-crypto/
+  location: https://github.com/input-output-hk/cardano-crypto
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q

@@ -30,24 +30,23 @@ import           GHC.Records
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
 
+import           Cardano.Binary (FromCBOR, ToCBOR)
+
 import           Cardano.Ledger.Allegra (AllegraEra)
-import qualified Cardano.Ledger.Core as LC
+import           Cardano.Ledger.Allegra.Translation ()
+import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
+import qualified Cardano.Ledger.Era as Core (TranslateEra (..), TxInBlock)
 import           Cardano.Ledger.Mary (MaryEra)
+import           Cardano.Ledger.Mary.Translation ()
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
-
-import           Cardano.Binary (FromCBOR, ToCBOR)
-import           Cardano.Ledger.Allegra.Translation ()
-import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Era as SL (TranslateEra (..), TxInBlock)
-import           Cardano.Ledger.Mary.Translation ()
-import qualified Cardano.Ledger.Shelley.Constraints as SL
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Serialization as SL
+
+import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -106,20 +105,20 @@ type EraCrypto era = Crypto era
 -- most likely with Alonzo, thus this equivalence will no longer be valid.
 class ( SL.ShelleyBasedEra era
 
-      , State (LC.EraRule "PPUP" era) ~ SL.PPUPState era
-      , Default (State (LC.EraRule "PPUP" era))
+      , State (Core.EraRule "PPUP" era) ~ SL.PPUPState era
+      , Default (State (Core.EraRule "PPUP" era))
 
-      , HasField "_maxBHSize" (LC.PParams era) Natural
-      , HasField "_maxTxSize" (LC.PParams era) Natural
-      , HasField "_a0" (LC.PParams era) Rational
-      , HasField "_nOpt" (LC.PParams era) Natural
-      , HasField "_rho" (LC.PParams era) SL.UnitInterval
-      , HasField "_tau" (LC.PParams era) SL.UnitInterval
-      , FromCBOR (LC.PParams era)
-      , ToCBOR (LC.PParams era)
+      , HasField "_maxBHSize" (Core.PParams era) Natural
+      , HasField "_maxTxSize" (Core.PParams era) Natural
+      , HasField "_a0" (Core.PParams era) Rational
+      , HasField "_nOpt" (Core.PParams era) Natural
+      , HasField "_rho" (Core.PParams era) SL.UnitInterval
+      , HasField "_tau" (Core.PParams era) SL.UnitInterval
+      , FromCBOR (Core.PParams era)
+      , ToCBOR (Core.PParams era)
 
-      , HasField "_protocolVersion" (SL.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
-      , FromCBOR (SL.PParamsDelta era)
+      , HasField "_protocolVersion" (Core.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
+      , FromCBOR (Core.PParamsDelta era)
 
       , SL.AdditionalGenesisConfig era ~ ()
 
@@ -127,9 +126,9 @@ class ( SL.ShelleyBasedEra era
 
       , SL.ToCBORGroup (TxSeq era)
 
-      , Eq (SL.TxInBlock era)
-      , NoThunks (SL.TxInBlock era)
-      , Show (SL.TxInBlock era)
+      , Eq (Core.TxInBlock era)
+      , NoThunks (Core.TxInBlock era)
+      , Show (Core.TxInBlock era)
 
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
@@ -149,16 +148,16 @@ instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   TxInBlock wrapper
 -------------------------------------------------------------------------------}
 
--- | Wrapper for partially applying 'SL.TxInBlock'
+-- | Wrapper for partially applying 'Core.TxInBlock'
 --
 -- For generality, Consensus uses that type family as eg the index of
--- 'SL.TranslateEra'. We thus need to partially apply it.
-newtype WrapTxInBlock era = WrapTxInBlock {unwrapTxInBlock :: SL.TxInBlock era}
+-- 'Core.TranslateEra'. We thus need to partially apply it.
+newtype WrapTxInBlock era = WrapTxInBlock {unwrapTxInBlock :: Core.TxInBlock era}
 
-instance ShelleyBasedEra (AllegraEra c) => SL.TranslateEra (AllegraEra c) WrapTxInBlock where
-  type TranslationError (AllegraEra c) WrapTxInBlock = SL.TranslationError (AllegraEra c) SL.Tx
-  translateEra ctxt = fmap WrapTxInBlock . SL.translateEra ctxt . unwrapTxInBlock
+instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) WrapTxInBlock where
+  type TranslationError (AllegraEra c) WrapTxInBlock = Core.TranslationError (AllegraEra c) SL.Tx
+  translateEra ctxt = fmap WrapTxInBlock . Core.translateEra ctxt . unwrapTxInBlock
 
-instance ShelleyBasedEra (MaryEra c) => SL.TranslateEra (MaryEra c) WrapTxInBlock where
-  type TranslationError (MaryEra c) WrapTxInBlock = SL.TranslationError (MaryEra c) SL.Tx
-  translateEra ctxt = fmap WrapTxInBlock . SL.translateEra ctxt . unwrapTxInBlock
+instance ShelleyBasedEra (MaryEra c) => Core.TranslateEra (MaryEra c) WrapTxInBlock where
+  type TranslationError (MaryEra c) WrapTxInBlock = Core.TranslationError (MaryEra c) SL.Tx
+  translateEra ctxt = fmap WrapTxInBlock . Core.translateEra ctxt . unwrapTxInBlock

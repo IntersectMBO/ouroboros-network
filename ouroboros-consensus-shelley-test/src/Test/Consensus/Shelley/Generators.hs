@@ -32,16 +32,17 @@ import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
-                     WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (Coherent (..),
+                     SomeResult (..), WithVersion (..))
 
-import           Test.Cardano.Ledger.Allegra ()
-import           Test.Cardano.Ledger.Mary ()
+import           Test.Cardano.Ledger.AllegraEraGen ()
+import           Test.Cardano.Ledger.MaryEraGen ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
-import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators ()
+import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators
+                     (genCoherentBlock)
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 {-------------------------------------------------------------------------------
@@ -51,8 +52,15 @@ import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
   necessarily valid
 -------------------------------------------------------------------------------}
 
+-- | The upstream 'Arbitrary' instance for Shelley blocks does not generate
+-- coherent blocks, so neither does this.
 instance CanMock era => Arbitrary (ShelleyBlock era) where
   arbitrary = mkShelleyBlock <$> arbitrary
+
+-- | This uses a different upstream generator to ensure the header and block
+-- body relate as expected.
+instance CanMock era => Arbitrary (Coherent (ShelleyBlock era)) where
+  arbitrary = Coherent . mkShelleyBlock <$> genCoherentBlock
 
 instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
   arbitrary = getHeader <$> arbitrary

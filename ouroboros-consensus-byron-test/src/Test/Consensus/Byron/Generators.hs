@@ -59,8 +59,8 @@ import qualified Test.Cardano.Chain.Update.Gen as UG
 import qualified Test.Cardano.Crypto.Gen as CC
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
-                     WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (Coherent (..),
+                     SomeResult (..), WithVersion (..))
 
 {-------------------------------------------------------------------------------
   Generators
@@ -87,7 +87,10 @@ instance Arbitrary RegularBlock where
     hedgehog (CC.genBlock protocolMagicId epochSlots)
 
 instance Arbitrary ByronBlock where
-  arbitrary = frequency
+  arbitrary = getCoherent <$> arbitrary
+
+instance Arbitrary (Coherent ByronBlock) where
+  arbitrary = Coherent <$> frequency
       [ (3, genBlock)
       , (1, genBoundaryBlock)
       ]
