@@ -59,7 +59,7 @@ belowTarget actions
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForGossip)
   = Guarded Nothing $ do
-      selectedForGossip <- pickPeers
+      selectedForGossip <- pickPeers st
                              policyPickKnownPeersForGossip
                              availableForGossip
                              numGossipReqsPossible
@@ -289,7 +289,7 @@ aboveTarget PeerSelectionPolicy {
       -- If we /might/ pick a root peer, limit the number to forget so we do
       -- not pick too many root peers. This may cause us to go round several
       -- times but that is ok.
-      selectedToForget <- pickPeers
+      selectedToForget <- pickPeers st
                             policyPickColdPeersToForget
                             availableToForget
                             numPeersToForget
