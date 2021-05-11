@@ -308,6 +308,7 @@ test-suite test
                        tasty-hunit,
                        tasty-quickcheck,
                        text,
+                       time,
 
                        cardano-binary,
                        cardano-prelude,
