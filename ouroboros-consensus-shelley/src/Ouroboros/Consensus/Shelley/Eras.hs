@@ -132,8 +132,8 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (LC.PParams era)
       , ToCBOR (LC.PParams era)
 
-      , HasField "_protocolVersion" (SL.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
-      , FromCBOR (SL.PParamsDelta era)
+      , HasField "_protocolVersion" (LC.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
+      , FromCBOR (LC.PParamsDelta era)
 
       , SL.AdditionalGenesisConfig era ~ ()
 

@@ -106,8 +106,7 @@ import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
 import qualified Cardano.Ledger.Mary.Value as MA
-import qualified Cardano.Ledger.Shelley.Constraints as SL (PParamsDelta,
-                     makeTxOut)
+import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import qualified Cardano.Ledger.ShelleyMA as MA
 import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
@@ -214,7 +213,7 @@ examples ::
      ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
        ~ SL.DelegsPredicateFailure era
      , Core.PParams era ~ SL.PParams era
-     , SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
+     , Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
      )
   => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
   -> (Core.Tx era -> SL.TxInBlock era)
@@ -358,7 +357,7 @@ exampleTxBodyShelley = SL.TxBody
 exampleTxBodyMA ::
      forall era.
      ( ShelleyBasedEra era
-     , SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
+     , Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
      )
   => Core.Value era -> MA.TxBody era
 exampleTxBodyMA value = MA.TxBody
@@ -451,7 +450,7 @@ examplePoolDistr = SL.PoolDistr $ Map.fromList [
     ]
 
 exampleProposedPPUpdates ::
-  ( SL.PParamsDelta era ~ SL.PParams' StrictMaybe era
+  ( Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
   , ShelleyBasedEra era
   ) => SL.ProposedPPUpdates era
 exampleProposedPPUpdates = SL.ProposedPPUpdates $

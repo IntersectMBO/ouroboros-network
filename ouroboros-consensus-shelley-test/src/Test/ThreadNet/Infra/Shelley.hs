@@ -76,7 +76,6 @@ import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
 import qualified Cardano.Ledger.Val as SL
-import qualified Cardano.Ledger.Shelley.Constraints as SL
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
@@ -552,7 +551,7 @@ mkAllegraSetDecentralizationParamTxs ::
      ( ShelleyBasedEra era
      , Cardano.Ledger.Core.TxBody era ~ MA.TxBody era
      , Cardano.Ledger.Core.PParams era ~ SL.PParams era
-     , SL.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
+     , Cardano.Ledger.Core.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
      , Cardano.Ledger.Core.Witnesses era ~ SL.WitnessSet era
      )
   => [CoreNode (Cardano.Ledger.Era.Crypto era)]

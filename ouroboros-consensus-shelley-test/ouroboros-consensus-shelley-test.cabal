@@ -24,7 +24,6 @@ library
                        Test.Consensus.Shelley.Examples
                        Test.Consensus.Shelley.Generators
                        Test.Consensus.Shelley.MockCrypto
-                       Test.Consensus.Shelley.Orphans
                        Test.ThreadNet.Infra.Alonzo
                        Test.ThreadNet.Infra.Shelley
                        Test.ThreadNet.TxGen.Shelley

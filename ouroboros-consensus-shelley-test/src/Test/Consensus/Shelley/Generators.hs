@@ -34,8 +34,9 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
                      WithVersion (..))
 
-import           Test.Cardano.Ledger.Allegra ()
-import           Test.Cardano.Ledger.Mary ()
+import           Test.Cardano.Ledger.AllegraEraGen ()
+import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
+import           Test.Cardano.Ledger.MaryEraGen ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock, CanMockOld)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
