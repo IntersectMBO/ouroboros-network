@@ -104,7 +104,7 @@ belowTargetLocal actions
           numPeersToPromote  = targetNumberOfLocalPeers
                              - numLocalEstablishedPeers
                              - numLocalConnectInProgress
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -187,7 +187,7 @@ belowTargetOther actions
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -368,7 +368,7 @@ aboveTarget actions
                                 Set.\\ LocalRootPeers.keysSet localRootPeers
                                 Set.\\ inProgressDemoteWarm
                                 Set.\\ inProgressPromoteWarm
-      selectedToDemote <- pickPeers
+      selectedToDemote <- pickPeers st
                             policyPickWarmPeersToDemote
                             availableToDemote
                             numPeersToDemote
