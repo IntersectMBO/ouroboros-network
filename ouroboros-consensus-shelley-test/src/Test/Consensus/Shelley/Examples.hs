@@ -384,9 +384,6 @@ exampleTxBodyAllegra = exampleTxBodyMA exampleCoin
 exampleTxBodyMary :: Core.TxBody StandardMary
 exampleTxBodyMary = exampleTxBodyMA exampleMultiAssetValue
 
--- exampleTxBodyAlonzo :: Core.TxBody StandardAlonzo
--- exampleTxBodyAlonzo = exampleTxBodyMA exampleMultiAssetValue
-
 exampleScriptMA :: Crypto c => Core.Script (MA.ShelleyMAEra ma c)
 exampleScriptMA =
     MA.RequireMOf 2 $ StrictSeq.fromList [

@@ -537,7 +537,6 @@ translateTxAllegraToMaryWrapper ::
 translateTxAllegraToMaryWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
-
 translateValidatedTxAllegraToMaryWrapper ::
      PraosCrypto c
   => InjectValidatedTx

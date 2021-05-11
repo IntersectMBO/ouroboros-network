@@ -207,29 +207,22 @@ instance c ~ MockCryptoCompatByron
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoBlock c)) where
-  arbitrary =
-    arbitraryNodeToNode BlockByron BlockShelley BlockAllegra BlockMary
+  arbitrary = arbitraryNodeToNode BlockByron BlockShelley BlockAllegra BlockMary
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoHeader c)) where
-  arbitrary =
-    arbitraryNodeToNode HeaderByron HeaderShelley HeaderAllegra HeaderMary
+  arbitrary = arbitraryNodeToNode HeaderByron HeaderShelley HeaderAllegra HeaderMary
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoGenTx c)) where
-  arbitrary =
-    arbitraryNodeToNode GenTxByron GenTxShelley GenTxAllegra GenTxMary
+  arbitrary = arbitraryNodeToNode GenTxByron GenTxShelley GenTxAllegra GenTxMary
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoGenTxId c)) where
-  arbitrary =
-    arbitraryNodeToNode GenTxIdByron
-                        GenTxIdShelley
-                        GenTxIdAllegra
-                        GenTxIdMary
+  arbitrary = arbitraryNodeToNode GenTxIdByron GenTxIdShelley GenTxIdAllegra GenTxIdMary
 
 {-------------------------------------------------------------------------------
   NodeToClient
@@ -381,7 +374,6 @@ instance c ~ MockCryptoCompatByron
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (HardForkApplyTxErrWrongEra <$> arbitrary))
       ]
-{-   TODO
   shrink = traverse aux
     where
       aux :: CardanoApplyTxErr MockCryptoCompatByron
@@ -390,7 +382,6 @@ instance c ~ MockCryptoCompatByron
           HardForkApplyTxErrFromEra . OneEraApplyTxErr <$> shrink x
       aux (HardForkApplyTxErrWrongEra x) =
           HardForkApplyTxErrWrongEra <$> shrink x
--}
 
 instance Arbitrary (Some QueryAnytime) where
   arbitrary = return $ Some GetEraStart
@@ -426,15 +417,15 @@ instance c ~ MockCryptoCompatByron
       , (1, fmap injHardFork <$> arbitrary)
       ]
     where
-      injByron          (SomeSecond query) = SomeSecond (QueryIfCurrentByron     query)
-      injShelley        (SomeSecond query) = SomeSecond (QueryIfCurrentShelley   query)
-      injAllegra        (SomeSecond query) = SomeSecond (QueryIfCurrentAllegra   query)
-      injMary           (SomeSecond query) = SomeSecond (QueryIfCurrentMary      query)
-      injAnytimeByron   (Some      query)  = SomeSecond (QueryAnytimeByron       query)
-      injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley     query)
-      injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra     query)
-      injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary        query)
-      injHardFork       (Some      query)  = SomeSecond (QueryHardFork           query)
+      injByron          (SomeSecond query) = SomeSecond (QueryIfCurrentByron   query)
+      injShelley        (SomeSecond query) = SomeSecond (QueryIfCurrentShelley query)
+      injAllegra        (SomeSecond query) = SomeSecond (QueryIfCurrentAllegra query)
+      injMary           (SomeSecond query) = SomeSecond (QueryIfCurrentMary    query)
+      injAnytimeByron   (Some      query)  = SomeSecond (QueryAnytimeByron     query)
+      injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley   query)
+      injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra   query)
+      injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary      query)
+      injHardFork       (Some      query)  = SomeSecond (QueryHardFork         query)
 
 instance Arbitrary History.EraEnd where
   arbitrary = oneof
@@ -516,9 +507,6 @@ instance c ~ MockCryptoCompatByron
               <*> genQueryAnytimeResultMary)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
-              <*> genQueryAnytimeResultAlonzo)
-      , (1, WithVersion
-              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryHardForkResult)
       ]
     where
@@ -563,10 +551,6 @@ instance c ~ MockCryptoCompatByron
       genQueryAnytimeResultMary :: Gen (SomeResult (CardanoBlock c))
       genQueryAnytimeResultMary =
           SomeResult (QueryAnytimeMary GetEraStart) <$> arbitrary
-
-      genQueryAnytimeResultAlonzo :: Gen (SomeResult (CardanoBlock c))
-      genQueryAnytimeResultAlonzo =
-          SomeResult (QueryAnytimeAlonzo GetEraStart) <$> arbitrary
 
       genQueryHardForkResult :: Gen (SomeResult (CardanoBlock c))
       genQueryHardForkResult = oneof
