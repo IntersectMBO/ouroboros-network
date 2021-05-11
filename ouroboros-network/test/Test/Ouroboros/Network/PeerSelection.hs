@@ -1934,12 +1934,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
 
     policy :: PeerSelectionPolicy SockAddr IO
     policy  = PeerSelectionPolicy {
-                policyPickKnownPeersForGossip = pickTrivially,
-                policyPickColdPeersToForget   = pickTrivially,
-                policyPickColdPeersToPromote  = pickTrivially,
-                policyPickWarmPeersToPromote  = pickTrivially,
-                policyPickHotPeersToDemote    = pickTrivially,
-                policyPickWarmPeersToDemote   = pickTrivially,
+                policyPickKnownPeersForGossip = \_ _ -> pickTrivially,
+                policyPickColdPeersToForget   = \_ _ -> pickTrivially,
+                policyPickColdPeersToPromote  = \_ _ -> pickTrivially,
+                policyPickWarmPeersToPromote  = \_ _ -> pickTrivially,
+                policyPickHotPeersToDemote    = \_ _ -> pickTrivially,
+                policyPickWarmPeersToDemote   = \_ _ -> pickTrivially,
                 policyFindPublicRootTimeout   = 5,
                 policyMaxInProgressGossipReqs = 0,
                 policyGossipRetryTime         = 0, -- seconds

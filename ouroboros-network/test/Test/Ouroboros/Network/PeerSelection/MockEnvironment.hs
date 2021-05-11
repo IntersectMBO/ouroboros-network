@@ -434,12 +434,12 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
     pickWarmPeersToDemoteVar   <- initScript pickWarmPeersToDemote
     pickColdPeersToForgetVar   <- initScript pickColdPeersToForget
     return PeerSelectionPolicy {
-      policyPickKnownPeersForGossip = interpretPickScript pickKnownPeersForGossipVar,
-      policyPickColdPeersToPromote  = interpretPickScript pickColdPeersToPromoteVar,
-      policyPickWarmPeersToPromote  = interpretPickScript pickWarmPeersToPromoteVar,
-      policyPickHotPeersToDemote    = interpretPickScript pickHotPeersToDemoteVar,
-      policyPickWarmPeersToDemote   = interpretPickScript pickWarmPeersToDemoteVar,
-      policyPickColdPeersToForget   = interpretPickScript pickColdPeersToForgetVar,
+      policyPickKnownPeersForGossip = \_ _ -> interpretPickScript pickKnownPeersForGossipVar,
+      policyPickColdPeersToPromote  = \_ _ -> interpretPickScript pickColdPeersToPromoteVar,
+      policyPickWarmPeersToPromote  = \_ _ -> interpretPickScript pickWarmPeersToPromoteVar,
+      policyPickHotPeersToDemote    = \_ _ -> interpretPickScript pickHotPeersToDemoteVar,
+      policyPickWarmPeersToDemote   = \_ _ -> interpretPickScript pickWarmPeersToDemoteVar,
+      policyPickColdPeersToForget   = \_ _ -> interpretPickScript pickColdPeersToForgetVar,
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressGossipReqs = 2,
       policyGossipRetryTime         = 3600, -- seconds
