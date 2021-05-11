@@ -33,6 +33,7 @@ import           Test.Util.Serialisation.Roundtrip
 
 import           Test.Consensus.Cardano.Generators (epochSlots)
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
+import           Test.Consensus.Shelley.Orphans ()
 
 tests :: TestTree
 tests = testGroup "Cardano"
