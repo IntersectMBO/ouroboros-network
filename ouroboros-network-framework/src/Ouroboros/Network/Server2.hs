@@ -128,14 +128,17 @@ run ServerArguments {
       let sockets = NonEmpty.toList serverSockets
       localAddresses <- traverse (getLocalAddr serverSnocket) sockets
       traceWith tracer (TrServerStarted localAddresses)
-      (runConcurrently
-          $ foldr1 (<>)
-          $ Concurrently (inboundGovernor inboundGovernorTracer
-                                          serverControlChannel
-                                          serverProtocolIdleTimeout
-                                          serverConnectionManager
-                                          serverObservableStateVar)
-          : (Concurrently . acceptLoop . accept serverSnocket <$> sockets))
+      let threads = inboundGovernor inboundGovernorTracer
+                                    serverControlChannel
+                                    serverProtocolIdleTimeout
+                                    serverConnectionManager
+                                    serverObservableStateVar
+                  : [ acceptLoop . accept serverSnocket
+                    $ socket
+                    | socket <- sockets
+                    ]
+
+      raceAll threads
         `finally`
           traceWith tracer TrServerStopped
         `catch`
@@ -145,6 +148,11 @@ run ServerArguments {
               Nothing -> traceWith tracer (TrServerError e)
             throwIO e
   where
+    raceAll :: [m x] -> m x
+    raceAll []       = error "raceAll: invariant violation"
+    raceAll [t]      = t
+    raceAll (t : ts) = either id id <$> race t (raceAll ts)
+
     acceptLoop :: Accept m socket peerAddr
                -> m Void
     acceptLoop acceptOne = do
