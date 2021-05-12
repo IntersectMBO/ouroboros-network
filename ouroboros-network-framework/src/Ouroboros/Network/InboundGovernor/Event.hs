@@ -94,11 +94,11 @@ firstMuxToFinish InboundGovernorState { igsConnections } =
 -- restart a mini-protocol and to do the restart.
 --
 data Terminated muxMode peerAddr m a b = Terminated {
-    tConnId       :: !(ConnectionId peerAddr),
-    tMux          :: !(Mux.Mux muxMode m),
-    tMiniProtocol :: !(MiniProtocol muxMode ByteString m a b),
-    tDataFlow     :: !DataFlow,
-    tResult       :: !(Either SomeException b)
+    tConnId           :: !(ConnectionId peerAddr),
+    tMux              :: !(Mux.Mux muxMode m),
+    tMiniProtocolData :: !(MiniProtocolData muxMode m a b),
+    tDataFlow         :: !DataFlow,
+    tResult           :: !(Either SomeException b)
   }
 
 
@@ -121,12 +121,13 @@ firstMiniProtocolToFinish InboundGovernorState { igsConnections } =
         Map.foldrWithKey
           (\miniProtocolNum completionAction inner ->
                 (\tResult -> Terminated {
-                    tConnId       = connId,
-                    tMux          = csMux,
-                    tMiniProtocol = fst (csMiniProtocolMap Map.! miniProtocolNum),
-                    tDataFlow     = csDataFlow,
-                    tResult
-                  })
+                      tConnId           = connId,
+                      tMux              = csMux,
+                      tMiniProtocolData = csMiniProtocolMap Map.! miniProtocolNum,
+                      tDataFlow         = csDataFlow,
+                      tResult
+                    }
+                )
             <$> completionAction
             <|> inner
           )
