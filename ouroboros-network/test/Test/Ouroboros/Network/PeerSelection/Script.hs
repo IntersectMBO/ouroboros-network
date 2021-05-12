@@ -19,7 +19,9 @@ module Test.Ouroboros.Network.PeerSelection.Script (
 
     -- * Pick scripts
     PickScript,
-    interpretPickScript
+    PickMembers(..),
+    arbitraryPickScript,
+    interpretPickScript,
 
   ) where
 
@@ -128,27 +130,39 @@ playTimedScript (Script ((x0,d0) :| script)) = do
 -- choices by their index (modulo the number of choices). This representation
 -- was chosen because it allows easy shrinking.
 --
-type PickScript = Script PickMembers
+type PickScript peeraddr = Script (PickMembers peeraddr)
 
-data PickMembers = PickFirst
-                 | PickAll
-                 | PickSome [Int]
+data PickMembers peeraddr = PickFirst
+                          | PickAll
+                          | PickSome (Set peeraddr)
   deriving (Eq, Show)
 
-instance Arbitrary PickMembers where
-    arbitrary = frequency [ (1, pure PickFirst)
-                          , (1, pure PickAll)
-                          , (2, PickSome <$> listOf1 arbitrarySizedNatural) ]
+instance (Arbitrary peeraddr, Ord peeraddr) =>
+         Arbitrary (PickMembers peeraddr) where
+    arbitrary = arbitraryPickMembers (Set.fromList <$> listOf1 arbitrary)
 
-    shrink (PickSome ixs) = PickAll
+    shrink (PickSome ixs) = PickFirst
+                          : PickAll
                           : [ PickSome ixs'
                             | ixs' <- shrink ixs
-                            , not (null ixs') ]
+                            , not (Set.null ixs') ]
     shrink PickAll        = [PickFirst]
     shrink PickFirst      = []
 
+arbitraryPickMembers :: Gen (Set peeraddr) -> Gen (PickMembers peeraddr)
+arbitraryPickMembers pickSome =
+    frequency [ (1, pure PickFirst)
+              , (1, pure PickAll)
+              , (2, PickSome <$> pickSome)
+              ]
+
+arbitraryPickScript :: Gen (Set peeraddr) -> Gen (PickScript peeraddr)
+arbitraryPickScript pickSome =
+    sized $ \sz ->
+      arbitraryScriptOf sz (arbitraryPickMembers pickSome)
+
 interpretPickScript :: (MonadSTMTx stm, Ord peeraddr)
-                    => TVar_ stm PickScript
+                    => TVar_ stm (PickScript peeraddr)
                     -> Set peeraddr
                     -> Int
                     -> stm (Set peeraddr)
@@ -166,14 +180,13 @@ interpretPickScript scriptVar available pickNum
        return (interpretPickMembers pickmembers available pickNum)
 
 interpretPickMembers :: Ord peeraddr
-                     => PickMembers -> Set peeraddr -> Int -> Set peeraddr
-interpretPickMembers PickFirst      ps _ = Set.singleton (Set.elemAt 0 ps)
-interpretPickMembers PickAll        ps n = Set.take n ps
-interpretPickMembers (PickSome ixs) ps n = pickMapKeys ps (take n ixs)
-
-pickMapKeys :: Ord a => Set a -> [Int] -> Set a
-pickMapKeys m ns =
-    Set.fromList (map pick ns)
+                     => PickMembers peeraddr
+                     -> Set peeraddr -> Int -> Set peeraddr
+interpretPickMembers PickFirst     ps _ = Set.singleton (Set.elemAt 0 ps)
+interpretPickMembers PickAll       ps n = Set.take n ps
+interpretPickMembers (PickSome as) ps n
+  | Set.null ps' = Set.singleton (Set.elemAt 0 ps)
+  | otherwise    = Set.take n ps'
   where
-    pick n = Set.elemAt i m where i = n `mod` Set.size m
+    ps' = Set.intersection ps as
 
