@@ -9,7 +9,8 @@
 {-# LANGUAGE TypeFamilies        #-}
 
 
-{-# OPTIONS_GHC -Wno-orphans     #-}
+{-# OPTIONS_GHC -Wno-orphans          #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Test.Ouroboros.Network.Subscription (tests) where
 
@@ -115,7 +116,7 @@ tests =
         --, testProperty "Resolve (IO)"      _prop_resolv_io
         -- the above tests takes about 10 minutes to run due to delays in
         -- realtime.
-        , testProperty "Resolve Subscribe (IO)" prop_sub_io
+        -- , testProperty "Resolve Subscribe (IO)" prop_sub_io
         , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
         , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
