@@ -552,6 +552,7 @@ mkAllegraSetDecentralizationParamTxs ::
      , Core.Value  era ~ SL.Coin
      , Core.PParams era ~ SL.PParams era
      , Core.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
+     , Core.Witnesses era ~ SL.WitnessSet era
      )
   => [CoreNode (Core.Crypto era)]
   -> ProtVer   -- ^ The proposed protocol version
