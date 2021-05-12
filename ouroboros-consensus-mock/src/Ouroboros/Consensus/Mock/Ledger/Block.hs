@@ -24,8 +24,8 @@
 -- None of the definitions in this module depend on, or even refer to, any
 -- specific consensus protocols.
 module Ouroboros.Consensus.Mock.Ledger.Block (
-    Header (..)
-  , Query (..)
+    BlockQuery (..)
+  , Header (..)
   , SimpleBlock
   , SimpleBlock' (..)
   , SimpleBody (..)
@@ -490,25 +490,25 @@ txSize = fromIntegral . Lazy.length . serialise
   Support for QueryLedger
 -------------------------------------------------------------------------------}
 
-data instance Query (SimpleBlock c ext) result where
-    QueryLedgerTip :: Query (SimpleBlock c ext) (Point (SimpleBlock c ext))
+data instance BlockQuery (SimpleBlock c ext) result where
+    QueryLedgerTip :: BlockQuery (SimpleBlock c ext) (Point (SimpleBlock c ext))
 
 instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
-  answerQuery _cfg QueryLedgerTip =
+  answerBlockQuery _cfg QueryLedgerTip =
         castPoint
       . ledgerTipPoint (Proxy @(SimpleBlock c ext))
       . ledgerState
 
-instance SameDepIndex (Query (SimpleBlock c ext)) where
+instance SameDepIndex (BlockQuery (SimpleBlock c ext)) where
   sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
-deriving instance Show (Query (SimpleBlock c ext) result)
+deriving instance Show (BlockQuery (SimpleBlock c ext) result)
 
 instance (Typeable c, Typeable ext)
-    => ShowProxy (Query (SimpleBlock c ext)) where
+    => ShowProxy (BlockQuery (SimpleBlock c ext)) where
 
 instance (SimpleCrypto c, Typeable ext)
-      => ShowQuery (Query (SimpleBlock c ext)) where
+      => ShowQuery (BlockQuery (SimpleBlock c ext)) where
   showResult QueryLedgerTip = show
 
 {-------------------------------------------------------------------------------

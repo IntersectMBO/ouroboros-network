@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query (Query (..))
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
@@ -156,7 +157,7 @@ mkClient
        (Query TestBlock)
        m
        [(Maybe (Point TestBlock), Either AcquireFailure (Point TestBlock))]
-mkClient points = localStateQueryClient [(pt, QueryLedgerTip) | pt <- points]
+mkClient points = localStateQueryClient [(pt, BlockQuery QueryLedgerTip) | pt <- points]
 
 mkServer
   :: IOLike m

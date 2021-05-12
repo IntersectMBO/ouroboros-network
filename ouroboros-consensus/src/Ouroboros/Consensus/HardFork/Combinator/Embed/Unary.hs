@@ -614,13 +614,13 @@ instance Isomorphic SerialisedHeader where
   TODO: Class?
 -------------------------------------------------------------------------------}
 
--- | Project 'Query'
+-- | Project 'BlockQuery'
 --
 -- Not an instance of 'Isomorphic' because the types change.
-projQuery :: Query (HardForkBlock '[b]) result
+projQuery :: BlockQuery (HardForkBlock '[b]) result
           -> (forall result'.
                   (result :~: HardForkQueryResult '[b] result')
-               -> Query b result'
+               -> BlockQuery b result'
                -> a)
           -> a
 projQuery qry k =
@@ -630,24 +630,24 @@ projQuery qry k =
       (\Refl prfNonEmpty _ _ -> case prfNonEmpty of {})
       (\Refl prfNonEmpty _   -> case prfNonEmpty of {})
   where
-    aux :: QueryIfCurrent '[b] result -> Query b result
+    aux :: QueryIfCurrent '[b] result -> BlockQuery b result
     aux (QZ q) = q
     aux (QS q) = case q of {}
 
-projQuery' :: Query (HardForkBlock '[b]) result
+projQuery' :: BlockQuery (HardForkBlock '[b]) result
            -> ProjHardForkQuery b result
 projQuery' qry = projQuery qry $ \Refl -> ProjHardForkQuery
 
 data ProjHardForkQuery b :: Type -> Type where
   ProjHardForkQuery ::
-       Query b result'
+       BlockQuery b result'
     -> ProjHardForkQuery b (HardForkQueryResult '[b] result')
 
--- | Inject 'Query'
+-- | Inject 'BlockQuery'
 --
 -- Not an instance of 'Isomorphic' because the types change.
-injQuery :: Query b result
-         -> Query (HardForkBlock '[b]) (HardForkQueryResult '[b] result)
+injQuery :: BlockQuery b result
+         -> BlockQuery (HardForkBlock '[b]) (HardForkQueryResult '[b] result)
 injQuery = QueryIfCurrent . QZ
 
 projQueryResult :: HardForkQueryResult '[b] result -> result

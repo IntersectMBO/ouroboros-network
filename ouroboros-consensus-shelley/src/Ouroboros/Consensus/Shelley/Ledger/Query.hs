@@ -12,8 +12,8 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Query (
-    NonMyopicMemberRewards (..)
-  , Query (..)
+    BlockQuery (..)
+  , NonMyopicMemberRewards (..)
   , querySupportedVersion
     -- * Serialisation
   , decodeShelleyQuery
@@ -79,18 +79,18 @@ instance SL.PraosCrypto c => Serialise (NonMyopicMemberRewards c) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
 
-data instance Query (ShelleyBlock era) :: Type -> Type where
-  GetLedgerTip :: Query (ShelleyBlock era) (Point (ShelleyBlock era))
-  GetEpochNo :: Query (ShelleyBlock era) EpochNo
+data instance BlockQuery (ShelleyBlock era) :: Type -> Type where
+  GetLedgerTip :: BlockQuery (ShelleyBlock era) (Point (ShelleyBlock era))
+  GetEpochNo :: BlockQuery (ShelleyBlock era) EpochNo
   -- | Calculate the Non-Myopic Pool Member Rewards for a set of
   -- credentials. See 'SL.getNonMyopicMemberRewards'
   GetNonMyopicMemberRewards
     :: Set (Either SL.Coin (SL.Credential 'SL.Staking (EraCrypto era)))
-    -> Query (ShelleyBlock era) (NonMyopicMemberRewards (EraCrypto era))
+    -> BlockQuery (ShelleyBlock era) (NonMyopicMemberRewards (EraCrypto era))
   GetCurrentPParams
-    :: Query (ShelleyBlock era) (LC.PParams era)
+    :: BlockQuery (ShelleyBlock era) (LC.PParams era)
   GetProposedPParamsUpdates
-    :: Query (ShelleyBlock era) (SL.ProposedPPUpdates era)
+    :: BlockQuery (ShelleyBlock era) (SL.ProposedPPUpdates era)
   -- | This gets the stake distribution, but not in terms of _active_ stake
   -- (which we need for the leader schedule), but rather in terms of _total_
   -- stake, which is relevant for rewards. It is used by the wallet to show
@@ -98,17 +98,17 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   -- an endpoint that provides all the information that the wallet wants about
   -- pools, in an extensible fashion.
   GetStakeDistribution
-    :: Query (ShelleyBlock era) (SL.PoolDistr (EraCrypto era))
+    :: BlockQuery (ShelleyBlock era) (SL.PoolDistr (EraCrypto era))
   GetFilteredUTxO
     :: Set (SL.Addr (EraCrypto era))
-    -> Query (ShelleyBlock era) (SL.UTxO era)
+    -> BlockQuery (ShelleyBlock era) (SL.UTxO era)
   GetUTxO
-    :: Query (ShelleyBlock era) (SL.UTxO era)
+    :: BlockQuery (ShelleyBlock era) (SL.UTxO era)
 
   -- | Only for debugging purposes, we make no effort to ensure binary
   -- compatibility (cf the comment on 'GetCBOR'). Moreover, it is huge.
   DebugEpochState
-    :: Query (ShelleyBlock era) (SL.EpochState era)
+    :: BlockQuery (ShelleyBlock era) (SL.EpochState era)
 
   -- | Wrap the result of the query using CBOR-in-CBOR.
   --
@@ -124,29 +124,29 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   -- decode it, the client can fall back to pretty printing the actual CBOR,
   -- which is better than no output at all.
   GetCBOR
-    :: Query (ShelleyBlock era) result
-    -> Query (ShelleyBlock era) (Serialised result)
+    :: BlockQuery (ShelleyBlock era) result
+    -> BlockQuery (ShelleyBlock era) (Serialised result)
 
   GetFilteredDelegationsAndRewardAccounts
     :: Set (SL.Credential 'SL.Staking (EraCrypto era))
-    -> Query (ShelleyBlock era)
+    -> BlockQuery (ShelleyBlock era)
              (Delegations (EraCrypto era), SL.RewardAccounts (EraCrypto era))
 
   GetGenesisConfig
-    :: Query (ShelleyBlock era) (CompactGenesis era)
+    :: BlockQuery (ShelleyBlock era) (CompactGenesis era)
 
   -- | Only for debugging purposes, we make no effort to ensure binary
   -- compatibility (cf the comment on 'GetCBOR'). Moreover, it is huge.
   DebugNewEpochState
-    :: Query (ShelleyBlock era) (SL.NewEpochState era)
+    :: BlockQuery (ShelleyBlock era) (SL.NewEpochState era)
 
   -- | Only for debugging purposes, we make no effort to ensure binary
   -- compatibility (cf the comment on 'GetCBOR').
   DebugChainDepState
-    :: Query (ShelleyBlock era) (SL.ChainDepState (EraCrypto era))
+    :: BlockQuery (ShelleyBlock era) (SL.ChainDepState (EraCrypto era))
 
   GetRewardProvenance
-    :: Query (ShelleyBlock era) (SL.RewardProvenance (EraCrypto era))
+    :: BlockQuery (ShelleyBlock era) (SL.RewardProvenance (EraCrypto era))
 
   -- WARNING: please add new queries to the end of the list and stick to this
   -- order in all other pattern matches on queries. This helps in particular
@@ -162,10 +162,10 @@ data instance Query (ShelleyBlock era) :: Type -> Type where
   -- longer used (because mainnet has hard-forked to a newer version), it can be
   -- removed.
 
-instance Typeable era => ShowProxy (Query (ShelleyBlock era)) where
+instance Typeable era => ShowProxy (BlockQuery (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
-  answerQuery cfg query ext =
+  answerBlockQuery cfg query ext =
       case query of
         GetLedgerTip ->
           shelleyLedgerTipPoint lst
@@ -188,7 +188,7 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
           getEpochState st
         GetCBOR query' ->
           mkSerialised (encodeShelleyResult query') $
-            answerQuery cfg query' ext
+            answerBlockQuery cfg query' ext
         GetFilteredDelegationsAndRewardAccounts creds ->
           getFilteredDelegationsAndRewardAccounts st creds
         GetGenesisConfig ->
@@ -213,7 +213,7 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
       hst = headerState ext
       st  = shelleyLedgerState lst
 
-instance SameDepIndex (Query (ShelleyBlock era)) where
+instance SameDepIndex (BlockQuery (ShelleyBlock era)) where
   sameDepIndex GetLedgerTip GetLedgerTip
     = Just Refl
   sameDepIndex GetLedgerTip _
@@ -285,10 +285,10 @@ instance SameDepIndex (Query (ShelleyBlock era)) where
   sameDepIndex GetRewardProvenance _
     = Nothing
 
-deriving instance Eq   (Query (ShelleyBlock era) result)
-deriving instance Show (Query (ShelleyBlock era) result)
+deriving instance Eq   (BlockQuery (ShelleyBlock era) result)
+deriving instance Show (BlockQuery (ShelleyBlock era) result)
 
-instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
+instance ShelleyBasedEra era => ShowQuery (BlockQuery (ShelleyBlock era)) where
   showResult = \case
       GetLedgerTip                               -> show
       GetEpochNo                                 -> show
@@ -307,7 +307,7 @@ instance ShelleyBasedEra era => ShowQuery (Query (ShelleyBlock era)) where
       GetRewardProvenance                        -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
-querySupportedVersion :: Query (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
+querySupportedVersion :: BlockQuery (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
 querySupportedVersion = \case
     GetLedgerTip                               -> (>= v1)
     GetEpochNo                                 -> (>= v1)
@@ -365,7 +365,7 @@ getFilteredDelegationsAndRewardAccounts ss creds =
 
 encodeShelleyQuery ::
      ShelleyBasedEra era
-  => Query (ShelleyBlock era) result -> Encoding
+  => BlockQuery (ShelleyBlock era) result -> Encoding
 encodeShelleyQuery query = case query of
     GetLedgerTip ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 0
@@ -400,7 +400,7 @@ encodeShelleyQuery query = case query of
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
-  => Decoder s (SomeSecond Query (ShelleyBlock era))
+  => Decoder s (SomeSecond BlockQuery (ShelleyBlock era))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
@@ -426,7 +426,7 @@ decodeShelleyQuery = do
 
 encodeShelleyResult ::
      ShelleyBasedEra era
-  => Query (ShelleyBlock era) result -> result -> Encoding
+  => BlockQuery (ShelleyBlock era) result -> result -> Encoding
 encodeShelleyResult query = case query of
     GetLedgerTip                               -> encodePoint encode
     GetEpochNo                                 -> encode
@@ -446,7 +446,7 @@ encodeShelleyResult query = case query of
 
 decodeShelleyResult ::
      ShelleyBasedEra era
-  => Query (ShelleyBlock era) result
+  => BlockQuery (ShelleyBlock era) result
   -> forall s. Decoder s result
 decodeShelleyResult query = case query of
     GetLedgerTip                               -> decodePoint decode

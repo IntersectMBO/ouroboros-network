@@ -79,7 +79,7 @@ injectNestedCtxt_ idx nc = case idx of
 injectQuery ::
      forall x xs result.
      Index xs x
-  -> Query x result
+  -> BlockQuery x result
   -> QueryIfCurrent xs result
 injectQuery idx q = case idx of
     IZ      -> QZ q
@@ -142,7 +142,7 @@ instance Inject WrapApplyTxErr where
       (WrapApplyTxErr . HardForkApplyTxErrFromEra)
         .: injectNS' (Proxy @WrapApplyTxErr)
 
-instance Inject (SomeSecond Query) where
+instance Inject (SomeSecond BlockQuery) where
   inject _ idx (SomeSecond q) = SomeSecond (QueryIfCurrent (injectQuery idx q))
 
 instance Inject AnnTip where

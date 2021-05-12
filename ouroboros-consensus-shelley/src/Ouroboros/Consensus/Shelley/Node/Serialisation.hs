@@ -122,7 +122,7 @@ data ShelleyEncoderException era =
     -- | A query was submitted that is not supported by the given
     -- 'ShelleyNodeToClientVersion'.
     ShelleyEncoderUnsupportedQuery
-         (SomeSecond Query (ShelleyBlock era))
+         (SomeSecond BlockQuery (ShelleyBlock era))
          ShelleyNodeToClientVersion
   deriving (Show)
 
@@ -151,7 +151,7 @@ instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (SL.App
   decodeNodeToClient _ _ = fromCBOR
 
 instance ShelleyBasedEra era
-      => SerialiseNodeToClient (ShelleyBlock era) (SomeSecond Query (ShelleyBlock era)) where
+      => SerialiseNodeToClient (ShelleyBlock era) (SomeSecond BlockQuery (ShelleyBlock era)) where
   encodeNodeToClient _ version (SomeSecond q)
     | querySupportedVersion q version
     = encodeShelleyQuery q
@@ -159,7 +159,7 @@ instance ShelleyBasedEra era
     = throw $ ShelleyEncoderUnsupportedQuery (SomeSecond q) version
   decodeNodeToClient _ _ = decodeShelleyQuery
 
-instance ShelleyBasedEra era => SerialiseResult (ShelleyBlock era) (Query (ShelleyBlock era)) where
+instance ShelleyBasedEra era => SerialiseResult (ShelleyBlock era) (BlockQuery (ShelleyBlock era)) where
   encodeResult _ _ = encodeShelleyResult
   decodeResult _ _ = decodeShelleyResult
 

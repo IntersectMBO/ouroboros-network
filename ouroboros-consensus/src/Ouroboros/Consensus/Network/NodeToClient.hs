@@ -162,7 +162,7 @@ type ClientCodecs blk  m =
 defaultCodecs :: forall m blk.
                  ( MonadST m
                  , SerialiseNodeToClientConstraints blk
-                 , ShowQuery (Query blk)
+                 , ShowQuery (BlockQuery blk)
                  )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
@@ -211,7 +211,7 @@ defaultCodecs ccfg version networkVersion = Codecs {
 clientCodecs :: forall m blk.
                 ( MonadST m
                 , SerialiseNodeToClientConstraints blk
-                , ShowQuery (Query blk)
+                , ShowQuery (BlockQuery blk)
                 )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk
@@ -303,7 +303,7 @@ nullTracers = Tracers {
 showTracers :: ( Show peer
                , Show (GenTx blk)
                , Show (ApplyTxErr blk)
-               , ShowQuery (Query blk)
+               , ShowQuery (BlockQuery blk)
                , HasHeader blk
                )
             => Tracer m String -> Tracers m peer blk e
@@ -341,9 +341,9 @@ mkApps
      , Exception e
      , ShowProxy blk
      , ShowProxy (ApplyTxErr blk)
-     , ShowProxy (Query blk)
+     , ShowProxy (BlockQuery blk)
      , ShowProxy (GenTx blk)
-     , ShowQuery (Query blk)
+     , ShowQuery (BlockQuery blk)
      )
   => NodeKernel m remotePeer localPeer blk
   -> Tracers m localPeer blk e

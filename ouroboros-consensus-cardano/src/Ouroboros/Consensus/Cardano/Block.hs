@@ -37,10 +37,10 @@ module Ouroboros.Consensus.Cardano.Block (
   , CardanoTipInfo
   , OneEraTipInfo (TipInfoByron, TipInfoShelley, TipInfoAllegra, TipInfoMary)
     -- * Query
+  , BlockQuery (QueryIfCurrentByron, QueryIfCurrentShelley, QueryIfCurrentAllegra, QueryIfCurrentMary, QueryAnytimeByron, QueryAnytimeShelley, QueryAnytimeAllegra, QueryAnytimeMary, QueryHardFork)
   , CardanoQuery
   , CardanoQueryResult
   , Either (QueryResultSuccess, QueryResultEraMismatch)
-  , Query (QueryIfCurrentByron, QueryIfCurrentShelley, QueryIfCurrentAllegra, QueryIfCurrentMary, QueryAnytimeByron, QueryAnytimeShelley, QueryAnytimeAllegra, QueryAnytimeMary, QueryHardFork)
     -- * CodecConfig
   , CardanoCodecConfig
   , CodecConfig (CardanoCodecConfig)
@@ -394,14 +394,14 @@ pattern TipInfoMary ti = OneEraTipInfo (S (S (S (Z (WrapTipInfo ti)))))
 -------------------------------------------------------------------------------}
 
 -- | The 'Query' of Cardano chain.
-type CardanoQuery c = Query (CardanoBlock c)
+type CardanoQuery c = BlockQuery (CardanoBlock c)
 
 -- | Byron-specific query that can only be answered when the ledger is in the
 -- Byron era.
 pattern QueryIfCurrentByron
   :: ()
   => CardanoQueryResult c result ~ a
-  => Query ByronBlock result
+  => BlockQuery ByronBlock result
   -> CardanoQuery c a
 pattern QueryIfCurrentByron q = QueryIfCurrent (QZ q)
 
@@ -410,7 +410,7 @@ pattern QueryIfCurrentByron q = QueryIfCurrent (QZ q)
 pattern QueryIfCurrentShelley
   :: ()
   => CardanoQueryResult c result ~ a
-  => Query (ShelleyBlock (ShelleyEra c)) result
+  => BlockQuery (ShelleyBlock (ShelleyEra c)) result
   -> CardanoQuery c a
 pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 
@@ -419,7 +419,7 @@ pattern QueryIfCurrentShelley q = QueryIfCurrent (QS (QZ q))
 pattern QueryIfCurrentAllegra
   :: ()
   => CardanoQueryResult c result ~ a
-  => Query (ShelleyBlock (AllegraEra c)) result
+  => BlockQuery (ShelleyBlock (AllegraEra c)) result
   -> CardanoQuery c a
 pattern QueryIfCurrentAllegra q = QueryIfCurrent (QS (QS (QZ q)))
 
@@ -428,7 +428,7 @@ pattern QueryIfCurrentAllegra q = QueryIfCurrent (QS (QS (QZ q)))
 pattern QueryIfCurrentMary
   :: ()
   => CardanoQueryResult c result ~ a
-  => Query (ShelleyBlock (MaryEra c)) result
+  => BlockQuery (ShelleyBlock (MaryEra c)) result
   -> CardanoQuery c a
 pattern QueryIfCurrentMary q = QueryIfCurrent (QS (QS (QS (QZ q))))
 

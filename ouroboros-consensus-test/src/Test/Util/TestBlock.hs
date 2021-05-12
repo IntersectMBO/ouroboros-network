@@ -21,9 +21,9 @@
 module Test.Util.TestBlock (
     -- * Blocks
     BlockConfig (..)
+  , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
-  , Query (..)
   , StorageConfig (..)
   , TestBlock (..)
   , TestBlockError (..)
@@ -375,20 +375,20 @@ instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
   hardForkSummary = neverForksHardForkSummary id
 
-data instance Query TestBlock result where
-  QueryLedgerTip :: Query TestBlock (Point TestBlock)
+data instance BlockQuery TestBlock result where
+  QueryLedgerTip :: BlockQuery TestBlock (Point TestBlock)
 
 instance QueryLedger TestBlock where
-  answerQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
+  answerBlockQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
 
-instance SameDepIndex (Query TestBlock) where
+instance SameDepIndex (BlockQuery TestBlock) where
   sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
-deriving instance Eq (Query TestBlock result)
-deriving instance Show (Query TestBlock result)
+deriving instance Eq (BlockQuery TestBlock result)
+deriving instance Show (BlockQuery TestBlock result)
 
-instance ShowQuery (Query TestBlock) where
+instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
 
 testInitLedger :: LedgerState TestBlock

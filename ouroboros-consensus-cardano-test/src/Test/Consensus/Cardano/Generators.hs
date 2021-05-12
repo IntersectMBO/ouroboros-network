@@ -105,9 +105,9 @@ instance Arbitrary (BlockNodeToNodeVersion blk)
 
 arbitraryNodeToNode
   :: ( Arbitrary (WithVersion ByronNodeToNodeVersion byron)
-     , Arbitrary shelley
-     , Arbitrary allegra
-     , Arbitrary mary
+     , Arbitrary (WithVersion ShelleyNodeToNodeVersion shelley)
+     , Arbitrary (WithVersion ShelleyNodeToNodeVersion allegra)
+     , Arbitrary (WithVersion ShelleyNodeToNodeVersion mary)
      )
   => (byron   -> cardano)
   -> (shelley -> cardano)
@@ -378,7 +378,7 @@ instance CardanoHardForkConstraints c
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
-                                (SomeSecond Query (CardanoBlock c))) where
+                                (SomeSecond BlockQuery (CardanoBlock c))) where
   arbitrary = frequency
       [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary)
       , (1, WithVersion
