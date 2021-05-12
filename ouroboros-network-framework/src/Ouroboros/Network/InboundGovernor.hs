@@ -182,7 +182,7 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
           case Map.lookup cid m of
             Nothing -> return [StatusIdle]
             Just cs -> sequence $
-                      let tempProtocols = Map.keys . Map.filter ((== temp) . snd)
+                      let tempProtocols = Map.keys . Map.filter ((== temp) . mpdMiniProtocolTemp)
                        in Map.elems
                         . Map.filterWithKey (\(num, _) _ -> num `elem` tempProtocols (csMiniProtocolMap cs) )
                         . Mux.miniProtocolStateMap
@@ -232,15 +232,21 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                         -- connection
                         Nothing -> do
                           let csMPMHot =
-                                [ (miniProtocolNum mpH, (mpH, Hot))
+                                [ ( miniProtocolNum mpH
+                                  , MiniProtocolData mpH Hot
+                                  )
                                 | mpH <- projectBundle TokHot muxBundle
                                 ]
                               csMPMWarm =
-                                [ (miniProtocolNum mpW, (mpW, Warm))
+                                [ ( miniProtocolNum mpW
+                                  , MiniProtocolData mpW Warm
+                                  )
                                 | mpW <- projectBundle TokWarm muxBundle
                                 ]
                               csMPMEstablished =
-                                [ (miniProtocolNum mpE, (mpE, Established))
+                                [ ( miniProtocolNum mpE
+                                  , MiniProtocolData mpE Established
+                                  )
                                 | mpE <- projectBundle TokEstablished muxBundle
                                 ]
                               csMiniProtocolMap =
@@ -250,9 +256,9 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                           mCompletionMap
                             <-
                             foldM
-                              (\acc (miniProtocol, _) -> do
+                              (\acc MiniProtocolData { mpdMiniProtocol } -> do
                                  result <- runResponder
-                                             csMux miniProtocol
+                                             csMux mpdMiniProtocol
                                              Mux.StartOnDemand
                                  case result of
                                    -- synchronous exceptions when starting
@@ -260,12 +266,12 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                                    -- close the connection and allow the server
                                    -- to continue.
                                    Left err -> do
-                                     traceWith tracer (TrResponderStartFailure connId (miniProtocolNum miniProtocol) err)
+                                     traceWith tracer (TrResponderStartFailure connId (miniProtocolNum mpdMiniProtocol) err)
                                      Mux.stopMux csMux
                                      return Nothing
 
                                    Right completion ->  do
-                                     let acc' = Map.insert (miniProtocolNum miniProtocol)
+                                     let acc' = Map.insert (miniProtocolNum mpdMiniProtocol)
                                                            completion
                                             <$> acc
                                      -- force under lazy 'Maybe'
@@ -330,10 +336,10 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
           Terminated {
               tConnId,
               tMux,
-              tMiniProtocol,
+              tMiniProtocolData = MiniProtocolData { mpdMiniProtocol },
               tResult
             } ->
-          let num = miniProtocolNum tMiniProtocol in
+          let num = miniProtocolNum mpdMiniProtocol in
           case tResult of
             Left e -> do
               -- a mini-protocol errored.  In this case mux will shutdown, and
@@ -347,7 +353,7 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
 
             Right _ -> do
               result
-                <- runResponder tMux tMiniProtocol Mux.StartOnDemand
+                <- runResponder tMux mpdMiniProtocol Mux.StartOnDemand
               case result of
                 Right completionAction -> do
                   traceWith tracer (TrResponderRestarted tConnId num)
