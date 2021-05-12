@@ -404,8 +404,8 @@ mockPeerSelectionActions' tracer
     monitorPeerConnection (PeerConn _peeraddr conn) = readTVar conn
 
 
-snapshotPeersStatus :: MonadSTMTx stm
-                    => TVar_ stm (Map PeerAddr (TVar_ stm PeerStatus))
+snapshotPeersStatus :: MonadSTMTx stm tvar tmvar tqueue tbqueue
+                    => tvar (Map PeerAddr (tvar PeerStatus))
                     -> stm (Map PeerAddr PeerStatus)
 snapshotPeersStatus connsVar = do
     conns <- readTVar connsVar
