@@ -200,7 +200,7 @@ firstPeerPromotedToWarm InboundGovernorState { igsConnections } =
        -> STM m (ConnectionId peerAddr)
        -> STM m (ConnectionId peerAddr)
     fn connId =
-      \(_miniProtcolNum, miniProtocolDir)
+      \(_miniProtocolNum, miniProtocolDir)
       miniProtocolStatus
       inner ->
         case miniProtocolDir of
@@ -320,12 +320,12 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } =
                   (Mux.miniProtocolStateMap csMux)
                 ) $> WaitIdleRemote connId
 
-          -- Possible for both 'Unidirectional' and 'Duplex' connections; In
-          -- non-compat mode wait for first of:
+          -- Possible for both 'Unidirectional' and 'Duplex' connections.  Wait
+          -- for first of:
           --
           -- 1. timeout, in which case we will transition to 'RemoteCold',
           -- 2. one of mini-protocols to wake up, in which case we transition
-          --    back to 'RemoteEstablished';
+          --    to 'RemoteWarm';
           -- 3. mux stopped;
           --
           -- This is done to solve a situation where one of the mini-protocols
@@ -346,7 +346,8 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } =
                                (miniProtocolStatus >>= \case
                                  StatusIdle          -> retry
                                  StatusStartOnDemand -> retry
-                                 StatusRunning       -> return (AwakeRemote connId))
+                                 StatusRunning       -> return (AwakeRemote connId)
+                               )
                             <|> inner
                     )
                     (
