@@ -459,6 +459,7 @@ withBidirectionalConnectionManager
           InitiatorResponderMode socket peerAddr
           UnversionedProtocol ByteString m [resp] acc
        -> peerAddr
+       -> Async m Void
        -> m a)
     -> m a
 withBidirectionalConnectionManager name snocket socket localAddress
@@ -543,9 +544,9 @@ withBidirectionalConnectionManager name snocket socket localAddress
                     serverObservableStateVar = observableStateVar
                   }
               )
-              (\_ -> k connectionManager serverAddr)
+              (\serverAsync -> k connectionManager serverAddr serverAsync)
           `catch` \(e :: SomeException) -> do
-            Debug.traceShowM e
+            say (show e)
             throwIO e
   where
     -- for a bidirectional mux we need to define 'Mu.xMiniProtocolInfo' for each
@@ -785,7 +786,8 @@ unidirectionalExperiment snocket socket clientAndServerData = do
       $ \connectionManager ->
         withBidirectionalConnectionManager
           "server" snocket socket Nothing clientAndServerData
-          $ \_ serverAddr -> do
+          $ \_ serverAddr serverAsync -> do
+            link serverAsync
             -- client → server: connect
             (rs :: [Either SomeException (Bundle [resp])]) <-
                 replicateM
@@ -869,10 +871,12 @@ bidirectionalExperiment
       -- forces to block until negotiation is done, which is not ideal.
       withBidirectionalConnectionManager
         "node-0" snocket socket0 (Just localAddr0) clientAndServerData0
-        (\connectionManager0 _serverAddr0 ->
+        (\connectionManager0 _serverAddr0 serverAsync0 ->
           withBidirectionalConnectionManager
             "node-1" snocket socket1 (Just localAddr1) clientAndServerData1
-            (\connectionManager1 _serverAddr1 -> do
+            (\connectionManager1 _serverAddr1 serverAsync1 -> do
+              link serverAsync0
+              link serverAsync1
               -- runInitiatorProtocols returns a list of results per each
               -- protocol in each bucket (warm \/ hot \/ established); but
               -- we run only one mini-protocol. We can use `concat` to
@@ -925,6 +929,7 @@ bidirectionalExperiment
                         Disconnected _ err ->
                           throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   )))
+
               pure $
                 foldr
                   (\(r, expected) acc ->
@@ -968,10 +973,12 @@ prop_bidirectional_IO data0 data1 =
 #endif
             -- TODO: use ephemeral ports
             let hints = Socket.defaultHints { Socket.addrFlags = [Socket.AI_ADDRCONFIG, Socket.AI_PASSIVE] }
-            addr0 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "6000")
-            addr1 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "6001")
+            addr0 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
+            addr1 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
             Socket.bind socket0 (Socket.addrAddress addr0)
             Socket.bind socket1 (Socket.addrAddress addr1)
+            addr0' <- Socket.getSocketName socket0
+            addr1' <- Socket.getSocketName socket1
             Socket.listen socket0 10
             Socket.listen socket1 10
 
@@ -979,8 +986,8 @@ prop_bidirectional_IO data0 data1 =
               (socketSnocket iomgr)
               socket0
               socket1
-              (Socket.addrAddress addr0)
-              (Socket.addrAddress addr1)
+              addr0'
+              addr1'
               data0
               data1
 

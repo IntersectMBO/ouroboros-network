@@ -1,8 +1,10 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- Inbound protocol governor state.
 --
@@ -15,10 +17,12 @@ module Ouroboros.Network.InboundGovernor.State
   , InboundGovernorState (..)
   , ConnectionState (..)
   , InboundGovernorCounters (..)
+  , inboundGovernorCounters
   , unregisterConnection
   , updateMiniProtocol
-  , RemoteState (..)
+  , RemoteState (.., RemoteEstablished)
   , updateRemoteState
+  , MiniProtocolData (..)
   ) where
 
 import           Control.Exception (assert)
@@ -67,7 +71,7 @@ newObservableStateVarIO = do
     newObservableStateVar igsPrng
 
 
--- | Useful for testing, is is using 'Rnd.mkStdGen'.
+-- | Useful for testing, it is using 'Rnd.mkStdGen'.
 --
 newObservableStateVarFromSeed
     :: MonadSTM m
@@ -90,17 +94,48 @@ data InboundGovernorState muxMode peerAddr m a b =
 
         -- | PRNG available to 'PrunePolicy'.
         --
-        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState),
-
-        -- | Map of connection ids and respective remote temperature
-        --
-        igsRemoteTemperatures :: !(Map (ConnectionId peerAddr)
-                                       ProtocolTemperature),
-
-        -- | Cached metric counters
-        --
-        igsCounters :: !InboundGovernorCounters
+        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState)
       }
+
+-- | Counters for tracing and analysis purposes
+--
+data InboundGovernorCounters = InboundGovernorCounters {
+      warmPeersRemote :: !Int,
+      -- ^ number of remote peers that have the local peer as warm
+      hotPeersRemote  :: !Int
+      -- ^ number of remote peers that have the local peer as hot
+    }
+  deriving Show
+
+instance Semigroup InboundGovernorCounters where
+    InboundGovernorCounters w h <> InboundGovernorCounters w' h' =
+      InboundGovernorCounters (w + w') (h + h')
+
+instance Monoid InboundGovernorCounters where
+    mempty = InboundGovernorCounters 0 0
+
+
+inboundGovernorCounters :: InboundGovernorState muxMode peerAddr m a b
+                        -> InboundGovernorCounters
+inboundGovernorCounters InboundGovernorState { igsConnections } =
+    foldMap (\ConnectionState { csRemoteState } ->
+              case csRemoteState of
+                RemoteWarm -> InboundGovernorCounters 1 0
+                RemoteHot  -> InboundGovernorCounters 0 1
+                _          -> mempty
+            )
+            igsConnections
+
+
+data MiniProtocolData muxMode m a b = MiniProtocolData {
+    -- | Static 'MiniProtocol' description.
+    --
+    mpdMiniProtocol      :: !(MiniProtocol muxMode ByteString m a b),
+
+    -- | Static mini-protocol temperature.
+    --
+    mpdMiniProtocolTemp  :: !ProtocolTemperature
+  }
 
 
 -- | Per connection state tracked by /inbound protocol governor/.
@@ -118,8 +153,7 @@ data ConnectionState muxMode peerAddr m a b = ConnectionState {
       -- 'ProtocolTemperature'
       --
       csMiniProtocolMap :: !(Map MiniProtocolNum
-                                ( MiniProtocol muxMode ByteString m a b
-                                , ProtocolTemperature )),
+                                 (MiniProtocolData muxMode m a b)),
 
       -- | Map of all running mini-protocol completion STM actions.
       --
@@ -132,17 +166,6 @@ data ConnectionState muxMode peerAddr m a b = ConnectionState {
 
     }
 
--- | Counters for tracing and analysis purposes
---
-data InboundGovernorCounters = InboundGovernorCounters {
-  establishedPeersRemote :: !Int, -- ^ number of remote peers that have the local peer as established
-  warmPeersRemote        :: !Int, -- ^ number of remote peers that have the local peer as warm
-  hotPeersRemote         :: !Int  -- ^ number of remote peers that have the local peer as hot
-  } deriving Show
-
-instance Semigroup InboundGovernorCounters where
-    InboundGovernorCounters e w h <> InboundGovernorCounters e' w' h' =
-      InboundGovernorCounters (e + e') (w + w') (h + h')
 
 --
 -- State management functions
@@ -195,9 +218,14 @@ updateMiniProtocol connId miniProtocolNum completionAction state =
 --
 data RemoteState m
     -- | After @PromotedToWarm^{dataFlow}_{Remote}@ a connection is in
-    -- 'RemoteEstablished' state.
+    -- 'RemoteWarm' state.
     --
-    = RemoteEstablished
+    = RemoteWarm
+
+    -- | In this state all established and hot mini-protocols are running and
+    -- none of the warm mini-protocols is running.
+    --
+    | RemoteHot
 
     -- | After @DemotedToCold^{dataFlow}_{Remote}@ is detected.  This state
     -- corresponds to 'InboundIdleState'. In this state we are checking
@@ -220,6 +248,17 @@ data RemoteState m
     -- For a 'Unidreictional' connection: after all responders terminated.
     --
     | RemoteCold
+
+
+remoteEstablished :: RemoteState m -> Maybe (RemoteState m)
+remoteEstablished a@RemoteWarm = Just a
+remoteEstablished a@RemoteHot  = Just a
+remoteEstablished _            = Nothing
+
+pattern RemoteEstablished :: RemoteState m
+pattern RemoteEstablished <- (remoteEstablished -> Just _)
+
+{-# COMPLETE RemoteEstablished, RemoteIdle, RemoteCold #-}
 
 
 -- | Set 'csRemoteState' for a given connection.
