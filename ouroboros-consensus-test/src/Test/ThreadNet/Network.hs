@@ -56,7 +56,8 @@ import           GHC.Stack
 import           System.Random (mkStdGen)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
+                     TraceLabelPeer (..))
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
@@ -912,7 +913,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       let -- prop_general relies on these tracers
           instrumentationTracers = nullTracers
                 { chainSyncClientTracer = Tracer $ \case
-                    CSClient.TraceDownloadedHeader hdr
+                    TraceLabelPeer _ (CSClient.TraceDownloadedHeader hdr)
                       -> case blockPoint hdr of
                             GenesisPoint   -> pure ()
                             BlockPoint s h ->
