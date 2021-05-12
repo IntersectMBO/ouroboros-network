@@ -162,11 +162,12 @@ processSingleWanton :: MonadSTM m
                     -> MiniProtocolDir
                     -> Wanton m
                     -> m ()
-processSingleWanton egressQueue bearer timeout mpc md wanton = do
+processSingleWanton egressQueue MuxBearer { write, sduSize }
+                    timeout mpc md wanton = do
     blob <- atomically $ do
       -- extract next SDU
       d <- readTVar (want wanton)
-      let (frag, rest) = BL.splitAt (fromIntegral (sduSize bearer)) d
+      let (frag, rest) = BL.splitAt (fromIntegral (getSDUSize sduSize)) d
       -- if more to process then enqueue remaining work
       if BL.null rest
         then writeTVar (want wanton) BL.empty
@@ -187,5 +188,5 @@ processSingleWanton egressQueue bearer timeout mpc md wanton = do
                   },
                 msBlob = blob
               }
-    void $ write bearer timeout sdu
+    void $ write timeout sdu
     --paceTransmission tNow

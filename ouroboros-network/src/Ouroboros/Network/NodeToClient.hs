@@ -364,7 +364,6 @@ networkErrorPolicies = ErrorPolicies
                       MuxIngressQueueOverRun       -> Just ourBug
                       MuxInitiatorOnly             -> Just ourBug
                       MuxShutdown {}               -> Just ourBug
-                      MuxCleanShutdown             -> Just ourBug
                       MuxBlockedOnCompletionVar {} -> Just ourBug
 
                       -- in case of bearer closed / or IOException we suspend

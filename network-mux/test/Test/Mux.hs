@@ -26,6 +26,7 @@ import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.List (dropWhileEnd, nub)
+import qualified Data.List as List
 import qualified Data.Map as M
 import           Data.Tuple (swap)
 import           Data.Word
@@ -38,6 +39,7 @@ import qualified System.Random.SplitMix as SM
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -62,9 +64,14 @@ import qualified Network.Mux.Compat as Compat
 import           Network.Mux.Codec
 import           Network.Mux.Channel
 import           Network.Mux.Types ( muxBearerAsChannel, MiniProtocolDir(..), MuxSDU(..), MuxSDUHeader(..)
-                                   , RemoteClockModel(..) )
+                                   , RemoteClockModel(..), SDUSize (..) )
+import           Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
 import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Pipe
+import           Network.Mux.Bearer.Socket
+import qualified Network.Socket as Socket
+import           Text.Show.Functions ()
+-- import qualified Debug.Trace as Debug
 
 tests :: TestTree
 tests =
@@ -81,6 +88,8 @@ tests =
   , testProperty "demuxing (IO)"           prop_demux_sdu_io
   , testProperty "mux start and stop"      prop_mux_start
   , testProperty "mux restart"             prop_mux_restart
+  , testProperty "mux close (Sim)"         prop_mux_close_sim
+  , testProperty "mux close (IO)"          (withMaxSuccess 50 prop_mux_close_io)
   , testGroup "Generators"
     [ testProperty "genByteString"         prop_arbitrary_genByteString
     , testProperty "genLargeByteString"    prop_arbitrary_genLargeByteString
@@ -313,7 +322,7 @@ instance Arbitrary Uneven where
 prop_mux_snd_recv :: DummyRun
                   -> Property
 prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
-    let sduLen = 1260
+    let sduLen = SDUSize 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -375,7 +384,7 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
 prop_mux_snd_recv_bi :: DummyRun
                      -> Property
 prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
-    let sduLen = 1260
+    let sduLen = SDUSize 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -475,7 +484,7 @@ prop_mux_snd_recv_bi (DummyRun messages) = ioProperty $ do
 prop_mux_snd_recv_compat :: DummyTrace
                   -> Property
 prop_mux_snd_recv_compat messages = ioProperty $ do
-    let sduLen = 1260
+    let sduLen = SDUSize 1260
 
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
@@ -708,7 +717,7 @@ runMuxApplication initApps initBearer respApps respBearer = do
 
 runWithQueues :: RunMuxApplications
 runWithQueues initApps respApps = do
-    let sduLen = 14000
+    let sduLen = SDUSize 14000
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
     let server_w = client_r
@@ -834,9 +843,9 @@ prop_mux_2_minis_Pipe a b = ioProperty $ test_mux_2_minis runWithPipe a b
 prop_mux_starvation :: Uneven
                     -> Property
 prop_mux_starvation (Uneven response0 response1) =
-    let sduLen = 1260 in
-    (BL.length (unDummyPayload response0) > 2 * fromIntegral sduLen) &&
-    (BL.length (unDummyPayload response1) > 2 * fromIntegral sduLen) ==>
+    let sduLen = SDUSize 1260 in
+    (BL.length (unDummyPayload response0) > 2 * fromIntegral (getSDUSize sduLen)) &&
+    (BL.length (unDummyPayload response1) > 2 * fromIntegral (getSDUSize sduLen)) ==>
     ioProperty $ do
     let request       = DummyPayload $ BL.replicate 4 0xa
 
@@ -1076,7 +1085,7 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        let serverBearer = queuesAsMuxBearer serverTracer server_w server_r 1280
+        let serverBearer = queuesAsMuxBearer serverTracer server_w server_r (SDUSize 1280)
             serverTracer = contramap (Compat.WithMuxBearer "server") activeTracer
 
         serverMux <- newMux $ MiniProtocolBundle [serverApp]
@@ -1296,8 +1305,8 @@ prop_mux_start_mX :: forall m.
 prop_mux_start_mX apps runTime = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
-        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r (SDUSize 1234)
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w (SDUSize 1234)
     prop_mux_start_m bearer (triggerApp peerBearer) checkRes apps runTime
 
   where
@@ -1340,7 +1349,7 @@ prop_mux_restart_m :: forall m.
 prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
+    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r (SDUSize 1234)
         MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo InitiatorDirectionOnly . fst) apps
 
     mux <- newMux $ MiniProtocolBundle minis
@@ -1377,8 +1386,9 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
 prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
-        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+    let sduSize = SDUSize 1234
+        bearer = queuesAsMuxBearer nullTracer mux_w mux_r sduSize
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w sduSize
         apps = map fst rapps
         MiniProtocolBundle minis = MiniProtocolBundle $ map (appToInfo ResponderDirectionOnly) apps
 
@@ -1417,8 +1427,9 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
 prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
     mux_w <- atomically $ newTBQueue 10
     mux_r <- atomically $ newTBQueue 10
-    let bearer = queuesAsMuxBearer nullTracer mux_w mux_r 1234
-        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w 1234
+    let sduSize = SDUSize 1234
+        bearer = queuesAsMuxBearer nullTracer mux_w mux_r sduSize
+        peerBearer = queuesAsMuxBearer nullTracer mux_r mux_w sduSize
         apps = map fst rapps
         initMinis = map (appToInfo InitiatorDirection) apps
         respMinis = map (appToInfo ResponderDirection) apps
@@ -1648,3 +1659,366 @@ threadAndTimeTracer tr = Tracer $ \s -> do
     !now <- getMonotonicTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now (show tid) s
+
+
+--
+-- mux close test
+--
+
+
+data FaultInjection
+    = CleanShutdown
+    | CloseOnWrite
+    | CloseOnRead
+  deriving (Show, Eq)
+
+instance Arbitrary FaultInjection where
+    arbitrary = elements [CleanShutdown, CloseOnWrite, CloseOnRead]
+    shrink CloseOnRead   = [CleanShutdown, CloseOnWrite]
+    shrink CloseOnWrite  = [CleanShutdown]
+    shrink CleanShutdown = []
+
+
+-- | Tag for tracer.
+--
+data ClientOrServer = Client | Server
+    deriving Show
+
+
+data NetworkCtx sock m = NetworkCtx {
+    ncSocket    :: m sock,
+    ncClose     :: sock -> m (),
+    ncMuxBearer :: sock -> MuxBearer m
+  }
+
+
+withNetworkCtx :: MonadThrow m => NetworkCtx sock m -> (MuxBearer m -> m a) -> m a
+withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
+    bracket ncSocket ncClose (k . ncMuxBearer)
+
+
+close_experiment
+    :: forall sock acc req resp m.
+       ( MonadAsync      m
+       , MonadFork       m
+       , MonadMask       m
+       , MonadTime       m
+       , MonadTimer      m
+       , MonadThrow (STM m)
+       , MonadST         m
+       , Serialise req
+       , Serialise resp
+       , Eq resp
+       , Show req
+       , Show resp
+       )
+    => FaultInjection
+    -> Tracer m (ClientOrServer, TraceSendRecv (MsgReqResp req resp))
+    -> Tracer m (ClientOrServer, MuxTrace)
+    -> NetworkCtx sock m
+    -> NetworkCtx sock m
+    -> [req]
+    -> (acc -> req -> (acc, resp))
+    -> acc
+    -> m Property
+close_experiment fault tracer muxTracer clientCtx serverCtx reqs0 fn acc0 = do
+    withAsync
+      -- run client thread
+      (bracket (newMux $ MiniProtocolBundle
+                       [ MiniProtocolInfo {
+                           miniProtocolNum,
+                           miniProtocolDir = InitiatorDirectionOnly,
+                           miniProtocolLimits = MiniProtocolLimits maxBound
+                         }
+                       ])
+                stopMux $ \mux ->
+        withNetworkCtx clientCtx $ \clientBearer ->
+          withAsync (runMux ((Client,) `contramap` muxTracer) mux clientBearer) $ \_muxAsync ->
+                runMiniProtocol
+                  mux miniProtocolNum
+                  InitiatorDirectionOnly StartEagerly
+                  (\chan -> mkClient >>= runClient clientTracer chan)
+            >>= atomically
+      )
+      $ \clientAsync ->
+        withAsync
+          -- run server thread
+          (bracket ( newMux $ MiniProtocolBundle
+                            [ MiniProtocolInfo {
+                                miniProtocolNum,
+                                miniProtocolDir = ResponderDirectionOnly,
+                                miniProtocolLimits = MiniProtocolLimits maxBound
+                              }
+                            ])
+                    stopMux $ \mux ->
+          withNetworkCtx serverCtx $ \serverBearer  ->
+            withAsync (runMux ((Server,) `contramap` muxTracer) mux serverBearer) $ \_muxAsync -> do
+                  runMiniProtocol
+                    mux miniProtocolNum
+                    ResponderDirectionOnly StartOnDemand
+                    (\chan -> runServer serverTracer chan (server acc0))
+              >>= atomically
+          )
+          $ \serverAsync -> do
+            -- await for both client and server threads, inspect results
+
+            -- 'join @(Either SomeException)' of 'waitCatch' and
+            -- 'runMiniProtocol'
+            (resClient, resServer) <- (,) <$> (join <$> waitCatch clientAsync)
+                                          <*> (join <$> waitCatch serverAsync)
+            case (fault, resClient, resServer) of
+              (CleanShutdown, Right (Right resps), Right _)
+                 | expected <- expectedResps (List.length resps)
+                 , resps == expected
+                -> return $ property True
+
+                 | otherwise
+                -> return $ counterexample
+                              (concat [ show resps
+                                      , " ≠ "
+                                      , show (expectedResps (List.length resps))
+                                      ])
+                              False
+
+              -- close on read with empty responses is the same as clean
+              -- shutdown
+              (CloseOnRead, Right (Right resps@[]), Right _)
+                 | expected <- expectedResps 0
+                 , List.null expected
+                -> return $ property True
+
+                 | otherwise
+                -> return $ counterexample
+                              (concat [ show resps
+                                      , " ≠ "
+                                      , show (expectedResps (List.length resps))
+                                      ])
+                              False
+
+              (CloseOnWrite, Right (Left resps), Left serverError)
+                 | expected <- expectedResps (List.length resps)
+                 , resps == expected
+                 , Just (MuxError errType _) <- fromException serverError
+                 , case errType of
+                     MuxShutdown _    -> True
+                     MuxBearerClosed  -> True
+                     _                -> False
+                -> return $ property True
+
+                 | expected <- expectedResps (List.length resps)
+                 , resps /= expected
+                -> return $ counterexample
+                              (concat [ show resps
+                                      , " ≠ "
+                                      , show expected
+                                      ])
+                          $ counterexample
+                              (show serverError)
+                              False
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
+                              False
+              (CloseOnRead, Right (Left resps), Left serverError)
+                 | expected <- expectedResps (List.length resps)
+                 , resps == expected 
+                 , Just (MuxError errType _) <- fromException serverError
+                 , case errType of
+                     MuxShutdown _    -> True
+                     MuxBearerClosed  -> True
+                     _                -> False
+                -> return $ property True
+
+                 | expected <- expectedResps (List.length resps)
+                 , resps /= expected
+                -> return $ counterexample
+                              (concat [ show resps
+                                      , " ≠ "
+                                      , show expected
+                                      ])
+                          $ counterexample
+                              (show serverError)
+                              False
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
+                              False
+
+              (_, clientRes, serverRes) ->
+                return $ counterexample (show fault)
+                       $ counterexample ("Client: " ++ show clientRes)
+                       $ counterexample ("Server: " ++ show serverRes)
+                       $ False
+
+  where
+    clientTracer,
+      serverTracer :: Tracer m (TraceSendRecv (MsgReqResp req resp))
+    clientTracer = (Client,) `contramap` tracer
+    serverTracer = (Server,) `contramap` tracer
+
+    expectedResps :: Int -> [resp]
+    expectedResps n = snd $ List.mapAccumL fn acc0 (take n reqs0)
+
+    miniProtocolNum :: MiniProtocolNum
+    miniProtocolNum = MiniProtocolNum 1
+
+    -- client application; after sending all requests it will either terminate
+    -- the protocol (clean shutdown) or close the connection and do early exit.
+    mkClient :: m (ReqRespClient req resp m (Either [resp] [resp]))
+    mkClient = clientImpl [] reqs0
+      where
+        clientImpl !resps (req : []) =
+          case fault of
+            CleanShutdown ->
+              return $ SendMsgReq
+                req
+                (\resp -> return $ SendMsgDone (return $! Right
+                                                       $! reverse (resp : resps)))
+
+            CloseOnWrite ->
+              return (EarlyExit $! Left
+                                $! reverse resps)
+
+            CloseOnRead ->
+              return $ SendMsgReq
+                req
+                (\resp ->
+                  return (EarlyExit $! Left
+                                    $! reverse (resp : resps)))
+
+        clientImpl !resps (req : reqs) =
+          return $ SendMsgReq
+            req
+            (\resp -> clientImpl (resp : resps) reqs)
+
+        clientImpl !resps [] =
+          case fault of
+            CloseOnWrite ->
+              return $ EarlyExit $! Left
+                                 $! reverse resps
+            _ ->
+              return $ SendMsgDone (return $! Right
+                                           $! reverse resps)
+        
+    -- server which incrementally computes 'mapAccumL'
+    server :: acc -> ReqRespServer req resp m ()
+    server acc = ReqRespServer {
+        recvMsgReq  = \req -> return $
+                        case fn acc req of
+                          (acc', resp) -> (resp, server acc'),
+        recvMsgDone = return ()
+      }
+
+
+prop_mux_close_io :: FaultInjection
+                  -> [Int]
+                  -> (Int -> Int -> (Int, Int))
+                  -> Int
+                  -> Property
+prop_mux_close_io fault reqs fn acc = ioProperty $ do
+    serverAddr : _ <- Socket.getAddrInfo
+                        Nothing (Just "127.0.0.1") (Just "0")
+    bracket (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
+            Socket.close
+            $ \serverSocket -> do
+      Socket.bind serverSocket (Socket.addrAddress serverAddr)
+      Socket.listen serverSocket 1
+      let serverCtx = NetworkCtx {
+              ncSocket = fst <$> Socket.accept serverSocket,
+              ncClose  = Socket.close,
+              ncMuxBearer = socketAsMuxBearer 10 nullTracer
+            }
+          clientCtx = NetworkCtx {
+              ncSocket = do
+                sock <- Socket.socket Socket.AF_INET Socket.Stream
+                                      Socket.defaultProtocol
+                (Socket.getSocketName serverSocket
+                  >>= Socket.connect sock)
+                  `onException`
+                    Socket.close sock
+                return sock,
+              ncClose  = Socket.close,
+              ncMuxBearer = socketAsMuxBearer 10 nullTracer
+            }
+      close_experiment
+        fault
+        nullTracer
+        nullTracer
+        {--
+          - ((\msg -> (,msg) <$> getMonotonicTime)
+          -  `contramapM` Tracer Debug.traceShowM
+          - )
+          - ((\msg -> (,msg) <$> getMonotonicTime)
+          -  `contramapM` Tracer Debug.traceShowM
+          - )
+          --}
+        clientCtx serverCtx
+        reqs fn acc
+
+
+prop_mux_close_sim :: FaultInjection
+                   -> Positive Word16
+                   -> [Int]
+                   -> (Int -> Int -> (Int, Int))
+                   -> Int
+                   -> Property
+prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
+    runSimOrThrow experiment
+  where
+    experiment :: IOSim s Property
+    experiment = do
+      (chann, chann')
+        <- atomically $ newConnectedAttenuatedChannelPair
+            nullTracer
+            nullTracer
+            {--
+              - ((\msg -> (,(Client,msg)) <$> getMonotonicTime)
+              -  `contramapM` Tracer Debug.traceShowM
+              - )
+              - ((\msg -> (,(Server,msg)) <$> getMonotonicTime)
+              -  `contramapM` Tracer Debug.traceShowM
+              - )
+              --}
+            noAttenuation
+            noAttenuation
+      let sduSize = SDUSize sduSize_
+          sduTimeout = 10
+          clientCtx = NetworkCtx {
+              ncSocket = return chann,
+              ncClose  = acClose,
+              ncMuxBearer = attenuationChannelAsMuxBearer
+                              sduSize sduTimeout
+                              nullTracer
+            }
+          serverCtx = NetworkCtx {
+              ncSocket = return chann',
+              ncClose  = acClose,
+              ncMuxBearer = attenuationChannelAsMuxBearer
+                              sduSize sduTimeout
+                              nullTracer
+            }
+      close_experiment
+        fault
+        nullTracer
+        nullTracer
+        {--
+          - ((\msg -> (,msg) <$> getMonotonicTime)
+          -  `contramapM` Tracer Debug.traceShowM
+          - )
+          - ((\msg -> (,msg) <$> getMonotonicTime)
+          -  `contramapM` Tracer Debug.traceShowM
+          - )
+          --}
+        clientCtx
+        serverCtx
+        reqs fn acc
+
+    -- in this simulation we don't need attenuation, we inject failures
+    -- directly into the client.
+    noAttenuation = Attenuation {
+        aReadAttenuation  = \_ _ -> (1, AttenuatedChannel.Success),
+        aWriteAttenuation = Nothing
+      }
+

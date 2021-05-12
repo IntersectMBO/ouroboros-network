@@ -104,10 +104,10 @@ jobPromoteWarmPeer :: forall peeraddr peerconn m.
                    => PeerSelectionActions peeraddr peerconn m
                    -> peeraddr
                    -> peerconn
-                   -> Job m (Completion m peeraddr peerconn)
+                   -> Job () m (Completion m peeraddr peerconn)
 jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {activatePeerConnection}}
                    peeraddr peerconn =
-    Job job handler "promoteWarmPeer"
+    Job job handler () "promoteWarmPeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
@@ -226,10 +226,10 @@ jobDemoteActivePeer :: forall peeraddr peerconn m.
                     => PeerSelectionActions peeraddr peerconn m
                     -> peeraddr
                     -> peerconn
-                    -> Job m (Completion m peeraddr peerconn)
+                    -> Job () m (Completion m peeraddr peerconn)
 jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
                     peeraddr peerconn =
-    Job job handler "demoteActivePeer"
+    Job job handler () "demoteActivePeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
