@@ -65,6 +65,7 @@ import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers
                    as LocalRootPeers hiding (tests)
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 import           Test.Tasty (TestTree, localOption, testGroup)
 import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 
@@ -99,12 +100,12 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        localRootPeers          :: LocalRootPeers PeerAddr,
        publicRootPeers         :: Set PeerAddr,
        targets                 :: TimedScript PeerSelectionTargets,
-       pickKnownPeersForGossip :: PickScript,
-       pickColdPeersToPromote  :: PickScript,
-       pickWarmPeersToPromote  :: PickScript,
-       pickHotPeersToDemote    :: PickScript,
-       pickWarmPeersToDemote   :: PickScript,
-       pickColdPeersToForget   :: PickScript
+       pickKnownPeersForGossip :: PickScript PeerAddr,
+       pickColdPeersToPromote  :: PickScript PeerAddr,
+       pickWarmPeersToPromote  :: PickScript PeerAddr,
+       pickHotPeersToDemote    :: PickScript PeerAddr,
+       pickWarmPeersToDemote   :: PickScript PeerAddr,
+       pickColdPeersToForget   :: PickScript PeerAddr
      }
   deriving Show
 
@@ -431,17 +432,20 @@ instance Arbitrary GovernorMockEnvironment where
   arbitrary = do
       -- Dependency of the root set on the graph
       peerGraph         <- arbitrary
+      let peersSet       = allPeers peerGraph
       (localRootPeers,
-       publicRootPeers) <- arbitraryRootPeers (allPeers peerGraph)
+       publicRootPeers) <- arbitraryRootPeers peersSet
 
       -- But the others are independent
       targets                 <- arbitrary
-      pickKnownPeersForGossip <- arbitrary
-      pickColdPeersToPromote  <- arbitrary
-      pickWarmPeersToPromote  <- arbitrary
-      pickHotPeersToDemote    <- arbitrary
-      pickWarmPeersToDemote   <- arbitrary
-      pickColdPeersToForget   <- arbitrary
+
+      let arbitrarySubsetOfPeers = arbitrarySubset peersSet
+      pickKnownPeersForGossip <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickColdPeersToPromote  <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickWarmPeersToPromote  <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickHotPeersToDemote    <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickWarmPeersToDemote   <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
       return GovernorMockEnvironment{..}
     where
       arbitraryRootPeers :: Set PeerAddr
