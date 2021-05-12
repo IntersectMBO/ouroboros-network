@@ -20,7 +20,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 -- import qualified LedgerOnDisk.QSM.Model
 import           LedgerOnDisk.Simple
-import Test.StateMachine.Lockstep.Simple
+import Test.StateMachine.Lockstep.NAry
 import Data.IORef
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.HashSet as HashSet
@@ -64,7 +64,7 @@ deriving newtype instance (s ~ MockKVState) => MonadState s MockM
 instance MonadFail MockM where
   fail = MockM . lift . Left
 
-mockCmd :: MonadState (KVState n) m => KVCmd n (KVMockHandle n) -> m (KVResp n (KVMockHandle n))
+mockCmd :: MonadState (KVState n) m => KVCmd n (KVMockHandle n) (KVRealHandles n) -> m (KVResp n (KVMockHandle n) (KVRealHandles n))
 mockCmd cmd = state $ \s -> kvRunMock cmd s
 
 arbSubkeys :: (Eq k, Hashable k) => HashMap k v -> Gen (HashSet k)
@@ -132,7 +132,7 @@ prop_model_can_insert initial_map = property $ do
 
 prop_model_cmd_generator_valid :: KVState Identity -> Property
 prop_model_cmd_generator_valid m = property $ do
-  let model = Model m []
+  let model = Model m mempty
   sequenceA (kvGenerator model) <&> \case
     Nothing -> False
     Just (At x) -> case x of

@@ -9,6 +9,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 module LedgerOnDisk.Simple where
 
 import Control.Monad.Except
@@ -23,6 +25,8 @@ import Data.Monoid
 import LedgerOnDisk.Class
 import LedgerOnDisk.Pure
 import Debug.Trace
+import Data.TreeDiff.Class
+import GHC.Generics
 
 type SimpleKey = Int
 
@@ -78,7 +82,8 @@ instance MonadIO m => MonadKV SimpleKey SimpleValue (SimpleT m) where
     { resultSetId :: !Int,
       resultSetQuery :: !(QueryScope SimpleKey)
     }
-    deriving stock (Show, Eq)
+    deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToExpr)
 
   prepareOperation q = withState $ \s@SimpleState {..} ->
     pure

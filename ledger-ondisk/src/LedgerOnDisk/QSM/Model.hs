@@ -22,31 +22,46 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE ConstraintKinds #-}
+
+{-# OPTIONS -fno-warn-unused-imports #-}
+
+{-# OPTIONS_GHC -Wno-deferred-type-errors #-}
 module LedgerOnDisk.QSM.Model where
 
 import Data.Coerce
---import Data.Function
+import Data.Function ()
 
--- import Data.HashSet (HashSet)
+import Data.HashSet (HashSet)
 
 import Data.Foldable
 import Data.Functor
 import Data.HashMap.Strict (HashMap)
+import Data.Sequence (Seq)
 import qualified Data.HashMap.Strict as HashMap
--- import qualified Data.HashSet as HashSet
+import qualified Data.HashSet as HashSet
 import Data.Hashable
 import Data.Kind
--- import Data.Monoid
+import Data.Monoid
 import Data.TreeDiff.Expr
 import Data.Typeable
-import GHC.Generics
+import GHC.Generics hiding ((:.:))
 import LedgerOnDisk.Class
 import LedgerOnDisk.Pure
 import LedgerOnDisk.Simple
 import Test.QuickCheck
 import Test.StateMachine
-import Test.StateMachine.Lockstep.Simple
-
+import qualified Control.Foldl as Foldl
+import Control.Foldl (Fold)
+import Data.Monoid
+import Data.HashSet (HashSet)
+import Test.StateMachine.Lockstep.NAry
+import Test.StateMachine.Types
+import Data.SOP hiding (Fn)
+import Test.StateMachine.Lockstep.Auxiliary
 -- import Test.StateMachine.Types.References
 
 data MonadKVStateMachine (m :: Type -> Type)
@@ -54,10 +69,12 @@ data MonadKVStateMachine (m :: Type -> Type)
 stateMachineTest ::
   ( Typeable m,
     SimpleMonadKV m,
+
     Eq (Err m),
     Show (Err m),
-    Show (ResultSet m),
-    Eq (ResultSet m) -- this is perhaps unreasonable
+    ToExpr (ResultSet m),
+    Eq (ResultSet m),
+    Show (ResultSet m)
   ) =>
   SimpleMap ->
   (forall a. m a -> IO a) ->
@@ -74,25 +91,33 @@ stateMachineTest initial_map toIO =
     }
 
 type KVModel m = Model (MonadKVStateMachine m)
+type KVStateMachineTest m = StateMachineTest (MonadKVStateMachine m)
 
-data instance Resp (MonadKVStateMachine m) h where
-  KVSuccessLookupAll_ :: HashMap Int Int -> Resp (MonadKVStateMachine m) h
-  KVSuccessHandle :: h -> Resp (MonadKVStateMachine m) h
-  KVSuccessResult :: Int -> Resp (MonadKVStateMachine m) h
-  KVError :: SimpleMonadKV m => Err m -> Resp (MonadKVStateMachine m) h
-  KVBaseError :: BaseError -> Resp (MonadKVStateMachine m) h
+data instance Resp (MonadKVStateMachine m) f hs where
+  KVSuccessLookupAll_ :: HashMap Int Int -> Resp (MonadKVStateMachine m) f '[resultSet]
+  KVSuccessHandle :: f resultSet -> Resp (MonadKVStateMachine m) f '[resultSet]
+  KVSuccessResult :: Int -> Resp (MonadKVStateMachine m) f '[resultSet]
+  KVError :: SimpleMonadKV m => Err m -> Resp (MonadKVStateMachine m) f '[resultSet]
+  KVBaseError :: BaseError -> Resp (MonadKVStateMachine m) f '[resultSet]
+
+deriving stock instance (forall a. Eq a => Eq (f a), Eq resultSet, Eq (Err m)) => Eq (Resp (MonadKVStateMachine m) f '[resultSet])
+deriving stock instance (forall a. Show a => Show (f a), Show resultSet, Show (Err m)) => Show (Resp (MonadKVStateMachine m) f '[resultSet])
+
+instance NTraversable (KVResp n) where
+  -- nctraverse :: forall m c proxy g h resultSet xs xs'. (Applicative m,
+  --                                               Data.SOP.All c xs,
+  --                                               xs ~ (resultSet ': xs')
+  --                                               )
+  --   => proxy c -> (forall a. c a => Elem xs a -> g a -> m (h a)) -> KVResp n g xs -> m (KVResp n h xs)
+  nctraverse _ f = \case
+    (KVSuccessHandle fh :: KVResp n g xs) -> KVSuccessHandle <$> f ElemHead  fh
+    -- There has to be a better way
+    KVSuccessLookupAll_ r -> pure $ KVSuccessLookupAll_ r
+    KVSuccessResult i -> pure $ KVSuccessResult i
+    KVError e -> pure $ KVError e
+    KVBaseError e -> pure $ KVBaseError e
 
 type KVResp m = Resp (MonadKVStateMachine m)
-
-deriving stock instance Functor (KVResp m)
-
-deriving stock instance Foldable (KVResp m)
-
-deriving stock instance Traversable (KVResp m)
-
-deriving stock instance (SimpleMonadKV m, Eq (Err m), Eq (Err m), Eq h) => Eq (KVResp m h)
-
-deriving stock instance (SimpleMonadKV m, Show (Err m), Show (Err m), Show h) => Show (KVResp m h)
 
 data OperationFunction k v a where
   OFArb :: Fun (HashMap k (Maybe v)) (OperationResult k v, a) -> OperationFunction k v a
@@ -120,30 +145,44 @@ pattern OFn :: (HashMap k (Maybe v) -> (OperationResult k v, a)) -> OperationFun
 pattern OFn f <- (applyOperationFunction -> f)
 {-# COMPLETE OFn #-}
 
-data instance Cmd (MonadKVStateMachine m) h where
-  KVPrepare :: QueryScope Int -> Cmd (MonadKVStateMachine m) h
-  KVSubmit :: h -> OperationFunction Int Int Int -> Cmd (MonadKVStateMachine m) h -- k = v = Int, always returns Int
+data instance Cmd (MonadKVStateMachine m) f hs where
+  KVPrepare :: QueryScope Int -> Cmd (MonadKVStateMachine m) f '[resultSet]
+  KVSubmit :: f resultSet -> OperationFunction Int Int Int -> Cmd (MonadKVStateMachine m) f '[resultSet] -- k = v = Int, always returns Int
   -- suffixed with _ means it can be generated, it's for validating the model
-  KVLookupAll_ :: h -> Cmd (MonadKVStateMachine m) h
-  deriving stock (Functor, Foldable, Traversable, Show)
+  KVLookupAll_ :: f resultSet -> Cmd (MonadKVStateMachine m) f '[resultSet]
+  -- deriving stock (Functor, Foldable, Traversable, Show)
+
+
+deriving stock instance (forall a. Show a => Show (f a), Show resultSet, Show (Err m)) => Show (Cmd (MonadKVStateMachine m) f '[resultSet])
+-- deriving stock instance (forall a. Eq a => Eq (f a), Eq resultSet, Eq (Err m)) => Eq (Resp (MonadKVStateMachine m) f '[resultSet])
 
 type KVCmd m = Cmd (MonadKVStateMachine m)
 
-newtype instance RealHandle (MonadKVStateMachine m) = KVRealHandle (ResultSet m)
-  deriving stock (Generic)
+instance NTraversable (KVCmd m) where
+  nctraverse _ go = \case
+    KVPrepare s -> pure $ KVPrepare s
+    KVSubmit fr f -> (\x -> KVSubmit x f) <$> go ElemHead fr
+    KVLookupAll_ fr -> KVLookupAll_ <$> go ElemHead fr
 
-type KVRealHandle m = RealHandle (MonadKVStateMachine m)
+type instance RealHandles (MonadKVStateMachine m) = '[ResultSet m]
 
-deriving stock instance Eq (ResultSet m) => Eq (KVRealHandle m)
+type KVRealHandles m = RealHandles (MonadKVStateMachine m)
 
-deriving stock instance Show (ResultSet m) => Show (KVRealHandle m)
+-- deriving stock instance Eq (ResultSet m) => Eq (KVRealHandle m)
 
-instance ToExpr (KVRealHandle m) where
-  toExpr _ = App "KVRealHandle" []
+-- deriving stock instance Show (ResultSet m) => Show (KVRealHandle m)
 
-newtype instance MockHandle (MonadKVStateMachine m) = KVMockHandle Int
-  deriving stock (Eq, Show, Generic)
-  deriving anyclass (ToExpr)
+-- instance ToExpr (KVRealHandle m) where
+--   toExpr _ = App "KVRealHandle" []
+
+data instance MockHandle (MonadKVStateMachine m) a where
+  MockResultSet :: Int -> MockHandle (MonadKVStateMachine m) (ResultSet m)
+
+deriving stock instance Eq (KVMockHandle m a)
+deriving stock instance Show (KVMockHandle m a)
+
+instance ToExpr (MockHandle (MonadKVStateMachine m) a) where
+  toExpr (MockResultSet i) = toExpr i
 
 type KVMockHandle m = MockHandle (MonadKVStateMachine m)
 
@@ -159,6 +198,8 @@ type instance MockState (MonadKVStateMachine m) = Mock
 
 type KVState m = MockState (MonadKVStateMachine m)
 
+type instance RealMonad (MonadKVStateMachine m) = IO
+
 instance Arbitrary Mock where
   arbitrary = arbitrary <&> \x -> Mock x mempty 0
   shrink s@Mock{modelMap} = shrink modelMap <&> \m -> s { modelMap = m}
@@ -169,9 +210,9 @@ emptyMock = Mock mempty mempty 0
 nonemptyMock :: SimpleMap -> Mock
 nonemptyMock x = emptyMock { modelMap = x }
 
-mockAddQuery :: QueryScope Int -> Mock -> (KVMockHandle m, Mock)
+mockAddQuery :: QueryScope Int -> Mock -> (KVMockHandle m (ResultSet m), Mock)
 mockAddQuery qs m@Mock { nextQueryId, queries} =
-  ( KVMockHandle nextQueryId,
+  (  MockResultSet nextQueryId,
     m {
         queries = HashMap.insert nextQueryId qs queries,
         LedgerOnDisk.QSM.Model.nextQueryId = nextQueryId + 1
@@ -201,16 +242,16 @@ mockAddQuery qs m@Mock { nextQueryId, queries} =
 --     , nextQueryId = 0
 --     }
 
-kvRunMock :: KVCmd m (KVMockHandle m) -> KVState m -> (KVResp m (KVMockHandle m), KVState m)
+kvRunMock :: KVCmd m (KVMockHandle m) (KVRealHandles m) -> KVState m -> (KVResp m (KVMockHandle m) (KVRealHandles m), KVState m)
 kvRunMock cmd s@Mock {..} = case cmd of
-  KVLookupAll_ (KVMockHandle i) -> case i `HashMap.lookup` queries of
+  KVLookupAll_(MockResultSet i) -> case i `HashMap.lookup` queries of
     Nothing -> (KVBaseError BEBadResultSet, s)
     Just qs -> let
       (a, _new_map) = pureApplyOperation (coerce qs) (\x -> (mempty, HashMap.mapMaybe id x)) modelMap
       in (KVSuccessLookupAll_ a, s) -- no change to state, don't even delete query
   KVPrepare qs -> case mockAddQuery qs s of
     (h, s') -> (KVSuccessHandle h, s')
-  KVSubmit (KVMockHandle i) (OFn f) -> case i `HashMap.lookup` queries of
+  KVSubmit (MockResultSet i) (OFn f) -> case i `HashMap.lookup` queries of
     Nothing -> (KVBaseError BEBadResultSet, s)
     Just qs ->
       let (a, new_map) = pureApplyOperation (coerce qs) f modelMap
@@ -221,10 +262,13 @@ kvRunMock cmd s@Mock {..} = case cmd of
               }
           )
 
-kvRunReal :: forall m. SimpleMonadKV m => (forall a. m a -> IO a) -> KVCmd m (KVRealHandle m) -> IO (KVResp m (KVRealHandle m))
+kvRunReal :: forall m. SimpleMonadKV m
+  => (forall a. m a -> IO a)
+  -> KVCmd m I (KVRealHandles m)
+  -> IO (KVResp m I (KVRealHandles m))
 kvRunReal toIO = \case
-  KVPrepare qs -> toIO $ prepareOperation qs <&> KVSuccessHandle . KVRealHandle
-  KVSubmit (KVRealHandle rs) (OFn f) -> toIO $ submitOperation rs f <&> \case
+  KVPrepare qs -> toIO $ prepareOperation qs <&> KVSuccessHandle . I
+  KVSubmit (I rs) (OFn f) -> toIO $ submitOperation rs f <&> \case
     Left e
       | Just e' <- toKVBaseError (Proxy @ m) e -> KVBaseError e'
       | otherwise -> KVError e
@@ -239,18 +283,20 @@ kvRunReal toIO = \case
 --       nextQueryId = 0
 --     }
 
-kvNewHandles :: forall m. forall h. KVResp m h -> [h]
-kvNewHandles = toList -- I think?
+kvNewHandles :: forall m f. KVResp m f (KVRealHandles m) -> NP ([] :.: f) (KVRealHandles m)
+kvNewHandles = \case
+  KVSuccessHandle fh -> Comp [fh] :* Nil
+  _ -> mempty
 
 kvGenerator :: KVModel m Symbolic -> Maybe (Gen (KVCmd m :@ Symbolic))
-kvGenerator Model {modelRefs} = Just $ do
+kvGenerator Model {modelRefss = Refss (Refs resultSets :* Nil)} = Just $ do
   let prepare = At . KVPrepare <$> arbitrary
   let submit = do
-        (ref, _mockhandle) <- elements modelRefs
+        (ref, _mockhandle) <- elements resultSets
         f <- arbitrary
-        pure . At $ KVSubmit ref f
+        pure . At $ KVSubmit (FlipRef ref) f
 
-  oneof $ [prepare] ++ [submit | not . null $ modelRefs]
+  oneof $ [prepare] ++ [submit | not . null $ resultSets]
 
 kvShrinker :: KVModel m Symbolic -> KVCmd m :@ Symbolic -> [KVCmd m :@ Symbolic]
 kvShrinker _model (At cmd) = case cmd of
