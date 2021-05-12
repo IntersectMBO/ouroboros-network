@@ -694,8 +694,9 @@ withPeerStateActions timeout
               pure connHandle
 
             Disconnected _ Nothing ->
-              -- TODO!
-              error "TODO"
+              -- Disconnected in 'TerminatingState' or 'TerminatedState' without
+              -- an exception.
+              throwIO $ userError "establishPeerConnection: Disconnected"
             Disconnected _ (Just reason) ->
               case reason of
                 HandleHandshakeClientError err -> do
