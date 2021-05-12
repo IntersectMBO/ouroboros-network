@@ -19,6 +19,7 @@ module Ouroboros.Network.InboundGovernor.State
   , updateMiniProtocol
   , RemoteState (..)
   , updateRemoteState
+  , MiniProtocolData (..)
   ) where
 
 import           Control.Exception (assert)
@@ -103,6 +104,17 @@ data InboundGovernorState muxMode peerAddr m a b =
       }
 
 
+data MiniProtocolData muxMode m a b = MiniProtocolData {
+    -- | Static 'MiniProtocol' description.
+    --
+    mpdMiniProtocol      :: !(MiniProtocol muxMode ByteString m a b),
+
+    -- | Static mini-protocol temperature.
+    --
+    mpdMiniProtocolTemp  :: !ProtocolTemperature
+  }
+
+
 -- | Per connection state tracked by /inbound protocol governor/.
 --
 data ConnectionState muxMode peerAddr m a b = ConnectionState {
@@ -118,8 +130,7 @@ data ConnectionState muxMode peerAddr m a b = ConnectionState {
       -- 'ProtocolTemperature'
       --
       csMiniProtocolMap :: !(Map MiniProtocolNum
-                                ( MiniProtocol muxMode ByteString m a b
-                                , ProtocolTemperature )),
+                                 (MiniProtocolData muxMode m a b)),
 
       -- | Map of all running mini-protocol completion STM actions.
       --
