@@ -167,7 +167,7 @@ arbitraryPickScript pickSome =
       arbitraryScriptOf sz (arbitraryPickMembers pickSome)
 
 interpretPickScript :: (MonadSTMTx stm tvar tmvar tqueue tbqueue, Ord peeraddr)
-                    => tvar PickScript
+                    => tvar (PickScript peeraddr)
                     -> Set peeraddr
                     -> Int
                     -> stm (Set peeraddr)
