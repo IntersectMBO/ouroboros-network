@@ -4,12 +4,19 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Data.Monoid.Synchronisation
   ( FirstToFinish (..)
   , LastToFinish (..)
   , firstToLast
   , lastToFirst
+  , FirstToFinishSTM
+  , LastToFinishSTM (..)
+  , firstToLastSTM
+  , lastToFirstSTM
   ) where
 
 import           Data.Coerce (coerce)
@@ -19,6 +26,7 @@ import           GHC.Generics (Generic, Generic1)
 
 import           Control.Applicative (Alternative (..))
 import           Control.Monad (MonadPlus (..))
+import           Control.Monad.Class.MonadSTM
 
 
 -- | First-to-finish synchronisation.  Like 'Alt' it is a monoid under '<|>'.
@@ -79,3 +87,39 @@ firstToLast = coerce
 
 lastToFirst :: LastToFinish m a -> FirstToFinish m a
 lastToFirst = coerce
+
+
+-- | The correct last-to-finish synchronisation (i.e. the multiplicative
+-- semigroup of the semiring), but restricted to 'STM'.  It is easier to use
+-- than 'LastToFinish' since its 'Semigroup' instance does not have any
+-- constraints on @a@.
+--
+newtype LastToFinishSTM m a = LastToFinishSTM { runLastToFinishSTM  :: STM m a }
+  deriving ( Generic
+           , Generic1
+           )
+
+deriving instance Functor     (STM m) => Functor     (LastToFinishSTM m)
+deriving instance Applicative (STM m) => Applicative (LastToFinishSTM m)
+deriving instance Alternative (STM m) => Alternative (LastToFinishSTM m)
+deriving instance Monad       (STM m) => Monad       (LastToFinishSTM m)
+deriving instance MonadPlus   (STM m) => MonadPlus   (LastToFinishSTM m)
+
+instance MonadSTM m => Semigroup (LastToFinishSTM m a) where
+    LastToFinishSTM stm <> LastToFinishSTM stm' = LastToFinishSTM $ do
+      v <- newEmptyTMVar
+      (Left <$> stm) `orElse` (Right <$> stm') >>= putTMVar v
+      a <- takeTMVar v
+      case a of
+        Left _  -> stm'
+        Right _ -> stm
+
+type FirstToFinishSTM m a = FirstToFinish (STM m) a
+
+firstToLastSTM :: FirstToFinishSTM m a -> LastToFinishSTM m a
+firstToLastSTM = coerce
+
+lastToFirstSTM :: LastToFinishSTM m a -> FirstToFinishSTM m a
+lastToFirstSTM = coerce
+
+
