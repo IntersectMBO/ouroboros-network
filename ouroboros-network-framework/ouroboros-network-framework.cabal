@@ -20,7 +20,8 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
 library
-  exposed-modules:     Ouroboros.Network.Codec
+  exposed-modules:     Data.Monoid.Synchronisation
+                       Ouroboros.Network.Codec
                        Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
@@ -106,6 +107,7 @@ test-suite test
   hs-source-dirs:      test
   other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
                        Network.TypedProtocol.ReqResp.Codec.CBOR
+                       Test.Data.Monoid.Synchronisation
                        Test.Network.TypedProtocol.PingPong.Codec
                        Test.Network.TypedProtocol.ReqResp.Codec
                        Test.Ouroboros.Network.Driver
