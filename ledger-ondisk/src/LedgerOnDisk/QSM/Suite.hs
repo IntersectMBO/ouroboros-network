@@ -43,18 +43,18 @@ import Data.HashSet (HashSet)
 import Data.Hashable
 import System.IO.Unsafe
 import GHC.Base
+import Control.Monad.Trans.Cont
+import Test.Tasty.QuickCheckStateMachine
 
 type MockKVState = KVState Identity -- in the mock case Identity could be anything
 
-prop_stateMachine_SimpleT :: SimpleMap -> Property
-prop_stateMachine_SimpleT initial_map = let
-  !initial_state = initialState initial_map
-  !ref = noinline . unsafePerformIO . newIORef $ initial_state
-  smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runSimpleTWithIORef x ref
-  smt = smt0
-    { cleanup = \x -> cleanup smt0 x *> writeIORef ref initial_state
-    }
-  in prop_sequential smt Nothing
+simpleStateMachineTest :: Cont Property (KVStateMachineTest (SimpleT IO))
+simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
+  let !initial_state = initialState initial_map
+  ref <- newIORef $ initial_state
+  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runSimpleTWithIORef x ref
+      smt = smt0 { cleanup = \x -> cleanup smt0 x *> writeIORef ref initial_state }
+  pure $ k smt
 
 newtype MockM a = MockM { unMockM :: StateT (KVState Identity) (Either String) a }
   deriving newtype (Functor, Applicative, Monad)
@@ -173,5 +173,6 @@ tests = testGroup "quickcheck state machine"
     , testProperty "generate no LookupAll_ s" prop_model_cmd_generator_valid
     , testProperty "prop_out_of_order_queries_consistent"  prop_out_of_order_queries_consistent
     ]
-  , testProperty "SimpleT" prop_stateMachine_SimpleT
+  , testQSM "SimpleT" simpleStateMachineTest
+  -- , testLabelStateMachine "KVModel" $
   ]

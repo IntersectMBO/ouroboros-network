@@ -28,8 +28,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 
 {-# OPTIONS -fno-warn-unused-imports #-}
-
-{-# OPTIONS_GHC -Wno-deferred-type-errors #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module LedgerOnDisk.QSM.Model where
 
 import Data.Coerce
@@ -57,11 +56,18 @@ import Test.StateMachine
 import qualified Control.Foldl as Foldl
 import Control.Foldl (Fold)
 import Data.Monoid
-import Data.HashSet (HashSet)
 import Test.StateMachine.Lockstep.NAry
 import Test.StateMachine.Types
 import Data.SOP hiding (Fn)
 import Test.StateMachine.Lockstep.Auxiliary
+import Test.Tasty.QuickCheckStateMachine
+import Test.StateMachine.Labelling
+import qualified Data.Map.Strict as Map
+import Data.Map (Map)
+import qualified Data.Set as Set
+import Data.Set (Set)
+import Data.Maybe
+import Data.Functor.Classes
 -- import Test.StateMachine.Types.References
 
 data MonadKVStateMachine (m :: Type -> Type)
@@ -309,9 +315,9 @@ kvCleanup _ = pure ()
 
 
 
-withArbitraryCmdList :: (SimpleMonadKV m, Testable prop, Show (Err m), Show (ResultSet m)) => Maybe Int -> KVStateMachineTest m -> ([(KVCmd m :@ Symbolic, KVResp m :@ Symbolic, [Var])] -> prop) -> Property
-withArbitraryCmdList mb_min_cmds smt go = forAllCommands sm mb_min_cmds $ go . unCommands where
-  sm = toStateMachine smt
+-- withArbitraryCmdList :: (SimpleMonadKV m, Testable prop, Show (Err m), Show (ResultSet m)) => Maybe Int -> KVStateMachineTest m -> ([(KVCmd m :@ Symbolic, KVResp m :@ Symbolic, [Var])] -> prop) -> Property
+-- withArbitraryCmdList mb_min_cmds smt go = forAllCommands sm mb_min_cmds $ go . unCommands where
+--   sm = toStateMachine smt
   -- commands_to_list (Commands cs) =
   --   [ (cmd, resp, vars)
   --   | Command (cmdAtToSimple -> At cmd) (respMockToSimple -> At resp) vars <- cs
@@ -322,44 +328,54 @@ data KVCmdListTag
   = THasSubmit
   | THasOutOfOrderSubmit
   | THasDisallowedConstructors
-  deriving (Show, Eq)
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass Hashable
 
-tagKVCmdList :: forall f m. Foldable f => f (KVCmd m :@ Symbolic) -> [KVCmdListTag]
-tagKVCmdList = flip appEndo [] . Foldl.fold the_fold   where
-    the_fold :: Fold (KVCmd m :@ Symbolic) (Endo ([KVCmdListTag]))
+tagKVCmdList :: forall f e m. (Ord (ResultSet m), Foldable f, e ~ Event (KVModel m) (At (KVCmd m) ) (At (KVResp m)) Symbolic)
+  => f e -> [KVCmdListTag]
+tagKVCmdList = HashSet.toList . Foldl.fold the_fold   where
+    the_fold :: Fold e (HashSet KVCmdListTag)
     the_fold = fold -- lol
-      [ maybe mempty (Endo . (:)) <$> x
-      | x <-
         [ hasSubmit
         , hasOutOfOrderSubmit
         , hasDisallowedConstructors
         ]
-      ]
 
-    tagTrue x (Any b) = if b then Just x else Nothing
+    tagTrue x (Any b) = if b then HashSet.singleton x else mempty
 
-    hasSubmit :: Fold (KVCmd m :@ Symbolic) (Maybe KVCmdListTag)
+    hasSubmit :: Fold e (HashSet KVCmdListTag)
     hasSubmit = Foldl.foldMap go $ tagTrue THasSubmit where
-      go :: KVCmd m :@ Symbolic -> Any
-      go = \case
-        At (KVSubmit {}) -> coerce True
-        _ -> mempty
+      go :: e -> Any
+      go = coerce . \case
+        Event { eventCmd = At KVSubmit {}} -> True
+        _ -> False
 
+    hasOutOfOrderSubmit  :: Fold e (HashSet KVCmdListTag)
     hasOutOfOrderSubmit = Foldl.foldMap go finish where
       finish e = case appEndo e mempty of
         (_rs_to_seen_vars_map, _submitted_vars_set, any_ooo_submits) -> tagTrue THasOutOfOrderSubmit any_ooo_submits
-      go :: KVCmd m :@ Symbolic -> Endo (HashMap (_Var) (HashSet Var), HashSet Var, Any)
-      go cmd = Endo $ \x@(rs_to_seen_vars_map, submitted_vars_set, any_ooo_submits) -> case cmd of
+      go :: e -> Endo (Map _ (Set _), Set _, Any)
+      go Event{eventResp, eventCmd} = Endo $ \x@(rs_to_seen_vars_map, submitted_vars_set, _) -> case () of
         -- when we introduce a new result set, record which other result sets preceeded this one
-        KVPrepare (FlipRef ref) -> let
-          seen_vars = HashMap.keysSet rs_to_seen_vars_map
-          in (HashMap.insert ref seen_vars rs_to_seen_vars_map, submitted_vars_set, mempty)
-        KVSubmit (FlipRef ref) _ -> let
-          -- any result sets that were prepared before us not yet submitted?
-          ooo = Any . not . null $ HashMap.lookupDefault ref mempty rs_to_seen_vars_map `HashSet.difference` submitted_vars_set
-          in (rs_to_seen_vars_map, ref `HashSet.insert` submitted_vars_set, ooo <> any_ooo_submits)
+        _ | At (KVSuccessHandle ref ) <- eventResp
+          , let seen_vars = Map.keysSet rs_to_seen_vars_map
+          -> x <> (Map.singleton ref seen_vars, mempty, mempty)
+
+        -- when we see a submitted a result set, see if anything preceeding it has been submitted
+          | At (KVSubmit ref _) <- eventCmd
+          , let is_ooo = Any . not . null $
+                  fromMaybe mempty (Map.lookup ref rs_to_seen_vars_map) `Set.difference` submitted_vars_set
+            -> x <> (mempty, Set.singleton ref, is_ooo)
         _ -> x
+
+    hasDisallowedConstructors   :: Fold e (HashSet KVCmdListTag)
     hasDisallowedConstructors = Foldl.foldMap go $ tagTrue THasDisallowedConstructors where
-      go = \case
-        KVLookupAll_ {} -> Any True
+      go Event{eventCmd} = case eventCmd of
+        At (KVLookupAll_ {}) -> Any True
         _ -> mempty
+
+-- testLabelStateMachine :: KVStateMachineTest m -> LabellingTest
+-- testLabelStateMachine  m = labellingTest (toStateMachine m) $ \xs -> show <$> tagKVCmdList [eventCmd | Event{..} <- xs]
+
+deriving stock instance (Eq h, Eq1 r) => Eq (FlipRef r h)
+deriving stock instance (Ord h, Ord1 r) => Ord (FlipRef r h)
