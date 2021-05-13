@@ -49,7 +49,8 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip (WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (Coherent (..),
+                     WithVersion (..))
 
 import           Test.Consensus.Byron.Generators
 
@@ -64,6 +65,11 @@ import           Test.Consensus.Cardano.MockCrypto
 
 instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
   arbitrary = HardForkBlock . OneEraBlock <$> arbitrary
+
+instance Arbitrary (Coherent (CardanoBlock MockCryptoCompatByron)) where
+  arbitrary =
+        Coherent . HardForkBlock . OneEraBlock . hmap (I . getCoherent)
+    <$> arbitrary
 
 instance Arbitrary (CardanoHeader MockCryptoCompatByron) where
   arbitrary = getHeader <$> arbitrary
@@ -191,6 +197,17 @@ instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoBlock c)) where
   arbitrary = arbitraryNodeToNode BlockByron BlockShelley BlockAllegra BlockMary
+
+instance c ~ MockCryptoCompatByron
+      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
+                                (Coherent (CardanoBlock c))) where
+  arbitrary =
+        fmap (fmap Coherent)
+      $ arbitraryNodeToNode
+          (BlockByron   . getCoherent)
+          (BlockShelley . getCoherent)
+          (BlockAllegra . getCoherent)
+          (BlockMary    . getCoherent)
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))

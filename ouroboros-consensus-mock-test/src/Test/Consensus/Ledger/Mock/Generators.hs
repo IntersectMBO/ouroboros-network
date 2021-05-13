@@ -61,11 +61,22 @@ instance Arbitrary (HeaderHash blk) => Arbitrary (Point blk) where
   Generators
 -------------------------------------------------------------------------------}
 
--- These generators blindly create random values, so the block will not be
--- valid, but this does not matter for serialisation tests.
-
+-- | This blindly creates random values, so the block will not be valid, but
+-- this does not matter for serialisation tests.
 instance (SimpleCrypto c, Arbitrary ext, Serialise ext)
       => Arbitrary (SimpleBlock c ext) where
+  arbitrary = do
+    simpleStdHeader <- arbitrary
+    body            <- arbitrary
+    ext             <- arbitrary
+    let hdr = mkSimpleHeader encode simpleStdHeader ext
+    return $ SimpleBlock hdr body
+
+-- | This blindly creates random values, so the block will not be valid, but
+-- this does not matter for serialisation tests. Except we do touch-up the
+-- 'simpleBodySize'; hence 'Coherent'.
+instance (SimpleCrypto c, Arbitrary ext, Serialise ext)
+      => Arbitrary (Coherent (SimpleBlock c ext)) where
   arbitrary = do
     simpleStdHeader <- arbitrary
     body            <- arbitrary
@@ -76,7 +87,7 @@ instance (SimpleCrypto c, Arbitrary ext, Serialise ext)
             simpleBodySize = fromIntegral $ Lazy.length $ serialise body
           }
         hdr = mkSimpleHeader encode simpleStdHeader' ext
-    return $ SimpleBlock hdr body
+    return $ Coherent $ SimpleBlock hdr body
 
 instance (SimpleCrypto c, Arbitrary ext, Serialise ext, Typeable ext)
       => Arbitrary (Header (SimpleBlock c ext)) where

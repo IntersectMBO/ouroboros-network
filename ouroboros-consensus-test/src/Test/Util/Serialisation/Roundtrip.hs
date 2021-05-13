@@ -1,5 +1,7 @@
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -15,6 +17,7 @@ module Test.Util.Serialisation.Roundtrip (
   , roundtrip'
     -- * Test skeleton
   , Arbitrary'
+  , Coherent (..)
   , SomeResult (..)
   , WithVersion (..)
   , prop_hashSize
@@ -36,6 +39,8 @@ import qualified Data.ByteString.Lazy.Char8 as Char8
 import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Typeable
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
                      mkSerialised)
@@ -125,6 +130,7 @@ roundtrip_all
      , Arbitrary' (ChainDepState (BlockProtocol blk))
 
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) blk
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Coherent blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTxId blk)
@@ -148,7 +154,7 @@ roundtrip_all ccfg dictNestedHdr =
       , testProperty "envelopes"          $ roundtrip_envelopes             ccfg
       , testProperty "ConvertRawHash"     $ roundtrip_ConvertRawHash        (Proxy @blk)
       , testProperty "hashSize"           $ prop_hashSize                   (Proxy @blk)
-      , testProperty "estimateBlockSize"  $ prop_estimateBlockSize         ccfg
+      , testProperty "estimateBlockSize"  $ prop_estimateBlockSize          ccfg
       ]
 
 -- TODO how can we ensure that we have a test for each constraint listed in
@@ -205,6 +211,16 @@ data WithVersion v a = WithVersion v a
 -- | Similar to @Arbitrary'@, but with an 'Arbitrary' instasnce for
 -- @('WithVersion' v a)@.
 type ArbitraryWithVersion v a = (Arbitrary (WithVersion v a), Eq a, Show a)
+
+-- | Used to generate slightly less arbitrary values
+--
+-- Like some other QuickCheck modifiers, the exact meaning is
+-- context-dependent. The original motivating example is that some of our
+-- serialization-adjacent properties require that the generated block contains
+-- a header and a body that match, ie are /coherent/.
+newtype Coherent a = Coherent { getCoherent :: a }
+  deriving (Eq, Generic)
+  deriving (Show) via (Quiet (Coherent a))
 
 -- TODO how can we ensure that we have a test for each constraint listed in
 -- 'SerialiseNodeToNodeConstraints'?
@@ -441,9 +457,9 @@ prop_hashSize p h =
 prop_estimateBlockSize ::
      (SerialiseNodeToNodeConstraints blk, GetHeader blk)
   => CodecConfig blk
-  -> WithVersion (BlockNodeToNodeVersion blk) blk
+  -> WithVersion (BlockNodeToNodeVersion blk) (Coherent blk)
   -> Property
-prop_estimateBlockSize ccfg (WithVersion version blk)
+prop_estimateBlockSize ccfg (WithVersion version (Coherent blk))
   | actualBlockSize > expectedBlockSize
   = counterexample
       ("actualBlockSize > expectedBlockSize: "

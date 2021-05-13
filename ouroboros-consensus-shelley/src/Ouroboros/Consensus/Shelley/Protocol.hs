@@ -42,11 +42,13 @@ module Ouroboros.Consensus.Shelley.Protocol (
 
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
-import           Control.Monad.Except (Except, throwError)
+import           Control.Monad.Except (Except, runExcept, throwError,
+                     withExceptT)
 import           Data.Coerce (coerce)
 import           Data.Function (on)
 import qualified Data.Map.Strict as Map
 import           Data.Ord (Down (..))
+import qualified Data.Text as T (pack)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
@@ -471,7 +473,10 @@ instance PraosCrypto c => ConsensusProtocol (TPraos c) where
 
 mkShelleyGlobals :: ConsensusConfig (TPraos c) -> SL.Globals
 mkShelleyGlobals TPraosConfig{..} = SL.Globals {
-      epochInfo                     = History.toPureEpochInfo tpraosEpochInfo
+      epochInfoWithErr              =
+        hoistEpochInfo
+          (runExcept . withExceptT (T.pack . show))
+          tpraosEpochInfo
     , slotsPerKESPeriod             = tpraosSlotsPerKESPeriod
     , stabilityWindow               = SL.computeStabilityWindow               k tpraosLeaderF
     , randomnessStabilisationWindow = SL.computeRandomnessStabilisationWindow k tpraosLeaderF
