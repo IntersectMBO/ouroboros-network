@@ -20,7 +20,8 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
 library
-  exposed-modules:     Ouroboros.Network.Codec
+  exposed-modules:     Data.Monoid.Synchronisation
+                       Ouroboros.Network.Codec
                        Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
