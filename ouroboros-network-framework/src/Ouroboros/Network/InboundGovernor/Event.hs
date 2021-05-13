@@ -219,12 +219,12 @@ firstPeerPromotedToHot InboundGovernorState { igsConnections } = runFirstToFinis
         case csRemoteState of
           RemoteHot     -> mempty
           RemoteWarm    ->
-              lastToFirst
+              lastToFirstM
             . fmap (const connId)
             $ foldMap fn
                 (hotMiniProtocolStateMap connState)
           RemoteCold    -> 
-              lastToFirst
+              lastToFirstM
             . fmap (const connId)
             $ foldMap fn
                 (hotMiniProtocolStateMap connState)
@@ -250,9 +250,9 @@ firstPeerPromotedToHot InboundGovernorState { igsConnections } = runFirstToFinis
        )
 
     fn :: STM m MiniProtocolStatus
-       -> LastToFinish (STM m) ()
+       -> LastToFinishM (STM m) ()
     fn miniProtocolStatus =
-      LastToFinish $
+      LastToFinishM $
         miniProtocolStatus >>= \case
           StatusIdle          -> retry
           StatusStartOnDemand -> retry
@@ -288,14 +288,14 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } = runFirstToFinis
           -- not be restarted.
           RemoteEstablished ->
                 fmap (const (WaitIdleRemote connId))
-              . lastToFirst
+              . lastToFirstM
               $ (Map.foldMapWithKey
                   (\(_, miniProtocolDir) miniProtocolStatus ->
                     case miniProtocolDir of
                       InitiatorDir -> mempty
 
                       ResponderDir ->
-                        LastToFinish $ do
+                        LastToFinishM $ do
                           miniProtocolStatus >>= \case
                             StatusIdle          -> return ()
                             StatusStartOnDemand -> return ()

@@ -118,6 +118,7 @@ test-suite test
   hs-source-dirs:      test
   other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
                        Network.TypedProtocol.ReqResp.Codec.CBOR
+                       Test.Data.Monoid.Synchronisation
                        Test.Network.TypedProtocol.PingPong.Codec
                        Test.Network.TypedProtocol.ReqResp.Codec
                        Test.Ouroboros.Network.ConnectionManager
