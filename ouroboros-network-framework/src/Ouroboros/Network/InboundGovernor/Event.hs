@@ -20,7 +20,7 @@ module Ouroboros.Network.InboundGovernor.Event
   , firstPeerDemotedToCold
   ) where
 
-import           Control.Applicative (Alternative (..), (<|>))
+import           Control.Applicative (Alternative (..))
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
@@ -29,6 +29,7 @@ import           Data.Functor (($>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import           Data.Monoid.Synchronisation
 
 import qualified Network.Mux as Mux
 import           Network.Mux.Types ( MiniProtocolStatus (..),
@@ -90,12 +91,12 @@ firstMuxToFinish
     => InboundGovernorState muxMode peerAddr m a b
     -> STM m (ConnectionId peerAddr, Maybe SomeException)
 firstMuxToFinish InboundGovernorState { igsConnections } =
-    Map.foldrWithKey
-      (\connId ConnectionState { csMux } outer ->
-            (connId,) <$> Mux.muxStopped csMux
-        <|> outer)
-      empty
-      igsConnections
+      runFirstToFinish
+    . Map.foldMapWithKey
+        (\connId ConnectionState { csMux } ->
+          FirstToFinish $ (connId,) <$> Mux.muxStopped csMux
+        )
+    $ igsConnections
 
 
 -- | When a mini-protocol terminates we take 'Terminated' out of 'ConnectionState
@@ -119,16 +120,15 @@ firstMiniProtocolToFinish
     :: Alternative (STM m)
     => InboundGovernorState muxMode peerAddr m a b
     -> STM m (Terminated muxMode peerAddr m a b)
-firstMiniProtocolToFinish InboundGovernorState { igsConnections } =
-    Map.foldrWithKey
+firstMiniProtocolToFinish InboundGovernorState { igsConnections } = runFirstToFinish $
+    Map.foldMapWithKey
       (\connId ConnectionState { csMux,
                                  csMiniProtocolMap,
                                  csDataFlow,
                                  csCompletionMap
-                               }
-        outer ->
-        Map.foldrWithKey
-          (\miniProtocolNum completionAction inner ->
+                               } ->
+        Map.foldMapWithKey
+          (\miniProtocolNum completionAction ->
                 (\tResult -> Terminated {
                       tConnId           = connId,
                       tMux              = csMux,
@@ -137,13 +137,10 @@ firstMiniProtocolToFinish InboundGovernorState { igsConnections } =
                       tResult
                     }
                 )
-            <$> completionAction
-            <|> inner
+            <$> FirstToFinish completionAction
           )
-          outer
           csCompletionMap
       )
-      empty
       igsConnections
 
 
@@ -161,59 +158,52 @@ firstPeerPromotedToWarm
     :: forall muxMode peerAddr m a b. MonadSTM m
     => InboundGovernorState muxMode peerAddr m a b
     -> STM m (ConnectionId peerAddr)
-firstPeerPromotedToWarm InboundGovernorState { igsConnections } =
-    Map.foldrWithKey
-      (\connId ConnectionState { csMux,
-                                 csRemoteState
-                               } outer ->
-        case csRemoteState of
-          -- the connection is already in 'RemoteEstablished' state.
-          RemoteEstablished -> outer
+firstPeerPromotedToWarm InboundGovernorState { igsConnections } = runFirstToFinish $
+     Map.foldMapWithKey
+       (\connId ConnectionState { csMux,
+                                  csRemoteState
+                                } ->
+         case csRemoteState of
+           -- the connection is already in 'RemoteEstablished' state.
+           RemoteEstablished -> mempty
 
-          -- If the connection is in 'RemoteCold' state we do first to finish
-          -- synchronisation to detect incoming traffic on any of the responder
-          -- mini-protocols.
-          --
-          -- This works for both duplex and unidirectional connections (e.g. p2p
-          -- \/ non-p2p nodes), for which protocols are started eagerly, unlike
-          -- for p2p nodes for which we start all mini-protocols on demand.
-          -- Using 'miniProtocolStatusVar' is ok for unidirectional connection,
-          -- as we never restart the protocols for them.  They transition to
-          -- 'RemoteWarm' as soon the connection is accepted.  This is because
-          -- for eagerly started mini-protocols mux puts them in 'StatusRunning'
-          -- as soon as mini-protocols are set in place by 'runMiniProtocol'.
-          RemoteCold ->
-            Map.foldrWithKey
-              (fn connId)
-              outer
-              (Mux.miniProtocolStateMap csMux)
+           -- If the connection is in 'RemoteCold' state we do first to finish
+           -- synchronisation to detect incoming traffic on any of the responder
+           -- mini-protocols.
+           --
+           -- This works for both duplex and unidirectional connections (e.g. p2p
+           -- \/ non-p2p nodes), for which protocols are started eagerly, unlike
+           -- for p2p nodes for which we start all mini-protocols on demand.
+           -- Using 'miniProtocolStatusVar' is ok for unidirectional connection,
+           -- as we never restart the protocols for them.  They transition to
+           -- 'RemoteWarm' as soon the connection is accepted.  This is because
+           -- for eagerly started mini-protocols mux puts them in 'StatusRunning'
+           -- as soon as mini-protocols are set in place by 'runMiniProtocol'.
+           RemoteCold ->
+             Map.foldMapWithKey
+               (fn connId)
+               (Mux.miniProtocolStateMap csMux)
 
-          -- We skip it here; this case is done in 'firstPeerDemotedToCold'.
-          RemoteIdle {} -> outer
-      )
-      retry
-      igsConnections
+           -- We skip it here; this case is done in 'firstPeerDemotedToCold'.
+           RemoteIdle {} -> mempty
+       )
+       igsConnections
   where
     fn :: ConnectionId peerAddr
        -> (MiniProtocolNum, MiniProtocolDir)
        -> STM m MiniProtocolStatus
-       -> STM m (ConnectionId peerAddr)
-       -> STM m (ConnectionId peerAddr)
-    fn connId =
-      \(_miniProtocolNum, miniProtocolDir)
-      miniProtocolStatus
-      inner ->
-        case miniProtocolDir of
-          InitiatorDir -> inner
+       -> FirstToFinish (STM m) (ConnectionId peerAddr)
+    fn connId = \(_miniProtocolNum, miniProtocolDir) miniProtocolStatus ->
+      case miniProtocolDir of
+        InitiatorDir -> mempty
 
-          ResponderDir ->
-                (do status <- miniProtocolStatus
-                    case status of
-                      StatusIdle          -> retry
-                      StatusStartOnDemand -> retry
-                      StatusRunning       -> return connId
-                )
-            <|> inner
+        ResponderDir ->
+          FirstToFinish $
+            miniProtocolStatus >>= \case
+              StatusIdle          -> retry
+              StatusStartOnDemand -> retry
+              StatusRunning       -> return connId
+              
 
 
 -- | Detect when a first warm peer is promoted to hot (all established and hot
@@ -223,26 +213,23 @@ firstPeerPromotedToHot
     :: forall muxMode peerAddr m a b. MonadSTM m
     => InboundGovernorState muxMode peerAddr m a b
     -> STM m (ConnectionId peerAddr)
-firstPeerPromotedToHot InboundGovernorState { igsConnections } =
-    Map.foldrWithKey
-      (\connId connState@ConnectionState { csRemoteState } outer ->
+firstPeerPromotedToHot InboundGovernorState { igsConnections } = runFirstToFinish $
+    Map.foldMapWithKey
+      (\connId connState@ConnectionState { csRemoteState } ->
         case csRemoteState of
-          RemoteHot     -> outer
+          RemoteHot     -> mempty
           RemoteWarm    ->
-                Map.foldr
-                  (fn connId)
-                  (return connId)
-                  (hotMiniProtocolStateMap connState)
-            <|> outer
-          RemoteCold    -> 
-              Map.foldr
-                (fn connId)
-                (return connId)
+              lastToFirst
+            . fmap (const connId)
+            $ foldMap fn
                 (hotMiniProtocolStateMap connState)
-            <|> outer
-          RemoteIdle {} -> outer
+          RemoteCold    -> 
+              lastToFirst
+            . fmap (const connId)
+            $ foldMap fn
+                (hotMiniProtocolStateMap connState)
+          RemoteIdle {} -> mempty
       )
-      empty
       igsConnections
   where
     -- only hot or established mini-protocols;
@@ -262,16 +249,14 @@ firstPeerPromotedToHot InboundGovernorState { igsConnections } =
        $ csMiniProtocolMap
        )
 
-    fn :: ConnectionId peerAddr
-       -> STM m MiniProtocolStatus
-       -> STM m (ConnectionId peerAddr)
-       -> STM m (ConnectionId peerAddr)
-    fn connId miniProtocolStatus inner =
-         inner
-      >> miniProtocolStatus >>= \case
-           StatusIdle          -> retry
-           StatusStartOnDemand -> retry
-           StatusRunning       -> return connId
+    fn :: STM m MiniProtocolStatus
+       -> LastToFinish (STM m) ()
+    fn miniProtocolStatus =
+      LastToFinish $
+        miniProtocolStatus >>= \case
+          StatusIdle          -> retry
+          StatusStartOnDemand -> retry
+          StatusRunning       -> return ()
 
 
 -- | Await for first peer demoted to cold, i.e. detect the
@@ -283,17 +268,16 @@ firstPeerDemotedToCold
     :: MonadSTM m
     => InboundGovernorState muxMode peerAddr m a b
     -> STM m (Event muxMode peerAddr m a b)
-firstPeerDemotedToCold InboundGovernorState { igsConnections } =
-    Map.foldrWithKey
+firstPeerDemotedToCold InboundGovernorState { igsConnections } = runFirstToFinish $
+    Map.foldMapWithKey
       (\connId
         ConnectionState {
           csMux,
           csRemoteState
-        }
-        outer ->
+        } ->
         case csRemoteState of
           -- the connection is already in 'RemoteCold' state
-          RemoteCold -> outer
+          RemoteCold -> mempty
 
           -- Responders are started using 'StartOnDemand' strategy. We detect
           -- when all of the responders are in 'StatusIdle' or
@@ -303,22 +287,22 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } =
           -- In compat mode, when established mini-protocols terminate they will
           -- not be restarted.
           RemoteEstablished ->
-                outer
-            <|> (Map.foldlWithKey'
-                  (\inner (_, miniProtocolDir) miniProtocolStatus ->
+                fmap (const (WaitIdleRemote connId))
+              . lastToFirst
+              $ (Map.foldMapWithKey
+                  (\(_, miniProtocolDir) miniProtocolStatus ->
                     case miniProtocolDir of
-                      InitiatorDir -> inner
+                      InitiatorDir -> mempty
 
                       ResponderDir ->
-                           inner
-                        >> miniProtocolStatus >>= \case
-                             StatusIdle          -> return ()
-                             StatusStartOnDemand -> return ()
-                             StatusRunning       -> retry
+                        LastToFinish $ do
+                          miniProtocolStatus >>= \case
+                            StatusIdle          -> return ()
+                            StatusStartOnDemand -> return ()
+                            StatusRunning       -> retry
                   )
-                  (return ())
                   (Mux.miniProtocolStateMap csMux)
-                ) $> WaitIdleRemote connId
+                )
 
           -- Possible for both 'Unidirectional' and 'Duplex' connections.  Wait
           -- for first of:
@@ -336,24 +320,19 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } =
               -- mini-protocols terminated, and we wait for a period of
               -- idleness.  Note that the meaning of 'timeoutSTM' is
               -- different from the compat mode case.
-                  outer
-              <|> Map.foldlWithKey'
-                    (\inner (_, miniProtocolDir) miniProtocolStatus ->
-                        case miniProtocolDir of
-                          InitiatorDir -> inner
+                    Map.foldMapWithKey
+                      (\(_, miniProtocolDir) miniProtocolStatus ->
+                          case miniProtocolDir of
+                            InitiatorDir -> mempty
 
-                          ResponderDir ->
-                               (miniProtocolStatus >>= \case
+                            ResponderDir ->
+                              FirstToFinish $ do
+                                miniProtocolStatus >>= \case
                                  StatusIdle          -> retry
                                  StatusStartOnDemand -> retry
                                  StatusRunning       -> return (AwakeRemote connId)
-                               )
-                            <|> inner
-                    )
-                    (
-                          timeoutSTM $> CommitRemote connId
-                    )
-                    (Mux.miniProtocolStateMap csMux)
+                      )
+                      (Mux.miniProtocolStateMap csMux)
+                  <> FirstToFinish (timeoutSTM $> CommitRemote connId)
       )
-      retry
       igsConnections
