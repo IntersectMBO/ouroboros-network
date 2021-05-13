@@ -14,6 +14,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards #-}
 module LedgerOnDisk.QSM.Suite where
 
 import           Test.Tasty
@@ -45,6 +46,7 @@ import System.IO.Unsafe
 import GHC.Base
 import Control.Monad.Trans.Cont
 import Test.Tasty.QuickCheckStateMachine
+import LedgerOnDisk.WWB
 
 type MockKVState = KVState Identity -- in the mock case Identity could be anything
 
@@ -54,6 +56,13 @@ simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOPro
   ref <- newIORef $ initial_state
   let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runSimpleTWithIORef x ref
       smt = smt0 { cleanup = \x -> cleanup smt0 x *> writeIORef ref initial_state }
+  pure $ k smt
+
+wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int Int IO))
+wwbStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
+  !cfg <- liftIO $ wwbConfigIO initial_map
+  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runWWBTWithConfig x cfg
+      smt = smt0 { cleanup = \x -> cleanup smt0 x *> resetWWBTIO initial_map cfg }
   pure $ k smt
 
 newtype MockM a = MockM { unMockM :: StateT (KVState Identity) (Either String) a }
@@ -174,5 +183,6 @@ tests = testGroup "quickcheck state machine"
     , testProperty "prop_out_of_order_queries_consistent"  prop_out_of_order_queries_consistent
     ]
   , testQSM "SimpleT" simpleStateMachineTest
+  , testQSM "WWBT" wwbStateMachineTest
   -- , testLabelStateMachine "KVModel" $
   ]

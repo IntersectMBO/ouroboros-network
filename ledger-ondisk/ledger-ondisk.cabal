@@ -22,9 +22,10 @@ library
   -- other-extensions:
   exposed-modules:     LedgerOnDisk
                        LedgerOnDisk.Class
+                       LedgerOnDisk.ClassWithExceptions
                        LedgerOnDisk.Simple
                        LedgerOnDisk.Pure
-                       LedgerOnDisk.ClassWithExceptions
+                       LedgerOnDisk.WWB
                        LedgerOnDisk.QSM.Model
                        LedgerOnDisk.QSM.Suite
                        Test.Tasty.QuickCheckStateMachine
@@ -43,7 +44,12 @@ library
                        foldl,
                        containers,
                        sop-core,
-                       tagged
+                       tagged,
+                       async,
+                       stm,
+                       fingertree,
+                       time
+
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
