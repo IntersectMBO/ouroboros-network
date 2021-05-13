@@ -124,11 +124,11 @@ prepare i qs backing_store = do
   -- live marker is present it must be that all the values are present
   modify $ \l -> l >< live_ft >< relevant_ft >< new_ft
 
-submit :: (Eq k, Hashable k, MonadState (InMemoryStore k v) m) => WWBResultSet k v -> (HashMap k (Maybe v) -> (OperationResult k v, a))  -> m (Either BaseError a)
+submit :: (Eq k, Hashable k, MonadState (InMemoryStore k v) m) => WWBResultSet k v -> (HashMap k (Maybe v) -> (OperationResult k v, a))  -> m (Either (WWBErr k v) a)
 submit WWBResultSet{resultSetId} f = runExceptT $ do
   InMemoryEntryMeasure{imeMap, liveQueries} <- gets measure
   qs <- case HashMap.lookup resultSetId liveQueries >>= Semi.getLast  of
-    Nothing -> throwError BEBadResultSet
+    Nothing -> throwError . WWBEBase $ BEBadResultSet
     Just qs -> pure qs
 
   let (updates, r) = f $ coerce imeMap `HashMap.intersection` HashSet.toMap qs
@@ -171,9 +171,17 @@ resetWWBTIO m WWBConfig{..} = liftIO . atomically $ do
         writeTVar backingStore m
         writeTVar inMemoryStore mempty
 
+data WWBErr k v = WWBEBase BaseError | WWBEExpiredResultSet
+  deriving stock (Eq, Show, Generic)
+
 instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
   newtype ResultSet (WWBT k v m) = WWBResultSet_ { unWWBResultSet_ :: WWBResultSet  k v }
     deriving newtype (Eq, Show, Generic, ToExpr)
+  type Err (WWBT k v m) = WWBErr k v
+  fromKVBaseError _ = WWBEBase
+  toKVBaseError _ = \case
+    WWBEBase e -> Just e
+    _ -> Nothing
 
   prepareOperation qs = WWBT $ do
     WWBConfig{..} <- ask
@@ -184,7 +192,6 @@ instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
         pure qid
 
     pure . coerce $ WWBResultSet {..}
-
 
   submitOperation rs f = WWBT $ do
     WWBConfig{..} <- ask
