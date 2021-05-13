@@ -478,6 +478,7 @@ instance MonadTimer (IOSim s) where
           (\_ -> return Nothing) $
           bracket
             (forkIO $ do
+                labelThisThread "<<timeout>>"
                 fired <- atomically $ awaitTimeout t
                 when fired $ throwTo pid (TimeoutException tid))
             (\pid' -> do
@@ -860,11 +861,22 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl k ctl }
       schedule thread' simstate
 
-    CancelTimeout (Timeout _tvar _tvar' tmid) k -> do
+    CancelTimeout (Timeout tvar _tvar' tmid) k -> do
       let timers' = PSQ.delete tmid timers
           thread' = thread { threadControl = ThreadControl k ctl }
-      trace <- schedule thread' simstate { timers = timers' }
-      return (Trace time tid tlbl (EventTimerCancelled tmid) trace)
+      written <- execAtomically' (runSTM $ writeTVar tvar TimeoutCancelled)
+      (wakeup, wokeby) <- threadsUnblockedByWrites written
+      mapM_ (\(SomeTVar var) -> unblockAllThreadsFromTVar var) written
+      let (unblocked,
+           simstate') = unblockThreads wakeup simstate
+      trace <- schedule thread' simstate' { timers = timers' }
+      return $ Trace time tid tlbl (EventTimerCancelled tmid)
+             $ traceMany
+                 [ (time, tid', tlbl', EventTxWakeup vids)
+                 | tid' <- unblocked
+                 , let tlbl' = lookupThreadLabel tid' threads
+                 , let Just vids = Set.toList <$> Map.lookup tid' wokeby ]
+             $ trace
 
     -- cancelling a negative timer is a no-op
     CancelTimeout (NegativeTimeout _tmid) k -> do
