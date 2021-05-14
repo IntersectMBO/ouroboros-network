@@ -200,17 +200,6 @@ instance c ~ MockCryptoCompatByron
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
-                                (Coherent (CardanoBlock c))) where
-  arbitrary =
-        fmap (fmap Coherent)
-      $ arbitraryNodeToNode
-          (BlockByron   . getCoherent)
-          (BlockShelley . getCoherent)
-          (BlockAllegra . getCoherent)
-          (BlockMary    . getCoherent)
-
-instance c ~ MockCryptoCompatByron
-      => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoHeader c)) where
   arbitrary = arbitraryNodeToNode HeaderByron HeaderShelley HeaderAllegra HeaderMary
 
