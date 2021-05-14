@@ -28,6 +28,7 @@ library
                        LedgerOnDisk.WWB
                        LedgerOnDisk.QSM.Model
                        LedgerOnDisk.QSM.Suite
+                       LedgerOnDisk.App.WWB
                        Test.Tasty.QuickCheckStateMachine
   build-depends:       base,
                        unordered-containers,
@@ -66,3 +67,9 @@ test-suite ledger-ondisk-test
                        QuickCheck,
                        quickcheck-instances
   ghc-options:         -Wall
+
+executable wwb
+   main-is:            wwb.hs
+   hs-source-dirs:     app
+   ghc-options:        -threaded -rtsopts
+   build-depends:      ledger-ondisk
