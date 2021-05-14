@@ -77,6 +77,7 @@ type PickPolicy peeraddr m =
          -- As more attributes are needed, extend this with more such functions.
          (peeraddr -> PeerSource) -- Where the peer is known from
       -> (peeraddr -> Int)        -- Connection failure count
+      -> (peeraddr -> Bool)       -- Found to be tepid flag
       -> Set peeraddr             -- The set to pick from
       -> Int                      -- Max number to choose, fewer is ok.
       -> STM m (Set peeraddr)     -- The set picked.
@@ -432,13 +433,14 @@ pickPeers :: (Ord peeraddr, Functor m)
           => PeerSelectionState peeraddr peerconn
           -> (   (peeraddr -> PeerSource)
               -> (peeraddr -> Int)
+              -> (peeraddr -> Bool)
               -> Set peeraddr -> Int -> m (Set peeraddr))
           -> Set peeraddr -> Int -> m (Set peeraddr)
 pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
           pick available num =
     assert precondition $
     fmap (\picked -> assert (postcondition picked) picked)
-         (pick peerSource peerConnectFailCount
+         (pick peerSource peerConnectFailCount peerTepidFlag
                available numClamped)
   where
     precondition         = not (Set.null available) && num > 0
@@ -456,6 +458,10 @@ pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
     peerConnectFailCount p =
         fromMaybe errorUnavailable $
           KnownPeers.lookupFailCount p knownPeers
+
+    peerTepidFlag p  =
+        fromMaybe errorUnavailable $
+          KnownPeers.lookupTepidFlag p knownPeers
 
     errorUnavailable =
         error $ "A pick policy requested an attribute for peer address "
