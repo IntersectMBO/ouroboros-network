@@ -44,7 +44,6 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.HashSet as HashSet
 import Data.Hashable
 import Data.Kind
-import Data.Monoid
 import Data.TreeDiff.Expr
 import Data.Typeable
 import GHC.Generics hiding ((:.:))
@@ -126,8 +125,8 @@ instance NTraversable (KVResp n) where
 type KVResp m = Resp (MonadKVStateMachine m)
 
 data OperationFunction k v a where
-  OFArb :: Fun (HashMap k (Maybe v)) (OperationResult k v, a) -> OperationFunction k v a
-  OFSet :: String -> (HashMap k (Maybe v) -> (OperationResult k v, a)) -> OperationFunction k v a
+  OFArb :: Fun (HashMap k (Maybe v)) (KVOperationResult k v, a) -> OperationFunction k v a
+  OFSet :: String -> (HashMap k (Maybe v) -> (KVOperationResult k v, a)) -> OperationFunction k v a
 
 type SimpleOperationFunction = OperationFunction SimpleKey SimpleValue Int
 
@@ -141,13 +140,13 @@ instance (Eq k, Hashable k, Function k, Function v, CoArbitrary k, CoArbitrary v
     OFArb f -> OFArb <$> shrink f
     OFSet {} -> []
 
-applyOperationFunction :: OperationFunction k v a -> HashMap k (Maybe v) -> (OperationResult k v, a)
+applyOperationFunction :: OperationFunction k v a -> HashMap k (Maybe v) -> (KVOperationResult k v, a)
 applyOperationFunction = \case
   OFArb (Fn f) -> f
   OFSet _ f -> f
   _ -> error "impossible"
 
-pattern OFn :: (HashMap k (Maybe v) -> (OperationResult k v, a)) -> OperationFunction k v a
+pattern OFn :: (HashMap k (Maybe v) -> (KVOperationResult k v, a)) -> OperationFunction k v a
 pattern OFn f <- (applyOperationFunction -> f)
 {-# COMPLETE OFn #-}
 
@@ -167,7 +166,7 @@ type KVCmd m = Cmd (MonadKVStateMachine m)
 instance NTraversable (KVCmd m) where
   nctraverse _ go = \case
     KVPrepare s -> pure $ KVPrepare s
-    KVSubmit fr f -> (\x -> KVSubmit x f) <$> go ElemHead fr
+    KVSubmit fr f -> (`KVSubmit` f) <$> go ElemHead fr
     KVLookupAll_ fr -> KVLookupAll_ <$> go ElemHead fr
 
 type instance RealHandles (MonadKVStateMachine m) = '[ResultSet m]
@@ -302,7 +301,7 @@ kvGenerator Model {modelRefss = Refss (Refs resultSets :* Nil)} = Just $ do
         f <- arbitrary
         pure . At $ KVSubmit (FlipRef ref) f
 
-  oneof $ [prepare] ++ [submit | not . null $ resultSets]
+  oneof $ prepare : [submit | not . null $ resultSets]
 
 kvShrinker :: KVModel m Symbolic -> KVCmd m :@ Symbolic -> [KVCmd m :@ Symbolic]
 kvShrinker _model (At cmd) = case cmd of
@@ -371,7 +370,7 @@ tagKVCmdList = HashSet.toList . Foldl.fold the_fold   where
     hasDisallowedConstructors   :: Fold e (HashSet KVCmdListTag)
     hasDisallowedConstructors = Foldl.foldMap go $ tagTrue THasDisallowedConstructors where
       go Event{eventCmd} = case eventCmd of
-        At (KVLookupAll_ {}) -> Any True
+        At KVLookupAll_ {} -> Any True
         _ -> mempty
 
 -- testLabelStateMachine :: KVStateMachineTest m -> LabellingTest

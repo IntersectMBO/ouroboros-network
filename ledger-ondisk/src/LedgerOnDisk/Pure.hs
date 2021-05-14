@@ -15,16 +15,13 @@ pureApplyOperation ::
   (Eq k, Hashable k) =>
   HashSet k ->
   ( HashMap k (Maybe v) ->
-    (HashMap k (DiffItem v), a)
+    (HashMap k (D v), a)
   ) ->
   HashMap k v ->
   (a, HashMap k v)
 pureApplyOperation scope op m =
   let restricted_map = HashMap.mapWithKey (\k _ -> HashMap.lookup k m) $ HashSet.toMap scope
       (updates, a) = op restricted_map
-      go k =
-        Endo . \case
-          DIUpdate v -> HashMap.insert k v
-          DIRemove -> HashMap.delete k
+      go k = Endo . applyD k
       new_map = appEndo (HashMap.foldMapWithKey go updates) m
    in (a, new_map)

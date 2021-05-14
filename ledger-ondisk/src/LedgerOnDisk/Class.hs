@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -26,6 +27,7 @@ import Control.Monad
 import Test.QuickCheck
 import Data.TreeDiff.Class
 import Test.QuickCheck.Instances.UnorderedContainers ()
+import qualified Data.Semigroup as Semi
 -- import Data.Proxy
 
 newtype QueryScope k = QueryScope (HashSet k)
@@ -35,20 +37,35 @@ newtype QueryScope k = QueryScope (HashSet k)
 querySingle :: (Hashable k) => k -> QueryScope k
 querySingle = coerce . HashSet.singleton
 
-data DiffItem v where
-  DIUpdate :: v -> DiffItem v
-  DIRemove :: DiffItem v
+data D v where
+  DChangeTo :: v -> D v
+  DRemove :: D v
+  DNoChange :: D v
+  -- this is interesting, but it makes things more complicated. Inhibits functor
+  -- instance (though I think this could be surmounted with a CoYoneda trick)
+  -- DIMappend :: Monoid v => v -> D v
   deriving stock (Show, Eq)
+  deriving Semigroup via (Semi.Last (D v))
 
-instance Arbitrary v => Arbitrary (DiffItem v) where
-  arbitrary = oneof [ pure DIRemove, DIUpdate <$> arbitrary ]
+instance Monoid (D v) where
+  mempty = DNoChange
+
+applyD :: (Eq k, Hashable k) => k -> D v -> HashMap k v -> HashMap k v
+applyD k = \case
+  DChangeTo v -> HashMap.insert k v
+  DRemove -> HashMap.delete k
+  DNoChange -> id
+  -- DIMappend v -> HashMap.insertWith (<>) k v
+
+instance Arbitrary v => Arbitrary (D v) where
+  arbitrary = oneof [ pure DRemove, DChangeTo <$> arbitrary ]
   shrink di = case di of
-    DIRemove -> []
-    DIUpdate v -> DIUpdate <$> shrink v
+    DRemove -> []
+    DChangeTo v -> DChangeTo <$> shrink v
+    _ -> []
 
-type OperationResult k v = HashMap k (DiffItem v)
-
-type KVOperation k v a = (HashMap k (Maybe v) -> (OperationResult k v, a))
+type KVOperationResult k v = HashMap k (D v)
+type KVOperation k v a = (HashMap k (Maybe v) -> (KVOperationResult k v, a))
 
 data BaseError where
   BEBadResultSet :: BaseError
@@ -60,7 +77,9 @@ class (Eq k, Hashable k, Monad m) => MonadKV k v m | m -> k v where
   type Err m = BaseError
   data ResultSet m
   prepareOperation :: QueryScope k -> m (ResultSet m)
-  submitOperation :: ResultSet m -> (HashMap k (Maybe v) -> (OperationResult k v, a)) -> m (Either (Err m) a)
+  submitOperation :: ResultSet m -> (HashMap k (Maybe v) -> (KVOperationResult k v, a)) -> m (Either (Err m) a)
+
+
   fromKVBaseError :: proxy m -> BaseError -> Err m
   default fromKVBaseError :: Coercible BaseError (Err m) => proxy m -> BaseError -> Err m
   fromKVBaseError _ = coerce
@@ -74,13 +93,13 @@ class (Eq k, Hashable k, Monad m) => MonadKV k v m | m -> k v where
 --   KVBaseError e = fromKVBaseError (Proxy @ m) e
 
 
-submitOperation_ :: MonadKV k v m => ResultSet m -> (HashMap k (Maybe v) -> OperationResult k v) -> m (Maybe (Err m))
+submitOperation_ :: MonadKV k v m => ResultSet m -> (HashMap k (Maybe v) -> KVOperationResult k v) -> m (Maybe (Err m))
 submitOperation_ rs = fmap (either Just (const Nothing)) . submitOperation rs . fmap (,())
 
 insert :: MonadKV k v m => k -> v -> m (Either (Err m) (Maybe v))
 insert k v = do
   rs <- prepareOperation mempty
-  submitOperation rs $ \m -> (HashMap.fromList [ (k, DIUpdate v) ], join $ HashMap.lookup k m)
+  submitOperation rs $ \m -> (HashMap.fromList [ (k, DChangeTo v) ], join $ HashMap.lookup k m)
 
 lookup :: MonadKV k v m => k -> m (Either (Err m) (Maybe v))
 lookup k = do
@@ -90,4 +109,4 @@ lookup k = do
 delete :: MonadKV k v m => k -> m (Either (Err m) (Maybe v))
 delete k = do
   rs <- prepareOperation $ QueryScope . HashSet.singleton $ k
-  submitOperation rs $ \x -> (HashMap.fromList [(k, DIRemove)], x ! k)
+  submitOperation rs $ \x -> (HashMap.fromList [(k, DRemove)], x ! k)
