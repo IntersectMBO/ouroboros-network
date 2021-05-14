@@ -18,8 +18,9 @@
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE InstanceSigs #-}
 
-{-# OPTIONS -fno-warn-unused-imports #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS -fno-warn-unused-imports #-}
+
 module LedgerOnDisk.WWB where
 
 import LedgerOnDisk.Class
