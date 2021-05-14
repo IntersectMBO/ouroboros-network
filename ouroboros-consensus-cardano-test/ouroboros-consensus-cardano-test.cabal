@@ -36,6 +36,7 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
+                     , cardano-ledger-alonzo-test
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
                      , cardano-ledger-core

@@ -20,6 +20,7 @@
 module Ouroboros.Consensus.Shelley.Node (
     MaxMajorProtVer (..)
   , ProtocolParamsAllegra (..)
+  , ProtocolParamsAlonzo (..)
   , ProtocolParamsMary (..)
   , ProtocolParamsShelley (..)
   , ProtocolParamsShelleyBased (..)
@@ -243,6 +244,11 @@ data ProtocolParamsAllegra = ProtocolParamsAllegra {
 -- | Parameters needed to run Mary
 data ProtocolParamsMary = ProtocolParamsMary {
       maryProtVer :: SL.ProtVer
+    }
+
+-- | Parameters needed to run Alonzo
+data ProtocolParamsAlonzo = ProtocolParamsAlonzo {
+      alonzoProtVer :: SL.ProtVer
     }
 
 protocolInfoShelley ::

@@ -26,6 +26,8 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
+import qualified Cardano.Ledger.Alonzo.Translation as SL (AlonzoGenesis)
+
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -58,6 +60,7 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     CardanoBlockArgs {
         byronArgs   :: Args ByronBlock
       , shelleyArgs :: Args (ShelleyBlock StandardShelley)
+      , alonzoArgs  :: FilePath
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
@@ -66,7 +69,8 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     genesisByron <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
     genesisShelley <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
-    return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley initialNonce
+    genesisAlonzo <- undefined alonzoArgs
+    return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley genesisAlonzo initialNonce
 
 instance HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
@@ -81,14 +85,20 @@ parseCardanoArgs :: Parser CardanoBlockArgs
 parseCardanoArgs = CardanoBlockArgs
     <$> argsParser Proxy
     <*> argsParser Proxy
+    <*> strOption (mconcat [
+            long "configAlonzo"
+          , help "Path to config file"
+          , metavar "PATH"
+          ])
 
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
   -> Maybe PBftSignatureThreshold
   -> ShelleyGenesis StandardShelley
+  -> SL.AlonzoGenesis
   -> Nonce
   -> ProtocolInfo IO (CardanoBlock StandardCrypto)
-mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonce =
+mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlonzo initialNonce =
     protocolInfoCardano
       ProtocolParamsByron {
           byronGenesis                = genesisByron
@@ -111,6 +121,9 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
       ProtocolParamsMary {
           maryProtVer    = ProtVer 4 0
         }
+      ProtocolParamsAlonzo {
+          alonzoProtVer  = ProtVer 5 0
+        }
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = ()
         , transitionTrigger            = TriggerHardForkAtVersion 2
@@ -122,6 +135,10 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = ()
         , transitionTrigger            = TriggerHardForkAtVersion 4
+        }
+      ProtocolTransitionParamsShelleyBased {
+          transitionTranslationContext = genesisAlonzo
+        , transitionTrigger            = TriggerHardForkAtVersion 5
         }
 
 castHeaderHash ::

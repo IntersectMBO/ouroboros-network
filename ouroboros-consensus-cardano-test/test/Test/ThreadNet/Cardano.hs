@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.Cardano.Node
 
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 import           Test.ThreadNet.General
+import qualified Test.ThreadNet.Infra.Alonzo as Alonzo
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Network (NodeOutput (..),
@@ -506,6 +507,9 @@ mkProtocolCardanoAndHardForkTxs
         ProtocolParamsMary {
             maryProtVer    = SL.ProtVer maryMajorVersion    0
           }
+        ProtocolParamsAlonzo {
+            alonzoProtVer  = SL.ProtVer alonzoMajorVersion  0
+          }
         protocolParamsByronShelley
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = ()
@@ -516,6 +520,11 @@ mkProtocolCardanoAndHardForkTxs
             transitionTranslationContext = ()
           , transitionTrigger            =
               TriggerHardForkAtVersion maryMajorVersion
+          }
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
+          , transitionTrigger            =
+              TriggerHardForkAtVersion alonzoMajorVersion
           }
 
     -- Byron
@@ -566,6 +575,11 @@ allegraMajorVersion = shelleyMajorVersion + 1
 -- See 'byronMajorVersion'
 maryMajorVersion :: Num a => a
 maryMajorVersion = allegraMajorVersion + 1
+
+-- | The major protocol version of Alonzo in this test
+--
+alonzoMajorVersion :: Num a => a
+alonzoMajorVersion = maryMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --
