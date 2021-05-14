@@ -28,7 +28,6 @@ constraints:
   , hedgehog >= 1.0
   , bimap >= 0.4.0
   , ListLike >= 4.7.3
-  , witherable >= 0.4
 
 package Win32-network
   tests: True
@@ -178,8 +177,6 @@ source-repository-package
   tag: 7540043e0c565896be4eb8b278587e95eefa8a95
   --sha256: 1b9c9d95sl3wnmjrly78i59f9k2zngvdr3cpnwbpn5scnkwkijm4
   subdir:
-    alonzo/impl
-    alonzo/test
     byron/chain/executable-spec
     byron/crypto
     byron/crypto/test
@@ -217,7 +214,3 @@ source-repository-package
   location: https://github.com/input-output-hk/cardano-crypto
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
-
-allow-newer:
-  monoidal-containers:aeson,
-  size-based:template-haskell
