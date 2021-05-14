@@ -19,6 +19,7 @@
 {-# LANGUAGE InstanceSigs #-}
 
 {-# OPTIONS -fno-warn-unused-imports #-}
+{-# LANGUAGE UndecidableInstances #-}
 module LedgerOnDisk.WWB where
 
 import LedgerOnDisk.Class
@@ -52,7 +53,11 @@ import qualified Control.Monad.State as Strict
 import Test.QuickCheck
 
 newtype WWBT k v m a = WWBT { unWWBT :: ReaderT (WWBConfig k v) m a }
-  deriving newtype (Functor, Applicative, Monad)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadFail, MonadTrans, MonadState s)
+
+instance MonadReader r m => MonadReader r (WWBT k v m) where
+  ask = lift ask
+  local f (WWBT m) = WWBT $ ask >>= \x -> lift (local f $ runReaderT m x)
 
 -- TODO QSPreexecuted needs names, one is keys to fetch, one is keys to query. so fetch \subset query
 
@@ -157,7 +162,7 @@ flushInMemoryStore flushPolicy about_to_add = do
         FPNever -> pure mempty
         FPAll -> gets (imeMap . measure) <* put mempty
         FPMaxWidth w -> do
-          let go_split InMemoryEntryMeasure{imeMap} = length imeMap - about_to_add > w
+          let go_split InMemoryEntryMeasure{imeMap} = length imeMap - about_to_add <= w
           (to_split_ft, new_ims_ft) <- gets $ FingerTree.split go_split
           put new_ims_ft $> (imeMap . measure $ to_split_ft)
 
