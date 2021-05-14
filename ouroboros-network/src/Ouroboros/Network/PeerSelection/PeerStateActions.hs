@@ -28,7 +28,7 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
   , PeerSelectionActionsTrace (..)
   ) where
 
-import           Control.Exception (SomeAsyncException (..), assert)
+import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (DiffTime)
@@ -761,8 +761,6 @@ withPeerStateActions timeout
         writeTVar pchPeerState PromotingToHot
         writeTVar (getControlVar TokHot pchAppHandles) Continue
         writeTVar (getControlVar TokWarm pchAppHandles) Quiesce
-        e <- readTVar (getControlVar TokEstablished pchAppHandles)
-        assert (e == Continue) $ pure ()
 
       -- start hot peer protocols
       startProtocols TokHot connHandle
@@ -782,13 +780,7 @@ withPeerStateActions timeout
       atomically $ do
         writeTVar pchPeerState DemotingToWarm
         writeTVar (getControlVar TokHot pchAppHandles) Terminate
-
-        w <- readTVar (getControlVar TokWarm pchAppHandles)
-        assert (w == Quiesce) $ pure ()
         writeTVar (getControlVar TokWarm pchAppHandles) Continue
-
-        e <- readTVar (getControlVar TokEstablished pchAppHandles)
-        assert (e == Continue) $ pure ()
 
       -- Hot protocols should stop within 'spsDeactivateTimeout'.
       res <-
