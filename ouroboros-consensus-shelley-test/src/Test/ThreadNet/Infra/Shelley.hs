@@ -19,7 +19,6 @@ module Test.ThreadNet.Infra.Shelley (
   , genCoreNode
   , incrementMinorProtVer
   , initialLovelacePerCoreNode
-  , mkAllegraSetDecentralizationParamTxs
   , mkCredential
   , mkEpochSize
   , mkGenesisConfig
@@ -28,6 +27,7 @@ module Test.ThreadNet.Infra.Shelley (
   , mkKeyHashVrf
   , mkKeyPair
   , mkLeaderCredentials
+  , mkMASetDecentralizationParamTxs
   , mkProtocolShelley
   , mkSetDecentralizationParamTxs
   , mkVerKey
@@ -76,6 +76,7 @@ import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
+import qualified Cardano.Ledger.Val as SL
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
                      unitIntervalFromRational)
@@ -545,11 +546,10 @@ networkId = SL.Testnet
 --
 -- Our current plan is to replace all of this infrastructure with the ThreadNet
 -- rewrite; so we're minimizing the work and maintenance here for now.
-mkAllegraSetDecentralizationParamTxs ::
+mkMASetDecentralizationParamTxs ::
      forall era.
      ( ShelleyBasedEra era
      , Core.TxBody era ~ MA.TxBody era
-     , Core.Value  era ~ SL.Coin
      , Core.PParams era ~ SL.PParams era
      , Core.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
      , Core.Witnesses era ~ SL.WitnessSet era
@@ -559,7 +559,7 @@ mkAllegraSetDecentralizationParamTxs ::
   -> SlotNo   -- ^ The TTL
   -> DecentralizationParam   -- ^ The new value
   -> [GenTx (ShelleyBlock era)]
-mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
+mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
     SL.Tx
@@ -613,7 +613,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
             }
         update'  = SL.SJust update
         adHash   = SL.SNothing
-        mint     = SL.Coin 0
+        mint     = SL.inject $ SL.Coin 0
 
     -- Every Shelley transaction requires one input.
     --
@@ -631,7 +631,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
             addr = SL.Addr networkId
                 (mkCredential (cnDelegateKey cn))
                 (SL.StakeRefBase (mkCredential (cnStakingKey cn)))
-            coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+            coin = SL.inject $ SL.Coin $ fromIntegral initialLovelacePerCoreNode
 
     -- One replicant of the parameter update per each node.
     update :: SL.Update era

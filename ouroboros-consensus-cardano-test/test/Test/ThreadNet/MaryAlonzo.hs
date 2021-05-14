@@ -12,9 +12,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-{-# OPTIONS_GHC -Wno-orphans #-}
-
-module Test.ThreadNet.AllegraMary (tests) where
+module Test.ThreadNet.MaryAlonzo (tests) where
 
 import           Control.Monad (replicateM)
 import qualified Data.Map as Map
@@ -42,9 +40,8 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
-import qualified Shelley.Spec.Ledger.PParams as SL
+import           Cardano.Ledger.Alonzo.Translation (AlonzoGenesis)
+import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Node
@@ -70,10 +67,11 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
 import           Test.Consensus.Shelley.MockCrypto (MockCrypto)
+import qualified Test.ThreadNet.Infra.Alonzo as Alonzo
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Infra.ShelleyBasedHardFork
 import           Test.ThreadNet.TxGen
-import           Test.ThreadNet.TxGen.Allegra ()
+import           Test.ThreadNet.TxGen.Alonzo ()
 import           Test.ThreadNet.TxGen.Mary ()
 
 import           Test.ThreadNet.Infra.TwoEras
@@ -81,8 +79,8 @@ import           Test.ThreadNet.Infra.TwoEras
 -- | No Byron era, so our crypto can be trivial.
 type Crypto = MockCrypto ShortHash
 
-type AllegraMaryBlock =
-  ShelleyBasedHardForkBlock (AllegraEra Crypto) (MaryEra Crypto)
+type MaryAlonzoBlock =
+  ShelleyBasedHardForkBlock (MaryEra Crypto) (AlonzoEra Crypto)
 
 -- | The varying data of this test
 --
@@ -101,7 +99,7 @@ data TestSetup = TestSetup
   , setupPartition    :: Partition
   , setupSlotLength   :: SlotLength
   , setupTestConfig   :: TestConfig
-  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion AllegraMaryBlock)
+  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion MaryAlonzoBlock)
   }
   deriving (Show)
 
@@ -135,7 +133,7 @@ instance Arbitrary TestSetup where
 
     setupVersion   <- genVersionFiltered
                         isHardForkNodeToNodeEnabled
-                        (Proxy @AllegraMaryBlock)
+                        (Proxy @MaryAlonzoBlock)
 
     pure TestSetup
       { setupD
@@ -160,16 +158,16 @@ oneTenthTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ n `div` 10
 
 tests :: TestTree
-tests = testGroup "AllegraMary ThreadNet" $
+tests = testGroup "MaryAlonzo ThreadNet" $
     [ let name = "simple convergence" in
       askIohkNightlyEnabled $ \enabled ->
       (if enabled then id else adjustOption oneTenthTestCount) $
       testProperty name $ \setup ->
-        prop_simple_allegraMary_convergence setup
+        prop_simple_allegraAlonzo_convergence setup
     ]
 
-prop_simple_allegraMary_convergence :: TestSetup -> Property
-prop_simple_allegraMary_convergence TestSetup
+prop_simple_allegraAlonzo_convergence :: TestSetup -> Property
+prop_simple_allegraAlonzo_convergence TestSetup
   { setupD
   , setupHardFork
   , setupInitialNonce
@@ -241,7 +239,7 @@ prop_simple_allegraMary_convergence TestSetup
       , version      = setupVersion
       }
 
-    testOutput :: TestOutput AllegraMaryBlock
+    testOutput :: TestOutput MaryAlonzoBlock
     testOutput = runTestNetwork setupTestConfig testConfigB TestConfigMB {
           nodeInfo = \(CoreNodeId nid) ->
             TestNodeInitialization {
@@ -256,7 +254,7 @@ prop_simple_allegraMary_convergence TestSetup
               , tniProtocolInfo =
                   protocolInfoShelleyBasedHardFork
                     ProtocolParamsShelleyBased {
-                        shelleyBasedGenesis           = genesisShelley
+                        shelleyBasedGenesis           = genesisMary
                       , shelleyBasedInitialNonce      = setupInitialNonce
                       , shelleyBasedLeaderCredentials =
                           [Shelley.mkLeaderCredentials
@@ -265,7 +263,7 @@ prop_simple_allegraMary_convergence TestSetup
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
                     ProtocolTransitionParamsShelleyBased {
-                        transitionTranslationContext = ()
+                        transitionTranslationContext = alonzoGenesis
                       , transitionTrigger            =
                           TriggerHardForkAtVersion majorVersion2
                       }
@@ -290,8 +288,8 @@ prop_simple_allegraMary_convergence TestSetup
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * Shelley.initialLovelacePerCoreNode
 
-    genesisShelley :: ShelleyGenesis (AllegraEra Crypto)
-    genesisShelley =
+    genesisMary :: ShelleyGenesis (MaryEra Crypto)
+    genesisMary =
         Shelley.mkGenesisConfig
           (SL.ProtVer majorVersion1 0)
           setupK
@@ -302,10 +300,13 @@ prop_simple_allegraMary_convergence TestSetup
           (Shelley.mkKesConfig (Proxy @Crypto) numSlots)
           coreNodes
 
+    alonzoGenesis :: AlonzoGenesis
+    alonzoGenesis = Alonzo.degenerateAlonzoGenesis
+
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
     -- does not randomize it
     epochSize :: EpochSize
-    epochSize = sgEpochLength genesisShelley
+    epochSize = sgEpochLength genesisMary
 
     firstEraSize :: EraSize
     firstEraSize = EraSize numFirstEraEpochs
@@ -343,7 +344,7 @@ prop_simple_allegraMary_convergence TestSetup
         secondEraOverlaySlots
           numSlots
           (NumSlots numFirstEraSlots)
-          (SL._d (sgProtocolParams genesisShelley))
+          (SL._d (sgProtocolParams genesisMary))
           epochSize
 
     numFirstEraSlots :: Word64
@@ -353,8 +354,8 @@ prop_simple_allegraMary_convergence TestSetup
     finalBlockEra :: String
     finalBlockEra =
         if rsEra2Blocks reachesEra2
-        then "Allegra"
-        else "Mary"
+        then "Mary"
+        else "Alonzo"
 
     finalIntersectionDepth :: Word64
     finalIntersectionDepth = depth
