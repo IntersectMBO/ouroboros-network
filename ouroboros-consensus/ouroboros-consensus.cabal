@@ -31,6 +31,7 @@ library
      hs-source-dirs:   src-unix
 
   exposed-modules:
+
                        Ouroboros.Consensus.Block
                        Ouroboros.Consensus.Block.Abstract
                        Ouroboros.Consensus.Block.EBB
