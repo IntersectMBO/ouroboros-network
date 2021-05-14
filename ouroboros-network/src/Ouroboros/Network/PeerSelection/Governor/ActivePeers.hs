@@ -24,6 +24,7 @@ import           System.Random (randomR)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.KnownPeers (setTepidFlag)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -491,19 +492,22 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
       deactivatePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {
                                 activePeers,
+                                knownPeers,
                                 targets = PeerSelectionTargets {
                                             targetNumberOfActivePeers
                                           }
                              }
                              _now ->
         assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
-        let activePeers' = Set.delete peeraddr activePeers in
+        let activePeers' = Set.delete peeraddr activePeers
+            knownPeers'  = setTepidFlag peeraddr knownPeers in
         Decision {
           decisionTrace = TraceDemoteHotDone targetNumberOfActivePeers
                                              (Set.size activePeers')
                                              peeraddr,
           decisionState = st {
                             activePeers         = activePeers',
+                            knownPeers          = knownPeers',
                             inProgressDemoteHot = Set.delete peeraddr
                                                     (inProgressDemoteHot st)
                           },
