@@ -68,6 +68,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Shelley.Spec.Ledger.API as SL
@@ -253,11 +254,15 @@ protocolInfoShelley protocolParamsShelleyBased
                     ProtocolParamsShelley {
                         shelleyProtVer = protVer
                       } =
-    protocolInfoShelleyBased protocolParamsShelleyBased protVer
+    protocolInfoShelleyBased
+      protocolParamsShelleyBased
+      ()  -- trivial translation context
+      protVer
 
 protocolInfoShelleyBased ::
      forall m era. (IOLike m, ShelleyBasedEra era)
   => ProtocolParamsShelleyBased era
+  -> Core.TranslationContext era
   -> SL.ProtVer
   -> ProtocolInfo m (ShelleyBlock era)
 protocolInfoShelleyBased ProtocolParamsShelleyBased {
@@ -265,6 +270,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
                            , shelleyBasedInitialNonce      = initialNonce
                            , shelleyBasedLeaderCredentials = credentialss
                            }
+                         transCtxt
                          protVer =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
@@ -293,7 +299,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
       }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock era)
-    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer
+    ledgerConfig = mkShelleyLedgerConfig genesis transCtxt epochInfo maxMajorProtVer
 
     epochInfo :: EpochInfo (Except History.PastHorizonException)
     epochInfo =

@@ -12,7 +12,7 @@ module Ouroboros.Consensus.Cardano (
   , ProtocolParamsByron (..)
   , ProtocolParamsMary (..)
   , ProtocolParamsShelley (..)
-  , ProtocolParamsTransition (..)
+  , ProtocolTransitionParamsShelleyBased (..)
   , module X
   ) where
 

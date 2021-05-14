@@ -36,7 +36,7 @@ import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Allegra.Translation ()
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
-import qualified Cardano.Ledger.Era as Core (TranslateEra (..), TxInBlock)
+import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
 import           Cardano.Ledger.Shelley (ShelleyEra)
@@ -93,16 +93,6 @@ type EraCrypto era = Crypto era
 -- needed to determine the hard fork point. In the future this should be
 -- replaced with an appropriate API - see
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
---
--- TODO Currently we include the constraint @SL.AdditionalGenesisConfig era ~
--- ()@. When we fork to Alonzo we will need additional genesis config
--- information.
---
--- TODO Core.Witnesses is type family that represents the set of witnesses
--- in a Tx which may vary from one Era to another.
--- Currently, for all existing Shelley based eras (Shelley, Alegra,
--- and Mary) this type is set to SL.WitnessSet. This will eventually change,
--- most likely with Alonzo, thus this equivalence will no longer be valid.
 class ( SL.ShelleyBasedEra era
 
       , State (Core.EraRule "PPUP" era) ~ SL.PPUPState era
@@ -122,13 +112,15 @@ class ( SL.ShelleyBasedEra era
 
       , SL.AdditionalGenesisConfig era ~ ()
 
-      , Core.Witnesses era ~ SL.WitnessSet era
-
       , SL.ToCBORGroup (TxSeq era)
 
       , Eq (Core.TxInBlock era)
       , NoThunks (Core.TxInBlock era)
       , Show (Core.TxInBlock era)
+
+      , NoThunks (Core.TranslationContext era)
+
+      , ToCBOR (Core.Witnesses era)
 
       ) => ShelleyBasedEra era where
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,

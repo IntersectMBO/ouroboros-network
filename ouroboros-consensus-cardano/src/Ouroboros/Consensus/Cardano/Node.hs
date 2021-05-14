@@ -15,7 +15,7 @@ module Ouroboros.Consensus.Cardano.Node (
   , MaxMajorProtVer (..)
   , ProtocolParamsAllegra (..)
   , ProtocolParamsMary (..)
-  , ProtocolParamsTransition (..)
+  , ProtocolTransitionParamsShelleyBased (..)
   , TriggerHardFork (..)
   , protocolClientInfoCardano
   , protocolInfoCardano
@@ -72,7 +72,9 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
-import qualified Cardano.Ledger.Era as SL
+import qualified Cardano.Ledger.Era as Core
+import qualified Shelley.Spec.Ledger.API as SL
+
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
@@ -80,7 +82,6 @@ import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol (TPraosParams (..))
 import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 import           Ouroboros.Consensus.Shelley.ShelleyBased
-import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
@@ -340,12 +341,10 @@ instance CardanoHardForkConstraints c
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
--- | Parameters needed to transition between two eras.
---
--- The two eras are phantom type parameters of this type to avoid mixing up
--- multiple 'ProtocolParamsTransition's
-data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
-      transitionTrigger    :: TriggerHardFork
+-- | Parameters needed to transition to a Shelley era.
+data ProtocolTransitionParamsShelleyBased era = ProtocolTransitionParamsShelleyBased {
+      transitionTranslationContext :: Core.TranslationContext era
+    , transitionTrigger            :: TriggerHardFork
     }
 
 -- | Create a 'ProtocolInfo' for 'CardanoBlock'
@@ -363,15 +362,9 @@ protocolInfoCardano ::
   -> ProtocolParamsShelley
   -> ProtocolParamsAllegra
   -> ProtocolParamsMary
-  -> ProtocolParamsTransition
-       ByronBlock
-       (ShelleyBlock (ShelleyEra c))
-  -> ProtocolParamsTransition
-       (ShelleyBlock (ShelleyEra c))
-       (ShelleyBlock (AllegraEra c))
-  -> ProtocolParamsTransition
-       (ShelleyBlock (AllegraEra c))
-       (ShelleyBlock (MaryEra c))
+  -> ProtocolTransitionParamsShelleyBased (ShelleyEra c)
+  -> ProtocolTransitionParamsShelleyBased (AllegraEra c)
+  -> ProtocolTransitionParamsShelleyBased (MaryEra c)
   -> ProtocolInfo m (CardanoBlock c)
 protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         byronGenesis           = genesisByron
@@ -391,14 +384,17 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                     ProtocolParamsMary {
                         maryProtVer = protVerMary
                       }
-                    ProtocolParamsTransition {
-                        transitionTrigger = triggerHardForkByronShelley
+                    ProtocolTransitionParamsShelleyBased {
+                        transitionTranslationContext = ()
+                      , transitionTrigger            = triggerHardForkShelley
                       }
-                    ProtocolParamsTransition {
-                        transitionTrigger = triggerHardForkShelleyAllegra
+                    ProtocolTransitionParamsShelleyBased {
+                        transitionTranslationContext = ()
+                      , transitionTrigger            = triggerHardForkAllegra
                       }
-                    ProtocolParamsTransition {
-                        transitionTrigger = triggerHardForkAllegraMary
+                    ProtocolTransitionParamsShelleyBased {
+                        transitionTranslationContext = ()
+                      , transitionTrigger            = triggerHardForkMary
                       }
   | SL.Mainnet <- SL.sgNetworkId genesisShelley
   , length credssShelleyBased > 1
@@ -417,6 +413,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     maxMajorProtVer = MaxMajorProtVer (pvMajor protVerMary)
 
     -- Byron
+
     ProtocolInfo {
         pInfoConfig = topLevelConfigByron@TopLevelConfig {
             topLevelConfigProtocol = consensusConfigByron
@@ -432,7 +429,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigByron :: PartialLedgerConfig ByronBlock
     partialLedgerConfigByron = ByronPartialLedgerConfig {
           byronLedgerConfig    = ledgerConfigByron
-        , byronTriggerHardFork = triggerHardForkByronShelley
+        , byronTriggerHardFork = triggerHardForkShelley
         }
 
     kByron :: SecurityParam
@@ -462,8 +459,9 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
           genesisShelley
+          ()  -- trivial translation context
           maxMajorProtVer
-          triggerHardForkShelleyAllegra
+          triggerHardForkAllegra
 
     kShelley :: SecurityParam
     kShelley = SecurityParam $ sgSecurityParam genesisShelley
@@ -471,7 +469,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Allegra
 
     genesisAllegra :: ShelleyGenesis (AllegraEra c)
-    genesisAllegra = SL.translateEra' () genesisShelley
+    genesisAllegra = Core.translateEra' () genesisShelley
 
     blockConfigAllegra :: BlockConfig (ShelleyBlock (AllegraEra c))
     blockConfigAllegra =
@@ -488,13 +486,14 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigAllegra =
         mkPartialLedgerConfigShelley
           genesisAllegra
+          ()  -- trivial translation context
           maxMajorProtVer
-          triggerHardForkAllegraMary
+          triggerHardForkMary
 
     -- Mary
 
     genesisMary :: ShelleyGenesis (MaryEra c)
-    genesisMary = SL.translateEra' () genesisAllegra
+    genesisMary = Core.translateEra' () genesisAllegra
 
     blockConfigMary :: BlockConfig (ShelleyBlock (MaryEra c))
     blockConfigMary =
@@ -511,6 +510,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigMary =
         mkPartialLedgerConfigShelley
           genesisMary
+          ()  -- trivial translation context
           maxMajorProtVer
           TriggerHardForkNever
 
@@ -671,14 +671,20 @@ protocolClientInfoCardano epochSlots = ProtocolClientInfo {
 
 mkPartialLedgerConfigShelley ::
      ShelleyGenesis era
+  -> Core.TranslationContext era
   -> MaxMajorProtVer
   -> TriggerHardFork
   -> PartialLedgerConfig (ShelleyBlock era)
-mkPartialLedgerConfigShelley genesisShelley maxMajorProtVer shelleyTriggerHardFork =
+mkPartialLedgerConfigShelley
+  genesisShelley
+  transCtxt
+  maxMajorProtVer
+  shelleyTriggerHardFork =
     ShelleyPartialLedgerConfig {
           shelleyLedgerConfig =
             Shelley.mkShelleyLedgerConfig
               genesisShelley
+              transCtxt
               -- 'completeLedgerConfig' will replace the 'History.dummyEpochInfo'
               -- in the partial ledger config with the correct one.
               History.dummyEpochInfo

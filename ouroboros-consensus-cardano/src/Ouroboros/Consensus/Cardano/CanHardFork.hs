@@ -506,6 +506,10 @@ translateLedgerStateAllegraToMaryWrapper =
       Translate $ \_epochNo ->
         unComp . SL.translateEra' () . Comp
 
+{-------------------------------------------------------------------------------
+  Translation from Allegra to Mary
+-------------------------------------------------------------------------------}
+
 translateTxAllegraToMaryWrapper ::
      PraosCrypto c
   => InjectTx

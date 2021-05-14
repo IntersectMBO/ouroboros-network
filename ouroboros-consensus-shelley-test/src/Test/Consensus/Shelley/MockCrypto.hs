@@ -8,6 +8,7 @@
 module Test.Consensus.Shelley.MockCrypto (
     Block
   , CanMock
+  , CanMockPreAlonzo
   , MockCrypto
   , MockShelley
   ) where
@@ -70,5 +71,11 @@ type CanMock era =
   , Arbitrary (Core.TxOut era)
   , Arbitrary (Core.Value era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
+  )
+
+-- | A stronger 'CanMock' that is incompatible with Alonzo
+type CanMockPreAlonzo era =
+  ( CanMock era
   , Core.TxSeq era ~ SL.TxSeq era
+  , Core.Witnesses era ~ SL.WitnessSet era
   )

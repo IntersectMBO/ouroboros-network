@@ -73,7 +73,8 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
 
-import qualified Cardano.Ledger.Core as Ledger.Core
+import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Era as Core
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 
@@ -102,10 +103,11 @@ instance ShelleyBasedEra era => NoThunks (ShelleyLedgerError era)
 -------------------------------------------------------------------------------}
 
 data ShelleyLedgerConfig era = ShelleyLedgerConfig {
-      shelleyLedgerCompactGenesis :: !(CompactGenesis era)
+      shelleyLedgerCompactGenesis     :: !(CompactGenesis era)
       -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
       -- because it used very often.
-    , shelleyLedgerGlobals        :: !SL.Globals
+    , shelleyLedgerGlobals            :: !SL.Globals
+    , shelleyLedgerTranslationContext :: !(Core.TranslationContext era)
     }
   deriving (Generic, NoThunks)
 
@@ -136,18 +138,22 @@ shelleyEraParamsNeverHardForks genesis = HardFork.EraParams {
 
 mkShelleyLedgerConfig
   :: SL.ShelleyGenesis era
+  -> Core.TranslationContext era
   -> EpochInfo (Except HardFork.PastHorizonException)
   -> MaxMajorProtVer
   -> ShelleyLedgerConfig era
-mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
+mkShelleyLedgerConfig genesis transCtxt epochInfo mmpv =
     ShelleyLedgerConfig {
-        shelleyLedgerCompactGenesis = compactGenesis genesis
-      , shelleyLedgerGlobals        =
+        shelleyLedgerCompactGenesis     = compactGenesis genesis
+      , shelleyLedgerGlobals            =
           SL.mkShelleyGlobals
             genesis
             (HardFork.toPureEpochInfo epochInfo)
             maxMajorPV
+      , shelleyLedgerTranslationContext = transCtxt
       }
+  where
+    MaxMajorProtVer maxMajorPV = mmpv
 
 type instance LedgerCfg (LedgerState (ShelleyBlock era)) = ShelleyLedgerConfig era
 
@@ -408,7 +414,7 @@ instance ShelleyBasedEra era => ValidateEnvelope (ShelleyBlock era) where
   Auxiliary
 -------------------------------------------------------------------------------}
 
-getPParams :: SL.NewEpochState era -> Ledger.Core.PParams era
+getPParams :: SL.NewEpochState era -> Core.PParams era
 getPParams = SL.esPp . SL.nesEs
 
 {-------------------------------------------------------------------------------

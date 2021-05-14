@@ -369,5 +369,6 @@ prop_simple_real_tpraos_convergence TestSetup
         ledgerConfig :: LedgerConfig (ShelleyBlock Era)
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
+            ()  -- trivial translation context
             (fixedEpochInfo epochSize tpraosSlotLength)
             (MaxMajorProtVer 1000) -- TODO
