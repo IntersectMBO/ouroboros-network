@@ -715,7 +715,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       -> Map k v
       -> Map k v
     limitToLatestReleasedVersion prj =
-        if not srnEnableInDevelopmentVersions then id
+        if srnEnableInDevelopmentVersions then id
         else
         case prj $ latestReleasedNodeVersion (Proxy @blk) of
           Nothing      -> id
