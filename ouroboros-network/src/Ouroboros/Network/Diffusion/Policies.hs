@@ -72,7 +72,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
       return available'
 
     hotDemotionPolicy :: PickPolicy SockAddr m
-    hotDemotionPolicy _ _ available pickNum = do
+    hotDemotionPolicy _ _ _ available pickNum = do
         mode <- getChurnMode
         scores <- case mode of
                        ChurnModeNormal ->
@@ -89,7 +89,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
              $ available'
 
     simplePromotionPolicy :: PickPolicy SockAddr m
-    simplePromotionPolicy _ _ available pickNum = do
+    simplePromotionPolicy _ _ _ available pickNum = do
       available' <- addRand available
       return $ Set.fromList
              . map fst
@@ -99,7 +99,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
              $ available'
 
     simpleDemotionPolicy :: PickPolicy SockAddr m
-    simpleDemotionPolicy _ _ available pickNum = do
+    simpleDemotionPolicy _ _ _ available pickNum = do
       available' <- addRand available
       return $ Set.fromList
              . map fst

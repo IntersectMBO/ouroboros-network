@@ -281,6 +281,7 @@ jobPromoteColdPeer PeerSelectionActions {
       peerconn <- establishPeerConnection peeraddr
       return $ Completion $ \st@PeerSelectionState {
                                establishedPeers,
+                               knownPeers,
                                targets = PeerSelectionTargets {
                                            targetNumberOfEstablishedPeers
                                          }
@@ -288,6 +289,11 @@ jobPromoteColdPeer PeerSelectionActions {
                              _now ->
         let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
                                                         establishedPeers
+            knownPeers'       = KnownPeers.clearTepidFlag peeraddr $
+                                    KnownPeers.resetFailCount
+                                        peeraddr
+                                        knownPeers
+
         in Decision {
              decisionTrace = TracePromoteColdDone targetNumberOfEstablishedPeers
                                                   (EstablishedPeers.size establishedPeers')
@@ -296,9 +302,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                establishedPeers      = establishedPeers',
                                inProgressPromoteCold = Set.delete peeraddr
                                                          (inProgressPromoteCold st),
-                               knownPeers            = KnownPeers.resetFailCount
-                                                         peeraddr
-                                                         (knownPeers st)
+                               knownPeers            = knownPeers'
                              },
              decisionJobs  = []
            }
