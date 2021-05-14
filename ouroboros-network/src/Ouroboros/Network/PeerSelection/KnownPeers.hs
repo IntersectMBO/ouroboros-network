@@ -21,6 +21,9 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     incrementFailCount,
     resetFailCount,
     lookupFailCount,
+    lookupTepidFlag,
+    setTepidFlag,
+    clearTepidFlag,
 
     -- ** Tracking when we can gossip
     minGossipTime,
@@ -99,7 +102,15 @@ data KnownPeerInfo = KnownPeerInfo {
        -- It is used to implement the exponential backoff strategy and may also
        -- be used by policies to select peers to forget.
        --
-       knownPeerFailCount :: !Int
+       knownPeerFailCount :: !Int,
+
+       -- | Indicates if the peer was hot but then got demoted.
+       --
+       -- It is set on the hot to warm promotion and reset on cold to warm,
+       -- thus it can be present for warm or cold peers.  It's purpose is to
+       -- provide information to demotion policies.
+       --
+       knownPeerTepid     :: !Bool
      }
   deriving (Eq, Show)
 
@@ -190,10 +201,12 @@ insert peeraddrs
     newPeerInfo _peeraddr =
       KnownPeerInfo {
         knownPeerFailCount = 0
+      , knownPeerTepid     = False
       }
     mergePeerInfo old _new =
       KnownPeerInfo {
         knownPeerFailCount = knownPeerFailCount old
+      , knownPeerTepid     = knownPeerTepid old
       }
 
 delete :: Ord peeraddr
@@ -306,6 +319,36 @@ lookupFailCount :: Ord peeraddr
 lookupFailCount peeraddr KnownPeers{allPeers} =
     knownPeerFailCount <$> Map.lookup peeraddr allPeers
 
+
+lookupTepidFlag :: Ord peeraddr
+                => peeraddr
+                -> KnownPeers peeraddr
+                -> Maybe Bool
+lookupTepidFlag peeraddr KnownPeers{allPeers} =
+    knownPeerTepid <$> Map.lookup peeraddr allPeers
+
+setTepidFlag' :: Ord peeraddr
+             => Bool
+             -> peeraddr
+             -> KnownPeers peeraddr
+             -> KnownPeers peeraddr
+setTepidFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
+    assert (peeraddr `Map.member` allPeers) $
+    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownPeerTepid = val })
+                              peeraddr allPeers
+               }
+
+clearTepidFlag :: Ord peeraddr
+             => peeraddr
+             -> KnownPeers peeraddr
+             -> KnownPeers peeraddr
+clearTepidFlag = setTepidFlag' False
+
+setTepidFlag :: Ord peeraddr
+             => peeraddr
+             -> KnownPeers peeraddr
+             -> KnownPeers peeraddr
+setTepidFlag = setTepidFlag' True
 
 -------------------------------
 -- Tracking when we can gossip
