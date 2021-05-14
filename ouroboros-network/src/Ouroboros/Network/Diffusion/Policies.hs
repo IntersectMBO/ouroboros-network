@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- Constants used in 'Ouroboros.Network.Diffusion'
@@ -49,8 +48,8 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
       policyPickWarmPeersToPromote  = simplePromotionPolicy,
 
       policyPickHotPeersToDemote    = hotDemotionPolicy,
-      policyPickWarmPeersToDemote   = simpleDemotionPolicy,
-      policyPickColdPeersToForget   = simpleDemotionPolicy,
+      policyPickWarmPeersToDemote   = warmDemotionPolicy,
+      policyPickColdPeersToForget   = coldForgetPolicy,
 
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressGossipReqs = 2,
@@ -60,14 +59,16 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
     }
   where
 
-     -- Add metrics and a random number in order to prevent ordering based on SockAddr
-    addRand :: Set.Set SockAddr -> STM m (Map.Map SockAddr Word32)
-    addRand available = do
+     -- Add scaled random number in order to prevent ordering based on SockAddr
+    addRand :: Set.Set SockAddr
+            -> (SockAddr -> Word32 -> (SockAddr, Word32))
+            -> STM m (Map.Map SockAddr Word32)
+    addRand available scaleFn = do
       inRng <- readTVar rngVar
 
       let (rng, rng') = split inRng
           rns = take (Set.size available) $ unfoldr (Just . random)  rng :: [Word32]
-          available' = Map.fromList $ zip (Set.toList available) rns
+          available' = Map.fromList $ zipWith scaleFn (Set.toList available) rns
       writeTVar rngVar rng'
       return available'
 
@@ -79,7 +80,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
                            upstreamyness <$> getHeaderMetrics metrics
                        ChurnModeBulkSync ->
                            fetchyness <$> getFetchedMetrics metrics
-        available' <- addRand available
+        available' <- addRand available (,)
         return $ Set.fromList
              . map fst
              . take pickNum
@@ -88,22 +89,54 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
              . Map.assocs
              $ available'
 
-    simplePromotionPolicy :: PickPolicy SockAddr m
-    simplePromotionPolicy _ _ _ available pickNum = do
-      available' <- addRand available
+    -- Randomly pick peers to demote, peeers with knownPeerTepid set are twice
+    -- as likely to be demoted.
+    warmDemotionPolicy :: PickPolicy SockAddr m
+    warmDemotionPolicy _ _ isTepid available pickNum = do
+      available' <- addRand available (tepidWeight isTepid)
       return $ Set.fromList
              . map fst
              . take pickNum
-             . sortOn (\(_, rn) -> rn)
+             . sortOn snd
              . Map.assocs
              $ available'
 
-    simpleDemotionPolicy :: PickPolicy SockAddr m
-    simpleDemotionPolicy _ _ _ available pickNum = do
-      available' <- addRand available
+
+    -- Randomly pick peers to forget, peers with failures are more likely to
+    -- be forgotten.
+    coldForgetPolicy :: PickPolicy SockAddr m
+    coldForgetPolicy _ failCnt _ available pickNum = do
+      available' <- addRand available (failWeight failCnt)
       return $ Set.fromList
              . map fst
              . take pickNum
-             . sortOn (\(_, rn) -> rn)
+             . sortOn snd
              . Map.assocs
              $ available'
+
+    simplePromotionPolicy :: PickPolicy SockAddr m
+    simplePromotionPolicy _ _ _ available pickNum = do
+      available' <- addRand available (,)
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn snd
+             . Map.assocs
+             $ available'
+
+    -- Failures lowers r
+    failWeight :: (SockAddr -> Int)
+                -> SockAddr
+                -> Word32
+                -> (SockAddr, Word32)
+    failWeight failCnt peer r =
+        (peer, r `div` fromIntegral (failCnt peer + 1))
+
+    -- Tepid flag cuts r in half
+    tepidWeight :: (SockAddr -> Bool)
+                -> SockAddr
+                -> Word32
+                -> (SockAddr, Word32)
+    tepidWeight isTepid peer r =
+          if isTepid peer then (peer, r `div` 2)
+                          else (peer, r)
