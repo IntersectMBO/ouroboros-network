@@ -40,7 +40,7 @@ import           HasAnalysis
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyBasedEra era
-         , HasField "outputs" (Core.TxBody era) (StrictSeq (SL.TxOut era))
+         , HasField "outputs" (Core.TxBody era) (StrictSeq (Core.TxOut era))
          ) => HasAnalysis (ShelleyBlock era) where
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body -> sum $ fmap countOutputs (CL.fromTxSeq @era body)

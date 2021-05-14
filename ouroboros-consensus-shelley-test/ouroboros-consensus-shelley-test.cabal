@@ -24,6 +24,7 @@ library
                        Test.Consensus.Shelley.Examples
                        Test.Consensus.Shelley.Generators
                        Test.Consensus.Shelley.MockCrypto
+                       Test.ThreadNet.Infra.Alonzo
                        Test.ThreadNet.Infra.Shelley
                        Test.ThreadNet.TxGen.Shelley
 
@@ -48,6 +49,8 @@ library
                      , transformers
 
                        -- cardano-ledger-specs
+                     , cardano-ledger-alonzo
+                     , cardano-ledger-alonzo-test
                      , cardano-ledger-shelley-ma
                      , cardano-ledger-shelley-ma-test
                      , shelley-spec-ledger
