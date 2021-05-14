@@ -21,6 +21,7 @@ library
   -- other-modules:
   -- other-extensions:
   exposed-modules:     LedgerOnDisk
+                       LedgerOnDisk.Suite
                        LedgerOnDisk.Class
                        LedgerOnDisk.ClassWithExceptions
                        LedgerOnDisk.Simple
@@ -49,7 +50,9 @@ library
                        async,
                        stm,
                        fingertree,
-                       time
+                       time,
+                       quickcheck-classes,
+                       tasty-quickcheck-laws
 
   hs-source-dirs:      src
   default-language:    Haskell2010

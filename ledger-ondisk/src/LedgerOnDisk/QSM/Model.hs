@@ -28,7 +28,10 @@
 {-# LANGUAGE ConstraintKinds #-}
 
 {-# OPTIONS -fno-warn-unused-imports #-}
+
+-- from quickcheck-state-machine, see very bottom of file
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module LedgerOnDisk.QSM.Model where
 
 import Data.Coerce

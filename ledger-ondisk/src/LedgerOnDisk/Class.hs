@@ -27,7 +27,6 @@ import Control.Monad
 import Test.QuickCheck
 import Data.TreeDiff.Class
 import Test.QuickCheck.Instances.UnorderedContainers ()
-import qualified Data.Semigroup as Semi
 import Data.Monoid
 -- import Data.Proxy
 
@@ -46,7 +45,10 @@ data D v where
   -- instance (though I think this could be surmounted with a CoYoneda trick)
   -- DIMappend :: Monoid v => v -> D v
   deriving stock (Show, Eq)
-  deriving Semigroup via (Semi.Last (D v))
+
+instance Semigroup (D v) where
+  x <> DNoChange = x
+  _ <> y = y
 
 instance Monoid (D v) where
   mempty = DNoChange

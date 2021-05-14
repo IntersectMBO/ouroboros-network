@@ -11,6 +11,8 @@
 
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+
+{-# OPTIONS -fno-warn-unused-imports #-}
 module LedgerOnDisk.Simple where
 
 import Control.Monad.Except

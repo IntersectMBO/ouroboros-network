@@ -187,5 +187,4 @@ tests = testGroup "quickcheck state machine"
     ]
   , testQSM "SimpleT" simpleStateMachineTest
   , testQSM "WWBT" wwbStateMachineTest
-  -- , testLabelStateMachine "KVModel" $
   ]
