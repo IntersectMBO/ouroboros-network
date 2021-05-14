@@ -46,6 +46,7 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
+                     , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-core
                      , cardano-prelude
@@ -78,6 +79,7 @@ executable db-analyser
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
+                     , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-core
                      , cardano-ledger-shelley-ma

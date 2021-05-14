@@ -16,6 +16,7 @@ module Test.Consensus.Shelley.Examples (
   , testShelleyGenesis
     -- * Examples
   , examplesAllegra
+  , examplesAlonzo
   , examplesMary
   , examplesShelley
     -- * Era-specific examples
@@ -314,6 +315,9 @@ examplesMary =
       exampleMultiAssetValue
       exampleTxBodyMary
       exampleAuxiliaryDataMA
+
+examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
+examplesAlonzo = mempty   -- TODO
 
 {-------------------------------------------------------------------------------
   Era-specific individual examples

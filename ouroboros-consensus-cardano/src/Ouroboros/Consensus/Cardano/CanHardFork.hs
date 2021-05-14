@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.ShelleyHFC
 
 import           Cardano.Ledger.Allegra.Translation ()
+import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Mary.Translation ()
@@ -246,6 +247,7 @@ type CardanoHardForkConstraints c =
   , ShelleyBasedEra (ShelleyEra c)
   , ShelleyBasedEra (AllegraEra c)
   , ShelleyBasedEra (MaryEra    c)
+  , ShelleyBasedEra (AlonzoEra  c)
     -- These equalities allow the transition from Byron to Shelley, since
     -- @shelley-spec-ledger@ requires Ed25519 for Byron bootstrap addresses and
     -- the current Byron-to-Shelley translation requires a 224-bit hash for
@@ -261,9 +263,11 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
           PCons translateLedgerStateByronToShelleyWrapper
         $ PCons translateLedgerStateShelleyToAllegraWrapper
         $ PCons translateLedgerStateAllegraToMaryWrapper
+        $ PCons translateLedgerStateMaryToAlonzoWrapper
         $ PNil
     , translateChainDepState =
           PCons translateChainDepStateByronToShelleyWrapper
+        $ PCons translateChainDepStateAcrossShelley
         $ PCons translateChainDepStateAcrossShelley
         $ PCons translateChainDepStateAcrossShelley
         $ PNil
@@ -271,16 +275,23 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
           PCons translateLedgerViewByronToShelleyWrapper
         $ PCons translateLedgerViewAcrossShelley
         $ PCons translateLedgerViewAcrossShelley
+        $ PCons translateLedgerViewAcrossShelley
         $ PNil
     }
   hardForkChainSel =
         -- Byron <-> Shelley, ...
-        TCons (CompareBlockNo :* CompareBlockNo :* CompareBlockNo :* Nil)
+        TCons (   CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* Nil)
         -- Shelley <-> Allegra, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* Nil)
+      $ TCons (SelectSameProtocol :* SelectSameProtocol :* SelectSameProtocol :* Nil)
         -- Allegra <-> Mary, ...
+      $ TCons (SelectSameProtocol :* SelectSameProtocol :* Nil)
+        -- Mary <-> Alonzo, ...
       $ TCons (SelectSameProtocol :* Nil)
-        -- Mary <-> ...
+        -- Alonzo <-> ...
       $ TCons Nil
       $ TNil
   hardForkInjectTxs =
@@ -294,6 +305,13 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
                 $ Pair2
                     translateTxAllegraToMaryWrapper
                     translateValidatedTxAllegraToMaryWrapper
+              )
+      $ PCons (RequireBoth $ \_cfgMary cfgAlonzo ->
+                 let ctxt = getAlonzoTranslationContext cfgAlonzo
+                 in
+                 Pair2
+                   (translateTxMaryToAlonzoWrapper          ctxt)
+                   (translateValidatedTxMaryToAlonzoWrapper ctxt)
               )
       $ PNil
 
@@ -525,3 +543,47 @@ translateValidatedTxAllegraToMaryWrapper ::
        (ShelleyBlock (MaryEra c))
 translateValidatedTxAllegraToMaryWrapper = InjectValidatedTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
+
+{-------------------------------------------------------------------------------
+  Translation from Mary to Alonzo
+-------------------------------------------------------------------------------}
+
+translateLedgerStateMaryToAlonzoWrapper ::
+     PraosCrypto c
+  => RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (AlonzoEra c))
+translateLedgerStateMaryToAlonzoWrapper =
+    RequireBoth $ \_cfgMary cfgAlonzo ->
+      Translate $ \_epochNo ->
+        unComp . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo) . Comp
+
+getAlonzoTranslationContext ::
+     WrapLedgerConfig (ShelleyBlock (AlonzoEra c))
+  -> Alonzo.AlonzoGenesis
+getAlonzoTranslationContext =
+    shelleyLedgerTranslationContext . unwrapLedgerConfig
+
+translateTxMaryToAlonzoWrapper ::
+     PraosCrypto c
+  => Alonzo.AlonzoGenesis
+  -> InjectTx
+       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (AlonzoEra c))
+translateTxMaryToAlonzoWrapper ctxt = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
+
+translateValidatedTxMaryToAlonzoWrapper ::
+     forall c.
+     PraosCrypto c
+  => Alonzo.AlonzoGenesis
+  -> InjectValidatedTx
+       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (AlonzoEra c))
+translateValidatedTxMaryToAlonzoWrapper ctxt = InjectValidatedTx $
+      fmap (\(WrapTxInBlock tx) -> WrapValidatedGenTx (mkShelleyValidatedTx tx))
+    . eitherToMaybe . runExcept
+    . SL.translateEra @(AlonzoEra c) ctxt
+    . (\(WrapValidatedGenTx (ShelleyValidatedTx _txId tx)) -> WrapTxInBlock tx)
