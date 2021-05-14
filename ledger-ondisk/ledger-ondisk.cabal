@@ -51,8 +51,10 @@ library
                        stm,
                        fingertree,
                        time,
+-- unused at time of writing
                        quickcheck-classes,
-                       tasty-quickcheck-laws
+                       tasty-quickcheck-laws,
+                       streaming
 
   hs-source-dirs:      src
   default-language:    Haskell2010
