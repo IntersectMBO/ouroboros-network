@@ -28,6 +28,7 @@ library
                        Test.ThreadNet.Infra.TwoEras
 
                        Test.ThreadNet.TxGen.Allegra
+                       Test.ThreadNet.TxGen.Alonzo
                        Test.ThreadNet.TxGen.Cardano
                        Test.ThreadNet.TxGen.Mary
 
@@ -36,10 +37,6 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-ledger-alonzo-test
-                     , cardano-ledger-byron
-                     , cardano-ledger-byron-test
-                     , cardano-ledger-core
                      , cardano-prelude
                      , cardano-slotting
                      , cborg
@@ -53,6 +50,11 @@ library
                      , tasty-quickcheck
                      , time
 
+                     , cardano-ledger-alonzo
+                     , cardano-ledger-alonzo-test
+                     , cardano-ledger-byron
+                     , cardano-ledger-byron-test
+                     , cardano-ledger-core
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
 
@@ -84,17 +86,16 @@ test-suite test
                        Test.Consensus.Cardano.ByronCompatibility
                        Test.Consensus.Cardano.Golden
                        Test.Consensus.Cardano.Serialisation
-                       Test.ThreadNet.Cardano
-                       Test.ThreadNet.ShelleyAllegra
                        Test.ThreadNet.AllegraMary
+                       Test.ThreadNet.Cardano
+                       Test.ThreadNet.MaryAlonzo
+                       Test.ThreadNet.ShelleyAllegra
 
   build-depends:       base
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-ledger-byron
-                     , cardano-ledger-byron-test
                      , cardano-slotting
                      , cborg
                      , containers
@@ -106,6 +107,9 @@ test-suite test
                      , tasty-quickcheck
                      , time
 
+                     , cardano-ledger-alonzo
+                     , cardano-ledger-byron
+                     , cardano-ledger-byron-test
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
 
