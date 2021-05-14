@@ -49,6 +49,7 @@ import Data.Functor.Identity
 import Data.Foldable
 import Data.Either
 import qualified Control.Monad.State as Strict
+import Test.QuickCheck
 
 newtype WWBT k v m a = WWBT { unWWBT :: ReaderT (WWBConfig k v) m a }
   deriving newtype (Functor, Applicative, Monad)
@@ -64,13 +65,23 @@ data QueryState k v = QSPreexecuted
   -- ^ Either an error encountered while fetching, or the scope of the query
   | QSRetired
   -- ^ The query has been retired
-  deriving (Show, Eq)
+  deriving stock (Show, Eq, Generic)
+
+-- | WARNING: This instance upholds no invariants
+instance (Eq k, Hashable k, Arbitrary k) => Arbitrary (QueryState k v) where
+  arbitrary = oneof
+    [ QSPreexecuted <$> arbitrary <*> arbitrary
+    , QSExecuted <$> arbitrary
+    , pure QSRetired
+    ]
+  shrink = genericShrink
 
 data InMemoryEntry k v
   = IME !k !(Maybe v)
   | QueryStateChange !Int !(QueryState k v)
 
 type role MonoidalHashMap nominal representational
+
 newtype MonoidalHashMap k v = MonoidalHashMap { unMonoidalHashMap :: HashMap k v }
   deriving stock (Show)
   deriving newtype (Eq)
@@ -85,7 +96,11 @@ data InMemoryEntryMeasure k v = InMemoryEntryMeasure
   { imeMap :: !(HashMap k (Maybe v))
   , liveQueries :: !(HashMap Int (QueryState k v))
   }
-  deriving stock (Show, Eq)
+  deriving stock (Show, Eq, Generic)
+
+-- | WARNING: This instance upholds no invariants
+instance (Eq k, Hashable k, Arbitrary k, Arbitrary v) => Arbitrary (InMemoryEntryMeasure k v) where
+  arbitrary = InMemoryEntryMeasure <$> arbitrary <*> arbitrary
 
 measureInMemoryEntries :: (Eq k, Hashable k, Foldable f) => f (InMemoryEntry k v) -> InMemoryEntryMeasure k v
 measureInMemoryEntries f = InMemoryEntryMeasure{..} where
@@ -267,6 +282,15 @@ resetWWBTIO m WWBConfig{..} = liftIO . atomically $ do
 
 data WWBErr k v = WWBEBase BaseError | WWBEExpiredResultSet | WWBEWeird String
   deriving stock (Eq, Show, Generic)
+
+-- | WARNING: This instance upholds no invariants
+instance Arbitrary (WWBErr k v) where
+  arbitrary = oneof
+    [ WWBEBase <$> arbitrary
+    , pure WWBEExpiredResultSet
+    , pure $ WWBEWeird "weird"
+    ]
+  shrink = genericShrink
 
 wwbStateTVar :: TVar s -> Strict.State s a -> STM a
 wwbStateTVar v = stateTVar v . Strict.runState

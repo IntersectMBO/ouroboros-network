@@ -15,6 +15,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveGeneric #-}
 module LedgerOnDisk.Class where
 
 import Data.HashMap.Strict(HashMap, (!))
@@ -28,6 +29,7 @@ import Test.QuickCheck
 import Data.TreeDiff.Class
 import Test.QuickCheck.Instances.UnorderedContainers ()
 import Data.Monoid
+import GHC.Generics (Generic)
 -- import Data.Proxy
 
 newtype QueryScope k = QueryScope (HashSet k)
@@ -76,8 +78,11 @@ type KVOperation k v a = (HashMap k (Maybe v) -> (KVOperationResult k v, a))
 
 data BaseError where
   BEBadResultSet :: BaseError
-  deriving stock (Show, Eq)
+  deriving stock (Show, Eq, Generic)
 
+instance Arbitrary BaseError where
+  arbitrary = pure BEBadResultSet
+  shrink = genericShrink
 
 class (Eq k, Hashable k, Monad m) => MonadKV k v m | m -> k v where
   type Err m
