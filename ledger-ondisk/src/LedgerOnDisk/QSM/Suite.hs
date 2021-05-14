@@ -63,7 +63,7 @@ simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOPro
 
 wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int Int IO))
 wwbStateMachineTest = cont $ \k -> property $ \initial_map queryOnPrepare -> idempotentIOProperty $ do
-  !cfg <- liftIO $ wwbConfigIO queryOnPrepare initial_map
+  !cfg <- liftIO $ wwbConfigIO queryOnPrepare FPNever initial_map
   let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runWWBTWithConfig x cfg
       smt = smt0 { cleanup = \x -> cleanup smt0 x *> resetWWBTIO initial_map cfg }
   pure $ k smt

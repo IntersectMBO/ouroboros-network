@@ -24,7 +24,7 @@ module LedgerOnDisk.WWB where
 import LedgerOnDisk.Class
 import Data.Hashable
 import Data.TreeDiff
-import GHC.Generics
+import GHC.Generics hiding (D)
 import Data.HashMap.Strict (HashMap)
 import Control.Monad.IO.Class
 import Control.Monad.RWS.Strict
@@ -112,11 +112,14 @@ instance (Eq k, Hashable k) => Monoid (InMemoryEntryMeasure k v) where
 
 type InMemoryStore k v = FingerTree (InMemoryEntryMeasure k v) (InMemoryEntry k v)
 
+data WWBFlushPolicy = FPNever | FPAll | FPMaxWidth !Int
+
 data WWBConfig k v = WWBConfig
   { backingStore :: !(TVar (HashMap k v))
   , inMemoryStore :: !(TVar (InMemoryStore k v))
   , nextQueryId :: !(TVar Int)
-  , queryOnPrepare :: Bool
+  , queryOnPrepare :: !Bool
+  , flushPolicy :: !WWBFlushPolicy
   }
   deriving stock (Generic)
 
@@ -132,22 +135,25 @@ newtype WWBResultSet k v = WWBResultSet
 nextResultSet :: MonadState Int m => m (WWBResultSet k v)
 nextResultSet = gets coerce <* modify (+1)
 
-flushInMemoryStore :: (Eq k, Hashable k, MonadState (InMemoryStore k v) m) => HashMap k v -> m (HashMap k v)
-flushInMemoryStore initial_map = do
-  InMemoryEntryMeasure{imeMap} <- gets measure
-  put mempty
-  let go k v = Endo $ maybe (HashMap.delete k) (HashMap.insert k) v
-  pure $ appEndo (HashMap.foldMapWithKey go $ coerce imeMap) initial_map
+flushInMemoryStore :: (Eq k, Hashable k, MonadState (InMemoryStore k v) m) => WWBFlushPolicy -> Int -> m (HashMap k (D v))
+flushInMemoryStore flushPolicy about_to_add = do
+    to_flush_map <- do
+      case flushPolicy of
+        FPNever -> pure mempty
+        FPAll -> gets (imeMap . measure) <* put mempty
+        FPMaxWidth w -> do
+          let go_split InMemoryEntryMeasure{imeMap} = length imeMap - about_to_add > w
+          (to_split_ft, new_ims_ft) <- gets $ FingerTree.split go_split
+          put new_ims_ft $> (imeMap . measure $ to_split_ft)
+
+    pure $ HashMap.map (maybe DRemove DChangeTo) to_flush_map
 
 flush :: (MonadIO m, Eq k, Hashable k) => WWBT k v m ()
 flush = WWBT $ do
   WWBConfig{..} <- ask
   liftIO . atomically $ do
-    bs <- readTVar backingStore
-    new_bs <- stateTVar inMemoryStore . State.runState $ flushInMemoryStore bs
-    writeTVar backingStore new_bs
-
-
+    bs_d <- wwbStateTVar inMemoryStore $ flushInMemoryStore flushPolicy 0
+    wwbStateTVar backingStore $ modify' $ applyDtoHashMap bs_d
 
 makeInMemoryStore :: (Eq k, Hashable k) => HashMap k v -> HashSet k -> InMemoryStore k v
 makeInMemoryStore backing_store = coerce . FingerTree.fromList .
@@ -172,8 +178,8 @@ markLiveQuery WWBResultSet{resultSetId} scope =  do
   -- TODO we could remove the elements of  relevent_ft from the left of the tree
   modify' (<> (live_ft <> relevant_ft))
 
-executeQuery :: (MonadState (InMemoryStore k v) m, Eq k, Hashable k) => WWBResultSet k v -> HashMap k v -> m ()
-executeQuery WWBResultSet{resultSetId} backing_store = do
+executeQuery :: (MonadState (InMemoryStore k v) m, Eq k, Hashable k) => WWBResultSet k v -> WWBFlushPolicy -> HashMap k v -> m ()
+executeQuery WWBResultSet{resultSetId} _flush_policy backing_store = do
   InMemoryEntryMeasure{imeMap, liveQueries} <- gets measure
   -- TODO check this i is not already in liveQueries
   r <- runExceptT $ do
@@ -190,8 +196,11 @@ executeQuery WWBResultSet{resultSetId} backing_store = do
         QSExecuted Right{} -> throwError . WWBEBase $ BEBadResultSet-- TODO distinguish error
         QSRetired -> throwError . WWBEBase $ BEBadResultSet-- TODO distinguish error
     let
-
       go k acc = IME k (k `HashMap.lookup` backing_store) : acc
+
+    -- TODO I think this is the right place to call flush. It's inconvenient
+    -- right now, because backing_store is pure
+
     pure . FingerTree.fromList $ (QueryStateChange resultSetId . QSExecuted . Right $ scope) :
       foldr go [] fetchKeys
 
@@ -225,24 +234,24 @@ submit WWBResultSet{resultSetId} f = runExceptT $ do
   pure r
 
 
-runWWBT :: (MonadIO m, Eq k, Hashable k) => WWBT k v m a -> Bool -> HashMap k v -> m (HashMap k v, a)
-runWWBT (WWBT m) query_on_prepare initial_map = do
+runWWBT :: (MonadIO m, Eq k, Hashable k) => WWBT k v m a -> Bool -> WWBFlushPolicy -> HashMap k v -> m (HashMap k v, a)
+runWWBT (WWBT m) query_on_prepare flush_policy initial_map = do
   -- let
   --   prepare_queue_depth = 100
   --   submit_queue_depth = 100
-  c@WWBConfig{..} <- wwbConfigIO query_on_prepare initial_map
+  c@WWBConfig{..} <- wwbConfigIO query_on_prepare flush_policy initial_map
 
   a <- runReaderT m c
   liftIO $ atomically $ do
-    bs <- readTVar backingStore
-    final_map <- stateTVar inMemoryStore . State.runState $ flushInMemoryStore bs
-    pure (final_map, a)
+    nearly_final_map <- readTVar backingStore
+    final_flush_d <- stateTVar inMemoryStore . State.runState $ flushInMemoryStore FPAll 0
+    pure (applyDtoHashMap final_flush_d nearly_final_map, a)
 
 runWWBTWithConfig :: WWBT k v m a -> WWBConfig k v -> m a
 runWWBTWithConfig (WWBT m) = runReaderT m
 
-wwbConfigIO :: (Eq k, Hashable k, MonadIO m) => Bool -> HashMap k v -> m (WWBConfig k v)
-wwbConfigIO queryOnPrepare m = liftIO $ do
+wwbConfigIO :: (Eq k, Hashable k, MonadIO m) => Bool -> WWBFlushPolicy -> HashMap k v -> m (WWBConfig k v)
+wwbConfigIO queryOnPrepare flushPolicy m = liftIO $ do
     (backingStore, inMemoryStore, nextQueryId) <- liftA3 (,,)
         (newTVarIO m)
         (newTVarIO mempty)
@@ -278,10 +287,15 @@ instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
     WWBConfig{..} <- ask
     liftIO . atomically $ do
         bs <- readTVar backingStore
-        rs <- stateTVar nextQueryId . State.runState $ nextResultSet
-        stateTVar inMemoryStore . State.runState $ do
+        rs <- wwbStateTVar nextQueryId nextResultSet
+        mb_bs_diff <- wwbStateTVar inMemoryStore $ do
           markLiveQuery rs $ coerce qs
-          when queryOnPrepare $ void $ executeQuery rs bs
+          if queryOnPrepare
+          then do
+            executeQuery rs flushPolicy bs
+            Just <$> flushInMemoryStore flushPolicy 0
+          else pure Nothing
+        for_ mb_bs_diff $ \d -> wwbStateTVar backingStore . modify' $ applyDtoHashMap d
         pure . coerce $ rs
 
   submitOperation (coerce -> rs@WWBResultSet{}) f = WWBT $ do
@@ -289,5 +303,8 @@ instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
     liftIO . atomically $ do
       unless queryOnPrepare $ do
         bs <- readTVar backingStore
-        wwbStateTVar inMemoryStore $ executeQuery rs bs
+        mb_bs_diff <- wwbStateTVar inMemoryStore $ do
+          executeQuery rs flushPolicy bs
+          Just <$> flushInMemoryStore flushPolicy 0
+        for_ mb_bs_diff $ \d -> wwbStateTVar backingStore . modify' $ applyDtoHashMap d
       wwbStateTVar inMemoryStore $ submit rs f

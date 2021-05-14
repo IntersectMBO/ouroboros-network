@@ -28,6 +28,7 @@ import Test.QuickCheck
 import Data.TreeDiff.Class
 import Test.QuickCheck.Instances.UnorderedContainers ()
 import qualified Data.Semigroup as Semi
+import Data.Monoid
 -- import Data.Proxy
 
 newtype QueryScope k = QueryScope (HashSet k)
@@ -50,12 +51,16 @@ data D v where
 instance Monoid (D v) where
   mempty = DNoChange
 
-applyD :: (Eq k, Hashable k) => k -> D v -> HashMap k v -> HashMap k v
-applyD k = \case
+applyDforK :: (Eq k, Hashable k) => k -> D v -> HashMap k v -> HashMap k v
+applyDforK k = \case
   DChangeTo v -> HashMap.insert k v
   DRemove -> HashMap.delete k
   DNoChange -> id
   -- DIMappend v -> HashMap.insertWith (<>) k v
+
+applyDtoHashMap :: (Eq k, Hashable k) => HashMap k (D v) -> HashMap k v -> HashMap k v
+applyDtoHashMap d = appEndo (HashMap.foldMapWithKey go d) where
+  go k = Endo . applyDforK k
 
 instance Arbitrary v => Arbitrary (D v) where
   arbitrary = oneof [ pure DRemove, DChangeTo <$> arbitrary ]
