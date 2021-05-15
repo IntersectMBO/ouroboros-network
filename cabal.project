@@ -137,6 +137,12 @@ package small-steps
 package small-steps-test
   tests: False
 
+package plutus-tx
+  tests: False
+
+package prettyprinter-configurable
+  tests: False
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/Win32-network
@@ -198,8 +204,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: 1578ab92f9ac389c68aa915370bf38ad7b4a75e9
-  --sha256: 1fnpv2l7zs1in1hgdpb85zv8l37kjcclz0zjzqmll391gbdsb99f
+  tag: 7576a40d9e2e713b12833e727acc782e032beee7
+  --sha256: 06nhxn1gb3d6rfvqnpjcalsavd5ry9yihv7gk48y97pl930dirxv
   subdir:
     plutus-ledger-api
     plutus-tx
