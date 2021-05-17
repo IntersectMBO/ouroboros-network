@@ -66,7 +66,7 @@ snapshotEpochInfo summary = EpochInfo {
 -- | A dummy 'EpochInfo' that always throws an 'error'.
 --
 -- To be used as a placeholder before a summary is available.
-dummyEpochInfo :: EpochInfo (Except PastHorizonException)
+dummyEpochInfo :: EpochInfo m
 dummyEpochInfo = EpochInfo {
       epochInfoSize_               = \_ -> error "dummyEpochInfo used"
     , epochInfoFirst_              = \_ -> error "dummyEpochInfo used"
