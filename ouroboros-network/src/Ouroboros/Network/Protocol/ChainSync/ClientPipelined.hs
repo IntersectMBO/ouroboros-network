@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -28,7 +27,7 @@ import Ouroboros.Network.Protocol.ChainSync.Type
 
 -- | Pipelined chain sync client.  It can only pipeline 'MsgRequestNext'
 -- messages, while the 'MsgFindIntersect' are non pipelined.  This has a penalty
--- cost of an RTT, but they are send relatively seldom and their resposne might
+-- cost of an RTT, but they are send relatively seldom and their response might
 -- impact how many messages one would like to pipeline.  It also simplifies the
 -- receiver callback.
 --
@@ -165,7 +164,7 @@ mapChainSyncClientPipelined toPoint' toPoint toHeader toTip (ChainSyncClientPipe
 --
 
 -- | Data received through pipelining: either roll forward or roll backward
--- instcutrion.  If the server replied with 'MsgAwaitReply' the pipelined
+-- instruction. If the server replied with 'MsgAwaitReply' the pipelined
 -- receiver will await for the next message which must come with an instruction
 -- how to update our chain.
 --
