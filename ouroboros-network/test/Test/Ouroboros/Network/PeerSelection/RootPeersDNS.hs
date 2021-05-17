@@ -2,6 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -48,7 +49,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "RootPeersDNS"
+  testGroup "Ouroboros.Network.PeerSelection.RootPeersDNS"
   [ testGroup "localRootPeersProvider"
      [ testProperty "preserves groups and targets"
                     prop_local_preservesGroupNumberAndTargets
@@ -187,8 +188,9 @@ mockDNSActions dnsMap stdGenVar =
      gen <- atomically $ readTVar stdGenVar
 
          -- Small probability of timeout
-     let (dtTimeout, dtDelay) = (genDiffTime 110 300 gen, genDiffTime 20 120 gen)
-         (_, g')              = split gen
+     let (_, (g', g'')) = split <$> split gen
+         dtTimeout      = genDiffTime 110 300 g'
+         dtDelay        = genDiffTime 20 120 g''
 
      atomically $ writeTVar stdGenVar g'
 
@@ -311,7 +313,7 @@ selectPublicRootResultEvents trace = [ (t, (domain, map fst r))
 --
 
 -- | The 'localRootPeersProvider' should preserve the local root peers
--- group number and respective targets. This property tests wether local
+-- group number and respective targets. This property tests whether local
 -- root peer groups update due to DNS resolution results, does not alter
 -- the initial groups configuration.
 --
@@ -339,7 +341,7 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _) =
 
 -- | The 'localRootPeersProvider' should be able to resolve DNS domains
 -- correctly, assuming the domain maps to any IP address. This property
--- tests wether 'localRootPeersProvider' is capable of eventually resolving
+-- tests whether 'localRootPeersProvider' is capable of eventually resolving
 -- domain addresses even after having failed to do so in the first attempt.
 --
 prop_local_resolvesDomainsCorrectly :: MockRoots -> Property
@@ -358,7 +360,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) =
 -- | The 'localRootPeersProvider' after resolving a DNS domain address
 -- should update the local result group list correctly, i.e. add the
 -- resolved ip addresses to the correct group where the domain address was
--- (in the initial configuration specification). This property tests wether
+-- (in the initial configuration specification). This property tests whether
 -- after a successful DNS lookup the result list is updated correctly.
 prop_local_updatesDomainsCorrectly :: MockRoots -> Property
 prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _) =
@@ -413,13 +415,13 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _) =
 
 -- | The 'publicRootPeersProvider' should be able to resolve DNS domains
 -- correctly, assuming the domain maps to any IP address. This property
--- tests wether 'publicRootPeersProvider' is capable of eventually resolving domain
+-- tests whether 'publicRootPeersProvider' is capable of eventually resolving domain
 -- addresses even after having failed to do so in the first attempt, in
 -- a bounded amount of time.
 --
 prop_public_resolvesDomainsCorrectly :: MockRoots -> Int -> Property
 prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) n =
-    within 1000000 $
+    within 1_000_000 $
       lookupLoop mockRoots dnsMap === dnsMap
   where
     -- Perform public root DNS lookup until no failures
@@ -458,7 +460,7 @@ prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) n =
 
 -- | The 'resolveDomainAddresses' should be able to resolve DNS domains
 -- correctly, assuming the domain maps to any IP address. This property
--- tests wether 'resolveDomainAddresses' is capable of eventually resolving domain
+-- tests whether 'resolveDomainAddresses' is capable of eventually resolving domain
 -- addresses even after having failed to do so in the first attempt, in
 -- a bounded amount of time.
 --
