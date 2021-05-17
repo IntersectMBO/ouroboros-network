@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC
   , translateLedgerViewAcrossShelley
   ) where
 
+import           Cardano.Slotting.Time (SystemStart)
 import           Control.Monad (guard)
 import           Control.Monad.Except (runExcept, throwError, withExceptT)
 import qualified Data.Map.Strict as Map
@@ -236,7 +237,9 @@ instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
               <*> fromCBOR @Word64
               <*> fromCBOR @ActiveSlotCoeff
               <*> fromCBOR @SL.Network
+              <*> fromCBOR @SystemStart
             )
+        <*> fromCBOR @(SL.TranslationContext era)
       )
       <*> fromCBOR @TriggerHardFork
 
@@ -257,7 +260,9 @@ instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
           maxLovelaceSupply
           activeSlotCoeff
           networkId
+          systemStart
         )
+        translationContext
       )
       triggerHardFork
     )
@@ -276,6 +281,8 @@ instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
         <> toCBOR @Word64 maxLovelaceSupply
         <> toCBOR @ActiveSlotCoeff activeSlotCoeff
         <> toCBOR @SL.Network networkId
+        <> toCBOR @SystemStart systemStart
+        <> toCBOR @(SL.TranslationContext era) translationContext
         -- TriggerHardFork
         <> toCBOR @TriggerHardFork triggerHardFork
 
