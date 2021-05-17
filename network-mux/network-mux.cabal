@@ -110,6 +110,7 @@ test-suite test
                        io-sim            >=0.2 && < 0.3,
                        contra-tracer,
                        network-mux,
+                       Win32-network,
 
                        array,
                        binary,
@@ -130,7 +131,6 @@ test-suite test
 
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <3.0,
-                       Win32-network   >=0.1 && <0.2
   ghc-options:         -threaded
                        -Wall
                        -fno-ignore-asserts
