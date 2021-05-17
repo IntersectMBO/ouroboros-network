@@ -136,6 +136,12 @@ package small-steps
 package small-steps-test
   tests: False
 
+package plutus-tx
+  tests: False
+
+package prettyprinter-configurable
+  tests: False
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/Win32-network
