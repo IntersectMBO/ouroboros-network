@@ -164,6 +164,7 @@ library
                        serialise         >=0.2 && <0.3,
                        random,
                        stm               >=2.4 && <2.6,
+                       unix,
 
                        cardano-binary,
                        cardano-prelude,
