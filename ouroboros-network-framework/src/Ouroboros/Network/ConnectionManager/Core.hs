@@ -491,57 +491,81 @@ withConnectionManager ConnectionManagerArguments {
           freshIdSupply <- newFreshIdSupply (Proxy :: Proxy m)
           return (freshIdSupply, v)
 
-    let connectionManager :: ConnectionManager muxMode socket peerAddr
+    let readState
+          :: m (Map peerAddr AbstractState)
+        readState =
+          atomically $ do
+              state <- readTMVar stateVar
+              traverse ( fmap (abstractState . Known)
+                       . readTVar
+                       . connVar
+                       )
+                       state
+
+        connectionManager :: ConnectionManager muxMode socket peerAddr
                                                handle handleError m
         connectionManager =
           case connectionHandler of
             WithInitiatorMode outboundHandler ->
-              ConnectionManager
-                (WithInitiatorMode
-                  OutboundConnectionManager {
-                      ocmRequestConnection =
-                        requestOutboundConnectionImpl freshIdSupply stateVar outboundHandler,
-                      ocmUnregisterConnection =
-                        unregisterOutboundConnectionImpl stateVar
-                    })
+              ConnectionManager {
+                getConnectionManager =
+                  WithInitiatorMode
+                    OutboundConnectionManager {
+                        ocmRequestConnection =
+                          requestOutboundConnectionImpl freshIdSupply stateVar
+                                                        outboundHandler,
+                        ocmUnregisterConnection =
+                          unregisterOutboundConnectionImpl stateVar
+                      },
+                readState
+              }
 
             WithResponderMode inboundHandler ->
-              ConnectionManager
-                (WithResponderMode
-                  InboundConnectionManager {
-                      icmIncludeConnection =
-                        includeInboundConnectionImpl freshIdSupply stateVar inboundHandler,
-                      icmUnregisterConnection =
-                        unregisterInboundConnectionImpl stateVar,
-                      icmPromotedToWarmRemote =
-                        promotedToWarmRemoteImpl stateVar,
-                      icmDemotedToColdRemote =
-                        demotedToColdRemoteImpl stateVar,
-                      icmNumberOfConnections =
-                        readTMVar stateVar >>= countPrunableConnections
-                    })
+              ConnectionManager {
+                getConnectionManager =
+                  WithResponderMode
+                    InboundConnectionManager {
+                        icmIncludeConnection =
+                          includeInboundConnectionImpl freshIdSupply stateVar
+                                                       inboundHandler,
+                        icmUnregisterConnection =
+                          unregisterInboundConnectionImpl stateVar,
+                        icmPromotedToWarmRemote =
+                          promotedToWarmRemoteImpl stateVar,
+                        icmDemotedToColdRemote =
+                          demotedToColdRemoteImpl stateVar,
+                        icmNumberOfConnections =
+                          readTMVar stateVar >>= countPrunableConnections
+                      },
+                readState
+              }
 
             WithInitiatorResponderMode outboundHandler inboundHandler ->
-              ConnectionManager
-                (WithInitiatorResponderMode
-                  OutboundConnectionManager {
-                      ocmRequestConnection =
-                        requestOutboundConnectionImpl freshIdSupply stateVar outboundHandler,
-                      ocmUnregisterConnection =
-                        unregisterOutboundConnectionImpl stateVar
-                    }
-                  InboundConnectionManager {
-                      icmIncludeConnection =
-                        includeInboundConnectionImpl freshIdSupply stateVar inboundHandler,
-                      icmUnregisterConnection =
-                        unregisterInboundConnectionImpl stateVar,
-                      icmPromotedToWarmRemote =
-                        promotedToWarmRemoteImpl stateVar,
-                      icmDemotedToColdRemote =
-                        demotedToColdRemoteImpl stateVar,
-                      icmNumberOfConnections =
-                        readTMVar stateVar >>= countPrunableConnections
-                    })
+              ConnectionManager {
+                getConnectionManager =
+                  WithInitiatorResponderMode
+                    OutboundConnectionManager {
+                        ocmRequestConnection =
+                          requestOutboundConnectionImpl freshIdSupply stateVar
+                                                        outboundHandler,
+                        ocmUnregisterConnection =
+                          unregisterOutboundConnectionImpl stateVar
+                      }
+                    InboundConnectionManager {
+                        icmIncludeConnection =
+                          includeInboundConnectionImpl freshIdSupply stateVar
+                                                       inboundHandler,
+                        icmUnregisterConnection =
+                          unregisterInboundConnectionImpl stateVar,
+                        icmPromotedToWarmRemote =
+                          promotedToWarmRemoteImpl stateVar,
+                        icmDemotedToColdRemote =
+                          demotedToColdRemoteImpl stateVar,
+                        icmNumberOfConnections =
+                          readTMVar stateVar >>= countPrunableConnections
+                      },
+                readState
+              }
 
     k connectionManager
       `finally` do
