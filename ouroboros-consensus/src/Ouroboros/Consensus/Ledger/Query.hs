@@ -29,6 +29,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Cardano.Binary
 import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (HasNetworkProtocolVersion (..), NodeToClientVersion (..))
