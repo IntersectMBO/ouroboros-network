@@ -505,13 +505,16 @@ data InboundConnectionManager (muxMode :: MuxMode) socket peerAddr handle handle
 -- local addresses.  It is safe to share a connection manager with multiple
 -- listening sockets.
 --
-newtype ConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleError m =
+data ConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleError m =
     ConnectionManager {
         getConnectionManager
           :: WithMuxMode
               muxMode
               (OutboundConnectionManager muxMode socket peerAddr handle handleError m)
-              (InboundConnectionManager  muxMode socket peerAddr handle handleError m)
+              (InboundConnectionManager  muxMode socket peerAddr handle handleError m),
+
+        readState
+          :: m (Map peerAddr AbstractState)
       }
 
 --
@@ -806,6 +809,8 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionTimeWait         !(ConnectionId peerAddr)
   | TrConnectionTimeWaitDone     !(ConnectionId peerAddr)
   | TrConnectionManagerCounters  !ConnectionManagerCounters
+  | TrState                      !(Map peerAddr AbstractState)
+  -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
   deriving Show
 
 
