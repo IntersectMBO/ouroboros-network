@@ -51,11 +51,11 @@ import           Control.Tracer
 import qualified System.Win32.NamedPipes as Win32.NamedPipes
 import qualified System.Win32.File       as Win32.File
 import qualified System.Win32.Async      as Win32.Async
-import           System.IOManager
 #else
 import           System.IO (hClose)
 import           System.Process (createPipe)
 #endif
+import           System.IOManager
 
 import           Test.Mux.ReqResp
 
@@ -1917,16 +1917,20 @@ prop_mux_close_io :: FaultInjection
                   -> (Int -> Int -> (Int, Int))
                   -> Int
                   -> Property
-prop_mux_close_io fault reqs fn acc = ioProperty $ do
+prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
     serverAddr : _ <- Socket.getAddrInfo
                         Nothing (Just "127.0.0.1") (Just "0")
     bracket (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
             Socket.close
             $ \serverSocket -> do
+      associateWithIOManager iocp (Right serverSocket)
       Socket.bind serverSocket (Socket.addrAddress serverAddr)
       Socket.listen serverSocket 1
       let serverCtx = NetworkCtx {
-              ncSocket = fst <$> Socket.accept serverSocket,
+              ncSocket = do
+                (sock, _) <- Socket.accept serverSocket
+                associateWithIOManager iocp (Right sock)
+                return sock,
               ncClose  = Socket.close,
               ncMuxBearer = socketAsMuxBearer 10 nullTracer
             }
@@ -1934,6 +1938,7 @@ prop_mux_close_io fault reqs fn acc = ioProperty $ do
               ncSocket = do
                 sock <- Socket.socket Socket.AF_INET Socket.Stream
                                       Socket.defaultProtocol
+                associateWithIOManager iocp (Right sock)
                 (Socket.getSocketName serverSocket
                   >>= Socket.connect sock)
                   `onException`
