@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DerivingStrategies       #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
@@ -37,6 +38,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
+import           Cardano.Binary
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 
@@ -229,7 +231,26 @@ data ByronPartialLedgerConfig = ByronPartialLedgerConfig {
       byronLedgerConfig    :: !(LedgerConfig ByronBlock)
     , byronTriggerHardFork :: !TriggerHardFork
     }
-  deriving (Generic, NoThunks)
+  deriving stock Generic
+  deriving anyclass (NoThunks)
+
+instance ToCBOR ByronPartialLedgerConfig where
+  toCBOR
+    (ByronPartialLedgerConfig
+      byronLedgerConfig
+      byronTriggerHardFork
+    ) = mconcat [
+            encodeListLen 2
+          , toCBOR @(LedgerConfig ByronBlock) byronLedgerConfig
+          , toCBOR @TriggerHardFork byronTriggerHardFork
+          ]
+
+instance FromCBOR ByronPartialLedgerConfig where
+  fromCBOR = do
+    enforceSize "ByronPartialLedgerConfig" 2
+    ByronPartialLedgerConfig
+      <$> fromCBOR @(LedgerConfig ByronBlock)
+      <*> fromCBOR @TriggerHardFork
 
 instance HasPartialLedgerConfig ByronBlock where
 
