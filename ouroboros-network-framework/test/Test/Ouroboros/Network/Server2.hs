@@ -787,9 +787,9 @@ unidirectionalExperiment snocket socket clientAndServerData = do
                   )
             pure $
               foldr
-                (\(r, expected) acc ->
+                (\ (r, expected) acc ->
                   case r of
-                    Left _ -> acc
+                    Left err -> counterexample (show err) False
                     Right a -> a === expected .&&. acc)
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
@@ -909,17 +909,17 @@ bidirectionalExperiment
 
               pure $
                 foldr
-                  (\(r, expected) acc ->
+                  (\ (r, expected) acc ->
                     case r of
-                      Left _ -> acc
+                      Left err -> counterexample (show err) False
                       Right a -> a === expected .&&. acc)
                   (property True)
                   (zip rs0 (expectedResult clientAndServerData0 clientAndServerData1))
                 .&&.
                 foldr
-                  (\(r, expected) acc ->
+                  (\ (r, expected) acc ->
                     case r of
-                      Left _ -> acc
+                      Left err -> counterexample (show err) False
                       Right a -> a === expected .&&. acc)
                   (property True)
                   (zip rs1 (expectedResult clientAndServerData1 clientAndServerData0))
