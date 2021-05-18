@@ -9,6 +9,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
@@ -222,9 +223,9 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 -- should suffice as a formal definition:
 --
 -- RATE-LIMITING: When a peer rolls back from a block with block number N and
--- afterwards it rolls back again twice from blocks with block number =< N, the
--- third rollback will not be committed until at least one second has passed
--- between the second and the third rollbacks.
+-- afterwards it rolls back again from a block with block number =< N, the
+-- second rollback will not be committed until at least one second has passed
+-- since the first rollback.
 --
 -- = Disconnecting on dubious behavior
 --
@@ -381,6 +382,44 @@ instance ( LedgerSupportsProtocol blk
          ) => NoThunks (KnownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
 
+{-------------------------------------------------------------------------------
+  Rollback History
+-------------------------------------------------------------------------------}
+
+data RollbackHistory = RollbackHistory
+  { rbhWhen    :: !Time
+    -- ^ The time at which the last rollback was performed.
+  , rbhBlockNo :: !BlockNo
+    -- ^ At which block number the last rollback was performed.
+  }
+  deriving (Generic)
+
+instance NoThunks RollbackHistory where
+  showTypeOf _ = show $ typeRep (Proxy @RollbackHistory)
+
+data MaybeAnnotatedWithRollbackHistory a = MaybeAnnotatedWithRollbackHistory
+  { rollbackHistory :: !(Maybe RollbackHistory)
+  , value           :: !a
+  } deriving (Generic)
+
+instance NoThunks a
+     => NoThunks (MaybeAnnotatedWithRollbackHistory a) where
+  showTypeOf _ = show $ typeRep (Proxy @MaybeAnnotatedWithRollbackHistory)
+
+type KnownIntersectionState'   blk =
+  MaybeAnnotatedWithRollbackHistory (KnownIntersectionState blk)
+type UnknownIntersectionState' blk =
+  MaybeAnnotatedWithRollbackHistory (UnknownIntersectionState blk)
+type TrivialState                  =
+  MaybeAnnotatedWithRollbackHistory ()
+
+unannotated :: a -> MaybeAnnotatedWithRollbackHistory a
+unannotated = MaybeAnnotatedWithRollbackHistory Nothing
+
+clearState
+  :: MaybeAnnotatedWithRollbackHistory a
+  -> TrivialState
+clearState s = s { value = () }
 
 {-------------------------------------------------------------------------------
   Implementation
@@ -503,11 +542,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 _version
                 controlMessageSTM
                 varCandidate = ChainSyncClientPipelined $
-    continueWithState () $ initialise
+    continueWithState (unannotated ()) $ initialise
   where
     -- | Start ChainSync by looking for an intersection between our current
     -- chain fragment and their chain.
-    initialise :: Stateful m blk () (ClientPipelinedStIdle 'Z)
+    initialise :: Stateful m blk TrivialState (ClientPipelinedStIdle 'Z)
     initialise = findIntersection (ForkTooDeep GenesisPoint)
 
     -- | Try to find an intersection by sending points of our current chain to
@@ -518,8 +557,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     findIntersection
       :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientResult)
          -- ^ Exception to throw when no intersection is found.
-      -> Stateful m blk () (ClientPipelinedStIdle 'Z)
-    findIntersection mkResult = Stateful $ \() -> do
+      -> Stateful m blk TrivialState (ClientPipelinedStIdle 'Z)
+    findIntersection mkResult = Stateful $ \state -> do
       (ourFrag, ourHeaderStateHistory) <- atomically $ (,)
         <$> getCurrentChain
         <*> getHeaderStateHistory
@@ -538,7 +577,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             }
       return $ SendMsgFindIntersect points $ ClientPipelinedStIntersect
         { recvMsgIntersectFound = \i theirTip' ->
-            continueWithState uis $
+            continueWithState (state { value = uis }) $
               intersectFound (castPoint i) (Their theirTip')
         , recvMsgIntersectNotFound = \theirTip' ->
             terminate $
@@ -552,13 +591,15 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     intersectFound :: Point blk  -- ^ Intersection
                    -> Their (Tip blk)
                    -> Stateful m blk
-                        (UnknownIntersectionState blk)
+                        (UnknownIntersectionState' blk)
                         (ClientPipelinedStIdle 'Z)
     intersectFound intersection theirTip
-                 = Stateful $ \UnknownIntersectionState
-                     { ourFrag
-                     , ourHeaderStateHistory
-                     } -> do
+                 = Stateful $ \state@MaybeAnnotatedWithRollbackHistory
+                               { value = UnknownIntersectionState
+                                 { ourFrag
+                                 , ourHeaderStateHistory
+                                 }
+                               } -> do
       traceWith tracer $
         TraceFoundIntersection intersection (ourTipFromChain ourFrag) theirTip
       traceException $ do
@@ -598,7 +639,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 , ourFrag                 = ourFrag
                 , mostRecentIntersection  = intersection
                 }
-        continueWithState kis $ nextStep mkPipelineDecision0 Zero theirTip
+        continueWithState (state { value = kis }) $
+          nextStep mkPipelineDecision0 Zero theirTip
 
     -- | Look at the current chain fragment that may have been updated in the
     -- background. Check whether the candidate fragment still intersects with
@@ -681,15 +723,15 @@ chainSyncClient mkPipelineDecision0 tracer cfg
              -> Nat n
              -> Their (Tip blk)
              -> Stateful m blk
-                  (KnownIntersectionState blk)
+                  (KnownIntersectionState' blk)
                   (ClientPipelinedStIdle n)
-    nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
+    nextStep mkPipelineDecision n theirTip = Stateful $ \state -> do
       atomically controlMessageSTM >>= \case
         -- We have been asked to terminate the client
         Terminate ->
           terminateAfterDrain n $ AskedToTerminate
         _continue -> do
-          mKis' <- atomically $ intersectsWithCurrentChain kis
+          mKis' <- atomically $ intersectsWithCurrentChain (value state)
           case mKis' of
             Just kis'@KnownIntersectionState { theirFrag } -> do
               -- Our chain (tip) didn't change or if it did, it still intersects
@@ -698,12 +740,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               atomically $ writeTVar varCandidate theirFrag
               let candTipBlockNo = AF.headBlockNo theirFrag
               return $
-                requestNext kis' mkPipelineDecision n theirTip candTipBlockNo
+                requestNext (state { value = kis' }) mkPipelineDecision n theirTip candTipBlockNo
             Nothing ->
               -- Our chain (tip) has changed and it no longer intersects with
               -- the candidate fragment, so we have to find a new intersection,
               -- but first drain the pipe.
-              continueWithState ()
+              continueWithState (clearState state)
                 $ drainThePipe n
                 $ findIntersection NoMoreIntersection
 
@@ -725,30 +767,30 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             , recvMsgRollBackward = \_pt  _tip -> go n' s
             }
 
-    requestNext :: KnownIntersectionState blk
+    requestNext :: KnownIntersectionState' blk
                 -> MkPipelineDecision
                 -> Nat n
                 -> Their (Tip blk)
                 -> WithOrigin BlockNo
                 -> Consensus (ClientPipelinedStIdle n) blk m
-    requestNext kis mkPipelineDecision n theirTip candTipBlockNo =
+    requestNext state mkPipelineDecision n theirTip candTipBlockNo =
         case (n, decision) of
           (Zero, (Request, mkPipelineDecision')) ->
             SendMsgRequestNext
-              (handleNext kis mkPipelineDecision' Zero)
-              (return $ handleNext kis mkPipelineDecision' Zero) -- when we have to wait
+              (handleNext state mkPipelineDecision' Zero)
+              (return $ handleNext state mkPipelineDecision' Zero) -- when we have to wait
           (_, (Pipeline, mkPipelineDecision')) ->
             SendMsgRequestNextPipelined
-              (requestNext kis mkPipelineDecision' (Succ n) theirTip candTipBlockNo)
+              (requestNext state mkPipelineDecision' (Succ n) theirTip candTipBlockNo)
           (Succ n', (CollectOrPipeline, mkPipelineDecision')) ->
             CollectResponse
               (Just $ pure $ SendMsgRequestNextPipelined $
-                requestNext kis mkPipelineDecision' (Succ n) theirTip candTipBlockNo)
-              (handleNext kis mkPipelineDecision' n')
+                requestNext state mkPipelineDecision' (Succ n) theirTip candTipBlockNo)
+              (handleNext state mkPipelineDecision' n')
           (Succ n', (Collect, mkPipelineDecision')) ->
             CollectResponse
               Nothing
-              (handleNext kis mkPipelineDecision' n')
+              (handleNext state mkPipelineDecision' n')
       where
         theirTipBlockNo = getTipBlockNo (unTheir theirTip)
         decision = runPipelineDecision
@@ -757,20 +799,22 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           candTipBlockNo
           theirTipBlockNo
 
-    handleNext :: KnownIntersectionState blk
+    -- | Handlers for reacting to receiving a RollForward or RollBackward
+    -- message.
+    handleNext :: KnownIntersectionState' blk
                -> MkPipelineDecision
                -> Nat n
                -> Consensus (ClientStNext n) blk m
-    handleNext kis mkPipelineDecision n = ClientStNext
+    handleNext state mkPipelineDecision n = ClientStNext
       { recvMsgRollForward  = \hdr theirTip -> do
           traceWith tracer $ TraceDownloadedHeader hdr
-          continueWithState kis $
+          continueWithState state $
             rollForward mkPipelineDecision n hdr (Their theirTip)
       , recvMsgRollBackward = \intersection theirTip -> do
           let intersection' :: Point blk
               intersection' = castPoint intersection
           traceWith tracer $ TraceRolledBack intersection'
-          continueWithState kis $
+          continueWithState state $
             rollBackward mkPipelineDecision n intersection' (Their theirTip)
       }
 
@@ -781,10 +825,13 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 -> Header blk
                 -> Their (Tip blk)
                 -> Stateful m blk
-                     (KnownIntersectionState blk)
+                     (KnownIntersectionState' blk)
                      (ClientPipelinedStIdle n)
     rollForward mkPipelineDecision n hdr theirTip
-              = Stateful $ \kis -> traceException $ do
+              = Stateful $ \state@MaybeAnnotatedWithRollbackHistory
+                                    {  value = kis
+                                    ,  rollbackHistory = rb
+                                    } -> traceException $ do
       -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
@@ -830,7 +877,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           -- Our chain (tip) has changed and it no longer intersects with the
           -- candidate fragment, so we have to find a new intersection, but
           -- first drain the pipe.
-          continueWithState ()
+          continueWithState (state { value = () })
             $ drainThePipe n
             $ findIntersection NoMoreIntersection
 
@@ -881,25 +928,41 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   , ourFrag                 = ourFrag
                   , mostRecentIntersection  = mostRecentIntersection'
                   }
+              -- If we moved past a block with a block number higher that the
+              -- previous point at which we did a rollback, clear the rollback
+              -- history.
+              rbh = rb >>= (\r -> if blockNo hdr >
+                                     rbhBlockNo r
+                                  then Nothing
+                                  else Just r)
+
           atomically $ writeTVar varCandidate theirFrag'
 
-          continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
+          continueWithState (state {
+                                  value = kis''
+                                , rollbackHistory = rbh
+                                }) $
+            nextStep mkPipelineDecision n theirTip
 
     rollBackward :: MkPipelineDecision
                  -> Nat n
                  -> Point blk
                  -> Their (Tip blk)
                  -> Stateful m blk
-                      (KnownIntersectionState blk)
+                      (KnownIntersectionState' blk)
                       (ClientPipelinedStIdle n)
     rollBackward mkPipelineDecision n rollBackPoint
                  theirTip
-               = Stateful $ \KnownIntersectionState
-                   { theirFrag
-                   , theirHeaderStateHistory
-                   , ourFrag
-                   , mostRecentIntersection
-                   } -> traceException $ do
+               = Stateful $ \MaybeAnnotatedWithRollbackHistory{
+                                 value =
+                                   KnownIntersectionState
+                                   { theirFrag
+                                   , theirHeaderStateHistory
+                                   , ourFrag
+                                   , mostRecentIntersection
+                                   }
+                               , ..
+                               } -> traceException $ do
         case attemptRollback rollBackPoint (theirFrag, theirHeaderStateHistory) of
           -- Remember that we use our current chain fragment as the starting
           -- point for the candidate's chain. Our fragment contained @k@
@@ -931,6 +994,16 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 theirTip
 
           Just (theirFrag', theirHeaderStateHistory') -> do
+            -- The rollback is acceptable for our current view of their
+            -- fragment.
+            --
+            -- We must now check that the peer is not behaving strangely as
+            -- described in the rate-limiting section above.
+            rollbackHistory' <-
+              Just <$> rateLimitRollbacks
+                         (fromWithOrigin 0 $ AF.headBlockNo theirFrag)
+                         rollbackHistory
+
             -- We just rolled back to @intersection@, either our most recent
             -- intersection was after or at @intersection@, in which case
             -- @intersection@ becomes the new most recent intersection.
@@ -951,7 +1024,54 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                     }
             atomically $ writeTVar varCandidate theirFrag'
 
-            continueWithState kis' $ nextStep mkPipelineDecision n theirTip
+            continueWithState (MaybeAnnotatedWithRollbackHistory rollbackHistory' kis') $ nextStep mkPipelineDecision n theirTip
+
+    rateLimitRollbacks
+      :: BlockNo
+      -- ^ The block number at which the rollback was performed.
+      -> Maybe RollbackHistory
+      -- ^ The past history of rollbacks.
+      -> m RollbackHistory
+    rateLimitRollbacks rollingBackFrom = \case
+              Nothing -> do
+                 -- We still have not done any rollbacks, so we keep track of
+                 -- this current rollback from now on.
+                 rbhWhen' <- getMonotonicTime
+                 return $ RollbackHistory {
+                   rbhBlockNo = rollingBackFrom,
+                   rbhWhen = rbhWhen'
+                   }
+              Just RollbackHistory{..} -> do
+                -- We already did another rollback in the past. When this new
+                -- rollback is done from a block number =< rbhBlockNo we will
+                -- introduce a delay on this thread ensuring that this happens
+                -- at most once per second.
+                if rbhBlockNo >= rollingBackFrom
+                  then do
+                    -- We are rolling back twice or more from suspicious blocks,
+                    -- this is suspicious and we must rate limit this if less
+                    -- than one second has passed since the last rollback.
+                    rbhWhen' <- getMonotonicTime
+                    let waitFor = diffTime
+                                    (Time 1)
+                                    (Time $ diffTime rbhWhen' rbhWhen)
+                    traceWith tracer $ TraceRateLimiting waitFor
+                    threadDelay (fromRational $ toRational waitFor)
+                    rbhWhen'' <- getMonotonicTime
+                    return $ RollbackHistory {
+                      rbhWhen = rbhWhen'',
+                      rbhBlockNo = rbhBlockNo
+                      }
+                  else do
+                    -- We are rolling back from a higher block, so we reset the
+                    -- tracked rollback history
+                    rbhWhen'' <- getMonotonicTime
+                    return $ RollbackHistory {
+                      rbhWhen = rbhWhen'',
+                      rbhBlockNo = rollingBackFrom
+                      }
+
+
 
     -- | Gracefully terminate the connection with the upstream node with the
     -- given result.
@@ -963,7 +1083,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     -- | Same as 'terminate', but first 'drainThePipe'.
     terminateAfterDrain :: Nat n -> ChainSyncClientResult -> m (Consensus (ClientPipelinedStIdle n) blk m)
     terminateAfterDrain n result =
-          continueWithState ()
+          continueWithState (unannotated ())
         $ drainThePipe n
         $ Stateful $ const $ terminate result
 
@@ -1217,6 +1337,9 @@ data ChainSyncClientException =
           (Point blk)  -- ^ Invalid block
           (InvalidBlockReason blk)
 
+    | forall blk. (Typeable blk, StandardHash blk) =>
+        ServingRolledBackBlock (Point blk)
+
 deriving instance Show ChainSyncClientException
 
 instance Eq ChainSyncClientException where
@@ -1243,6 +1366,12 @@ instance Eq ChainSyncClientException where
       Nothing   -> False
       Just Refl -> (a, b) == (a', b')
   InvalidBlock{} == _ = False
+
+  ServingRolledBackBlock (a :: Point blk) == ServingRolledBackBlock (a' :: Point blk') =
+    case eqT @blk @blk' of
+      Nothing   -> False
+      Just Refl -> a == a'
+  ServingRolledBackBlock{} == _ = False
 
 instance Exception ChainSyncClientException
 
@@ -1306,6 +1435,8 @@ data TraceChainSyncClientEvent blk
     -- ^ An exception was thrown by the Chain Sync Client.
   | TraceTermination ChainSyncClientResult
     -- ^ The client has terminated.
+  | TraceRateLimiting DiffTime
+    -- ^ The peer switched forks too quickly, so it is being rate-limited.
 
 deriving instance ( BlockSupportsProtocol blk
                   , Eq (ValidationErr (BlockProtocol blk))
