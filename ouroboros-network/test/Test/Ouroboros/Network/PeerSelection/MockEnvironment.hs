@@ -35,6 +35,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           System.Random (mkStdGen)
 
 import           Control.Exception (throw)
 import           Control.Monad (forM_)
@@ -168,6 +169,7 @@ runGovernorInMockEnvironment mockEnv =
         tracerTracePeerSelection
         tracerDebugPeerSelection
         tracerTracePeerSelectionCounters
+        (mkStdGen 42)
         actions
         policy
 
