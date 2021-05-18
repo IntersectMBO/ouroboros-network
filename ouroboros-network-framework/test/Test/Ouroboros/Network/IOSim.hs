@@ -10,8 +10,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
--- 'ShowProxy' instance for 'ReqResp' mini-protocol
-{-# OPTIONS_GHC -Wno-orphans        #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Test.Ouroboros.Network.IOSim
@@ -64,6 +62,8 @@ import           Network.TypedProtocol.ReqResp.Type
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
 
+import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
+
 import           Test.QuickCheck hiding (Result (..))
 import           Test.QuickCheck.Instances.ByteString
 import           Test.Tasty (TestTree, testGroup)
@@ -102,9 +102,6 @@ pingClient = go True
     go !res []       = SendMsgDone (pure res)
     go !res (a : as) = SendMsgReq a $ \a' -> pure (go (a == a' && res) as)
 
-
-instance ShowProxy (ReqResp req resp) where
-    showProxy _ = "ReqResp"
 
 codecReqResp :: forall req resp m.
                 ( MonadST m
