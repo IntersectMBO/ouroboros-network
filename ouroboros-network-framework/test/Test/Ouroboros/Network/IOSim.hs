@@ -14,6 +14,10 @@
 
 module Test.Ouroboros.Network.IOSim
   ( tests
+  , BearerInfoScript(..)
+  , NonFailingBearerInfoScript(..)
+  , AbsBearerInfo
+  , toBearerInfo
   ) where
 
 import           Control.Monad.Class.MonadAsync
@@ -77,6 +81,8 @@ tests =
     [ testGroup "generators"
       [ testProperty "shrinker AbsBearerInfo" prop_shrinker_AbsBearerInfo
       , testProperty "shrinker BearerInfoScript" prop_shrinker_BearerInfoScript
+      , testProperty "generator NonFailingBearerInfoScript"
+          prop_generator_NonFailingBeararInfoScript
       ]
     , testProperty "client-server" prop_client_server
     ]
@@ -115,7 +121,7 @@ codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
                  PeerHasAgency pr st
               -> Message (ReqResp req resp) st st'
               -> CBOR.Encoding
-    encodeMsg (ClientAgency TokIdle) (MsgReq req) = 
+    encodeMsg (ClientAgency TokIdle) (MsgReq req) =
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 1
       <> Serialise.encode req
@@ -123,7 +129,7 @@ codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 2
       <> Serialise.encode resp
-    encodeMsg (ClientAgency TokIdle) MsgDone = 
+    encodeMsg (ClientAgency TokIdle) MsgDone =
          CBOR.encodeListLen 1
       <> CBOR.encodeWord 3
 
@@ -417,7 +423,7 @@ genLongDelay :: Gen DiffTime
 genLongDelay = getDelay <$> resize 1_000 arbitrary
 
 instance Arbitrary AbsAttenuation where
-    arbitrary = 
+    arbitrary =
       frequency
         [ (2, NoAttenuation <$> arbitrary)
         , (1, SpeedAttenuation <$> arbitrary `suchThat` (> SlowSpeed)
@@ -466,7 +472,7 @@ attenuation (ErrorInterval speed from len) =
             else Failure
         )
 
-data AbsBearerInfo = AbsBearerInfo 
+data AbsBearerInfo = AbsBearerInfo
     { abiConnectionDelay      :: !AbsDelay
     , abiInboundAttenuation   :: !AbsAttenuation
     , abiOutboundAttenuation  :: !AbsAttenuation
@@ -570,7 +576,7 @@ instance Arbitrary BearerInfoScript where
             . fixupAbsBearerInfos
           <$> listOf1 arbitrary
 
-  shrink (BearerInfoScript (Script script)) = 
+  shrink (BearerInfoScript (Script script)) =
     [ BearerInfoScript (Script script')
     | script'
         <- map NonEmpty.fromList
@@ -590,6 +596,33 @@ prop_shrinker_BearerInfoScript (Fixed bis) =
         )
         (shrink bis)
 
+newtype NonFailingBearerInfoScript = 
+    NonFailingBearerInfoScript (Script AbsBearerInfo)
+  deriving       Show via (Script AbsBearerInfo)
+  deriving stock Eq
+
+toNonFailingBearerInfoScript :: BearerInfoScript -> NonFailingBearerInfoScript
+toNonFailingBearerInfoScript (BearerInfoScript script) =
+    NonFailingBearerInfoScript $ fmap unfail script
+  where
+    unfail :: AbsBearerInfo -> AbsBearerInfo
+    unfail bi = bi { abiInboundWriteFailure  = Nothing
+                   , abiOutboundWriteFailure = Nothing
+                   , abiInboundAttenuation   = unfailAtt $ abiInboundAttenuation bi
+                   , abiOutboundAttenuation  = unfailAtt $ abiOutboundAttenuation bi
+                   }
+
+    unfailAtt (ErrorInterval    speed _ _) = NoAttenuation speed
+    unfailAtt (SpeedAttenuation speed _ _) = NoAttenuation speed
+    unfailAtt a = a
+
+instance Arbitrary NonFailingBearerInfoScript where
+  arbitrary = toNonFailingBearerInfoScript <$> arbitrary
+  shrink (NonFailingBearerInfoScript script) = toNonFailingBearerInfoScript <$> shrink (BearerInfoScript script)
+
+prop_generator_NonFailingBeararInfoScript :: NonFailingBearerInfoScript -> Bool
+prop_generator_NonFailingBeararInfoScript (NonFailingBearerInfoScript s) = not (any canFail s)
+
 --
 -- Properties
 --
@@ -597,7 +630,7 @@ prop_shrinker_BearerInfoScript (Fixed bis) =
 prop_client_server :: [ByteString] -> BearerInfoScript -> Property
 prop_client_server payloads (BearerInfoScript script) =
     let tr = runSimTrace $ clientServerSimulation script' payloads
-    in -- Debug.traceShow script $ 
+    in -- Debug.traceShow script $
        case traceResult True tr of
          Left e         -> counterexample
                              (unlines
