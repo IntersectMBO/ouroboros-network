@@ -14,6 +14,10 @@
 
 module Test.Simulation.Network.Snocket
   ( tests
+  , BearerInfoScript(..)
+  , NonFailingBearerInfoScript(..)
+  , AbsBearerInfo
+  , toBearerInfo
   ) where
 
 import           Control.Monad.Class.MonadAsync
@@ -76,6 +80,8 @@ tests =
     [ testGroup "generators"
       [ testProperty "shrinker AbsBearerInfo" prop_shrinker_AbsBearerInfo
       , testProperty "shrinker BearerInfoScript" prop_shrinker_BearerInfoScript
+      , testProperty "generator NonFailingBearerInfoScript"
+          prop_generator_NonFailingBeararInfoScript
       ]
     , testProperty "client-server" prop_client_server
     ]
@@ -586,6 +592,33 @@ prop_shrinker_BearerInfoScript (Fixed bis) =
                && not (canFail (NonEmpty.last s))
         )
         (shrink bis)
+
+newtype NonFailingBearerInfoScript = 
+    NonFailingBearerInfoScript (Script AbsBearerInfo)
+  deriving       Show via (Script AbsBearerInfo)
+  deriving stock Eq
+
+toNonFailingBearerInfoScript :: BearerInfoScript -> NonFailingBearerInfoScript
+toNonFailingBearerInfoScript (BearerInfoScript script) =
+    NonFailingBearerInfoScript $ fmap unfail script
+  where
+    unfail :: AbsBearerInfo -> AbsBearerInfo
+    unfail bi = bi { abiInboundWriteFailure  = Nothing
+                   , abiOutboundWriteFailure = Nothing
+                   , abiInboundAttenuation   = unfailAtt $ abiInboundAttenuation bi
+                   , abiOutboundAttenuation  = unfailAtt $ abiOutboundAttenuation bi
+                   }
+
+    unfailAtt (ErrorInterval    speed _ _) = NoAttenuation speed
+    unfailAtt (SpeedAttenuation speed _ _) = NoAttenuation speed
+    unfailAtt a = a
+
+instance Arbitrary NonFailingBearerInfoScript where
+  arbitrary = toNonFailingBearerInfoScript <$> arbitrary
+  shrink (NonFailingBearerInfoScript script) = toNonFailingBearerInfoScript <$> shrink (BearerInfoScript script)
+
+prop_generator_NonFailingBeararInfoScript :: NonFailingBearerInfoScript -> Bool
+prop_generator_NonFailingBeararInfoScript (NonFailingBearerInfoScript s) = not (any canFail s)
 
 --
 -- Properties
