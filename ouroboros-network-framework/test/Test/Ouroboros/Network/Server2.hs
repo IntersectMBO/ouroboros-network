@@ -11,8 +11,6 @@
 
 -- just to use 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
--- `ShowProxy (ReqResp req resp)` is an orphaned instance
-{-# OPTIONS_GHC -Wno-orphans               #-}
 
 module Test.Ouroboros.Network.Server2
   ( tests
@@ -47,7 +45,6 @@ import qualified Network.Mux as Mux
 import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Core
 
-import           Network.TypedProtocol.ReqResp.Type (ReqResp)
 import           Network.TypedProtocol.ReqResp.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
@@ -73,9 +70,9 @@ import           Ouroboros.Network.Server2 (ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
 import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Util.ShowProxy
 import qualified Debug.Trace as Debug
 
+import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
 
 tests :: TestTree
 tests =
@@ -83,9 +80,6 @@ tests =
   [ testProperty "unidirectional_IO" prop_unidirectional_IO
   , testProperty "bidirectional_IO"  prop_bidirectional_IO
   ]
-
-instance ShowProxy (ReqResp req resp) where
-    showProxy _ = "ReqResp"
 
 --
 -- Server tests (IO only)
