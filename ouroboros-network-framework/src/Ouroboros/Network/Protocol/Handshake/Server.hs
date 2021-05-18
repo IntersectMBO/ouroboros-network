@@ -1,11 +1,13 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Ouroboros.Network.Protocol.Handshake.Server
   ( handshakeServerPeer
+  , accept
   ) where
 
 import           Data.Map (Map)
@@ -31,48 +33,71 @@ handshakeServerPeer
   -> Peer (Handshake vNumber vParams)
           AsServer StPropose m
           (Either (RefuseReason vNumber) (r, vNumber, vData))
-handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
+handshakeServerPeer codec acceptVersion versions =
     -- await for versions proposed by a client
     Await (ClientAgency TokPropose) $ \msg -> case msg of
 
-      MsgProposeVersions vMap ->
-        -- Compute intersection of local and remote versions.
-        case lookupGreatestCommonKey vMap (getVersions versions) of
-          Nothing ->
-            let vReason = VersionMismatch (Map.keys $ getVersions versions) []
-            in Yield (ServerAgency TokConfirm)
-                     (MsgRefuse vReason)
-                     (Done TokDone (Left vReason))
+      MsgProposeVersions versionMap ->
+        accept TokAsServer codec acceptVersion versions versionMap
 
-          Just (vNumber, (vParams, Version app vData)) ->
-              case decodeData vNumber vParams of
-                Left err ->
-                  let vReason = HandshakeDecodeError vNumber err
-                  in Yield (ServerAgency TokConfirm)
+-- | Accept a proposed version, or refuse any of them.
+--
+accept
+  :: forall (peerRole :: PeerRole) vParams vNumber vData r m.
+     Ord vNumber
+  => TokPeerRole peerRole
+  -> VersionDataCodec vParams vNumber vData
+  -> (vData -> vData -> Accept vData)
+  -> Versions vNumber vData r
+  -> Map vNumber vParams
+  -- ^ proposed versions received either with `MsgProposeVersions` or
+  -- `MsgProposeVersions'`
+  -> Peer (Handshake vNumber vParams)
+          peerRole (StConfirm peerRole) m
+          (Either (RefuseReason vNumber) (r, vNumber, vData))
+accept role VersionDataCodec {encodeData, decodeData} acceptVersion
+       versions versionMap =
+    case lookupGreatestCommonKey versionMap (getVersions versions) of
+      Nothing ->
+        let vReason = VersionMismatch (Map.keys $ getVersions versions) []
+        in Yield tok
+                 (MsgRefuse vReason)
+                 (Done TokDone (Left vReason))
+
+      Just (vNumber, (vParams, Version app vData)) ->
+          case decodeData vNumber vParams of
+            Left err ->
+              let vReason = HandshakeDecodeError vNumber err
+              in Yield tok
+                       (MsgRefuse vReason)
+                       (Done TokDone $ Left vReason)
+
+            Right vData' ->
+              case acceptVersion vData vData' of
+
+                -- We agree on the version; send back the agreed version
+                -- number @vNumber@ and encoded data associated with our
+                -- version.
+                Accept agreedData ->
+                  Yield tok
+                        (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
+                        (Done TokDone $ Right $
+                          ( app agreedData
+                          , vNumber
+                          , agreedData
+                          ))
+
+                -- We disagree on the version.
+                Refuse err ->
+                  let vReason = Refused vNumber err
+                  in Yield tok
                            (MsgRefuse vReason)
-                           (Done TokDone $ Left vReason)
+                           (Done TokDone $ Left $ vReason)
+  where
+    tok = case role of
+      TokAsClient -> ClientAgency TokConfirmClient
+      TokAsServer -> ServerAgency TokConfirmServer
 
-                Right vData' ->
-                  case acceptVersion vData vData' of
-
-                    -- We agree on the version; send back the agreed version
-                    -- number @vNumber@ and encoded data associated with our
-                    -- version.
-                    Accept agreedData ->
-                      Yield (ServerAgency TokConfirm)
-                            (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
-                            (Done TokDone $ Right $
-                              ( app agreedData
-                              , vNumber
-                              , agreedData
-                              ))
-
-                    -- We disagree on the version.
-                    Refuse err ->
-                      let vReason = Refused vNumber err
-                      in Yield (ServerAgency TokConfirm)
-                               (MsgRefuse vReason)
-                               (Done TokDone $ Left $ vReason)
 
 lookupGreatestCommonKey :: Ord k => Map k a -> Map k b -> Maybe (k, (a, b))
 lookupGreatestCommonKey l r = Map.lookupMax $ Map.intersectionWith (,) l r

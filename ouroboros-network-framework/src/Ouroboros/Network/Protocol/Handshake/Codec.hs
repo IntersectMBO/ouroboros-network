@@ -85,7 +85,8 @@ byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
                     PeerHasAgency pr st -> Word
     stateToLimit (ClientAgency TokPropose) = maxTransmissionUnit
-    stateToLimit (ServerAgency TokConfirm) = maxTransmissionUnit
+    stateToLimit (ClientAgency TokConfirmClient) = maxTransmissionUnit
+    stateToLimit (ServerAgency TokConfirmServer) = maxTransmissionUnit
 
 -- | Time limits.
 --
@@ -95,7 +96,8 @@ timeLimitsHandshake = ProtocolTimeLimits stateToLimit
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokPropose) = shortWait
-    stateToLimit (ServerAgency TokConfirm) = shortWait
+    stateToLimit (ClientAgency TokConfirmClient) = shortWait
+    stateToLimit (ServerAgency TokConfirmServer) = shortWait
 
 
 noTimeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBOR.Term)
@@ -104,7 +106,8 @@ noTimeLimitsHandshake = ProtocolTimeLimits stateToLimit
     stateToLimit :: forall (pr :: PeerRole) (st  :: Handshake vNumber CBOR.Term).
                     PeerHasAgency pr st -> Maybe DiffTime
     stateToLimit (ClientAgency TokPropose) = Nothing
-    stateToLimit (ServerAgency TokConfirm) = Nothing
+    stateToLimit (ClientAgency TokConfirmClient) = Nothing
+    stateToLimit (ServerAgency TokConfirmServer) = Nothing
 
 
 -- |
@@ -141,13 +144,37 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
                    | (vNumber, vParams) <- vs'
                    ]
 
-      encodeMsg (ServerAgency TokConfirm) (MsgAcceptVersion vNumber vParams) =
+      -- Although `MsgProposeVersions'` shall not be sent, for testing purposes
+      -- it is useful to have an encoder for it.
+      encodeMsg (ServerAgency TokConfirmServer) (MsgProposeVersions' vs) =
+        let vs' = Map.toAscList vs
+        in
+           CBOR.encodeListLen 2
+        <> CBOR.encodeWord 0
+        <> CBOR.encodeMapLen (fromIntegral $ length vs')
+        <> mconcat [    CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
+                     <> CBOR.encodeTerm vParams
+                   | (vNumber, vParams) <- vs'
+                   ]
+
+      encodeMsg (ServerAgency TokConfirmServer) (MsgAcceptVersion vNumber vParams) =
            CBOR.encodeListLen 3
         <> CBOR.encodeWord 1
         <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
         <> CBOR.encodeTerm vParams
 
-      encodeMsg (ServerAgency TokConfirm) (MsgRefuse vReason) =
+      encodeMsg (ServerAgency TokConfirmServer) (MsgRefuse vReason) =
+           CBOR.encodeListLen 2
+        <> CBOR.encodeWord 2
+        <> encodeRefuseReason versionNumberCodec vReason
+
+      encodeMsg (ClientAgency TokConfirmClient) (MsgAcceptVersion vNumber vParams) =
+           CBOR.encodeListLen 3
+        <> CBOR.encodeWord 1
+        <> CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
+        <> CBOR.encodeTerm vParams
+
+      encodeMsg (ClientAgency TokConfirmClient) (MsgRefuse vReason) =
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 2
         <> encodeRefuseReason versionNumberCodec vReason
@@ -186,7 +213,11 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
             l  <- CBOR.decodeMapLen
             vMap <- decodeMap l Nothing []
             pure $ SomeMessage $ MsgProposeVersions vMap
-          (ServerAgency TokConfirm, 1, 3) -> do
+          (ServerAgency TokConfirmServer, 0, 2) -> do
+            l  <- CBOR.decodeMapLen
+            vMap <- decodeMap l Nothing []
+            pure $ SomeMessage $ MsgProposeVersions' vMap
+          (ServerAgency TokConfirmServer, 1, 3) -> do
             v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
             case v of
               -- at this stage we can throw exception when decoding
@@ -195,12 +226,25 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
               Left e -> fail ("codecHandshake.MsgAcceptVersion: not recognized version: " ++ show e)
               Right vNumber ->
                 SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
-          (ServerAgency TokConfirm, 2, 2) ->
+          (ServerAgency TokConfirmServer, 2, 2) ->
+            SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
+          (ClientAgency TokConfirmClient, 1, 3) -> do
+            v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
+            case v of
+              -- at this stage we can throw exception when decoding
+              -- version number: 'MsgAcceptVersion' must send us back
+              -- version which we know how to decode
+              Left e -> fail ("codecHandshake.MsgAcceptVersion: not recognized version: " ++ show e)
+              Right vNumber ->
+                SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
+          (ClientAgency TokConfirmClient, 2, 2) ->
             SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
 
           (ClientAgency TokPropose, _, _) ->
             fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
-          (ServerAgency TokConfirm, _, _) ->
+          (ClientAgency TokConfirmClient, _, _) ->
+            fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
+          (ServerAgency TokConfirmServer, _, _) ->
             fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
 
 

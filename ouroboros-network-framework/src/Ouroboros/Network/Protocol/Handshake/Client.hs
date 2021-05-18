@@ -10,6 +10,7 @@ module Ouroboros.Network.Protocol.Handshake.Client
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Bifunctor (first)
 
 import qualified Codec.CBOR.Term     as CBOR
 
@@ -18,6 +19,7 @@ import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Protocol.Handshake.Server (accept)
 
 
 -- | Handshake client which offers @'Versions' vNumber vData@ to the
@@ -26,7 +28,9 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 -- TODO: GADT encoding of the client (@Handshake.Client@ module).
 --
 handshakeClientPeer
-  :: Ord vNumber
+  :: ( Ord vNumber
+     , Functor m
+     )
   => VersionDataCodec CBOR.Term vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
@@ -35,11 +39,15 @@ handshakeClientPeer
           (Either
             (HandshakeClientProtocolError vNumber)
             (r, vNumber, vData))
-handshakeClientPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
+handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData} acceptVersion versions =
   -- send known versions
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
-    Await (ServerAgency TokConfirm) $ \msg -> case msg of
+    Await (ServerAgency TokConfirmServer) $ \msg -> case msg of
+      MsgProposeVersions' versionMap -> 
+        -- simultanous open; 'accept' will choose version (the greatest common
+        -- version), and check if we can accept received version data.
+        f <$> accept TokAsClient codec acceptVersion versions versionMap
 
       -- the server refused common highest version
       MsgRefuse vReason ->
@@ -65,6 +73,12 @@ handshakeClientPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
                                            )
                   Refuse err ->
                     Done TokDone (Left (InvalidServerSelection vNumber err))
+  where
+    f :: Either (RefuseReason vNumber)
+                (r, vNumber, vData)
+      -> Either (HandshakeClientProtocolError vNumber)
+                (r, vNumber, vData)
+    f = first HandshakeError
 
 
 encodeVersions

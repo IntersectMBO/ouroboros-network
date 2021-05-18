@@ -20,6 +20,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
   , ClientHasAgency (..)
   , ServerHasAgency (..)
   , NobodyHasAgency (..)
+    -- $simultanous-open
   , RefuseReason (..)
   , HandshakeClientProtocolError (..)
   )
@@ -34,16 +35,15 @@ import           Data.Map (Map)
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
-
 -- |
 -- The handshake mini-protocol is used initially to agree the version and
 -- associated parameters of the protocol to use for all subsequent
 -- communication.
 --
 data Handshake vNumber vParams where
-    StPropose :: Handshake vNumber vParams
-    StConfirm :: Handshake vNumber vParams
-    StDone    :: Handshake vNumber vParams
+    StPropose  :: Handshake vNumber vParams
+    StConfirm  :: PeerRole -> Handshake vNumber vParams
+    StDone     :: Handshake vNumber vParams
 
 instance ShowProxy (Handshake vNumber vParams) where
     showProxy _ = "Handshake"
@@ -80,7 +80,17 @@ instance Protocol (Handshake vNumber vParams) where
       --
       MsgProposeVersions
         :: Map vNumber vParams
-        -> Message (Handshake vNumber vParams) StPropose StConfirm
+        -> Message (Handshake vNumber vParams) StPropose (StConfirm AsServer)
+
+      -- |
+      -- `MsgProposeVersions'` received as a response to 'MsgProposeVersions'.
+      -- It is not supported to explicitly send this message. It can only be
+      -- received as a copy of 'MsgProposeVersions' in a simultanous open
+      -- scenario.
+      --
+      MsgProposeVersions'
+        :: Map vNumber vParams
+        -> Message (Handshake vNumber vParams) (StConfirm AsServer) (StConfirm AsClient) 
 
       -- |
       -- The remote end decides which version to use and sends chosen version.
@@ -89,20 +99,21 @@ instance Protocol (Handshake vNumber vParams) where
       MsgAcceptVersion
         :: vNumber
         -> vParams
-        -> Message (Handshake vNumber vParams) StConfirm StDone
+        -> Message (Handshake vNumber vParams) (StConfirm clientOrServer) StDone
 
       -- |
       -- or it refuses to run any version,
       --
       MsgRefuse
         :: RefuseReason vNumber
-        -> Message (Handshake vNumber vParams) StConfirm StDone
+        -> Message (Handshake vNumber vParams) (StConfirm clientOrServer) StDone
 
     data ClientHasAgency st where
-      TokPropose :: ClientHasAgency StPropose
+      TokPropose       :: ClientHasAgency StPropose
+      TokConfirmClient :: ClientHasAgency (StConfirm AsClient)
 
     data ServerHasAgency st where
-      TokConfirm :: ServerHasAgency StConfirm
+      TokConfirmServer :: ServerHasAgency (StConfirm AsServer)
 
     data NobodyHasAgency st where
       TokDone    :: NobodyHasAgency StDone
@@ -111,14 +122,32 @@ instance Protocol (Handshake vNumber vParams) where
     exclusionLemma_NobodyAndClientHaveAgency TokDone    tok = case tok of {}
     exclusionLemma_NobodyAndServerHaveAgency TokDone    tok = case tok of {}
 
+-- $simultanous-open
+--
+-- On simultanous open both sides will send `MsgProposeVersions`, which will be
+-- decoded as `MsgProposeVersions'` and both sides will reply with either
+-- 'MsgAcceptVersion' or 'MsgRefuse'.  It is important to stress that in this
+-- case both sides will make the choice which version and parameters to pick.
+--
+-- The 'Ouroboros.Network.Protocol.Handshake.accept' takes the greatest common
+-- key in the proposed versions and the configured versions.  Since taking
+-- greatest common key is symmetric this guarantees that both sides will endup
+-- with the same version - this works under the assumption that both sides
+-- presented all its known versions.  However, it is not guaranteed that the
+-- version data received by both sides is the same.
+-- 'Ouroboros.Network.Protocol.Handshake.accept' will use the @acceptVeresion@
+-- function to check that the received version is acceptable (see 'Acceptable'
+-- instances).
+
 deriving instance (Show vNumber, Show vParams)
     => Show (Message (Handshake vNumber vParams) from to)
 
 instance Show (ClientHasAgency (st :: Handshake vNumber vParams)) where
-    show TokPropose = "TokPropose"
+    show TokPropose       = "TokPropose"
+    show TokConfirmClient = "TokConfirmClient"
 
 instance Show (ServerHasAgency (st :: Handshake vNumber vParams)) where
-    show TokConfirm = "TokConfirm"
+    show TokConfirmServer = "TokConfirmServer"
 
 -- |
 -- Client errors, which extends handshake error @'RefuseReason'@ type,
