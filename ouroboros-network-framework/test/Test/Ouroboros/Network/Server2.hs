@@ -30,7 +30,7 @@ import           Control.Tracer (contramap, nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (($>))
+import           Data.Functor (($>), (<&>))
 import           Data.List (mapAccumL)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Typeable (Typeable)
@@ -144,6 +144,13 @@ instance ( Arbitrary req
                           <*> arbitraryList
                           <*> arbitraryList
 
+    shrink (ClientAndServerData fun ini hot warm est) = concat
+      [ shrink fun  <&> \ fun'  -> ClientAndServerData fun' ini  hot  warm  est
+      , shrink ini  <&> \ ini'  -> ClientAndServerData fun  ini' hot  warm  est
+      , shrink hot  <&> \ hot'  -> ClientAndServerData fun  ini  hot' warm  est
+      , shrink warm <&> \ warm' -> ClientAndServerData fun  ini  hot  warm' est
+      , shrink est  <&> \ est'  -> ClientAndServerData fun  ini  hot  warm  est'
+      ]
 
 expectedResult :: ClientAndServerData req resp acc
                -> ClientAndServerData req resp acc
