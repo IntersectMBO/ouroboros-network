@@ -547,6 +547,9 @@ instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
   AnyMessage (MsgProposeVersions vs) == AnyMessage (MsgProposeVersions vs')
     = vs == vs'
 
+  AnyMessage (MsgProposeVersions' vs) == AnyMessage (MsgProposeVersions' vs')
+    = vs == vs'
+
   AnyMessage (MsgAcceptVersion vNumber vParams) == AnyMessage (MsgAcceptVersion vNumber' vParams')
     = vNumber == vNumber' && vParams == vParams'
 
@@ -563,11 +566,26 @@ instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) whe
         . getVersions
       <$> genVersions
 
-    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+    ,     AnyMessageAndAgency (ServerAgency TokConfirmServer)
+        . MsgProposeVersions'
+        . Map.mapWithKey (\v -> encodeTerm (dataCodecCBORTerm v) . versionData)
+        . getVersions
+      <$> genVersions
+
+    ,     AnyMessageAndAgency (ServerAgency TokConfirmServer)
         . uncurry MsgAcceptVersion
       <$> genValidVersion'
 
-    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+    ,     AnyMessageAndAgency (ServerAgency TokConfirmServer)
+        . MsgRefuse
+        . runArbitraryRefuseReason
+      <$> arbitrary
+
+    ,     AnyMessageAndAgency (ClientAgency TokConfirmClient)
+        . uncurry MsgAcceptVersion
+      <$> genValidVersion'
+
+    ,     AnyMessageAndAgency (ClientAgency TokConfirmClient)
         . MsgRefuse
         . runArbitraryRefuseReason
       <$> arbitrary
