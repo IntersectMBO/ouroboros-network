@@ -248,7 +248,7 @@ prop_simple_allegraMary_convergence TestSetup
                 tniCrucialTxs   =
                   if not setupHardFork then [] else
                   fmap GenTxShelley1 $
-                  Shelley.mkAllegraSetDecentralizationParamTxs
+                  Shelley.mkMASetDecentralizationParamTxs
                     coreNodes
                     (SL.ProtVer majorVersion2 0)
                     (SlotNo $ unNumSlots numSlots)   -- never expire

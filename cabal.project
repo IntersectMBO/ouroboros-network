@@ -28,6 +28,7 @@ constraints:
   , hedgehog >= 1.0
   , bimap >= 0.4.0
   , ListLike >= 4.7.3
+  , witherable >= 0.4
 
 package Win32-network
   tests: True
@@ -136,6 +137,12 @@ package small-steps
 package small-steps-test
   tests: False
 
+package plutus-tx
+  tests: False
+
+package prettyprinter-configurable
+  tests: False
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/Win32-network
@@ -177,6 +184,8 @@ source-repository-package
   tag: 7540043e0c565896be4eb8b278587e95eefa8a95
   --sha256: 1b9c9d95sl3wnmjrly78i59f9k2zngvdr3cpnwbpn5scnkwkijm4
   subdir:
+    alonzo/impl
+    alonzo/test
     byron/chain/executable-spec
     byron/crypto
     byron/crypto/test
@@ -194,6 +203,17 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/plutus
+  tag: 530d3f7940319788a49c7ecb017f8366994990b0
+  --sha256: 01jzrl04zyp63c9sxd1qgdy4nxbnaz7n2g1pw4x2d5y9562mrq6v
+  subdir:
+    plutus-ledger-api
+    plutus-tx
+    plutus-core
+    prettyprinter-configurable
+
+source-repository-package
+  type: git
   location: https://github.com/input-output-hk/goblins
   tag: cde90a2b27f79187ca8310b6549331e59595e7ba
   --sha256: 17c88rbva3iw82yg9srlxjv2ia5wjb9cyqw44hik565f5v9svnyg
@@ -203,3 +223,7 @@ source-repository-package
   location: https://github.com/input-output-hk/cardano-crypto
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
+
+allow-newer:
+  monoidal-containers:aeson,
+  size-based:template-haskell

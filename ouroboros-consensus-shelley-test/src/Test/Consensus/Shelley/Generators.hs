@@ -36,6 +36,7 @@ import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      SomeResult (..), WithVersion (..))
 
 import           Test.Cardano.Ledger.AllegraEraGen ()
+import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock, CanMockPreAlonzo)
