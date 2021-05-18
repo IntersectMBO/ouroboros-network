@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -27,15 +28,19 @@ import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>), (<&>))
-import           Data.List (mapAccumL)
+import           Data.List (mapAccumL, intercalate)
 import           Data.List.NonEmpty (NonEmpty (..))
+import           Data.Maybe (fromMaybe)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+
+import           Text.Printf
 
 import           Test.QuickCheck
 import           Test.Tasty.QuickCheck
@@ -71,18 +76,23 @@ import qualified Ouroboros.Network.Server2 as Server
 import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 
+import           Simulation.Network.Snocket
+
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
+import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), toBearerInfo)
 
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Server2"
-  [ testProperty "unidirectional_IO" prop_unidirectional_IO
-  , testProperty "bidirectional_IO"  prop_bidirectional_IO
+  [ testProperty "unidirectional_IO"  prop_unidirectional_IO
+  , testProperty "unidirectional_Sim" prop_unidirectional_Sim
+  , testProperty "bidirectional_IO"   prop_bidirectional_IO
+  , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
   ]
 
 
 --
--- Server tests (IO only)
+-- Server tests
 --
 
 -- | The protocol will run three instances of  `ReqResp` protocol; one for each
@@ -383,7 +393,7 @@ withInitiatorOnlyConnectionManager
                   (reqs : rest) -> do
                     writeTVar requestsVar rest $> reqs
                   [] -> pure []
-            pure $ 
+            pure $
               reqRespClientPeer (reqRespClientMap reqs)))
 
 
@@ -398,7 +408,7 @@ timeWaitTimeout :: DiffTime
 timeWaitTimeout = 0.1
 
 
--- 
+--
 -- Rethrow policies
 --
 
@@ -654,7 +664,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
                   (reqs : rest) -> do
                     writeTVar requestsVar rest $> reqs
                   [] -> pure []
-            pure $ 
+            pure $
               reqRespClientPeer
               (reqRespClientMap reqs)))
         (MuxPeer
@@ -814,6 +824,18 @@ unidirectionalExperiment snocket socket clientAndServerData = do
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
 
+prop_unidirectional_Sim :: ClientAndServerData Int Int Int -> Property
+prop_unidirectional_Sim clientAndServerData =
+  simulatedPropertyWithTimeout 7200 $ do
+    net   <- newNetworkState (singletonScript noAttenuation) 10
+    let snock = mkSnocket net debugTracer
+    fd <- Snocket.open snock Snocket.TestFamily
+    Snocket.bind   snock fd serverAddr
+    Snocket.listen snock fd
+    unidirectionalExperiment snock fd clientAndServerData
+  where
+    serverAddr = Snocket.TestAddress (0 :: Int)
+
 prop_unidirectional_IO
   :: ClientAndServerData Int Int Int
   -> Property
@@ -947,6 +969,26 @@ bidirectionalExperiment
                 ))
 
 
+prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int Int Int -> ClientAndServerData Int Int Int -> Property
+prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
+  simulatedPropertyWithTimeout 7200 $ do
+    net <- newNetworkState script' 10
+    let snock = mkSnocket net debugTracer
+    bracket ((,) <$> Snocket.open snock Snocket.TestFamily
+                 <*> Snocket.open snock Snocket.TestFamily)
+            (\ (socket0, socket1) -> Snocket.close snock socket0 >>
+                                     Snocket.close snock socket1)
+      $ \ (socket0, socket1) -> do
+        let addr0 = Snocket.TestAddress (0 :: Int)
+            addr1 = Snocket.TestAddress 1
+        Snocket.bind   snock socket0 addr0
+        Snocket.bind   snock socket1 addr1
+        Snocket.listen snock socket0
+        Snocket.listen snock socket1
+        bidirectionalExperiment snock socket0 socket1 addr0 addr1 data0 data1
+  where
+    script' = toBearerInfo <$> script
+
 prop_bidirectional_IO
     :: ClientAndServerData Int Int Int
     -> ClientAndServerData Int Int Int
@@ -1030,7 +1072,26 @@ withLock :: ( MonadSTM   m
          => StrictTMVar m ()
          -> m a
          -> m a
-withLock v m = 
+withLock v m =
     bracket (atomically $ takeTMVar v)
             (atomically . putTMVar v)
             (const m)
+
+simulatedPropertyWithTimeout :: DiffTime -> (forall s. IOSim s Property) -> Property
+simulatedPropertyWithTimeout t test =
+  counterexample ("\nTrace:\n" ++ ppTrace_ tr) $
+  case traceResult False tr of
+    Left failure ->
+      counterexample ("Failure:\n" ++ displayException failure) False
+    Right prop -> fromMaybe (counterexample "timeout" $ property False) prop
+  where
+    tr = runSimTrace $ timeout t test
+
+ppTrace_ :: SimTrace a -> String
+ppTrace_ tr = intercalate "\n" $ map fmt events
+  where
+    events = traceEvents tr
+    w      = maximum [ length name | (_, _, Just name, _) <- events ]
+
+    fmt (t, tid, lbl, e) = printf "%-10s - %-13s %-*s - %s" (show t) (show tid) w (fromMaybe "" lbl) (show e)
+
