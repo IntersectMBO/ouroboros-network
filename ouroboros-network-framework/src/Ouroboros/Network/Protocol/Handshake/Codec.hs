@@ -32,6 +32,7 @@ import           Data.Text (Text)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
+import           Text.Printf
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
@@ -178,14 +179,14 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
                    PeerHasAgency pr st
                 -> CBOR.Decoder s (SomeMessage st)
       decodeMsg stok = do
-        _ <- CBOR.decodeListLen
+        len <- CBOR.decodeListLen
         key <- CBOR.decodeWord
-        case (stok, key) of
-          (ClientAgency TokPropose, 0) -> do
+        case (stok, key, len) of
+          (ClientAgency TokPropose, 0, 2) -> do
             l  <- CBOR.decodeMapLen
             vMap <- decodeMap l Nothing []
             pure $ SomeMessage $ MsgProposeVersions vMap
-          (ServerAgency TokConfirm, 1) -> do
+          (ServerAgency TokConfirm, 1, 3) -> do
             v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
             case v of
               -- at this stage we can throw exception when decoding
@@ -194,11 +195,13 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
               Left e -> fail ("codecHandshake.MsgAcceptVersion: not recognized version: " ++ show e)
               Right vNumber ->
                 SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
-          (ServerAgency TokConfirm, 2) ->
+          (ServerAgency TokConfirm, 2, 2) ->
             SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
 
-          (ClientAgency TokPropose, _) -> fail "codecHandshake.Propose: unexpected key"
-          (ServerAgency TokConfirm, _) -> fail "codecHandshake.Confirm: unexpected key"
+          (ClientAgency TokPropose, _, _) ->
+            fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
+          (ServerAgency TokConfirm, _, _) ->
+            fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
 
 
 encodeRefuseReason :: CodecCBORTerm fail vNumber
