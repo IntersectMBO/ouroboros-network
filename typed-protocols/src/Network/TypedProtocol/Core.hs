@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
@@ -26,6 +27,7 @@ module Network.TypedProtocol.Core (
   -- * Engaging in protocols
   -- $using
   PeerRole(..),
+  TokPeerRole(..),
   FlipAgency,
   PeerHasAgency(..),
   WeHaveAgency,
@@ -319,6 +321,14 @@ class Protocol ps where
 -- This definition is only used as promoted types and kinds, never as values.
 --
 data PeerRole = AsClient | AsServer
+
+-- | Singletons for the promoted 'PeerRole' types.  Not directly used by the
+-- framework, however some times useful when writing code that is shared between
+-- client and server.
+--
+data TokPeerRole (peerRole :: PeerRole) where
+    TokAsClient :: TokPeerRole AsClient
+    TokAsServer :: TokPeerRole AsServer
 
 -- | This data type is used to hold state tokens for states with either client
 -- or server agency. This GADT shows up when writing protocol peers, when
