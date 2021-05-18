@@ -22,10 +22,9 @@
 -- #1356.
 
 module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
-    ChainDbView (..)
-  , ChainSyncClientException (..)
+    -- $our_task
+    ChainSyncClientException (..)
   , ChainSyncClientResult (..)
-  , Consensus
   , Our (..)
   , Their (..)
   , bracketChainSyncClient
@@ -34,6 +33,9 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
     -- * Trace events
   , InvalidBlockReason
   , TraceChainSyncClientEvent (..)
+    -- * Internal datatypes exported for testing
+  , ChainDbView (..)
+  , Consensus
   ) where
 
 import           Control.Monad
@@ -80,16 +82,176 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
+-- $our_task
+--
+-- = High-level description
+--
+-- Our task: after connecting to an upstream node, try to maintain an
+-- up-to-date header-only fragment representing their chain. We maintain
+-- such candidate chains in a map with upstream nodes as keys.
+--
+-- The block fetch logic will use these candidate chains to download
+-- blocks from, prioritising certain candidate chains over others using
+-- the consensus protocol. Whenever such a block has been downloaded and
+-- added to the local 'ChainDB', the 'ChainDB' will perform chain
+-- selection.
+--
+-- We also validate the headers of a candidate chain by advancing the
+-- 'ChainDepState' with the headers, which returns an error when validation
+-- failed. Thus, in addition to the chain fragment of each candidate, we also
+-- store a 'ChainDepState' corresponding to the head of the candidate chain.
+--
+-- We must keep the candidate chain synchronised with the corresponding
+-- upstream chain. The upstream node's chain might roll forward or
+-- backwards, and they will inform us about this. When we get these
+-- messages, we will replicate these actions on our candidate chain.
+--
+-- INVARIANT:
+--
+-- >      k or less
+-- >   <--------->
+-- >           our tip
+-- >             v
+-- >   /--* .... *
+-- >   |
+-- > --*
+-- >   |
+-- >   \--* .... *
+-- >             ^
+-- >        fragment tip
+-- >   <--------->
+-- >      k or less
+--
+-- The distance from our tip to the intersection between our chain and the
+-- fragment maintained for the upstream node cannot exceed @k@ blocks. When
+-- this invariant cannot be maintained, the upstream node is on a fork that
+-- is too distant and we should disconnect.
+--
+-- TODO #423 rate-limit switching chains, otherwise we can't place blame (we
+-- don't know which candidate's chain included the point that was
+-- poisoned). E.g. two rollbacks per time slot -> make it configurable ->
+-- just a simple argument for now.
+--
+-- TODO #467 if the 'theirTip' that they sent us is on our chain, just
+-- switch to it.
+--
+-- = Candidate fragment size
+--
+-- The size of the downloaded candidate fragment ('theirFrag') and the
+-- corresponding header state history ('theirHeaderStateHistory', which has the
+-- same size as 'theirFrag') is limited by how far in the future the ledger view
+-- can forecast.
+--
+-- For PBFT (Byron), we can forecast up to @2k@ slots ahead. Assuming a chain
+-- density of 100%, this means the look-ahead is @2k@ headers. For mainnet this
+-- means @2 * 2160 = 4320@ headers.
+--
+-- For TPraos (Shelley), we can forecast up to @3k/f@ slots ahead. Assuming a
+-- density of @f@, this means the look-ahead is @3k@ headers. For mainnet, this
+-- means @3 * 2160 = 6480@ headers.
+--
+-- The figure below shows the relation between 'ourFrag' and 'theirFrag':
+--
+-- >                       k headers or less, when A is genesis
+-- >              <--------------------->
+-- >            anchor    header       tip
+-- >              |         |           |
+-- >              V         V           V
+-- > 'ourFrag':   A-H-H-H-H-H-H-H-H-...-H
+-- >                     \
+-- > 'theirFrag':         H-H-H-H-...   ...   ...
+-- >                    ^
+-- >                    |
+-- >           most recent intersection (between A and the tip)
+--
+-- Note that the 'ourFrag' and 'theirFrag' share anchors /at all times/. In the
+-- figure above, the first three headers on 'ourFrag' are thus also on
+-- 'theirFrag'. The further away the most recent intersection is from the anchor
+-- point, the more headers 'theirFrag' and 'ourFrag' will have in common.
+--
+-- In the \"worst\" case 'theirFrag' has the following length:
+--
+-- >                        k
+-- >              <--------------------->
+-- > 'ourFrag':   A-H-H-H-H-H-H-H-H-...-H
+-- >                                    \
+-- > 'theirFrag':                        H-H-H-H-H-H-H-H-H-H-H-H-H-H-H...-H
+-- >                                     <-------------------------------->
+-- >                                               max look-ahead
+-- > max length   <------------------------------------------------------->
+-- > of 'theirFrag'         k + max look-ahead
+--
+-- For PBFT this is @2160 + 4320 = 6480@ headers, for TPraos this is @2160 +
+-- 6480 = 8640@ headers. The header state history will have the same length.
+--
+-- This worst case can happen when:
+--
+-- - We are more than 6480 or respectively 8640 blocks behind, bulk syncing, and
+--   the BlockFetch client and/or the ChainDB can't keep up with the ChainSync
+--   client.
+-- - When our clock is running behind such that we are not adopting the
+--   corresponding blocks because we think they are from the future.
+-- - When an attacker is serving us headers from the future.
+--
+-- When we are in sync with the network, the fragment will typically be @k@ to
+-- @k + 1@ headers long.
+--
+-- = Rate-limiting switching chains (see #423)
+--
+-- Based on the assumption that:
+--
+-- prop> An honest node never produces more than one block per slot.
+--
+-- We can conclude that a peer that rapidly switches forks in the same slot is
+-- at least questionable behavior and should not happen under normal
+-- circumstances.
+--
+-- When the peer switches to a longer fork, we still want to follow that
+-- fragment, but when the switching is done on chains of equal length, or more
+-- precisely, /at the same block number/, we are definitely observing a strange
+-- behavior from the peer, and here is when rate-limiting kicks in.
+--
+-- Delaying switches to at most one per second, we will limit the impact that
+-- this strange behavior might impose on our node. Simply 'threadDelay'ing the
+-- thread used for the ChainSync client for this peer will in principle make the
+-- other peers with the honest chain outrun this chain, or at least these
+-- switches won't diminish our capability of following and downloading other
+-- fragments that might actually be the right ones.
+--
+-- To precisely state how this rate-limiting is implemented, the following
+-- should suffice as a formal definition:
+--
+-- RATE-LIMITING: When a peer rolls back from a block with block number N and
+-- afterwards it rolls back again twice from blocks with block number =< N, the
+-- third rollback will not be committed until at least one second has passed
+-- between the second and the third rollbacks.
+--
+-- = Disconnecting on dubious behavior
+--
+-- Some behavior exposed by a peer will lead to hard disconnection:
+--
+--
+-- - When the server announces that an intersection was found but the given
+--   point is not on the candidate chain.
+--
+-- - When the server provides an invalid block.
+--
+-- - When the hash stored in the header that is in the provided block that is to
+--   be rollforwarded to doesn't match the hash of the block we are applying the
+--   rollforward on.
+--
+-- - When the header is not valid wrt the ticked ledger view.
+
 type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
    client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView {
-      getCurrentChain       :: STM m (AnchoredFragment (Header blk))
-    , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
-    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk))
-    , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
-    }
+    getCurrentChain       :: STM m (AnchoredFragment (Header blk))
+  , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
+  , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk))
+  , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+  }
 
 defaultChainDbView ::
      (IOLike m, LedgerSupportsProtocol blk)
@@ -149,111 +311,9 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
         getIsInvalidBlock
         (readTVar varCandidate)
 
--- Our task: after connecting to an upstream node, try to maintain an
--- up-to-date header-only fragment representing their chain. We maintain
--- such candidate chains in a map with upstream nodes as keys.
---
--- The block fetch logic will use these candidate chains to download
--- blocks from, prioritising certain candidate chains over others using
--- the consensus protocol. Whenever such a block has been downloaded and
--- added to the local 'ChainDB', the 'ChainDB' will perform chain
--- selection.
---
--- We also validate the headers of a candidate chain by advancing the
--- 'ChainDepState' with the headers, which returns an error when validation
--- failed. Thus, in addition to the chain fragment of each candidate, we also
--- store a 'ChainDepState' corresponding to the head of the candidate chain.
---
--- We must keep the candidate chain synchronised with the corresponding
--- upstream chain. The upstream node's chain might roll forward or
--- backwards, and they will inform us about this. When we get these
--- messages, we will replicate these actions on our candidate chain.
---
--- INVARIANT:
---
--- >           our tip
--- >             v
--- >   /--* .... *
--- >   |
--- > --*
--- >   |
--- >   \--* .... *
--- >        fragment tip
---
--- The distance from our tip to the intersection between our chain and the
--- fragment maintained for the upstream node cannot exceed @k@ blocks. When
--- this invariant cannot be maintained, the upstream node is on a fork that
--- is too distant and we should disconnect.
---
--- TODO #423 rate-limit switching chains, otherwise we can't place blame (we
--- don't know which candidate's chain included the point that was
--- poisoned). E.g. two rollbacks per time slot -> make it configurable ->
--- just a simple argument for now.
---
--- TODO #467 if the 'theirTip' that they sent us is on our chain, just
--- switch to it.
-
-
--- = Candidate fragment size
--- -------------------------
---
--- The size of the downloaded candidate fragment ('theirFrag') and the
--- corresponding header state history ('theirHeaderStateHistory', which has the
--- same size as 'theirFrag') is limited by how far in the future the ledger view
--- can forecast.
---
--- For PBFT (Byron), we can forecast up to @2k@ slots ahead. Assuming a chain
--- density of 100%, this means the look-ahead is @2k@ headers. For mainnet this
--- means @2 * 2160 = 4320@ headers.
---
--- For TPraos (Shelley), we can forecast up to @3k/f@ slots ahead. Assuming a
--- density of @f@, this means the look-ahead is @3k@ headers. For mainnet, this
--- means @3 * 2160 = 6480@ headers.
---
--- The figure below shows the relation between 'ourFrag' and 'theirFrag':
---
--- >                       k headers or less, when A is genesis
--- >              <--------------------->
--- >            anchor    header       tip
--- >              |         |           |
--- >              V         V           V
--- > 'ourFrag':   A-H-H-H-H-H-H-H-H-...-H
--- >                     \
--- > 'theirFrag':         H-H-H-H-...   ...   ...
--- >                    ^
--- >                    |
--- >           most recent intersection (between A and the tip)
---
--- Note that the 'ourFrag' and 'theirFrag' share anchors /at all times/. In the
--- figure above, the first three headers on 'ourFrag' are thus also on
--- 'theirFrag'. The further away the most recent intersection is from the anchor
--- point, the more headers 'theirFrag' and 'ourFrag' will have in common.
---
--- In the \"worst\" case 'theirFrag' has the following length:
---
--- >                        k
--- >              <--------------------->
--- > 'ourFrag':   A-H-H-H-H-H-H-H-H-...-H
--- >                                    \
--- > 'theirFrag':                        H-H-H-H-H-H-H-H-H-H-H-H-H-H-H...-H
--- >                                     <-------------------------------->
--- >                                               max look-ahead
--- > max length   <------------------------------------------------------->
--- > of 'theirFrag'         k + max look-ahead
---
--- For PBFT this is @2160 + 4320 = 6480@ headers, for TPraos this is @2160 +
--- 6480 = 8640@ headers. The header state history will have the same length.
---
--- This worst case can happen when:
--- * We are more than 6480 or respectively 8640 blocks behind, bulk syncing, and
---   the BlockFetch client and/or the ChainDB can't keep up with the ChainSync
---   client.
--- * When our clock is running behind such that we are not adopting the
---   corresponding blocks because we think they are from the future.
--- * When an attacker is serving us headers from the future.
---
--- When we are in sync with the network, the fragment will typically be @k@ to
--- @k + 1@ headers long.
+{-------------------------------------------------------------------------------
+  Intersection state known or unknown
+-------------------------------------------------------------------------------}
 
 -- | State used when the intersection between the candidate and the current
 -- chain is unknown.
@@ -266,7 +326,7 @@ data UnknownIntersectionState blk = UnknownIntersectionState
     -- This fragment is used to select points from to find an intersection
     -- with the candidate.
     --
-    -- INVARIANT: 'ourFrag' contains @k@ headers, unless close to genesis.
+    -- INVARIANT: 'ourFrag' contains @k@ headers, or less when close to genesis.
   , ourHeaderStateHistory :: !(HeaderStateHistory blk)
     -- ^ 'HeaderStateHistory' corresponding to the tip (most recent block) of
     -- 'ourFrag'.
@@ -320,6 +380,11 @@ data KnownIntersectionState blk = KnownIntersectionState
 instance ( LedgerSupportsProtocol blk
          ) => NoThunks (KnownIntersectionState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(KnownIntersectionState blk))
+
+
+{-------------------------------------------------------------------------------
+  Implementation
+-------------------------------------------------------------------------------}
 
 checkKnownIntersectionInvariants
   :: ( HasHeader blk
@@ -709,6 +774,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             rollBackward mkPipelineDecision n intersection' (Their theirTip)
       }
 
+    -- | React to a MsgRollForward advancing the candidate chain with the given
+    -- block header if it is valid and applicable on the intersection point.
     rollForward :: MkPipelineDecision
                 -> Nat n
                 -> Header blk
@@ -742,7 +809,8 @@ chainSyncClient mkPipelineDecision0 tracer cfg
             forecast <-
               maybe
                 (error $
-                   "intersection not within last k blocks: " <> show mostRecentIntersection)
+                      "intersection not within last k blocks: "
+                   <> show mostRecentIntersection)
                 (ledgerViewForecastAt (configLedger cfg) . ledgerState)
                 <$> getPastLedger mostRecentIntersection
 
@@ -751,7 +819,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               -- current chain. We have to wait until our chain and the
               -- intersection have advanced far enough. This will wait on
               -- changes to the current chain via the call to
-              -- 'intersectsWithCurrentChain' befoer it.
+              -- 'intersectsWithCurrentChain' before it.
               Left OutsideForecastRange{} ->
                 retry
               Right ledgerView ->
