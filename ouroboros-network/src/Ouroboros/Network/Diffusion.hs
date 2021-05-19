@@ -9,6 +9,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
+#if !defined(mingw32_HOST_OS)
+#define POSIX
+#endif
+
 module Ouroboros.Network.Diffusion
   ( DiffusionTracers (..)
   , DiffusionArguments (..)
@@ -57,6 +61,9 @@ import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Kind (Type)
 import           System.Random (newStdGen, split)
+#ifdef POSIX
+import qualified System.Posix.Signals as Signals
+#endif
 
 import           Network.Mux ( MiniProtocolBundle (..)
                              , MiniProtocolInfo (..)
@@ -84,6 +91,9 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 
 import           Ouroboros.Network.ConnectionManager.Types
+#ifdef POSIX
+import qualified Ouroboros.Network.ConnectionManager.Types as ConnectionManager
+#endif
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.RethrowPolicy
@@ -816,7 +826,19 @@ runDataDiffusion tracers
                   connectionHandler
                   classifyHandleError
                   NotInResponderMode
-                  $ \(connectionManager :: NodeToNodeConnectionManager InitiatorMode Void) ->
+                  $ \(connectionManager :: NodeToNodeConnectionManager InitiatorMode Void) -> do
+#ifdef POSIX
+                  _ <- Signals.installHandler
+                    Signals.sigUSR1
+                    (Signals.Catch
+                      (do state <- ConnectionManager.readState connectionManager
+                          traceWith dtConnectionManagerTracer
+                                    (TrState state)
+                      )
+                    )
+                    Nothing
+#endif
+
                   --
                   -- peer state actions
                   --
@@ -923,7 +945,18 @@ runDataDiffusion tracers
                   connectionHandler
                   classifyHandleError
                   (InResponderMode controlChannel)
-                  $ \(connectionManager :: NodeToNodeConnectionManager InitiatorResponderMode ()) ->
+                  $ \(connectionManager :: NodeToNodeConnectionManager InitiatorResponderMode ()) -> do
+#ifdef POSIX
+                  _ <- Signals.installHandler
+                    Signals.sigUSR1
+                    (Signals.Catch
+                      (do state <- ConnectionManager.readState connectionManager
+                          traceWith dtConnectionManagerTracer
+                                    (TrState state)
+                      )
+                    )
+                    Nothing
+#endif
                   --
                   -- peer state actions
                   --
