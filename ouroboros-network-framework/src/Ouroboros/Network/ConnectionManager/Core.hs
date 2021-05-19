@@ -591,17 +591,18 @@ withConnectionManager ConnectionManagerArguments {
                             writeTVar connVar (TerminatedState Nothing)
                             return $ There connState
                           TerminatingState {} -> do
+                            -- clean shutdown
                             return $ Here connVar
                           TerminatedState {} ->
                             return $ There connState
                 case wConnVar of
                   Nowhere -> do
-                    close cmSnocket socket
+                    reset cmSnocket socket
                     return ( state
                            , Left Unknown
                            )
                   There connState -> do
-                    close cmSnocket socket
+                    reset cmSnocket socket
                     return ( Map.delete peerAddr state
                            , Left (Known connState)
                            )
@@ -1093,7 +1094,7 @@ withConnectionManager ConnectionManagerArguments {
             bracketOnError
               (openToConnect cmSnocket peerAddr)
               (\socket -> do
-                  close cmSnocket socket
+                  reset cmSnocket socket
                   tr <- atomically $ do
                     connState <- readTVar connVar
                     let connState' = TerminatedState Nothing
