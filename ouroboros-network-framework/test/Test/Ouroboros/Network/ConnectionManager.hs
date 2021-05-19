@@ -1481,6 +1481,7 @@ mkSnocket scheduleMap = do
         accept,
         bind,
         close,
+        reset = close,
         toBearer
       }
   where

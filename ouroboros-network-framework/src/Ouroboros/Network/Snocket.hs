@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -235,6 +236,7 @@ data Snocket m fd addr = Snocket {
   , accept        :: fd -> Accept m fd addr
 
   , close         :: fd -> m ()
+  , reset         :: fd -> m ()
 
   , toBearer      ::  DiffTime -> Tracer m MuxTrace -> fd -> MuxBearer m
   }
@@ -305,10 +307,19 @@ socketSnocket ioManager = Snocket {
       -- TODO: 'Socket.close' is interruptible by asynchronous exceptions; it
       -- should be fixed upstream, once that's done we can remove
       -- `unitnerruptibleMask_'
-    , close    = uninterruptibleMask_ . Socket.close
+    , close
+    , reset    
     , toBearer = Mx.socketAsMuxBearer
     }
   where
+    close, reset :: Socket -> IO ()
+    close sd = uninterruptibleMask_ $ do
+      Socket.setSockOpt sd Socket.Linger
+                          (StructLinger { sl_onoff  = 0,
+                                          sl_linger = 0 })
+      Socket.close sd
+    reset sd = uninterruptibleMask_ (Socket.close sd)
+
     openSocket :: AddressFamily SockAddr -> IO Socket
     openSocket (SocketFamily family_) = do
       sd <- Socket.socket family_ Socket.Stream Socket.defaultProtocol
@@ -398,7 +409,8 @@ localSnocket ioManager path = Snocket {
           return (Accepted sock localAddress, acceptNext)
 
       -- Win32.closeHandle is not interrupible
-    , close    = Win32.closeHandle . getLocalHandle
+    , close
+    , reset    = close
 
     , toBearer = \_sduTimeout tr -> namedPipeAsBearer tr . getLocalHandle
     }
@@ -442,6 +454,9 @@ localSnocket ioManager path = Snocket {
               Win32.Async.connectNamedPipe hpipe
               return (Accepted (LocalSocket hpipe) localAddress, go)
 
+    close :: LocalSocket -> IO ()
+    close = Win32.closeHandle . getLocalHandle
+
 -- local snocket on unix
 #else
 
@@ -459,7 +474,8 @@ localSnocket ioManager _ =
                       . getLocalHandle
       , open          = openSocket
       , openToConnect = \_addr -> openSocket LocalFamily
-      , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
+      , close
+      , reset         = close
       , toBearer      = \df tr (LocalSocket sd) -> Mx.socketAsMuxBearer df tr sd
       }
   where
@@ -484,6 +500,9 @@ localSnocket ioManager _ =
           Socket.close sd
           throwIO e
       return (LocalSocket sd)
+
+    close :: LocalSocket -> IO ()
+    close = uninterruptibleMask_ . Socket.close . getLocalHandle
 #endif
 
 localAddressFromPath :: FilePath -> LocalAddress
