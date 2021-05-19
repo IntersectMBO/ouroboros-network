@@ -185,6 +185,8 @@ library
                        ouroboros-network-framework
                                          >=0.1 && <1.0,
                        typed-protocols   >=0.1 && < 1.0
+  if !os(windows)
+    build-depends:     unix
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
