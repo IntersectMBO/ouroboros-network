@@ -667,6 +667,14 @@ withPeerStateActions PeerStateActionsArguments {
                                             awaitVarBundle
                       }
 
+              startProtocols TokWarm connHandle
+              startProtocols TokEstablished connHandle
+              atomically $ writeTVar peerStateVar (PeerStatus PeerWarm)
+              traceWith spsTracer (PeerStatusChanged
+                                    (ColdToWarm
+                                      (Just localAddress)
+                                      remoteAddress))
+
               JobPool.forkJob jobPool
                               (Job (handleJust
                                      (\e -> case fromException e of
@@ -679,13 +687,6 @@ withPeerStateActions PeerStateActionsArguments {
                                    (return . Just)
                                    ()
                                    ("peerMonitoringLoop " ++ show remoteAddress))
-              startProtocols TokWarm connHandle
-              startProtocols TokEstablished connHandle
-              atomically $ writeTVar peerStateVar (PeerStatus PeerWarm)
-              traceWith spsTracer (PeerStatusChanged
-                                    (ColdToWarm
-                                      (Just localAddress)
-                                      remoteAddress))
               pure connHandle
 
             Disconnected _ Nothing ->
