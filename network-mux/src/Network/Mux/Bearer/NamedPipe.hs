@@ -38,7 +38,7 @@ namedPipeAsBearer tracer h =
     Mx.MuxBearer {
         Mx.read    = readNamedPipe,
         Mx.write   = writeNamedPipe,
-        Mx.sduSize = 24576
+        Mx.sduSize = Mx.SDUSize 24576
       }
   where
     readNamedPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
