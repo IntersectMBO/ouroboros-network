@@ -7,6 +7,7 @@ import qualified Test.Network.TypedProtocol.PingPong.Codec as PingPong
 import qualified Test.Network.TypedProtocol.ReqResp.Codec as ReqResp
 import qualified Test.Ouroboros.Network.ConnectionManager as ConnectionManager
 import qualified Test.Ouroboros.Network.Driver as Driver
+import qualified Test.Ouroboros.Network.IOSim as IOSim
 import qualified Test.Ouroboros.Network.Server2 as Server2
 import qualified Test.Ouroboros.Network.Socket as Socket
 import qualified Test.Ouroboros.Network.Subscription as Subscription
@@ -27,6 +28,7 @@ tests =
   , Subscription.tests
   , RateLimiting.tests
   , Synchronisation.tests
+  , IOSim.tests
   ]
 
 
