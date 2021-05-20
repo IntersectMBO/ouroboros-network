@@ -253,10 +253,11 @@ makeConnectionHandler muxTracer singMuxMode
         runWithUnmask :: (forall x. m x -> m x) -> m ()
         runWithUnmask unmask =
           classifyExceptions tracer remoteAddress OutboundError $ do
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
             hsResult <-
-              unmask (runHandshakeClient (mkMuxBearer sduHandshakeTimeout socket)
-                                          connectionId
-                                          handshakeArguments)
+              unmask (runHandshakeClient handshakeBearer
+                                         connectionId
+                                         handshakeArguments)
               -- 'runHandshakeClient' only deals with protocol limit errors or
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.
@@ -288,8 +289,9 @@ makeConnectionHandler muxTracer singMuxMode
                           hControlMessage = controlMessageBundle
                         }
                   atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
+                  bearer <- mkMuxBearer sduTimeout socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
-                         mux (mkMuxBearer sduTimeout socket)
+                         mux bearer
 
 
     inboundConnectionHandler
@@ -311,8 +313,9 @@ makeConnectionHandler muxTracer singMuxMode
         runWithUnmask :: (forall x. m x -> m x) -> m ()
         runWithUnmask unmask =
           classifyExceptions tracer remoteAddress InboundError $ do
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
             hsResult <-
-              unmask (runHandshakeServer (mkMuxBearer sduHandshakeTimeout socket)
+              unmask (runHandshakeServer handshakeBearer
                                          connectionId
                                          handshakeArguments)
               -- 'runHandshakeServer' only deals with protocol limit errors or
@@ -346,8 +349,9 @@ makeConnectionHandler muxTracer singMuxMode
                           hControlMessage = controlMessageBundle
                         }
                   atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
+                  bearer <- mkMuxBearer sduTimeout socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
-                             mux (mkMuxBearer sduTimeout socket)
+                             mux bearer
 
 
 
