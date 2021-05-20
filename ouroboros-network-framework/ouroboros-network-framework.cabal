@@ -21,6 +21,7 @@ extra-source-files:  CHANGELOG.md
 
 library
   exposed-modules:     Data.Monoid.Synchronisation
+                       Data.Cache
                        Ouroboros.Network.Codec
                        Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
