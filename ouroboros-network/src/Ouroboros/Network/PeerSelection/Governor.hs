@@ -37,6 +37,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     emptyPeerSelectionState,
 ) where
 
+import           Data.Cache
 import           Data.Void (Void)
 import           Data.Semigroup (Min(..))
 
@@ -48,7 +49,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer(..), traceWith, contramap)
+import           Control.Tracer (Tracer(..), traceWith)
 import           System.Random
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -452,14 +453,13 @@ peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
-        tracer (debugTracer <> contramap transform countersTracer)
-        actions policy
+        tracer
+        debugTracer
+        countersTracer
+        actions
+        policy
         jobPool
         (emptyPeerSelectionState fuzzRng)
-  where
-    transform :: Ord peeraddr => DebugPeerSelection peeraddr peerconn -> PeerSelectionCounters
-    transform (TraceGovernorState _ _ st) = peerStateToCounters st
-
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -482,12 +482,18 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                               Ord peeraddr)
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr peerconn)
+                          -> Tracer m PeerSelectionCounters
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
                           -> JobPool () m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
                           -> m Void
-peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
+peerSelectionGovernorLoop tracer
+                          debugTracer
+                          countersTracer
+                          actions
+                          policy
+                          jobPool =
     loop
   where
     loop :: PeerSelectionState peeraddr peerconn -> m Void
@@ -503,10 +509,17 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
       now <- getMonotonicTime
-      let Decision { decisionTrace, decisionJobs, decisionState } = timedDecision now
+      let Decision { decisionTrace, decisionJobs, decisionState } =
+            timedDecision now
+          newCounters = peerStateToCounters decisionState
       traceWith tracer decisionTrace
+      withCacheA (countersCache decisionState)
+                 newCounters
+                 (traceWith countersTracer)
+
+
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop decisionState
+      loop (decisionState { countersCache = Cache newCounters })
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
