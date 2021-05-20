@@ -171,6 +171,33 @@ defaultShelleyLedgerExamples mkWitnesses mkValidatedTx value txBody auxiliaryDat
       , sreShelleyGenesis = testShelleyGenesis
       }
 
+ledgerExamplesShelley :: ShelleyLedgerExamples StandardShelley
+ledgerExamplesShelley =
+    defaultShelleyLedgerExamples
+      (mkWitnessesPreAlonzo (Proxy @StandardShelley))
+      id
+      exampleCoin
+      exampleTxBodyShelley
+      exampleAuxiliaryDataShelley
+
+ledgerExamplesAllegra :: ShelleyLedgerExamples StandardAllegra
+ledgerExamplesAllegra =
+    defaultShelleyLedgerExamples
+      (mkWitnessesPreAlonzo (Proxy @StandardAllegra))
+      id
+      exampleCoin
+      exampleTxBodyAllegra
+      exampleAuxiliaryDataMA
+
+ledgerExamplesMary :: ShelleyLedgerExamples StandardMary
+ledgerExamplesMary =
+    defaultShelleyLedgerExamples
+      (mkWitnessesPreAlonzo (Proxy @StandardMary))
+      id
+      exampleMultiAssetValue
+      exampleTxBodyMary
+      exampleAuxiliaryDataMA
+
 exampleShelleyLedgerBlock
   :: forall era. ShelleyBasedEra era
   => SL.TxInBlock era
@@ -576,7 +603,9 @@ keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
 codecConfig :: CodecConfig (ShelleyBlock StandardShelley)
 codecConfig = ShelleyCodecConfig
 
-fromShelleyLedgerExamples :: ShelleyBasedEra era => ShelleyLedgerExamples era -- ^
+fromShelleyLedgerExamples
+  :: ShelleyBasedEra era
+  => ShelleyLedgerExamples era -- ^
   -> Golden.Examples (ShelleyBlock era)
 fromShelleyLedgerExamples ShelleyLedgerExamples {
                             sleResultExamples = ShelleyResultExamples{..}
@@ -642,59 +671,17 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                        ledgerState
                        (genesisHeaderState chainDepState)
 
-examples ::
-     forall era.
-     ( ShelleyBasedEra era
-     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
-       ~ SL.DelegsPredicateFailure era
-     , Core.PParams era ~ SL.PParams era
-     , Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
-     )
-  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
-  -> (Core.Tx era -> SL.TxInBlock era)
-  -> Core.Value era
-  -> Core.TxBody era
-  -> Core.AuxiliaryData era
-  -> Golden.Examples (ShelleyBlock era)
-examples mkWitnesses mkValidatedTx value txBody auxiliaryData =
-  fromShelleyLedgerExamples shelleyLedgerExamples
-  where
-    shelleyLedgerExamples = defaultShelleyLedgerExamples
-                              mkWitnesses
-                              mkValidatedTx
-                              value
-                              txBody
-                              auxiliaryData
-
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
-examplesShelley =
-    examples
-      (mkWitnessesPreAlonzo (Proxy @StandardShelley))
-      id
-      exampleCoin
-      exampleTxBodyShelley
-      exampleAuxiliaryDataShelley
+examplesShelley = fromShelleyLedgerExamples ledgerExamplesShelley
 
 examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
-examplesAllegra =
-    examples
-      (mkWitnessesPreAlonzo (Proxy @StandardAllegra))
-      id
-      exampleCoin
-      exampleTxBodyAllegra
-      exampleAuxiliaryDataMA
+examplesAllegra = fromShelleyLedgerExamples ledgerExamplesAllegra
 
 examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
-examplesMary =
-    examples
-      (mkWitnessesPreAlonzo (Proxy @StandardMary))
-      id
-      exampleMultiAssetValue
-      exampleTxBodyMary
-      exampleAuxiliaryDataMA
+examplesMary = fromShelleyLedgerExamples ledgerExamplesMary
 
 examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
-examplesAlonzo = mempty   -- TODO
+examplesAlonzo = mempty -- TODO fromShelleyLedgerExamples ledgerExamplesAlonzo
 
 {-------------------------------------------------------------------------------
   Keys
