@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
@@ -10,31 +11,12 @@
 module Test.Consensus.Shelley.Examples (
     -- * Setup
     codecConfig
-  , keyToCredential
-  , mkDummyHash
-  , testEpochInfo
   , testShelleyGenesis
     -- * Examples
   , examplesAllegra
   , examplesAlonzo
   , examplesMary
   , examplesShelley
-    -- * Era-specific examples
-  , exampleCoin
-    -- * Individual examples
-  , exampleApplyTxErr
-  , exampleBlock
-  , exampleChainDepState
-  , exampleExtLedgerState
-  , exampleHeaderHash
-  , exampleHeaderState
-  , exampleLedgerState
-  , exampleTx
-    -- * Keys
-  , exampleKeys
-  , examplePayKey
-  , examplePoolParams
-  , exampleStakeKey
   ) where
 
 import qualified Data.ByteString as Strict
@@ -65,10 +47,8 @@ import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Time
 
@@ -77,7 +57,14 @@ import qualified Cardano.Ledger.Coin as SL (DeltaCoin (..))
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH, VRF)
 import qualified Cardano.Ledger.Era as SL
+import qualified Cardano.Ledger.Mary.Value as MA
 import qualified Cardano.Ledger.SafeHash as SL
+import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
+import qualified Cardano.Ledger.ShelleyMA as MA
+import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
+import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
+import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
+
 import qualified Control.State.Transition.Extended as SL (PredicateFailure)
 import           Shelley.Spec.Ledger.API (StrictMaybe (..))
 import qualified Shelley.Spec.Ledger.API as SL
@@ -105,16 +92,9 @@ import           Test.Shelley.Spec.Ledger.Orphans ()
 import qualified Test.Shelley.Spec.Ledger.Utils as SL hiding (mkKeyPair,
                      mkKeyPair', mkVRFKeyPair)
 
-import qualified Cardano.Ledger.Mary.Value as MA
-import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
-import qualified Cardano.Ledger.ShelleyMA as MA
-import qualified Cardano.Ledger.ShelleyMA.AuxiliaryData as MA
-import qualified Cardano.Ledger.ShelleyMA.Timelocks as MA
-import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
-
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto, TPraos,
+import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto,
                      TPraosState (..))
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -122,12 +102,146 @@ import           Test.Util.Serialisation.Golden (labelled, unlabelled)
 import qualified Test.Util.Serialisation.Golden as Golden
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
-{-------------------------------------------------------------------------------
-  Setup
--------------------------------------------------------------------------------}
+-- To Ledger START
 
-testEpochInfo :: EpochInfo Identity
-testEpochInfo = SL.epochInfo SL.testGlobals
+data ShelleyResultExamples era = ShelleyResultExamples {
+    srePParams           :: Core.PParams era
+  , sreProposedPPUpdates :: SL.ProposedPPUpdates era
+  , srePoolDistr         :: SL.PoolDistr (SL.Crypto era)
+  , sreNonMyopicRewards  :: Map (Either SL.Coin (SL.Credential 'SL.Staking (SL.Crypto era)))
+                                (Map (SL.KeyHash 'SL.StakePool (SL.Crypto era)) SL.Coin)
+  , sreShelleyGenesis    :: SL.ShelleyGenesis era
+  }
+
+data ShelleyLedgerExamples era = ShelleyLedgerExamples {
+     sleBlock :: SL.Block era
+   , sleHashHeader :: SL.HashHeader (SL.Crypto era) -- TODO move exampleHeaderHash dummy to ledger
+   , sleTx :: SL.Tx era
+   , sleApplyTxError :: SL.ApplyTxError era
+   , sleRewardsCredentials :: Set (Either SL.Coin (SL.Credential 'SL.Staking (SL.Crypto era)))
+   , sleResultExamples :: ShelleyResultExamples era
+   , sleNewEpochState :: SL.NewEpochState era
+   , sleChainDepState :: SL.ChainDepState (SL.Crypto era)
+   }
+
+defaultShelleyLedgerExamples
+  :: forall era.
+     ( ShelleyBasedEra era
+     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
+       ~ SL.DelegsPredicateFailure era
+     , Core.PParams era ~ SL.PParams era
+     , Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
+     )
+  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
+  -> (Core.Tx era -> SL.TxInBlock era)
+  -> Core.Value era
+  -> Core.TxBody era
+  -> Core.AuxiliaryData era
+  -> ShelleyLedgerExamples era
+defaultShelleyLedgerExamples mkWitnesses mkValidatedTx value txBody auxiliaryData = ShelleyLedgerExamples {
+    sleBlock  = exampleShelleyLedgerBlock (mkValidatedTx tx)
+   , sleHashHeader = exampleHashHeader (Proxy @era)
+   , sleTx = tx
+   , sleApplyTxError = ApplyTxError
+                       $ pure
+                       $ SL.DelegsFailure
+                       $ SL.DelegateeNotRegisteredDELEG @era (mkKeyHash 1)
+   , sleRewardsCredentials = Set.fromList [
+                Left  (SL.Coin 100)
+              , Right (SL.ScriptHashObj (mkScriptHash 1))
+              , Right (SL.KeyHashObj (mkKeyHash 2))
+              ]
+   , sleResultExamples = resultExamples
+   , sleNewEpochState = exampleNewEpochState value
+   , sleChainDepState = exampleLedgerChainDepState 1
+   }
+
+  where
+    tx = exampleTx mkWitnesses txBody auxiliaryData
+
+    resultExamples = ShelleyResultExamples {
+      srePParams = def
+      , sreProposedPPUpdates = exampleProposedPParamsUpdates
+      , srePoolDistr = examplePoolDistr
+      , sreNonMyopicRewards = Map.fromList [
+                (Left (SL.Coin 100), Map.singleton (mkKeyHash 2) (SL.Coin 3))
+              , (Right (SL.ScriptHashObj (mkScriptHash 1)), Map.empty)
+              , (Right (SL.KeyHashObj (mkKeyHash 2)), Map.singleton (mkKeyHash 3) (SL.Coin 9))
+              ]
+      , sreShelleyGenesis = testShelleyGenesis
+      }
+
+exampleShelleyLedgerBlock
+  :: forall era. ShelleyBasedEra era
+  => SL.TxInBlock era
+  -> SL.Block era
+exampleShelleyLedgerBlock tx = SL.Block blockHeader blockBody
+  where
+    keys :: SL.AllIssuerKeys (EraCrypto era) 'SL.StakePool
+    keys = exampleKeys
+
+    (_, (hotKey, _)) = head $ SL.hot keys
+    SL.KeyPair vKeyCold _ = SL.cold keys
+
+    blockHeader :: SL.BHeader (EraCrypto era)
+    blockHeader = SL.BHeader blockHeaderBody (SL.signedKES () 0 blockHeaderBody hotKey)
+
+    blockHeaderBody :: SL.BHBody (EraCrypto era)
+    blockHeaderBody = SL.BHBody {
+          bheaderBlockNo = BlockNo 3
+        , bheaderSlotNo  = SlotNo 9
+        , bheaderPrev    = SL.BlockHash (SL.HashHeader (mkDummyHash Proxy 2))
+        , bheaderVk      = SL.coerceKeyRole vKeyCold
+        , bheaderVrfVk   = snd $ SL.vrf keys
+        , bheaderEta     = SL.mkCertifiedVRF (mkBytes 0) (fst $ SL.vrf keys)
+        , bheaderL       = SL.mkCertifiedVRF (mkBytes 1) (fst $ SL.vrf keys)
+        , bsize          = 2345
+        , bhash          = SL.hashTxSeq @era blockBody
+        , bheaderOCert   = SL.mkOCert keys 0 (SL.KESPeriod 0)
+        , bprotver       = SL.ProtVer 2 0
+        }
+
+    blockBody = SL.toTxSeq @era (StrictSeq.fromList [tx])
+
+    mkBytes :: Int -> SL.Seed
+    mkBytes = SL.Seed . mkDummyHash (Proxy @Blake2b_256)
+
+exampleHashHeader ::
+     forall era. ShelleyBasedEra era
+  => Proxy era
+  -> SL.HashHeader (SL.Crypto era)
+exampleHashHeader _ = coerce $ mkDummyHash (Proxy @(HASH (SL.Crypto era))) 0
+
+-- | This is not a valid transaction. We don't care, we are only interested in
+-- serialisation, not validation.
+exampleTx ::
+     forall era. ShelleyBasedEra era
+  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
+  -> Core.TxBody era
+  -> Core.AuxiliaryData era
+  -> SL.Tx era
+exampleTx mkWitnesses txBody auxiliaryData =
+    SL.Tx txBody (mkWitnesses txBody keyPairWits) (SJust auxiliaryData)
+  where
+    keyPairWits :: KeyPairWits era
+    keyPairWits = [
+          SL.asWitness examplePayKey
+        , SL.asWitness exampleStakeKey
+        , SL.asWitness $ SL.cold (exampleKeys @(EraCrypto era) @'SL.StakePool)
+        ]
+
+exampleProposedPParamsUpdates :: (ShelleyBasedEra era
+     , Core.PParamsDelta era ~ SL.PParams' StrictMaybe era) => SL.ProposedPPUpdates era
+exampleProposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
+                               (mkKeyHash 0)
+                               (SL.emptyPParamsUpdate {SL._keyDeposit = SJust (SL.Coin 100)})
+
+examplePoolDistr :: forall c. PraosCrypto c => SL.PoolDistr c
+examplePoolDistr = SL.PoolDistr $ Map.fromList [
+      (mkKeyHash 1, SL.IndividualPoolStake
+                      1
+                      (SL.hashVerKeyVRF (snd (SL.vrf (exampleKeys @c)))))
+    ]
 
 -- | These are dummy values.
 testShelleyGenesis :: SL.ShelleyGenesis era
@@ -151,132 +265,84 @@ testShelleyGenesis = SL.ShelleyGenesis {
     , sgStaking           = SL.emptyGenesisStaking
     }
 
-codecConfig :: CodecConfig (ShelleyBlock StandardShelley)
-codecConfig = ShelleyCodecConfig
-
-mkDummyHash :: forall h a. HashAlgorithm h => Proxy h -> Int -> Hash.Hash h a
-mkDummyHash _ = coerce . SL.hashWithSerialiser @h toCBOR
-
-mkDummySafeHash :: forall c a. Crypto c => Proxy c -> Int -> SL.SafeHash c a
-mkDummySafeHash _ =
-      SL.unsafeMakeSafeHash
-    . mkDummyHash (Proxy @(HASH c))
-
-mkKeyHash :: forall c discriminator. Crypto c => Int -> SL.KeyHash discriminator c
-mkKeyHash = SL.KeyHash . mkDummyHash (Proxy @(ADDRHASH c))
-
-mkScriptHash :: forall c. Crypto c => Int -> SL.ScriptHash c
-mkScriptHash = SL.ScriptHash . mkDummyHash (Proxy @(ADDRHASH c))
-
--- | @mkKeyPair'@ from @Test.Shelley.Spec.Ledger.Utils@ doesn't work for real
--- crypto:
--- <https://github.com/input-output-hk/cardano-ledger-specs/issues/1770>
-mkDSIGNKeyPair ::
-     forall c kd. DSIGNAlgorithm (DSIGN c)
-  => Word8
-  -> SL.KeyPair kd c
-mkDSIGNKeyPair byte = SL.KeyPair (SL.VKey $ DSIGN.deriveVerKeyDSIGN sk) sk
-  where
-    seed =
-      Seed.mkSeedFromBytes $
-        Strict.replicate
-          (fromIntegral (DSIGN.seedSizeDSIGN (Proxy @(DSIGN c))))
-          byte
-
-    sk = DSIGN.genKeyDSIGN seed
-
-mkVRFKeyPair ::
-     forall c. VRFAlgorithm (VRF c)
-  => Proxy c
-  -> Word8
-  -> (SL.SignKeyVRF c, SL.VerKeyVRF c)
-mkVRFKeyPair _ byte = (sk, VRF.deriveVerKeyVRF sk)
-  where
-    seed =
-      Seed.mkSeedFromBytes $
-        Strict.replicate
-          (fromIntegral (VRF.seedSizeVRF (Proxy @(VRF c))))
-          byte
-
-    sk = VRF.genKeyVRF seed
-
-keyToCredential :: Crypto c => SL.KeyPair r c -> SL.Credential r c
-keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
-
-{-------------------------------------------------------------------------------
-  Examples
--------------------------------------------------------------------------------}
-
-examples ::
+-- | This is probably not a valid ledger. We don't care, we are only
+-- interested in serialisation, not validation.
+exampleNewEpochState ::
      forall era.
      ( ShelleyBasedEra era
-     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
-       ~ SL.DelegsPredicateFailure era
      , Core.PParams era ~ SL.PParams era
-     , Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
      )
-  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
-  -> (Core.Tx era -> SL.TxInBlock era)
-  -> Core.Value era
-  -> Core.TxBody era
-  -> Core.AuxiliaryData era
-  -> Golden.Examples (ShelleyBlock era)
-examples mkWitnesses mkValidatedTx value txBody auxiliaryData = Golden.Examples {
-      exampleBlock            = unlabelled blk
-    , exampleSerialisedBlock  = unlabelled exampleSerialisedBlock
-    , exampleHeader           = unlabelled (getHeader blk)
-    , exampleSerialisedHeader = unlabelled exampleSerialisedHeader
-    , exampleHeaderHash       = unlabelled (exampleHeaderHash (Proxy @era))
-    , exampleGenTx            = unlabelled exampleGenTx
-    , exampleGenTxId          = unlabelled (txId exampleGenTx)
-    , exampleApplyTxErr       = unlabelled exampleApplyTxErr
-    , exampleQuery            = queries
-    , exampleResult           = results
-    , exampleAnnTip           = unlabelled exampleAnnTip
-    , exampleLedgerState      = unlabelled (exampleLedgerState value)
-    , exampleChainDepState    = unlabelled exampleChainDepState
-    , exampleExtLedgerState   = unlabelled (exampleExtLedgerState value)
+  => Core.Value era
+  -> SL.NewEpochState era
+exampleNewEpochState value = SL.NewEpochState {
+      nesEL     = EpochNo 0
+    , nesBprev  = SL.BlocksMade (Map.singleton (mkKeyHash 1) 10)
+    , nesBcur   = SL.BlocksMade (Map.singleton (mkKeyHash 2) 3)
+    , nesEs     = epochState
+    , nesRu     = SJust rewardUpdate
+    , nesPd     = examplePoolDistr
     }
   where
-    tx           = exampleTx mkWitnesses txBody auxiliaryData
-    exampleGenTx = mkShelleyTx tx
-    blk          = exampleBlock (mkValidatedTx tx)
+    epochState :: SL.EpochState era
+    epochState = SL.EpochState {
+          esAccountState = SL.AccountState {
+              _treasury = SL.Coin 10000
+            , _reserves = SL.Coin 1000
+            }
+        , esSnapshots    = SL.emptySnapShots
+        , esLState       = SL.LedgerState {
+              _utxoState = SL.UTxOState {
+                  _utxo      = SL.UTxO $ Map.fromList [
+                      (SL.TxIn (SL.TxId (mkDummySafeHash Proxy 1)) 0,
+                       SL.makeTxOut (Proxy @era) addr value)
+                    ]
+                , _deposited = SL.Coin 1000
+                , _fees      = SL.Coin 1
+                , _ppups     = def
 
-    queries = labelled [
-          ("GetLedgerTip",              SomeSecond GetLedgerTip)
-        , ("GetEpochNo",                SomeSecond GetEpochNo)
-        , ("GetCurrentPParams",         SomeSecond GetCurrentPParams)
-        , ("GetProposedPParamsUpdates", SomeSecond GetProposedPParamsUpdates)
-        , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
-        , ("GetNonMyopicMemberRewards",
-            SomeSecond $ GetNonMyopicMemberRewards $ Set.fromList [
-                Left  (SL.Coin 100)
-              , Right (SL.ScriptHashObj (mkScriptHash 1))
-              , Right (SL.KeyHashObj (mkKeyHash 2))
-              ])
-        , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
-      ]
+                }
+            , _delegationState = def
+            }
+        , esPrevPp       = SL.emptyPParams
+        , esPp           = SL.emptyPParams { SL._minUTxOValue = SL.Coin 1 }
+        , esNonMyopic    = nonMyopic
+        }
+      where
+        addr :: SL.Addr (EraCrypto era)
+        addr = SL.Addr
+                 SL.Testnet
+                 (keyToCredential examplePayKey)
+                 (SL.StakeRefBase (keyToCredential exampleStakeKey))
 
-    results = labelled [
-          ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
-        , ("EpochNo",                SomeResult GetEpochNo 10)
-        , ("EmptyPParams",           SomeResult GetCurrentPParams def)
-        , ("ProposedPParamsUpdates", SomeResult GetProposedPParamsUpdates proposedPParamsUpdates)
-        , ("StakeDistribution",      SomeResult GetStakeDistribution examplePoolDistr)
-        , ("NonMyopicMemberRewards", SomeResult (GetNonMyopicMemberRewards Set.empty)
-            (NonMyopicMemberRewards $ Map.fromList [
-                (Left (SL.Coin 100), Map.singleton (mkKeyHash 2) (SL.Coin 3))
-              , (Right (SL.ScriptHashObj (mkScriptHash 1)), Map.empty)
-              , (Right (SL.KeyHashObj (mkKeyHash 2)), Map.singleton (mkKeyHash 3) (SL.Coin 9))
-              ]))
-        , ("GenesisConfig",          SomeResult GetGenesisConfig (compactGenesis testShelleyGenesis))
-        ]
+    rewardUpdate :: SL.PulsingRewUpdate (EraCrypto era)
+    rewardUpdate = SL.startStep @era
+                     (EpochSize 432000)
+                     (SL.BlocksMade (Map.singleton (mkKeyHash 1) 10))
+                     epochState
+                     (SL.Coin 45)
+                     (SL.activeSlotCoeff SL.testGlobals)
+                     10
 
-    proposedPParamsUpdates :: SL.ProposedPPUpdates era
-    proposedPParamsUpdates = SL.ProposedPPUpdates $ Map.singleton
-        (mkKeyHash 0)
-        (SL.emptyPParamsUpdate {SL._keyDeposit = SJust (SL.Coin 100)})
+    nonMyopic :: SL.NonMyopic (EraCrypto era)
+    nonMyopic = def
 
+exampleLedgerChainDepState :: forall c. PraosCrypto c => Word64 -> SL.ChainDepState c
+exampleLedgerChainDepState seed = SL.ChainDepState
+      { SL.csProtocol = SL.PrtclState
+          (Map.fromList [
+              (mkKeyHash 1, 1)
+            , (mkKeyHash 2, 2)
+            ])
+          (SL.mkNonceFromNumber seed)
+          (SL.mkNonceFromNumber seed)
+      , SL.csTickn = SL.TicknState
+          SL.NeutralNonce
+          (SL.mkNonceFromNumber seed)
+      , SL.csLabNonce =
+          SL.mkNonceFromNumber seed
+      }
+
+-- TODO: Maybe move to examples?
 mkWitnessesPreAlonzo ::
      ShelleyBasedEra era
   => Proxy era
@@ -288,40 +354,6 @@ mkWitnessesPreAlonzo _ txBody keyPairWits =
       SL.addrWits =
         SL.makeWitnessesVKey (coerce (SL.hashAnnotated txBody)) keyPairWits
     }
-
-examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
-examplesShelley =
-    examples
-      (mkWitnessesPreAlonzo (Proxy @StandardShelley))
-      id
-      exampleCoin
-      exampleTxBodyShelley
-      exampleAuxiliaryDataShelley
-
-examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
-examplesAllegra =
-    examples
-      (mkWitnessesPreAlonzo (Proxy @StandardAllegra))
-      id
-      exampleCoin
-      exampleTxBodyAllegra
-      exampleAuxiliaryDataMA
-
-examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
-examplesMary =
-    examples
-      (mkWitnessesPreAlonzo (Proxy @StandardMary))
-      id
-      exampleMultiAssetValue
-      exampleTxBodyMary
-      exampleAuxiliaryDataMA
-
-examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
-examplesAlonzo = mempty   -- TODO
-
-{-------------------------------------------------------------------------------
-  Era-specific individual examples
--------------------------------------------------------------------------------}
 
 exampleCoin :: SL.Coin
 exampleCoin = SL.Coin 10
@@ -415,10 +447,6 @@ exampleAuxiliaryDataMA =
       exampleMetadataMap
       (StrictSeq.fromList [exampleScriptMA])
 
-{-------------------------------------------------------------------------------
-  Individual examples
--------------------------------------------------------------------------------}
-
 exampleTxIns :: Crypto c => Set (SL.TxIn c)
 exampleTxIns = Set.fromList [
       SL.TxIn (SL.TxId (mkDummySafeHash Proxy 1)) 0
@@ -439,13 +467,6 @@ exampleWithdrawals = SL.Wdrl $ Map.fromList [
       (SL._poolRAcnt examplePoolParams, SL.Coin 100)
     ]
 
-examplePoolDistr :: forall c. PraosCrypto c => SL.PoolDistr c
-examplePoolDistr = SL.PoolDistr $ Map.fromList [
-      (mkKeyHash 1, SL.IndividualPoolStake
-                      1
-                      (SL.hashVerKeyVRF (snd (SL.vrf (exampleKeys @c)))))
-    ]
-
 exampleProposedPPUpdates ::
   ( Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
   , ShelleyBasedEra era
@@ -455,213 +476,6 @@ exampleProposedPPUpdates = SL.ProposedPPUpdates $
       (mkKeyHash 1)
       (SL.emptyPParamsUpdate { SL._maxBHSize = SJust 4000 })
 
--- | This is not a valid block. We don't care, we are only interested in
--- serialisation, not validation.
-exampleBlock ::
-     forall era. ShelleyBasedEra era
-  => SL.TxInBlock era
-  -> ShelleyBlock era
-exampleBlock tx = mkShelleyBlock $ SL.Block blockHeader blockBody
-  where
-    keys :: SL.AllIssuerKeys (EraCrypto era) 'SL.StakePool
-    keys = exampleKeys
-
-    (_, (hotKey, _)) = head $ SL.hot keys
-    SL.KeyPair vKeyCold _ = SL.cold keys
-
-    blockHeader :: SL.BHeader (EraCrypto era)
-    blockHeader = SL.BHeader blockHeaderBody (SL.signedKES () 0 blockHeaderBody hotKey)
-
-    blockHeaderBody :: SL.BHBody (EraCrypto era)
-    blockHeaderBody = SL.BHBody {
-          bheaderBlockNo = BlockNo 3
-        , bheaderSlotNo  = SlotNo 9
-        , bheaderPrev    = SL.BlockHash (SL.HashHeader (mkDummyHash Proxy 2))
-        , bheaderVk      = SL.coerceKeyRole vKeyCold
-        , bheaderVrfVk   = snd $ SL.vrf keys
-        , bheaderEta     = SL.mkCertifiedVRF (mkBytes 0) (fst $ SL.vrf keys)
-        , bheaderL       = SL.mkCertifiedVRF (mkBytes 1) (fst $ SL.vrf keys)
-        , bsize          = 2345
-        , bhash          = SL.hashTxSeq @era blockBody
-        , bheaderOCert   = SL.mkOCert keys 0 (SL.KESPeriod 0)
-        , bprotver       = SL.ProtVer 2 0
-        }
-
-    blockBody = SL.toTxSeq @era (StrictSeq.fromList [tx])
-
-    mkBytes :: Int -> SL.Seed
-    mkBytes = SL.Seed . mkDummyHash (Proxy @Blake2b_256)
-
-exampleSerialisedBlock :: Serialised (ShelleyBlock era)
-exampleSerialisedBlock = Serialised "<BLOCK>"
-
-exampleSerialisedHeader :: SerialisedHeader (ShelleyBlock era)
-exampleSerialisedHeader = SerialisedHeaderFromDepPair $
-    GenDepPair (NestedCtxt CtxtShelley) (Serialised "<HEADER>")
-
-exampleHeaderHash ::
-     forall era. ShelleyBasedEra era
-  => Proxy era
-  -> HeaderHash (ShelleyBlock era)
-exampleHeaderHash _ = coerce $ mkDummyHash (Proxy @(HASH (EraCrypto era))) 0
-
-type KeyPairWits era = [SL.KeyPair 'SL.Witness (EraCrypto era)]
-
--- | This is not a valid transaction. We don't care, we are only interested in
--- serialisation, not validation.
-exampleTx ::
-     forall era. ShelleyBasedEra era
-  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
-  -> Core.TxBody era
-  -> Core.AuxiliaryData era
-  -> SL.Tx era
-exampleTx mkWitnesses txBody auxiliaryData =
-    SL.Tx txBody (mkWitnesses txBody keyPairWits) (SJust auxiliaryData)
-  where
-    keyPairWits :: KeyPairWits era
-    keyPairWits = [
-          SL.asWitness examplePayKey
-        , SL.asWitness exampleStakeKey
-        , SL.asWitness $ SL.cold (exampleKeys @(EraCrypto era) @'SL.StakePool)
-        ]
-
--- TODO incomplete, this type has tons of constructors that can all change.
--- <https://github.com/input-output-hk/ouroboros-network/issues/1896.
-exampleApplyTxErr ::
-     forall era.
-     ( ShelleyBasedEra era
-     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
-       ~ SL.DelegsPredicateFailure era
-     )
-  => ApplyTxErr (ShelleyBlock era)
-exampleApplyTxErr =
-      ApplyTxError
-    $ pure
-    $ SL.DelegsFailure
-    $ SL.DelegateeNotRegisteredDELEG @era (mkKeyHash 1)
-
-exampleAnnTip :: forall era. ShelleyBasedEra era => AnnTip (ShelleyBlock era)
-exampleAnnTip = AnnTip {
-      annTipSlotNo  = SlotNo 14
-    , annTipBlockNo = BlockNo 6
-    , annTipInfo    = exampleHeaderHash (Proxy @era)
-    }
-
-exampleChainDepState ::
-     forall c. PraosCrypto c => ChainDepState (TPraos c)
-exampleChainDepState = TPraosState (NotOrigin 1) (mkPrtclState 1)
-  where
-    mkPrtclState :: Word64 -> SL.ChainDepState c
-    mkPrtclState seed = SL.ChainDepState
-      { SL.csProtocol = SL.PrtclState
-          (Map.fromList [
-              (mkKeyHash 1, 1)
-            , (mkKeyHash 2, 2)
-            ])
-          (SL.mkNonceFromNumber seed)
-          (SL.mkNonceFromNumber seed)
-      , SL.csTickn = SL.TicknState
-          SL.NeutralNonce
-          (SL.mkNonceFromNumber seed)
-      , SL.csLabNonce =
-          SL.mkNonceFromNumber seed
-      }
-
--- | This is probably not a valid ledger. We don't care, we are only
--- interested in serialisation, not validation.
-exampleNewEpochState ::
-     forall era.
-     ( ShelleyBasedEra era
-     , Core.PParams era ~ SL.PParams era
-     )
-  => Core.Value era
-  -> SL.NewEpochState era
-exampleNewEpochState value = SL.NewEpochState {
-      nesEL     = EpochNo 0
-    , nesBprev  = SL.BlocksMade (Map.singleton (mkKeyHash 1) 10)
-    , nesBcur   = SL.BlocksMade (Map.singleton (mkKeyHash 2) 3)
-    , nesEs     = epochState
-    , nesRu     = SJust rewardUpdate
-    , nesPd     = examplePoolDistr
-    }
-  where
-    epochState :: SL.EpochState era
-    epochState = SL.EpochState {
-          esAccountState = SL.AccountState {
-              _treasury = SL.Coin 10000
-            , _reserves = SL.Coin 1000
-            }
-        , esSnapshots    = SL.emptySnapShots
-        , esLState       = SL.LedgerState {
-              _utxoState = SL.UTxOState {
-                  _utxo      = SL.UTxO $ Map.fromList [
-                      (SL.TxIn (SL.TxId (mkDummySafeHash Proxy 1)) 0,
-                       SL.makeTxOut (Proxy @era) addr value)
-                    ]
-                , _deposited = SL.Coin 1000
-                , _fees      = SL.Coin 1
-                , _ppups     = def
-
-                }
-            , _delegationState = def
-            }
-        , esPrevPp       = SL.emptyPParams
-        , esPp           = SL.emptyPParams { SL._minUTxOValue = SL.Coin 1 }
-        , esNonMyopic    = nonMyopic
-        }
-      where
-        addr :: SL.Addr (EraCrypto era)
-        addr = SL.Addr
-                 SL.Testnet
-                 (keyToCredential examplePayKey)
-                 (SL.StakeRefBase (keyToCredential exampleStakeKey))
-
-    rewardUpdate :: SL.PulsingRewUpdate (EraCrypto era)
-    rewardUpdate = SL.startStep @era
-                     (EpochSize 432000)
-                     (SL.BlocksMade (Map.singleton (mkKeyHash 1) 10))
-                     epochState
-                     (SL.Coin 45)
-                     (SL.activeSlotCoeff SL.testGlobals)
-                     10
-
-    nonMyopic :: SL.NonMyopic (EraCrypto era)
-    nonMyopic = def
-
-exampleLedgerState ::
-     forall era.
-     ( ShelleyBasedEra era
-     , Core.PParams era ~ SL.PParams era
-     )
-  => Core.Value era
-  -> LedgerState (ShelleyBlock era)
-exampleLedgerState value = ShelleyLedgerState {
-      shelleyLedgerTip        = NotOrigin ShelleyTip {
-                                    shelleyTipSlotNo  = SlotNo 9
-                                  , shelleyTipBlockNo = BlockNo 3
-                                  , shelleyTipHash    = exampleHeaderHash (Proxy @era)
-                                  }
-    , shelleyLedgerState      = exampleNewEpochState value
-    , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-    }
-
-exampleHeaderState :: ShelleyBasedEra era => HeaderState (ShelleyBlock era)
-exampleHeaderState = genesisHeaderState exampleChainDepState
-
-exampleExtLedgerState ::
-     ( ShelleyBasedEra era
-     , Core.PParams era ~ SL.PParams era
-     )
-  => Core.Value era
-  -> ExtLedgerState (ShelleyBlock era)
-exampleExtLedgerState value = ExtLedgerState {
-      ledgerState = exampleLedgerState value
-    , headerState = exampleHeaderState
-    }
-
-{-------------------------------------------------------------------------------
-  Keys
--------------------------------------------------------------------------------}
 
 examplePayKey :: Crypto c => SL.KeyPair 'SL.Payment c
 examplePayKey = mkDSIGNKeyPair 0
@@ -696,3 +510,194 @@ examplePoolParams = SL.PoolParams {
     }
   where
     poolKeys = exampleKeys @c @'SL.StakePool
+
+-- To Ledger END
+
+{-------------------------------------------------------------------------------
+  Setup
+-------------------------------------------------------------------------------}
+
+testEpochInfo :: EpochInfo Identity
+testEpochInfo = SL.epochInfo SL.testGlobals
+
+mkDummyHash :: forall h a. HashAlgorithm h => Proxy h -> Int -> Hash.Hash h a
+mkDummyHash _ = coerce . SL.hashWithSerialiser @h toCBOR
+
+mkDummySafeHash :: forall c a. Crypto c => Proxy c -> Int -> SL.SafeHash c a
+mkDummySafeHash _ =
+      SL.unsafeMakeSafeHash
+    . mkDummyHash (Proxy @(HASH c))
+
+mkKeyHash :: forall c discriminator. Crypto c => Int -> SL.KeyHash discriminator c
+mkKeyHash = SL.KeyHash . mkDummyHash (Proxy @(ADDRHASH c))
+
+mkScriptHash :: forall c. Crypto c => Int -> SL.ScriptHash c
+mkScriptHash = SL.ScriptHash . mkDummyHash (Proxy @(ADDRHASH c))
+
+-- | @mkKeyPair'@ from @Test.Shelley.Spec.Ledger.Utils@ doesn't work for real
+-- crypto:
+-- <https://github.com/input-output-hk/cardano-ledger-specs/issues/1770>
+mkDSIGNKeyPair ::
+     forall c kd. DSIGNAlgorithm (DSIGN c)
+  => Word8
+  -> SL.KeyPair kd c
+mkDSIGNKeyPair byte = SL.KeyPair (SL.VKey $ DSIGN.deriveVerKeyDSIGN sk) sk
+  where
+    seed =
+      Seed.mkSeedFromBytes $
+        Strict.replicate
+          (fromIntegral (DSIGN.seedSizeDSIGN (Proxy @(DSIGN c))))
+          byte
+
+    sk = DSIGN.genKeyDSIGN seed
+
+mkVRFKeyPair ::
+     forall c. VRFAlgorithm (VRF c)
+  => Proxy c
+  -> Word8
+  -> (SL.SignKeyVRF c, SL.VerKeyVRF c)
+mkVRFKeyPair _ byte = (sk, VRF.deriveVerKeyVRF sk)
+  where
+    seed =
+      Seed.mkSeedFromBytes $
+        Strict.replicate
+          (fromIntegral (VRF.seedSizeVRF (Proxy @(VRF c))))
+          byte
+
+    sk = VRF.genKeyVRF seed
+
+keyToCredential :: Crypto c => SL.KeyPair r c -> SL.Credential r c
+keyToCredential = SL.KeyHashObj . SL.hashKey . SL.vKey
+
+{-------------------------------------------------------------------------------
+  Examples
+-------------------------------------------------------------------------------}
+
+codecConfig :: CodecConfig (ShelleyBlock StandardShelley)
+codecConfig = ShelleyCodecConfig
+
+fromShelleyLedgerExamples :: ShelleyBasedEra era => ShelleyLedgerExamples era -- ^
+  -> Golden.Examples (ShelleyBlock era)
+fromShelleyLedgerExamples ShelleyLedgerExamples {
+                            sleResultExamples = ShelleyResultExamples{..}
+                            , ..} =
+  Golden.Examples {
+      exampleBlock            = unlabelled blk
+    , exampleSerialisedBlock  = unlabelled serialisedBlock
+    , exampleHeader           = unlabelled $ getHeader blk
+    , exampleSerialisedHeader = unlabelled serialisedHeader
+    , exampleHeaderHash       = unlabelled hash
+    , exampleGenTx            = unlabelled tx
+    , exampleGenTxId          = unlabelled $ txId tx
+    , exampleApplyTxErr       = unlabelled sleApplyTxError
+    , exampleQuery            = queries
+    , exampleResult           = results
+    , exampleAnnTip           = unlabelled annTip
+    , exampleLedgerState      = unlabelled ledgerState
+    , exampleChainDepState    = unlabelled chainDepState
+    , exampleExtLedgerState   = unlabelled extLedgerState
+    }
+  where
+    blk = mkShelleyBlock sleBlock
+    hash = ShelleyHash sleHashHeader
+    serialisedBlock = Serialised "<BLOCK>"
+    tx = mkShelleyTx sleTx
+    serialisedHeader =
+      SerialisedHeaderFromDepPair $ GenDepPair (NestedCtxt CtxtShelley) (Serialised "<HEADER>")
+    queries = labelled [
+          ("GetLedgerTip",              SomeSecond GetLedgerTip)
+        , ("GetEpochNo",                SomeSecond GetEpochNo)
+        , ("GetCurrentPParams",         SomeSecond GetCurrentPParams)
+        , ("GetProposedPParamsUpdates", SomeSecond GetProposedPParamsUpdates)
+        , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
+        , ("GetNonMyopicMemberRewards", SomeSecond $ GetNonMyopicMemberRewards sleRewardsCredentials)
+        , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
+      ]
+    results = labelled [
+          ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
+        , ("EpochNo",                SomeResult GetEpochNo 10)
+        , ("EmptyPParams",           SomeResult GetCurrentPParams srePParams)
+        , ("ProposedPParamsUpdates", SomeResult GetProposedPParamsUpdates sreProposedPPUpdates)
+        , ("StakeDistribution",      SomeResult GetStakeDistribution srePoolDistr)
+        , ("NonMyopicMemberRewards", SomeResult (GetNonMyopicMemberRewards Set.empty)
+                                     (NonMyopicMemberRewards $ sreNonMyopicRewards))
+        , ("GenesisConfig",          SomeResult GetGenesisConfig (compactGenesis sreShelleyGenesis))
+        ]
+    annTip = AnnTip {
+        annTipSlotNo  = SlotNo 14
+      , annTipBlockNo = BlockNo 6
+      , annTipInfo    = hash
+      }
+    ledgerState = ShelleyLedgerState {
+        shelleyLedgerTip        = NotOrigin ShelleyTip {
+                                    shelleyTipSlotNo  = SlotNo 9
+                                  , shelleyTipBlockNo = BlockNo 3
+                                  , shelleyTipHash    = hash
+                                  }
+    , shelleyLedgerState      = sleNewEpochState
+    , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+    }
+    chainDepState = TPraosState (NotOrigin 1) sleChainDepState
+    extLedgerState = ExtLedgerState
+                       ledgerState
+                       (genesisHeaderState chainDepState)
+
+examples ::
+     forall era.
+     ( ShelleyBasedEra era
+     ,   SL.PredicateFailure (Core.EraRule "DELEGS" era)
+       ~ SL.DelegsPredicateFailure era
+     , Core.PParams era ~ SL.PParams era
+     , Core.PParamsDelta era ~ SL.PParams' StrictMaybe era
+     )
+  => (Core.TxBody era -> KeyPairWits era -> Core.Witnesses era)
+  -> (Core.Tx era -> SL.TxInBlock era)
+  -> Core.Value era
+  -> Core.TxBody era
+  -> Core.AuxiliaryData era
+  -> Golden.Examples (ShelleyBlock era)
+examples mkWitnesses mkValidatedTx value txBody auxiliaryData =
+  fromShelleyLedgerExamples shelleyLedgerExamples
+  where
+    shelleyLedgerExamples = defaultShelleyLedgerExamples
+                              mkWitnesses
+                              mkValidatedTx
+                              value
+                              txBody
+                              auxiliaryData
+
+examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
+examplesShelley =
+    examples
+      (mkWitnessesPreAlonzo (Proxy @StandardShelley))
+      id
+      exampleCoin
+      exampleTxBodyShelley
+      exampleAuxiliaryDataShelley
+
+examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
+examplesAllegra =
+    examples
+      (mkWitnessesPreAlonzo (Proxy @StandardAllegra))
+      id
+      exampleCoin
+      exampleTxBodyAllegra
+      exampleAuxiliaryDataMA
+
+examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
+examplesMary =
+    examples
+      (mkWitnessesPreAlonzo (Proxy @StandardMary))
+      id
+      exampleMultiAssetValue
+      exampleTxBodyMary
+      exampleAuxiliaryDataMA
+
+examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
+examplesAlonzo = mempty   -- TODO
+
+{-------------------------------------------------------------------------------
+  Keys
+-------------------------------------------------------------------------------}
+
+type KeyPairWits era = [SL.KeyPair 'SL.Witness (EraCrypto era)]
