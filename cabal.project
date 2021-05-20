@@ -147,6 +147,12 @@ allow-newer:
   monoidal-containers:aeson,
   size-based:template-haskell
 
+
+-- ---------------------------------------------------------
+-- cabalWrapped - TODO: comment this
+-- --------------------------- 8< --------------------------
+-- Please do not put any `source-repository-package` clause above this line.
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/Win32-network
