@@ -334,7 +334,7 @@ type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version
     -> PromiseWriter m (Either handleError (handle, version))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
-    -> (DiffTime -> socket -> MuxBearer m)
+    -> (DiffTime -> socket -> m (MuxBearer m))
     -> MaskedAction m ()
 
 
