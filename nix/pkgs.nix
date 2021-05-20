@@ -17,4 +17,6 @@ pkgs: _: with pkgs; {
     version = "latest";
     inherit (ouroborosNetworkHaskellPackages) index-state;
   };
+
+  trace = builtins.trace;
 }
