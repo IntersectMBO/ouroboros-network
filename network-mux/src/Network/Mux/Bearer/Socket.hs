@@ -53,7 +53,7 @@ socketAsMuxBearer sduTimeout tracer sd =
       Mx.MuxBearer {
         Mx.read    = readSocket,
         Mx.write   = writeSocket,
-        Mx.sduSize = 12288
+        Mx.sduSize = Mx.SDUSize 12288
       }
     where
       hdrLenght = 8

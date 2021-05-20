@@ -1602,7 +1602,7 @@ mkSnocket scheduleMap = do
       MuxBearer {
           write   = \_ _ -> getMonotonicTime,
           read    = \_ -> forever (threadDelay 3600),
-          sduSize = 1500
+          sduSize = SDUSize 1500
         }
 
     listen (FD fd) = atomically $ do
