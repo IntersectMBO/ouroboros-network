@@ -65,6 +65,8 @@ library
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
 
+                       Simulation.Network.Snocket
+
   other-modules:       Ouroboros.Network.Linger
   -- other-extensions:
   build-depends:       base            >=4.12  && <4.15
