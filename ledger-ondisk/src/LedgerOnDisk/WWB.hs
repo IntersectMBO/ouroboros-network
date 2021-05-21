@@ -270,29 +270,33 @@ runWWBT m tracer hm range = do
 runWWBTWithConfig :: (Eq k, Hashable k, MonadMask m, MonadIO m) => WWBT k v m a -> WWBConfig k v m -> m a
 runWWBTWithConfig (WWBT m) cfg = runReaderT m cfg
 
-data WWBPrepareTrace
+data WWBPrepareTrace = WWBPPrepared
+  { tId :: !QueryId
+  , tQuerySize :: !Int
+  }
 
 prepare :: (MonadIO m, Eq k, Hashable k)
   => Tracer m WWBPrepareTrace
   -> WWBConfig k v m
   -> HashSet k
   -> m (WWBReadSet k v)
-prepare _tracer WWBConfig
+prepare tracer WWBConfig
     { backingStoreMV
     , nextQueryIdTV
     , writeBufferTV
     , randomQueryDelayRange
     }
-    qs = liftIO $ do
-  rsId <- atomically $ do
+    qs = do
+  rsId <- liftIO . atomically $ do
     qId <- wwbStateTVar nextQueryIdTV $ get <* modify' (+1)
     wwbStateTVar writeBufferTV $ do
       WriteBufferMeasure{wbmSummary = qInitDiff} <- gets measure
       modify' (<> FingerTree.singleton (WBEQueryStarted{..}))
     pure qId
   -- TODO if this async doesn't complete then it should write an event to the fingertree
-  rsFetchAsync <- async $ simulateQuery randomQueryDelayRange qs (readMVar backingStoreMV)
-  tokenMV <- newMVar SubmissionToken
+  rsFetchAsync <- liftIO . async $ simulateQuery randomQueryDelayRange qs (readMVar backingStoreMV)
+  tokenMV <- liftIO $ newMVar SubmissionToken
+  traceWith tracer $ WWBPPrepared rsId (length qs)
   pure WWBReadSet{..}
 
 data WWBSubmitTrace
