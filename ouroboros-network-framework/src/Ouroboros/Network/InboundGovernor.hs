@@ -41,6 +41,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 
+import           Data.Cache
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 import           Data.List (sortOn)
@@ -99,7 +100,8 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                 connectionManager observableStateVar = do
     let state = InboundGovernorState {
             igsConnections   = Map.empty,
-            igsObservableVar = observableStateVar
+            igsObservableVar = observableStateVar,
+            igsCountersCache = mempty
           }
     inboundGovernorLoop state
   where
@@ -110,9 +112,10 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
       :: InboundGovernorState muxMode peerAddr m a b
       -> m Void
     inboundGovernorLoop !state = do
-      traceWith tracer ( TrInboundGovernorCounters
-                       $ inboundGovernorCounters state)
-
+      mapTraceWithCache TrInboundGovernorCounters
+                        tracer
+                        (igsCountersCache state)
+                        (inboundGovernorCounters state)
       event
         <- atomically $
                 (uncurry MuxFinished    <$> firstMuxToFinish state)
