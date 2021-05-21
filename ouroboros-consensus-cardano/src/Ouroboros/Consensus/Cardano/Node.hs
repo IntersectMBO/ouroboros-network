@@ -10,7 +10,11 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans
+                -Wno-incomplete-patterns
+                -Wno-incomplete-uni-patterns
+                -Wno-incomplete-record-updates
+                -Wno-overlapping-patterns #-}
 module Ouroboros.Consensus.Cardano.Node (
     CardanoHardForkConstraints
   , MaxMajorProtVer (..)
