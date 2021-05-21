@@ -63,6 +63,7 @@ import Control.Monad.Catch
 import Data.IORef
 import LedgerOnDisk.Pure
 import Data.Maybe
+import Data.Bifunctor
 
 
 wwbStateTVar :: TVar s -> Strict.State s a -> STM a
@@ -159,7 +160,7 @@ instance Show (WWBReadSet k v) where
 data WWBSubmission k v = forall a. WWBSubmission
   { sReadSet :: !(WWBReadSet k v)
   , sOp :: !(KVOperation k v a)
-  , sResultTMV :: !(TMVar (Either (WWBErr k v) a))
+  , sResultMV :: !(MVar (Either (WWBErr k v) a))
   }
 
 data WWBConfig k v = WWBConfig
@@ -175,42 +176,43 @@ data WWBConfig k v = WWBConfig
 
 wwbLoop :: (MonadIO m, Eq k, Hashable k) => MVar (HashMap k v) -> TVar (WriteBuffer k v) -> TBQueue (WWBSubmission k v) -> m ()
 wwbLoop backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forever $ do
-  (WWBSubmission{sOp, sReadSet = WWBReadSet{rsId}, sResultTMV}, fetch_results, wb) <- atomically $ do
+  (WWBSubmission{sOp, sReadSet = WWBReadSet{rsId}, sResultMV}, e_fetch_results, wb) <- atomically $ do
     s@WWBSubmission{sReadSet = WWBReadSet{rsFetchAsync}} <- readTBQueue submissionQueueRef
     -- TODO think about exceptions
-    fetch_results <- waitSTM rsFetchAsync
+    e_fetch_results <- waitCatchSTM rsFetchAsync
     wb <- readTVar writeBufferTV
-    pure (s, fetch_results, wb)
+    pure (s, first (WWBEReadErr . ReadSetException) e_fetch_results, wb)
 
-  let
-    WriteBufferMeasure
-      { wbmSummary = coerce -> wbmSummary
-      , wbmIsQueryPending = coerce -> iqp
-      } = measure wb
+  res <- runExceptT $ do
+    fetch_results <- liftEither e_fetch_results
+    let
+      (!qResult, a) = sOp $ applyDtoHashMaybeMap diff fetch_results
+        where
+          diff = unMonoidalHashMap $ coerce qInitDiff <> coerce wbmSummary
+          WriteBufferMeasure
+            { wbmSummary
+            , wbmIsQueryPending
+            } = measure wb
+          Just (QSStarted{qInitDiff}) = rsId `HashMap.lookup` wbmIsQueryPending
 
-    Just (Semi.Last (QSStarted{qInitDiff})) = rsId `HashMap.lookup` iqp
-    (qResult, a) = sOp $ applyDtoHashMaybeMap (unMonoidalHashMap $ MonoidalHashMap qInitDiff <> wbmSummary) fetch_results
+    to_flush <- liftIO . atomically $ do
+      wwbStateTVar writeBufferTV $ do
+        modify (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
+        ft <- get
+        let WriteBufferMeasure{wbmIsQueryPending = current_wiqp} = measure ft
+            any_pending WriteBufferMeasure{wbmIsQueryPending} = getAny . HashMap.foldMapWithKey go $ wbmIsQueryPending
+              where go k qs
+                      | QSStarted {} <- qs
+                      , Just (QSStarted {}) <- k `HashMap.lookup` current_wiqp
+                      = Any True
+                      | otherwise = Any False
 
-  -- traceM $ "qResult: " <> show qResult
-  to_flush <- atomically $ do
-    -- TODO this should never wait, perhaps check that it doesn't. Is TMVar the right primitive?
-    -- sending result doesn't need to be atomic with updating the fingertree
-    putTMVar sResultTMV (Right a)
-    wwbStateTVar writeBufferTV $ do
-      modify (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
-      ft <- get
-      let WriteBufferMeasure{wbmIsQueryPending = current_wiqp} = measure ft
-          pred WriteBufferMeasure{wbmIsQueryPending} = getAny . HashMap.foldMapWithKey go $ wbmIsQueryPending
-            where go k qs
-                    | QSStarted {} <- qs
-                    , Just (QSStarted {}) <- k `HashMap.lookup` current_wiqp
-                    = Any True
-                    | otherwise = Any False
-
-          (measure -> WriteBufferMeasure{wbmSummary = to_flush}, new_ft) = FingerTree.split pred ft
-      put new_ft
-      pure $ to_flush
-  modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
+            (measure -> WriteBufferMeasure{wbmSummary = to_flush}, new_ft) = FingerTree.split any_pending ft
+        put new_ft
+        pure $ to_flush
+    liftIO . modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
+    pure a
+  putMVar sResultMV res
 
 
 wwbConfigIO :: (MonadIO m, Eq k, Hashable k) => HashMap k v -> (NominalDiffTime, NominalDiffTime) -> m (WWBConfig k v)
@@ -246,7 +248,7 @@ prepare qs = ask >>= \WWBConfig{backingStoreMV, nextQueryIdTV, writeBufferTV, ra
   rsId <- atomically $ do
     qId <- wwbStateTVar nextQueryIdTV $ get <* modify' (+1)
     wwbStateTVar writeBufferTV $ do
-      WriteBufferMeasure{wbmSummary = coerce -> qInitDiff} <- gets measure
+      WriteBufferMeasure{wbmSummary = qInitDiff} <- gets measure
       modify' (<> FingerTree.singleton (WBEQueryStarted{..}))
     pure qId
   rsFetchAsync <- async $ simulateQuery randomQueryDelayRange qs (readMVar backingStoreMV)
@@ -259,12 +261,15 @@ submit sReadSet@WWBReadSet{tokenMV} sOp = ask >>= \WWBConfig{submissionQueueRef}
     Nothing -> throwError $ WWBEBase BEBadReadSet
     Just _ -> pure ()
   ExceptT $ do
-    sResultTMV <- newEmptyTMVarIO
+    sResultMV <- newEmptyMVar
     atomically $ writeTBQueue submissionQueueRef $ WWBSubmission {..}
-    atomically $ readTMVar sResultTMV
+    takeMVar sResultMV
 
-data ReadSetError = forall e. Exception e => ReadSetException e
+data ReadSetError = ReadSetException SomeException
+  deriving stock(Show)
 
+instance Eq ReadSetError where
+  ReadSetException x == ReadSetException y = show x == show y
 
 cancelReadSet :: MonadIO m => WWBReadSet k v -> m ()
 cancelReadSet WWBReadSet{rsFetchAsync} = liftIO $ cancel rsFetchAsync
@@ -305,7 +310,7 @@ simulateQuery range qs read_data = do
   threadDelay' post_delay
   pure result
 
-data WWBErr k v = WWBEBase BaseError | WWBEExpiredReadSet | WWBEWeird String
+data WWBErr k v = WWBEBase BaseError | WWBEExpiredReadSet | WWBEWeird String | WWBEReadErr ReadSetError
   deriving stock (Eq, Show, Generic)
 
 -- | WARNING: This instance upholds no invariants
