@@ -29,6 +29,7 @@ import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
+import           Data.Cache (Cache)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -94,7 +95,11 @@ data InboundGovernorState muxMode peerAddr m a b =
 
         -- | PRNG available to 'PrunePolicy'.
         --
-        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState)
+        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState),
+
+        -- | 'InboundGovernorCounters' counters cache. Allows to only trace
+        -- values when necessary.
+        igsCountersCache :: !(Cache InboundGovernorCounters)
       }
 
 -- | Counters for tracing and analysis purposes
@@ -105,7 +110,7 @@ data InboundGovernorCounters = InboundGovernorCounters {
       hotPeersRemote  :: !Int
       -- ^ number of remote peers that have the local peer as hot
     }
-  deriving Show
+  deriving (Eq, Show)
 
 instance Semigroup InboundGovernorCounters where
     InboundGovernorCounters w h <> InboundGovernorCounters w' h' =
