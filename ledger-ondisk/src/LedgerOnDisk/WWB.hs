@@ -299,7 +299,7 @@ prepare tracer WWBConfig
   traceWith tracer $ WWBPPrepared rsId (length qs)
   pure WWBReadSet{..}
 
-data WWBSubmitTrace
+data WWBSubmitTrace = WWBSSubmitted !QueryId !Bool | WWBSComplete !QueryId !Bool
 
 submit :: (MonadIO m)
   => Tracer m WWBSubmitTrace
@@ -307,14 +307,20 @@ submit :: (MonadIO m)
   -> WWBReadSet k v
   -> KVOperation k v a
   -> m (Either (WWBErr k v) a)
-submit _tracer submissionQueueRef sReadSet@WWBReadSet{tokenMV} sOp = liftIO . runExceptT $ do
-  lift (tryTakeMVar tokenMV) >>= \case
-    Nothing -> throwError $ WWBEBase BEBadReadSet
+submit tracer submissionQueueRef sReadSet@WWBReadSet{rsId, tokenMV} sOp = runExceptT $ do
+  liftIO (tryTakeMVar tokenMV) >>= \case
+    Nothing -> do
+      lift . traceWith tracer $ WWBSSubmitted rsId False
+      throwError $ WWBEBase BEBadReadSet
     Just _ -> pure ()
+
   ExceptT $ do
-    sResultMV <- newEmptyMVar
-    atomically . writeTBQueue submissionQueueRef $ WWBSubmission {..}
-    takeMVar sResultMV
+    sResultMV <- liftIO newEmptyMVar
+    liftIO . atomically . writeTBQueue submissionQueueRef $ WWBSubmission {..}
+    traceWith tracer $ WWBSSubmitted rsId True
+    r <- liftIO $ takeMVar sResultMV
+    traceWith tracer $ WWBSComplete rsId (isRight r)
+    pure r
 
 data ReadSetError = ReadSetException SomeException
   deriving stock(Show)
