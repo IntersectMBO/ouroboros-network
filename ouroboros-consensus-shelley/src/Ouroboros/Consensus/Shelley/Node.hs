@@ -286,6 +286,19 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
           traverse (shelleyBlockForging tpraosParams) credentialss
       }
   where
+
+    -- | Currently for all existing eras in ledger-specs (Shelley, Allegra, Mary
+    -- and Alonzo) it happens to be the case that AdditionalGenesisConfig and
+    -- TranslationContext are instantiated to the same type.
+    -- We take advantage of this fact below to simplify our code, but we are
+    -- aware that this might change in future (for new eras), breaking this
+    -- code.
+    --
+    -- see type equality constraint in
+    -- Ouroboros.Consensus.Shelley.Eras.ShelleyBasedEra
+    additionalGenesisConfig :: SL.AdditionalGenesisConfig era
+    additionalGenesisConfig = transCtxt
+
     maxMajorProtVer :: MaxMajorProtVer
     maxMajorProtVer = MaxMajorProtVer $ SL.pvMajor protVer
 
@@ -334,7 +347,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
         shelleyLedgerTip        = Origin
       , shelleyLedgerState      =
           registerGenesisStaking (SL.sgStaking genesis) $
-            SL.initialState genesis ()
+            SL.initialState genesis additionalGenesisConfig
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
       }
 
