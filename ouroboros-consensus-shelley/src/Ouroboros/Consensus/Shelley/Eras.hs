@@ -122,8 +122,7 @@ class ( SL.ShelleyBasedEra era
       , HasField "_protocolVersion" (Core.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
       , FromCBOR (Core.PParamsDelta era)
 
-      , SL.AdditionalGenesisConfig era ~ ()
-
+      , SL.AdditionalGenesisConfig era ~ Core.TranslationContext era
       , SL.ToCBORGroup (TxSeq era)
 
       , Eq (Core.TxInBlock era)

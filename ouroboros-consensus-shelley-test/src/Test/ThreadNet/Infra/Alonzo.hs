@@ -2,8 +2,8 @@ module Test.ThreadNet.Infra.Alonzo (degenerateAlonzoGenesis) where
 
 import qualified Data.Map as Map
 
+import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis (..))
 import           Cardano.Ledger.Alonzo.Scripts (Prices (..))
-import           Cardano.Ledger.Alonzo.Translation (AlonzoGenesis (..))
 import           Shelley.Spec.Ledger.API (Coin (..))
 
 degenerateAlonzoGenesis :: AlonzoGenesis

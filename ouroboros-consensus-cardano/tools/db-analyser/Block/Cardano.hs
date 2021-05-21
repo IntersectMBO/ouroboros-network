@@ -26,7 +26,7 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import qualified Cardano.Ledger.Alonzo.Translation as SL (AlonzoGenesis)
+import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 
