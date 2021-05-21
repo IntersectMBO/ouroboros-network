@@ -251,6 +251,7 @@ prepare qs = ask >>= \WWBConfig{backingStoreMV, nextQueryIdTV, writeBufferTV, ra
       WriteBufferMeasure{wbmSummary = qInitDiff} <- gets measure
       modify' (<> FingerTree.singleton (WBEQueryStarted{..}))
     pure qId
+  -- TODO if this async doesn't complete then it should write an event to the fingertree
   rsFetchAsync <- async $ simulateQuery randomQueryDelayRange qs (readMVar backingStoreMV)
   tokenMV <- newMVar SubmissionToken
   pure WWBReadSet{..}
@@ -262,7 +263,7 @@ submit sReadSet@WWBReadSet{tokenMV} sOp = ask >>= \WWBConfig{submissionQueueRef}
     Just _ -> pure ()
   ExceptT $ do
     sResultMV <- newEmptyMVar
-    atomically $ writeTBQueue submissionQueueRef $ WWBSubmission {..}
+    atomically . writeTBQueue submissionQueueRef $ WWBSubmission {..}
     takeMVar sResultMV
 
 data ReadSetError = ReadSetException SomeException
@@ -286,18 +287,8 @@ pollReadSet WWBReadSet{rsFetchAsync} = pollSTM rsFetchAsync <&> isJust
 pollReadSetIO :: MonadIO m => WWBReadSet k v -> m Bool
 pollReadSetIO = liftIO . atomically . pollReadSet
 
--- nextReadSetId :: MonadState Int m => m (Int)
--- nextReadSetId = gets <* modify (+1)
-
--- writeBufferSuffixForQuery :: QueryId -> WriteBuffer k v -> WriteBuffer k v
--- writeBufferSuffixForQuery qid = FingerTree.dropUntil pred where
---   -- TODO not sure about this, is it monotone, why doesn't it care about the value of the query state ?
---   -- we assume here that there is at most one "QueryStarted" event for the query
---   pred WriteBufferMeasure{wbmIsQueryPending} = HashMap.lookup (coerce wbmIsQueryPending) qid == Nothing
-
 threadDelay' :: MonadIO m => NominalDiffTime -> m ()
 threadDelay' = liftIO . threadDelay . round . (* 100000)
-
 
 simulateQuery :: (Eq k, Hashable k) => (NominalDiffTime, NominalDiffTime) -> HashSet k -> IO (HashMap k v) -> IO (HashMap k (Maybe v))
 simulateQuery range qs read_data = do
@@ -312,16 +303,6 @@ simulateQuery range qs read_data = do
 
 data WWBErr k v = WWBEBase BaseError | WWBEExpiredReadSet | WWBEWeird String | WWBEReadErr ReadSetError
   deriving stock (Eq, Show, Generic)
-
--- | WARNING: This instance upholds no invariants
--- instance Arbitrary (WWBErr k v) where
---   arbitrary = oneof
---     [ WWBEBase <$> arbitrary
---     , pure WWBEExpiredReadSet
---     , pure $ WWBEWeird "weird"
---     ]
---   shrink = genericShrink
-
 
 instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
   -- This awkward thing is because most functions above don't use this m, they
