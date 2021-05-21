@@ -50,7 +50,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer(..), traceWith, contramap)
+import           Control.Tracer (Tracer, traceWith)
 import           System.Random
 
 import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
@@ -507,10 +507,9 @@ peerSelectionGovernorLoop tracer
             timedDecision now
           newCounters = peerStateToCounters decisionState
       traceWith tracer decisionTrace
-      withCacheA (countersCache decisionState)
-                 newCounters
-                 (traceWith countersTracer)
-
+      traceWithCache countersTracer
+                     (countersCache decisionState)
+                     newCounters
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
       loop (decisionState { countersCache = Cache newCounters })
