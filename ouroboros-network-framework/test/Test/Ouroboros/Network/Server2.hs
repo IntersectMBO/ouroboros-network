@@ -1,11 +1,14 @@
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -33,11 +36,14 @@ import           Control.Tracer (Tracer (..), contramap, nullTracer)
 import           Codec.Serialise.Class (Serialise)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>), (<&>))
-import           Data.List (mapAccumL)
+import           Data.List (mapAccumL, intercalate, (\\), tails, delete)
 import           Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+
+import           Text.Printf
 
 import           Test.QuickCheck
 import           Test.Tasty.QuickCheck
@@ -76,6 +82,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
 
+import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
 import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), toBearerInfo)
 
@@ -86,6 +93,10 @@ tests =
   , testProperty "unidirectional_Sim" prop_unidirectional_Sim
   , testProperty "bidirectional_IO"   prop_bidirectional_IO
   , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
+  -- This test fails now with:
+  -- > NotReleasedListeningSockets [TestAddress 0] Nothing
+  -- which is likely due to rebasing.  This is fixed a few commits later. 
+  --, testProperty "multinode_Sim"      prop_multinode_Sim
   ]
 
 
@@ -229,6 +240,7 @@ withInitiatorOnlyConnectionManager
     -> Snocket m socket peerAddr
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
+    -> Maybe peerAddr
     -> Bundle (ConnectionId peerAddr -> STM m [req])
     -- ^ Functions to get the next requests for a given connection
     -> (MuxConnectionManager
@@ -236,7 +248,7 @@ withInitiatorOnlyConnectionManager
           UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager name snocket nextRequests k = do
+withInitiatorOnlyConnectionManager name snocket localAddr nextRequests k = do
     mainThreadId <- myThreadId
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
     withConnectionManager
@@ -248,7 +260,7 @@ withInitiatorOnlyConnectionManager name snocket nextRequests k = do
                         `contramap` nullTracer,
          -- MuxTracer
           cmMuxTracer = muxTracer,
-          cmIPv4Address = Nothing,
+          cmIPv4Address = localAddr,
           cmIPv6Address = Nothing,
           cmAddressType = \_ -> Just IPv4Address,
           cmSnocket = snocket,
@@ -337,10 +349,10 @@ withInitiatorOnlyConnectionManager name snocket nextRequests k = do
 --
 
 protocolIdleTimeout :: DiffTime
-protocolIdleTimeout = 0.1
+protocolIdleTimeout = 30
 
 timeWaitTimeout :: DiffTime
-timeWaitTimeout = 0.1
+timeWaitTimeout = 30
 
 outboundIdleTimeout :: DiffTime
 outboundIdleTimeout = 0.1
@@ -669,7 +681,7 @@ unidirectionalExperiment
 unidirectionalExperiment snocket socket clientAndServerData = do
     nextReqs <- oneshotNextRequests clientAndServerData
     withInitiatorOnlyConnectionManager
-      "client" snocket nextReqs
+      "client" snocket Nothing nextReqs
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" snocket socket Nothing
                                            [accumulatorInit clientAndServerData]
@@ -919,6 +931,406 @@ prop_bidirectional_IO data0 data1 =
               data1
 
 
+--- Multi-node experiment
+
+-- | A test case for the multi-node property contains a sequence of connection events. The
+--   `DiffTime` in each constructor is relative to the previous event in the sequence.
+data ConnectionEvent req peerAddr
+  = StartClient DiffTime peerAddr
+    -- ^ Start a new client at the given address
+  | StartServer DiffTime peerAddr req
+    -- ^ Start a new server at the given address
+  | InboundConnection DiffTime peerAddr
+    -- ^ Create a connection from client or server with the given address to the central server.
+  | OutboundConnection DiffTime peerAddr
+    -- ^ Create a connection from the central server to another server.
+  | InboundMiniprotocols DiffTime peerAddr (Bundle [req])
+    -- ^ Run a bundle of mini protocols on the inbound connection from the given address.
+  | OutboundMiniprotocols DiffTime peerAddr (Bundle [req])
+    -- ^ Run a bundle of mini protocols on the outbound connection to the given address.
+  | CloseInboundConnection DiffTime peerAddr
+    -- ^ Close an inbound connection.
+  | CloseOutboundConnection DiffTime peerAddr
+    -- ^ Close an outbound connection.
+  deriving (Show, Functor)
+
+-- | A sequence of connection events that make up a test scenario for `prop_multinode_Sim`.
+newtype MultiNodeScript req peerAddr = MultiNodeScript [ConnectionEvent req peerAddr]
+  deriving (Show, Functor)
+
+-- | To generate well-formed scripts we need to keep track of what nodes are started and what
+--   connections they've made.
+data ScriptState peerAddr = ScriptState { startedClients      :: [peerAddr]
+                                        , startedServers      :: [peerAddr]
+                                        , clientConnections   :: [peerAddr]
+                                        , inboundConnections  :: [peerAddr]
+                                        , outboundConnections :: [peerAddr] }
+
+-- | Update the state after a connection event.
+nextState :: Eq peerAddr => ConnectionEvent req peerAddr -> ScriptState peerAddr -> ScriptState peerAddr
+nextState e s@ScriptState{..} =
+  case e of
+    StartClient             _ a   -> s{ startedClients      = a : startedClients }
+    StartServer             _ a _ -> s{ startedServers      = a : startedServers }
+    InboundConnection       _ a   -> s{ inboundConnections  = a : inboundConnections }
+    OutboundConnection      _ a   -> s{ outboundConnections = a : outboundConnections }
+    CloseInboundConnection  _ a   -> s{ inboundConnections  = delete a inboundConnections }
+    CloseOutboundConnection _ a   -> s{ outboundConnections = delete a outboundConnections }
+    InboundMiniprotocols{}        -> s
+    OutboundMiniprotocols{}       -> s
+
+-- | Check if an event makes sense in a given state.
+isValidEvent :: Eq peerAddr => ConnectionEvent req peerAddr -> ScriptState peerAddr -> Bool
+isValidEvent e ScriptState{..} =
+  case e of
+    StartClient             _ a   -> notElem a (startedClients ++ startedServers)
+    StartServer             _ a _ -> notElem a (startedClients ++ startedServers)
+    InboundConnection       _ a   -> elem a (startedServers ++ startedClients) && notElem a inboundConnections
+    OutboundConnection      _ a   -> elem a startedServers && notElem a outboundConnections
+    CloseInboundConnection  _ a   -> elem a inboundConnections
+    CloseOutboundConnection _ a   -> elem a outboundConnections
+    InboundMiniprotocols    _ a _ -> elem a inboundConnections
+    OutboundMiniprotocols   _ a _ -> elem a outboundConnections
+
+-- This could be an Arbitrary instance, but it would be an orphan.
+genBundle :: Arbitrary a => Gen (Bundle a)
+genBundle = traverse id $ pure arbitrary
+
+shrinkBundle :: Arbitrary a => Bundle a -> [Bundle a]
+shrinkBundle (Bundle (WithHot hot) (WithWarm warm) (WithEstablished est)) =
+  (shrink hot  <&> \ hot'  -> Bundle (WithHot hot') (WithWarm warm)  (WithEstablished est)) ++
+  (shrink warm <&> \ warm' -> Bundle (WithHot hot)  (WithWarm warm') (WithEstablished est)) ++
+  (shrink est  <&> \ est'  -> Bundle (WithHot hot)  (WithWarm warm)  (WithEstablished est'))
+
+instance (Arbitrary peerAddr, Arbitrary req, Eq peerAddr) =>
+         Arbitrary (MultiNodeScript req peerAddr) where
+  arbitrary = do
+      NonNegative len <- scale (`div` 2) arbitrary
+      MultiNodeScript <$> go (ScriptState [] [] [] [] []) (len :: Integer)
+    where     -- Divide delays by 100 to avoid running in to protocol and SDU timeouts if waiting
+              -- too long between connections and mini protocols.
+      delay = frequency [(1, pure 0), (3, (/ 100) <$> genDelayWithPrecision 2)]
+      go _ 0 = pure []
+      go s@ScriptState{..} n = do
+        event <- frequency $
+                    [ (1, StartClient             <$> delay <*> newClient)
+                    , (1, StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
+                    [ (4, InboundConnection       <$> delay <*> elements possibleInboundConnections)  | not $ null possibleInboundConnections] ++
+                    [ (4, OutboundConnection      <$> delay <*> elements possibleOutboundConnections) | not $ null possibleOutboundConnections] ++
+                    [ (4, CloseInboundConnection  <$> delay <*> elements inboundConnections)  | not $ null $ inboundConnections ] ++
+                    [ (4, CloseOutboundConnection <$> delay <*> elements outboundConnections) | not $ null $ outboundConnections ] ++
+                    [ (16, InboundMiniprotocols   <$> delay <*> elements inboundConnections  <*> genBundle) | not $ null inboundConnections ] ++
+                    [ (16, OutboundMiniprotocols  <$> delay <*> elements outboundConnections <*> genBundle) | not $ null outboundConnections ]
+        (event :) <$> go (nextState event s) (n - 1)
+        where
+          possibleInboundConnections  = (startedClients ++ startedServers) \\ inboundConnections
+          possibleOutboundConnections = startedServers \\ outboundConnections
+          newClient = arbitrary `suchThat` (`notElem` (startedClients ++ startedServers))
+          newServer = arbitrary `suchThat` (`notElem` (startedClients ++ startedServers))
+
+  shrink (MultiNodeScript events) = MultiNodeScript . makeValid <$> shrinkList shrinkEvent events
+    where
+      makeValid = go (ScriptState [] [] [] [] [])
+        where
+          go _ [] = []
+          go s (e : es)
+            | isValidEvent e s = e : go (nextState e s) es
+            | otherwise        = go s es
+
+      shrinkDelay = map fromRational . shrink . toRational
+
+      shrinkEvent (StartServer d a p) =
+        (shrink p      <&> \ p' -> StartServer d  a p') ++
+        (shrinkDelay d <&> \ d' -> StartServer d' a p)
+      shrinkEvent (StartClient             d a) = shrinkDelay d <&> \ d' -> StartClient d' a
+      shrinkEvent (InboundConnection       d a) = shrinkDelay d <&> \ d' -> InboundConnection  d' a
+      shrinkEvent (OutboundConnection      d a) = shrinkDelay d <&> \ d' -> OutboundConnection d' a
+      shrinkEvent (CloseInboundConnection  d a) = shrinkDelay d <&> \ d' -> CloseInboundConnection  d' a
+      shrinkEvent (CloseOutboundConnection d a) = shrinkDelay d <&> \ d' -> CloseOutboundConnection d' a
+      shrinkEvent (InboundMiniprotocols    d a r) =
+        (shrinkBundle r <&> \ r' -> InboundMiniprotocols d  a r') ++
+        (shrinkDelay  d <&> \ d' -> InboundMiniprotocols d' a r)
+      shrinkEvent (OutboundMiniprotocols d a r) =
+        (shrinkBundle r <&> \ r' -> OutboundMiniprotocols d  a r') ++
+        (shrinkDelay  d <&> \ d' -> OutboundMiniprotocols d' a r)
+
+-- | We use a wrapper for test addresses since the Arbitrary instance for Snocket.TestAddress only
+--   generates addresses between 1 and 4.
+newtype TestAddr = TestAddr { unTestAddr :: Snocket.TestAddress Int }
+  deriving (Show, Eq, Ord)
+
+instance Arbitrary TestAddr where
+  arbitrary = TestAddr . Snocket.TestAddress <$> choose (1, 100)
+
+-- | Each node in the multi-node experiment is controlled by a thread responding to these messages.
+data ConnectionHandlerMessage peerAddr req
+  = NewConnection peerAddr [req]
+    -- ^ Connect to the server at the given address. Needs to know the `accumulatorInit` of the
+    --   server in order to validate the responses.
+  | Disconnect peerAddr
+    -- ^ Disconnect from the server at the given address.
+  | RunMiniProtocols peerAddr (Bundle [req])
+    -- ^ Run a bundle of mini protocols against the server at the given address (requires an active
+    --   connection).
+
+-- | Run a central server that talks to any number of clients and other nodes.
+multinodeExperiment
+    :: forall peerAddr socket acc req resp m.
+       ( ConnectionManagerMonad m
+       , MonadAsync m
+       , MonadLabelledSTM m
+       , MonadSay m
+       , acc ~ [req], resp ~ [req]
+       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
+       , Eq (LazySTM.TVar m (ConnectionState
+                                peerAddr
+                                (Handle 'InitiatorMode peerAddr ByteString m [resp] Void)
+                                (HandleError 'InitiatorMode UnversionedProtocol)
+                                (UnversionedProtocol, UnversionedProtocolData)
+                                m))
+       , Eq (LazySTM.TVar m (ConnectionState_ InitiatorResponderMode peerAddr m [resp] acc))
+       , Serialise req, Show req
+       , Serialise resp, Show resp, Eq resp
+       , Typeable req, Typeable resp
+       )
+    => Snocket m socket peerAddr
+    -> Snocket.AddressFamily peerAddr
+    -> peerAddr
+    -> req
+    -> MultiNodeScript req peerAddr
+    -> m Property
+multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript script) = do
+  -- Avoid parallel connections. This can cause one side to think that the existing connection
+  -- should be used and the other side thinking that there should be two separate connections,
+  -- causing the latter to wait on messages that never come.
+  lock <- newTMVarIO ()
+  labelTMVarIO lock "lock"
+  -- TVar keeping the resulting property. Connection handler threads update this after each
+  -- mini-protocol run.
+  propVar <- newTVarIO (property True)
+  labelTVarIO propVar "propVar"
+  cc <- startServerConnectionHandler "main-server" [accInit] serverAddr lock propVar
+  loop lock (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) propVar script
+  where
+
+    loop :: StrictTMVar m ()
+         -> Map.Map peerAddr acc
+         -> Map.Map peerAddr (TQueue m (ConnectionHandlerMessage peerAddr req))
+         -> StrictTVar m Property
+         -> [ConnectionEvent req peerAddr]
+         -> m Property
+    loop _ _ _ propVar [] = do
+      threadDelay 3600
+      atomically $ readTVar propVar
+    loop lock nodeAccs servers propVar (event : events) =
+      case event of
+
+        StartClient delay localAddr -> do
+          threadDelay delay
+          cc <- startClientConnectionHandler ("client-" ++ show localAddr) localAddr lock propVar
+          loop lock nodeAccs (Map.insert localAddr cc servers) propVar events
+
+        StartServer delay localAddr nodeAcc -> do
+          threadDelay delay
+          cc <- startServerConnectionHandler ("node-" ++ show localAddr) [nodeAcc] localAddr lock propVar
+          loop lock (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) propVar events
+
+        InboundConnection delay nodeAddr -> do
+          threadDelay delay
+          acc <- getAcc serverAddr
+          sendMsg nodeAddr $ NewConnection serverAddr acc
+          loop lock nodeAccs servers propVar events
+
+        OutboundConnection delay nodeAddr -> do
+          threadDelay delay
+          acc <- getAcc nodeAddr
+          sendMsg serverAddr $ NewConnection nodeAddr acc
+          loop lock nodeAccs servers propVar events
+
+        CloseInboundConnection delay remoteAddr -> do
+          threadDelay delay
+          sendMsg remoteAddr $ Disconnect serverAddr
+          loop lock nodeAccs servers propVar events
+
+        CloseOutboundConnection delay remoteAddr -> do
+          threadDelay delay
+          sendMsg serverAddr $ Disconnect remoteAddr
+          loop lock nodeAccs servers propVar events
+
+        InboundMiniprotocols delay nodeAddr reqs -> do
+          threadDelay delay
+          sendMsg nodeAddr $ RunMiniProtocols serverAddr reqs
+          loop lock nodeAccs servers propVar events
+
+        OutboundMiniprotocols delay nodeAddr reqs -> do
+          threadDelay delay
+          sendMsg serverAddr $ RunMiniProtocols nodeAddr reqs
+          loop lock nodeAccs servers propVar events
+      where
+        sendMsg :: peerAddr -> ConnectionHandlerMessage peerAddr req -> m ()
+        sendMsg addr msg = atomically $
+          case Map.lookup addr servers of
+            Nothing -> assertProperty propVar $ counterexample (show addr ++ " is not a started node") False
+            Just cc -> writeTQueue cc msg
+
+        getAcc :: peerAddr -> m acc
+        getAcc addr =
+          case Map.lookup addr nodeAccs of
+            Nothing  -> do
+              assertPropertyIO propVar $ counterexample (show addr ++ " is not a started server node") False
+              return []
+            Just acc -> return acc
+
+    mkNextRequests :: StrictTVar m (Map.Map (ConnectionId peerAddr) (Bundle (TQueue m [req]))) ->
+                      Bundle (ConnectionId peerAddr -> STM m [req])
+    mkNextRequests connVar = makeBundle next
+      where
+        next :: forall pt. TokProtocolTemperature pt -> ConnectionId peerAddr -> STM m [req]
+        next tok connId = do
+          connMap <- readTVar connVar
+          case Map.lookup connId connMap of
+            Nothing -> retry
+            Just qs -> readTQueue (projectBundle tok qs)
+
+    assertPropertyIO :: StrictTVar m Property -> Property -> m ()
+    assertPropertyIO propVar p = atomically $ assertProperty propVar p
+
+    assertProperty :: StrictTVar m Property -> Property -> STM m ()
+    assertProperty propVar p = modifyTVar propVar (.&&. p)
+
+    startClientConnectionHandler :: String -> peerAddr
+                                 -> StrictTMVar m ()
+                                 -> StrictTVar m Property
+                                 -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
+    startClientConnectionHandler name localAddr lock propVar = do
+        cc      <- atomically $ newTQueue
+        labelTQueueIO cc $ "cc/" ++ name
+        connVar <- newTVarIO Map.empty
+        labelTVarIO connVar $ "connVar/" ++ name
+        _ <- forkIO $ do
+          labelThisThread name
+          withInitiatorOnlyConnectionManager
+              name snocket (Just localAddr) (mkNextRequests connVar) $ \ connectionManager ->
+            connectionLoop SingInitiatorMode localAddr lock propVar cc connectionManager Map.empty connVar
+        return cc
+
+    startServerConnectionHandler :: String -> acc -> peerAddr
+                                 -> StrictTMVar m ()
+                                 -> StrictTVar m Property
+                                 -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
+    startServerConnectionHandler name serverAcc localAddr lock propVar = do
+        fd <- Snocket.open snocket addrFamily
+        Snocket.bind   snocket fd localAddr
+        Snocket.listen snocket fd
+        cc      <- atomically $ newTQueue
+        labelTQueueIO cc $ "cc/" ++ name
+        connVar <- newTVarIO Map.empty
+        labelTVarIO connVar $ "connVar/" ++ name
+        _ <- forkIO $ do
+          labelThisThread name
+          withBidirectionalConnectionManager
+                name snocket fd (Just localAddr) serverAcc
+                (mkNextRequests connVar) $ \ connectionManager _ serverAsync -> do
+            link serverAsync
+            connectionLoop SingInitiatorResponderMode localAddr lock propVar cc connectionManager Map.empty connVar
+        return cc
+
+    connectionLoop
+         :: (HasInitiator muxMode ~ True)
+         => SingMuxMode muxMode
+         -> peerAddr
+         -> StrictTMVar m ()
+         -> StrictTVar m Property
+         -> TQueue m (ConnectionHandlerMessage peerAddr req)                          -- control channel
+         -> MuxConnectionManager muxMode socket peerAddr UnversionedProtocol ByteString m [resp] a
+         -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a, acc)     -- active connections
+         -> StrictTVar m (Map.Map (ConnectionId peerAddr) (Bundle (TQueue m [req])))  -- mini protocol queues
+         -> m ()
+    connectionLoop muxMode localAddr lock propVar cc cm connMap connVar = atomically (readTQueue cc) >>= \ case
+      NewConnection remoteAddr remoteAcc -> do
+        let mkQueue :: forall pt. TokProtocolTemperature pt -> STM m (TQueue m [req])
+            mkQueue tok = do
+              q <- newTQueue
+              let temp = case tok of
+                    TokHot         -> "hot"
+                    TokWarm        -> "warm"
+                    TokEstablished -> "cold"
+              q <$ labelTQueue q ("protoVar." ++ temp ++ "@" ++ show localAddr)
+        qs <- atomically $ traverse id $ makeBundle mkQueue
+        atomically $ modifyTVar connVar $ Map.insert (connId remoteAddr) qs
+        connHandle <- withLock False lock $ requestOutboundConnection cm remoteAddr
+        case connHandle of
+          Connected _ _ h -> do
+            connectionLoop muxMode localAddr lock propVar cc cm (Map.insert remoteAddr (h, remoteAcc) connMap) connVar
+          Disconnected _ err ->
+            failureIO $ "connection failure: " ++ show err
+      Disconnect remoteAddr -> do
+        atomically $ modifyTVar connVar $ Map.delete (connId remoteAddr)
+        _ <- unregisterOutboundConnection cm remoteAddr
+        connectionLoop muxMode localAddr lock propVar cc cm (Map.delete remoteAddr connMap) connVar
+      RunMiniProtocols remoteAddr reqs -> do
+        atomically $ do
+          mqs <- (Map.lookup $ connId remoteAddr) <$> readTVar connVar
+          case mqs of
+            Nothing -> failure $ "No active connection " ++ show localAddr ++ " => " ++ show remoteAddr
+            Just qs -> do
+              sequence_ $ writeTQueue <$> qs <*> reqs
+        case Map.lookup remoteAddr connMap of
+          Nothing -> failureIO $ "no connection " ++ show localAddr ++ " => " ++ show remoteAddr
+          Just (Handle mux muxBundle _, acc)  -> do
+            rs <- try @_ @SomeException $ runInitiatorProtocols muxMode mux muxBundle
+            case rs of
+              Left err -> failureIO $ "protocol error: " ++ show err
+              Right r  -> assertPropertyIO propVar $ r === fmap (drop 2 . reverse .  tails . (++ acc) . reverse) reqs
+        connectionLoop muxMode localAddr lock propVar cc cm connMap connVar
+      where
+        connId remoteAddr = ConnectionId{ localAddress = localAddr, remoteAddress = remoteAddr }
+
+        failureIO :: String -> m ()
+        failureIO = atomically . failure
+
+        failure :: String -> STM m ()
+        failure err = assertProperty propVar $ counterexample err False
+
+-- | Property wrapping `multinodeExperiment`.
+prop_multinode_Sim :: Int -> MultiNodeScript Int TestAddr -> Property
+prop_multinode_Sim serverAcc script' =
+  simulatedPropertyWithTimeout 7200 $
+    withSnocket debugTracer (singletonScript noAttenuation) (TestAddress 10) $ \snocket ->
+    let script  = unTestAddr <$> script' in
+    counterexample (ppScript script) <$>
+      multinodeExperiment snocket Snocket.TestFamily (Snocket.TestAddress 0) serverAcc script
+
+ppScript :: (Show peerAddr, Show req) => MultiNodeScript peerAddr req -> String
+ppScript (MultiNodeScript script) = intercalate "\n" $ go 0 script
+  where
+    delay (StartServer             d _ _) = d
+    delay (StartClient             d _)   = d
+    delay (InboundConnection       d _)   = d
+    delay (OutboundConnection      d _)   = d
+    delay (InboundMiniprotocols    d _ _) = d
+    delay (OutboundMiniprotocols   d _ _) = d
+    delay (CloseInboundConnection  d _)   = d
+    delay (CloseOutboundConnection d _)   = d
+
+    ppEvent (StartServer             _ a i) = "Start server " ++ show a ++ " with accInit=" ++ show i
+    ppEvent (StartClient             _ a)   = "Start client " ++ show a
+    ppEvent (InboundConnection       _ a)   = "Connection from " ++ show a
+    ppEvent (OutboundConnection      _ a)   = "Connecting to " ++ show a
+    ppEvent (InboundMiniprotocols    _ a p) = "Miniprotocols from " ++ show a ++ ": " ++ ppData p
+    ppEvent (OutboundMiniprotocols   _ a p) = "Miniprotocols to " ++ show a ++ ": " ++ ppData p
+    ppEvent (CloseInboundConnection  _ a)   = "Close connection from " ++ show a
+    ppEvent (CloseOutboundConnection _ a)   = "Close connection to " ++ show a
+
+    ppData (Bundle hot warm est) =
+      concat [ "hot:", show (withoutProtocolTemperature hot)
+             , " warm:", show (withoutProtocolTemperature warm)
+             , " est:", show (withoutProtocolTemperature est)]
+
+    go _ [] = []
+    go t (e : es) = printf "%5s: %s" (show t') (ppEvent e) : go t' es
+      where t' = t + delay e
+
 --
 -- Utils
 --
@@ -926,6 +1338,14 @@ prop_bidirectional_IO data0 data1 =
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 debugTracer = Tracer $
   \msg -> (,msg) <$> getCurrentTime >>= say . show
+
+-- | Convenience function to create a Bundle. Could move to Ouroboros.Network.Mux.
+makeBundle :: (forall pt. TokProtocolTemperature pt -> a) -> Bundle a
+makeBundle f = Bundle (WithHot         $ f TokHot)
+                      (WithWarm        $ f TokWarm)
+                      (WithEstablished $ f TokEstablished)
+
+
 
 withLock :: ( MonadSTM   m
             , MonadThrow m
@@ -942,10 +1362,20 @@ withLock True   v m =
 
 simulatedPropertyWithTimeout :: DiffTime -> (forall s. IOSim s Property) -> Property
 simulatedPropertyWithTimeout t test =
-  counterexample ("\nTrace:\n" ++ ppTrace_ tr) $
+  counterexample ("\nTrace:\n" ++ prettyPrintTrace tr) $
   case traceResult False tr of
     Left failure ->
       counterexample ("Failure:\n" ++ displayException failure) False
     Right prop -> fromMaybe (counterexample "timeout" $ property False) prop
   where
     tr = runSimTrace $ timeout t test
+
+
+prettyPrintTrace :: SimTrace a -> String
+prettyPrintTrace tr = concat
+    [ "====== Trace ======\n"
+    , ppTrace_ tr
+    , "\n\n====== Say Events ======\n"
+    , intercalate "\n" $ selectTraceEventsSay' tr
+    , "\n"
+    ]
