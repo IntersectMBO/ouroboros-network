@@ -173,8 +173,8 @@ data WWBConfig k v = WWBConfig
   }
   deriving stock (Generic)
 
-wwbLoop :: (MonadIO m, Eq k, Hashable k) => TVar (WriteBuffer k v) -> TBQueue (WWBSubmission k v) -> m ()
-wwbLoop writeBufferTV submissionQueueRef = liftIO $ forever $ do
+wwbLoop :: (MonadIO m, Eq k, Hashable k) => MVar (HashMap k v) -> TVar (WriteBuffer k v) -> TBQueue (WWBSubmission k v) -> m ()
+wwbLoop backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forever $ do
   (WWBSubmission{sOp, sReadSet = WWBReadSet{rsId}, sResultTMV}, fetch_results, wb) <- atomically $ do
     s@WWBSubmission{sReadSet = WWBReadSet{rsFetchAsync}} <- readTBQueue submissionQueueRef
     -- TODO think about exceptions
@@ -192,12 +192,26 @@ wwbLoop writeBufferTV submissionQueueRef = liftIO $ forever $ do
     (qResult, a) = sOp $ applyDtoHashMaybeMap (unMonoidalHashMap $ MonoidalHashMap qInitDiff <> wbmSummary) fetch_results
 
   -- traceM $ "qResult: " <> show qResult
-  atomically $ do
-    wwbStateTVar writeBufferTV $ do
-      -- TODO this should never wait, perhaps check that it doesn't. Is TMVar the right primitive?
-      -- sending result doesn't need to be atomic with updating the fingertree
-      modify (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
+  to_flush <- atomically $ do
+    -- TODO this should never wait, perhaps check that it doesn't. Is TMVar the right primitive?
+    -- sending result doesn't need to be atomic with updating the fingertree
     putTMVar sResultTMV (Right a)
+    wwbStateTVar writeBufferTV $ do
+      modify (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
+      ft <- get
+      let WriteBufferMeasure{wbmIsQueryPending = current_wiqp} = measure ft
+          pred WriteBufferMeasure{wbmIsQueryPending} = getAny . HashMap.foldMapWithKey go $ wbmIsQueryPending
+            where go k qs
+                    | QSStarted {} <- qs
+                    , Just (QSStarted {}) <- k `HashMap.lookup` current_wiqp
+                    = Any True
+                    | otherwise = Any False
+
+          (measure -> WriteBufferMeasure{wbmSummary = to_flush}, new_ft) = FingerTree.split pred ft
+      put new_ft
+      pure $ to_flush
+  modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
+
 
 wwbConfigIO :: (MonadIO m, Eq k, Hashable k) => HashMap k v -> (NominalDiffTime, NominalDiffTime) -> m (WWBConfig k v)
 wwbConfigIO initial_map randomQueryDelayRange = liftIO $ do
@@ -205,7 +219,7 @@ wwbConfigIO initial_map randomQueryDelayRange = liftIO $ do
   writeBufferTV <- newTVarIO mempty
   nextQueryIdTV <- newTVarIO 0
   submissionQueueRef <- newTBQueueIO 10
-  loopAsync <- async $ wwbLoop writeBufferTV submissionQueueRef
+  loopAsync <- async $ wwbLoop backingStoreMV writeBufferTV submissionQueueRef
   pure $ WWBConfig{..}
 
 closeWWbConfig :: (MonadThrow m, MonadIO m) => WWBConfig k v -> m ()
