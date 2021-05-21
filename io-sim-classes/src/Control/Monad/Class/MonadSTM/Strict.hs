@@ -138,10 +138,10 @@ writeTVar StrictTVar { tvar, invariant } !a =
 modifyTVar :: MonadSTM m => StrictTVar m a -> (a -> a) -> STM m ()
 modifyTVar v f = readTVar v >>= writeTVar v . f
 
-stateTVar :: MonadSTM m => StrictTVar m a -> (a -> (a, b)) -> STM m b
+stateTVar :: MonadSTM m => StrictTVar m s -> (s -> (a, s)) -> STM m a
 stateTVar v f = do
     a <- readTVar v
-    let (a', b) = f a
+    let (b, a') = f a
     writeTVar v a'
     return b
 
@@ -152,7 +152,7 @@ swapTVar v a' = do
     return a
 
 
-updateTVar :: MonadSTM m => StrictTVar m a -> (a -> (a, b)) -> STM m b
+updateTVar :: MonadSTM m => StrictTVar m s -> (s -> (a, s)) -> STM m a
 updateTVar = stateTVar
 {-# DEPRECATED updateTVar "Use stateTVar" #-}
 
