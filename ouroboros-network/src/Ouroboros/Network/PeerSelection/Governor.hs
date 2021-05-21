@@ -513,10 +513,9 @@ peerSelectionGovernorLoop tracer
             timedDecision now
           newCounters = peerStateToCounters decisionState
       traceWith tracer decisionTrace
-      withCacheA (countersCache decisionState)
-                 newCounters
-                 (traceWith countersTracer)
-
+      traceWithCache countersTracer
+                     (countersCache decisionState)
+                     newCounters
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
       loop (decisionState { countersCache = Cache newCounters })
