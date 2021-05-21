@@ -51,6 +51,7 @@ import Control.Monad.Trans.Cont
 import Test.Tasty.QuickCheckStateMachine
 import LedgerOnDisk.WWB
 import Control.Concurrent
+import Control.Tracer
 
 type MockKVState = KVState Identity -- in the mock case Identity could be anything
 
@@ -64,7 +65,7 @@ simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOPro
 
 wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int Int IO))
 wwbStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
-  let mk_cfg = wwbConfigIO initial_map (0.00001, 0.0001)
+  let mk_cfg = wwbConfigIO initial_map nullTracer (0.00001, 0.0001)
   cfg_mv <- mk_cfg >>= newMVar
 
   let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> withMVar cfg_mv $ \cfg -> runWWBTWithConfig x cfg

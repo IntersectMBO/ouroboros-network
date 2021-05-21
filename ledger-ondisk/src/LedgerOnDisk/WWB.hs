@@ -64,23 +64,24 @@ import Data.IORef
 import LedgerOnDisk.Pure
 import Data.Maybe
 import Data.Bifunctor
-
+import Control.Tracer
 
 wwbStateTVar :: TVar s -> Strict.State s a -> STM a
 wwbStateTVar v = stateTVar v . Strict.runState
 
-newtype WWBT k v m a = WWBT { unWWBT :: ReaderT (WWBConfig k v) m a }
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadFail, MonadTrans, MonadState s)
+data WWBTrace = WWBTPrepare WWBPrepareTrace | WWBTSubmit WWBSubmitTrace | WWBTLoop WWBLoopTrace
+
+newtype WWBT k v m a = WWBT { unWWBT :: ReaderT (WWBConfig k v m) m a }
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadFail, MonadState s)
+
+instance MonadTrans (WWBT k v) where
+  lift = WWBT . lift
 
 instance MonadReader r m => MonadReader r (WWBT k v m) where
   ask = lift ask
   local f (WWBT m) = WWBT $ ask >>= lift . local f . runReaderT m
 
--- data InMemoryEntry k v
---   = IME !k !(Maybe v)
-
 type role MonoidalHashMap nominal representational
-
 newtype MonoidalHashMap k v = MonoidalHashMap { unMonoidalHashMap :: HashMap k v }
   deriving stock (Show)
   deriving newtype (Eq, Arbitrary)
@@ -163,7 +164,7 @@ data WWBSubmission k v = forall a. WWBSubmission
   , sResultMV :: !(MVar (Either (WWBErr k v) a))
   }
 
-data WWBConfig k v = WWBConfig
+data WWBConfig k v m = WWBConfig
   { backingStoreMV :: !(MVar (HashMap k v))
   , writeBufferTV :: !(TVar (WriteBuffer k v))
   , nextQueryIdTV :: !(TVar Int)
@@ -171,11 +172,18 @@ data WWBConfig k v = WWBConfig
   -- , tickets :: !TSem
   , randomQueryDelayRange :: !(NominalDiffTime, NominalDiffTime)
   , loopAsync :: !(Async ())
+  , tracer :: !(Tracer m WWBTrace)
   }
   deriving stock (Generic)
 
-wwbLoop :: (MonadIO m, Eq k, Hashable k) => MVar (HashMap k v) -> TVar (WriteBuffer k v) -> TBQueue (WWBSubmission k v) -> m ()
-wwbLoop backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forever $ do
+data WWBLoopTrace
+wwbLoop :: (MonadIO m, Eq k, Hashable k)
+  => Tracer m WWBLoopTrace
+  -> MVar (HashMap k v)
+  -> TVar (WriteBuffer k v)
+  -> TBQueue (WWBSubmission k v)
+  -> m ()
+wwbLoop _tracer backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forever $ do
   (WWBSubmission{sOp, sReadSet = WWBReadSet{rsId}, sResultMV}, e_fetch_results, wb) <- atomically $ do
     s@WWBSubmission{sReadSet = WWBReadSet{rsFetchAsync}} <- readTBQueue submissionQueueRef
     -- TODO think about exceptions
@@ -215,16 +223,17 @@ wwbLoop backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forever $ do
   putMVar sResultMV res
 
 
-wwbConfigIO :: (MonadIO m, Eq k, Hashable k) => HashMap k v -> (NominalDiffTime, NominalDiffTime) -> m (WWBConfig k v)
-wwbConfigIO initial_map randomQueryDelayRange = liftIO $ do
+wwbConfigIO :: (MonadIO m, Eq k, Hashable k) => HashMap k v -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> m (WWBConfig k v m)
+wwbConfigIO initial_map tracer0 randomQueryDelayRange = liftIO $ do
+  let tracer = natTracer liftIO tracer0
   backingStoreMV <- newMVar initial_map
   writeBufferTV <- newTVarIO mempty
   nextQueryIdTV <- newTVarIO 0
   submissionQueueRef <- newTBQueueIO 10
-  loopAsync <- async $ wwbLoop backingStoreMV writeBufferTV submissionQueueRef
+  loopAsync <- async $ wwbLoop (contramap WWBTLoop tracer0) backingStoreMV writeBufferTV submissionQueueRef
   pure $ WWBConfig{..}
 
-closeWWbConfig :: (MonadThrow m, MonadIO m) => WWBConfig k v -> m ()
+closeWWbConfig :: (MonadThrow m, MonadIO m) => WWBConfig k v m -> m ()
 closeWWbConfig WWBConfig{loopAsync} = liftIO $ do
   cancel loopAsync
   waitCatch loopAsync >>= \case
@@ -232,19 +241,31 @@ closeWWbConfig WWBConfig{loopAsync} = liftIO $ do
     Left e -> throwM  e
     Right () -> pure ()
 
-withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k) => HashMap k v -> (NominalDiffTime, NominalDiffTime) -> (WWBConfig k v -> m a) -> m a
-withWWBConfig hm range f = bracket (wwbConfigIO hm range) closeWWbConfig f
+withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k) => HashMap k v -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> (WWBConfig k v m -> m a) -> m a
+withWWBConfig hm tracer range f = bracket (wwbConfigIO hm tracer range) closeWWbConfig f
 
-runWWBT :: (Eq k, Hashable k, MonadIO m, MonadMask m) => WWBT k v m a -> HashMap k v -> (NominalDiffTime, NominalDiffTime) -> m a
-runWWBT m hm range = do
-  cfg <- wwbConfigIO hm range
+runWWBT :: (Eq k, Hashable k, MonadIO m, MonadMask m) => WWBT k v m a -> Tracer IO WWBTrace -> HashMap k v -> (NominalDiffTime, NominalDiffTime) -> m a
+runWWBT m tracer hm range = do
+  cfg <- wwbConfigIO hm tracer range
   runWWBTWithConfig m cfg
 
-runWWBTWithConfig :: (Eq k, Hashable k, MonadMask m, MonadIO m) => WWBT k v m a -> WWBConfig k v -> m a
+runWWBTWithConfig :: (Eq k, Hashable k, MonadMask m, MonadIO m) => WWBT k v m a -> WWBConfig k v m -> m a
 runWWBTWithConfig (WWBT m) cfg = runReaderT m cfg
 
-prepare :: (MonadIO m, MonadReader (WWBConfig k v) m, Eq k, Hashable k) => HashSet k -> m (WWBReadSet k v)
-prepare qs = ask >>= \WWBConfig{backingStoreMV, nextQueryIdTV, writeBufferTV, randomQueryDelayRange} -> liftIO $ do
+data WWBPrepareTrace
+
+prepare :: (MonadIO m, Eq k, Hashable k)
+  => Tracer m WWBPrepareTrace
+  -> WWBConfig k v m
+  -> HashSet k
+  -> m (WWBReadSet k v)
+prepare _tracer WWBConfig
+    { backingStoreMV
+    , nextQueryIdTV
+    , writeBufferTV
+    , randomQueryDelayRange
+    }
+    qs = liftIO $ do
   rsId <- atomically $ do
     qId <- wwbStateTVar nextQueryIdTV $ get <* modify' (+1)
     wwbStateTVar writeBufferTV $ do
@@ -256,8 +277,15 @@ prepare qs = ask >>= \WWBConfig{backingStoreMV, nextQueryIdTV, writeBufferTV, ra
   tokenMV <- newMVar SubmissionToken
   pure WWBReadSet{..}
 
-submit :: (MonadReader (WWBConfig k v) m, MonadIO m) => WWBReadSet k v -> KVOperation k v a -> m (Either (WWBErr k v) a)
-submit sReadSet@WWBReadSet{tokenMV} sOp = ask >>= \WWBConfig{submissionQueueRef} -> liftIO . runExceptT $ do
+data WWBSubmitTrace
+
+submit :: (MonadIO m)
+  => Tracer m WWBSubmitTrace
+  -> TBQueue (WWBSubmission k v)
+  -> WWBReadSet k v
+  -> KVOperation k v a
+  -> m (Either (WWBErr k v) a)
+submit _tracer submissionQueueRef sReadSet@WWBReadSet{tokenMV} sOp = liftIO . runExceptT $ do
   lift (tryTakeMVar tokenMV) >>= \case
     Nothing -> throwError $ WWBEBase BEBadReadSet
     Just _ -> pure ()
@@ -317,5 +345,9 @@ instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
     WWBEBase e -> Just e
     _ -> Nothing
 
-  prepareOperation = WWBT . fmap coerce . prepare . coerce
-  submitOperation (coerce -> rs@WWBReadSet{}) = WWBT . submit rs
+  prepareOperation qs = WWBT . ReaderT $ \cfg@WWBConfig{tracer} -> do
+    res <- prepare (contramap WWBTPrepare tracer) cfg . coerce $ qs
+    pure $ coerce res
+
+  submitOperation (coerce -> rs) op = WWBT . ReaderT $ \WWBConfig{tracer, submissionQueueRef} -> do
+    submit (contramap WWBTSubmit tracer) submissionQueueRef rs op
