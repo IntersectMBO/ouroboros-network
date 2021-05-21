@@ -16,6 +16,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFunctor #-}
 module LedgerOnDisk.Class where
 
 import Data.HashMap.Strict(HashMap, (!))
@@ -46,7 +47,7 @@ data D v where
   -- this is interesting, but it makes things more complicated. Inhibits functor
   -- instance (though I think this could be surmounted with a CoYoneda trick)
   -- DIMappend :: Monoid v => v -> D v
-  deriving stock (Show, Eq)
+  deriving stock (Show, Eq, Functor)
 
 instance Semigroup (D v) where
   x <> DNoChange = x
@@ -54,6 +55,12 @@ instance Semigroup (D v) where
 
 instance Monoid (D v) where
   mempty = DNoChange
+
+applyD :: Maybe v -> D v -> Maybe v
+applyD x = \case
+  DChangeTo v -> Just v
+  DRemove -> Nothing
+  DNoChange -> x
 
 applyDforK :: (Eq k, Hashable k) => k -> D v -> HashMap k v -> HashMap k v
 applyDforK k = \case
@@ -77,19 +84,19 @@ type KVOperationResult k v = HashMap k (D v)
 type KVOperation k v a = (HashMap k (Maybe v) -> (KVOperationResult k v, a))
 
 data BaseError where
-  BEBadResultSet :: BaseError
+  BEBadReadSet :: BaseError
   deriving stock (Show, Eq, Generic)
 
 instance Arbitrary BaseError where
-  arbitrary = pure BEBadResultSet
+  arbitrary = pure BEBadReadSet
   shrink = genericShrink
 
 class (Eq k, Hashable k, Monad m) => MonadKV k v m | m -> k v where
   type Err m
   type Err m = BaseError
-  data ResultSet m
-  prepareOperation :: QueryScope k -> m (ResultSet m)
-  submitOperation :: ResultSet m -> (HashMap k (Maybe v) -> (KVOperationResult k v, a)) -> m (Either (Err m) a)
+  data ReadSet m
+  prepareOperation :: QueryScope k -> m (ReadSet m)
+  submitOperation :: ReadSet m -> (HashMap k (Maybe v) -> (KVOperationResult k v, a)) -> m (Either (Err m) a)
 
 
   fromKVBaseError :: proxy m -> BaseError -> Err m
@@ -98,14 +105,14 @@ class (Eq k, Hashable k, Monad m) => MonadKV k v m | m -> k v where
   toKVBaseError :: proxy m -> Err m -> Maybe BaseError
   default toKVBaseError :: Coercible BaseError (Err m) => proxy m -> Err m -> Maybe BaseError
   toKVBaseError _ = Just . coerce
-  -- close :: ResultSet m -> m (_)
+  -- close :: ReadSet m -> m (_)
 
 -- pattern KVBaseError :: forall k v m e. (MonadKV k v m, Err m ~ e) => () => KVBaseError -> e
 -- pattern KVBaseError e <-  (toKVBaseError (Proxy @ m) -> Just e) where
 --   KVBaseError e = fromKVBaseError (Proxy @ m) e
 
 
-submitOperation_ :: MonadKV k v m => ResultSet m -> (HashMap k (Maybe v) -> KVOperationResult k v) -> m (Maybe (Err m))
+submitOperation_ :: MonadKV k v m => ReadSet m -> (HashMap k (Maybe v) -> KVOperationResult k v) -> m (Maybe (Err m))
 submitOperation_ rs = fmap (either Just (const Nothing)) . submitOperation rs . fmap (,())
 
 insert :: MonadKV k v m => k -> v -> m (Either (Err m) (Maybe v))

@@ -43,7 +43,7 @@ queryForTick t = do
   let qs = foldMap querySingle [ fromIntegral $ (x + t * querySize) `mod` keySpace | x <-[0 .. querySize - 1] ]
   pure qs
 
-tick :: (MonadFail m, MonadIO m, MonadState (HashMap Integer (WWBResultSet  Int Int)) m, MonadReader Config m) => Integer -> WWBT Int Int m ()
+tick :: (MonadFail m, MonadIO m, MonadState (HashMap Integer (WWBReadSet  Int Int)) m, MonadReader Config m) => Integer -> WWBT Int Int m ()
 tick t = do
   Config{..} <- ask
   when (t `mod` yellInterval == 0) $ do
@@ -70,14 +70,14 @@ main :: IO ()
 main = do
   -- TODO validate Config
   let
-    lag = 10
+    lag = 50
     query_on_prepare = True
     querySize = 90
     keySpace = 1000
     ticks = 10000
     yellInterval = 1000
 
-    flush_policy = FPMaxWidth 100
+    flush_policy = FPMaxWidth 500
 
   let c = Config{..}
 

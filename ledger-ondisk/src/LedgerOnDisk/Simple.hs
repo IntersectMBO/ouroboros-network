@@ -80,7 +80,7 @@ withState f = SimpleT $ do
 -- askMap = SimpleT $ ask >>= liftIO . readIORef
 
 instance MonadIO m => MonadKV SimpleKey SimpleValue (SimpleT m) where
-  data ResultSet (SimpleT m) = SimpleResultSet
+  data ReadSet (SimpleT m) = SimpleReadSet
     { resultSetId :: !Int,
       resultSetQuery :: !(QueryScope SimpleKey)
     }
@@ -93,12 +93,12 @@ instance MonadIO m => MonadKV SimpleKey SimpleValue (SimpleT m) where
           { nextQueryId = nextQueryId + 1,
             activeQueries = nextQueryId `HashSet.insert`  activeQueries
           },
-        SimpleResultSet nextQueryId q
+        SimpleReadSet nextQueryId q
       )
 
-  submitOperation SimpleResultSet {..} f = hoistSimpleT runExceptT $ do
+  submitOperation SimpleReadSet {..} f = hoistSimpleT runExceptT $ do
     withState $ \s@SimpleState {..} -> do
-      unless (resultSetId `HashSet.member` activeQueries) $ throwError BEBadResultSet
+      unless (resultSetId `HashSet.member` activeQueries) $ throwError BEBadReadSet
       let (a, new_map) = pureApplyOperation (coerce resultSetQuery) f backingStore
       pure
         ( s

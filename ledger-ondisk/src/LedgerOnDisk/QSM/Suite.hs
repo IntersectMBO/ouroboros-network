@@ -50,6 +50,7 @@ import GHC.Base
 import Control.Monad.Trans.Cont
 import Test.Tasty.QuickCheckStateMachine
 import LedgerOnDisk.WWB
+import Control.Concurrent
 
 type MockKVState = KVState Identity -- in the mock case Identity could be anything
 
@@ -62,11 +63,25 @@ simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOPro
   pure $ k smt
 
 wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int Int IO))
-wwbStateMachineTest = cont $ \k -> property $ \initial_map queryOnPrepare -> idempotentIOProperty $ do
-  !cfg <- liftIO $ wwbConfigIO queryOnPrepare FPNever initial_map
-  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runWWBTWithConfig x cfg
-      smt = smt0 { cleanup = \x -> cleanup smt0 x *> resetWWBTIO initial_map cfg }
+wwbStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
+  let mk_cfg = wwbConfigIO initial_map (0.00001, 0.0001)
+  cfg_mv <- mk_cfg >>= newMVar
+
+  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> withMVar cfg_mv $ \cfg -> runWWBTWithConfig x cfg
+      smt = smt0 { cleanup = \x -> do
+                     cleanup smt0 x
+                     modifyMVar_ cfg_mv $ \cfg -> do
+                       closeWWbConfig cfg
+                       mk_cfg
+                 }
   pure $ k smt
+
+-- wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int Int IO))
+-- wwbStateMachineTest = cont $ \k -> property $ \initial_map queryOnPrepare -> idempotentIOProperty $ do
+--   !cfg <- liftIO $ wwbConfigIO queryOnPrepare FPNever initial_map
+--   let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runWWBTWithConfig x cfg
+--       smt = smt0 { cleanup = \x -> cleanup smt0 x *> resetWWBTIO initial_map cfg }
+--   pure $ k smt
 
 newtype MockM a = MockM { unMockM :: StateT (KVState Identity) (Either String) a }
   deriving newtype (Functor, Applicative, Monad)
@@ -156,7 +171,7 @@ prop_model_disallows_reuse_of_resultsets :: SimpleMap -> SimpleOperationFunction
 prop_model_disallows_reuse_of_resultsets initial_map op@(OFn f) = runMockM initial_map $ do
   KVSuccessHandle h <- mockCmd . KVPrepare $ mempty
   KVSuccessResult r <- mockCmd . KVSubmit h $ op
-  KVBaseError BEBadResultSet <-  mockCmd . KVSubmit h $ op
+  KVBaseError BEBadReadSet <-  mockCmd . KVSubmit h $ op
   pure $ \_ -> r === (snd . f $ mempty)
 
 prop_out_of_order_queries_consistent :: SimpleMap -> Property
@@ -165,10 +180,12 @@ prop_out_of_order_queries_consistent initial_map = not (null initial_map)  ==> d
   pure $ runMockM initial_map $ do
     KVSuccessHandle h1 <- mockCmd . KVPrepare $ querySingle k
     KVSuccessHandle h2 <- mockCmd . KVPrepare $ mempty
-    KVSuccessResult _ <- mockCmd . KVSubmit h2 $ OFSet "delete" $ const (HashMap.fromList [ (k, DRemove) ], 0)
-    KVSuccessResult r <- mockCmd . KVSubmit h1 $ OFSet "lookup" $ \m -> (mempty, maybe 1 (const 0) $ k `HashMap.lookup` m)
+    KVSuccessResult 0 <- mockCmd . KVSubmit h2 $ OFSet "delete" $ const (HashMap.fromList [ (k, DRemove) ], 0)
+    KVSuccessResult r <- mockCmd . KVSubmit h1 $ OFSet "lookup" $ \m -> (mempty, case k `HashMap.lookup` m of
+      Just Nothing -> 1
+      _ -> 0)
     pure $ \final_map -> let
-      results_correct = r === 0
+      results_correct = r === 1
       key_absent = not $ k `HashMap.member` final_map
       in results_correct .&&. key_absent
 

@@ -80,9 +80,9 @@ stateMachineTest ::
 
     Eq (Err m),
     Show (Err m),
-    ToExpr (ResultSet m),
-    Eq (ResultSet m),
-    Show (ResultSet m)
+    ToExpr (ReadSet m),
+    Eq (ReadSet m),
+    Show (ReadSet m)
   ) =>
   SimpleMap ->
   (forall a. m a -> IO a) ->
@@ -172,25 +172,25 @@ instance NTraversable (KVCmd m) where
     KVSubmit fr f -> (`KVSubmit` f) <$> go ElemHead fr
     KVLookupAll_ fr -> KVLookupAll_ <$> go ElemHead fr
 
-type instance RealHandles (MonadKVStateMachine m) = '[ResultSet m]
+type instance RealHandles (MonadKVStateMachine m) = '[ReadSet m]
 
 type KVRealHandles m = RealHandles (MonadKVStateMachine m)
 
--- deriving stock instance Eq (ResultSet m) => Eq (KVRealHandle m)
+-- deriving stock instance Eq (ReadSet m) => Eq (KVRealHandle m)
 
--- deriving stock instance Show (ResultSet m) => Show (KVRealHandle m)
+-- deriving stock instance Show (ReadSet m) => Show (KVRealHandle m)
 
 -- instance ToExpr (KVRealHandle m) where
 --   toExpr _ = App "KVRealHandle" []
 
 data instance MockHandle (MonadKVStateMachine m) a where
-  MockResultSet :: Int -> MockHandle (MonadKVStateMachine m) (ResultSet m)
+  MockReadSet :: Int -> MockHandle (MonadKVStateMachine m) (ReadSet m)
 
 deriving stock instance Eq (KVMockHandle m a)
 deriving stock instance Show (KVMockHandle m a)
 
 instance ToExpr (MockHandle (MonadKVStateMachine m) a) where
-  toExpr (MockResultSet i) = toExpr i
+  toExpr (MockReadSet i) = toExpr i
 
 type KVMockHandle m = MockHandle (MonadKVStateMachine m)
 
@@ -218,9 +218,9 @@ emptyMock = Mock mempty mempty 0
 nonemptyMock :: SimpleMap -> Mock
 nonemptyMock x = emptyMock { modelMap = x }
 
-mockAddQuery :: QueryScope Int -> Mock -> (KVMockHandle m (ResultSet m), Mock)
+mockAddQuery :: QueryScope Int -> Mock -> (KVMockHandle m (ReadSet m), Mock)
 mockAddQuery qs m@Mock { nextQueryId, queries} =
-  (  MockResultSet nextQueryId,
+  (  MockReadSet nextQueryId,
     m {
         queries = HashMap.insert nextQueryId qs queries,
         LedgerOnDisk.QSM.Model.nextQueryId = nextQueryId + 1
@@ -252,15 +252,15 @@ mockAddQuery qs m@Mock { nextQueryId, queries} =
 
 kvRunMock :: KVCmd m (KVMockHandle m) (KVRealHandles m) -> KVState m -> (KVResp m (KVMockHandle m) (KVRealHandles m), KVState m)
 kvRunMock cmd s@Mock {..} = case cmd of
-  KVLookupAll_(MockResultSet i) -> case i `HashMap.lookup` queries of
-    Nothing -> (KVBaseError BEBadResultSet, s)
+  KVLookupAll_(MockReadSet i) -> case i `HashMap.lookup` queries of
+    Nothing -> (KVBaseError BEBadReadSet, s)
     Just qs -> let
       (a, _new_map) = pureApplyOperation (coerce qs) (\x -> (mempty, HashMap.mapMaybe id x)) modelMap
       in (KVSuccessLookupAll_ a, s) -- no change to state, don't even delete query
   KVPrepare qs -> case mockAddQuery qs s of
     (h, s') -> (KVSuccessHandle h, s')
-  KVSubmit (MockResultSet i) (OFn f) -> case i `HashMap.lookup` queries of
-    Nothing -> (KVBaseError BEBadResultSet, s)
+  KVSubmit (MockReadSet i) (OFn f) -> case i `HashMap.lookup` queries of
+    Nothing -> (KVBaseError BEBadReadSet, s)
     Just qs ->
       let (a, new_map) = pureApplyOperation (coerce qs) f modelMap
        in ( KVSuccessResult a,
@@ -317,7 +317,7 @@ kvCleanup _ = pure ()
 
 
 
--- withArbitraryCmdList :: (SimpleMonadKV m, Testable prop, Show (Err m), Show (ResultSet m)) => Maybe Int -> KVStateMachineTest m -> ([(KVCmd m :@ Symbolic, KVResp m :@ Symbolic, [Var])] -> prop) -> Property
+-- withArbitraryCmdList :: (SimpleMonadKV m, Testable prop, Show (Err m), Show (ReadSet m)) => Maybe Int -> KVStateMachineTest m -> ([(KVCmd m :@ Symbolic, KVResp m :@ Symbolic, [Var])] -> prop) -> Property
 -- withArbitraryCmdList mb_min_cmds smt go = forAllCommands sm mb_min_cmds $ go . unCommands where
 --   sm = toStateMachine smt
   -- commands_to_list (Commands cs) =
@@ -333,7 +333,7 @@ data KVCmdListTag
   deriving stock (Show, Eq, Generic)
   deriving anyclass Hashable
 
-tagKVCmdList :: forall f e m. (Ord (ResultSet m), Foldable f, e ~ Event (KVModel m) (At (KVCmd m) ) (At (KVResp m)) Symbolic)
+tagKVCmdList :: forall f e m. (Ord (ReadSet m), Foldable f, e ~ Event (KVModel m) (At (KVCmd m) ) (At (KVResp m)) Symbolic)
   => f e -> [KVCmdListTag]
 tagKVCmdList = HashSet.toList . Foldl.fold the_fold   where
     the_fold :: Fold e (HashSet KVCmdListTag)
