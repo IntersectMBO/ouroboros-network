@@ -31,6 +31,7 @@ library
                        LedgerOnDisk.QSM.Suite
                        -- LedgerOnDisk.App.WWB
                        LedgerOnDisk.Util.RandomTime
+                       LedgerOnDisk.Util.Trace
 
                        Test.Tasty.QuickCheckStateMachine
   build-depends:       base,

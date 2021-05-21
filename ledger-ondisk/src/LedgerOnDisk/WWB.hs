@@ -65,6 +65,7 @@ import LedgerOnDisk.Pure
 import Data.Maybe
 import Data.Bifunctor
 import Control.Tracer
+import LedgerOnDisk.Util.Trace
 
 wwbStateTVar :: TVar s -> Strict.State s a -> STM a
 wwbStateTVar v = stateTVar v . Strict.runState
@@ -176,20 +177,31 @@ data WWBConfig k v m = WWBConfig
   }
   deriving stock (Generic)
 
-data WWBLoopTrace
+data WWBLoopTrace =
+  WWBLTReceivedSubmission QueryId Bool
+  | WWBLTCommit
+    { tId :: !QueryId
+    , tNumMutations :: !Int
+    , tNumFlushed :: !Int
+    , tWriteBufferSize :: !Int
+    }
+  deriving stock (Show, Generic)
+
 wwbLoop :: (MonadIO m, Eq k, Hashable k)
-  => Tracer m WWBLoopTrace
+  => Tracer IO WWBLoopTrace
   -> MVar (HashMap k v)
   -> TVar (WriteBuffer k v)
   -> TBQueue (WWBSubmission k v)
   -> m ()
-wwbLoop _tracer backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forever $ do
+wwbLoop tracer backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forever $ do
   (WWBSubmission{sOp, sReadSet = WWBReadSet{rsId}, sResultMV}, e_fetch_results, wb) <- atomically $ do
     s@WWBSubmission{sReadSet = WWBReadSet{rsFetchAsync}} <- readTBQueue submissionQueueRef
     -- TODO think about exceptions
     e_fetch_results <- waitCatchSTM rsFetchAsync
     wb <- readTVar writeBufferTV
     pure (s, first (WWBEReadErr . ReadSetException) e_fetch_results, wb)
+
+  traceWith tracer $ WWBLTReceivedSubmission rsId (isLeft e_fetch_results)
 
   res <- runExceptT $ do
     fetch_results <- liftEither e_fetch_results
@@ -203,7 +215,7 @@ wwbLoop _tracer backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forev
             } = measure wb
           Just (QSStarted{qInitDiff}) = rsId `HashMap.lookup` wbmIsQueryPending
 
-    to_flush <- liftIO . atomically $ do
+    (to_flush, new_size) <- liftIO . atomically $ do
       wwbStateTVar writeBufferTV $ do
         modify (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
         ft <- get
@@ -217,7 +229,13 @@ wwbLoop _tracer backingStoreMV writeBufferTV submissionQueueRef = liftIO $ forev
 
             (measure -> WriteBufferMeasure{wbmSummary = to_flush}, new_ft) = FingerTree.split any_pending ft
         put new_ft
-        pure $ to_flush
+        pure (to_flush, length new_ft)
+    lift $ traceWith tracer $ WWBLTCommit
+      { tId = rsId
+      , tNumMutations = length to_flush
+      , tNumFlushed = length qResult
+      , tWriteBufferSize = new_size
+      }
     liftIO . modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
     pure a
   putMVar sResultMV res
