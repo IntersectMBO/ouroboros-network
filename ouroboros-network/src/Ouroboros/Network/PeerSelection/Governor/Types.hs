@@ -288,7 +288,10 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- | Rng for fuzzy delay
        fuzzRng                  :: !StdGen,
 
-       countersCache :: Cache PeerSelectionCounters
+       -- | 'PeerSelectionCounters' counters cache. Allows to only trace
+       -- values when necessary.
+       --
+       countersCache :: !(Cache PeerSelectionCounters)
 
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
