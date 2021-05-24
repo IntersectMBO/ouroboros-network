@@ -78,7 +78,7 @@ instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
          :* mk BlockShelley
          :* mk BlockAllegra
          :* mk BlockMary
-         :* K Nothing   -- TODO Alonzo summand
+         :* mk BlockAlonzo
          :* Nil
 
       mk ::
@@ -100,7 +100,7 @@ instance Arbitrary (Coherent (CardanoBlock MockCryptoCompatByron)) where
          :* mk BlockShelley
          :* mk BlockAllegra
          :* mk BlockMary
-         :* K Nothing   -- TODO Alonzo summand
+         :* mk BlockAlonzo
          :* Nil
 
       mk ::
@@ -152,13 +152,15 @@ arbitraryNodeToNode
      , Arbitrary (WithVersion ShelleyNodeToNodeVersion shelley)
      , Arbitrary (WithVersion ShelleyNodeToNodeVersion allegra)
      , Arbitrary (WithVersion ShelleyNodeToNodeVersion mary)
+     , Arbitrary (WithVersion ShelleyNodeToNodeVersion alonzo)
      )
   => (byron   -> cardano)
   -> (shelley -> cardano)
   -> (allegra -> cardano)
   -> (mary    -> cardano)
+  -> (alonzo  -> cardano)
   -> Gen (WithVersion (HardForkNodeToNodeVersion (CardanoEras c)) cardano)
-arbitraryNodeToNode injByron injShelley injAllegra injMary = oneof
+arbitraryNodeToNode injByron injShelley injAllegra injMary injAlonzo = oneof
     -- Byron + HardFork disabled
     [ (\(WithVersion versionByron b) ->
           WithVersion
@@ -223,38 +225,52 @@ arbitraryNodeToNode injByron injShelley injAllegra injMary = oneof
               ))
             (injMary m))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
-    -- TODO Alonzo
+    -- Alonzo + HardFork enabled
+    , (\versionByron versionShelley versionAllegra versionMary (WithVersion versionAlonzo a) ->
+          WithVersion
+            (HardForkNodeToNodeEnabled
+              maxBound
+              (  EraNodeToNodeEnabled versionByron
+              :* EraNodeToNodeEnabled versionShelley
+              :* EraNodeToNodeEnabled versionAllegra
+              :* EraNodeToNodeEnabled versionMary
+              :* EraNodeToNodeEnabled versionAlonzo
+              :* Nil
+              ))
+            (injAlonzo a))
+        <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     ]
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (SomeSecond (NestedCtxt Header) (CardanoBlock c))) where
-  arbitrary = arbitraryNodeToNode injByron injShelley injAllegra injMary
+  arbitrary = arbitraryNodeToNode injByron injShelley injAllegra injMary injAlonzo
     where
       injByron   = mapSomeNestedCtxt NCZ
       injShelley = mapSomeNestedCtxt (NCS . NCZ)
       injAllegra = mapSomeNestedCtxt (NCS . NCS . NCZ)
       injMary    = mapSomeNestedCtxt (NCS . NCS . NCS . NCZ)
+      injAlonzo  = mapSomeNestedCtxt (NCS . NCS . NCS . NCS . NCZ)
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoBlock c)) where
-  arbitrary = arbitraryNodeToNode BlockByron BlockShelley BlockAllegra BlockMary
+  arbitrary = arbitraryNodeToNode BlockByron BlockShelley BlockAllegra BlockMary BlockAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoHeader c)) where
-  arbitrary = arbitraryNodeToNode HeaderByron HeaderShelley HeaderAllegra HeaderMary
+  arbitrary = arbitraryNodeToNode HeaderByron HeaderShelley HeaderAllegra HeaderMary HeaderAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoGenTx c)) where
-  arbitrary = arbitraryNodeToNode GenTxByron GenTxShelley GenTxAllegra GenTxMary
+  arbitrary = arbitraryNodeToNode GenTxByron GenTxShelley GenTxAllegra GenTxMary GenTxAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToNodeVersion (CardanoEras c))
                                 (CardanoGenTxId c)) where
-  arbitrary = arbitraryNodeToNode GenTxIdByron GenTxIdShelley GenTxIdAllegra GenTxIdMary
+  arbitrary = arbitraryNodeToNode GenTxIdByron GenTxIdShelley GenTxIdAllegra GenTxIdMary GenTxIdAlonzo
 
 {-------------------------------------------------------------------------------
   NodeToClient
@@ -316,13 +332,15 @@ arbitraryNodeToClient
      , Arbitrary (WithVersion ShelleyNodeToClientVersion shelley)
      , Arbitrary (WithVersion ShelleyNodeToClientVersion allegra)
      , Arbitrary (WithVersion ShelleyNodeToClientVersion mary)
+     , Arbitrary (WithVersion ShelleyNodeToClientVersion alonzo)
      )
   => (byron   -> cardano)
   -> (shelley -> cardano)
   -> (allegra -> cardano)
   -> (mary    -> cardano)
+  -> (alonzo  -> cardano)
   -> Gen (WithVersion (HardForkNodeToClientVersion (CardanoEras c)) cardano)
-arbitraryNodeToClient injByron injShelley injAllegra injMary = oneof
+arbitraryNodeToClient injByron injShelley injAllegra injMary injAlonzo = oneof
     -- Byron + HardFork disabled
     [ (\(WithVersion versionByron b) ->
           WithVersion
@@ -385,24 +403,37 @@ arbitraryNodeToClient injByron injShelley injAllegra injMary = oneof
               ))
             (injMary m))
         <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
-    -- TODO Alonzo summand
+    -- Alonzo + HardFork enabled
+    , (\versionByron versionShelley versionAllegra versionMary (WithVersion versionAlonzo a) ->
+          WithVersion
+            (HardForkNodeToClientEnabled
+              maxBound
+              (  EraNodeToClientEnabled versionByron
+              :* EraNodeToClientEnabled versionShelley
+              :* EraNodeToClientEnabled versionAllegra
+              :* EraNodeToClientEnabled versionMary
+              :* EraNodeToClientEnabled versionAlonzo
+              :* Nil
+              ))
+            (injAlonzo a))
+        <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
     ]
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (CardanoBlock c)) where
-  arbitrary = arbitraryNodeToClient BlockByron BlockShelley BlockAllegra BlockMary
+  arbitrary = arbitraryNodeToClient BlockByron BlockShelley BlockAllegra BlockMary BlockAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (CardanoGenTx c)) where
-  arbitrary = arbitraryNodeToClient GenTxByron GenTxShelley GenTxAllegra GenTxMary
+  arbitrary = arbitraryNodeToClient GenTxByron GenTxShelley GenTxAllegra GenTxMary GenTxAlonzo
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (CardanoApplyTxErr c)) where
   arbitrary = frequency
-      [ (8, arbitraryNodeToClient ApplyTxErrByron ApplyTxErrShelley ApplyTxErrAllegra ApplyTxErrMary)
+      [ (8, arbitraryNodeToClient ApplyTxErrByron ApplyTxErrShelley ApplyTxErrAllegra ApplyTxErrMary ApplyTxErrAlonzo)
       , (2, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (HardForkApplyTxErrWrongEra <$> arbitrary))
@@ -434,7 +465,7 @@ instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (SomeSecond BlockQuery (CardanoBlock c))) where
   arbitrary = frequency
-      [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary)
+      [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary injAlonzo)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> (injAnytimeByron <$> arbitrary))
@@ -457,6 +488,7 @@ instance c ~ MockCryptoCompatByron
       injShelley        (SomeSecond query) = SomeSecond (QueryIfCurrentShelley query)
       injAllegra        (SomeSecond query) = SomeSecond (QueryIfCurrentAllegra query)
       injMary           (SomeSecond query) = SomeSecond (QueryIfCurrentMary    query)
+      injAlonzo         (SomeSecond query) = SomeSecond (QueryIfCurrentAlonzo  query)
       injAnytimeByron   (Some      query)  = SomeSecond (QueryAnytimeByron     query)
       injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley   query)
       injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra   query)
@@ -526,7 +558,7 @@ instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
                                 (SomeResult (CardanoBlock c))) where
   arbitrary = frequency
-      [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary)
+      [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary injAlonzo)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryIfCurrentResultEraMismatch)
@@ -554,6 +586,7 @@ instance c ~ MockCryptoCompatByron
       injShelley (SomeResult q r) = SomeResult (QueryIfCurrentShelley q) (QueryResultSuccess r)
       injAllegra (SomeResult q r) = SomeResult (QueryIfCurrentAllegra q) (QueryResultSuccess r)
       injMary    (SomeResult q r) = SomeResult (QueryIfCurrentMary    q) (QueryResultSuccess r)
+      injAlonzo  (SomeResult q r) = SomeResult (QueryIfCurrentAlonzo  q) (QueryResultSuccess r)
 
       -- In practice, when sending a Byron query you'll never get a mismatch
       -- saying that your query is from the Shelley era while the ledger is
