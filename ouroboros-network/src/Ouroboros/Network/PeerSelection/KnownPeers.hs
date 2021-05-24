@@ -14,6 +14,7 @@ module Ouroboros.Network.PeerSelection.KnownPeers (
     insert,
     delete,
     toSet,
+    member,
 
     -- * Special operations
     setCurrentTime,
@@ -147,6 +148,13 @@ size = Map.size . allPeers
 -- | /O(n)/
 toSet :: KnownPeers peeraddr -> Set peeraddr
 toSet = Map.keysSet . allPeers
+
+member :: Ord peeraddr
+       => peeraddr
+       -> KnownPeers peeraddr
+       -> Bool
+member peeraddr KnownPeers {allPeers} =
+    peeraddr `Map.member` allPeers
 
 insert :: Ord peeraddr
        => Set peeraddr
