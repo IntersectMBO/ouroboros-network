@@ -34,7 +34,6 @@ import qualified Test.Shelley.Spec.Ledger.Generator.EraGen as SL (EraGen)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyBasedEra,
                      ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (PraosCrypto)
 
 -- | A mock replacement for 'StandardCrypto'
 --
@@ -53,7 +52,7 @@ instance HashAlgorithm h => Crypto (MockCrypto h) where
 
 type MockShelley h = ShelleyEra (MockCrypto h)
 
-instance HashAlgorithm h => PraosCrypto (MockCrypto h)
+instance HashAlgorithm h => SL.PraosCrypto (MockCrypto h)
 
 type Block h = ShelleyBlock (MockShelley h)
 

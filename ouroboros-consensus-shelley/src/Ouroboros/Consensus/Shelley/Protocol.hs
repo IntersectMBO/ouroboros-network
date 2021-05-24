@@ -30,7 +30,7 @@ module Ouroboros.Consensus.Shelley.Protocol (
   , mkShelleyGlobals
   , mkTPraosParams
     -- * Crypto
-  , PraosCrypto
+  , SL.PraosCrypto
   , StandardCrypto
     -- * CannotForge
   , TPraosCannotForge (..)
@@ -66,14 +66,13 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Versioned
 
-import           Cardano.Ledger.Crypto (VRF)
+import           Cardano.Ledger.Crypto (StandardCrypto, VRF)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import qualified Shelley.Spec.Ledger.BlockChain as SL (checkLeaderValue, mkSeed,
                      seedEta, seedL)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto
 import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 import           Ouroboros.Consensus.Shelley.Protocol.Util
@@ -88,9 +87,9 @@ data TPraosFields c toSign = TPraosFields {
     }
   deriving (Generic)
 
-deriving instance (NoThunks toSign, PraosCrypto c)
+deriving instance (NoThunks toSign, SL.PraosCrypto c)
   => NoThunks (TPraosFields c toSign)
-deriving instance (Show toSign, PraosCrypto c)
+deriving instance (Show toSign, SL.PraosCrypto c)
   => Show (TPraosFields c toSign)
 
 -- | Fields arising from transitional praos execution which must be included in
@@ -118,11 +117,11 @@ data TPraosToSign c = TPraosToSign {
     }
   deriving (Generic)
 
-instance PraosCrypto c => NoThunks (TPraosToSign c)
-deriving instance PraosCrypto c => Show (TPraosToSign c)
+instance SL.PraosCrypto c => NoThunks (TPraosToSign c)
+deriving instance SL.PraosCrypto c => Show (TPraosToSign c)
 
 forgeTPraosFields ::
-     ( PraosCrypto c
+     ( SL.PraosCrypto c
      , SL.KESignable c toSign
      , Monad m
      )
@@ -236,7 +235,7 @@ data TPraosCanBeLeader c = TPraosCanBeLeader {
     }
   deriving (Generic)
 
-instance PraosCrypto c => NoThunks (TPraosCanBeLeader c)
+instance SL.PraosCrypto c => NoThunks (TPraosCanBeLeader c)
 
 -- | Assembled proof that the issuer has the right to issue a block in the
 -- selected slot.
@@ -249,7 +248,7 @@ data TPraosIsLeader c = TPraosIsLeader {
     }
   deriving (Generic)
 
-instance PraosCrypto c => NoThunks (TPraosIsLeader c)
+instance SL.PraosCrypto c => NoThunks (TPraosIsLeader c)
 
 -- | Static configuration
 data instance ConsensusConfig (TPraos c) = TPraosConfig {
@@ -263,7 +262,7 @@ data instance ConsensusConfig (TPraos c) = TPraosConfig {
     }
   deriving (Generic)
 
-instance PraosCrypto c => NoThunks (ConsensusConfig (TPraos c))
+instance SL.PraosCrypto c => NoThunks (ConsensusConfig (TPraos c))
 
 -- | Separate type instead of 'Bool' for the custom 'Ord' instance +
 -- documentation.
@@ -299,7 +298,7 @@ data TPraosChainSelectView c = TPraosChainSelectView {
   , csvLeaderVRF   :: VRF.OutputVRF (VRF c)
   } deriving (Show, Eq)
 
-instance PraosCrypto c => Ord (TPraosChainSelectView c) where
+instance SL.PraosCrypto c => Ord (TPraosChainSelectView c) where
   compare =
       mconcat [
           compare `on` csvChainLength
@@ -337,13 +336,13 @@ data TPraosState c = TPraosState {
     }
   deriving (Generic, Show, Eq)
 
-instance PraosCrypto c => NoThunks (TPraosState c)
+instance SL.PraosCrypto c => NoThunks (TPraosState c)
 
 -- | Version 0 supported rollback, removed in #2575.
 serialisationFormatVersion1 :: VersionNumber
 serialisationFormatVersion1 = 1
 
-instance PraosCrypto c => Serialise (TPraosState c) where
+instance SL.PraosCrypto c => Serialise (TPraosState c) where
   encode (TPraosState slot chainDepState) =
     encodeVersion serialisationFormatVersion1 $ mconcat [
         CBOR.encodeListLen 2
@@ -364,7 +363,7 @@ data instance Ticked (TPraosState c) = TickedChainDepState {
     , tickedTPraosStateLedgerView    :: Ticked (LedgerView (TPraos c))
     }
 
-instance PraosCrypto c => ConsensusProtocol (TPraos c) where
+instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
   type ChainDepState (TPraos c) = TPraosState c
   type IsLeader      (TPraos c) = TPraosIsLeader c
   type CanBeLeader   (TPraos c) = TPraosCanBeLeader c
@@ -495,7 +494,7 @@ mkShelleyGlobals TPraosConfig{..} = SL.Globals {
 
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold ::
-     forall c. PraosCrypto c
+     forall c. SL.PraosCrypto c
   => ConsensusConfig (TPraos c)
   -> LedgerView (TPraos c)
   -> SL.KeyHash 'SL.StakePool c
@@ -542,7 +541,7 @@ data TPraosCannotForge c =
       !(SL.Hash c (SL.VerKeyVRF c))
   deriving (Generic)
 
-deriving instance PraosCrypto c => Show (TPraosCannotForge c)
+deriving instance SL.PraosCrypto c => Show (TPraosCannotForge c)
 
 tpraosCheckCanForge ::
      ConsensusConfig (TPraos c)
@@ -575,5 +574,5 @@ tpraosCheckCanForge TPraosConfig { tpraosParams }
   Condense
 -------------------------------------------------------------------------------}
 
-instance (Condense toSign, PraosCrypto c) => Condense (TPraosFields c toSign) where
+instance (Condense toSign, SL.PraosCrypto c) => Condense (TPraosFields c toSign) where
   condense = condense . tpraosToSign

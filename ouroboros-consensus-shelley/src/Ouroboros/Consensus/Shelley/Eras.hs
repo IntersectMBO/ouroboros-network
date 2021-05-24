@@ -43,6 +43,7 @@ import           Cardano.Ledger.Alonzo (AlonzoEra)
 import qualified Cardano.Ledger.Alonzo.PParams as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
 import qualified Cardano.Ledger.Core as Core
+import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
 import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Mary (MaryEra)
@@ -53,8 +54,6 @@ import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.Serialization as SL
-
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
