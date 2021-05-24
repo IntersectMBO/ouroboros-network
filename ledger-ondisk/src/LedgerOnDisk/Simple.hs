@@ -102,8 +102,8 @@ instance MonadIO m => MonadKV SimpleKey SimpleValue (SimpleT m) where
       let (a, new_map) = pureApplyOperation (coerce resultSetQuery) f backingStore
       pure
         ( s
-            { activeQueries = resultSetId `HashSet.delete` activeQueries,
-              backingStore = new_map
+            { activeQueries = HashSet.filter (> resultSetId) activeQueries
+            , backingStore = new_map
             },
           a
         )

@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -62,16 +63,18 @@ import Data.TreeDiff
 import GHC.Generics hiding (D)
 import LedgerOnDisk.Class
 import LedgerOnDisk.Pure
+import LedgerOnDisk.Util
 import LedgerOnDisk.Util.RandomTime
 import LedgerOnDisk.Util.Trace
 import Test.QuickCheck
+import Numeric.Natural
 
 wwbStateTVar :: TVar s -> Strict.State s a -> STM a
 wwbStateTVar v = stateTVar v . Strict.runState
 
 data WWBTrace = WWBTPrepare WWBPrepareTrace | WWBTSubmit WWBSubmitTrace | WWBTLoop WWBLoopTrace
 
-newtype WWBT k v m a = WWBT {unWWBT :: ReaderT (WWBConfig k v m) m a}
+newtype WWBT k v m a = WWBT {unWWBT :: ReaderT (Tracer m WWBTrace, WWBConfig k v) m a}
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadFail, MonadState s)
 
 instance MonadTrans (WWBT k v) where
@@ -93,65 +96,46 @@ instance (Eq k, Hashable k, Semigroup v) => Semigroup (MonoidalHashMap k v) wher
   (MonoidalHashMap x) <> (MonoidalHashMap y) = MonoidalHashMap (HashMap.unionWith (<>) x y)
 
 instance (Eq k, Hashable k, Semigroup v) => Monoid (MonoidalHashMap k v) where
-  mempty = MonoidalHashMap mempty
+  mempty = MonoidalHashMap HashMap.empty
 
 data WriteBufferEntry k v
   = WBEQueryCompleted {qId :: !QueryId, qResult :: !(HashMap k (D v))}
-  | WBEQueryStarted {qId :: !QueryId, qInitDiff :: !(HashMap k (D v))}
   deriving stock (Eq, Show)
 
-data QueryState k v = QSStarted {qInitDiff :: HashMap k (D v)} | QSCompleted
-  deriving stock (Eq, Show, Generic)
-
-instance (Eq k, Hashable k, Arbitrary k, Arbitrary v) => Arbitrary (QueryState k v) where
-  arbitrary = oneof [QSStarted <$> arbitrary, pure QSCompleted]
-
 data WriteBufferMeasure k v = WriteBufferMeasure
-  { wbmSummary :: !(HashMap k (D v)),
-    wbmIsQueryPending :: !(HashMap QueryId (QueryState k v))
+  { wbmSummary :: !(HashMap k (D v))
+  , wbmCount :: !Int
   }
   deriving stock (Eq, Show, Generic)
+  -- deriving (Semigroup, Monoid) via MonoidalHashMap k (D v)
+
+instance (Eq k, Hashable k) => Semigroup (WriteBufferMeasure k v) where
+  WriteBufferMeasure s1 c1 <> WriteBufferMeasure s2 c2 = WriteBufferMeasure (coerce merged_maps) (coerce merged_counts)
+    where
+      merged_maps :: MonoidalHashMap k (D v)
+      merged_maps = coerce s1 <> coerce s2
+      merged_counts :: Sum Int
+      merged_counts = coerce c1 <> coerce c2
+
+emptyWriteBufferMeasure :: WriteBufferMeasure k v
+emptyWriteBufferMeasure  = WriteBufferMeasure HashMap.empty 0
+
+instance (Eq k, Hashable k) => Monoid (WriteBufferMeasure k v) where
+  mempty = emptyWriteBufferMeasure
 
 instance (Eq k, Hashable k, Arbitrary k, Arbitrary v) => Arbitrary (WriteBufferMeasure k v) where
   arbitrary = WriteBufferMeasure <$> arbitrary <*> arbitrary
   shrink = genericShrink
 
-instance (Eq k, Hashable k) => Semigroup (WriteBufferMeasure k v) where
-  WriteBufferMeasure s1 p1 <> WriteBufferMeasure s2 p2 =
-    let s3 :: MonoidalHashMap k (D v)
-        s3 = coerce s1 <> coerce s2
-        p3 :: MonoidalHashMap QueryId (Semi.Last (QueryState k v))
-        p3 = coerce p1 <> coerce p2
-     in WriteBufferMeasure (coerce s3) (coerce p3)
-
-emptyWriteBufferMeasure :: (Eq k, Hashable k) => WriteBufferMeasure k v
-emptyWriteBufferMeasure = WriteBufferMeasure HashMap.empty HashMap.empty
-
-instance (Eq k, Hashable k) => Monoid (WriteBufferMeasure k v) where
-  mempty = emptyWriteBufferMeasure
-
 instance (Eq k, Hashable k) => Measured (WriteBufferMeasure k v) (WriteBufferEntry k v) where
-  measure = \case
-    WBEQueryCompleted {qId, qResult} ->
-      WriteBufferMeasure
-        { wbmSummary = qResult,
-          wbmIsQueryPending = HashMap.singleton qId QSCompleted
-        }
-    WBEQueryStarted {qId, qInitDiff} ->
-      WriteBufferMeasure
-        { wbmSummary = HashMap.empty,
-          wbmIsQueryPending = HashMap.singleton qId QSStarted {qInitDiff}
-        }
+  measure WBEQueryCompleted {qResult} = WriteBufferMeasure { wbmSummary = qResult, wbmCount = 1}
 
 type WriteBuffer k v = FingerTree (WriteBufferMeasure k v) (WriteBufferEntry k v)
 
--- TODO Hide the constructor
-data SubmissionToken = SubmissionToken
-
 data WWBReadSet k v = WWBReadSet
-  { rsId :: !QueryId,
-    rsFetchAsync :: !(Async (HashMap k (Maybe v))),
-    tokenMV :: !(MVar SubmissionToken)
+  { rsId :: !QueryId
+  ,  rsFetchAsync :: !(Async (HashMap k (Maybe v)))
+  -- , rsWriteBufferSnapshot :: !(WriteBufferMeasure k v)
   }
   deriving stock (Eq, Generic)
 
@@ -168,15 +152,18 @@ data WWBSubmission k v = forall a.
     sResultMV :: !(MVar (Either (WWBErr k v) a))
   }
 
-data WWBConfig k v m = WWBConfig
-  { backingStoreMV :: !(MVar (HashMap k v)),
-    writeBufferTV :: !(TVar (WriteBuffer k v)),
+data WWBConfig k v = WWBConfig
+  { writeBufferTV :: !(TVar (WriteBuffer k v)),
     nextQueryIdTV :: !(TVar Int),
+    lastSubmittedQueryIdTV :: !(TVar Int),
     submissionQueueRef :: !(TBQueue (WWBSubmission k v)),
-    -- , tickets :: !TSem
-    randomQueryDelayRange :: !(NominalDiffTime, NominalDiffTime),
+
     loopAsync :: !(Async ()),
-    tracer :: !(Tracer m WWBTrace)
+
+    backingStoreMV :: !(MVar (HashMap k v)),
+
+    randomQueryDelayRange :: !(NominalDiffTime, NominalDiffTime),
+    numTickets :: !Natural
   }
   deriving stock (Generic)
 
@@ -193,71 +180,93 @@ data WWBLoopTrace
 wwbLoop ::
   (MonadIO m, Eq k, Hashable k) =>
   Tracer IO WWBLoopTrace ->
-  MVar (HashMap k v) ->
-  TVar (WriteBuffer k v) ->
-  TBQueue (WWBSubmission k v) ->
+  WWBConfig k v ->
   m ()
-wwbLoop tracer backingStoreMV writeBufferTV submissionQueueRef = liftIO $
+wwbLoop tracer WWBConfig
+  { submissionQueueRef
+  , writeBufferTV
+  , backingStoreMV
+  , numTickets
+  , lastSubmittedQueryIdTV
+  } = liftIO $
   forever $ do
-    (WWBSubmission {sOp, sReadSet = WWBReadSet {rsId}, sResultMV}, e_fetch_results, wb) <- atomically $ do
-      s@WWBSubmission {sReadSet = WWBReadSet {rsFetchAsync}} <- readTBQueue submissionQueueRef
-      -- TODO think about exceptions
-      e_fetch_results <- waitCatchSTM rsFetchAsync
-      wb <- readTVar writeBufferTV
-      pure (s, first (WWBEReadErr . ReadSetException) e_fetch_results, wb)
+    ( WWBSubmission
+      { sOp, sReadSet = WWBReadSet
+        { rsId
+        -- , rsWriteBufferSnapshot
+        , rsFetchAsync
+        }
+      , sResultMV
+      }
+     , wb
+     , mb_result :: Either (WWBErr k v) (HashMap k (Maybe v))
+     ) <- atomically $ do
+        s@WWBSubmission{sReadSet = WWBReadSet{rsId, rsFetchAsync}} <- readTBQueue submissionQueueRef
+        wb <- readTVar writeBufferTV
+        lsqid <- readTVar lastSubmittedQueryIdTV
+        mb_r <- runExceptT $ do
+          when (lsqid >= rsId) $ throwError WWBEOutOfOrderSubmit
+            { ooosLastSubmittedQueryId = lsqid
+            , ooosThisQueryId = rsId
+            }
+          ExceptT . fmap (first $ WWBEReadErr . ReadSetException) $ waitCatchSTM rsFetchAsync
+        wwbStateTVar lastSubmittedQueryIdTV $ modify' (rsId `max`) 
+        pure (s, wb, mb_r)
 
-    traceWith tracer $ WWBLTReceivedSubmission rsId (isLeft e_fetch_results)
 
     res <- runExceptT $ do
-      fetch_results <- liftEither e_fetch_results
-      let (!qResult, a) = sOp $ applyDtoHashMaybeMap diff fetch_results
+      let trace = lift . traceWith tracer
+      trace $ WWBLTReceivedSubmission rsId (isRight mb_result)
+      fetch_results <- liftEither mb_result `catchError`
+        (\e -> liftIO (cancel rsFetchAsync) *> throwError e)
+      let (!qResult, a) = sOp $ applyDtoHashMaybeMap wbmSummary fetch_results
             where
-              diff = unMonoidalHashMap $ coerce qInitDiff <> coerce wbmSummary
-              WriteBufferMeasure
-                { wbmSummary,
-                  wbmIsQueryPending
-                } = measure wb
-              Just (QSStarted {qInitDiff}) = rsId `HashMap.lookup` wbmIsQueryPending
+              WriteBufferMeasure{wbmSummary} = measure wb
 
       (to_flush, new_size) <- liftIO . atomically $ do
         wwbStateTVar writeBufferTV $ do
-          modify (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
+          modify' (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
           ft <- get
-          let WriteBufferMeasure {wbmIsQueryPending = current_wiqp} = measure ft
-              any_pending WriteBufferMeasure {wbmIsQueryPending} = getAny . HashMap.foldMapWithKey go $ wbmIsQueryPending
+          let
+            len_ft = length ft
+            nt_i = fromIntegral numTickets
+          if len_ft >= 2 * nt_i
+          then do
+            let
+              num_to_flush = len_ft - nt_i
+              (measure -> WriteBufferMeasure{wbmSummary}, new_ft) = FingerTree.split go ft
                 where
-                  go k qs
-                    | QSStarted {} <- qs,
-                      Just (QSStarted {}) <- k `HashMap.lookup` current_wiqp =
-                      Any True
-                    | otherwise = Any False
+                  go WriteBufferMeasure{wbmCount} = wbmCount < num_to_flush
+            put new_ft
+            pure (wbmSummary, length new_ft)
+          else pure (mempty, len_ft)
 
-              (measure -> WriteBufferMeasure {wbmSummary = to_flush}, new_ft) = FingerTree.split any_pending ft
-          put new_ft
-          pure (to_flush, length new_ft)
-      lift $
-        traceWith tracer $
-          WWBLTCommit
+      when (length to_flush > 0) $ do
+        liftIO . modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
+
+      trace WWBLTCommit
             { tId = rsId,
-              tNumMutations = length to_flush,
-              tNumFlushed = length qResult,
+              tNumMutations = length qResult,
+              tNumFlushed = length to_flush,
               tWriteBufferSize = new_size
             }
-      liftIO . modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
       pure a
     putMVar sResultMV res
 
-wwbConfigIO :: (MonadIO m, Eq k, Hashable k) => HashMap k v -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> m (WWBConfig k v m)
-wwbConfigIO initial_map tracer0 randomQueryDelayRange = liftIO $ do
+wwbConfigIO :: (MonadIO m, Eq k, Hashable k) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> m (Tracer m WWBTrace, WWBConfig k v)
+wwbConfigIO initial_map numTickets tracer0 randomQueryDelayRange = liftIO $ do
   let tracer = natTracer liftIO tracer0
   backingStoreMV <- newMVar initial_map
   writeBufferTV <- newTVarIO mempty
   nextQueryIdTV <- newTVarIO 0
-  submissionQueueRef <- newTBQueueIO 10
-  loopAsync <- async $ wwbLoop (contramap WWBTLoop tracer0) backingStoreMV writeBufferTV submissionQueueRef
-  pure $ WWBConfig {..}
+  lastSubmittedQueryIdTV <- newTVarIO (-1)
+  submissionQueueRef <- newTBQueueIO numTickets
+  mdo
+    let cfg = WWBConfig {..}
+    loopAsync <- async $ wwbLoop (contramap WWBTLoop tracer0) cfg
+    pure $ (tracer, cfg)
 
-closeWWbConfig :: (MonadThrow m, MonadIO m) => WWBConfig k v m -> m ()
+closeWWbConfig :: (MonadThrow m, MonadIO m) => WWBConfig k v -> m ()
 closeWWbConfig WWBConfig {loopAsync} = liftIO $ do
   cancel loopAsync
   waitCatch loopAsync >>= \case
@@ -265,22 +274,22 @@ closeWWbConfig WWBConfig {loopAsync} = liftIO $ do
     Left e -> throwM e
     Right () -> pure ()
 
-withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k) => HashMap k v -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> (WWBConfig k v m -> m a) -> m a
-withWWBConfig hm tracer range f = bracket (wwbConfigIO hm tracer range) closeWWbConfig f
+withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> ((Tracer m WWBTrace, WWBConfig k v) -> m a) -> m a
+withWWBConfig hm num_tickets tracer range f = bracket (wwbConfigIO hm num_tickets tracer range) (closeWWbConfig . snd) f
 
 runWWBT ::
   (Eq k, Hashable k, MonadIO m, MonadMask m) =>
   WWBT k v m a ->
   Tracer IO WWBTrace ->
   HashMap k v ->
+  Natural ->
   (NominalDiffTime, NominalDiffTime) ->
   m a
-runWWBT m tracer hm range = do
-  cfg <- wwbConfigIO hm tracer range
-  runWWBTWithConfig m cfg
+runWWBT m tracer0 hm num_tickets range = do
+  withWWBConfig hm num_tickets tracer0 range $ \(tracer, cfg) -> runWWBTWithConfig m tracer cfg
 
-runWWBTWithConfig :: (Eq k, Hashable k, MonadMask m, MonadIO m) => WWBT k v m a -> WWBConfig k v m -> m a
-runWWBTWithConfig (WWBT m) cfg = runReaderT m cfg
+runWWBTWithConfig :: (Eq k, Hashable k, MonadMask m, MonadIO m) => WWBT k v m a -> Tracer m WWBTrace -> WWBConfig k v -> m a
+runWWBTWithConfig (WWBT m) tracer cfg = runReaderT m (tracer, cfg)
 
 data WWBPrepareTrace = WWBPPrepared
   { tId :: !QueryId,
@@ -290,7 +299,7 @@ data WWBPrepareTrace = WWBPPrepared
 prepare ::
   (MonadIO m, Eq k, Hashable k) =>
   Tracer m WWBPrepareTrace ->
-  WWBConfig k v m ->
+  WWBConfig k v ->
   HashSet k ->
   m (WWBReadSet k v)
 prepare
@@ -299,18 +308,22 @@ prepare
     { backingStoreMV,
       nextQueryIdTV,
       writeBufferTV,
-      randomQueryDelayRange
+      randomQueryDelayRange,
+      numTickets,
+      lastSubmittedQueryIdTV
     }
   qs = do
-    rsId <- liftIO . atomically $ do
+    (rsId, _rsWriteBufferSnapshot) <- liftIO . atomically $ do
       qId <- wwbStateTVar nextQueryIdTV $ get <* modify' (+ 1)
-      wwbStateTVar writeBufferTV $ do
-        WriteBufferMeasure {wbmSummary = qInitDiff} <- gets measure
-        modify' (<> FingerTree.singleton (WBEQueryStarted {..}))
-      pure qId
-    -- TODO if this async doesn't complete then it should write an event to the fingertree
+      lastSubmittedId <- readTVar lastSubmittedQueryIdTV
+
+      -- This guard ensures we can only ever have numTickets outstanding queries
+      guard $ lastSubmittedId + fromIntegral numTickets > qId
+
+      WriteBufferMeasure {wbmSummary} <- measure <$> readTVar writeBufferTV
+      pure (qId, wbmSummary)
+
     rsFetchAsync <- liftIO . async $ simulateQuery randomQueryDelayRange qs (readMVar backingStoreMV)
-    tokenMV <- liftIO $ newMVar SubmissionToken
     traceWith tracer $ WWBPPrepared rsId (length qs)
     pure WWBReadSet {..}
 
@@ -319,18 +332,11 @@ data WWBSubmitTrace = WWBSSubmitted !QueryId !Bool | WWBSComplete !QueryId !Bool
 submit ::
   (MonadIO m) =>
   Tracer m WWBSubmitTrace ->
-  TBQueue (WWBSubmission k v) ->
+  WWBConfig k v ->
   WWBReadSet k v ->
   KVOperation k v a ->
   m (Either (WWBErr k v) a)
-submit tracer submissionQueueRef sReadSet@WWBReadSet {rsId, tokenMV} sOp = runExceptT $ do
-  liftIO (tryTakeMVar tokenMV) >>= \case
-    Nothing -> do
-      lift . traceWith tracer $ WWBSSubmitted rsId False
-      throwError $ WWBEBase BEBadReadSet
-    Just _ -> pure ()
-
-  ExceptT $ do
+submit tracer WWBConfig{submissionQueueRef} sReadSet@WWBReadSet {rsId} sOp = do
     sResultMV <- liftIO newEmptyMVar
     liftIO . atomically . writeTBQueue submissionQueueRef $ WWBSubmission {..}
     traceWith tracer $ WWBSSubmitted rsId True
@@ -373,7 +379,11 @@ simulateQuery range qs read_data = do
   threadDelay' post_delay
   pure result
 
-data WWBErr k v = WWBEBase BaseError | WWBEExpiredReadSet | WWBEWeird String | WWBEReadErr ReadSetError
+data WWBErr k v = WWBEBase BaseError | WWBEExpiredReadSet | WWBEWeird String | WWBEReadErr ReadSetError |
+  WWBEOutOfOrderSubmit
+    { ooosThisQueryId :: !QueryId
+    , ooosLastSubmittedQueryId :: !QueryId
+    }
   deriving stock (Eq, Show, Generic)
 
 instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
@@ -387,11 +397,12 @@ instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
   fromKVBaseError _ = WWBEBase
   toKVBaseError _ = \case
     WWBEBase e -> Just e
+    WWBEOutOfOrderSubmit {} -> Just BEBadReadSet
     _ -> Nothing
 
-  prepareOperation qs = WWBT . ReaderT $ \cfg@WWBConfig {tracer} -> do
+  prepareOperation qs = WWBT . ReaderT $ \(tracer, cfg) -> do
     res <- prepare (contramap WWBTPrepare tracer) cfg . coerce $ qs
     pure $ coerce res
 
-  submitOperation (coerce -> rs) op = WWBT . ReaderT $ \WWBConfig {tracer, submissionQueueRef} -> do
-    submit (contramap WWBTSubmit tracer) submissionQueueRef rs op
+  submitOperation (coerce -> rs) op = WWBT . ReaderT $ \(tracer, cfg) -> do
+    submit (contramap WWBTSubmit tracer) cfg rs op

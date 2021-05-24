@@ -57,21 +57,25 @@ type MockKVState = KVState Identity -- in the mock case Identity could be anythi
 
 simpleStateMachineTest :: Cont Property (KVStateMachineTest (SimpleT IO))
 simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
-  let !initial_state = initialState initial_map
+  let
+    num_tickets = 10
+    !initial_state = initialState initial_map
   ref <- newIORef initial_state
-  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runSimpleTWithIORef x ref
+  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest num_tickets initial_map $ \x -> runSimpleTWithIORef x ref
       smt = smt0 { cleanup = \x -> cleanup smt0 x *> writeIORef ref initial_state }
   pure $ k smt
 
 wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int Int IO))
 wwbStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
-  let mk_cfg = wwbConfigIO initial_map nullTracer (0.00001, 0.0001)
+  let num_tickets = 10
+  let mk_cfg = wwbConfigIO initial_map (fromIntegral num_tickets) nullTracer (0.00001, 0.0001)
   cfg_mv <- mk_cfg >>= newMVar
 
-  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> withMVar cfg_mv $ \cfg -> runWWBTWithConfig x cfg
+  let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest num_tickets initial_map $
+        \x -> withMVar cfg_mv $ \(tracer, cfg) -> runWWBTWithConfig x tracer cfg
       smt = smt0 { cleanup = \x -> do
                      cleanup smt0 x
-                     modifyMVar_ cfg_mv $ \cfg -> do
+                     modifyMVar_ cfg_mv $ \(_, cfg) -> do
                        closeWWbConfig cfg
                        mk_cfg
                  }
@@ -161,7 +165,7 @@ prop_model_can_insert initial_map = property $ do
 prop_model_cmd_generator_valid :: KVState Identity -> Property
 prop_model_cmd_generator_valid m = property $ do
   let model = Model m mempty
-  sequenceA (kvGenerator model) <&> \case
+  sequenceA (kvGenerator 10 model) <&> \case
     Nothing -> False
     Just (At x) -> case x of
       KVLookupAll_ {} -> False
@@ -179,10 +183,10 @@ prop_out_of_order_queries_consistent :: SimpleMap -> Property
 prop_out_of_order_queries_consistent initial_map = not (null initial_map)  ==> do
   k <- elements . HashMap.keys $ initial_map
   pure $ runMockM initial_map $ do
-    KVSuccessHandle h1 <- mockCmd . KVPrepare $ querySingle k
-    KVSuccessHandle h2 <- mockCmd . KVPrepare $ mempty
-    KVSuccessResult 0 <- mockCmd . KVSubmit h2 $ OFSet "delete" $ const (HashMap.fromList [ (k, DRemove) ], 0)
-    KVSuccessResult r <- mockCmd . KVSubmit h1 $ OFSet "lookup" $ \m -> (mempty, case k `HashMap.lookup` m of
+    KVSuccessHandle h1 <- mockCmd . KVPrepare $ mempty
+    KVSuccessHandle h2 <- mockCmd . KVPrepare $ querySingle k
+    KVSuccessResult 0 <- mockCmd . KVSubmit h1 $ OFSet "delete" $ const (HashMap.fromList [ (k, DRemove) ], 0)
+    KVSuccessResult r <- mockCmd . KVSubmit h2 $ OFSet "lookup" $ \m -> (mempty, case k `HashMap.lookup` m of
       Just Nothing -> 1
       _ -> 0)
     pure $ \final_map -> let

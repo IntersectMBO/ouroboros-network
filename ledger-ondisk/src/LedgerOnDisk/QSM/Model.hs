@@ -84,16 +84,17 @@ stateMachineTest ::
     Eq (ReadSet m),
     Show (ReadSet m)
   ) =>
+  Int ->
   SimpleMap ->
   (forall a. m a -> IO a) ->
   StateMachineTest (MonadKVStateMachine m)
-stateMachineTest initial_map toIO =
+stateMachineTest tickets initial_map toIO =
   StateMachineTest
     { runMock = kvRunMock,
       runReal = kvRunReal toIO,
       initMock = nonemptyMock initial_map,
       newHandles = kvNewHandles,
-      generator = kvGenerator,
+      generator = kvGenerator tickets,
       shrinker = kvShrinker,
       cleanup = kvCleanup
     }
@@ -266,7 +267,7 @@ kvRunMock cmd s@Mock {..} = case cmd of
        in ( KVSuccessResult a,
             s
               { modelMap = new_map,
-                queries = i `HashMap.delete` queries
+                queries = HashMap.filterWithKey (\k _ -> k > i) queries
               }
           )
 
@@ -296,15 +297,17 @@ kvNewHandles = \case
   KVSuccessHandle fh -> Comp [fh] :* Nil
   _ -> mempty
 
-kvGenerator :: KVModel m Symbolic -> Maybe (Gen (KVCmd m :@ Symbolic))
-kvGenerator Model {modelRefss = Refss (Refs resultSets :* Nil)} = Just $ do
+kvGenerator :: Int -> KVModel m Symbolic -> Maybe (Gen (KVCmd m :@ Symbolic))
+kvGenerator max_refs Model {modelRefss = Refss (Refs resultSets :* Nil)} = Just $ do
   let prepare = At . KVPrepare <$> arbitrary
   let submit = do
         (ref, _mockhandle) <- elements resultSets
         f <- arbitrary
         pure . At $ KVSubmit (FlipRef ref) f
 
-  oneof $ prepare : [submit | not . null $ resultSets]
+  oneof $
+    [prepare | length resultSets < max_refs] ++
+    [submit | not . null $ resultSets]
 
 kvShrinker :: KVModel m Symbolic -> KVCmd m :@ Symbolic -> [KVCmd m :@ Symbolic]
 kvShrinker _model (At cmd) = case cmd of
