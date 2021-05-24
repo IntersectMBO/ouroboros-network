@@ -134,8 +134,7 @@ type WriteBuffer k v = FingerTree (WriteBufferMeasure k v) (WriteBufferEntry k v
 
 data WWBReadSet k v = WWBReadSet
   { rsId :: !QueryId
-  ,  rsFetchAsync :: !(Async (HashMap k (Maybe v)))
-  -- , rsWriteBufferSnapshot :: !(WriteBufferMeasure k v)
+  , rsFetchAsync :: !(Async (HashMap k (Maybe v)))
   }
   deriving stock (Eq, Generic)
 
@@ -145,8 +144,7 @@ instance ToExpr (WWBReadSet k v) where
 instance Show (WWBReadSet k v) where
   showsPrec d WWBReadSet {rsId} = showsPrec d rsId
 
-data WWBSubmission k v = forall a.
-  WWBSubmission
+data WWBSubmission k v = forall a. WWBSubmission
   { sReadSet :: !(WWBReadSet k v),
     sOp :: !(KVOperation k v a),
     sResultMV :: !(MVar (Either (WWBErr k v) a))
@@ -188,12 +186,10 @@ wwbLoop tracer WWBConfig
   , backingStoreMV
   , numTickets
   , lastSubmittedQueryIdTV
-  } = liftIO $
-  forever $ do
+  } = liftIO $ forever $ do
     ( WWBSubmission
       { sOp, sReadSet = WWBReadSet
         { rsId
-        -- , rsWriteBufferSnapshot
         , rsFetchAsync
         }
       , sResultMV
@@ -213,7 +209,6 @@ wwbLoop tracer WWBConfig
         wwbStateTVar lastSubmittedQueryIdTV $ modify' (rsId `max`) 
         pure (s, wb, mb_r)
 
-
     res <- runExceptT $ do
       let trace = lift . traceWith tracer
       trace $ WWBLTReceivedSubmission rsId (isRight mb_result)
@@ -227,6 +222,10 @@ wwbLoop tracer WWBConfig
         wwbStateTVar writeBufferTV $ do
           modify' (<> FingerTree.singleton WBEQueryCompleted {qId = rsId, qResult})
           ft <- get
+
+          -- Here we assess whether the fingertree has grown past 2xnumTickets.
+          -- If so, split it so that the right half is numTickets wide. The left
+          -- half will be written out to the backing store
           let
             len_ft = length ft
             nt_i = fromIntegral numTickets
@@ -261,6 +260,7 @@ wwbConfigIO initial_map numTickets tracer0 randomQueryDelayRange = liftIO $ do
   nextQueryIdTV <- newTVarIO 0
   lastSubmittedQueryIdTV <- newTVarIO (-1)
   submissionQueueRef <- newTBQueueIO numTickets
+  -- recursive mdo because loopAsync is a field of WWBConfig
   mdo
     let cfg = WWBConfig {..}
     loopAsync <- async $ wwbLoop (contramap WWBTLoop tracer0) cfg
@@ -275,7 +275,10 @@ closeWWbConfig WWBConfig {loopAsync} = liftIO $ do
     Right () -> pure ()
 
 withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> ((Tracer m WWBTrace, WWBConfig k v) -> m a) -> m a
-withWWBConfig hm num_tickets tracer range f = bracket (wwbConfigIO hm num_tickets tracer range) (closeWWbConfig . snd) f
+withWWBConfig hm num_tickets tracer range f = bracket
+  (wwbConfigIO hm num_tickets tracer range)
+  (closeWWbConfig . snd)
+  f
 
 runWWBT ::
   (Eq k, Hashable k, MonadIO m, MonadMask m) =>
@@ -307,21 +310,22 @@ prepare
   WWBConfig
     { backingStoreMV,
       nextQueryIdTV,
-      writeBufferTV,
       randomQueryDelayRange,
       numTickets,
       lastSubmittedQueryIdTV
     }
   qs = do
-    (rsId, _rsWriteBufferSnapshot) <- liftIO . atomically $ do
+    rsId <- liftIO . atomically $ do
       qId <- wwbStateTVar nextQueryIdTV $ get <* modify' (+ 1)
       lastSubmittedId <- readTVar lastSubmittedQueryIdTV
 
       -- This guard ensures we can only ever have numTickets outstanding queries
+      -- we check a simple invariant on the id's we've seen. We could do much
+      -- more, in particular we have the opportunity to look at the fingertree
+      -- and guard on an invariant on it's measure.
       guard $ lastSubmittedId + fromIntegral numTickets > qId
 
-      WriteBufferMeasure {wbmSummary} <- measure <$> readTVar writeBufferTV
-      pure (qId, wbmSummary)
+      pure qId
 
     rsFetchAsync <- liftIO . async $ simulateQuery randomQueryDelayRange qs (readMVar backingStoreMV)
     traceWith tracer $ WWBPPrepared rsId (length qs)
