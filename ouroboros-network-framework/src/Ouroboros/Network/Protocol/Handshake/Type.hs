@@ -21,7 +21,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
   , ServerHasAgency (..)
   , NobodyHasAgency (..)
   , RefuseReason (..)
-  , HandshakeClientProtocolError (..)
+  , HandshakeProtocolError (..)
   )
   where
 
@@ -120,15 +120,13 @@ instance Show (ClientHasAgency (st :: Handshake vNumber vParams)) where
 instance Show (ServerHasAgency (st :: Handshake vNumber vParams)) where
     show TokConfirm = "TokConfirm"
 
--- |
--- Client errors, which extends handshake error @'RefuseReason'@ type,
--- by client specific errors.
+-- | Extends handshake error @'RefuseReason'@ type, by client specific errors.
 --
-data HandshakeClientProtocolError vNumber
+data HandshakeProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   | InvalidServerSelection vNumber Text
   deriving (Eq, Show)
 
 instance (Typeable vNumber, Show vNumber)
-    => Exception (HandshakeClientProtocolError vNumber)
+    => Exception (HandshakeProtocolError vNumber)
