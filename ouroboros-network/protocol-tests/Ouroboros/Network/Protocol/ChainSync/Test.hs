@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -31,8 +32,9 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 
-import           Ouroboros.Network.Block (Serialised (..), StandardHash,
-                     Tip (..), castPoint, decodeTip, encodeTip, legacyTip,
+import           Ouroboros.Network.Block (pattern GenesisPoint,
+                     BlockNo, pattern BlockPoint, Serialised (..), StandardHash,
+                     Tip (..), castPoint, decodeTip, encodeTip,
                      unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -377,14 +379,20 @@ type ChainSync_Serialised_BlockHeader =
 instance Arbitrary (AnyMessageAndAgency ChainSync_BlockHeader) where
   arbitrary = genChainSync arbitrary arbitrary genTip
     where
-      genTip = legacyTip <$> arbitrary <*> arbitrary
+      genTip = f <$> arbitrary <*> arbitrary
+      f :: Point BlockHeader ->  BlockNo -> Tip BlockHeader
+      f GenesisPoint _     = TipGenesis
+      f (BlockPoint s h) b = Tip s h b
 
 instance Arbitrary (AnyMessageAndAgency ChainSync_Serialised_BlockHeader) where
   arbitrary = genChainSync (castPoint <$> genPoint)
                            (serialiseBlock <$> arbitrary)
                            genTip
     where
-      genTip = legacyTip <$> arbitrary <*> arbitrary
+      genTip = f <$> arbitrary <*> arbitrary
+      f :: Point BlockHeader ->  BlockNo -> Tip BlockHeader
+      f GenesisPoint _     = TipGenesis
+      f (BlockPoint s h) b = Tip s h b
 
       genPoint :: Gen (Point BlockHeader)
       genPoint = arbitrary
