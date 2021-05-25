@@ -53,9 +53,9 @@ applyDtoHashMap d = appEndo (HashMap.foldMapWithKey go d) where
 instance Arbitrary v => Arbitrary (D v) where
   arbitrary = oneof [ pure DRemove, DChangeTo <$> arbitrary ]
   shrink di = case di of
-    DRemove -> []
-    DChangeTo v -> DChangeTo <$> shrink v
-    _ -> []
+    DRemove -> [DNoChange]
+    DChangeTo v -> (DChangeTo <$> shrink v) ++ [ DNoChange ]
+    DNoChange -> []
 
 -- we demand that domain keys (applyDToHashMaybeMap x y)  == keys y
 applyDtoHashMaybeMap :: (Eq k, Hashable k) => HashMap k (D v) -> HashMap k (Maybe v) -> HashMap k (Maybe v)
