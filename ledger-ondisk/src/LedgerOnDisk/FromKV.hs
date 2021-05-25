@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -14,6 +15,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
+
+{-# LANGUAGE EmptyCase #-}
 module LedgerOnDisk.FromKV where
 
 import Data.Dependent.Map (DMap)
@@ -27,6 +30,10 @@ import Control.Monad.State
 import Data.Coerce
 import Data.Kind
 import Data.Dependent.Sum (DSum ((:=>)))
+import Data.Functor ((<&>))
+import GHC.Generics hiding (D)
+import Data.Void
+import Data.Functor.Const
 
 
 class MonadKV1 f m | m -> f where
@@ -42,11 +49,32 @@ class GCompare (K a) => FromKV' a where
   fromKV :: O a -> DMap (K a) Identity -> a
   toKV :: a -> (O a, DMap (K a) Identity)
 
-  -- It's not clear that this is needed
   applyDiff :: DMap (K a) D -> a -> a
 
 class (K a ~ f, FromKV' a) => FromKV f a where
 instance (K a ~ f, FromKV' a) => FromKV f a where
+
+newtype VoidF a = VoidF (Const Void a)
+
+instance GEq VoidF where
+  geq ~(VoidF (Const v)) _ = absurd v
+
+instance GCompare VoidF where
+  gcompare ~(VoidF (Const v)) _ = absurd v
+
+instance FromKV' (V1 p) where
+  type O (V1 p) = Void
+  type K (V1 p) = VoidF
+
+  fromKV v _ = absurd v
+  toKV v = case v of {}
+  applyDiff _ v = case v of {}
+
+-- instance GEq (U1 p) where
+
+-- instance FromKV' (U1 p) where
+--   type O (U1 p) = ()
+--   type K (U1 p) = Const ()
 
 
 load :: (MonadError (KV1Err m) m, MonadKV1 f m, FromKV f a, GCompare f)
@@ -58,22 +86,19 @@ load other dm_px = prepare dm_px >>= \rs -> do
   either throwError pure r
 
 
-newtype KVStateT s m a = KVStateT { unKVStateT :: StateT (s, DMap (K s) Identity, DMap (K s) D) m a }
+newtype KVStateT s m a = KVStateT { unKVStateT :: StateT (s, DMap (K s) D) m a }
   deriving stock (Functor)
   deriving newtype (Applicative, Monad, MonadTrans)
 
 kvsApplyD :: (Monad m, FromKV f s) => DSum f D -> KVStateT s m ()
-kvsApplyD (k :=> v) = KVStateT $ modify' $ \(s, dm_i, dm_d) -> let
+kvsApplyD (k :=> v) = KVStateT $ modify' $ \(s, dm_d) -> let
   singleton_dm = DMap.singleton k v
   new_dm_d = DMap.unionWithKey (\_k v1 v2 -> v1 <> v2) dm_d singleton_dm
-  new_dm_i = applyDtoDMap singleton_dm dm_i
-  in (applyDiff singleton_dm s, new_dm_i, new_dm_d)
+  in (applyDiff singleton_dm s, new_dm_d)
 
+kvsGet :: (Monad m, FromKV f s) => KVStateT s m s
+kvsGet = KVStateT . gets $ \(s,_) -> s
 
--- deriving stock instance Functor m => Functor (KVStateT s m)
--- instance Functor m => Functor (KVStateT s m) where
---   fmap f (KVStateT m) = KVStateT $ fmap f m
---   x <$ (KVStateT m) = KVStateT $ x <$ m
-
-  -- (<*>) :: forall x y (f :: * -> *).  KVStateT s m (x -> y) -> KVStateT s m x -> KVStateT s m y
-  -- KVStateT (x :: StateT (s, DMap f Identity, DMap f D) _ _) <*> KVStateT (y :: StateT (s, DMap f Identity, DMap f D) _ _) = KVStateT $ x <*> y
+runKVStateT :: Functor m => KVStateT s m a -> s -> m (s, DMap (K s) D, a)
+runKVStateT (KVStateT m) s = runStateT m (s, DMap.empty) <&> \case
+  (a, (s', dm_d)) -> (s', dm_d, a)
