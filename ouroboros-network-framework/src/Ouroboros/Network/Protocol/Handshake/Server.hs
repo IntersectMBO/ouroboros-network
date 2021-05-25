@@ -30,7 +30,7 @@ handshakeServerPeer
   -> Versions vNumber vData r
   -> Peer (Handshake vNumber vParams)
           AsServer StPropose m
-          (Either (RefuseReason vNumber) (r, vNumber, vData))
+          (Either (HandshakeProtocolError vNumber) (r, vNumber, vData))
 handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
     -- await for versions proposed by a client
     Await (ClientAgency TokPropose) $ \msg -> case msg of
@@ -42,7 +42,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
             let vReason = VersionMismatch (Map.keys $ getVersions versions) []
             in Yield (ServerAgency TokConfirm)
                      (MsgRefuse vReason)
-                     (Done TokDone (Left vReason))
+                     (Done TokDone (Left $ HandshakeError vReason))
 
           Just (vNumber, (vParams, Version app vData)) ->
               case decodeData vNumber vParams of
@@ -50,7 +50,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
                   let vReason = HandshakeDecodeError vNumber err
                   in Yield (ServerAgency TokConfirm)
                            (MsgRefuse vReason)
-                           (Done TokDone $ Left vReason)
+                           (Done TokDone $ Left $ HandshakeError vReason)
 
                 Right vData' ->
                   case acceptVersion vData vData' of
@@ -72,7 +72,7 @@ handshakeServerPeer VersionDataCodec {encodeData, decodeData} acceptVersion vers
                       let vReason = Refused vNumber err
                       in Yield (ServerAgency TokConfirm)
                                (MsgRefuse vReason)
-                               (Done TokDone $ Left $ vReason)
+                               (Done TokDone $ Left $ HandshakeError vReason)
 
 lookupGreatestCommonKey :: Ord k => Map k a -> Map k b -> Maybe (k, (a, b))
 lookupGreatestCommonKey l r = Map.lookupMax $ Map.intersectionWith (,) l r

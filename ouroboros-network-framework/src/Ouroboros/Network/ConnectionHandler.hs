@@ -108,12 +108,12 @@ data Handle (muxMode :: MuxMode) peerAddr bytes m a b =
 data HandleError (muxMode :: MuxMode) versionNumber where
     HandleHandshakeClientError
       :: HasInitiator muxMode ~ True
-      => !(HandshakeException (HandshakeClientProtocolError versionNumber))
+      => !(HandshakeException versionNumber)
       -> HandleError muxMode versionNumber
 
     HandleHandshakeServerError
       :: HasResponder muxMode ~ True
-      => !(HandshakeException (RefuseReason versionNumber))
+      => !(HandshakeException versionNumber)
       -> HandleError muxMode versionNumber
 
     HandleError
@@ -367,8 +367,8 @@ makeConnectionHandler muxTracer singMuxMode
 data ConnectionHandlerTrace versionNumber versionData =
       TrHandshakeSuccess versionNumber versionData
     | TrHandshakeClientError
-        !(HandshakeException (HandshakeClientProtocolError versionNumber))
+        !(HandshakeException versionNumber)
     | TrHandshakeServerError
-        !(HandshakeException (RefuseReason versionNumber))
+        !(HandshakeException versionNumber)
     | TrError !ErrorContext !SomeException !ErrorCommand
   deriving Show
