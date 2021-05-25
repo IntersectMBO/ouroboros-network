@@ -69,18 +69,18 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
+import qualified Cardano.Ledger.BaseTypes as SL (truncateUnitInterval,
+                     unitIntervalFromRational)
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
 import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
+import qualified Cardano.Ledger.Keys
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Cardano.Ledger.Val as SL
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
-                     unitIntervalFromRational)
-import qualified Shelley.Spec.Ledger.Keys
 import qualified Shelley.Spec.Ledger.OCert as SL (OCertSignable (..))
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
@@ -179,7 +179,7 @@ genCoreNode startKESPeriod = do
     vrfKey <- genKeyVRF   <$> genSeed (seedSizeVRF   (Proxy @(VRF   c)))
     kesKey <- genKeyKES   <$> genSeed (seedSizeKES   (Proxy @(KES   c)))
     let kesPub = deriveVerKeyKES kesKey
-        sigma  = Shelley.Spec.Ledger.Keys.signedDSIGN
+        sigma  = Cardano.Ledger.Keys.signedDSIGN
           @c
           delKey
           (SL.OCertSignable kesPub certificateIssueNumber startKESPeriod)

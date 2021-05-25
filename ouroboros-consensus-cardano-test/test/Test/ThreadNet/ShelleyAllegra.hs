@@ -42,7 +42,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
+import qualified Cardano.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 

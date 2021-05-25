@@ -66,9 +66,9 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Versioned
 
+import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import           Cardano.Ledger.Crypto (StandardCrypto, VRF)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import qualified Shelley.Spec.Ledger.BlockChain as SL (checkLeaderValue, mkSeed,
                      seedEta, seedL)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))

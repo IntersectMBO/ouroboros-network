@@ -60,7 +60,7 @@ import qualified Cardano.Chain.Common as CC.Common
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (unEpochSlots)
 
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
+import qualified Cardano.Ledger.BaseTypes as SL
 import qualified Shelley.Spec.Ledger.OverlaySchedule as SL
 
 import           Test.ThreadNet.General
