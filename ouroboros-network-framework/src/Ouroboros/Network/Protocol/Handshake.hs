@@ -10,7 +10,7 @@ module Ouroboros.Network.Protocol.Handshake
   , runHandshakeServer
   , HandshakeArguments (..)
   , HandshakeException (..)
-  , HandshakeClientProtocolError (..)
+  , HandshakeProtocolError (..)
   , RefuseReason (..)
   , Accept (..)
   ) where
@@ -48,20 +48,21 @@ handshakeProtocolNum = MiniProtocolNum 0
 
 -- | Wrapper around initiator and responder errors experienced by tryHandshake.
 --
-data HandshakeException a =
+data HandshakeException vNumber =
     HandshakeProtocolLimit ProtocolLimitFailure
-  | HandshakeProtocolError a
+  | HandshakeProtocolError (HandshakeProtocolError vNumber)
+  deriving Show
 
 
 -- | Try to complete either initiator or responder side of the Handshake protocol
 -- within `handshakeTimeout` seconds.
 --
-tryHandshake :: forall m a r.
+tryHandshake :: forall m vNumber r.
                 ( MonadAsync m
                 , MonadMask m
                 )
-             => m (Either a r)
-             -> m (Either (HandshakeException a) r)
+             => m (Either (HandshakeProtocolError vNumber) r)
+             -> m (Either (HandshakeException vNumber)     r)
 tryHandshake doHandshake = do
     mapp <- try doHandshake
     case mapp of
@@ -121,7 +122,7 @@ runHandshakeClient
     => MuxBearer m
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m application
-    -> m (Either (HandshakeException (HandshakeClientProtocolError vNumber))
+    -> m (Either (HandshakeException vNumber)
                  (application, vNumber, vData))
 runHandshakeClient bearer
                    connectionId
@@ -159,7 +160,7 @@ runHandshakeServer
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m application
     -> m (Either
-           (HandshakeException (RefuseReason vNumber))
+           (HandshakeException vNumber)
            (application, vNumber, vData))
 runHandshakeServer bearer
                    connectionId
