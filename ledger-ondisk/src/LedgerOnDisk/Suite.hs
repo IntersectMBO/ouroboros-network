@@ -21,9 +21,8 @@ import LedgerOnDisk.WWB
 import Test.QuickCheck
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashMap.Strict (HashMap)
-import LedgerOnDisk.Class (D, applyD, applyDforK, applyDtoHashMap)
 import Test.Tasty.QuickCheck
-import LedgerOnDisk.Pure (applyDtoHashMaybeMap)
+import LedgerOnDisk.Diff
 
 prop_applyD :: Maybe Int -> D Int -> D Int -> Property
 prop_applyD mb_i d1 d2 = applyD (applyD mb_i d1) d2 === applyD mb_i (d1 <> d2)

@@ -6,6 +6,10 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 module LedgerOnDisk.SimpleLedgerState where
 
 import Data.HashMap.Strict (HashMap)
@@ -20,11 +24,14 @@ import qualified Data.Dependent.Map as DMap
 import Data.Proxy
 import Data.Foldable
 
-import LedgerOnDisk.Class (D(..))
+import LedgerOnDisk.Diff
 import Data.Functor.Identity
 import qualified Data.HashMap.Strict as HashMap
 import Data.Hashable
 import Data.Monoid
+
+import LedgerOnDisk.FromKV
+import Control.Monad.Except
 
 newtype TxIn = TxIn Int
   deriving stock (Show, Eq)
@@ -87,4 +94,32 @@ prepareLedgerState utxos_set delegations_set other =
                 LSKutxo i -> ((i, v) : utxos, delegations)
                 LSKStakeDelegation i -> (utxos, (i, v) : delegations)
 
--- submitLedgerState ::
+instance FromKV' LedgerState where
+  type O LedgerState = OtherData
+  type K LedgerState = LedgerStateK
+  fromKV other dm = LedgerState{..}
+    where
+      (HashMap.fromList -> utxos, HashMap.fromList -> stakeDelegation) = DMap.foldrWithKey go mempty dm
+      go :: forall x. LedgerStateK x -> Identity x -> ([(TxIn, TxOut)], [(DelegateFrom, DelegateTo)]) -> ([(TxIn, TxOut)], [(DelegateFrom, DelegateTo)])
+      go k (Identity v) (utxos', delegations) = case k of
+              LSKutxo i -> ((i, v) : utxos', delegations)
+              LSKStakeDelegation i -> (utxos', (i, v) : delegations)
+  toKV LedgerState{..} = (other, DMap.fromList $ utxo_dsums ++ delegation_dsums)
+    where
+      utxo_dsums = [ LSKutxo k :=> Identity v | (k, v) <- HashMap.toList utxos ]
+      delegation_dsums = [ LSKStakeDelegation k :=> Identity v | (k, v) <- HashMap.toList stakeDelegation ]
+
+  applyDiff diff_dm LedgerState{..} = LedgerState
+    { utxos = new_utxos
+    , stakeDelegation = new_stake_delegation
+    , other
+    }
+    where
+      (flip appEndo utxos -> new_utxos, flip appEndo stakeDelegation -> new_stake_delegation) =
+        DMap.foldrWithKey go mempty diff_dm
+      go :: forall x. LedgerStateK x -> D x
+        -> (Endo (HashMap TxIn TxOut), Endo (HashMap DelegateFrom DelegateTo))
+        -> (Endo (HashMap TxIn TxOut), Endo (HashMap DelegateFrom DelegateTo))
+      go k v e = case k of
+        LSKutxo i -> (Endo $ applyDforK i v, mempty) <> e
+        LSKStakeDelegation i -> (mempty, Endo $ applyDforK i v) <> e

@@ -17,7 +17,12 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveFunctor #-}
-module LedgerOnDisk.Class where
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+module LedgerOnDisk.Class
+  (module LedgerOnDisk.Class
+  , module LedgerOnDisk.Diff
+  )
+where
 
 import Data.HashMap.Strict(HashMap, (!))
 import qualified Data.HashMap.Strict as HashMap
@@ -33,6 +38,8 @@ import Data.Monoid
 import GHC.Generics (Generic)
 -- import Data.Proxy
 
+import LedgerOnDisk.Diff
+
 newtype QueryScope k = QueryScope (HashSet k)
   deriving stock (Show)
   deriving newtype (Semigroup, Monoid, Eq, ToExpr, Arbitrary)
@@ -40,45 +47,6 @@ newtype QueryScope k = QueryScope (HashSet k)
 querySingle :: (Hashable k) => k -> QueryScope k
 querySingle = coerce . HashSet.singleton
 
-data D v where
-  DChangeTo :: v -> D v
-  DRemove :: D v
-  DNoChange :: D v
-  -- this is interesting, but it makes things more complicated. Inhibits functor
-  -- instance (though I think this could be surmounted with a CoYoneda trick)
-  -- DIMappend :: Monoid v => v -> D v
-  deriving stock (Show, Eq, Functor)
-
-instance Semigroup (D v) where
-  x <> DNoChange = x
-  _ <> y = y
-
-instance Monoid (D v) where
-  mempty = DNoChange
-
-applyD :: Maybe v -> D v -> Maybe v
-applyD x = \case
-  DChangeTo v -> Just v
-  DRemove -> Nothing
-  DNoChange -> x
-
-applyDforK :: (Eq k, Hashable k) => k -> D v -> HashMap k v -> HashMap k v
-applyDforK k = \case
-  DChangeTo v -> HashMap.insert k v
-  DRemove -> HashMap.delete k
-  DNoChange -> id
-  -- DIMappend v -> HashMap.insertWith (<>) k v
-
-applyDtoHashMap :: (Eq k, Hashable k) => HashMap k (D v) -> HashMap k v -> HashMap k v
-applyDtoHashMap d = appEndo (HashMap.foldMapWithKey go d) where
-  go k = Endo . applyDforK k
-
-instance Arbitrary v => Arbitrary (D v) where
-  arbitrary = oneof [ pure DRemove, DChangeTo <$> arbitrary ]
-  shrink di = case di of
-    DRemove -> []
-    DChangeTo v -> DChangeTo <$> shrink v
-    _ -> []
 
 type KVOperationResult k v = HashMap k (D v)
 type KVOperation k v a = (HashMap k (Maybe v) -> (KVOperationResult k v, a))

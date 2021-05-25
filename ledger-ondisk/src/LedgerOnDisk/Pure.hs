@@ -8,7 +8,7 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.Hashable
-import LedgerOnDisk.Class
+import LedgerOnDisk.Diff
 
 pureApplyOperation ::
   (Eq k, Hashable k) =>
@@ -23,6 +23,3 @@ pureApplyOperation scope op m =
       (updates, a) = op restricted_map
    in (a, applyDtoHashMap updates m )
 
--- we demand that domain keys (applyDToHashMaybeMap x y)  == keys y
-applyDtoHashMaybeMap :: (Eq k, Hashable k) => HashMap k (D v) -> HashMap k (Maybe v) -> HashMap k (Maybe v)
-applyDtoHashMaybeMap d_map = HashMap.mapWithKey $ \k mb_v -> applyD mb_v (HashMap.lookupDefault mempty k d_map)
