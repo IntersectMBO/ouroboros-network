@@ -261,16 +261,16 @@ pureSyncWithLedger
   -> SyncWithLedger blk
 pureSyncWithLedger istate lstate lcfg capacityOverride =
     let vr          = validateIS istate lstate lcfg capacityOverride
-        mempoolSize = isMempoolSize istate
-        snapshot    = implSnapshotFromIS istate
         removed     = map fst (vrInvalid vr)
+        istate'     = internalStateFromVR vr
         mTrace      = if null removed
                       then
                         Nothing
                       else
-                        Just $ TraceMempoolRemoveTxs removed mempoolSize
+                        Just $ TraceMempoolRemoveTxs removed (isMempoolSize istate')
+        snapshot    = implSnapshotFromIS istate'
     in
-      NewSyncedState (internalStateFromVR vr) snapshot mTrace
+      NewSyncedState istate' snapshot mTrace
 
 -- | Get a snapshot of the mempool state that is valid with respect to
 -- the given ledger state
