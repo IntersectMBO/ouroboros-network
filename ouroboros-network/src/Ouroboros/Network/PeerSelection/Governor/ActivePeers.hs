@@ -18,6 +18,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Concurrent.JobPool (Job(..))
 import           Control.Exception (SomeException, assert)
+import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -209,9 +210,8 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                    peeraddr peerconn =
     Job job handler () "promoteWarmPeer"
   where
-    -- TODO: The delay should be randomly picked from an interval.
-    reconnectDelay :: DiffTime
-    reconnectDelay = 10
+    baseReconnectDelay :: Double
+    baseReconnectDelay = 10
 
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
@@ -220,6 +220,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                                activePeers,
                                establishedPeers,
                                knownPeers,
+                               fuzzRng,
                                targets = PeerSelectionTargets {
                                            targetNumberOfActivePeers
                                          }
@@ -227,10 +228,12 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                     now ->
         let establishedPeers' = EstablishedPeers.delete peeraddr
                                   establishedPeers
+            (fuzz, fuzzRng')  = randomR (-2, 2 :: Double) fuzzRng
+            delay             = realToFrac $ fuzz + baseReconnectDelay
             knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
                                    then KnownPeers.setConnectTime
                                           (Set.singleton peeraddr)
-                                          (reconnectDelay `addTime` now)
+                                          (delay `addTime` now)
                                         $ snd $ KnownPeers.incrementFailCount
                                           peeraddr
                                           knownPeers
@@ -248,7 +251,8 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                           inProgressPromoteWarm = Set.delete peeraddr
                                                     (inProgressPromoteWarm st),
                           knownPeers            = knownPeers',
-                          establishedPeers      = establishedPeers'
+                          establishedPeers      = establishedPeers',
+                          fuzzRng               = fuzzRng'
                         },
         decisionJobs  = []
       }
