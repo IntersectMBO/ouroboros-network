@@ -539,7 +539,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- version or we refused it.  This is only for outbound connections,
           -- thus we suspend the consumer.
           ErrorPolicy
-            $ \(_ :: HandshakeClientProtocolError NodeToNodeVersion)
+            $ \(_ :: HandshakeProtocolError NodeToNodeVersion)
                   -> Just misconfiguredPeer
 
           -- deserialisation failure; this means that the remote peer is either

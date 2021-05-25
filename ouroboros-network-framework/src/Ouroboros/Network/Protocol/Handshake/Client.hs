@@ -33,7 +33,7 @@ handshakeClientPeer
   -> Peer (Handshake vNumber CBOR.Term)
           AsClient StPropose m
           (Either
-            (HandshakeClientProtocolError vNumber)
+            (HandshakeProtocolError vNumber)
             (r, vNumber, vData))
 handshakeClientPeer VersionDataCodec {encodeData, decodeData} acceptVersion versions =
   -- send known versions
