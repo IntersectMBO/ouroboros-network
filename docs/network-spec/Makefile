@@ -34,10 +34,7 @@ all: $(DOCNAME).pdf
 # missing file reference and interactively asking you for an alternative.
 
 $(DOCNAME).pdf: $(DOCNAME).tex
-	latexmk -bibtex -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
-
-watch: network-spec.tex miniprotocols.tex ../../ouroboros-network/test/messages.cddl
-	latexmk -bibtex -pvc -pdf -pdflatex="pdflatex -synctex=1 -interaction=nonstopmode" -use-make $(DOCNAME).tex
+	latexmk -bibtex -pdf $(DOCNAME).tex
 
 clean:
 	latexmk -CA

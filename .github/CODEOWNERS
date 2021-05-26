@@ -1,12 +1,12 @@
 # Note: later rules override earlier rules.
 
 # Default
-#                                  Marcin Karl    Nick     Paweł        "Higher ups"
-*                                  @coot  @karknu @nfrisby @EncodePanda @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+#                                  Marcin Karl    Armando Nick     Paweł        "Higher ups"
+*                                  @coot  @karknu @bolt12 @nfrisby @EncodePanda @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 
 # Network Team
 
-docs                               @coot @karknu @njd42 @peterwthomson @input-output-hk/network-superowners
+docs                               @coot @karknu @bolt12 @njd42 @peterwthomson @input-output-hk/network-superowners
 
 io-sim                             @coot @input-output-hk/network-superowners
 io-sim-classes                     @coot @input-output-hk/network-superowners
