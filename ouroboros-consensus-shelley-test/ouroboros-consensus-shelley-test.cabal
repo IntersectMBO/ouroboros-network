@@ -96,6 +96,7 @@ test-suite test
                      , tasty-quickcheck
 
                        -- cardano-ledger-specs
+                     , cardano-ledger-core
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
 

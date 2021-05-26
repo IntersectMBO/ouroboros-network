@@ -35,6 +35,7 @@ import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
+import qualified Cardano.Ledger.BaseTypes as SL (truncateUnitInterval)
 import qualified Cardano.Ledger.Hashes as SL
 import qualified Cardano.Ledger.SafeHash as SL
 import           Cardano.Ledger.Val ((<->))
@@ -42,7 +43,6 @@ import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.Address as SL (BootstrapAddress (..))
 import qualified Shelley.Spec.Ledger.Address.Bootstrap as SL
                      (makeBootstrapWitness)
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
 import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessVKey)
 

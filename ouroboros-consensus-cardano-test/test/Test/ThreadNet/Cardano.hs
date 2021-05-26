@@ -43,8 +43,8 @@ import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
+import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff)
 
 import           Ouroboros.Consensus.Shelley.Node
 

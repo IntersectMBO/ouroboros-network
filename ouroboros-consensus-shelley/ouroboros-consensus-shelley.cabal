@@ -42,7 +42,6 @@ library
                        Ouroboros.Consensus.Shelley.Node
                        Ouroboros.Consensus.Shelley.Node.Serialisation
                        Ouroboros.Consensus.Shelley.Protocol
-                       Ouroboros.Consensus.Shelley.Protocol.Crypto
                        Ouroboros.Consensus.Shelley.Protocol.HotKey
                        Ouroboros.Consensus.Shelley.Protocol.Util
                        Ouroboros.Consensus.Shelley.ShelleyBased

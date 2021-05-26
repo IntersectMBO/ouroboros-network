@@ -34,7 +34,7 @@ import           Ouroboros.Consensus.Block (UpdateInfo (..))
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Cardano.Ledger.Crypto (Crypto)
-import qualified Shelley.Spec.Ledger.Keys as SL
+import qualified Cardano.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
 {-------------------------------------------------------------------------------

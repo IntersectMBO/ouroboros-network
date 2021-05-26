@@ -107,6 +107,7 @@ test-suite test
                      , tasty-quickcheck
                      , time
 
+                     , cardano-ledger-core
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test

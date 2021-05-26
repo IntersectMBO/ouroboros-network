@@ -20,9 +20,9 @@ import           Data.Text.Encoding (encodeUtf8)
 
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 
-import           Shelley.Spec.Ledger.BaseTypes
+import           Cardano.Ledger.BaseTypes
+import qualified Cardano.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.Delegation.Certificates as SL
-import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.TxBody as SL
 

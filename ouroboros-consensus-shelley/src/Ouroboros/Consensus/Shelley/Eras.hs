@@ -42,19 +42,18 @@ import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Alonzo (AlonzoEra)
 import qualified Cardano.Ledger.Alonzo.PParams as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
+import           Cardano.Ledger.BaseTypes
 import qualified Cardano.Ledger.Core as Core
+import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
 import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
+import           Cardano.Ledger.Serialization
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.Serialization as SL
-
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (StandardCrypto)
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -113,8 +112,8 @@ class ( SL.ShelleyBasedEra era
       , HasField "_maxTxSize" (Core.PParams era) Natural
       , HasField "_a0" (Core.PParams era) Rational
       , HasField "_nOpt" (Core.PParams era) Natural
-      , HasField "_rho" (Core.PParams era) SL.UnitInterval
-      , HasField "_tau" (Core.PParams era) SL.UnitInterval
+      , HasField "_rho" (Core.PParams era) UnitInterval
+      , HasField "_tau" (Core.PParams era) UnitInterval
 
       , FromCBOR (Core.PParams era)
       , ToCBOR (Core.PParams era)
@@ -123,7 +122,7 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (Core.PParamsDelta era)
 
       , SL.AdditionalGenesisConfig era ~ Core.TranslationContext era
-      , SL.ToCBORGroup (TxSeq era)
+      , ToCBORGroup (TxSeq era)
 
       , Eq (Core.TxInBlock era)
       , NoThunks (Core.TxInBlock era)
