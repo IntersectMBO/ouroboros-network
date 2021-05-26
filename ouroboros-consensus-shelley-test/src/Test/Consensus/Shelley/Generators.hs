@@ -39,7 +39,7 @@ import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
-import           Test.Consensus.Shelley.MockCrypto (CanMock, CanMockPreAlonzo)
+import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators
@@ -55,21 +55,21 @@ import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 -- | The upstream 'Arbitrary' instance for Shelley blocks does not generate
 -- coherent blocks, so neither does this.
-instance CanMockPreAlonzo era => Arbitrary (ShelleyBlock era) where
+instance CanMock era => Arbitrary (ShelleyBlock era) where
   arbitrary = mkShelleyBlock <$> arbitrary
 
 -- | This uses a different upstream generator to ensure the header and block
 -- body relate as expected.
-instance CanMockPreAlonzo era => Arbitrary (Coherent (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (Coherent (ShelleyBlock era)) where
   arbitrary = Coherent . mkShelleyBlock <$> genCoherentBlock
 
-instance CanMockPreAlonzo era => Arbitrary (Header (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
   arbitrary = getHeader <$> arbitrary
 
 instance SL.Mock c => Arbitrary (ShelleyHash c) where
   arbitrary = ShelleyHash <$> arbitrary
 
-instance CanMockPreAlonzo era => Arbitrary (GenTx (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
   arbitrary = mkShelleyTx <$> arbitrary
 
 instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where

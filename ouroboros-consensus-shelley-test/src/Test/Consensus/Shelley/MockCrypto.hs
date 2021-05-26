@@ -8,7 +8,6 @@
 module Test.Consensus.Shelley.MockCrypto (
     Block
   , CanMock
-  , CanMockPreAlonzo
   , MockCrypto
   , MockShelley
   ) where
@@ -24,7 +23,6 @@ import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Cardano.Ledger.Era as Core
 import           Control.State.Transition.Extended (PredicateFailure)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Tx as SL (ValidateScript)
 
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
@@ -70,11 +68,5 @@ type CanMock era =
   , Arbitrary (Core.TxOut era)
   , Arbitrary (Core.Value era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
-  )
-
--- | A stronger 'CanMock' that is incompatible with Alonzo
-type CanMockPreAlonzo era =
-  ( CanMock era
-  , Core.TxSeq era ~ SL.TxSeq era
-  , Core.Witnesses era ~ SL.WitnessSet era
+  , Arbitrary (Core.Witnesses era)
   )

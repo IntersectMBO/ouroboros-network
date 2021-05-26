@@ -45,12 +45,13 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 import           Ouroboros.Consensus.Shelley.Protocol
                      (TPraosState (TPraosState))
 
-import           Test.Cardano.Ledger.Allegra.Examples.Consensus hiding
-                     (StandardAllegra)
-import           Test.Cardano.Ledger.Mary.Examples.Consensus hiding
-                     (StandardMary)
-import           Test.Shelley.Spec.Ledger.Examples.Consensus hiding
-                     (StandardShelley)
+import           Test.Cardano.Ledger.Allegra.Examples.Consensus
+                     (ledgerExamplesAllegra)
+import           Test.Cardano.Ledger.Mary.Examples.Consensus
+                     (ledgerExamplesMary)
+import           Test.Shelley.Spec.Ledger.Examples.Consensus
+                     (ShelleyLedgerExamples (..), ShelleyResultExamples (..),
+                     ledgerExamplesShelley, testShelleyGenesis)
 
 {-------------------------------------------------------------------------------
   Examples
