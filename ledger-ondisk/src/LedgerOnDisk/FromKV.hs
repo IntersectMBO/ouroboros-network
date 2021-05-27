@@ -31,10 +31,7 @@ import Data.Coerce
 import Data.Kind
 import Data.Dependent.Sum (DSum ((:=>)))
 import Data.Functor ((<&>))
-import GHC.Generics hiding (D)
-import Data.Void
-import Data.Functor.Const
-
+-- import Generics.SOP
 
 class MonadKV1 f m | m -> f where
   data KV1Err m
@@ -54,24 +51,23 @@ class GCompare (K a) => FromKV' a where
 class (K a ~ f, FromKV' a) => FromKV f a where
 instance (K a ~ f, FromKV' a) => FromKV f a where
 
-newtype VoidF a = VoidF (Const Void a)
+-- newtype VoidF a = VoidF (Const Void a)
 
-instance GEq VoidF where
-  geq ~(VoidF (Const v)) _ = absurd v
+-- instance GEq VoidF where
+--   geq ~(VoidF (Const v)) _ = absurd v
 
-instance GCompare VoidF where
-  gcompare ~(VoidF (Const v)) _ = absurd v
+-- instance GCompare VoidF where
+--   gcompare ~(VoidF (Const v)) _ = absurd v
 
-instance FromKV' (V1 p) where
-  type O (V1 p) = Void
-  type K (V1 p) = VoidF
+-- instance FromKV' (V1 p) where
+--   type O (V1 p) = Void
+--   type K (V1 p) = VoidF
 
-  fromKV v _ = absurd v
-  toKV v = case v of {}
-  applyDiff _ v = case v of {}
+--   fromKV v _ = absurd v
+--   toKV v = case v of {}
+--   applyDiff _ v = case v of {}
 
--- instance GEq (U1 p) where
-
+-- instance GEq (U1 p
 -- instance FromKV' (U1 p) where
 --   type O (U1 p) = ()
 --   type K (U1 p) = Const ()

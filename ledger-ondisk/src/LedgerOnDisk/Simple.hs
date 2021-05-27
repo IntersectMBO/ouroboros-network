@@ -13,6 +13,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 {-# OPTIONS -fno-warn-unused-imports #-}
+{-# LANGUAGE FlexibleInstances #-}
 module LedgerOnDisk.Simple where
 
 import Control.Monad.Except
@@ -26,13 +27,14 @@ import Data.IORef
 import Data.Monoid
 import LedgerOnDisk.Class
 import LedgerOnDisk.Pure
+import LedgerOnDisk.Diff
 import Debug.Trace
 import Data.TreeDiff.Class
-import GHC.Generics
-
+import GHC.Generics hiding (D)
+import qualified Data.Semigroup as Semi
 type SimpleKey = Int
 
-type SimpleValue = Int
+type SimpleValue = Sum Int
 
 type SimpleMap = HashMap SimpleKey SimpleValue
 

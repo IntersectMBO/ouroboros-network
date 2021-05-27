@@ -124,8 +124,8 @@ instance (Eq k, Hashable k) => Monoid (WriteBufferMeasure k v) where
   mempty = emptyWriteBufferMeasure
 
 instance (Eq k, Hashable k, Arbitrary k, Arbitrary v) => Arbitrary (WriteBufferMeasure k v) where
-  arbitrary = WriteBufferMeasure <$> arbitrary <*> arbitrary
-  shrink = genericShrink
+  arbitrary = WriteBufferMeasure <$> (fmap (fmap unArbNonmonoidalD) arbitrary) <*> arbitrary
+  shrink WriteBufferMeasure{..} = [ WriteBufferMeasure ft count | (fmap unArbNonmonoidalD -> ft, count) <- shrink (coerce wbmSummary, wbmCount)]
 
 instance (Eq k, Hashable k) => Measured (WriteBufferMeasure k v) (WriteBufferEntry k v) where
   measure WBEQueryCompleted {qResult} = WriteBufferMeasure { wbmSummary = qResult, wbmCount = 1}

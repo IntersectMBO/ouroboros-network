@@ -65,7 +65,7 @@ simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOPro
       smt = smt0 { cleanup = \x -> cleanup smt0 x *> writeIORef ref initial_state }
   pure $ k smt
 
-wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int Int IO))
+wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int (Sum Int) IO))
 wwbStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
   let num_tickets = 10
   let mk_cfg = wwbConfigIO initial_map (fromIntegral num_tickets) nullTracer (0.00001, 0.0001)
@@ -154,12 +154,12 @@ prop_model_can_insert initial_map = property $ do
   keys <- listOf1 arbitrary <&> HashSet.fromList . fmap ((+lb) . getNonNegative)
   pure . runMockM initial_map $ do
     KVSuccessHandle h <- mockCmd . KVPrepare . coerce $ keys
-    KVSuccessResult _ <- mockCmd . KVSubmit h $ OFSet "insertAll" $ \m -> (HashMap.mapWithKey (\k _ -> DChangeTo k) m, length m)
+    KVSuccessResult _ <- mockCmd . KVSubmit h $ OFSet "insertAll" $ \m -> (HashMap.mapWithKey (\k _ -> DChangeTo (Sum k)) m, length m)
     pure $ \final_map -> let
       correct_length = length final_map === length initial_map + length keys
       -- new_keys_apart must be true if correct_length is, should it be removed?
       new_keys_apart = keys `HashSet.intersection` HashMap.keysSet initial_map === HashSet.empty
-      correct_values = getAll . foldMap (\k -> All $ HashMap.lookup k final_map == Just k) $ keys
+      correct_values = getAll . foldMap (\k -> All $ HashMap.lookup k final_map == Just (Sum k)) $ keys
       in correct_length .&&. new_keys_apart .&&. correct_values
 
 prop_model_cmd_generator_valid :: KVState Identity -> Property
@@ -172,7 +172,7 @@ prop_model_cmd_generator_valid m = property $ do
       KVSubmit _ OFSet {} -> False
       _ -> True
 
-prop_model_disallows_reuse_of_resultsets :: SimpleMap -> SimpleOperationFunction -> Property
+prop_model_disallows_reuse_of_resultsets :: SimpleMap -> SimpleOperationFunction Int -> Property
 prop_model_disallows_reuse_of_resultsets initial_map op@(OFn f) = runMockM initial_map $ do
   KVSuccessHandle h <- mockCmd . KVPrepare $ mempty
   KVSuccessResult r <- mockCmd . KVSubmit h $ op

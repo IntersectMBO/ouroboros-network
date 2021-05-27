@@ -77,7 +77,6 @@ data MonadKVStateMachine (m :: Type -> Type)
 stateMachineTest ::
   ( Typeable m,
     SimpleMonadKV m,
-
     Eq (Err m),
     Show (Err m),
     ToExpr (ReadSet m),
@@ -103,7 +102,7 @@ type KVModel m = Model (MonadKVStateMachine m)
 type KVStateMachineTest m = StateMachineTest (MonadKVStateMachine m)
 
 data instance Resp (MonadKVStateMachine m) f hs where
-  KVSuccessLookupAll_ :: HashMap Int Int -> Resp (MonadKVStateMachine m) f '[resultSet]
+  KVSuccessLookupAll_ :: SimpleMap -> Resp (MonadKVStateMachine m) f '[resultSet]
   KVSuccessHandle :: f resultSet -> Resp (MonadKVStateMachine m) f '[resultSet]
   KVSuccessResult :: Int -> Resp (MonadKVStateMachine m) f '[resultSet]
   KVError :: SimpleMonadKV m => Err m -> Resp (MonadKVStateMachine m) f '[resultSet]
@@ -132,13 +131,13 @@ data OperationFunction k v a where
   OFArb :: Fun (HashMap k (Maybe v)) (KVOperationResult k v, a) -> OperationFunction k v a
   OFSet :: String -> (HashMap k (Maybe v) -> (KVOperationResult k v, a)) -> OperationFunction k v a
 
-type SimpleOperationFunction = OperationFunction SimpleKey SimpleValue Int
+type SimpleOperationFunction a = OperationFunction SimpleKey SimpleValue a
 
 instance (Show k, Show v, Show a) => Show (OperationFunction k v a) where
   showsPrec d (OFArb f) = showsPrec d f
   showsPrec d (OFSet n _) = showsPrec d n
 
-instance (Eq k, Hashable k, Function k, Function v, CoArbitrary k, CoArbitrary v, Arbitrary k, Arbitrary v, Arbitrary a) => Arbitrary (OperationFunction k v a) where
+instance (Eq k, Hashable k, Function k, Function v, CoArbitrary k, CoArbitrary v, Arbitrary k, Arbitrary v, Arbitrary a, Semigroup v) => Arbitrary (OperationFunction k v a) where
   arbitrary = OFArb <$> arbitrary
   shrink = \case
     OFArb f -> OFArb <$> shrink f
@@ -156,7 +155,7 @@ pattern OFn f <- (applyOperationFunction -> f)
 
 data instance Cmd (MonadKVStateMachine m) f hs where
   KVPrepare :: QueryScope Int -> Cmd (MonadKVStateMachine m) f '[resultSet]
-  KVSubmit :: f resultSet -> OperationFunction Int Int Int -> Cmd (MonadKVStateMachine m) f '[resultSet] -- k = v = Int, always returns Int
+  KVSubmit :: f resultSet -> SimpleOperationFunction Int -> Cmd (MonadKVStateMachine m) f '[resultSet] -- k = v = Int, always returns Int
   -- suffixed with _ means it can be generated, it's for validating the model
   KVLookupAll_ :: f resultSet -> Cmd (MonadKVStateMachine m) f '[resultSet]
   -- deriving stock (Functor, Foldable, Traversable, Show)
@@ -196,7 +195,7 @@ instance ToExpr (MockHandle (MonadKVStateMachine m) a) where
 type KVMockHandle m = MockHandle (MonadKVStateMachine m)
 
 data Mock = Mock
-  { modelMap :: !(HashMap Int Int),
+  { modelMap :: !SimpleMap,
     queries :: !(HashMap Int (QueryScope Int)),
     nextQueryId :: !Int
   }
