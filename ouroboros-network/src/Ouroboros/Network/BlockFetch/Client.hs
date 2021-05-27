@@ -190,6 +190,7 @@ blockFetchClient _version controlMessageSTM
                 Right lower = AF.last fragment
                 Right upper = AF.head fragment
 
+        traceWith tracer (SendFetchRequest fragment)
         return $
           SenderPipeline
             (ClientAgency TokIdle)
