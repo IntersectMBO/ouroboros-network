@@ -89,6 +89,7 @@ test-suite test
                      , cardano-slotting
                      , cborg
                      , containers
+                     , filepath
                      , hedgehog-quickcheck
                      , mtl
                      , QuickCheck

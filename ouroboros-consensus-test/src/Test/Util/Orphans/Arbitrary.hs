@@ -53,7 +53,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
-import           Test.Util.Serialisation.Roundtrip
 import           Test.Util.Time
 
 minNumCoreNodes :: Word64
@@ -383,20 +382,12 @@ instance (All SingleEraBlock (x ': xs), IsNonEmpty xs)
   Query
 -------------------------------------------------------------------------------}
 
+instance Arbitrary QueryVersion where
+  arbitrary = arbitraryBoundedEnum
+  shrink v = if v == minBound then [] else [pred v]
+
 instance Arbitrary (SomeSecond BlockQuery blk)
       => Arbitrary (SomeSecond Query blk) where
   arbitrary = do
     SomeSecond someBlockQuery <- arbitrary
     return (SomeSecond (BlockQuery someBlockQuery))
-
-instance Arbitrary (WithVersion version (SomeSecond BlockQuery blk))
-      => Arbitrary (WithVersion version (SomeSecond Query blk)) where
-  arbitrary = do
-    WithVersion v (SomeSecond someBlockQuery) <- arbitrary
-    return (WithVersion v (SomeSecond (BlockQuery someBlockQuery)))
-
--- | This is @OVERLAPPABLE@ because we have to override the default behaviour
--- for e.g. 'Query's.
-instance {-# OVERLAPPABLE #-} (Arbitrary version, Arbitrary a)
-      => Arbitrary (WithVersion version a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary

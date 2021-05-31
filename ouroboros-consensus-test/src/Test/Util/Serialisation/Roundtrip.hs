@@ -1,15 +1,16 @@
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE DerivingVia          #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Test.Util.Serialisation.Roundtrip (
     -- * Basic test helpers
@@ -48,7 +49,9 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..),
+                     QueryVersion)
+import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -59,6 +62,8 @@ import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
+
+import           Test.Util.Orphans.Arbitrary ()
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -139,9 +144,9 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
+     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeSecond Query blk)
      )
   => CodecConfig blk
   -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
@@ -211,6 +216,26 @@ data WithVersion v a = WithVersion v a
 -- | Similar to @Arbitrary'@, but with an 'Arbitrary' instasnce for
 -- @('WithVersion' v a)@.
 type ArbitraryWithVersion v a = (Arbitrary (WithVersion v a), Eq a, Show a)
+
+instance ( Arbitrary (WithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk))
+         , blockVersion ~ BlockNodeToClientVersion blk
+         )
+      => Arbitrary (WithVersion (QueryVersion, blockVersion) (SomeSecond Query blk)) where
+  arbitrary = do
+    queryVersion <- arbitrary
+    case queryVersion of
+      Query.TopLevelQueryDisabled -> do
+        WithVersion blockV (SomeSecond someBlockQuery) <- arbitrary
+        return (WithVersion (queryVersion, blockV) (SomeSecond (BlockQuery someBlockQuery)))
+      -- TODO This case statement will cause a warning when we add a new top
+      -- level query and hence a new QueryVersion. In that case we should
+      -- support such top level `Query` constructors in this Arbitrary instance.
+
+-- | This is @OVERLAPPABLE@ because we have to override the default behaviour
+-- for e.g. 'Query's.
+instance {-# OVERLAPPABLE #-} (Arbitrary version, Arbitrary a)
+      => Arbitrary (WithVersion version a) where
+  arbitrary = WithVersion <$> arbitrary <*> arbitrary
 
 -- | Used to generate slightly less arbitrary values
 --
@@ -327,9 +352,9 @@ roundtrip_SerialiseNodeToClient
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
+     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeSecond Query blk)
 
        -- Needed for testing the @Serialised blk@
      , EncodeDisk blk blk
@@ -342,7 +367,21 @@ roundtrip_SerialiseNodeToClient ccfg =
     , rt (Proxy @(GenTx blk))                 "GenTx"
     , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
     , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
-    -- TODO , rt (Proxy @(SomeSecond Query blk))      "Query"
+    , rtWith
+        @(SomeSecond Query blk)
+        @(QueryVersion, BlockNodeToClientVersion blk)
+        (\(queryVersion, blockVersion) query -> Query.queryEncodeNodeToClient
+                          ccfg
+                          queryVersion
+                          blockVersion
+                          query
+        )
+        (\(queryVersion, blockVersion) -> Query.queryDecodeNodeToClient
+                          ccfg
+                          queryVersion
+                          blockVersion
+        )
+        "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
@@ -381,10 +420,23 @@ roundtrip_SerialiseNodeToClient ccfg =
          , SerialiseNodeToClient blk a
          )
        => Proxy a -> String -> TestTree
-    rt _ name =
+    rt _ name = rtWith (enc @a) (dec @a) name
+
+    rtWith
+      :: forall a version.
+         ( Arbitrary (WithVersion version a)
+         , Eq a
+         , Show a
+         , Show version
+         )
+       => (version -> a -> Encoding)
+       -> (version -> forall s. Decoder s a)
+       -> String
+       -> TestTree
+    rtWith enc' dec' name =
       testProperty ("roundtrip " <> name) $
         \(WithVersion version a) ->
-          roundtrip @a (enc version) (dec version) a
+          roundtrip @a (enc' version) (dec' version) a
 
 {-------------------------------------------------------------------------------
   Checking envelopes
