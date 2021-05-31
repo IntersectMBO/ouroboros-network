@@ -18,6 +18,7 @@ import           Control.Concurrent.JobPool (Job)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert, SomeException)
+import           System.Random (StdGen)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.EstablishedPeers (EstablishedPeers)
@@ -257,7 +258,10 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        inProgressPromoteCold    :: !(Set peeraddr),
        inProgressPromoteWarm    :: !(Set peeraddr),
        inProgressDemoteWarm     :: !(Set peeraddr),
-       inProgressDemoteHot      :: !(Set peeraddr)
+       inProgressDemoteHot      :: !(Set peeraddr),
+
+       -- | Rng for fuzzy delay
+       fuzzRng                  :: !StdGen
 
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
@@ -283,8 +287,8 @@ peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers 
     warmPeers = Set.size $ establishedPeersSet Set.\\ activePeers st
     hotPeers  = Set.size $ activePeers st
 
-emptyPeerSelectionState :: PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState =
+emptyPeerSelectionState :: StdGen -> PeerSelectionState peeraddr peerconn
+emptyPeerSelectionState rng =
     PeerSelectionState {
       targets              = nullPeerSelectionTargets,
       localRootPeers       = LocalRootPeers.empty,
@@ -299,7 +303,8 @@ emptyPeerSelectionState =
       inProgressPromoteCold    = Set.empty,
       inProgressPromoteWarm    = Set.empty,
       inProgressDemoteWarm     = Set.empty,
-      inProgressDemoteHot      = Set.empty
+      inProgressDemoteHot      = Set.empty,
+      fuzzRng                  = rng
     }
 
 

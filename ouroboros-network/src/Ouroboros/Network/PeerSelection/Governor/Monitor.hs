@@ -25,6 +25,7 @@ import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
+import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -112,7 +113,8 @@ connections PeerSelectionActions{
               establishedPeers,
               inProgressDemoteHot,
               inProgressDemoteWarm,
-              inProgressPromoteWarm
+              inProgressPromoteWarm,
+              fuzzRng
             } =
     Guarded Nothing $ do
       monitorStatus <- traverse monitorPeerConnection
@@ -121,7 +123,9 @@ connections PeerSelectionActions{
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition (==PeerWarm) demotions
       return $ \now ->
-        let activePeers'       = activePeers
+        let (aFuzz, fuzzRng')      = randomR (-5, 5 :: Double) fuzzRng
+            (rFuzz, fuzzRng'')     = randomR (-2, 2 :: Double) fuzzRng'
+            activePeers'       = activePeers
                                   Set.\\ Map.keysSet demotions
 
             -- Note that we do not use establishedStatus' which
@@ -129,7 +133,8 @@ connections PeerSelectionActions{
             -- handled elsewhere. We just update the async ones:
             establishedPeers'  = EstablishedPeers.setActivateTime
                                   (Map.keysSet demotedToWarm)
-                                  (activateDelay `addTime` now)
+                                  ((realToFrac aFuzz + activateDelay)
+                                   `addTime` now)
                                . EstablishedPeers.deletePeers
                                   (Map.keysSet demotedToCold)
                                $ establishedPeers
@@ -138,7 +143,8 @@ connections PeerSelectionActions{
             -- a result of a failure.
             knownPeers'        = KnownPeers.setConnectTime
                                    (Map.keysSet demotedToCold)
-                                   (reconnectDelay `addTime` now)
+                                   ((realToFrac rFuzz + reconnectDelay)
+                                    `addTime` now)
                                . Set.foldr'
                                    ((snd .) . KnownPeers.incrementFailCount)
                                    (knownPeers st)
@@ -166,13 +172,15 @@ connections PeerSelectionActions{
                                 -- reason we need to adjust 'inProgressPromoteWarm'.
                                 inProgressPromoteWarm
                                                   = inProgressPromoteWarm
-                                                      Set.\\ Map.keysSet demotedToCold
+                                                      Set.\\ Map.keysSet demotedToCold,
 
                                 -- Note that we do not need to adjust
                                 -- inProgressDemoteWarm or inProgressDemoteHot
                                 -- here since we define the async demotions
                                 -- to not include peers in those sets. Instead,
                                 -- those ones will complete synchronously.
+
+                                fuzzRng = fuzzRng''
                               }
           }
   where

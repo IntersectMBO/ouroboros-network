@@ -664,7 +664,8 @@ runDataDiffusion tracers
     -- demoting/promoting peers.
     rng <- newStdGen
     let (ledgerPeersRng, rng') = split rng
-        (policyRng, churnRng)  = split rng'
+        (policyRng, rng'')  = split rng'
+        (churnRng, fuzzRng) = split rng''
     policyRngVar <- newTVarIO policyRng
 
     -- Request interface, supply the number of peers desired.
@@ -887,6 +888,7 @@ runDataDiffusion tracers
                             dtTracePeerSelectionTracer
                             dtDebugPeerSelectionInitiatorTracer
                             dtTracePeerSelectionCounters
+                            fuzzRng
                             peerSelectionActions
                             (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
                           $ \governorThread ->
@@ -1008,6 +1010,7 @@ runDataDiffusion tracers
                           dtTracePeerSelectionTracer
                           dtDebugPeerSelectionInitiatorResponderTracer
                           dtTracePeerSelectionCounters
+                          fuzzRng
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy policyRngVar))
                         $ \governorThread -> do
