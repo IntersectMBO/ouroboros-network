@@ -190,12 +190,15 @@ defaultCodecs ccfg version networkVersion = Codecs {
           (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> dec)
+          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
+          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
   where
+    queryVersion :: QueryVersion
+    queryVersion = nodeToClientVersionToQueryVersion networkVersion
+
     p :: Proxy blk
     p = Proxy
 
@@ -239,12 +242,15 @@ clientCodecs ccfg version networkVersion = Codecs {
           (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> dec)
+          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
+          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
   where
+    queryVersion :: QueryVersion
+    queryVersion = nodeToClientVersionToQueryVersion networkVersion
+
     p :: Proxy blk
     p = Proxy
 

@@ -342,7 +342,7 @@ roundtrip_SerialiseNodeToClient ccfg =
     , rt (Proxy @(GenTx blk))                 "GenTx"
     , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
     , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
-    , rt (Proxy @(SomeSecond Query blk))      "Query"
+    -- TODO , rt (Proxy @(SomeSecond Query blk))      "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
