@@ -55,7 +55,9 @@ import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid (All (..), Any (..))
 import qualified Data.Set as Set
+import qualified Data.Text.Lazy as Text
 import           Data.Void (Void)
+import           Text.Pretty.Simple (pShowOpt, defaultOutputOptionsNoColor)
 import           Quiet
 
 import           Network.Mux.Types
@@ -1239,25 +1241,15 @@ prop_shrinker_RefinedSchedule a@(Schedule s) =
 --
 newtype ScheduleMap' addr extra =
         ScheduleMap { getScheduleMap :: Map addr (Schedule extra) }
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor)
 
-
-{-
-prettyScheduleMap :: (Show addr, Show extra)
-                  => ScheduleMap' addr extra -> String
-prettyScheduleMap (ScheduleMap schedule) =
-        concat
-      . map (\(addr, schedule') ->
-            concat
-              [ show addr
-              , "\n"
-              , intercalate "\n" (map (('\t' :) . show) schedule')
-              ])
-      . Map.assocs
-      . fmap getSchedule
-      $ schedule
--}
-
+instance (Show addr, Show extra)
+      => Show (ScheduleMap' addr extra) where
+    show (ScheduleMap schedule) =
+      concat [ "ScheduleMap ( "
+             , Text.unpack (pShowOpt defaultOutputOptionsNoColor schedule)
+             , "\n  )"
+             ]
 
 instance Ord addr => Semigroup (ScheduleMap' addr extra) where
     ScheduleMap a <> ScheduleMap b = ScheduleMap (Map.unionWith f a b)
