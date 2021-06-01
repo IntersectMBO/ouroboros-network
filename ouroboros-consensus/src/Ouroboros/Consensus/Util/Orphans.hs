@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Util.Orphans () where
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))
-import           Control.Concurrent.STM (readTVarIO)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
@@ -77,7 +76,7 @@ instance NoThunks a => NoThunks (StrictTVar IO a) where
   wNoThunks ctxt tv = do
       -- We can't use @atomically $ readTVar ..@ here, as that will lead to a
       -- "Control.Concurrent.STM.atomically was nested" exception.
-      a <- readTVarIO (toLazyTVar tv)
+      a <- readTVarIO tv
       noThunks ctxt a
 
 instance (NoThunks k, NoThunks v)

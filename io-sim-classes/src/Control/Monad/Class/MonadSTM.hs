@@ -114,6 +114,9 @@ class ( Monad stm
   stateTVar    :: TVar_ stm s -> (s -> (a, s)) -> stm a
   stateTVar    = stateTVarDefault
 
+  swapTVar     :: TVar_ stm a -> a -> stm a
+  swapTVar     = swapTVarDefault
+
   check        :: Bool -> stm ()
   check True = return ()
   check _    = retry
@@ -161,6 +164,11 @@ stateTVarDefault var f = do
    writeTVar var s'
    return a
 
+swapTVarDefault :: MonadSTMTx stm => TVar_ stm a -> a -> stm a
+swapTVarDefault var new = do
+    old <- readTVar var
+    writeTVar var new
+    return old
 
 type TVar    m = TVar_    (STM m)
 type TMVar   m = TMVar_   (STM m)
@@ -176,13 +184,17 @@ class (Monad m, MonadSTMTx (STM m)) => MonadSTM m where
   -- Helpful derived functions with default implementations
 
   newTVarIO        :: a -> m (TVar  m a)
+  readTVarIO       :: TVar m a -> m a
   newTMVarIO       :: a -> m (TMVar m a)
   newEmptyTMVarIO  ::      m (TMVar m a)
+  newTQueueIO      :: m (TQueue m a)
   newTBQueueIO     :: Natural -> m (TBQueue m a)
 
   newTVarIO       = atomically . newTVar
+  readTVarIO      = atomically . readTVar
   newTMVarIO      = atomically . newTMVar
   newEmptyTMVarIO = atomically   newEmptyTMVar
+  newTQueueIO     = atomically newTQueue
   newTBQueueIO    = atomically . newTBQueue
 
 
@@ -247,6 +259,7 @@ instance MonadSTMTx STM.STM where
   modifyTVar     = STM.modifyTVar
   modifyTVar'    = STM.modifyTVar'
   stateTVar      = STM.stateTVar
+  swapTVar       = STM.swapTVar
   check          = STM.check
   newTMVar       = STM.newTMVar
   newEmptyTMVar  = STM.newEmptyTMVar
@@ -283,8 +296,11 @@ instance MonadSTM IO where
   atomically = wrapBlockedIndefinitely . STM.atomically
 
   newTVarIO       = STM.newTVarIO
+  readTVarIO      = STM.readTVarIO
   newTMVarIO      = STM.newTMVarIO
   newEmptyTMVarIO = STM.newEmptyTMVarIO
+  newTQueueIO     = STM.newTQueueIO
+  newTBQueueIO    = STM.newTBQueueIO
 
 -- | noop instance
 --
@@ -326,8 +342,11 @@ instance MonadSTM m => MonadSTM (ReaderT r m) where
   type STM (ReaderT r m) = STM m
   atomically      = lift . atomically
   newTVarIO       = lift . newTVarM
+  readTVarIO      = lift . readTVarIO
   newTMVarIO      = lift . newTMVarM
   newEmptyTMVarIO = lift   newEmptyTMVarM
+  newTQueueIO     = lift   newTQueueIO
+  newTBQueueIO    = lift . newTBQueueIO
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
