@@ -227,6 +227,7 @@ withBidirectionalConnectionManager snocket socket
           cmAddressType  = \_ -> Just IPv4Address,
           cmSnocket      = snocket,
           cmTimeWaitTimeout = timeWaitTimeout,
+          cmOutboundIdleTimeout = protocolIdleTimeout,
           connectionDataFlow = const Duplex,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
