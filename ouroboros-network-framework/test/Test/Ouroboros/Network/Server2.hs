@@ -276,7 +276,8 @@ withInitiatorOnlyConnectionManager
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0
             },
-          cmTimeWaitTimeout = timeWaitTimeout
+          cmTimeWaitTimeout = timeWaitTimeout,
+          cmOutboundIdleTimeout = outboundIdleTimeout
         }
       (makeConnectionHandler
         muxTracer
@@ -398,6 +399,9 @@ protocolIdleTimeout = 0.1
 timeWaitTimeout :: DiffTime
 timeWaitTimeout = 0.1
 
+outboundIdleTimeout :: DiffTime
+outboundIdleTimeout = 0.1
+
 
 -- 
 -- Rethrow policies
@@ -497,6 +501,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
           cmAddressType  = \_ -> Just IPv4Address,
           cmSnocket      = snocket,
           cmTimeWaitTimeout = timeWaitTimeout,
+          cmOutboundIdleTimeout = outboundIdleTimeout,
           connectionDataFlow = const Duplex,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
