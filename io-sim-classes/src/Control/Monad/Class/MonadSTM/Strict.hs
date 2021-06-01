@@ -22,9 +22,11 @@ module Control.Monad.Class.MonadSTM.Strict
   , newTVarIO
   , newTVarWithInvariantIO
   , readTVar
+  , readTVarIO
   , writeTVar
   , modifyTVar
   , stateTVar
+  , swapTVar
     -- * 'StrictTMVar'
   , StrictTMVar
   , labelTMVar
@@ -57,8 +59,9 @@ import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
                      labelTMVar, labelTMVarIO, modifyTVar, newEmptyTMVar,
                      newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
                      newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
-                     readTMVar, readTVar, stateTVar, swapTMVar, takeTMVar,
-                     tryPutTMVar, tryReadTMVar, tryTakeTMVar, writeTVar)
+                     readTMVar, readTVarIO, readTVar, stateTVar, swapTVar,
+                     swapTMVar, takeTMVar, tryPutTMVar, tryReadTMVar,
+                     tryTakeTMVar, writeTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           GHC.Stack
 
@@ -98,6 +101,7 @@ toLazyTVar StrictTVar { tvar } = tvar
 
 newTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
 newTVar !a = StrictTVar (const Nothing) <$> Lazy.newTVar a
+
 newTVarIO :: MonadSTM m => a -> m (StrictTVar m a)
 newTVarIO = newTVarWithInvariantIO (const Nothing)
 
@@ -123,6 +127,9 @@ newTVarWithInvariantM = newTVarWithInvariantIO
 readTVar :: MonadSTM m => StrictTVar m a -> STM m a
 readTVar StrictTVar { tvar } = Lazy.readTVar tvar
 
+readTVarIO :: MonadSTM m => StrictTVar m a -> m a
+readTVarIO StrictTVar { tvar } = Lazy.readTVarIO tvar
+
 writeTVar :: (MonadSTM m, HasCallStack) => StrictTVar m a -> a -> STM m ()
 writeTVar StrictTVar { tvar, invariant } !a =
     checkInvariant (invariant a) $
@@ -137,6 +144,13 @@ stateTVar v f = do
     let (a', b) = f a
     writeTVar v a'
     return b
+
+swapTVar :: MonadSTM m => StrictTVar m a -> a -> STM m a
+swapTVar v a' = do
+    a <- readTVar v
+    writeTVar v a'
+    return a
+
 
 updateTVar :: MonadSTM m => StrictTVar m a -> (a -> (a, b)) -> STM m b
 updateTVar = stateTVar
