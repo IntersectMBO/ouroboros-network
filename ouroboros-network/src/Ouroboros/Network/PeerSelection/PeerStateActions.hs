@@ -906,6 +906,9 @@ withPeerStateActions timeout
                     <$> awaitAllResults TokHot pchAppHandles
                     <*> awaitAllResults TokWarm pchAppHandles
                     <*> awaitAllResults TokEstablished pchAppHandles)
+      -- 'unregisterOutboundConnection' could only fail to demote the peer if
+      -- connection manager would simultanously promoted it, but this is not
+      -- posible.
       case res of
         Nothing -> do
           -- timeout fired
@@ -914,8 +917,6 @@ withPeerStateActions timeout
           traceWith spsTracer (PeerStatusChangeFailure
                                 (WarmToCold pchConnectionId)
                                 TimeoutError)
-
-          throwIO (CloseConnectionTimeout pchConnectionId)
 
         Just (SomeErrored errs) -> do
           -- some mini-protocol errored

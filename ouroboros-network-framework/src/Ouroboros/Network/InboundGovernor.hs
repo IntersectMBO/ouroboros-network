@@ -465,6 +465,7 @@ randomPrunePolicy stateVar mp n = do
       case connType of
         UnnegotiatedConn Outbound -> True
         UnnegotiatedConn Inbound  -> False
+        OutboundIdleConn _        -> True
         InboundIdleConn         _ -> False
         NegotiatedConn Outbound _ -> True
         NegotiatedConn Inbound  _ -> False
