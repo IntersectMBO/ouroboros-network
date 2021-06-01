@@ -268,7 +268,7 @@ withBidirectionalConnectionManager snocket socket
                     serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
-                    serverProtocolIdleTimeout = protocolIdleTimeout,
+                    serverInboundIdleTimeout = protocolIdleTimeout,
                     serverControlChannel = inbgovControlChannel,
                     serverObservableStateVar = observableStateVar
                   }

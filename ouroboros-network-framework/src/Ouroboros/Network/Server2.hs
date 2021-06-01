@@ -75,7 +75,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
       -- | Time for which all protocols need to be idle to trigger
       -- 'DemotedToCold' transition.
       --
-      serverProtocolIdleTimeout   :: DiffTime,
+      serverInboundIdleTimeout    :: DiffTime,
 
       -- | Server control var is passed as an argument; this allows to use the
       -- server to run and manage responders which needs to be started on
@@ -120,7 +120,7 @@ run ServerArguments {
       serverTracer = tracer,
       serverInboundGovernorTracer = inboundGovernorTracer,
       serverConnectionLimits,
-      serverProtocolIdleTimeout,
+      serverInboundIdleTimeout,
       serverConnectionManager,
       serverControlChannel,
       serverObservableStateVar
@@ -130,7 +130,7 @@ run ServerArguments {
       traceWith tracer (TrServerStarted localAddresses)
       let threads = inboundGovernor inboundGovernorTracer
                                     serverControlChannel
-                                    serverProtocolIdleTimeout
+                                    serverInboundIdleTimeout
                                     serverConnectionManager
                                     serverObservableStateVar
                   : [ acceptLoop . accept serverSnocket
