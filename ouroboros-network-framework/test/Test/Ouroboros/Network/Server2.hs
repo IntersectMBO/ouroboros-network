@@ -551,7 +551,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
                     serverInboundGovernorTracer = (name,) `contramap` nullTracer, -- InboundGovernorTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
-                    serverProtocolIdleTimeout = protocolIdleTimeout,
+                    serverInboundIdleTimeout = protocolIdleTimeout,
                     serverControlChannel = inbgovControlChannel,
                     serverObservableStateVar = observableStateVar
                   }

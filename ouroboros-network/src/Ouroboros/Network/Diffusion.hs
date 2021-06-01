@@ -306,14 +306,21 @@ data DiffusionArguments m = DiffusionArguments {
       -- ^ run in initiator only mode
 
     , daProtocolIdleTimeout :: DiffTime
-      -- ^ Timeout which starts once all responder protocols are idle. If the
-      -- responders stay idle for duration of the timeout, the connection will
-      -- be demoted, if it wasn't used by the p2p-governor it will be closed.
+      -- ^ Configures timeout which starts when initiator and responder
+      -- mini-protocols became idle.  If the initiators \/ responders stay idle
+      -- for duration of the timeout, the connection will be closed (reset).
       --
-      -- Applies to 'Unidirectional' as well as 'Duplex' /node-to-node/
-      -- connections.
+      -- This timeout should be be long enough to allow the application to read
+      -- from ingress buffers.  The recommended value is @5s@ for nodes facing
+      -- public network.
       --
-      -- See 'serverProtocolIdleTimeout'.
+      --
+      -- Implementation detail
+      --
+      -- We use two timeouts that are started in either of the situation:
+      --
+      -- * if all initiator protocols are idle and responders become idle
+      -- * if all responders protocols are idle and initiators become idle
 
     , daTimeWaitTimeout :: DiffTime
       -- ^ Time for which /node-to-node/ connections are kept in
@@ -739,7 +746,8 @@ runDataDiffusion tracers
                           connectionDataFlow    = uncurry localDataFlow,
                           cmPrunePolicy         = Server.randomPrunePolicy localServerStateVar,
                           cmConnectionsLimits   = localConnectionLimits,
-                          cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT
+                          cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
+                          cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT
                         }
 
                 withConnectionManager
@@ -767,7 +775,7 @@ runDataDiffusion tracers
                           serverConnectionLimits      = localConnectionLimits,
                           serverConnectionManager     = localConnectionManager,
                           serverObservableStateVar    = localServerStateVar,
-                          serverProtocolIdleTimeout   = local_PROTOCOL_IDLE_TIMEOUT
+                          serverInboundIdleTimeout    = local_PROTOCOL_IDLE_TIMEOUT
                         }) Async.wait
 
         --
@@ -817,7 +825,8 @@ runDataDiffusion tracers
                                 -- than limits imposed by 'cmConnectionsLimits'.
                                 simplePrunePolicy,
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
-                          cmTimeWaitTimeout     = daTimeWaitTimeout
+                          cmTimeWaitTimeout     = daTimeWaitTimeout,
+                          cmOutboundIdleTimeout = daProtocolIdleTimeout
                         }
 
                     connectionHandler :: NodeToNodeConnectionHandler InitiatorMode Void
@@ -940,7 +949,8 @@ runDataDiffusion tracers
                               HasInitiatorResponder (CMDInInitiatorResponderMode _ serverStateVar) ->
                                 Server.randomPrunePolicy serverStateVar,
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
-                          cmTimeWaitTimeout     = daTimeWaitTimeout
+                          cmTimeWaitTimeout     = daTimeWaitTimeout,
+                          cmOutboundIdleTimeout = daProtocolIdleTimeout
                         }
 
                     connectionHandler :: NodeToNodeConnectionHandler InitiatorResponderMode ()
@@ -1049,7 +1059,7 @@ runDataDiffusion tracers
                                   serverControlChannel        = controlChannel,
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,
-                                  serverProtocolIdleTimeout   = daProtocolIdleTimeout,
+                                  serverInboundIdleTimeout    = daProtocolIdleTimeout,
                                   serverObservableStateVar    = observableStateVar
                                 })
                                 $ \serverThread ->
