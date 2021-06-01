@@ -285,6 +285,7 @@ instance MonadSTM IO where
   newTVarIO       = STM.newTVarIO
   newTMVarIO      = STM.newTMVarIO
   newEmptyTMVarIO = STM.newEmptyTMVarIO
+  newTBQueueIO    = STM.newTBQueueIO
 
 -- | noop instance
 --
@@ -328,6 +329,7 @@ instance MonadSTM m => MonadSTM (ReaderT r m) where
   newTVarIO       = lift . newTVarM
   newTMVarIO      = lift . newTMVarM
   newEmptyTMVarIO = lift   newEmptyTMVarM
+  newTBQueueIO    = lift . newTBQueueIO
 
 --
 -- Default TMVar implementation in terms of TVars (used by sim)
