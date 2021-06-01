@@ -101,8 +101,8 @@ tests =
     ]
     -- connection manager simulation property
   , testGroup "simulations"
-    -- [ testProperty "simulation"                     prop_connectionManagerSimulation
-    [ testProperty "overwritten"                    unit_overwritten
+    [ testProperty "simulation"                     prop_connectionManagerSimulation
+    , testProperty "overwritten"                    unit_overwritten
     , testProperty "timeoutExpired"                 unit_timeoutExpired
     ]
   ]
@@ -1994,16 +1994,19 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                               case seActiveDelay conn of
                                 Left  _ -> killThread (hThreadId handle)
                                 Right _ -> do
-                                  (res, _) <-
-                                    unregisterOutboundConnection
-                                      connectionManager addr
-                                    `concurrently`
-                                      (when ( not (siReused (seExtra conn))
-                                              && seDataFlow conn == Duplex ) $
-                                         void $
-                                           unregisterInboundConnection
-                                             connectionManager addr
-                                      )
+                                  when ( not (siReused (seExtra conn))
+                                         && seDataFlow conn == Duplex ) $
+                                    -- we need to perform the @TimeoutExpired@
+                                    -- transition, in order for
+                                    -- 'unregisterOutboundConnection' to be
+                                    -- successful.
+                                    void $
+                                      unregisterInboundConnection
+                                        connectionManager addr
+
+                                  res <-
+                                      unregisterOutboundConnection
+                                        connectionManager addr
                                   case res of
                                     UnsupportedState st ->
                                       throwIO (UnsupportedStateError
@@ -2105,8 +2108,10 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
         -- will fail.
         Just (SomeConnectionManagerError e@ImpossibleConnection {}) -> throwIO e
         Just (SomeConnectionManagerError e@ImpossibleState {})      -> throwIO e
+        -- the test environment can requests outbound connection when there is
+        -- one in 'PreTerminatingState'
         Just (SomeConnectionManagerError  (ForbiddenOperation _
-                                            (OutboundIdleSt Unidirectional) _))
+                                            (OutboundIdleSt _) _))
                                          -> pure ()
         Just (SomeConnectionManagerError e@ForbiddenOperation {})   -> throwIO e
         Just (SomeConnectionManagerError e@UnknownPeer {})          -> throwIO e
