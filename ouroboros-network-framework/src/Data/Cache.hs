@@ -36,6 +36,7 @@ traceWithCache tracer cache a =
 -- different than the most recent one. And applies a function to the cache
 -- value before tracing.
 --
-mapTraceWithCache :: (Applicative m, Eq a) => (a -> b) -> Tracer m b -> Cache a -> a -> m ()
+mapTraceWithCache :: (Applicative m, Eq a)
+                  => (a -> b) -> Tracer m b -> Cache a -> a -> m ()
 mapTraceWithCache f tracer cache a =
     withCacheA cache a (traceWith tracer . f)
