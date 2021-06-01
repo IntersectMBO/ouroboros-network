@@ -132,7 +132,9 @@ test-suite test
                      , dns
                      , iproute
                      , network
+                     , pretty-simple
                      , serialise
+                     , text
                      , time
                      , quiet
 
