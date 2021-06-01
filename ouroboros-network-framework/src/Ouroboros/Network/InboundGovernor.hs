@@ -96,7 +96,7 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
                                         versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
                 -> m Void
-inboundGovernor tracer serverControlChannel protocolIdleTimeout
+inboundGovernor tracer serverControlChannel inboundIdleTimeout
                 connectionManager observableStateVar = do
     let state = InboundGovernorState {
             igsConnections   = Map.empty,
@@ -200,7 +200,7 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
                             Nothing -> return Nothing
 
                             Just csCompletionMap -> do
-                              v <- registerDelay protocolIdleTimeout
+                              v <- registerDelay inboundIdleTimeout
                               let -- initial state is 'RemoteIdle', if the remote end will not
                                   -- start any responders this will unregister the inbound side.
                                   csRemoteState :: RemoteState m
@@ -300,7 +300,7 @@ inboundGovernor tracer serverControlChannel protocolIdleTimeout
           res <- demotedToColdRemote connectionManager
                                      (remoteAddress connId)
           traceWith tracer (TrWaitIdleRemote connId res)
-          v <- registerDelay protocolIdleTimeout
+          v <- registerDelay inboundIdleTimeout
           let timeoutSTM :: STM m ()
               !timeoutSTM = LazySTM.readTVar v >>= check
 
