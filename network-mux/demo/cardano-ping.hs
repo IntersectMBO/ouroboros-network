@@ -169,13 +169,17 @@ data NodeToNodeVersion = NodeToNodeVersionV1 Word32
                        | NodeToNodeVersionV7 Word32 Bool
                        deriving (Eq, Ord, Show)
 
-keepAliveReqEnc :: Word16 -> CBOR.Encoding
-keepAliveReqEnc cookie =
+keepAliveReqEnc :: NodeToNodeVersion -> Word16 -> CBOR.Encoding
+keepAliveReqEnc (NodeToNodeVersionV7 _ _) cookie =
+       CBOR.encodeListLen 2
+    <> CBOR.encodeWord 0
+    <> CBOR.encodeWord16 cookie
+keepAliveReqEnc _ cookie =
        CBOR.encodeWord 0
     <> CBOR.encodeWord16 cookie
 
-keepAliveReq :: Word16 -> ByteString
-keepAliveReq = CBOR.toLazyByteString . keepAliveReqEnc
+keepAliveReq :: NodeToNodeVersion -> Word16 -> ByteString
+keepAliveReq v c = CBOR.toLazyByteString $ keepAliveReqEnc v c
 
 
 handshakeReqEnc :: [NodeToNodeVersion] -> CBOR.Encoding
@@ -225,8 +229,15 @@ data HandshakeFailure = UnknownVersionInRsp Word
 
 newtype KeepAliveFailure = KeepAliveFailureKey Word deriving Show
 
-keepAliveRspDec :: CBOR.Decoder s (Either KeepAliveFailure Word16)
-keepAliveRspDec = do
+keepAliveRspDec :: NodeToNodeVersion
+                -> CBOR.Decoder s (Either KeepAliveFailure Word16)
+keepAliveRspDec (NodeToNodeVersionV7 _ _) = do
+    len <- CBOR.decodeListLen
+    key <- CBOR.decodeWord
+    case (len, key) of
+         (2, 1) -> Right <$> CBOR.decodeWord16
+         (_, k) -> return $ Left $ KeepAliveFailureKey k
+keepAliveRspDec _ = do
     key <- CBOR.decodeWord
     case key of
          1 -> Right <$> CBOR.decodeWord16
@@ -384,7 +395,7 @@ pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
                       (NodeToNodeVersionV1 _) -> return ()
                       (NodeToNodeVersionV2 _) -> return ()
                       _                       -> do
-                          keepAlive bearer timeoutfn peerStr (tdigest []) 0
+                          keepAlive bearer timeoutfn peerStr version (tdigest []) 0
 
     )
   where
@@ -401,15 +412,21 @@ pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
            then return (msBlob sdu, t_e)
            else nextMsg bearer timeoutfn ptclNum
 
-    keepAlive :: MuxBearer IO -> TimeoutFn IO -> String -> TDigest 5 -> Word32 -> IO ()
-    keepAlive _ _ _ _ cookie | cookie == maxCount = return ()
-    keepAlive bearer timeoutfn peerStr td cookie = do
+    keepAlive :: MuxBearer IO
+              -> TimeoutFn IO
+              -> String
+              -> NodeToNodeVersion
+              -> TDigest 5
+              -> Word32
+              -> IO ()
+    keepAlive _ _ _ _ _ cookie | cookie == maxCount = return ()
+    keepAlive bearer timeoutfn peerStr version td !cookie = do
         let cookie16 = fromIntegral cookie
-        !t_s <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveReq cookie16)
+        !t_s <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveReq version cookie16)
         (!msg, !t_e) <- nextMsg bearer timeoutfn keepaliveNum
         let rtt = toSample t_e t_s
             td' = insert rtt td
-        case CBOR.deserialiseFromBytes keepAliveRspDec msg of
+        case CBOR.deserialiseFromBytes (keepAliveRspDec version) msg of
              Left err -> eprint $ printf "%s keepalive decoding error %s\n" peerStr (show err)
              Right (_, Left err) -> eprint $ printf "%s keepalive protocol error %s\n" peerStr (show err)
              Right (_, Right cookie') -> do
@@ -423,4 +440,4 @@ pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
                     else traceWith tracer $ LogMsg $ BSC.pack $ show point <> "\n"
                  hFlush stdout
                  threadDelay 1
-                 keepAlive bearer timeoutfn peerStr td' (cookie + 1)
+                 keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
