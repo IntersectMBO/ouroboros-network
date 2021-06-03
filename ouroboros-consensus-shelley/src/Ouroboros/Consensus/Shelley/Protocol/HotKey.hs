@@ -1,6 +1,8 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -33,9 +35,10 @@ import qualified Cardano.Crypto.KES as Relative (Period)
 import           Ouroboros.Consensus.Block (UpdateInfo (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Ledger.Crypto (Crypto, KES)
 import qualified Shelley.Spec.Ledger.Keys as SL
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
+import           Cardano.Crypto.KES.Class
 
 {-------------------------------------------------------------------------------
   KES Info
@@ -170,7 +173,7 @@ data KESState c = KESState {
 instance Crypto c => NoThunks (KESState c)
 
 mkHotKey ::
-     forall m c. (Crypto c, IOLike m)
+     forall m c. (Crypto c, IOLike m, KESSignAlgorithm m (KES c))
   => SL.SignKeyKES c
   -> Absolute.KESPeriod  -- ^ Start period
   -> Word64              -- ^ Max KES evolutions
@@ -187,11 +190,7 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
             KESKeyPoisoned -> error "trying to sign with a poisoned key"
             KESKey key     -> do
               let evolution = kesEvolution kesStateInfo
-                  signed    = SL.signedKES () evolution toSign key
-              -- Force the signature to WHNF (for 'SignedKES', WHNF implies
-              -- NF) so that we don't have any thunks holding on to a key that
-              -- might be destructively updated when evolved.
-              evaluate signed
+              SL.signedKES () evolution toSign key
       }
   where
     initKESState :: KESState c
@@ -219,7 +218,7 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
 --
 -- When the key is poisoned, we always return 'UpdateFailed'.
 evolveKey ::
-     forall m c. (Crypto c, IOLike m)
+     forall m c. (Crypto c, IOLike m, KESSignAlgorithm m (KES c))
   => StrictMVar m (KESState c) -> Absolute.KESPeriod -> m KESEvolutionInfo
 evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
     let info = kesStateInfo kesState
@@ -268,7 +267,7 @@ evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
       | targetEvolution <= curEvolution
       = return $ KESState { kesStateInfo = info, kesStateKey = KESKey key }
       | otherwise
-      = case SL.updateKES () key curEvolution of
+      = SL.updateKES () key curEvolution >>= \case
           -- This cannot happen
           Nothing    -> error "Could not update KES key"
           Just !key' -> do

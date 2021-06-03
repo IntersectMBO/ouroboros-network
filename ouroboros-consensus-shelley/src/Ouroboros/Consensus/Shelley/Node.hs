@@ -50,6 +50,7 @@ import qualified Data.Text as Text
 import           GHC.Stack (HasCallStack)
 
 import qualified Cardano.Crypto.VRF as VRF
+import           Cardano.Crypto.KES.Class (KESSignAlgorithm (..))
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Time (mkSlotLength)
 
@@ -70,6 +71,8 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
+import           Cardano.Ledger.Crypto (KES)
+import           Cardano.Ledger.Era (Crypto)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
@@ -120,7 +123,7 @@ type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionErro
 -- In case the same credentials should be shared across multiple Shelley-based
 -- eras, use 'shelleySharedBlockForging'.
 shelleyBlockForging ::
-     forall m era. (ShelleyBasedEra era, IOLike m)
+     forall m era. (ShelleyBasedEra era, IOLike m, KESSignAlgorithm m (KES (Crypto era)))
   => TPraosParams
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
@@ -147,6 +150,7 @@ shelleySharedBlockForging ::
      ( PraosCrypto c
      , All (ShelleyEraWithCrypto c) eras
      , IOLike m
+     , KESSignAlgorithm m (KES c)
      )
   => Proxy eras
   -> TPraosParams
@@ -245,7 +249,7 @@ data ProtocolParamsMary = ProtocolParamsMary {
     }
 
 protocolInfoShelley ::
-     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c))
+     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c), KESSignAlgorithm m (KES c))
   => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
@@ -256,7 +260,7 @@ protocolInfoShelley protocolParamsShelleyBased
     protocolInfoShelleyBased protocolParamsShelleyBased protVer
 
 protocolInfoShelleyBased ::
-     forall m era. (IOLike m, ShelleyBasedEra era)
+     forall m era. (IOLike m, ShelleyBasedEra era, KESSignAlgorithm m (KES (Crypto era)))
   => ProtocolParamsShelleyBased era
   -> SL.ProtVer
   -> ProtocolInfo m (ShelleyBlock era)

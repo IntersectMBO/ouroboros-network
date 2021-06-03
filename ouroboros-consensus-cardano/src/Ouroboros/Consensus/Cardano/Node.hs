@@ -45,6 +45,8 @@ import           Data.Word (Word16)
 import           Cardano.Binary (DecoderError (..), enforceSize)
 import           Cardano.Chain.Slotting (EpochSlots)
 import           Cardano.Prelude (cborError)
+import           Cardano.Crypto.KES.Class (KESSignAlgorithm)
+import qualified Cardano.Ledger.Crypto as CC
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -357,7 +359,11 @@ data ProtocolParamsTransition eraFrom eraTo = ProtocolParamsTransition {
 -- PRECONDITION: only a single set of Shelley credentials is allowed when used
 -- for mainnet (check against @'SL.gNetworkId' 'shelleyBasedGenesis'@).
 protocolInfoCardano ::
-     forall c m. (IOLike m, CardanoHardForkConstraints c)
+     forall c m.
+     ( IOLike m
+     , CardanoHardForkConstraints c
+     , KESSignAlgorithm m (CC.KES c)
+     )
   => ProtocolParamsByron
   -> ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
