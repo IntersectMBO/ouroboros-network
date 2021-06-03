@@ -55,7 +55,8 @@ import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
+                     nodeToClientVersionToQueryVersion)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -329,7 +330,7 @@ goldenTest_all ::
      , SupportedNetworkProtocolVersion  blk
 
      , ToGoldenDirectory (BlockNodeToNodeVersion   blk)
-     , ToGoldenDirectory (BlockNodeToClientVersion blk)
+     , ToGoldenDirectory (QueryVersion, BlockNodeToClientVersion blk)
 
      , HasCallStack
      )
@@ -421,7 +422,7 @@ goldenTest_SerialiseNodeToClient ::
      forall blk.
      ( SerialiseNodeToClientConstraints blk
      , SupportedNetworkProtocolVersion blk
-     , ToGoldenDirectory (BlockNodeToClientVersion blk)
+     , ToGoldenDirectory (QueryVersion, BlockNodeToClientVersion blk)
      , HasCallStack
      )
   => CodecConfig blk
@@ -430,12 +431,12 @@ goldenTest_SerialiseNodeToClient ::
   -> TestTree
 goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
     testGroup "SerialiseNodeToClient" [
-        testVersion version
-      | version <- nub $ Map.elems $ supportedNodeToClientVersions $ Proxy @blk
+        testVersion (nodeToClientVersionToQueryVersion version, blockVersion)
+      | (version, blockVersion) <- nub $ Map.toList $ supportedNodeToClientVersions $ Proxy @blk
       ]
   where
-    testVersion :: BlockNodeToClientVersion blk -> TestTree
-    testVersion version = testGroup (toGoldenDirectory version) [
+    testVersion :: (QueryVersion, BlockNodeToClientVersion blk) -> TestTree
+    testVersion versions@(_, blockVersion) = testGroup (toGoldenDirectory versions) [
           test "Block"           exampleBlock           enc'
         , test "SerialisedBlock" exampleSerialisedBlock enc'
         , test "GenTx"           exampleGenTx           enc'
@@ -446,10 +447,10 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
       where
 
         enc' :: SerialiseNodeToClient blk a => a -> Encoding
-        enc' = encodeNodeToClient codecConfig version
+        enc' = encodeNodeToClient codecConfig blockVersion
 
         encRes :: SomeResult blk -> Encoding
-        encRes (SomeResult q r) = encodeResult codecConfig version q r
+        encRes (SomeResult q r) = encodeResult codecConfig blockVersion q r
 
         test :: TestName -> Labelled a -> (a -> Encoding) -> TestTree
         test testName exampleValues enc =
@@ -457,7 +458,7 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
               testName
               exampleValues
               enc
-              (goldenDir </> toGoldenDirectory version)
+              (goldenDir </> toGoldenDirectory versions)
 
 {-------------------------------------------------------------------------------
   FlatTerm

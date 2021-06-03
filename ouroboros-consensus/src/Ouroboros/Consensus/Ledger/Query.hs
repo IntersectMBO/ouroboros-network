@@ -12,17 +12,27 @@ module Ouroboros.Consensus.Ledger.Query (
     BlockQuery
   , Query (..)
   , QueryLedger (..)
+  , QueryVersion (..)
   , ShowQuery (..)
   , answerQuery
+  , nodeToClientVersionToQueryVersion
+  , queryDecodeNodeToClient
+  , queryEncodeNodeToClient
   ) where
 
+import           Codec.CBOR.Decoding
+import           Codec.CBOR.Encoding
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
+import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query.Version
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+                     (BlockNodeToClientVersion)
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), SomeSecond (..))
@@ -34,7 +44,10 @@ import           Ouroboros.Consensus.Util.DepPair
 
 -- | Different queries supported by the ledger for all block types, indexed
 -- by the result type.
-data Query blk result = BlockQuery (BlockQuery blk result)
+data Query blk result
+  = BlockQuery (BlockQuery blk result)
+  -- ^ This constructor is supported by all @QueryVersion@s. The @BlockQuery@
+  -- argument is versioned by the @BlockNodeToClientVersion blk@.
 
 instance (ShowProxy (BlockQuery blk)) => ShowProxy (Query blk) where
   showProxy (Proxy :: Proxy (Query blk)) = "Query (" ++ showProxy (Proxy @(BlockQuery blk)) ++ ")"
@@ -49,22 +62,44 @@ instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
 instance Show (SomeSecond BlockQuery blk) => Show (SomeSecond Query blk) where
   show (SomeSecond (BlockQuery blockQueryA)) = "Query " ++ show (SomeSecond blockQueryA)
 
-instance SerialiseNodeToClient blk (SomeSecond BlockQuery blk) => SerialiseNodeToClient blk (SomeSecond Query blk) where
-  encodeNodeToClient codecConfig blockVersion (SomeSecond (BlockQuery blockQuery))
-    = encodeNodeToClient
-        @blk
-        @(SomeSecond BlockQuery blk)
-        codecConfig
-        blockVersion
-        (SomeSecond blockQuery)
+queryEncodeNodeToClient ::
+     forall blk. SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+  => CodecConfig blk
+  -> QueryVersion
+  -> BlockNodeToClientVersion blk
+  -> SomeSecond Query blk
+  -> Encoding
+queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
+  = case queryVersion of
+    TopLevelQueryDisabled -> encodeBlockQuery
+      (case query of
+        BlockQuery blockQuery -> blockQuery
+      )
+  where
+    encodeBlockQuery blockQuery = encodeNodeToClient
+      @blk
+      @(SomeSecond BlockQuery blk)
+      codecConfig
+      blockVersion
+      (SomeSecond blockQuery)
 
-  decodeNodeToClient codecConfig blockVersion = do
-    SomeSecond blockQuery <- decodeNodeToClient
+queryDecodeNodeToClient ::
+     forall blk. SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
+  => CodecConfig blk
+  -> QueryVersion
+  -> BlockNodeToClientVersion blk
+  -> forall s. Decoder s (SomeSecond Query blk)
+queryDecodeNodeToClient codecConfig queryVersion blockVersion
+  = case queryVersion of
+      TopLevelQueryDisabled -> decodeBlockQuery
+  where
+    decodeBlockQuery = do
+      SomeSecond blockQuery <- decodeNodeToClient
         @blk
         @(SomeSecond BlockQuery blk)
         codecConfig
         blockVersion
-    return (SomeSecond (BlockQuery blockQuery))
+      return (SomeSecond (BlockQuery blockQuery))
 
 instance SerialiseResult blk (BlockQuery blk) => SerialiseResult blk (Query blk) where
   encodeResult codecConfig blockVersion (BlockQuery blockQuery) result
