@@ -23,13 +23,12 @@ module Ouroboros.Consensus.Node (
   , stdVersionDataNTC
   , stdVersionDataNTN
   , stdWithCheckedDB
+    -- ** P2P Switch
+  , NetworkP2PMode (..)
     -- * Exposed by 'run' et al
   , ChainDB.RelativeMountPoint (..)
   , ChainDB.TraceEvent (..)
   , ChainDbArgs (..)
-  , ConnectionId (..)
-  , DiffusionArguments (..)
-  , DiffusionTracers (..)
   , HardForkBlockchainTimeArgs (..)
   , LastShutDownWasClean (..)
   , LowLevelRunNodeArgs (..)
@@ -56,25 +55,30 @@ import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
-import           Data.Void (Void)
 import           System.FilePath ((</>))
 import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
-
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
-import           Ouroboros.Network.Diffusion
+import           Ouroboros.Network.Diffusion (DiffusionApplications,
+                     DiffusionArguments, DiffusionTracers, daDiffusionMode,
+                     getDiffusionArguments, mkDiffusionApplicationsNonP2P,
+                     mkDiffusionApplicationsP2P, runDataDiffusion)
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient (LocalAddress,
-                     NodeToClientVersionData (..))
+import           Ouroboros.Network.NodeToClient (ConnectionId, LocalAddress,
+                     NodeToClientVersionData (..), combineVersions,
+                     simpleSingletonVersions)
 import           Ouroboros.Network.NodeToNode (DiffusionMode,
-                     MiniProtocolParameters (..), NodeToNodeVersionData (..),
-                     RemoteAddress, combineVersions,
+                     MiniProtocolParameters, NodeToNodeVersionData (..),
+                     RemoteAddress, blockFetchPipeliningMax,
                      defaultMiniProtocolParameters)
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..),
                      newPeerMetric, reportMetric)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
+import           Ouroboros.Network.RethrowPolicy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime hiding (getSystemStart)
@@ -88,6 +92,7 @@ import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
+import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -137,6 +142,8 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
                        -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
                        -> m ()
 
+      -- | Network P2P Mode switch
+    , rnEnableP2P :: NetworkP2PMode
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -183,10 +190,12 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
     , llrnRunDataDiffusion ::
            ResourceRegistry m
         -> DiffusionApplications
-             addrNTN        addrNTC
-             versionDataNTN versionDataNTC
+             addrNTN
+             addrNTC
+             versionDataNTN
+             versionDataNTC
              m
-        -> m Void
+        -> m ()
 
     , llrnVersionDataNTC :: versionDataNTC
 
@@ -202,12 +211,18 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
     , llrnMaxClockSkew :: ClockSkew
     }
 
+-- | P2P Switch
+--
+data NetworkP2PMode = EnabledP2PMode
+                    | DisabledP2PMode
+  deriving (Eq, Show)
+
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
 run :: forall blk.
      RunNode blk
   => RunNodeArgs IO RemoteAddress LocalAddress blk
   -> StdRunNodeArgs IO blk
-  -> IO Void
+  -> IO ()
 run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 
 -- | Start a node.
@@ -223,7 +238,7 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
      )
   => RunNodeArgs m addrNTN addrNTC blk
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
-  -> m Void
+  -> m ()
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
     llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
@@ -297,6 +312,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
           ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
           diffusionApplications = mkDiffusionApplications
+                                    rnEnableP2P
                                     (miniProtocolParameters nodeKernelArgs)
                                     ntnApps
                                     ntcApps
@@ -320,7 +336,14 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> PeerMetrics m addrNTN
       -> BlockNodeToNodeVersion blk
-      -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ByteString ()
+      -> NTN.Apps m
+          (ConnectionId addrNTN)
+          ByteString
+          ByteString
+          ByteString
+          ByteString
+          ByteString
+          ()
     mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics version =
         NTN.mkApps
           nodeKernel
@@ -344,51 +367,93 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           (NTC.mkHandlers nodeKernelArgs nodeKernel)
 
     mkDiffusionApplications
-      :: MiniProtocolParameters
+      :: NetworkP2PMode
+      -> MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
-          -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ByteString ()
-         )
+          -> NTN.Apps
+               m
+               (ConnectionId ntnAddr)
+               ByteString
+               ByteString
+               ByteString
+               ByteString
+               ByteString
+               ()
+        )
       -> (   BlockNodeToClientVersion blk
           -> NodeToClientVersion
-          -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
-         )
-      -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> PeerMetrics m addrNTN
+          -> NTC.Apps
+               m (ConnectionId ntcAddr) ByteString ByteString ByteString ()
+        )
+      -> NodeKernel m remotePeer localPeer blk
+      -> PeerMetrics m ntnAddr
       -> BlockchainTime m
       -> DiffusionApplications
-           addrNTN addrNTC
-           versionDataNTN versionDataNTC
+           ntnAddr
+           ntcAddr
+           versionDataNTN
+           versionDataNTC
            m
-    mkDiffusionApplications miniProtocolParams ntnApps ntcApps kernel peerMetrics btime =
-      DiffusionApplications {
-          daApplicationInitiatorMode = combineVersions
-             [ simpleSingletonVersions
-                 version
-                 llrnVersionDataNTN
-                 (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
-             | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
-             ]
-        , daApplicationInitiatorResponderMode = combineVersions
-             [ simpleSingletonVersions
-                 version
-                 llrnVersionDataNTN
-                 (NTN.initiatorAndResponder miniProtocolParams version $ ntnApps blockVersion)
-             | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
-             ]
-        , daLocalResponderApplication = combineVersions [
-              simpleSingletonVersions
+    mkDiffusionApplications
+      enP2P
+      miniProtocolParams
+      ntnApps
+      ntcApps
+      kernel
+      peerMetrics
+      btime =
+      case enP2P of
+        EnabledP2PMode ->
+          mkDiffusionApplicationsP2P
+            initiator
+            initiatorAndResponder
+            responder
+            ledgerPeersConsensusInterface
+            miniProtocolParams
+            (consensusRethrowPolicy (Proxy @blk))
+            localRethrowPolicy
+            peerMetrics
+            (getFetchMode (getChainDB kernel) btime)
+        DisabledP2PMode ->
+          mkDiffusionApplicationsNonP2P
+            initiator
+            initiatorAndResponder
+            responder
+            ledgerPeersConsensusInterface
+            (consensusErrorPolicy (Proxy @blk))
+      where
+        initiator =
+          combineVersions
+            [ simpleSingletonVersions
+                version
+                llrnVersionDataNTN
+                (NTN.initiator miniProtocolParams version
+                  $ ntnApps blockVersion)
+            | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
+            ]
+        initiatorAndResponder =
+          combineVersions
+            [ simpleSingletonVersions
+                version
+                llrnVersionDataNTN
+                (NTN.initiatorAndResponder miniProtocolParams version
+                  $ ntnApps blockVersion)
+            | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
+            ]
+        responder =
+          combineVersions
+            [ simpleSingletonVersions
                 version
                 llrnVersionDataNTC
                 (NTC.responder version $ ntcApps blockVersion version)
             | (version, blockVersion) <- Map.toList llrnNodeToClientVersions
             ]
-        , daMiniProtocolParameters = miniProtocolParams
-        , daRethrowPolicy = consensusRethrowPolicy (Proxy @blk)
-        , daLocalRethrowPolicy = consensusRethrowPolicy (Proxy @blk)
-        , daLedgerPeersCtx = LedgerPeersConsensusInterface (getPeersFromCurrentLedgerAfterSlot kernel)
-        , daPeerMetrics = peerMetrics
-        , daBlockFetchMode = getFetchMode (getChainDB kernel) btime
-        }
+        ledgerPeersConsensusInterface =
+          LedgerPeersConsensusInterface
+            (getPeersFromCurrentLedgerAfterSlot kernel)
+
+        localRethrowPolicy :: RethrowPolicy
+        localRethrowPolicy = mempty
 
 -- | Did the ChainDB already have existing clean-shutdown marker on disk?
 newtype LastShutDownWasClean = LastShutDownWasClean Bool
@@ -609,10 +674,12 @@ stdRunDataDiffusion ::
      DiffusionTracers
   -> DiffusionArguments IO
   -> DiffusionApplications
-       RemoteAddress LocalAddress
-       NodeToNodeVersionData NodeToClientVersionData
+       RemoteAddress
+       LocalAddress
+       NodeToNodeVersionData
+       NodeToClientVersionData
        IO
-  -> IO Void
+  -> IO ()
 stdRunDataDiffusion = runDataDiffusion
 
 -- | Higher-level arguments that can determine the 'LowLevelRunNodeArgs' under
@@ -670,7 +737,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnVersionDataNTN =
           stdVersionDataNTN
             networkMagic
-            (daDiffusionMode srnDiffusionArguments)
+            (daDiffusionMode (getDiffusionArguments srnDiffusionArguments))
       , llrnNodeToNodeVersions =
           limitToLatestReleasedVersion
             fst
