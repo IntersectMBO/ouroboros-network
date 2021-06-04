@@ -19,6 +19,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson hiding (Options, json)
+import           Data.Bits (clearBit, setBit, testBit)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BSC (pack, putStr)
@@ -48,13 +49,18 @@ handshakeNum = MiniProtocolNum 0
 keepaliveNum :: MiniProtocolNum
 keepaliveNum = MiniProtocolNum 8
 
-data Flag = CountF String | HelpF | HostF String | PortF String | MagicF String | QuietF | JsonF deriving Show
+nodeToClientVersionBit :: Int
+nodeToClientVersionBit = 15
+
+
+data Flag = CountF String | HelpF | HostF String | PortF String | MagicF String | QuietF | JsonF | UnixF String deriving Show
 
 optionDescriptions :: [OptDescr Flag]
 optionDescriptions = [
     Option "c" ["count"]  (ReqArg CountF "count")  "number of pings to send",
     Option "" ["help"]  (NoArg HelpF)  "print help",
     Option "h" ["host"]  (ReqArg HostF "host")  "hostname/ip, e.g relay.iohk.example",
+    Option "u" ["unixsock"] (ReqArg UnixF "unixsock") "unix socket, e.g file.socket",
     Option "m" ["magic"] (ReqArg MagicF "magic") ("magic, defaults to " ++ show mainnetMagic),
     Option "j" ["json"]  (NoArg JsonF ) "json output flag",
     Option "p" ["port"]  (ReqArg PortF "port") "portnumber, e.g 1234",
@@ -64,6 +70,7 @@ optionDescriptions = [
 data Options = Options {
       maxCount :: Word32
     , host     :: Maybe String
+    , unixSock :: Maybe String
     , port     :: String
     , magic    :: Word32
     , json     :: Bool
@@ -75,6 +82,7 @@ defaultOpts :: Options
 defaultOpts = Options {
       maxCount = maxBound
     , host     = Nothing
+    , unixSock = Nothing
     , port     = "3001"
     , json     = False
     , quiet    = False
@@ -90,6 +98,7 @@ buildOptions (PortF port) opt = opt { port = port }
 buildOptions (MagicF m)   opt = opt { magic = Prelude.read m }
 buildOptions JsonF        opt = opt { json = True }
 buildOptions QuietF       opt = opt { quiet = True }
+buildOptions (UnixF file) opt = opt { unixSock = Just file }
 
 data LogMsg = LogMsg ByteString
             | LogEnd
@@ -112,6 +121,24 @@ logger msgQueue json = go True
              LogEnd ->
                  when json $ putStrLn "] }"
 
+supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
+supportedNodeToNodeVersions magic = [
+    NodeToNodeVersionV1 magic
+  , NodeToNodeVersionV2 magic
+  , NodeToNodeVersionV3 magic
+  , NodeToNodeVersionV4 magic False
+  , NodeToNodeVersionV5 magic False
+  , NodeToNodeVersionV6 magic False
+  , NodeToNodeVersionV7 magic False
+  ]
+
+supportedNodeToClientVersions :: Word32 -> [NodeVersion]
+supportedNodeToClientVersions magic = [
+    NodeToClientVersionV5 magic
+  , NodeToClientVersionV6 magic
+  , NodeToClientVersionV7 magic
+  , NodeToClientVersionV8 magic
+  ]
 
 main :: IO ()
 main = do
@@ -127,14 +154,24 @@ main = do
 
     msgQueue <- newEmptyTMVarIO
 
-    when (isNothing $ host options) $ do
-        putStrLn "Specify host/ip with '-h <hostname>'"
+    when (isNothing (host options) && isNothing (unixSock options) ) $ do
+        putStrLn "Specify host/ip with '-h <hostname>' or a unix socket with -u <file name>"
         exitWith (ExitFailure 1)
 
-    addresses <- Socket.getAddrInfo (Just hints) (host options) (Just $ port options)
+    (addresses, versions) <- case unixSock options of
+        Nothing -> do
+          addrs <- Socket.getAddrInfo (Just hints) (host options)
+                       (Just $ port options)
+          return (addrs, supportedNodeToNodeVersions $ magic options)
+        Just fname ->
+          return ([ Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream
+                    Socket.defaultProtocol (Socket.SockAddrUnix fname)
+                    Nothing ]
+                 , supportedNodeToClientVersions $ magic options)
 
     laid <- async $ logger msgQueue $ json options
-    caids <- mapM (async . pingClient (Tracer $ doLog msgQueue) options) addresses
+    caids <- mapM (async . pingClient (Tracer $ doLog msgQueue) options
+                   versions) addresses
     res <- zip addresses <$> mapM waitCatch caids
     doLog msgQueue LogEnd
     wait laid
@@ -160,16 +197,20 @@ main = do
     doLog :: StrictTMVar IO LogMsg -> LogMsg -> IO ()
     doLog msgQueue msg = atomically $ putTMVar msgQueue msg
 
-data NodeToNodeVersion = NodeToNodeVersionV1 Word32
-                       | NodeToNodeVersionV2 Word32
-                       | NodeToNodeVersionV3 Word32
-                       | NodeToNodeVersionV4 Word32 Bool
-                       | NodeToNodeVersionV5 Word32 Bool
-                       | NodeToNodeVersionV6 Word32 Bool
-                       | NodeToNodeVersionV7 Word32 Bool
+data NodeVersion =       NodeToClientVersionV5 Word32
+                       | NodeToClientVersionV6 Word32
+                       | NodeToClientVersionV7 Word32
+                       | NodeToClientVersionV8 Word32
+                       | NodeToNodeVersionV1   Word32
+                       | NodeToNodeVersionV2   Word32
+                       | NodeToNodeVersionV3   Word32
+                       | NodeToNodeVersionV4   Word32 Bool
+                       | NodeToNodeVersionV5   Word32 Bool
+                       | NodeToNodeVersionV6   Word32 Bool
+                       | NodeToNodeVersionV7   Word32 Bool
                        deriving (Eq, Ord, Show)
 
-keepAliveReqEnc :: NodeToNodeVersion -> Word16 -> CBOR.Encoding
+keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
 keepAliveReqEnc (NodeToNodeVersionV7 _ _) cookie =
        CBOR.encodeListLen 2
     <> CBOR.encodeWord 0
@@ -178,11 +219,11 @@ keepAliveReqEnc _ cookie =
        CBOR.encodeWord 0
     <> CBOR.encodeWord16 cookie
 
-keepAliveReq :: NodeToNodeVersion -> Word16 -> ByteString
+keepAliveReq :: NodeVersion -> Word16 -> ByteString
 keepAliveReq v c = CBOR.toLazyByteString $ keepAliveReqEnc v c
 
 
-handshakeReqEnc :: [NodeToNodeVersion] -> CBOR.Encoding
+handshakeReqEnc :: [NodeVersion] -> CBOR.Encoding
 handshakeReqEnc [] = error "null version list"
 handshakeReqEnc versions =
        CBOR.encodeListLen 2
@@ -192,7 +233,19 @@ handshakeReqEnc versions =
                | v <- versions
                ]
   where
-    encodeVersion :: NodeToNodeVersion -> CBOR.Encoding
+    encodeVersion :: NodeVersion -> CBOR.Encoding
+    encodeVersion (NodeToClientVersionV5 magic) =
+          CBOR.encodeWord (5 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV6 magic) =
+          CBOR.encodeWord (6 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV7 magic) =
+          CBOR.encodeWord (7 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV8 magic) =
+          CBOR.encodeWord (8 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
     encodeVersion (NodeToNodeVersionV1 magic) =
           CBOR.encodeWord 1
        <> CBOR.encodeInt (fromIntegral magic)
@@ -215,7 +268,7 @@ handshakeReqEnc versions =
        <> CBOR.encodeInt (fromIntegral magic)
        <> CBOR.encodeBool mode
 
-handshakeReq :: [NodeToNodeVersion] -> ByteString
+handshakeReq :: [NodeVersion] -> ByteString
 handshakeReq [] = BL.empty
 handshakeReq versions = CBOR.toLazyByteString $ handshakeReqEnc versions
 
@@ -229,7 +282,7 @@ data HandshakeFailure = UnknownVersionInRsp Word
 
 newtype KeepAliveFailure = KeepAliveFailureKey Word deriving Show
 
-keepAliveRspDec :: NodeToNodeVersion
+keepAliveRspDec :: NodeVersion
                 -> CBOR.Decoder s (Either KeepAliveFailure Word16)
 keepAliveRspDec (NodeToNodeVersionV7 _ _) = do
     len <- CBOR.decodeListLen
@@ -243,7 +296,7 @@ keepAliveRspDec _ = do
          1 -> Right <$> CBOR.decodeWord16
          k -> return $ Left $ KeepAliveFailureKey k
 
-handshakeDec :: CBOR.Decoder s (Either HandshakeFailure NodeToNodeVersion)
+handshakeDec :: CBOR.Decoder s (Either HandshakeFailure NodeVersion)
 handshakeDec = do
     _ <- CBOR.decodeListLen
     key <- CBOR.decodeWord
@@ -270,21 +323,27 @@ handshakeDec = do
 
          k -> return $ Left $ UnknownKey k
   where
-    decodeVersion :: CBOR.Decoder s (Either HandshakeFailure NodeToNodeVersion)
+
+    decodeVersion :: CBOR.Decoder s (Either HandshakeFailure NodeVersion)
     decodeVersion = do
         version <- CBOR.decodeWord
-        case version of
-             1 -> Right . NodeToNodeVersionV1 <$> CBOR.decodeWord32
-             2 -> Right . NodeToNodeVersionV2 <$> CBOR.decodeWord32
-             3 -> Right . NodeToNodeVersionV3 <$> CBOR.decodeWord32
-             4 -> decodeWithMode NodeToNodeVersionV4
-             5 -> decodeWithMode NodeToNodeVersionV5
-             6 -> decodeWithMode NodeToNodeVersionV6
-             7 -> decodeWithMode NodeToNodeVersionV7
-             v -> return $ Left $ UnknownVersionInRsp v
+        case ( version `clearBit` nodeToClientVersionBit
+             , version `testBit`  nodeToClientVersionBit ) of
+             (1, False) -> Right . NodeToNodeVersionV1 <$> CBOR.decodeWord32
+             (2, False) -> Right . NodeToNodeVersionV2 <$> CBOR.decodeWord32
+             (3, False) -> Right . NodeToNodeVersionV3 <$> CBOR.decodeWord32
+             (4, False) -> decodeWithMode NodeToNodeVersionV4
+             (5, False) -> decodeWithMode NodeToNodeVersionV5
+             (6, False) -> decodeWithMode NodeToNodeVersionV6
+             (7, False) -> decodeWithMode NodeToNodeVersionV7
+             (5, True)  -> Right . NodeToClientVersionV5 <$> CBOR.decodeWord32
+             (6, True)  -> Right . NodeToClientVersionV6 <$> CBOR.decodeWord32
+             (7, True)  -> Right . NodeToClientVersionV7 <$> CBOR.decodeWord32
+             (8, True)  -> Right . NodeToClientVersionV8 <$> CBOR.decodeWord32
+             _ -> return $ Left $ UnknownVersionInRsp version
 
-    decodeWithMode :: (Word32 -> Bool -> NodeToNodeVersion)
-                   -> CBOR.Decoder s (Either HandshakeFailure NodeToNodeVersion)
+    decodeWithMode :: (Word32 -> Bool -> NodeVersion)
+                   -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
     decodeWithMode vnFun = do
         _ <- CBOR.decodeListLen
         magic <- CBOR.decodeWord32
@@ -358,30 +417,21 @@ toStatPoint ts host cookie sample td =
     stddev' = fromMaybe 0 (stddev td)
 
 
-pingClient :: Tracer IO LogMsg -> Options -> AddrInfo -> IO ()
-pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
+pingClient :: Tracer IO LogMsg -> Options -> [NodeVersion] -> AddrInfo -> IO ()
+pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
     (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
     Socket.close
     (\sd -> withTimeoutSerial $ \timeoutfn -> do
         !t0_s <- getMonotonicTime
         Socket.connect sd (Socket.addrAddress peer)
         !t0_e <- getMonotonicTime
-        (Just host, Just port) <- Socket.getNameInfo [Socket.NI_NUMERICHOST, Socket.NI_NUMERICSERV]
-                                      True True (Socket.addrAddress peer)
-        let peerStr = host ++ ":" ++ port
-        unless quiet $ printf "%s TCP rtt: %.3f\n" peerStr $ toSample t0_e t0_s
+        peerStr <- peerString
+        unless quiet $ printf "%s network rtt: %.3f\n" peerStr $ toSample t0_e t0_s
         let timeout = 30
             bearer = socketAsMuxBearer timeout nullTracer sd
 
         !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir
-                    (handshakeReq [ NodeToNodeVersionV1 magic
-                                  , NodeToNodeVersionV2 magic
-                                  , NodeToNodeVersionV3 magic
-                                  , NodeToNodeVersionV4 magic False
-                                  , NodeToNodeVersionV5 magic False
-                                  , NodeToNodeVersionV6 magic False
-                                  , NodeToNodeVersionV7 magic False
-                    ])
+                    (handshakeReq versions)
         (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
         unless quiet $ printf "%s handshake rtt: %s\n" peerStr (show $ diffTime t1_e t1_s)
         case CBOR.deserialiseFromBytes handshakeDec msg of
@@ -392,13 +442,29 @@ pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
              Right (_, Right version) -> do
                  unless quiet $ printf "%s Negotiated version %s\n" peerStr (show version)
                  case version of
-                      (NodeToNodeVersionV1 _) -> return ()
-                      (NodeToNodeVersionV2 _) -> return ()
+                      (NodeToNodeVersionV1   _) -> return ()
+                      (NodeToNodeVersionV2   _) -> return ()
+                      (NodeToClientVersionV5 _) -> return ()
+                      (NodeToClientVersionV6 _) -> return ()
+                      (NodeToClientVersionV7 _) -> return ()
+                      (NodeToClientVersionV8 _) -> return ()
                       _                       -> do
                           keepAlive bearer timeoutfn peerStr version (tdigest []) 0
 
     )
   where
+
+    peerString :: IO String
+    peerString =
+        case Socket.addrFamily peer of
+             Socket.AF_UNIX -> return $ show $ Socket.addrAddress peer
+             _ -> do
+                  (Just host, Just port) <- 
+                    Socket.getNameInfo
+                      [ Socket.NI_NUMERICHOST, Socket.NI_NUMERICSERV ]
+                      True True (Socket.addrAddress peer)
+                  return $ host ++ ":" ++ port
+
     toSample :: Time -> Time -> Double
     toSample t_e t_s = realToFrac $ diffTime t_e t_s
 
@@ -415,7 +481,7 @@ pingClient tracer Options{quiet, magic, json, maxCount} peer = bracket
     keepAlive :: MuxBearer IO
               -> TimeoutFn IO
               -> String
-              -> NodeToNodeVersion
+              -> NodeVersion
               -> TDigest 5
               -> Word32
               -> IO ()
