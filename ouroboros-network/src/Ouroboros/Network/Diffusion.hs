@@ -1,1330 +1,411 @@
-{-# LANGUAGE BangPatterns   #-}
-{-# LANGUAGE CPP            #-}
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE GADTs          #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase     #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-
-#if !defined(mingw32_HOST_OS)
-#define POSIX
-#endif
 
 module Ouroboros.Network.Diffusion
-  ( DiffusionTracers (..)
-  , DiffusionArguments (..)
-  , AcceptedConnectionsLimit (..)
-  , DiffusionApplications (..)
-  , LedgerPeersConsensusInterface (..)
-  , OuroborosApplication (..)
+  (
+  -- * Common API
+    DiffusionTracers
+  , DiffusionArguments
+  , getDiffusionArguments
+  , daDiffusionMode
+  , DiffusionApplications
   , runDataDiffusion
-    -- * Constants for /node-to-client/ diffusion
-  , local_PROTOCOL_IDLE_TIMEOUT
-  , local_TIME_WAIT_TIMEOUT
-    -- * re-exports
-  , simpleSingletonVersions
-  , ConnectionId (..)
-    -- ** Tracers
-  , nullTracers
   , DiffusionInitializationTracer(..)
-  , TraceLocalRootPeers (..)
-  , TracePublicRootPeers (..)
-  , TracePeerSelection (..)
-  , DebugPeerSelection (..)
-  , PeerSelectionActionsTrace (..)
-  , PeerSelectionCounters (..)
-  , ConnectionManagerTrace (..)
-  , ConnectionHandlerTrace (..)
-  , ConnectionManagerCounters (..)
-  , ServerTrace (..)
-  , InboundGovernorCounters (..)
-  , InboundGovernorTrace (..)
+  , DiffusionFailure
+  -- * Non P2P API
+  , nullTracersNonP2P
+  , mkDiffusionTracersNonP2P
+  , mkDiffusionArgumentsNonP2P
+  , mkDiffusionApplicationsNonP2P
+  -- * P2P API
+  , nullTracersP2P
+  , mkDiffusionTracersP2P
+  , mkDiffusionArgumentsP2P
+  , mkDiffusionApplicationsP2P
   )
   where
 
-import qualified Control.Monad.Class.MonadAsync as Async
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
-import           Control.Exception
-import           Control.Tracer (Tracer, nullTracer, traceWith)
-import           Data.Foldable (asum)
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Map (Map)
-import           Data.Maybe (catMaybes, maybeToList)
-import           Data.Set (Set)
-import           Data.Void (Void)
+import           Control.Monad.Class.MonadSTM (STM)
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Kind (Type)
-import           System.Random (newStdGen, split)
-#ifdef POSIX
-import qualified System.Posix.Signals as Signals
-#endif
+import           Data.Void (Void)
+import           Data.Map.Strict (Map)
+import           Data.Time (DiffTime)
+import           Data.Functor (void)
+import           Control.Exception (IOException)
+import           Control.Tracer (Tracer)
 
-import           Network.Mux ( MiniProtocolBundle (..)
-                             , MiniProtocolInfo (..)
-                             , MiniProtocolDirection (..)
-                             , MuxTrace (..)
-                             , WithMuxBearer (..)
-                             )
-import           Network.Mux.Timeout (withTimeoutSerial)
-import qualified Network.DNS as DNS
-import           Network.Socket (SockAddr (..), Socket, AddrInfo)
-import qualified Network.Socket as Socket
+import           Network.Mux (WithMuxBearer, MuxTrace)
+import           Network.Socket (SockAddr, Socket, AddrInfo)
 
-import           Ouroboros.Network.Snocket ( FileDescriptor
-                                           , LocalAddress
-                                           , LocalSnocket
-                                           , LocalSocket (..)
-                                           , SocketSnocket
-                                           , localSocketFileDescriptor
-                                           )
-import qualified Ouroboros.Network.Snocket as Snocket
-
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Protocol.Handshake.Codec
-
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                  ( TracePublicRootPeers
+                  , TraceLocalRootPeers
+                  )
+import           Ouroboros.Network.PeerSelection.Governor.Types
+                  ( TracePeerSelection
+                  , DebugPeerSelection
+                  , PeerSelectionCounters
+                  )
 import           Ouroboros.Network.ConnectionManager.Types
-#ifdef POSIX
-import qualified Ouroboros.Network.ConnectionManager.Types as ConnectionManager
-#endif
-import           Ouroboros.Network.ConnectionManager.Core
+                  ( ConnectionManagerTrace
+                  )
+import           Ouroboros.Network.PeerSelection.PeerStateActions
+                  ( PeerSelectionActionsTrace
+                  )
 import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.RethrowPolicy
-import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
-import           Ouroboros.Network.InboundGovernor.State (InboundGovernorCounters (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS ( resolveDomainAddresses
-                                                              , RelayAddress(..)
-                                                              , TraceLocalRootPeers(..)
-                                                              , TracePublicRootPeers(..)
+                  ( ConnectionHandlerTrace
+                  )
+import           Ouroboros.Network.Server2
+                  ( ServerTrace
+                  )
+import           Ouroboros.Network.InboundGovernor
+                  ( InboundGovernorTrace
+                  )
 
+import           Ouroboros.Network.NodeToNode
+                  ( RemoteAddress
+                  , NodeToNodeVersionData
+                  , DiffusionMode
+                  , NodeToNodeVersion
+                  , MiniProtocolParameters
+                  , AcceptedConnectionsLimit
+                  , IPSubscriptionTarget
+                  , DnsSubscriptionTarget
+                  )
+import qualified Ouroboros.Network.NodeToNode as NTN
+import           Ouroboros.Network.NodeToClient
+                  ( LocalAddress
+                  , NodeToClientVersionData
+                  , Versions
+                  , ConnectionId
+                  , NodeToClientVersion
+                  )
+import qualified Ouroboros.Network.NodeToClient as NTC
 
-
-
-
-
-                                                              , ioDNSActions
-                                                              )
-import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import           Ouroboros.Network.PeerSelection.Governor.Types ( ChurnMode (..)
-                                                                , TracePeerSelection (..)
-                                                                , DebugPeerSelection (..)
-                                                                , PeerSelectionCounters (..)
-                                                                )
-import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsensusInterface (..)
-                                                             , TraceLedgerPeers
-                                                             , NumberOfPeers
-                                                             , UseLedgerAfter (..)
-                                                             , runLedgerPeers)
+import           Ouroboros.Network.RethrowPolicy (RethrowPolicy)
+import           Ouroboros.Network.BlockFetch (FetchMode)
+import           Ouroboros.Network.Mux
+                 ( Bundle
+                 , MiniProtocol
+                 , MuxMode (..)
+                 , OuroborosApplication
+                 , ControlMessage
+                 )
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                 ( LedgerPeersConsensusInterface
+                 , TraceLedgerPeers
+                 , RelayAddress
+                 , UseLedgerAfter
+                 )
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-import           Ouroboros.Network.PeerSelection.PeerStateActions ( PeerSelectionActionsTrace (..)
-                                                                  , PeerStateActionsArguments (..)
-                                                                  , PeerConnectionHandle
-                                                                  , withPeerStateActions
-                                                                  )
-import           Ouroboros.Network.PeerSelection.Simple
-import           Ouroboros.Network.Server2 ( ServerArguments (..)
-                                           , ServerTrace (..)
-                                           )
-import qualified Ouroboros.Network.Server2 as Server
-import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
-                                                , NodeToClientVersionData)
-import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode ( ConnectionId (..)
-                                              , MiniProtocolParameters (..)
-                                              , NodeToNodeVersion (..)
-                                              , NodeToNodeVersionData (..)
-                                              , AcceptedConnectionsLimit (..)
-                                              , DiffusionMode (..)
-                                              , RemoteAddress
-                                              , chainSyncProtocolLimits
-                                              , blockFetchProtocolLimits
-                                              , txSubmissionProtocolLimits
-                                              , keepAliveProtocolLimits
-                                              , nodeToNodeHandshakeCodec
-                                              )
-import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 
+import qualified Ouroboros.Network.Diffusion.Common as Common
+import           Ouroboros.Network.Diffusion.Common
+                 ( DiffusionInitializationTracer
+                 , DiffusionFailure
+                 , daDiffusionMode
+                 , dtExtra
+                 , daExtra
+                 , dapExtra
+                 )
+import qualified Ouroboros.Network.Diffusion.P2P as P2P
+import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
 
--- TODO: use LocalAddress where appropriate rather than 'path'.
+-- | DiffusionTracers for either P2P or Non-P2P node
 --
-data DiffusionInitializationTracer
-  = RunServer !(NonEmpty SockAddr)
-  | RunLocalServer !LocalAddress
-  | UsingSystemdSocket !FilePath
-  -- Rename as 'CreateLocalSocket'
-  | CreateSystemdSocketForSnocketPath !FilePath
-  | CreatedLocalSocket !FilePath
-  | ConfiguringLocalSocket !FilePath !FileDescriptor
-  | ListeningLocalSocket !FilePath !FileDescriptor
-  | LocalSocketUp  !FilePath !FileDescriptor
-  -- Rename as 'CreateServerSocket'
-  | CreatingServerSocket !SockAddr
-  | ConfiguringServerSocket !SockAddr
-  | ListeningServerSocket !SockAddr
-  | ServerSocketUp !SockAddr
-  -- Rename as 'UnsupportedLocalSocketType'
-  | UnsupportedLocalSystemdSocket !SockAddr
-  -- Remove (this is impossible case), there's no systemd on Windows
-  | UnsupportedReadySocketCase
-  | DiffusionErrored SomeException
-    deriving Show
+newtype DiffusionTracers =
+    DiffusionTracers
+      (Common.DiffusionTracers
+        (Either NonP2P.DiffusionTracersExtra P2P.DiffusionTracersExtra))
 
+-- | NonP2P null tracers
+--
+nullTracersNonP2P :: DiffusionTracers
+nullTracersNonP2P =
+  DiffusionTracers (Common.nullTracers (Left NonP2P.nullTracers))
 
-data DiffusionTracers = DiffusionTracers {
-      dtMuxTracer
-        :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
+-- | P2P null tracers
+--
+nullTracersP2P :: DiffusionTracers
+nullTracersP2P =
+  DiffusionTracers (Common.nullTracers (Right P2P.nullTracers))
 
-      -- | Handshake protocol tracer
-    , dtHandshakeTracer
-        :: Tracer IO NodeToNode.HandshakeTr
-
-    , dtTraceLocalRootPeersTracer
-        :: Tracer IO (TraceLocalRootPeers IOException)
-
-    , dtTracePublicRootPeersTracer
-        :: Tracer IO TracePublicRootPeers
-
-    , dtTracePeerSelectionTracer
-        :: Tracer IO (TracePeerSelection SockAddr)
-
-    , dtDebugPeerSelectionInitiatorTracer
-        :: Tracer IO (DebugPeerSelection
-                       SockAddr
-                         (NodeToNodePeerConnectionHandle InitiatorMode Void))
-
-    , dtDebugPeerSelectionInitiatorResponderTracer
-        :: Tracer IO (DebugPeerSelection
-                       SockAddr
-                         (NodeToNodePeerConnectionHandle InitiatorResponderMode ()))
-
-    , dtTracePeerSelectionCounters
-        :: Tracer IO PeerSelectionCounters
-
-    , dtPeerSelectionActionsTracer
-        :: Tracer IO (PeerSelectionActionsTrace SockAddr)
-
-    , dtConnectionManagerTracer
-        :: Tracer IO (ConnectionManagerTrace
-                       SockAddr
-                       (ConnectionHandlerTrace NodeToNodeVersion NodeToNodeVersionData))
-
-    , dtServerTracer
-        :: Tracer IO (ServerTrace SockAddr)
-
-    , dtInboundGovernorTracer
-        :: Tracer IO (InboundGovernorTrace SockAddr)
-
-      --
-      -- NodeToClient tracers
-      --
-
-      -- | Mux tracer for local clients
-    , dtLocalMuxTracer
-        :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
-
-      -- | Handshake protocol tracer for local clients
-    , dtLocalHandshakeTracer
-        :: Tracer IO NodeToClient.HandshakeTr
-
-      -- | Connection manager tracer for local clients
-    , dtLocalConnectionManagerTracer
-        :: Tracer IO (ConnectionManagerTrace
-                       LocalAddress
-                       (ConnectionHandlerTrace NodeToClientVersion NodeToClientVersionData))
-
-      -- | Server tracer for local clients
-    , dtLocalServerTracer
-        :: Tracer IO (ServerTrace LocalAddress)
-
-      -- | Inbound protocol governor tracer for local clients
-    , dtLocalInboundGovernorTracer
-        :: Tracer IO (InboundGovernorTrace LocalAddress)
-
-      -- | Diffusion initialisation tracer
-    , dtDiffusionInitializationTracer
-        :: Tracer IO DiffusionInitializationTracer
-
-      -- | Ledger Peers tracer
-    , dtLedgerPeersTracer      :: Tracer IO TraceLedgerPeers
+-- | DiffusionArguments for either P2P or Non-P2P node
+--
+newtype DiffusionArguments m =
+  DiffusionArguments
+    { getDiffusionArguments
+        :: Common.DiffusionArguments
+            (Either NonP2P.DiffusionArgumentsExtra
+                    (P2P.DiffusionArgumentsExtra m))
     }
 
-
-nullTracers :: DiffusionTracers
-nullTracers = DiffusionTracers {
-    dtMuxTracer                                  = nullTracer
-  , dtHandshakeTracer                            = nullTracer
-  , dtTraceLocalRootPeersTracer                  = nullTracer
-  , dtTracePublicRootPeersTracer                 = nullTracer
-  , dtTracePeerSelectionTracer                   = nullTracer
-  , dtDebugPeerSelectionInitiatorTracer          = nullTracer
-  , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
-  , dtTracePeerSelectionCounters                 = nullTracer
-  , dtPeerSelectionActionsTracer                 = nullTracer
-  , dtConnectionManagerTracer                    = nullTracer
-  , dtServerTracer                               = nullTracer
-  , dtInboundGovernorTracer                      = nullTracer
-  , dtLocalMuxTracer                             = nullTracer
-  , dtLocalHandshakeTracer                       = nullTracer
-  , dtLocalConnectionManagerTracer               = nullTracer
-  , dtLocalServerTracer                          = nullTracer
-  , dtLocalInboundGovernorTracer                 = nullTracer
-  , dtDiffusionInitializationTracer              = nullTracer
-  , dtLedgerPeersTracer                          = nullTracer
-  }
-
--- | Network Node arguments
+-- | DiffusionApplications for either P2P or Non-P2P node
 --
-data DiffusionArguments m = DiffusionArguments {
-      daIPv4Address  :: Maybe (Either Socket.Socket AddrInfo)
-      -- ^ an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
-    , daIPv6Address  :: Maybe (Either Socket.Socket AddrInfo)
-      -- ^ an @IPV4@ socket ready to accept connections or an @IPv6@ addresses
-    , daLocalAddress :: Maybe (Either Socket.Socket FilePath)
-      -- ^ an @AF_UNIX@ socket ready to accept connections or an @AF_UNIX@
-      -- socket path
-    , daPeerSelectionTargets :: PeerSelectionTargets
-      -- ^ selection targets for the peer governor
+newtype DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
+  DiffusionApplications
+   (Common.DiffusionApplications
+     (Either
+        NonP2P.DiffusionApplicationsExtra
+        (P2P.DiffusionApplicationsExtra ntnAddr m))
+     ntnAddr
+     ntcAddr
+     ntnVersionData
+     ntcVersionData
+     m
+   )
 
-    , daReadLocalRootPeers  :: STM m [(Int, Map RelayAddress PeerAdvertise)]
-    , daReadPublicRootPeers :: STM m [RelayAddress]
-    , daReadUseLedgerAfter  :: STM m UseLedgerAfter
-
-    , daAcceptedConnectionsLimit :: AcceptedConnectionsLimit
-      -- ^ parameters for limiting number of accepted connections
-    , daDiffusionMode :: DiffusionMode
-      -- ^ run in initiator only mode
-
-    , daProtocolIdleTimeout :: DiffTime
-      -- ^ Configures timeout which starts when initiator and responder
-      -- mini-protocols became idle.  If the initiators \/ responders stay idle
-      -- for duration of the timeout, the connection will be closed (reset).
-      --
-      -- This timeout should be be long enough to allow the application to read
-      -- from ingress buffers.  The recommended value is @5s@ for nodes facing
-      -- public network.
-      --
-      --
-      -- Implementation detail
-      --
-      -- We use two timeouts that are started in either of the situation:
-      --
-      -- * if all initiator protocols are idle and responders become idle
-      -- * if all responders protocols are idle and initiators become idle
-
-    , daTimeWaitTimeout :: DiffTime
-      -- ^ Time for which /node-to-node/ connections are kept in
-      -- 'TerminatingState', it should correspond to the OS configured @TCP@
-      -- @TIME_WAIT@ timeout.
-      --
-      -- This timeout will apply to after a connection has been closed, its
-      -- purpose is to be resilient for delayed packets in the same way @TCP@
-      -- is using @TIME_WAIT@.
-    }
-
-
+-- | Construct a value of NonP2P DiffusionArguments data type.
+-- 'ouroboros-consensus' needs access to this constructor so we export this
+-- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
--- Constants
+mkDiffusionArgumentsNonP2P
+  :: Maybe (Either Socket AddrInfo)
+  -> Maybe (Either Socket AddrInfo)
+  -> Maybe (Either Socket FilePath)
+  -> AcceptedConnectionsLimit
+  -> DiffusionMode
+  -> IPSubscriptionTarget
+  -> [DnsSubscriptionTarget]
+  -> DiffusionArguments m
+mkDiffusionArgumentsNonP2P
+  a1 a2 a3 a4 a5 a6
+  a7 =
+    DiffusionArguments
+    $ Common.DiffusionArguments
+      a1 a2 a3 a4 a5
+    $ Left
+    $ NonP2P.DiffusionArgumentsExtra
+      a6 a7
+
+-- | Construct a value of P2P DiffusionArguments data type.
+-- 'ouroboros-consensus' needs access to this constructor so we export this
+-- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
+mkDiffusionArgumentsP2P
+  :: Maybe (Either Socket AddrInfo)
+  -> Maybe (Either Socket AddrInfo)
+  -> Maybe (Either Socket FilePath)
+  -> AcceptedConnectionsLimit
+  -> DiffusionMode
+  -> NTN.PeerSelectionTargets
+  -> STM m [(Int, Map RelayAddress NTN.PeerAdvertise)]
+  -> STM m [RelayAddress]
+  -> STM m UseLedgerAfter
+  -> DiffTime
+  -> DiffTime
+  -> DiffusionArguments m
+mkDiffusionArgumentsP2P
+  a1 a2 a3 a4 a5 a6
+  a7 a8 a9 a10 a11
+  =
+    DiffusionArguments
+    $ Common.DiffusionArguments
+      a1 a2 a3 a4 a5
+    $ Right
+    $ P2P.DiffusionArgumentsExtra
+      a6 a7 a8 a9 a10 a11
 
--- | Protocol inactivity timeout for local (e.g. /node-to-client/) connections.
+-- | Construct a value of NonP2P DiffusionApplications data type.
+-- 'ouroboros-consensus' needs access to this constructor so we export this
+-- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
-local_PROTOCOL_IDLE_TIMEOUT :: DiffTime
-local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
+mkDiffusionApplicationsNonP2P
+  :: Versions
+      NodeToNodeVersion
+      ntnVersionData
+      (Bundle
+         (ConnectionId ntnAddr
+          -> STM m ControlMessage
+          -> [MiniProtocol 'InitiatorMode ByteString m () Void]))
+  -> Versions
+       NodeToNodeVersion
+       ntnVersionData
+       (Bundle
+          (ConnectionId ntnAddr
+           -> STM m ControlMessage
+           -> [MiniProtocol 'InitiatorResponderMode ByteString m () ()]))
+  -> Versions
+       NodeToClientVersion
+       ntcVersionData
+       (OuroborosApplication 'ResponderMode ntcAddr ByteString m Void ())
+  -> LedgerPeersConsensusInterface m
+  -> NTC.ErrorPolicies
+  -> DiffusionApplications
+       ntnAddr
+       ntcAddr
+       ntnVersionData
+       ntcVersionData
+       m
+mkDiffusionApplicationsNonP2P
+  a1 a2 a3 a4 a5 =
+    DiffusionApplications
+    $ Common.DiffusionApplications
+      a1 a2 a3 a4
+    $ Left
+    $ NonP2P.DiffusionApplicationsExtra
+      a5
 
--- | Used to set 'cmWaitTimeout' for local (e.g. /node-to-client/) connections.
+-- | Construct a value of P2P DiffusionApplications data type.
+-- 'ouroboros-consensus' needs access to this constructor so we export this
+-- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
-local_TIME_WAIT_TIMEOUT :: DiffTime
-local_TIME_WAIT_TIMEOUT = 0
+mkDiffusionApplicationsP2P
+  :: Versions
+      NodeToNodeVersion
+      ntnVersionData
+      (Bundle
+         (ConnectionId ntnAddr
+          -> STM m ControlMessage
+          -> [MiniProtocol 'InitiatorMode ByteString m () Void]))
+  -> Versions
+       NodeToNodeVersion
+       ntnVersionData
+       (Bundle
+          (ConnectionId ntnAddr
+           -> STM m ControlMessage
+           -> [MiniProtocol 'InitiatorResponderMode ByteString m () ()]))
+  -> Versions
+       NodeToClientVersion
+       ntcVersionData
+       (OuroborosApplication 'ResponderMode ntcAddr ByteString m Void ())
+  -> LedgerPeersConsensusInterface m
+  -> MiniProtocolParameters
+  -> RethrowPolicy
+  -> RethrowPolicy
+  -> PeerMetrics m ntnAddr
+  -> STM m FetchMode
+  -> DiffusionApplications
+       ntnAddr
+       ntcAddr
+       ntnVersionData
+       ntcVersionData
+       m
+mkDiffusionApplicationsP2P
+  a1 a2 a3 a4 a5 a6
+  a7 a8 a9 =
+    DiffusionApplications
+    $ Common.DiffusionApplications
+      a1 a2 a3 a4
+    $ Right
+    $ P2P.DiffusionApplicationsExtra
+      a5 a6 a7 a8 a9
 
-
-socketAddressType :: Socket.SockAddr -> Maybe AddressType
-socketAddressType Socket.SockAddrInet {}  = Just IPv4Address
-socketAddressType Socket.SockAddrInet6 {} = Just IPv6Address
-socketAddressType addr                    = error ("socketAddressType: unexpected address " ++ show addr)
-
-
--- | Combine two uni-directional 'MiniProtocolBundle's into one bi-directional
--- one.
+-- | Construct a value of NonP2P DiffusionTracers data type.
+-- 'ouroboros-consensus' needs access to this constructor so we export this
+-- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
-combineMiniProtocolBundles :: MiniProtocolBundle InitiatorMode
-                           -> MiniProtocolBundle ResponderMode
-                           -> MiniProtocolBundle InitiatorResponderMode
-combineMiniProtocolBundles (MiniProtocolBundle initiators)
-                           (MiniProtocolBundle responders)
-    = MiniProtocolBundle $
-         [ MiniProtocolInfo { miniProtocolNum, miniProtocolLimits, miniProtocolDir = InitiatorDirection }
-         | MiniProtocolInfo { miniProtocolNum, miniProtocolLimits } <- initiators
-         ]
-      ++ [ MiniProtocolInfo { miniProtocolNum, miniProtocolLimits, miniProtocolDir = ResponderDirection }
-         | MiniProtocolInfo { miniProtocolNum, miniProtocolLimits } <- responders
-         ]
+mkDiffusionTracersNonP2P
+  :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
+  -> Tracer IO NTN.HandshakeTr
+  -> Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
+  -> Tracer IO NTC.HandshakeTr
+  -> Tracer IO DiffusionInitializationTracer
+  -> Tracer IO TraceLedgerPeers
+  -> Tracer IO (NTN.WithIPList (NTC.SubscriptionTrace SockAddr))
+  -> Tracer IO (NTN.WithDomainName (NTC.SubscriptionTrace SockAddr))
+  -> Tracer IO (NTN.WithDomainName NTN.DnsTrace)
+  -> Tracer IO (NTC.WithAddr SockAddr NTC.ErrorPolicyTrace)
+  -> Tracer IO (NTC.WithAddr LocalAddress NTC.ErrorPolicyTrace)
+  -> Tracer IO NTN.AcceptConnectionsPolicyTrace
+  -> DiffusionTracers
+mkDiffusionTracersNonP2P
+  a1 a2 a3 a4 a5 a6 a7 a8 a9
+  a10 a11 a12 =
+    DiffusionTracers
+    $ Common.DiffusionTracers
+      a1 a2 a3 a4 a5 a6
+    $ Left $ NonP2P.DiffusionTracersExtra
+      a7 a8 a9 a10 a11 a12
 
-
--- TODO: we need initiator only mode for Daedalus, there's no reason why it
--- should run a node-to-node server side.
+-- | Construct a value of P2P DiffusionTracers data type.
+-- ouroboros-consensus needs access to this constructor so we export this
+-- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
-data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
-    DiffusionApplications {
+mkDiffusionTracersP2P
+  :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
+  -> Tracer IO NTN.HandshakeTr
+  -> Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
+  -> Tracer IO NTC.HandshakeTr
+  -> Tracer IO DiffusionInitializationTracer
+  -> Tracer IO TraceLedgerPeers
+  -> Tracer IO (TraceLocalRootPeers IOException)
+  -> Tracer IO TracePublicRootPeers
+  -> Tracer IO (TracePeerSelection SockAddr)
+  -> Tracer
+       IO
+       (DebugPeerSelection
+          SockAddr (P2P.NodeToNodePeerConnectionHandle 'InitiatorMode Void))
+  -> Tracer
+       IO
+       (DebugPeerSelection
+          SockAddr
+          (P2P.NodeToNodePeerConnectionHandle 'InitiatorResponderMode ()))
+  -> Tracer IO PeerSelectionCounters
+  -> Tracer IO (PeerSelectionActionsTrace SockAddr)
+  -> Tracer
+       IO
+       (ConnectionManagerTrace
+          SockAddr
+          (ConnectionHandlerTrace
+             NodeToNodeVersion NodeToNodeVersionData))
+  -> Tracer IO (ServerTrace SockAddr)
+  -> Tracer IO (InboundGovernorTrace SockAddr)
+  -> Tracer
+       IO
+       (ConnectionManagerTrace
+          LocalAddress
+          (ConnectionHandlerTrace
+             NodeToClientVersion NodeToClientVersionData))
+  -> Tracer IO (ServerTrace LocalAddress)
+  -> Tracer IO (InboundGovernorTrace LocalAddress)
+  -> DiffusionTracers
+mkDiffusionTracersP2P
+  a1 a2 a3 a4 a5 a6 a7 a8 a9
+  a10 a11 a12 a13 a14 a15 a16
+  a17 a18 a19 =
+    DiffusionTracers
+    $ Common.DiffusionTracers
+      a1 a2 a3 a4 a5 a6
+    $ Right
+    $ P2P.DiffusionTracersExtra
+      a7 a8 a9 a10 a11 a12
+      a13 a14 a15 a16 a17
+      a18 a19
 
-      -- | NodeToNode initiator applications for initiator only mode.
-      --
-      -- TODO: we should accept one or the other, but not both:
-      -- 'daApplicationInitiatorMode', 'daApplicationInitiatorResponderMode'.
-      --
-      daApplicationInitiatorMode
-        :: Versions NodeToNodeVersion
-                    ntnVersionData
-                    (OuroborosBundle
-                      InitiatorMode ntnAddr
-                      ByteString m () Void)
-
-      -- | NodeToNode initiator & responder applications for bidirectional mode.
-      --
-    , daApplicationInitiatorResponderMode
-        :: Versions NodeToNodeVersion
-                    ntnVersionData
-                    (OuroborosBundle
-                      InitiatorResponderMode ntnAddr
-                      ByteString m () ())
-
-
-    -- | NodeToClient responder application (server role)
-    --
-    , daLocalResponderApplication
-        :: Versions NodeToClientVersion
-                    ntcVersionData
-                    (OuroborosApplication
-                      ResponderMode ntcAddr
-                      ByteString m Void ())
-    -- | configuration of mini-protocol parameters; they impact size limits of
-    -- mux ingress queues.
-    --
-    , daMiniProtocolParameters :: MiniProtocolParameters
-
-    -- | /node-to-node/ rethrow policy
-    --
-    , daRethrowPolicy      :: RethrowPolicy
-
-    -- | /node-to-client/ rethrow policy
-    --
-    , daLocalRethrowPolicy :: RethrowPolicy
-
-    , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
-      -- ^ Interface used to get peers from the current ledger.
-    , daPeerMetrics    :: PeerMetrics m ntnAddr
-    , daBlockFetchMode :: STM m FetchMode
-      -- ^ Used by churn-governor
-    }
-
-
--- TODO: add a tracer for these misconfiguration
-data DiffusionFailure = UnsupportedLocalSocketType
-                      | UnsupportedReadySocket -- Windows only
-                      | UnexpectedIPv4Address
-                      | UnexpectedIPv6Address
-                      | UnexpectedUnixAddress
-                      | NoSocket
-  deriving (Eq, Show)
-
-instance Exception DiffusionFailure
-
-
--- | Diffusion will always run initiator of node-to-node protocols, but in some
--- configurations, i.e. 'InitiatorOnlyDiffusionMode', it will not run the
--- responder side.  This type allows to reflect this.
---
--- This is only used internally by 'runDataDiffusion'; This type allows to
--- construct configuration upfront, before all services like connection manager
--- or server are initialised \/ started.
---
--- This is an existential wrapper for the higher order type @f :: MuxMode ->
--- Type@, like @'ConnectionManagerDataInMode' (mode :: MuxMode)@ below.
---
-data HasMuxMode (f :: MuxMode -> Type) where
-    HasInitiator :: !(f InitiatorMode)
-                 -> HasMuxMode f
-
-    HasInitiatorResponder
-                 :: !(f InitiatorResponderMode)
-                 -> HasMuxMode f
-
--- | Node-To-Node connection manager requires extra data when running in
--- 'InitiatorResponderMode'.
---
-data ConnectionManagerDataInMode (mode :: MuxMode) where
-    CMDInInitiatorMode
-      :: ConnectionManagerDataInMode InitiatorMode
-
-    CMDInInitiatorResponderMode
-      :: Server.ControlChannel IO
-          (Server.NewConnection
-            SockAddr
-            (Handle InitiatorResponderMode SockAddr ByteString IO () ()))
-      -> StrictTVar IO Server.InboundGovernorObservableState
-      -> ConnectionManagerDataInMode InitiatorResponderMode
-
-
---
--- Node-To-Client type aliases
---
--- Node-To-Client diffusion is only used in 'ResponderMode'.
---
-
-type NodeToClientHandle =
-    Handle ResponderMode LocalAddress ByteString IO Void ()
-
-type NodeToClientHandleError =
-    HandleError ResponderMode NodeToClientVersion
-
-type NodeToClientConnectionHandler =
-    ConnectionHandler
-      ResponderMode
-      (ConnectionHandlerTrace NodeToClientVersion NodeToClientVersionData)
-      LocalSocket
-      LocalAddress
-      NodeToClientHandle
-      NodeToClientHandleError
-      (NodeToClientVersion, NodeToClientVersionData)
-      IO
-
-type NodeToClientConnectionManagerArguments =
-    ConnectionManagerArguments
-      (ConnectionHandlerTrace NodeToClientVersion NodeToClientVersionData)
-      LocalSocket
-      LocalAddress
-      NodeToClientHandle
-      NodeToClientHandleError
-      (NodeToClientVersion, NodeToClientVersionData)
-      IO
-
-type NodeToClientConnectionManager =
-    ConnectionManager
-      ResponderMode
-      LocalSocket
-      LocalAddress
-      NodeToClientHandle
-      NodeToClientHandleError
-      IO
-
---
--- Node-To-Node type aliases
---
--- Node-To-Node diffusion runs in either 'InitiatorMode' or 'InitiatorResponderMode'.
---
-
-type NodeToNodeHandle (mode :: MuxMode) a =
-    Handle mode SockAddr ByteString IO () a
-
-type NodeToNodeHandleError (mode :: MuxMode) =
-    HandleError mode NodeToNodeVersion
-
-type NodeToNodeConnectionHandler (mode :: MuxMode) a =
-    ConnectionHandler
-      mode
-     (ConnectionHandlerTrace NodeToNodeVersion NodeToNodeVersionData)
-     Socket
-     SockAddr
-      (NodeToNodeHandle mode a)
-      (NodeToNodeHandleError mode)
-     (NodeToNodeVersion, NodeToNodeVersionData)
-     IO
-
-type NodeToNodeConnectionManagerArguments (mode :: MuxMode) a =
-    ConnectionManagerArguments
-      (ConnectionHandlerTrace NodeToNodeVersion NodeToNodeVersionData)
-      Socket
-      SockAddr
-      (NodeToNodeHandle mode a)
-      (NodeToNodeHandleError mode)
-      (NodeToNodeVersion, NodeToNodeVersionData)
-      IO
-
-type NodeToNodeConnectionManager (mode :: MuxMode) a =
-    ConnectionManager
-      mode
-      Socket
-      SockAddr
-      (NodeToNodeHandle mode a)
-      (NodeToNodeHandleError mode)
-      IO
-
---
--- Governor type aliases
---
-
-type NodeToNodePeerConnectionHandle (mode :: MuxMode) a =
-    PeerConnectionHandle
-      mode
-      SockAddr
-      ByteString
-      IO () a
-
-type NodeToNodePeerStateActions (mode :: MuxMode) a =
-    Governor.PeerStateActions
-      SockAddr
-      (NodeToNodePeerConnectionHandle mode a)
-      IO
-
-type NodeToNodePeerSelectionActions (mode :: MuxMode) a =
-    Governor.PeerSelectionActions
-      SockAddr
-      (NodeToNodePeerConnectionHandle mode a)
-      IO
-
-
--- | Main entry point for data diffusion service.  It allows to:
---
--- * connect to upstream peers;
--- * accept connection from downstream peers, if run in
---  'InitiatorAndResponderDiffusionMode'.
--- * runs a local service which allows to use node-to-client protocol to obtain
---   information from the running system.  This is used by 'cardano-cli' or
---   a wallet and a like local services.
+-- | runDataDiffusion for either P2P or Non-P2P node
 --
 runDataDiffusion
-    :: DiffusionTracers
-    -> DiffusionArguments IO
-    -> DiffusionApplications
-         RemoteAddress LocalAddress
-         NodeToNodeVersionData NodeToClientVersionData
-         IO
-    -> IO Void
-runDataDiffusion tracers
-                 DiffusionArguments { daIPv4Address
-                                    , daIPv6Address
-                                    , daLocalAddress
-                                    , daPeerSelectionTargets
-                                    , daReadLocalRootPeers
-                                    , daReadPublicRootPeers
-                                    , daReadUseLedgerAfter
-                                    , daAcceptedConnectionsLimit
-                                    , daDiffusionMode
-                                    , daProtocolIdleTimeout
-                                    , daTimeWaitTimeout
-                                    }
-                 DiffusionApplications { daApplicationInitiatorMode
-                                       , daApplicationInitiatorResponderMode
-                                       , daLocalResponderApplication
-                                       , daRethrowPolicy
-                                       , daMiniProtocolParameters
-                                       , daLocalRethrowPolicy
-                                       , daLedgerPeersCtx
-                                       , daPeerMetrics
-                                       , daBlockFetchMode
-                                       } =
-    -- We run two services: for /node-to-node/ and /node-to-client/.  The
-    -- naming convention is that we use /local/ prefix for /node-to-client/
-    -- related terms, as this is a local only service running over a unix
-    -- socket / windows named pipe.
-    handle (\e -> traceWith tracer (DiffusionErrored e)
-               >> throwIO e) $
-    withIOManager $ \iocp ->
-    withTimeoutSerial $ \timeout -> do
-
-    -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
-    mainThreadId <- myThreadId
-
-    cmIPv4Address
-      <- traverse (either Socket.getSocketName (pure . Socket.addrAddress))
-                  daIPv4Address
-    case cmIPv4Address of
-      Just SockAddrInet  {} -> pure ()
-      Just SockAddrInet6 {} -> throwIO UnexpectedIPv6Address
-      Just SockAddrUnix  {} -> throwIO UnexpectedUnixAddress
-      Nothing               -> pure ()
-
-    cmIPv6Address
-      <- traverse (either Socket.getSocketName (pure . Socket.addrAddress))
-                  daIPv6Address
-    case cmIPv6Address of
-      Just SockAddrInet {}  -> throwIO UnexpectedIPv4Address
-      Just SockAddrInet6 {} -> pure ()
-      Just SockAddrUnix {}  -> throwIO UnexpectedUnixAddress
-      Nothing               -> pure ()
-
-    -- control channel for the server; only required in
-    -- @'InitiatorResponderMode' :: 'MuxMode'@
-    cmdInMode
-      <- case daDiffusionMode of
-          InitiatorOnlyDiffusionMode ->
-            -- action which we pass to connection handler
-            pure (HasInitiator CMDInInitiatorMode)
-          InitiatorAndResponderDiffusionMode -> do
-            -- we pass 'Server.newOutboundConnection serverControlChannel' to
-            -- connection handler
-            HasInitiatorResponder <$>
-              (CMDInInitiatorResponderMode
-                <$> Server.newControlChannel
-                <*> Server.newObservableStateVarIO)
-
-    localControlChannel <- Server.newControlChannel
-    localServerStateVar <- Server.newObservableStateVarIO
-
-    -- RNGs used for picking random peers from the ledger and for
-    -- demoting/promoting peers.
-    rng <- newStdGen
-    let (ledgerPeersRng, rng') = split rng
-        (policyRng, rng'')  = split rng'
-        (churnRng, fuzzRng) = split rng''
-    policyRngVar <- newTVarIO policyRng
-
-    churnModeVar <- newTVarIO ChurnModeNormal
-
-    -- Request interface, supply the number of peers desired.
-    ledgerPeersReq <- newEmptyTMVarIO :: IO (StrictTMVar IO NumberOfPeers)
-    -- Response interface, returns a Set of peers. Nothing indicates that the
-    -- ledger hasn't caught up to `useLedgerAfter`. May return less than
-    -- the number of peers requested.
-    ledgerPeersRsp <- newEmptyTMVarIO :: IO (StrictTMVar IO (Maybe (Set SockAddr, DiffTime)))
-
-
-    peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
-        -- Start with a smaller number of active peers, the churn governor will increase
-        -- it to the configured value after a delay.
-        targetNumberOfActivePeers = min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
-      }
-
-    let -- snocket for remote communication.
-        snocket :: SocketSnocket
-        snocket = Snocket.socketSnocket iocp
-
-        localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
-
-        --
-        -- local connection manager
-        --
-        localThread :: Maybe (IO Void)
-        localThread =
-          case daLocalAddress of
-            Nothing -> Nothing
-            Just localAddr ->
-               Just $ withLocalSocket iocp tracer localAddr
-                       $ \localSnocket localSocket -> do
-                let localConnectionHandler :: NodeToClientConnectionHandler
-                    localConnectionHandler =
-                      makeConnectionHandler
-                        dtLocalMuxTracer
-                        SingResponderMode
-                        localMiniProtocolBundle
-                        HandshakeArguments {
-                            haHandshakeTracer = dtLocalHandshakeTracer,
-                            haHandshakeCodec = NodeToClient.nodeToClientHandshakeCodec,
-                            haVersionDataCodec = cborTermVersionDataCodec NodeToClient.nodeToClientCodecCBORTerm,
-                            haVersions =
-                                  (\(OuroborosApplication apps)
-                                    -> Bundle
-                                        (WithHot apps)
-                                        (WithWarm (\_ _ -> []))
-                                        (WithEstablished (\_ _ -> [])))
-                              <$> daLocalResponderApplication,
-                            haAcceptVersion = acceptableVersion,
-                            haTimeLimits = noTimeLimitsHandshake
-                          }
-                        (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
-
-                    localConnectionManagerArguments :: NodeToClientConnectionManagerArguments
-                    localConnectionManagerArguments =
-                      ConnectionManagerArguments {
-                          cmTracer              = dtLocalConnectionManagerTracer,
-                          cmTrTracer            = nullTracer, -- TODO
-                          cmMuxTracer           = dtLocalMuxTracer,
-                          cmIPv4Address         = Nothing,
-                          cmIPv6Address         = Nothing,
-                          cmAddressType         = const Nothing,
-                          cmSnocket             = localSnocket,
-                          connectionDataFlow    = uncurry localDataFlow,
-                          cmPrunePolicy         = Server.randomPrunePolicy localServerStateVar,
-                          cmConnectionsLimits   = localConnectionLimits,
-                          cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
-                          cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT
-                        }
-
-                withConnectionManager
-                  localConnectionManagerArguments
-                  localConnectionHandler
-                  classifyHandleError
-                  (InResponderMode localControlChannel)
-                  $ \(localConnectionManager :: NodeToClientConnectionManager) -> do
-
-                  --
-                  -- run local server
-                  --
-
-                  traceWith tracer . RunLocalServer
-                    =<< Snocket.getLocalAddr localSnocket localSocket
-
-                  Async.withAsync
-                    (Server.run
-                      ServerArguments {
-                          serverSockets               = localSocket :| [],
-                          serverSnocket               = localSnocket,
-                          serverTracer                = dtLocalServerTracer,
-                          serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
-                          serverControlChannel        = localControlChannel,
-                          serverConnectionLimits      = localConnectionLimits,
-                          serverConnectionManager     = localConnectionManager,
-                          serverObservableStateVar    = localServerStateVar,
-                          serverInboundIdleTimeout    = local_PROTOCOL_IDLE_TIMEOUT
-                        }) Async.wait
-
-        --
-        -- remote connection manager
-        --
-
-        remoteThread :: IO Void
-        remoteThread =
-          Async.withAsync
-            (runLedgerPeers
-              ledgerPeersRng
-              dtLedgerPeersTracer
-              daReadUseLedgerAfter
-              daLedgerPeersCtx
-              (resolveDomainAddresses
-                dtTracePublicRootPeersTracer
-                timeout
-                DNS.defaultResolvConf
-                ioDNSActions
-                )
-              (takeTMVar ledgerPeersReq)
-              (putTMVar ledgerPeersRsp)
-            )
-            $ \ledgerPeerThread ->
-            case cmdInMode of
-              -- InitiatorOnlyMode
-              --
-              -- Run peer selection only
-              HasInitiator CMDInInitiatorMode -> do
-                let connectionManagerArguments :: NodeToNodeConnectionManagerArguments InitiatorMode Void
-                    connectionManagerArguments =
-                      ConnectionManagerArguments {
-                          cmTracer              = dtConnectionManagerTracer,
-                          cmTrTracer            = nullTracer, -- TODO
-                          cmMuxTracer           = dtMuxTracer,
-                          cmIPv4Address,
-                          cmIPv6Address,
-                          cmAddressType         = socketAddressType,
-                          cmSnocket             = snocket,
-                          connectionDataFlow    = uncurry nodeDataFlow,
-                          cmPrunePolicy         =
-                            case cmdInMode of
-                              HasInitiator CMDInInitiatorMode ->
-                                -- Server is not running, it will not be able to
-                                -- advise which connections to prune.  It's also not
-                                -- expected that the governor targets will be larger
-                                -- than limits imposed by 'cmConnectionsLimits'.
-                                simplePrunePolicy,
-                          cmConnectionsLimits   = daAcceptedConnectionsLimit,
-                          cmTimeWaitTimeout     = daTimeWaitTimeout,
-                          cmOutboundIdleTimeout = daProtocolIdleTimeout
-                        }
-
-                    connectionHandler :: NodeToNodeConnectionHandler InitiatorMode Void
-                    connectionHandler =
-                      makeConnectionHandler
-                        dtMuxTracer
-                        SingInitiatorMode
-                        miniProtocolBundleInitiatorMode
-                        HandshakeArguments {
-                            haHandshakeTracer = dtHandshakeTracer,
-                            haHandshakeCodec = nodeToNodeHandshakeCodec,
-                            haVersionDataCodec = cborTermVersionDataCodec NodeToNode.nodeToNodeCodecCBORTerm,
-                            haVersions = daApplicationInitiatorMode,
-                            haAcceptVersion = acceptableVersion,
-                            haTimeLimits = timeLimitsHandshake
-                          }
-                        (mainThreadId, rethrowPolicy <> daRethrowPolicy)
-
-                withConnectionManager
-                  connectionManagerArguments
-                  connectionHandler
-                  classifyHandleError
-                  NotInResponderMode
-                  $ \(connectionManager :: NodeToNodeConnectionManager InitiatorMode Void) -> do
-#ifdef POSIX
-                  _ <- Signals.installHandler
-                    Signals.sigUSR1
-                    (Signals.Catch
-                      (do state <- ConnectionManager.readState connectionManager
-                          traceWith dtConnectionManagerTracer
-                                    (TrState state)
-                      )
-                    )
-                    Nothing
-#endif
-
-                  --
-                  -- peer state actions
-                  --
-                  -- Peer state actions run a job pool in the background which
-                  -- tracks threads forked by 'PeerStateActions'
-                  --
-
-                  withPeerStateActions
-                    timeout
-                    PeerStateActionsArguments {
-                        spsTracer = dtPeerSelectionActionsTracer,
-                        spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
-                        spsCloseConnectionTimeout = Diffusion.Policies.closeConnectionTimeout,
-                        spsConnectionManager = connectionManager
-                      }
-                    $ \(peerStateActions :: NodeToNodePeerStateActions InitiatorMode Void) ->
-                    --
-                    -- Run peer selection (p2p governor)
-                    --
-
-                    withPeerSelectionActions
-                      dtTraceLocalRootPeersTracer
-                      dtTracePublicRootPeersTracer
-                      timeout
-                      (readTVar peerSelectionTargetsVar)
-                      daReadLocalRootPeers
-                      daReadPublicRootPeers
-                      peerStateActions
-                      (putTMVar ledgerPeersReq)
-                      (takeTMVar ledgerPeersRsp)
-                      $ \mbLocalPeerRootProviderThread
-                         (peerSelectionActions
-                            :: NodeToNodePeerSelectionActions
-                                 InitiatorMode Void) ->
-
-                        Async.withAsync
-                          (Governor.peerSelectionGovernor
-                            dtTracePeerSelectionTracer
-                            dtDebugPeerSelectionInitiatorTracer
-                            dtTracePeerSelectionCounters
-                            fuzzRng
-                            peerSelectionActions
-                            (Diffusion.Policies.simplePeerSelectionPolicy
-                              policyRngVar (readTVar churnModeVar) daPeerMetrics))
-                          $ \governorThread ->
-                            Async.withAsync
-                              (Governor.peerChurnGovernor
-                                dtTracePeerSelectionTracer
-                                daPeerMetrics
-                                churnModeVar
-                                churnRng
-                                daBlockFetchMode
-                                daPeerSelectionTargets
-                                peerSelectionTargetsVar)
-                              $ \churnGovernorThread ->
-
-                                -- wait for any thread to fail
-                                snd <$> Async.waitAny
-                                  (maybeToList mbLocalPeerRootProviderThread
-                                  ++ [ governorThread
-                                     , ledgerPeerThread
-                                     , churnGovernorThread
-                                     ])
-
-
-              -- InitiatorResponderMode
-              --
-              -- Run peer selection and the server.
-              --
-              HasInitiatorResponder (CMDInInitiatorResponderMode controlChannel observableStateVar) -> do
-                let connectionManagerArguments :: NodeToNodeConnectionManagerArguments InitiatorResponderMode ()
-                    connectionManagerArguments =
-                      ConnectionManagerArguments {
-                          cmTracer              = dtConnectionManagerTracer,
-                          cmTrTracer            = nullTracer, -- TODO
-                          cmMuxTracer           = dtMuxTracer,
-                          cmIPv4Address,
-                          cmIPv6Address,
-                          cmAddressType         = socketAddressType,
-                          cmSnocket             = snocket,
-                          connectionDataFlow    = uncurry nodeDataFlow,
-                          cmPrunePolicy         =
-                            case cmdInMode of
-                              HasInitiatorResponder (CMDInInitiatorResponderMode _ serverStateVar) ->
-                                Server.randomPrunePolicy serverStateVar,
-                          cmConnectionsLimits   = daAcceptedConnectionsLimit,
-                          cmTimeWaitTimeout     = daTimeWaitTimeout,
-                          cmOutboundIdleTimeout = daProtocolIdleTimeout
-                        }
-
-                    connectionHandler :: NodeToNodeConnectionHandler InitiatorResponderMode ()
-                    connectionHandler =
-                      makeConnectionHandler
-                         dtMuxTracer
-                         SingInitiatorResponderMode
-                         miniProtocolBundleInitiatorResponderMode
-                         HandshakeArguments {
-                             haHandshakeTracer = dtHandshakeTracer,
-                             haHandshakeCodec = nodeToNodeHandshakeCodec,
-                             haVersionDataCodec = cborTermVersionDataCodec NodeToNode.nodeToNodeCodecCBORTerm,
-                             haVersions = daApplicationInitiatorResponderMode,
-                             haAcceptVersion = acceptableVersion,
-                             haTimeLimits = timeLimitsHandshake
-                           }
-                         (mainThreadId, rethrowPolicy <> daRethrowPolicy)
-
-                withConnectionManager
-                  connectionManagerArguments
-                  connectionHandler
-                  classifyHandleError
-                  (InResponderMode controlChannel)
-                  $ \(connectionManager :: NodeToNodeConnectionManager InitiatorResponderMode ()) -> do
-#ifdef POSIX
-                  _ <- Signals.installHandler
-                    Signals.sigUSR1
-                    (Signals.Catch
-                      (do state <- ConnectionManager.readState connectionManager
-                          traceWith dtConnectionManagerTracer
-                                    (TrState state)
-                      )
-                    )
-                    Nothing
-#endif
-                  --
-                  -- peer state actions
-                  --
-                  -- Peer state actions run a job pool in the background which
-                  -- tracks threads forked by 'PeerStateActions'
-                  --
-
-                  withPeerStateActions
-                    timeout
-                    PeerStateActionsArguments {
-                        spsTracer = dtPeerSelectionActionsTracer,
-                        spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
-                        spsCloseConnectionTimeout = Diffusion.Policies.closeConnectionTimeout,
-                        spsConnectionManager = connectionManager
-                      }
-                    $ \(peerStateActions
-                          :: NodeToNodePeerStateActions
-                               InitiatorResponderMode ()) ->
-
-                    --
-                    -- Run peer selection (p2p governor)
-                    --
-
-                    withPeerSelectionActions
-                      dtTraceLocalRootPeersTracer
-                      dtTracePublicRootPeersTracer
-                      timeout
-                      (readTVar peerSelectionTargetsVar)
-                      daReadLocalRootPeers
-                      daReadPublicRootPeers
-                      peerStateActions
-                      (putTMVar ledgerPeersReq)
-                      (takeTMVar ledgerPeersRsp)
-                      $ \mbLocalPeerRootProviderThread
-                        (peerSelectionActions
-                           :: NodeToNodePeerSelectionActions
-                                InitiatorResponderMode ()) ->
-
-                      Async.withAsync
-                        (Governor.peerSelectionGovernor
-                          dtTracePeerSelectionTracer
-                          dtDebugPeerSelectionInitiatorResponderTracer
-                          dtTracePeerSelectionCounters
-                          fuzzRng
-                          peerSelectionActions
-                          (Diffusion.Policies.simplePeerSelectionPolicy
-                            policyRngVar (readTVar churnModeVar) daPeerMetrics))
-                        $ \governorThread -> do
-                        let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
-                            mkAddr addr = ( Socket.addrFamily  addr
-                                          , Socket.addrAddress addr
-                                          )
-
-                        withSockets tracer snocket
-                                    (catMaybes
-                                      [ fmap (fmap mkAddr) daIPv4Address
-                                      , fmap (fmap mkAddr) daIPv6Address
-                                      ])
-                                    $ \sockets addresses -> do
-                          --
-                          -- Run server
-                          --
-                          traceWith tracer (RunServer addresses)
-                          Async.withAsync
-                            (Server.run
-                              ServerArguments {
-                                  serverSockets               = sockets,
-                                  serverSnocket               = snocket,
-                                  serverTracer                = dtServerTracer,
-                                  serverInboundGovernorTracer = dtInboundGovernorTracer,
-                                  serverControlChannel        = controlChannel,
-                                  serverConnectionLimits      = daAcceptedConnectionsLimit,
-                                  serverConnectionManager     = connectionManager,
-                                  serverInboundIdleTimeout    = daProtocolIdleTimeout,
-                                  serverObservableStateVar    = observableStateVar
-                                })
-                                $ \serverThread ->
-                                  Async.withAsync
-                                    (Governor.peerChurnGovernor
-                                      dtTracePeerSelectionTracer
-                                      daPeerMetrics
-                                      churnModeVar
-                                      churnRng
-                                      daBlockFetchMode
-                                      daPeerSelectionTargets
-                                      peerSelectionTargetsVar)
-                                    $ \churnGovernorThread ->
-
-                                      -- wait for any thread to fail
-                                      snd <$> Async.waitAny
-                                        (maybeToList mbLocalPeerRootProviderThread
-                                        ++ [ serverThread
-                                           , governorThread
-                                           , ledgerPeerThread
-                                           , churnGovernorThread
-                                           ])
-
-    Async.runConcurrently
-      $ asum
-      $ Async.Concurrently <$>
-          ( remoteThread
-          : maybeToList localThread
-          )
-
-  where
-    DiffusionTracers { dtMuxTracer
-                     , dtHandshakeTracer
-                     , dtTracePeerSelectionTracer
-                     , dtDebugPeerSelectionInitiatorTracer
-                     , dtDebugPeerSelectionInitiatorResponderTracer
-                     , dtTracePeerSelectionCounters
-                     , dtPeerSelectionActionsTracer
-                     , dtTraceLocalRootPeersTracer
-                     , dtTracePublicRootPeersTracer
-                     , dtConnectionManagerTracer
-                     , dtServerTracer
-                     , dtInboundGovernorTracer
-                     , dtLocalMuxTracer
-                     , dtLocalHandshakeTracer
-                     , dtLocalConnectionManagerTracer
-                     , dtLocalServerTracer
-                     , dtLocalInboundGovernorTracer
-                     , dtLedgerPeersTracer
-                     -- the tracer
-                     , dtDiffusionInitializationTracer = tracer
-                     } = tracers
-
-
-    miniProtocolBundleInitiatorResponderMode :: MiniProtocolBundle InitiatorResponderMode
-    miniProtocolBundleInitiatorResponderMode =
-      combineMiniProtocolBundles miniProtocolBundleInitiatorMode
-                                 miniProtocolBundleResponderMode
-
-    -- node-to-node responder bundle; it is only used in combination with
-    -- the node-to-node initiator bundle defined below.
-    --
-    miniProtocolBundleResponderMode :: MiniProtocolBundle ResponderMode
-    miniProtocolBundleResponderMode = MiniProtocolBundle
-      [ MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 2,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = chainSyncProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 3,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = blockFetchProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 4,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = txSubmissionProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 8,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = keepAliveProtocolLimits daMiniProtocolParameters
-        }
-      -- TODO: `tip-sample` protocol
-      ]
-
-    -- node-to-node initiator bundle
-    miniProtocolBundleInitiatorMode :: MiniProtocolBundle InitiatorMode
-    miniProtocolBundleInitiatorMode = MiniProtocolBundle
-      [ MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 2,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = chainSyncProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 3,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = blockFetchProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 4,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = txSubmissionProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 8,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = keepAliveProtocolLimits daMiniProtocolParameters
-        }
-      -- TODO: `tip-sample` protocol
-      ]
-
-    -- node-to-client protocol bundle
-    localMiniProtocolBundle :: MiniProtocolBundle ResponderMode
-    localMiniProtocolBundle = MiniProtocolBundle
-        [ MiniProtocolInfo {
-            miniProtocolNum    = MiniProtocolNum 5,
-            miniProtocolDir    = ResponderDirectionOnly,
-            miniProtocolLimits = maximumMiniProtocolLimits
-          }
-        , MiniProtocolInfo {
-            miniProtocolNum    = MiniProtocolNum 6,
-            miniProtocolDir    = ResponderDirectionOnly,
-            miniProtocolLimits = maximumMiniProtocolLimits
-          }
-        , MiniProtocolInfo {
-            miniProtocolNum    = MiniProtocolNum 7,
-            miniProtocolDir    = ResponderDirectionOnly,
-            miniProtocolLimits = maximumMiniProtocolLimits
-          }
-        ]
-      where
-        maximumMiniProtocolLimits :: MiniProtocolLimits
-        maximumMiniProtocolLimits =
-            MiniProtocolLimits {
-              maximumIngressQueue = 0xffffffff
-            }
-
-    -- Only the 'IOManagerError's are fatal, all the other exceptions in the
-    -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
-    -- this is so).
-    rethrowPolicy =
-      RethrowPolicy $ \_ctx err ->
-        case fromException err of
-          Just (_ :: IOManagerError) -> ShutdownNode
-          Nothing                    -> mempty
-
---
--- Data flow
---
-
--- | For Node-To-Node protocol, any connection which negotiated at least
--- 'NodeToNodeV_7' version and did not declared 'InitiatorOnlyDiffusionMode'
--- will run in 'Duplex' mode.   All connections from lower versions or one that
--- declared themselves as 'InitiatorOnly' will run in 'UnidirectionalMode'
---
-nodeDataFlow :: NodeToNodeVersion
-             -> NodeToNodeVersionData
-             -> DataFlow
-nodeDataFlow v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiffusionMode }
-                 | v >= NodeToNodeV_7
-                 = Duplex
-nodeDataFlow _ _ = Unidirectional
-
-
--- | For Node-To-Client protocol all connection are considered 'Unidirectional'.
---
-localDataFlow :: NodeToClientVersion
-              -> NodeToClientVersionData
-              -> DataFlow
-localDataFlow _ _ = Unidirectional
-
-
---
--- Socket utility functions
---
-
-withSockets :: Tracer IO DiffusionInitializationTracer
-            -> SocketSnocket
-            -> [Either Socket.Socket (Socket.Family, SockAddr)]
-            -> (NonEmpty Socket.Socket -> NonEmpty Socket.SockAddr -> IO a)
-            -> IO a
-withSockets tracer sn addresses k = go [] addresses
-  where
-    go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
-    go []   []       = throw NoSocket
-    go !acc []       =
-      let acc' = NonEmpty.fromList (reverse acc)
-      in (k $! (fst <$> acc')) $! (snd <$> acc')
-
-    withSocket :: Either Socket.Socket (Socket.Family, SockAddr)
-               -> ((Socket.Socket, Socket.SockAddr) -> IO a)
-               -> IO a
-    withSocket (Left sock) f =
-      bracket
-        (pure sock)
-        (Snocket.close sn)
-        $ \_sock -> do
-          !addr <- Socket.getSocketName sock
-          f (sock, addr)
-    withSocket (Right (fam, !addr)) f =
-      bracket
-        (do traceWith tracer (CreatingServerSocket addr)
-            Snocket.open sn (Snocket.SocketFamily fam))
-        (Snocket.close sn)
-        $ \sock -> do
-          traceWith tracer $ ConfiguringServerSocket addr
-          Snocket.bind sn sock addr
-          traceWith tracer $ ListeningServerSocket addr
-          Snocket.listen sn sock
-          traceWith tracer $ ServerSocketUp addr
-          f (sock, addr)
-
-
-withLocalSocket :: IOManager
-                -> Tracer IO DiffusionInitializationTracer
-                -> Either Socket.Socket FilePath
-                -> (LocalSnocket -> LocalSocket -> IO a)
-                -> IO a
-withLocalSocket iocp tracer localAddress k =
-  bracket
-    (
-      case localAddress of
-#if defined(mingw32_HOST_OS)
-         -- Windows uses named pipes so can't take advantage of existing sockets
-         Left _ -> traceWith tracer UnsupportedReadySocketCase
-                >> throwIO UnsupportedReadySocket
-#else
-         Left sd -> do
-             addr <- Socket.getSocketName sd
-             case addr of
-                  (Socket.SockAddrUnix path) -> do
-                    traceWith tracer (UsingSystemdSocket path)
-                    return (Left ( Snocket.localSnocket iocp path
-                                 , (LocalSocket sd)
-                                 ))
-                  _  -> do
-                    traceWith tracer $ UnsupportedLocalSystemdSocket addr
-                    throwIO UnsupportedLocalSocketType
-#endif
-         Right addr -> do
-             let sn :: LocalSnocket
-                 sn = Snocket.localSnocket iocp addr
-             traceWith tracer $ CreateSystemdSocketForSnocketPath addr
-             sd <- Snocket.open sn Snocket.LocalFamily
-             traceWith tracer $ CreatedLocalSocket addr
-             return (Right (sn, sd, addr))
-    )
-    -- We close the socket here, even if it was provided to us.
-    (\case
-      Left  (sn, sd)    -> Snocket.close sn sd
-      Right (sn, sd, _) -> Snocket.close sn sd)
-    $ \case
-      -- unconfigured socket
-      Right (sn, sd, addr) -> do
-        traceWith tracer . ConfiguringLocalSocket addr
-           =<< localSocketFileDescriptor sd
-        Snocket.bind sn sd (NodeToClient.LocalAddress addr)
-        traceWith tracer . ListeningLocalSocket addr
-           =<< localSocketFileDescriptor sd
-        Snocket.listen sn sd
-        traceWith tracer . LocalSocketUp addr
-           =<< localSocketFileDescriptor sd
-        k sn sd
-
-      -- pre-configured systemd socket
-      Left (sn, sd) -> k sn sd
+  :: DiffusionTracers
+  -> DiffusionArguments IO
+  -> DiffusionApplications
+       RemoteAddress
+       LocalAddress
+       NodeToNodeVersionData
+       NodeToClientVersionData
+       IO
+  -> IO ()
+runDataDiffusion
+  (DiffusionTracers
+    tr@Common.DiffusionTracers
+       { dtExtra })
+  (DiffusionArguments
+    dargs@Common.DiffusionArguments
+       { daExtra })
+  (DiffusionApplications
+    dapps@Common.DiffusionApplications
+       { dapExtra }) =
+  case (dtExtra, daExtra, dapExtra) of
+    (Left t, Left da, Left dapp)    ->
+      NonP2P.runDataDiffusion
+        (tr { dtExtra = t})
+        (dargs { daExtra = da })
+        (dapps { dapExtra = dapp })
+    (Right t, Right da, Right dapp) ->
+      void
+        $ P2P.runDataDiffusion
+            (tr { dtExtra = t})
+            (dargs { daExtra = da })
+            (dapps { dapExtra = dapp })
+    _                               ->
+      error "Non-matching arguments, every argument should be on the same side!"
