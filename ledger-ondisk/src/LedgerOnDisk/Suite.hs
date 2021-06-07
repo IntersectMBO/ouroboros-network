@@ -25,16 +25,16 @@ import Test.Tasty.QuickCheck
 import LedgerOnDisk.Diff
 import Data.Monoid
 
-prop_applyD :: (Eq v, Show v, Arbitrary v) => proxy v -> Maybe v -> D v -> D v -> Property
+prop_applyD :: (Eq v, Show v, Arbitrary v, Semigroup v) => proxy v -> Maybe v -> Diff v -> Diff v -> Property
 prop_applyD _ mb_i d1 d2 = applyD (applyD mb_i d1) d2 === applyD mb_i (d1 <> d2)
 
-prop_applyDForK :: (Eq v, Show v, Arbitrary v) => proxy v -> Int -> D v -> D v -> HashMap Int v -> Property
+prop_applyDForK :: (Eq v, Show v, Arbitrary v, Semigroup v) => proxy v -> Int -> Diff v -> Diff v -> HashMap Int v -> Property
 prop_applyDForK _ k d1 d2 m = applyDforK k d2 (applyDforK k d1 m) === applyDforK k (d1 <> d2) m
 
-prop_applyDtoHashMap :: (Eq v, Show v, Arbitrary v) => proxy v -> HashMap Int (D v) -> HashMap Int (D v) -> HashMap Int v -> Property
+prop_applyDtoHashMap :: (Eq v, Show v, Arbitrary v, Semigroup v) => proxy v -> HashMap Int (Diff v) -> HashMap Int (Diff v) -> HashMap Int v -> Property
 prop_applyDtoHashMap _ d1 d2 m = applyDtoHashMap d2 (applyDtoHashMap d1 m) === applyDtoHashMap (HashMap.unionWith (<>) d1 d2) m
 
-prop_applyDtoHashMaybeMap :: (Eq v, Show v, Arbitrary v) => proxy v -> HashMap Int (D v) -> HashMap Int (D v) -> HashMap Int (Maybe v) -> Property
+prop_applyDtoHashMaybeMap :: (Semigroup v, Eq v, Show v, Arbitrary v) => proxy v -> HashMap Int (Diff v) -> HashMap Int (Diff v) -> HashMap Int (Maybe v) -> Property
 prop_applyDtoHashMaybeMap _ d1 d2 m = r1 === r2 .&&. r1 `check_same_size` m
   where
     check_same_size x y = length x == length y
@@ -46,9 +46,9 @@ testManyLaws _ name = testGroup name . fmap ($ Proxy @ a)
 
 testLaws :: TestTree
 testLaws = testGroup "Laws"
-    [ testManyLaws (Proxy @ (LedgerOnDisk.Class.D (Sum Int))) "D"
+    [ testManyLaws (Proxy @ (LedgerOnDisk.Class.Diff (Sum Int))) "Diff"
       [Laws.testEqLaws, Laws.testSemigroupLaws, Laws.testMonoidLaws ]
-    , testManyLaws (Proxy @ (LedgerOnDisk.WWB.WriteBufferMeasure Int Int)) "WriteBufferMeasure"
+    , testManyLaws (Proxy @ (LedgerOnDisk.WWB.WriteBufferMeasure Int (Sum Int))) "WriteBufferMeasure"
       [Laws.testSemigroupLaws, Laws.testMonoidLaws]
     -- , testGroup "WWBT" $
     --     [ Laws.testReaderMonadLaws
@@ -69,7 +69,7 @@ tests :: TestTree
 tests = testGroup "LedgerOnDisk"
   [ LedgerOnDisk.QSM.Suite.tests
   , testLaws
-  , testGroup "D"
+  , testGroup "Diff"
     [ testProperty "prop_applyD" $ prop_applyD (Proxy @ (Sum Int))
     , testProperty "prop_applyDForK" $ prop_applyDForK (Proxy @ (Sum Int))
     , testProperty "prop_applyDtoHashMap" $ prop_applyDtoHashMap (Proxy @ (Sum Int))

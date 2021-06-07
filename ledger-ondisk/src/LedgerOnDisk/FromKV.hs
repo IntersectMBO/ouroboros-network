@@ -37,7 +37,7 @@ class MonadKV1 f m | m -> f where
   data KV1Err m
   data ReadSet m
   prepare :: DMap f Proxy -> m (ReadSet m)
-  submit :: ReadSet m -> (DMap f Identity -> (DMap f D, a)) -> m (Either (KV1Err m) a)
+  submit :: ReadSet m -> (DMap f Identity -> (DMap f Diff, a)) -> m (Either (KV1Err m) a)
 
 -- An instance "a" of this class is isomorphic to (O a, DMap (K a) Identity)
 class GCompare (K a) => FromKV' a where
@@ -46,7 +46,7 @@ class GCompare (K a) => FromKV' a where
   fromKV :: O a -> DMap (K a) Identity -> a
   toKV :: a -> (O a, DMap (K a) Identity)
 
-  applyDiff :: DMap (K a) D -> a -> a
+  applyDiff :: DMap (K a) Diff -> a -> a
 
 class (K a ~ f, FromKV' a) => FromKV f a where
 instance (K a ~ f, FromKV' a) => FromKV f a where
@@ -81,12 +81,18 @@ load other dm_px = prepare dm_px >>= \rs -> do
   r <- submit rs $ \dm_i -> (mempty, fromKV other dm_i)
   either throwError pure r
 
+-- foo :: DMap f Identity -> (DMap Diff Identity, a)
+-- foo  =runKVStateT $ do
+--         my_ledger_state <- kvsGet
+--         let (r :: DSum f Diff) = ledger_rule my_ledgerSTate
+--         kvsApplyD r
+--         pure a
 
-newtype KVStateT s m a = KVStateT { unKVStateT :: StateT (s, DMap (K s) D) m a }
+newtype KVStateT s m a = KVStateT { unKVStateT :: StateT (s, DMap (K s) Diff) m a }
   deriving stock (Functor)
   deriving newtype (Applicative, Monad, MonadTrans)
 
-kvsApplyD :: (Monad m, FromKV f s) => DSum f D -> KVStateT s m ()
+kvsApplyD :: (Monad m, FromKV f s) => DSum f Diff -> KVStateT s m ()
 kvsApplyD (k :=> v) = KVStateT $ modify' $ \(s, dm_d) -> let
   singleton_dm = DMap.singleton k v
   new_dm_d = DMap.unionWithKey (\_k v1 v2 -> v1 <> v2) dm_d singleton_dm
@@ -95,6 +101,6 @@ kvsApplyD (k :=> v) = KVStateT $ modify' $ \(s, dm_d) -> let
 kvsGet :: (Monad m, FromKV f s) => KVStateT s m s
 kvsGet = KVStateT . gets $ \(s,_) -> s
 
-runKVStateT :: Functor m => KVStateT s m a -> s -> m (s, DMap (K s) D, a)
+runKVStateT :: Functor m => KVStateT s m a -> s -> m (s, DMap (K s) Diff, a)
 runKVStateT (KVStateT m) s = runStateT m (s, DMap.empty) <&> \case
   (a, (s', dm_d)) -> (s', dm_d, a)

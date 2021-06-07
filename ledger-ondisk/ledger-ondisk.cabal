@@ -22,7 +22,8 @@ library
   -- other-extensions:
   exposed-modules:     LedgerOnDisk
                        LedgerOnDisk.Suite
-                       LedgerOnDisk.FromKV
+                       LedgerOnDisk.Diff
+                       -- LedgerOnDisk.FromKV
                        LedgerOnDisk.Class
                        LedgerOnDisk.ClassWithExceptions
                        LedgerOnDisk.Simple
@@ -30,11 +31,15 @@ library
                        LedgerOnDisk.WWB
                        LedgerOnDisk.QSM.Model
                        LedgerOnDisk.QSM.Suite
-                       -- LedgerOnDisk.App.WWB
                        LedgerOnDisk.Util
-                       LedgerOnDisk.Diff
                        LedgerOnDisk.Util.RandomTime
                        LedgerOnDisk.Util.Trace
+
+                       -- -- LedgerOnDisk.App.WWB
+                       Example
+                       ExampleAbstractMap
+                       MapClass
+                       KVableClass
 
                        Test.Tasty.QuickCheckStateMachine
   build-depends:       base,
@@ -65,7 +70,8 @@ library
                        contra-tracer,
                        dependent-map,
                        dependent-sum,
-                       generics-sop
+                       generics-sop,
+                       lens
 
   hs-source-dirs:      src
   default-language:    Haskell2010
@@ -84,8 +90,8 @@ test-suite ledger-ondisk-test
                        quickcheck-instances
   ghc-options:         -Wall
 
-executable wwb
-   main-is:            wwb.hs
-   hs-source-dirs:     app
-   ghc-options:        -threaded -rtsopts
-   build-depends:      ledger-ondisk
+-- executable wwb
+--    main-is:            wwb.hs
+--    hs-source-dirs:     app
+--    ghc-options:        -threaded -rtsopts
+--    build-depends:      ledger-ondisk

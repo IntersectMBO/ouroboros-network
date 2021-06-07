@@ -48,7 +48,7 @@ querySingle :: (Hashable k) => k -> QueryScope k
 querySingle = coerce . HashSet.singleton
 
 
-type KVOperationResult k v = HashMap k (D v)
+type KVOperationResult k v = HashMap k (Diff v)
 type KVOperation k v a = (HashMap k (Maybe v) -> (KVOperationResult k v, a))
 
 data BaseError where

@@ -14,7 +14,7 @@ import Data.HashMap.Strict(HashMap,(!))
 -- import qualified Data.HashMap.Strict as HashMap
 
 -- for reexport
-import LedgerOnDisk.Class as X(ReadSet, Err, D(..), querySingle, QueryScope)
+import LedgerOnDisk.Class as X(ReadSet, Err, Diff(..), querySingle, QueryScope)
 
 type MonadKV k v m = (Class.MonadKV k v m, MonadThrow m, Exception (Class.Err m))
 

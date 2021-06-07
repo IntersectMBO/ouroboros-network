@@ -66,20 +66,47 @@ tick t = do
           _ -> pure ()
     modify' $ HashMap.delete submit_tick
 
+
+
+
 main :: IO ()
 main = do
   -- TODO validate Config
   let
     lag = 50
-    query_on_prepare = True
     querySize = 90
     keySpace = 1000
     ticks = 10000
     yellInterval = 1000
+    cfg = Config{..}
 
-    flush_policy = FPMaxWidth 500
+    init_map = _
+    num_tickets = _
+    tracer0 = _
+    delay_range = _
 
-  let c = Config{..}
+
+  withWWBConfig init_map num_tickets tracer0 delay_range $ \(tracer, wwbCfg) -> do
+
+    q_mv <- newMVar (Seq.empty)
+
+    let prepare_thread = flip runReaderT cfg . flip runStateT 0 . (\x -> runWWBTWithConfig x tracer wwbCfg) . forever $ do
+          qs <- getQueryScope
+          rs <- prepareOperation qs
+
+          liftIO $ modifyMVar_ q_mv $ pure . (`snoc` rs)
+          modify' (+ 1)
+
+        submit_thread = flip runReaderT cfg . flip runStateT 0 . (\x -> runWWBTWithConfig x tracer wwbCfg) . forever $ do
+          rs <- modifyMVar q_mv $
+
+
+
+
+
+        forever $ do
+
+
 
   let mainLoop = do
         liftIO . putStrLn $ "Starting"

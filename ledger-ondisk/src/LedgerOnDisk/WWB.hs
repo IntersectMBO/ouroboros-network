@@ -60,7 +60,7 @@ import Data.PriorityQueue.FingerTree
 import qualified Data.Semigroup as Semi
 import Data.Time
 import Data.TreeDiff
-import GHC.Generics hiding (D)
+import GHC.Generics
 import LedgerOnDisk.Class
 import LedgerOnDisk.Pure
 import LedgerOnDisk.Util
@@ -99,20 +99,20 @@ instance (Eq k, Hashable k, Semigroup v) => Monoid (MonoidalHashMap k v) where
   mempty = MonoidalHashMap HashMap.empty
 
 data WriteBufferEntry k v
-  = WBEQueryCompleted {qId :: !QueryId, qResult :: !(HashMap k (D v))}
+  = WBEQueryCompleted {qId :: !QueryId, qResult :: !(HashMap k (Diff v))}
   deriving stock (Eq, Show)
 
 data WriteBufferMeasure k v = WriteBufferMeasure
-  { wbmSummary :: !(HashMap k (D v))
+  { wbmSummary :: !(HashMap k (Diff v))
   , wbmCount :: !Int
   }
   deriving stock (Eq, Show, Generic)
-  -- deriving (Semigroup, Monoid) via MonoidalHashMap k (D v)
+  -- deriving (Semigroup, Monoid) via MonoidalHashMap k (Diff v)
 
-instance (Eq k, Hashable k) => Semigroup (WriteBufferMeasure k v) where
+instance (Semigroup v, Eq k, Hashable k) => Semigroup (WriteBufferMeasure k v) where
   WriteBufferMeasure s1 c1 <> WriteBufferMeasure s2 c2 = WriteBufferMeasure (coerce merged_maps) (coerce merged_counts)
     where
-      merged_maps :: MonoidalHashMap k (D v)
+      merged_maps :: MonoidalHashMap k (Diff v)
       merged_maps = coerce s1 <> coerce s2
       merged_counts :: Sum Int
       merged_counts = coerce c1 <> coerce c2
@@ -120,14 +120,14 @@ instance (Eq k, Hashable k) => Semigroup (WriteBufferMeasure k v) where
 emptyWriteBufferMeasure :: WriteBufferMeasure k v
 emptyWriteBufferMeasure  = WriteBufferMeasure HashMap.empty 0
 
-instance (Eq k, Hashable k) => Monoid (WriteBufferMeasure k v) where
+instance (Semigroup v, Eq k, Hashable k) => Monoid (WriteBufferMeasure k v) where
   mempty = emptyWriteBufferMeasure
 
 instance (Eq k, Hashable k, Arbitrary k, Arbitrary v) => Arbitrary (WriteBufferMeasure k v) where
   arbitrary = WriteBufferMeasure <$> (fmap (fmap unArbNonmonoidalD) arbitrary) <*> arbitrary
   shrink WriteBufferMeasure{..} = [ WriteBufferMeasure ft count | (fmap unArbNonmonoidalD -> ft, count) <- shrink (coerce wbmSummary, wbmCount)]
 
-instance (Eq k, Hashable k) => Measured (WriteBufferMeasure k v) (WriteBufferEntry k v) where
+instance (Semigroup v, Eq k, Hashable k) => Measured (WriteBufferMeasure k v) (WriteBufferEntry k v) where
   measure WBEQueryCompleted {qResult} = WriteBufferMeasure { wbmSummary = qResult, wbmCount = 1}
 
 type WriteBuffer k v = FingerTree (WriteBufferMeasure k v) (WriteBufferEntry k v)
@@ -176,7 +176,7 @@ data WWBLoopTrace
   deriving stock (Show, Generic)
 
 wwbLoop ::
-  (MonadIO m, Eq k, Hashable k) =>
+  (MonadIO m, Eq k, Hashable k, Semigroup v) =>
   Tracer IO WWBLoopTrace ->
   WWBConfig k v ->
   m ()
@@ -252,7 +252,7 @@ wwbLoop tracer WWBConfig
       pure a
     putMVar sResultMV res
 
-wwbConfigIO :: (MonadIO m, Eq k, Hashable k) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> m (Tracer m WWBTrace, WWBConfig k v)
+wwbConfigIO :: (Semigroup v, MonadIO m, Eq k, Hashable k) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> m (Tracer m WWBTrace, WWBConfig k v)
 wwbConfigIO initial_map numTickets tracer0 randomQueryDelayRange = liftIO $ do
   let tracer = natTracer liftIO tracer0
   backingStoreMV <- newMVar initial_map
@@ -274,14 +274,14 @@ closeWWbConfig WWBConfig {loopAsync} = liftIO $ do
     Left e -> throwM e
     Right () -> pure ()
 
-withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> ((Tracer m WWBTrace, WWBConfig k v) -> m a) -> m a
+withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k, Semigroup v) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> ((Tracer m WWBTrace, WWBConfig k v) -> m a) -> m a
 withWWBConfig hm num_tickets tracer range f = bracket
   (wwbConfigIO hm num_tickets tracer range)
   (closeWWbConfig . snd)
   f
 
 runWWBT ::
-  (Eq k, Hashable k, MonadIO m, MonadMask m) =>
+  (Eq k, Hashable k, MonadIO m, MonadMask m, Semigroup v) =>
   WWBT k v m a ->
   Tracer IO WWBTrace ->
   HashMap k v ->
