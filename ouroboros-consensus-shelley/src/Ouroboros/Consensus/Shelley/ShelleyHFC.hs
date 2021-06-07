@@ -13,8 +13,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | This module is the Shelley Hard Fork Combinator
-module Ouroboros.Consensus.Shelley.ShelleyHFC
-  ( ProtocolShelley
+module Ouroboros.Consensus.Shelley.ShelleyHFC (
+    ProtocolShelley
   , ShelleyBlockHFC
   , ShelleyPartialLedgerConfig (..)
   , forecastAcrossShelley

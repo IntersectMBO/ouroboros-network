@@ -5,9 +5,7 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Consensus.Shelley.Node.Serialisation
-  (
-  ) where
+module Ouroboros.Consensus.Shelley.Node.Serialisation () where
 
 import           Control.Exception (Exception, throw)
 import qualified Data.ByteString.Lazy as Lazy

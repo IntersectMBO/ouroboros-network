@@ -17,8 +17,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Consensus.HardFork.Combinator.B
-  ( BlockB (..)
+module Test.Consensus.HardFork.Combinator.B (
+    BlockB (..)
   , ProtocolB
   , blockForgingB
   , safeZoneB

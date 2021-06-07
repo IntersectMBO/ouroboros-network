@@ -13,8 +13,8 @@
 --
 -- > import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis (ByronSpecGenesis)
 -- > import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
-module Ouroboros.Consensus.ByronSpec.Ledger.Genesis
-  ( ByronSpecGenesis (..)
+module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
+    ByronSpecGenesis (..)
   , modFeeParams
   , modPBftThreshold
   , modPParams

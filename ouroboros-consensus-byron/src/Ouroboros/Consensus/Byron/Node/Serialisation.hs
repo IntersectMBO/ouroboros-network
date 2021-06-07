@@ -24,6 +24,7 @@ import           Cardano.Prelude (cborError)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
+import qualified Cardano.Chain.Genesis as Genesis
 
 import           Ouroboros.Network.Block (Serialised (..), unwrapCBORinCBOR,
                      wrapCBORinCBOR)
@@ -40,7 +41,6 @@ import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Protocol
 import           Ouroboros.Consensus.HardFork.Combinator (PartialLedgerConfig)
-import qualified Cardano.Chain.Genesis as Genesis
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk

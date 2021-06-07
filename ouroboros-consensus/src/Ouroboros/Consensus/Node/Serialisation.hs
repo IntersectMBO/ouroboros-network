@@ -36,11 +36,11 @@ import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 
 {-------------------------------------------------------------------------------
   NodeToNode

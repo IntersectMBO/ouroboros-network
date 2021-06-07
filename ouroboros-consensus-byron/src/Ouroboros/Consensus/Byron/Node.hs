@@ -8,8 +8,8 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Byron.Node
-  ( PBftSignatureThreshold (..)
+module Ouroboros.Consensus.Byron.Node (
+    PBftSignatureThreshold (..)
   , ProtocolParamsByron (..)
   , byronBlockForging
   , defaultPBftSignatureThreshold

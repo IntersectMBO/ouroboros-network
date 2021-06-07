@@ -18,8 +18,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 {-# LANGUAGE UndecidableInstances     #-}
-module Ouroboros.Consensus.Shelley.Node
-  ( MaxMajorProtVer (..)
+module Ouroboros.Consensus.Shelley.Node (
+    MaxMajorProtVer (..)
   , ProtocolParamsAllegra (..)
   , ProtocolParamsAlonzo (..)
   , ProtocolParamsMary (..)
