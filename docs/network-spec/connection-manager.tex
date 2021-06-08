@@ -1,7 +1,263 @@
-%include polycode.fmt
+%% ODER: format ==         = "\mathrel{==}"
+%% ODER: format /=         = "\neq "
+%
+%
+\makeatletter
+\@ifundefined{lhs2tex.lhs2tex.sty.read}%
+  {\@namedef{lhs2tex.lhs2tex.sty.read}{}%
+   \newcommand\SkipToFmtEnd{}%
+   \newcommand\EndFmtInput{}%
+   \long\def\SkipToFmtEnd#1\EndFmtInput{}%
+  }\SkipToFmtEnd
 
-%format ^  = " "
-%format ^^ = "\;"
+\newcommand\ReadOnlyOnce[1]{\@ifundefined{#1}{\@namedef{#1}{}}\SkipToFmtEnd}
+\usepackage{amstext}
+\usepackage{amssymb}
+\usepackage{stmaryrd}
+\DeclareFontFamily{OT1}{cmtex}{}
+\DeclareFontShape{OT1}{cmtex}{m}{n}
+  {<5><6><7><8>cmtex8
+   <9>cmtex9
+   <10><10.95><12><14.4><17.28><20.74><24.88>cmtex10}{}
+\DeclareFontShape{OT1}{cmtex}{m}{it}
+  {<-> ssub * cmtt/m/it}{}
+\newcommand{\texfamily}{\fontfamily{cmtex}\selectfont}
+\DeclareFontShape{OT1}{cmtt}{bx}{n}
+  {<5><6><7><8>cmtt8
+   <9>cmbtt9
+   <10><10.95><12><14.4><17.28><20.74><24.88>cmbtt10}{}
+\DeclareFontShape{OT1}{cmtex}{bx}{n}
+  {<-> ssub * cmtt/bx/n}{}
+\newcommand{\tex}[1]{\text{\texfamily#1}}	% NEU
+
+\newcommand{\Sp}{\hskip.33334em\relax}
+
+
+\newcommand{\Conid}[1]{\mathit{#1}}
+\newcommand{\Varid}[1]{\mathit{#1}}
+\newcommand{\anonymous}{\kern0.06em \vbox{\hrule\@width.5em}}
+\newcommand{\plus}{\mathbin{+\!\!\!+}}
+\newcommand{\bind}{\mathbin{>\!\!\!>\mkern-6.7mu=}}
+\newcommand{\rbind}{\mathbin{=\mkern-6.7mu<\!\!\!<}}% suggested by Neil Mitchell
+\newcommand{\sequ}{\mathbin{>\!\!\!>}}
+\renewcommand{\leq}{\leqslant}
+\renewcommand{\geq}{\geqslant}
+\usepackage{polytable}
+
+%mathindent has to be defined
+\@ifundefined{mathindent}%
+  {\newdimen\mathindent\mathindent\leftmargini}%
+  {}%
+
+\def\resethooks{%
+  \global\let\SaveRestoreHook\empty
+  \global\let\ColumnHook\empty}
+\newcommand*{\savecolumns}[1][default]%
+  {\g@addto@macro\SaveRestoreHook{\savecolumns[#1]}}
+\newcommand*{\restorecolumns}[1][default]%
+  {\g@addto@macro\SaveRestoreHook{\restorecolumns[#1]}}
+\newcommand*{\aligncolumn}[2]%
+  {\g@addto@macro\ColumnHook{\column{#1}{#2}}}
+
+\resethooks
+
+\newcommand{\onelinecommentchars}{\quad-{}- }
+\newcommand{\commentbeginchars}{\enskip\{-}
+\newcommand{\commentendchars}{-\}\enskip}
+
+\newcommand{\visiblecomments}{%
+  \let\onelinecomment=\onelinecommentchars
+  \let\commentbegin=\commentbeginchars
+  \let\commentend=\commentendchars}
+
+\newcommand{\invisiblecomments}{%
+  \let\onelinecomment=\empty
+  \let\commentbegin=\empty
+  \let\commentend=\empty}
+
+\visiblecomments
+
+\newlength{\blanklineskip}
+\setlength{\blanklineskip}{0.66084ex}
+
+\newcommand{\hsindent}[1]{\quad}% default is fixed indentation
+\let\hspre\empty
+\let\hspost\empty
+\newcommand{\NB}{\textbf{NB}}
+\newcommand{\Todo}[1]{$\langle$\textbf{To do:}~#1$\rangle$}
+
+\EndFmtInput
+\makeatother
+%
+%
+%
+%
+%
+%
+% This package provides two environments suitable to take the place
+% of hscode, called "plainhscode" and "arrayhscode". 
+%
+% The plain environment surrounds each code block by vertical space,
+% and it uses \abovedisplayskip and \belowdisplayskip to get spacing
+% similar to formulas. Note that if these dimensions are changed,
+% the spacing around displayed math formulas changes as well.
+% All code is indented using \leftskip.
+%
+% Changed 19.08.2004 to reflect changes in colorcode. Should work with
+% CodeGroup.sty.
+%
+\ReadOnlyOnce{polycode.fmt}%
+\makeatletter
+
+\newcommand{\hsnewpar}[1]%
+  {{\parskip=0pt\parindent=0pt\par\vskip #1\noindent}}
+
+% can be used, for instance, to redefine the code size, by setting the
+% command to \small or something alike
+\newcommand{\hscodestyle}{}
+
+% The command \sethscode can be used to switch the code formatting
+% behaviour by mapping the hscode environment in the subst directive
+% to a new LaTeX environment.
+
+\newcommand{\sethscode}[1]%
+  {\expandafter\let\expandafter\hscode\csname #1\endcsname
+   \expandafter\let\expandafter\endhscode\csname end#1\endcsname}
+
+% "compatibility" mode restores the non-polycode.fmt layout.
+
+\newenvironment{compathscode}%
+  {\par\noindent
+   \advance\leftskip\mathindent
+   \hscodestyle
+   \let\\=\@normalcr
+   \let\hspre\(\let\hspost\)%
+   \pboxed}%
+  {\endpboxed\)%
+   \par\noindent
+   \ignorespacesafterend}
+
+\newcommand{\compaths}{\sethscode{compathscode}}
+
+% "plain" mode is the proposed default.
+% It should now work with \centering.
+% This required some changes. The old version
+% is still available for reference as oldplainhscode.
+
+\newenvironment{plainhscode}%
+  {\hsnewpar\abovedisplayskip
+   \advance\leftskip\mathindent
+   \hscodestyle
+   \let\hspre\(\let\hspost\)%
+   \pboxed}%
+  {\endpboxed%
+   \hsnewpar\belowdisplayskip
+   \ignorespacesafterend}
+
+\newenvironment{oldplainhscode}%
+  {\hsnewpar\abovedisplayskip
+   \advance\leftskip\mathindent
+   \hscodestyle
+   \let\\=\@normalcr
+   \(\pboxed}%
+  {\endpboxed\)%
+   \hsnewpar\belowdisplayskip
+   \ignorespacesafterend}
+
+% Here, we make plainhscode the default environment.
+
+\newcommand{\plainhs}{\sethscode{plainhscode}}
+\newcommand{\oldplainhs}{\sethscode{oldplainhscode}}
+\plainhs
+
+% The arrayhscode is like plain, but makes use of polytable's
+% parray environment which disallows page breaks in code blocks.
+
+\newenvironment{arrayhscode}%
+  {\hsnewpar\abovedisplayskip
+   \advance\leftskip\mathindent
+   \hscodestyle
+   \let\\=\@normalcr
+   \(\parray}%
+  {\endparray\)%
+   \hsnewpar\belowdisplayskip
+   \ignorespacesafterend}
+
+\newcommand{\arrayhs}{\sethscode{arrayhscode}}
+
+% The mathhscode environment also makes use of polytable's parray 
+% environment. It is supposed to be used only inside math mode 
+% (I used it to typeset the type rules in my thesis).
+
+\newenvironment{mathhscode}%
+  {\parray}{\endparray}
+
+\newcommand{\mathhs}{\sethscode{mathhscode}}
+
+% texths is similar to mathhs, but works in text mode.
+
+\newenvironment{texthscode}%
+  {\(\parray}{\endparray\)}
+
+\newcommand{\texths}{\sethscode{texthscode}}
+
+% The framed environment places code in a framed box.
+
+\def\codeframewidth{\arrayrulewidth}
+\RequirePackage{calc}
+
+\newenvironment{framedhscode}%
+  {\parskip=\abovedisplayskip\par\noindent
+   \hscodestyle
+   \arrayrulewidth=\codeframewidth
+   \tabular{@{}|p{\linewidth-2\arraycolsep-2\arrayrulewidth-2pt}|@{}}%
+   \hline\framedhslinecorrect\\{-1.5ex}%
+   \let\endoflinesave=\\
+   \let\\=\@normalcr
+   \(\pboxed}%
+  {\endpboxed\)%
+   \framedhslinecorrect\endoflinesave{.5ex}\hline
+   \endtabular
+   \parskip=\belowdisplayskip\par\noindent
+   \ignorespacesafterend}
+
+\newcommand{\framedhslinecorrect}[2]%
+  {#1[#2]}
+
+\newcommand{\framedhs}{\sethscode{framedhscode}}
+
+% The inlinehscode environment is an experimental environment
+% that can be used to typeset displayed code inline.
+
+\newenvironment{inlinehscode}%
+  {\(\def\column##1##2{}%
+   \let\>\undefined\let\<\undefined\let\\\undefined
+   \newcommand\>[1][]{}\newcommand\<[1][]{}\newcommand\\[1][]{}%
+   \def\fromto##1##2##3{##3}%
+   \def\nextline{}}{\) }%
+
+\newcommand{\inlinehs}{\sethscode{inlinehscode}}
+
+% The joincode environment is a separate environment that
+% can be used to surround and thereby connect multiple code
+% blocks.
+
+\newenvironment{joincode}%
+  {\let\orighscode=\hscode
+   \let\origendhscode=\endhscode
+   \def\endhscode{\def\hscode{\endgroup\def\@currenvir{hscode}\\}\begingroup}
+   %\let\SaveRestoreHook=\empty
+   %\let\ColumnHook=\empty
+   %\let\resethooks=\empty
+   \orighscode\def\hscode{\endgroup\def\@currenvir{hscode}}}%
+  {\origendhscode
+   \global\let\hscode=\orighscode
+   \global\let\endhscode=\origendhscode}%
+
+\makeatother
+\EndFmtInput
+%
+
 
 % TODO:
 % Discussion of interaction between inbound protocol governor and connection
@@ -248,7 +504,7 @@ Consider however what is required to make this scenario work.
 This leads to a couple observations:
 \begin{enumerate}
 \item that in the general case we need to support any number of transitions
-      between unidirectional and duplex} use of a connection; and
+      between unidirectional and duplex use of a connection; and
 \item that once a bearer has been established the relationship between the two
       ends is mostly symmetric: the original direction hardly matters.
 \end{enumerate}
@@ -388,11 +644,11 @@ interactions.
 \end{description}
 
 \begin{designalternative}
-The code currently uses the names |requestOutboundConnection| and
-|unregisterOutboundConnection|. The names `request' and 'unregister' are not a
+The code currently uses the names \ensuremath{\Varid{requestOutboundConnection}} and
+\ensuremath{\Varid{unregisterOutboundConnection}}. The names `request' and 'unregister' are not a
 pair of names that fit well together. The dual of `unregister' would be
 'register'. A more consistent pair of names might be `acquire' and `release',
-and hence API names |acquireOutboundConnection| and |releaseOutboundConnection|.
+and hence API names \ensuremath{\Varid{acquireOutboundConnection}} and \ensuremath{\Varid{releaseOutboundConnection}}.
 \end{designalternative}
 
 It is worth noting again that the P2P governor does not require exclusive
@@ -663,39 +919,88 @@ perspective of the local node.
 
 The connection manager exposes two methods to register a connection:
 
-\begin{code}
-data Connected peerAddr handle handleError
-  -- || We are connected and mux is running.
-  = Connected    !(ConnectionId peerAddr) !handle
-
-  -- || There was an error during handshake negotiation.
-  | Disconnected !(ConnectionId peerAddr) !(Maybe handleError)
-
--- || Include outbound connection into 'ConnectionManager'.
-
---   This executes:
---
--- * \(Reserve\) to \(Negotiated^{*}_{Outbound}\) transitions
--- * \(PromotedToWarm^{Duplex}_{Local}\) transition
--- * \(Awake^{Duplex}_{Local}\) transition
-requestOutboundConnection
-  ::  HasInitiator muxMode ~ True
-  =>  ConnectionManager muxMode socket peerAddr handle handleError m
-  ->  peerAddr
-  ->  m (Connected peerAddr handle handleError)
-
--- Include an inbound connection into 'ConnectionManager'.
-
---   This executes:
---
--- * \(Accepted\) \/ \(Overwritten\) to \(Negotiated^{*}_{Inbound}\) transitions
-includeInboundConnection
-  ::  HasResponder muxMode ~ True
-  =>  ConnectionManager muxMode socket peerAddr handle handleError m
-  ->  socket
-  ->  peerAddr
-  ->  m (Connected peerAddr handle handleError)
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{7}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{18}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\mathbf{data}\;\Conid{Connected}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  | We are connected and mux is running.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathrel{=}\Conid{Connected}{}\<[18]%
+\>[18]{}\mathbin{!}(\Conid{ConnectionId}\;\Varid{peerAddr})\mathbin{!}\Varid{handle}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  | There was an error during handshake negotiation.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{Disconnected}\mathbin{!}(\Conid{ConnectionId}\;\Varid{peerAddr})\mathbin{!}(\Conid{Maybe}\;\Varid{handleError}){}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  | Include outbound connection into 'ConnectionManager'.}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment    This executes:}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(Reserve\) to \(Negotiated^{*}_{Outbound}\) transitions}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(PromotedToWarm^{Duplex}_{Local}\) transition}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(Awake^{Duplex}_{Local}\) transition}{}\<[E]%
+\\
+\>[B]{}\Varid{requestOutboundConnection}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbin{::}{}\<[7]%
+\>[7]{}\Conid{HasInitiator}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\Rightarrow {}\<[7]%
+\>[7]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[7]%
+\>[7]{}\Varid{peerAddr}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[7]%
+\>[7]{}\Varid{m}\;(\Conid{Connected}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}){}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  Include an inbound connection into 'ConnectionManager'.}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment    This executes:}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(Accepted\) \/ \(Overwritten\) to \(Negotiated^{*}_{Inbound}\) transitions}{}\<[E]%
+\\
+\>[B]{}\Varid{includeInboundConnection}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbin{::}{}\<[7]%
+\>[7]{}\Conid{HasResponder}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\Rightarrow {}\<[7]%
+\>[7]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[7]%
+\>[7]{}\Varid{socket}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[7]%
+\>[7]{}\Varid{peerAddr}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[7]%
+\>[7]{}\Varid{m}\;(\Conid{Connected}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}){}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 
 The first one asks the connection manager to either connect to an outbound peer or, if
 possible, reuse a duplex connection. The other one allows to register an
@@ -705,86 +1010,198 @@ a multiplexer error) or a handle to a \textit{negotiated} connection.
 
 Other methods which are discussed in this specification:
 
-\begin{code}
--- || Custom either type for result of various methods.
-data OperationResult a
-    = UnsupportedState !InState
-    | OperationSuccess a
-
--- || Enumeration of states, used for reporting; constructors elided from this
--- specification.
-data InState
-
--- || Unregister an outbound connection.
---
---   This executes:
---
--- * \(DemotedToCold^{*}_{Local}\) transitions
-unregisterOutboundConnection
-  ::  HasInitiator muxMode ~ True
-  =>  ConnectionManager muxMode socket peerAddr handle handleError m
-  ->  peerAddr
-  ->  m (OperationResult ())
-
--- || Notify the 'ConnectionManager' that a remote end promoted us to a
--- /warm peer/.
---
--- This executes:
---
--- * \(PromotedToWarm^{Duplex}_{Remote}\) transition,
--- * \(Awake^{*}_{Remote}\) transition.
-promotedToWarmRemote
-  ::  HasInitiator muxMode ~ True
-  ->  ConnectionManager muxMode socket peerAddr handle handleError m
-  ->  peerAddr
-  ->  m (OperationResult InState)
-
--- || Notify the 'ConnectionManager' that a remote end demoted us to a /cold
--- peer/.
---
--- This executes:
---
--- * \(DemotedToCold^{*}_{Remote}\) transition.
-demotedToColdRemote
-  ::  HasResponder muxMode ~ True
-  ->  ConnectionManager muxMode socket peerAddr handle handleError m
-  ->  peerAddr
-  ->  m (OperationResult InState)
-
--- || Unregister outbound connection. Returns if the operation was successul.
---
--- This executes:
---
--- * \(Commit*{*}\) transition
--- * \(TimeoutExpired\) transition
-unregisterInboundConnection
-  ::  HasResponder muxMode ~ True
-  ->  ConnectionManager muxMode socket peerAddr handle handleError m
-  ->  peerAddr
-  ->  m (OperationResult DemotedToColdRemoteTr)
-
--- || Number of connections tracked by the server.
-numberOfConnections
-  ::  HasResponder muxMode ~ True
-  ->  ConnectionManager muxMode socket peerAddr handle handleError m
-  ->  STM m Int
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}c<{\hspost}@{}}%
+\column{3E}{@{}l@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{7}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\mbox{\onelinecomment  | Custom either type for result of various methods.}{}\<[E]%
+\\
+\>[B]{}\mathbf{data}\;\Conid{OperationResult}\;\Varid{a}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\mathrel{=}\Conid{UnsupportedState}\mathbin{!}\Conid{InState}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\mid \Conid{OperationSuccess}\;\Varid{a}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  | Enumeration of states, used for reporting; constructors elided from this}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  specification.}{}\<[E]%
+\\
+\>[B]{}\mathbf{data}\;\Conid{InState}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  | Unregister an outbound connection.}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment    This executes:}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(DemotedToCold^{*}_{Local}\) transitions}{}\<[E]%
+\\
+\>[B]{}\Varid{unregisterOutboundConnection}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbin{::}{}\<[3E]%
+\>[7]{}\Conid{HasInitiator}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\Rightarrow {}\<[3E]%
+\>[7]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{peerAddr}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{m}\;(\Conid{OperationResult}\;()){}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  | Notify the 'ConnectionManager' that a remote end promoted us to a}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  /warm peer/.}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  This executes:}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(PromotedToWarm^{Duplex}_{Remote}\) transition,}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(Awake^{*}_{Remote}\) transition.}{}\<[E]%
+\\
+\>[B]{}\Varid{promotedToWarmRemote}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbin{::}{}\<[3E]%
+\>[7]{}\Conid{HasInitiator}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{peerAddr}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{m}\;(\Conid{OperationResult}\;\Conid{InState}){}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  | Notify the 'ConnectionManager' that a remote end demoted us to a /cold}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  peer/.}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  This executes:}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(DemotedToCold^{*}_{Remote}\) transition.}{}\<[E]%
+\\
+\>[B]{}\Varid{demotedToColdRemote}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbin{::}{}\<[3E]%
+\>[7]{}\Conid{HasResponder}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{peerAddr}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{m}\;(\Conid{OperationResult}\;\Conid{InState}){}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  | Unregister outbound connection. Returns if the operation was successul.}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  This executes:}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(Commit*{*}\) transition}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(TimeoutExpired\) transition}{}\<[E]%
+\\
+\>[B]{}\Varid{unregisterInboundConnection}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbin{::}{}\<[3E]%
+\>[7]{}\Conid{HasResponder}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{peerAddr}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Varid{m}\;(\Conid{OperationResult}\;\Conid{DemotedToColdRemoteTr}){}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\mbox{\onelinecomment  | Number of connections tracked by the server.}{}\<[E]%
+\\
+\>[B]{}\Varid{numberOfConnections}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbin{::}{}\<[3E]%
+\>[7]{}\Conid{HasResponder}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\to {}\<[3E]%
+\>[7]{}\Conid{STM}\;\Varid{m}\;\Conid{Int}{}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 
 \subsection{Connection states}\label{sec:connection-state}
 
 Each connection is either initiated by \texttt{Inbound} or \texttt{Outbound} side.
 
-\begin{code}
-data Provenance
-  = Inbound
-  | Outbound
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\mathbf{data}\;\Conid{Provenance}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathrel{=}\Conid{Inbound}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{Outbound}{}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 Each connection negotiates \texttt{dataFlow}:
-\begin{code}
-data DataFlow
-  = Unidirectional
-  | Duplex
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\mathbf{data}\;\Conid{DataFlow}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathrel{=}\Conid{Unidirectional}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{Duplex}{}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 
 In \texttt{Unidirectional} data flow, the connection is only used in one direction:
 the outbound side runs initiator side of mini-protocols, the inbound side runs
@@ -795,45 +1212,89 @@ on two factors: negotiated version and \texttt{InitiatorOnly} flag which is
 announced through handshake. Each connection can be in one of the following
 states:
 
-%format timeout = "^\tau"
 
-\begin{code}
-data ConnectionState
-  -- Connection manger is about to connect to a peer.
-  = ReservedOutboundState
-
-  -- Connected to a peer, handshake negotiation is ongoing.
-  | UnnegotiatedState Provenance
-
-  -- Outbound connection, inbound idle timeout is ticking.
-  | OutboundState^timeout DataFlow
-
-  -- Outbound connection, inbound idle timeout expired.
-  | OutboundState DataFlow
-
-  -- Inbound connection, but not yet used.
-  | InboundIdleState^timeout DataFlow
-
-  -- Active inbound connection.
-  | InboundState DataFlow
-
-  -- Connection runs in duplex mode: either outbound connection negotiated
-  -- 'Duplex' data flow, or 'InboundState Duplex' was reused.
-  | DuplexState
-
-  -- Connection manager is about to close (reset) the connection, before it
-  -- will do that it will put the connection in 'OutboundIdleState' and start
-  -- a timeout.
-  | OutboundIdleState*'$^\tau$'*
-
-  -- Connection has terminated; socket is closed, thread running the
-  -- connection is killed.  For some delay (`TIME\_WAIT`) the connection is kept
-  -- in this state until the kernel releases all the resources.
-  | TerminatingState
-
-  -- Connection is forgotten.
-  | TerminatedState
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\mathbf{data}\;\Conid{ConnectionState}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Connection manger is about to connect to a peer.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathrel{=}\Conid{ReservedOutboundState}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Connected to a peer, handshake negotiation is ongoing.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{UnnegotiatedState}\;\Conid{Provenance}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Outbound connection, inbound idle timeout is ticking.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{OutboundState} ^\tau\;\Conid{DataFlow}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Outbound connection, inbound idle timeout expired.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{OutboundState}\;\Conid{DataFlow}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Inbound connection, but not yet used.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{InboundIdleState} ^\tau\;\Conid{DataFlow}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Active inbound connection.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{InboundState}\;\Conid{DataFlow}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Connection runs in duplex mode: either outbound connection negotiated}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  'Duplex' data flow, or 'InboundState Duplex' was reused.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{DuplexState}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Connection manager is about to close (reset) the connection, before it}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  will do that it will put the connection in 'OutboundIdleState' and start}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  a timeout.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{OutboundIdleState}\mathbin{*}\text{\ttfamily '\$\char94 \char92 tau\$'}\mathbin{*}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Connection has terminated; socket is closed, thread running the}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  connection is killed.  For some delay (`TIME\_WAIT`) the connection is kept}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  in this state until the kernel releases all the resources.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{TerminatingState}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mbox{\onelinecomment  Connection is forgotten.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{TerminatedState}{}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 
 The above type is a simplified version of what is implemented. The real
 implementation tracks more detail, e.g. connection id (the quadruple of ip
@@ -939,7 +1400,7 @@ start initiator-protocols, and the implementation is supposed to do that
 promptly. This however, cannot be assumed about the inbound side.
 
 \begin{table}[h]
-  \begin{tabular}[h]{l||l}
+  \begin{tabular}[h]{l|l}
     \textit{local connection state} & \textit{remote connection state} \\ [0.3em]
     \hline \\
     \UnnegotiatedStateOut{}         & \UnnegotiatedStateIn{}           \\ [0.2em]
@@ -1433,8 +1894,8 @@ the flow graph of \texttt{requestOutboundConnection}.
     \draw (connected) -- node[left] {\textbf{\textbf{handshake}}} (handshake_decision_outbound);
 
     \node[inbound_outbound_state] (outbound_dupdf)             at (-8, -11)  {\OutboundStateDup{}};
-    \draw[->] (handshake_decision_outbound.west) -|| node[left, near end] {\texttt{Unidirectional}} (outbound_unidf);
-    \draw[->] (handshake_decision_outbound) ||- node[right, near start] {\textbf{\texttt{Duplex}}} (outbound_dupdf);
+    \draw[->] (handshake_decision_outbound.west) -| node[left, near end] {\texttt{Unidirectional}} (outbound_unidf);
+    \draw[->] (handshake_decision_outbound) |- node[right, near start] {\textbf{\texttt{Duplex}}} (outbound_dupdf);
 
     % Connection found flow
 
@@ -1444,67 +1905,67 @@ the flow graph of \texttt{requestOutboundConnection}.
     \node[inbound_outbound_state,anchor=west] (reserved_outbound) at (1, -8)  {\ReservedOutboundState};
     \node[circle,fill=black] (x0) at (0, -8) {};
     \node[error,anchor=west]                  (termination_c)     at (4, -9) {\textbf{error \texttt{ConnectionExists}}};
-    \draw (x0) ||- (reserved_outbound);
-    \draw[] (reserved_outbound) ||- (termination_c);
+    \draw (x0) |- (reserved_outbound);
+    \draw[] (reserved_outbound) |- (termination_c);
 
     \node[inbound_outbound_state,anchor=west] (unnegotiated_inbound) at (1, -10) {\UnnegotiatedStateIn};
     \node[circle,fill=black] (x1) at (0, -10) {};
-    \draw (x1) ||- (unnegotiated_inbound);
+    \draw (x1) |- (unnegotiated_inbound);
     \draw[->] (unnegotiated_inbound) to[out=90,in=0] node[above right] {\textbf{await for handshake}} (found.east);
 
     \node[inbound_state,anchor=west] (inbound_unidf) at (1, -11) {\InboundStateUni};
     \node[circle,fill=black] (x2) at (0, -11) {};
     \node[error,anchor=west] (termination_unidf) at (4, -12) {\textbf{error \texttt{ForbiddenConnection}}};
-    \draw (x2) ||- (inbound_unidf);
-    \draw[] (inbound_unidf) ||- (termination_unidf);
+    \draw (x2) |- (inbound_unidf);
+    \draw[] (inbound_unidf) |- (termination_unidf);
 
     \node[inbound_state,anchor=west] (inboundidle_unidf)       at (1, -13) {\InboundIdleStateUni};
     \node[circle,fill=black] (x3) at (0, -13) {};
     \node[error,anchor=west] (termination_inboundidle) at (4, -14) {\textbf{error \texttt{ForbiddenConnection}}};
-    \draw (x3) ||- (inboundidle_unidf);
-    \draw (inboundidle_unidf.225) ||- (termination_inboundidle);
+    \draw (x3) |- (inboundidle_unidf);
+    \draw (inboundidle_unidf.225) |- (termination_inboundidle);
 
     \node[inbound_outbound_state,anchor=west] (inboundidle_dupdf)         at (1, -15) {\InboundIdleStateDup};
     \node[circle,fill=black] (x4) at (0, -15) {};
     \node[inbound_outbound_state,anchor=west] (outbound_dupdf_2) at (4, -16) {\OutboundStateDup};
-    \draw (x4) ||- (inboundidle_dupdf);
-    \draw (inboundidle_dupdf.225) ||- (outbound_dupdf_2);
+    \draw (x4) |- (inboundidle_dupdf);
+    \draw (inboundidle_dupdf.225) |- (outbound_dupdf_2);
 
     \node[inbound_outbound_state,anchor=west] (inbound_dupdf) at (1, -17) {\InboundStateDup};
     \node[circle,fill=black] (x5) at (0, -17) {};
     \node[inbound_outbound_state,anchor=west] (duplex)        at (4, -18) {\DuplexState};
-    \draw (x5) ||- (inbound_dupdf);
-    \draw (inbound_dupdf) ||- (duplex);
+    \draw (x5) |- (inbound_dupdf);
+    \draw (inbound_dupdf) |- (duplex);
 
     \node[impossible_outbound_state,anchor=west] (outbound_uni) at (1, -19) {\OutboundStateUni};
     \node[circle,fill=black] (x6) at (0, -19) {};
     \node[error,anchor=west] (termination_outuni) at (4, -20) {\textbf{error \texttt{ConnectionExists}}};
-    \draw (x6) ||- (outbound_uni);
-    \draw (outbound_uni) ||- (termination_outuni.west);
+    \draw (x6) |- (outbound_uni);
+    \draw (outbound_uni) |- (termination_outuni.west);
 
     \node[impossible_outbound_state,anchor=west] (duplex_imp)   at (1, -21) {\DuplexState};
     \node[circle,fill=black] (x7) at (0, -21) {};
     \node[error,anchor=west] (termination_dupuni) at (4, -22) {\textbf{error \texttt{ConnectionExists}}};
-    \draw (x7) ||- (duplex_imp);
-    \draw (duplex_imp) ||- (termination_dupuni.west);
+    \draw (x7) |- (duplex_imp);
+    \draw (duplex_imp) |- (termination_dupuni.west);
 
     \node[inbound_outbound_state,anchor=west] (outboundidle) at (1, -23) {\OutboundIdleStateAny};
     \node[circle,fill=black] (x8) at (0,-23) {};
     \node[error,anchor=west] (termination_outboundidle) at (4,-24) {\textbf{error \texttt{ForbiddenOperation}}};
-    \draw (x8) ||- (outboundidle);
-    \draw (outboundidle.200) ||- (termination_outboundidle);
+    \draw (x8) |- (outboundidle);
+    \draw (outboundidle.200) |- (termination_outboundidle);
 
     \node[inbound_outbound_state,anchor=west] (terminating) at (1, -25) {\TerminatingState};
     \node[circle,fill=black] (x9) at (0, -25) {};
-    \draw (x9) ||- (terminating);
+    \draw (x9) |- (terminating);
     \draw[->] (terminating.0) to [out=30,in=340] node[above right,pos=0.8,looseness=2] {\textbf{await wait time timeout}} (init.east);
 
     \node[inbound_outbound_state,anchor=west] (terminated)  at (1, -26) {\TerminatedState};
     \node[circle,fill=black] (x10) at (0, -26) {};
-    \draw (x10) ||- (terminated);
+    \draw (x10) |- (terminated);
     \draw[->] (terminated) to [out=90,in=315] (not_found);
 
-    \draw (found.south) ||- (x10);
+    \draw (found.south) |- (x10);
 
   \end{tikzpicture}}
   \caption{\textit{Outbound} connection flow graph}
@@ -1537,9 +1998,12 @@ connection needs to transition from either:
 
 To support that the connection manager exposes a method:
 
-\begin{code}
-unregisterOutboundConnection :: peerAddr -> m ()
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\Varid{unregisterOutboundConnection}\mathbin{::}\Varid{peerAddr}\to \Varid{m}\;(){}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 This method performs \DemotedToColdUniLoc{} or
 \DemotedToColdDupLoc{} transition. In the former case it will shut down the
 multiplexer and close the TCP connection, in the latter case, beside
@@ -1653,8 +2117,8 @@ Initial states for inbound connection are either:
     \draw (unnegotiated_inbound) -- (handshake_decision_inbound);
     \node[inbound_state]          (inbound_unidf) at (-3, -8) {\InboundStateUni{}};
     \node[inbound_outbound_state] (inbound_dupdf) at (3,  -8) {\InboundStateDup{}};
-    \draw[->] (handshake_decision_inbound.west) -|| node[left, near end]{\textbf{\texttt{Unidirectional}}} (inbound_unidf);
-    \draw[->] (handshake_decision_inbound.east) -|| node[right,near end]{\textbf{\texttt{Duplex}}}         (inbound_dupdf);
+    \draw[->] (handshake_decision_inbound.west) -| node[left, near end]{\textbf{\texttt{Unidirectional}}} (inbound_unidf);
+    \draw[->] (handshake_decision_inbound.east) -| node[right,near end]{\textbf{\texttt{Duplex}}}         (inbound_dupdf);
 
     \node[inbound_outbound_state] (duplex) at (3, -11) {\DuplexState{}};
     \draw[->] (inbound_dupdf) -- node[right]{\textbf{\texttt{requestOutboundConnection}}} (duplex);
@@ -1750,7 +2214,7 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by TCP.
     \OutboundStateUni{}      & $\dagger$ & & - \\[8pt]
     \OutboundStateDupTau{}   & \OutboundStateDup{} & & - \\[8pt]
     \OutboundStateDup{}      & $\dagger$ & & - \\[8pt]
-    \InboundIdleStateAny{}   & \TerminatingState{} & & |True| \\[8pt]
+    \InboundIdleStateAny{}   & \TerminatingState{} & & \ensuremath{\Conid{True}} \\[8pt]
     \InboundStateAny{}       & \TerminatingState{}\textsuperscript{$\dagger$} &
       \begin{minipage}[t]{5cm}
         \begin{itemize}
@@ -1758,8 +2222,8 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by TCP.
           \item \CommitAnyRem{}
         \end{itemize}
       \end{minipage}
-        & |True| \\[8pt]
-    \DuplexState{}           & \OutboundStateDup{} & \DemotedToColdDupRem{}  & |False| \\[8pt]
+        & \ensuremath{\Conid{True}} \\[8pt]
+    \DuplexState{}           & \OutboundStateDup{} & \DemotedToColdDupRem{}  & \ensuremath{\Conid{False}} \\[8pt]
     \TerminatingState{}      & - & & - \\[8pt]
     \TerminatedState{}       & - & & - \\[8pt]
   \end{tabular}
@@ -1904,19 +2368,43 @@ Once all responder mini-protocols become idle, i.e. they all stopped or were
 re-started but are not yet running, a \DemotedToColdAnyRem{} transition is
 run: the inbound governor will notify the connection manager using:
 
-\begin{code}
--- || Notify the 'ConnectionManager' that a remote end demoted us to a /cold
--- peer/.
---
--- This executes:
---
--- * \(DemotedToCold^{*}_{Remote}\) transition.
-demotedToColdRemote
-    ::  HasResponder muxMode ~ True
-    =>  ConnectionManager muxMode socket peerAddr handle handleError m
-    ->  peerAddr
-    ->  m (OperationResult InState)
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}c<{\hspost}@{}}%
+\column{5E}{@{}l@{}}%
+\column{9}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\mbox{\onelinecomment  | Notify the 'ConnectionManager' that a remote end demoted us to a /cold}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  peer/.}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  This executes:}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  * \(DemotedToCold^{*}_{Remote}\) transition.}{}\<[E]%
+\\
+\>[B]{}\Varid{demotedToColdRemote}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\mathbin{::}{}\<[5E]%
+\>[9]{}\Conid{HasResponder}\;\Varid{muxMode}\mathord{\sim}\Conid{True}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\Rightarrow {}\<[5E]%
+\>[9]{}\Conid{ConnectionManager}\;\Varid{muxMode}\;\Varid{socket}\;\Varid{peerAddr}\;\Varid{handle}\;\Varid{handleError}\;\Varid{m}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\to {}\<[5E]%
+\>[9]{}\Varid{peerAddr}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\to {}\<[5E]%
+\>[9]{}\Varid{m}\;(\Conid{OperationResult}\;\Conid{InState}){}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 
 When all responder mini-protocols are idle for \textit{protocol idle timeout},
 the inbound governor will execute \texttt{unregisterInboundConnection} which will trigger:
@@ -1927,27 +2415,55 @@ the inbound governor will execute \texttt{unregisterInboundConnection} which wil
   \item \texttt{no-op}  if the initial state is \OutboundStateDup{} or \OutboundIdleStateAny{}.
 \end{itemize}
 
-\begin{code}
--- || Return value of 'unregisterInboundConnection' to inform the caller about
--- the transition.
---
-data DemotedToColdRemoteTr =
-    -- || @Commit^{dataFlow}@ transition from @'InboundIdleState' dataFlow@.
-    --
-    CommitTr
-
-    -- || @DemotedToCold^{Remote}@ transition from @'InboundState' dataFlow@
-    --
-  | DemotedToColdRemoteTr
-
-    -- || Either @DemotedToCold^{Remote}@ transition from @'DuplexState'@, or
-    -- a level triggered @Awake^{Duplex}_{Local}@ transition.  In both cases
-    -- the server must keep the responder side of all protocols ready.
-  | KeepTr
-  deriving Show
-
-unregisterInboundConnection :: peerAddr -> m (OperationResult DemotedToColdRemoteTr)
-\end{code}
+\begin{hscode}\SaveRestoreHook
+\column{B}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{3}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{5}{@{}>{\hspre}l<{\hspost}@{}}%
+\column{E}{@{}>{\hspre}l<{\hspost}@{}}%
+\>[B]{}\mbox{\onelinecomment  | Return value of 'unregisterInboundConnection' to inform the caller about}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment  the transition.}{}\<[E]%
+\\
+\>[B]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\mathbf{data}\;\Conid{DemotedToColdRemoteTr}\mathrel{=}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\mbox{\onelinecomment  | \text{\ttfamily Commit\char94{}\char123{}dataFlow\char125{}} transition from \text{\ttfamily \char39{}InboundIdleState\char39{}~dataFlow}.}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\Conid{CommitTr}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\mbox{\onelinecomment  | \text{\ttfamily DemotedToCold\char94{}\char123{}Remote\char125{}} transition from \text{\ttfamily \char39{}InboundState\char39{}~dataFlow}}{}\<[E]%
+\\
+\>[B]{}\hsindent{5}{}\<[5]%
+\>[5]{}\mbox{\onelinecomment }{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{DemotedToColdRemoteTr}{}\<[E]%
+\\[\blanklineskip]%
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mbox{\onelinecomment  | Either \text{\ttfamily DemotedToCold\char94{}\char123{}Remote\char125{}} transition from \text{\ttfamily \char39{}DuplexState\char39{}}, or}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mbox{\onelinecomment  a level triggered \text{\ttfamily Awake\char94{}\char123{}Duplex\char125{}\char95{}\char123{}Local\char125{}} transition.  In both cases}{}\<[E]%
+\\
+\>[3]{}\hsindent{2}{}\<[5]%
+\>[5]{}\mbox{\onelinecomment  the server must keep the responder side of all protocols ready.}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mid \Conid{KeepTr}{}\<[E]%
+\\
+\>[B]{}\hsindent{3}{}\<[3]%
+\>[3]{}\mathbf{deriving}\;\Conid{Show}{}\<[E]%
+\\[\blanklineskip]%
+\>[B]{}\Varid{unregisterInboundConnection}\mathbin{::}\Varid{peerAddr}\to \Varid{m}\;(\Conid{OperationResult}\;\Conid{DemotedToColdRemoteTr}){}\<[E]%
+\ColumnHook
+\end{hscode}\resethooks
 Both \CommitUniRem{} and \CommitDupRem{} will free resources (terminate the
 connection thread, close the socket).
 
