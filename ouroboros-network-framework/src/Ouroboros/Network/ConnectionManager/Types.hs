@@ -743,7 +743,7 @@ instance ( Show peerAddr
              , prettyCallStack cs
              ]
     displayException (ForbiddenOperation peerAddr reason cs) =
-      concat [ "Forbidden operation"
+      concat [ "Forbidden operation "
              , show peerAddr
              , " "
              , show reason
@@ -751,7 +751,7 @@ instance ( Show peerAddr
              , prettyCallStack cs
              ]
     displayException (UnknownPeer peerAddr cs) =
-      concat [ "Forbidden operation"
+      concat [ "UnknownPeer "
              , show peerAddr
              , "\n"
              , prettyCallStack cs
