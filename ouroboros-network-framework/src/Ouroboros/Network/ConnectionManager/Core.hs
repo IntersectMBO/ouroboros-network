@@ -332,7 +332,7 @@ data Wedge a b =
   | There b
 
 
--- | Instruction used internally in @unregisterOutboundConectionImpl@, e.g. in
+-- | Instruction used internally in @unregisterOutboundConnectionImpl@, e.g. in
 -- the implementation of one of the two  @DemotedToCold^{dataFlow}_{Local}@
 -- transitions.
 --
@@ -768,6 +768,20 @@ withConnectionManager ConnectionManagerArguments {
                 ReservedOutboundState ->
                   throwSTM (withCallStack (ImpossibleState peerAddr))
 
+                --
+                -- The common case.
+                --
+                -- Note: we don't set an explicit timeout here.  The
+                -- server will set a timeout and call
+                -- 'unregisterInboundConnection' when it expires.
+                --
+                UnnegotiatedState {} -> do
+                  let connState' = InboundIdleState
+                                     connId connThread handle
+                                     (connectionDataFlow version)
+                  writeTVar connVar connState'
+                  return (mkTransition connState connState')
+
                 -- It is impossible to find a connection in 'OutboundUniState'
                 -- or 'OutboundDupState', since 'includeInboundConnection'
                 -- blocks until 'InboundState'.  This guarantees that this
@@ -790,22 +804,7 @@ withConnectionManager ConnectionManagerArguments {
 
                 DuplexState {} ->
                   throwSTM (withCallStack (ImpossibleState peerAddr))
-
-                --
-                -- The common case.
-                --
-                -- Note: we don't set an explicit timeout here.  The
-                -- server will set a timeout and call
-                -- 'unregisterInboundConnection' when it expires.
-                --
-
-                UnnegotiatedState {} -> do
-                  let connState' = InboundIdleState
-                                     connId connThread handle
-                                     (connectionDataFlow version)
-                  writeTVar connVar connState'
-                  return (mkTransition connState connState')
-
+                                    
                 TerminatingState {} -> do
                   let connState' = InboundIdleState
                                      connId connThread handle
