@@ -312,7 +312,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         }
 
     ledgerConfigB :: CoreNodeId -> LedgerConfig BlockB
-    ledgerConfigB _nid = ()
+    ledgerConfigB _nid = LedgerCfgB
 
     blockConfigA :: CoreNodeId -> BlockConfig BlockA
     blockConfigA _ = BCfgA

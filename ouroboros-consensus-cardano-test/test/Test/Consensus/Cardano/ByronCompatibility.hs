@@ -19,8 +19,8 @@
 --  existing roundtrip test functions.
 module Test.Consensus.Cardano.ByronCompatibility (tests) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Decoding (Decoder, decodeNull)
+import           Codec.CBOR.Encoding (Encoding, encodeNull)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (Coercible, coerce)
 import           Data.SOP.BasicFunctors
@@ -30,6 +30,7 @@ import qualified Cardano.Chain.Byron.API as CC
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -132,6 +133,24 @@ toCardanoCodecConfig codecConfigByron =
       ShelleyCodecConfig
       ShelleyCodecConfig
 
+-- | In both the cardano-to-byron and byron-to-cardano case, we don't attempt to
+-- test serialization of the ledger config, and so just use a unit type.
+-- Unfortunately, the serialisation of @SerialiseNodeToClient ByronBlock
+-- (LedgerConfig ByronBlock)@ and of @SerialiseNodeToClient (HardForkBlock
+-- '[ByronBlock]) (LedgerConfig (HardForkBlock '[ByronBlock]))@ are not
+-- compatible. In practice, we're not concerned by this as the ledger config is
+-- only serialised in response to a 'GetLedgerConfig' query which is only
+-- enabled in newer node-to-client versions i.e. not enabled when using a block
+-- type of 'ByronBlock' directly.
+data LedgerConfigUnit = LedgerConfigUnit
+
+instance SerialiseNodeToClient blk LedgerConfigUnit where
+  encodeNodeToClient _ _ _ = encodeNull
+  decodeNodeToClient _ _   = LedgerConfigUnit <$ decodeNull
+
+instance Arbitrary LedgerConfigUnit where
+  arbitrary = pure LedgerConfigUnit
+
 {------------------------------------------------------------------------------
   Byron to Cardano
 ------------------------------------------------------------------------------}
@@ -159,6 +178,7 @@ deriving instance Show (NestedCtxt_ ByronToCardano Header a)
 unNestedCtxt_B2C :: NestedCtxt_ ByronToCardano f a -> NestedCtxt_ ByronBlock f a
 unNestedCtxt_B2C (NestedCtxt_B2C ctxt) = ctxt
 
+type instance LedgerCfg (LedgerState ByronToCardano) = LedgerConfigUnit
 type instance HeaderHash ByronToCardano = HeaderHash ByronBlock
 type instance ApplyTxErr ByronToCardano = ApplyTxErr ByronBlock
 
@@ -465,6 +485,7 @@ deriving instance Show (NestedCtxt_ CardanoToByron Header a)
 unNestedCtxt_C2B :: NestedCtxt_ CardanoToByron f a -> NestedCtxt_ ByronBlock f a
 unNestedCtxt_C2B (NestedCtxt_C2B ctxt) = ctxt
 
+type instance LedgerCfg (LedgerState CardanoToByron) = LedgerConfigUnit
 type instance HeaderHash CardanoToByron = HeaderHash ByronBlock
 type instance ApplyTxErr CardanoToByron = ApplyTxErr ByronBlock
 

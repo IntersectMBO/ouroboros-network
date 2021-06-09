@@ -9,6 +9,8 @@ import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Quiet
 
+import           Cardano.Binary
+
 -- | Protocol security parameter
 --
 -- We interpret this as the number of rollbacks we support.
@@ -19,5 +21,5 @@ import           Quiet
 -- NOTE: This talks about the number of /blocks/ we can roll back, not
 -- the number of /slots/.
 newtype SecurityParam = SecurityParam { maxRollbacks :: Word64 }
-  deriving (Eq, Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks, ToCBOR, FromCBOR)
   deriving Show via Quiet SecurityParam

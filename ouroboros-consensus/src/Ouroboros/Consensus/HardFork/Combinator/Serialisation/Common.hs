@@ -88,7 +88,8 @@ import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToClient,
+                     Some (..))
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.SOP
 
@@ -98,6 +99,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
@@ -229,6 +231,7 @@ class ( SingleEraBlock                   blk
       , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
+      , SerialiseNodeToClient            blk (PartialLedgerConfig blk)
       , HasNetworkProtocolVersion        blk
       ) => SerialiseConstraintsHFC       blk
 

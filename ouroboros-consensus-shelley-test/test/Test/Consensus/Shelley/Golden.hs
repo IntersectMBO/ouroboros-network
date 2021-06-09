@@ -9,6 +9,7 @@ import           Ouroboros.Consensus.Ledger.Query (QueryVersion)
 
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node ()
+import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
 
 import           Test.Tasty
 
