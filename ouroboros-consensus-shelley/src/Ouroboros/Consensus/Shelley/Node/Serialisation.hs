@@ -128,8 +128,6 @@ data ShelleyEncoderException era =
 
 instance Typeable era => Exception (ShelleyEncoderException era)
 
-instance ShelleyBasedEra era => SerialiseNodeToClientConstraints (ShelleyBlock era)
-
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
 instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (ShelleyBlock era) where

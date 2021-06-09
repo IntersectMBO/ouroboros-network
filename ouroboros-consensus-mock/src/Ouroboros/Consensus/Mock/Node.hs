@@ -61,6 +61,7 @@ instance ( LedgerSupportsProtocol      (SimpleBlock SimpleMockCrypto ext)
          , Show (ForgeStateInfo        (SimpleBlock SimpleMockCrypto ext))
          , Show (ForgeStateUpdateError (SimpleBlock SimpleMockCrypto ext))
          , Serialise ext
+         , Serialise (MockLedgerConfig SimpleMockCrypto ext)
          , RunMockBlock SimpleMockCrypto ext
          ) => RunNode (SimpleBlock SimpleMockCrypto ext)
 

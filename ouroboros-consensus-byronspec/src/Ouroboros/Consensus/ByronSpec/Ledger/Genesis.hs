@@ -1,6 +1,10 @@
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE DerivingVia           #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TypeApplications      #-}
 
 -- | Genesis config for the spec
 --
@@ -25,6 +29,9 @@ import           Data.Set (Set)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
 import           Numeric.Natural (Natural)
 
+import           Cardano.Binary
+import           Codec.Serialise (Serialise (..))
+
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
@@ -32,6 +39,7 @@ import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Control.State.Transition as Spec
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
+import           Ouroboros.Consensus.Node.Serialisation
 
 {-------------------------------------------------------------------------------
   Genesis config
@@ -54,6 +62,24 @@ data ByronSpecGenesis = ByronSpecGenesis {
     }
   deriving stock (Show)
   deriving NoThunks via AllowThunk ByronSpecGenesis
+
+instance SerialiseNodeToClient blk ByronSpecGenesis where
+  encodeNodeToClient _ _ (ByronSpecGenesis delegators utxo pparams k slotLength) = mconcat
+    [ encodeListLen 5
+    , toCBOR delegators
+    , encode utxo
+    , encode pparams
+    , toCBOR k
+    , toCBOR slotLength
+    ]
+  decodeNodeToClient _ _ = do
+    enforceSize "ByronSpecGenesis" 5
+    ByronSpecGenesis
+      <$> fromCBOR @(Set Spec.VKeyGenesis)
+      <*> decode @Spec.UTxO
+      <*> decode @Spec.PParams
+      <*> fromCBOR @Spec.BlockCount
+      <*> fromCBOR @Natural
 
 modPBftThreshold :: (Double -> Double)
                  -> ByronSpecGenesis -> ByronSpecGenesis

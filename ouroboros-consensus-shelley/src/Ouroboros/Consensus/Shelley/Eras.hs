@@ -142,6 +142,12 @@ class ( SL.ShelleyBasedEra era
       , SL.AdditionalGenesisConfig era ~ Core.TranslationContext era
       , ToCBORGroup (TxSeq era)
 
+      , Eq       (Core.Tx era)
+      , NoThunks (Core.Tx era)
+      , Show     (Core.Tx era)
+
+      , FromCBOR (Core.TranslationContext era)
+      , ToCBOR   (Core.TranslationContext era)
       , NoThunks (Core.TranslationContext era)
 
       , FromCBOR (Annotator (Core.Witnesses era))

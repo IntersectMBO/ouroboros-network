@@ -80,9 +80,12 @@ import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
+import           Ouroboros.Network.Block
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -95,6 +98,7 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
+import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
                      (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
@@ -337,8 +341,15 @@ data SimpleLedgerConfig c ext = SimpleLedgerConfig {
 deriving instance Show (MockLedgerConfig c ext) => Show (SimpleLedgerConfig c ext)
 deriving instance NoThunks (MockLedgerConfig c ext)
                => NoThunks (SimpleLedgerConfig c ext)
+deriving instance Serialise (MockLedgerConfig c ext)
+               => Serialise (SimpleLedgerConfig c ext)
 
 type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
+
+instance MockProtocolSpecific c ext => HasPartialLedgerConfig (SimpleBlock c ext)
+
+instance (Serialise (MockLedgerConfig c ext))
+  => SerialiseNodeToClient (SimpleBlock c ext) (SimpleLedgerConfig c ext)
 
 instance GetTip (LedgerState (SimpleBlock c ext)) where
   getTip (SimpleLedgerState st) = castPoint $ mockTip st

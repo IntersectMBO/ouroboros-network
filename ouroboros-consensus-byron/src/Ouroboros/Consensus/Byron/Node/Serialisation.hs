@@ -22,12 +22,14 @@ import           Cardano.Prelude (cborError)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
+import           Cardano.Chain.Genesis (Config)
 
 import           Ouroboros.Network.Block (Serialised (..), unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -149,6 +151,10 @@ instance SerialiseNodeToNode ByronBlock (GenTxId ByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance SerialiseNodeToClientConstraints ByronBlock
+
+instance SerialiseNodeToClient ByronBlock Config where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.

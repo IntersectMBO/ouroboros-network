@@ -28,6 +28,7 @@ module Test.Consensus.HardFork.Combinator.B (
   , ConsensusConfig (..)
   , GenTx (..)
   , Header (..)
+  , LedgerCfgB (..)
   , LedgerState (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
@@ -43,6 +44,8 @@ import qualified Data.Set as Set
 import           Data.Void
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
+
+import           Cardano.Binary
 
 import           Test.Util.Time (dawnOfTime)
 
@@ -88,6 +91,18 @@ data instance ConsensusConfig ProtocolB = CfgB {
     , cfgB_leadInSlots :: Set SlotNo
     }
   deriving NoThunks via OnlyCheckWhnfNamed "CfgB" (ConsensusConfig ProtocolB)
+
+instance ToCBOR (ConsensusConfig ProtocolB) where
+  toCBOR (CfgB k leadInSlots) = mconcat [
+      encodeListLen 2
+    , toCBOR k
+    , toCBOR leadInSlots
+    ]
+
+instance FromCBOR (ConsensusConfig ProtocolB) where
+  fromCBOR = do
+    enforceSize "ConsensusConfig ProtocolB" 2
+    CfgB <$> fromCBOR <*> fromCBOR
 
 instance ConsensusProtocol ProtocolB where
   type ChainDepState ProtocolB = ()
@@ -168,7 +183,10 @@ data instance LedgerState BlockB = LgrB {
   deriving (Show, Eq, Generic, Serialise)
   deriving NoThunks via OnlyCheckWhnfNamed "LgrB" (LedgerState BlockB)
 
-type instance LedgerCfg (LedgerState BlockB) = ()
+data LedgerCfgB = LedgerCfgB
+  deriving (Generic, NoThunks)
+
+type instance LedgerCfg (LedgerState BlockB) = LedgerCfgB
 
 -- | Ticking has no state on the B ledger state
 newtype instance Ticked (LedgerState BlockB) = TickedLedgerStateB {
@@ -427,6 +445,10 @@ instance SerialiseNodeToClient BlockB (Serialised BlockB)
 instance SerialiseNodeToClient BlockB (GenTx BlockB)
 instance SerialiseNodeToClient BlockB (GenTxId BlockB)
 instance SerialiseNodeToClient BlockB SlotNo
+
+instance SerialiseNodeToClient BlockB LedgerCfgB where
+  encodeNodeToClient _ _ _ = encodeNull
+  decodeNodeToClient _ _ = LedgerCfgB <$ decodeNull
 
 instance SerialiseNodeToClient BlockB Void where
   encodeNodeToClient _ _ = absurd

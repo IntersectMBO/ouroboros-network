@@ -113,8 +113,18 @@ instance ShelleyBasedEra era => NoThunks (ShelleyLedgerError era)
 
 data ShelleyLedgerConfig era = ShelleyLedgerConfig {
       shelleyLedgerCompactGenesis     :: !(CompactGenesis era)
-      -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
-      -- because it used very often.
+      -- | Derived from 'shelleyLedgerCompactGenesis' but we store a cached
+      -- version because it used very often.
+      --
+      -- The 'EpochInfo' in this 'SL.Globals' value is a 'fixedEpochInfo' when
+      -- 'ShelleyBlock' is the top-level block; this is a consequence of the
+      -- Shelley ledger rules having no way to change the epoch size or slot
+      -- length. In contrast, this 'EpochInfo' can have much richer structure
+      -- when the top-level block is a 'HardForkBlock' that contains
+      -- 'ShelleyBlock'. Such a 'ShelleyLedgerConfig' will have been /completed/
+      -- by the HFC to contain an 'EpochInfo' with the most information possible
+      -- based on the past hard forks (and possibly also the next hard fork, if
+      -- its occurrence is already known).
     , shelleyLedgerGlobals            :: !SL.Globals
     , shelleyLedgerTranslationContext :: !(Core.TranslationContext era)
     }
