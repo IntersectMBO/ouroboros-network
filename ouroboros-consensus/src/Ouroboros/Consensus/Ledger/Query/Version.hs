@@ -19,7 +19,7 @@ data QueryVersion
   -- Adds support for 'GetSystemStart'.
   | QueryVersion1
 
-  -- Adds support for 'GetChainBlockNo' and 'GetChainPoint'.
+  -- Adds support for 'GetChainBlockNo', 'GetChainPoint', and 'GetLedgerConfig'.
   | QueryVersion2
   deriving (Eq, Ord, Enum, Bounded, Show)
 
