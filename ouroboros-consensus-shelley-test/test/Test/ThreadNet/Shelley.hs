@@ -22,6 +22,8 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 
+import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
+
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Infra.Shelley
 import           Test.ThreadNet.Network (TestNodeInitialization (..),

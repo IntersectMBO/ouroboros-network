@@ -7,12 +7,15 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Hard fork protocol, block, and ledger state
@@ -46,6 +49,7 @@ import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
+import           Cardano.Binary
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -63,6 +67,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.Node.Serialisation
 
 {-------------------------------------------------------------------------------
   Hard fork protocol, block, and ledger state
@@ -160,9 +165,28 @@ data HardForkLedgerConfig xs = HardForkLedgerConfig {
     }
   deriving (Generic)
 
+instance
+  ( SListI xs
+  , SerialiseNodeToClient (HardForkBlock xs) (PerEraLedgerConfig xs)
+  ) => SerialiseNodeToClient (HardForkBlock xs) (HardForkLedgerConfig xs) where
+  encodeNodeToClient ccfg version (HardForkLedgerConfig hflcShape perEraLedgerConfig)
+    = mconcat [
+            encodeListLen 2
+          , encodeNodeToClient @_ @(History.Shape xs)      ccfg version hflcShape
+          , encodeNodeToClient @_ @(PerEraLedgerConfig xs) ccfg version perEraLedgerConfig
+          ]
+  decodeNodeToClient ccfg version = do
+      enforceSize "HardForkLedgerConfig" 2
+      HardForkLedgerConfig
+        <$> decodeNodeToClient @_ @(History.Shape xs)       ccfg version
+        <*> decodeNodeToClient @_ @(PerEraLedgerConfig xs)  ccfg version
+
 instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
 
 type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig xs
+
+instance (CanHardFork xs, UpdateLedger (HardForkBlock xs))
+  => HasPartialLedgerConfig (HardForkBlock xs) where
 
 {-------------------------------------------------------------------------------
   Operations on config

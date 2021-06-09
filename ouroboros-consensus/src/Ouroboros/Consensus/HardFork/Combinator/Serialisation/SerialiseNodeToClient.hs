@@ -1,16 +1,19 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE EmptyCase             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeOperators              #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -22,6 +25,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import qualified Codec.Serialise as Serialise
 import           Control.Exception (throw)
+import           Data.Maybe (catMaybes)
 import           Data.Proxy
 import           Data.SOP.Strict
 
@@ -134,6 +138,50 @@ dispatchDecoderErr ccfg version =
 
 after :: (a -> b -> d -> e) -> (c -> d) -> a -> b -> c -> e
 after f g x y z = f x y (g z)
+
+{-------------------------------------------------------------------------------
+  Ledger Config
+-------------------------------------------------------------------------------}
+
+instance All SerialiseConstraintsHFC xs
+  => SerialiseNodeToClient (HardForkBlock xs) (PerEraLedgerConfig xs) where
+  encodeNodeToClient (HardForkCodecConfig (PerEraCodecConfig ccfgs)) version (PerEraLedgerConfig xs) = case version of
+    HardForkNodeToClientDisabled versionX -> case xs of
+      x :* _ -> case ccfgs of
+        cfg :* _ -> encodeNodeToClient cfg versionX x
+    HardForkNodeToClientEnabled _ subVersions ->
+      let -- Encoding of the components of xs, filtering out the eras disabled in subVersions.
+          components :: [Encoding]
+          components = catMaybes
+            $ hcollapse
+            $ hczipWith3
+                (Proxy @SerialiseConstraintsHFC)
+                (\ccfg subVersionMay x -> K $ case subVersionMay of
+                  EraNodeToClientEnabled subVersion -> Just (encodeNodeToClient ccfg subVersion x)
+                  EraNodeToClientDisabled -> Nothing
+                )
+                ccfgs
+                subVersions
+                xs
+      in Enc.encodeListLen (fromIntegral (length components)) <> mconcat components
+
+  decodeNodeToClient (HardForkCodecConfig (PerEraCodecConfig ccfgs)) version = do
+    enforceSize "PerEraLedgerConfig xs" expectedN
+    subVersions <- case version of
+        HardForkNodeToClientDisabled _            -> failVersion
+        HardForkNodeToClientEnabled _ subVersions -> return subVersions
+    ledgerConfigs <- hsequence' $ hczipWith
+      (Proxy @SerialiseConstraintsHFC)
+      (\ccfg subVersionMay -> Comp $ case subVersionMay of
+          EraNodeToClientDisabled -> failVersion
+          EraNodeToClientEnabled subVersion -> decodeNodeToClient ccfg subVersion
+      )
+      ccfgs
+      subVersions
+    return (PerEraLedgerConfig ledgerConfigs)
+    where
+      expectedN = lengthSList (Proxy @xs)
+      failVersion = fail "decodeNodeToClient: (NP f xs): incompatible node-to-client version"
 
 {-------------------------------------------------------------------------------
   Blocks

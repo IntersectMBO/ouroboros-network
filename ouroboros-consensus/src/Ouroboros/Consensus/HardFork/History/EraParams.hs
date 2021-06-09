@@ -1,11 +1,13 @@
-{-# LANGUAGE DeriveAnyClass     #-}
-{-# LANGUAGE DeriveGeneric      #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE TypeApplications   #-}
-{-# LANGUAGE TypeOperators      #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
 
 module Ouroboros.Consensus.HardFork.History.EraParams (
     -- * API
@@ -28,6 +30,7 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Node.Serialisation
 
 {-------------------------------------------------------------------------------
   OVERVIEW
@@ -235,6 +238,9 @@ instance Serialise EraParams where
       , encode eraSlotLength
       , encode eraSafeZone
       ]
+      -- WARNING if the serialisation changes, you must update the
+      -- @SerialiseNodeToClient blk EraParams@ instance to be backwards
+      -- compatible.
 
   decode = do
       enforceSize "EraParams" 3
@@ -242,3 +248,10 @@ instance Serialise EraParams where
       eraSlotLength <- decode
       eraSafeZone   <- decode
       return EraParams{..}
+      -- WARNING if the serialisation changes, you must update the
+      -- @SerialiseNodeToClient blk EraParams@ instance to be backwards
+      -- compatible.
+
+instance SerialiseNodeToClient blk EraParams where
+  encodeNodeToClient _ _ = encode
+  decodeNodeToClient _ _ = decode

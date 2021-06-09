@@ -128,6 +128,8 @@ class ( SL.ShelleyBasedEra era
       , NoThunks (Core.TxInBlock era)
       , Show (Core.TxInBlock era)
 
+      , FromCBOR (Core.TranslationContext era)
+      , ToCBOR (Core.TranslationContext era)
       , NoThunks (Core.TranslationContext era)
 
       , ToCBOR (Core.Witnesses era)

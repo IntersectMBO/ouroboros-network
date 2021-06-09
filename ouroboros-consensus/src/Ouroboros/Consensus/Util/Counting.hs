@@ -1,20 +1,23 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveFoldable      #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE EmptyCase             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 -- | Type-level counting
 --
@@ -58,6 +61,9 @@ import           Data.Kind (Type)
 import           Data.SOP.Dict
 import           Data.SOP.Strict
 
+import           Cardano.Binary
+
+import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
@@ -65,6 +71,16 @@ import           Ouroboros.Consensus.Util.SOP
 -------------------------------------------------------------------------------}
 
 newtype Exactly xs a = Exactly { getExactly :: NP (K a) xs }
+
+instance (SerialiseNodeToClient blk a, SListI xs)
+      => SerialiseNodeToClient blk (Exactly xs a) where
+  encodeNodeToClient ccfg v (Exactly xs)
+    = let encodings = hcfoldMap (Proxy @Top) ((:[]) . encodeNodeToClient ccfg v . unK) xs
+       in encodeListLen (fromIntegral (length encodings)) <> mconcat encodings
+  decodeNodeToClient ccfg v = do
+    let expectedLen = lengthSList (Proxy @xs)
+    enforceSize "Exactly xs a" expectedLen
+    Exactly <$> htraverse' (\(K ()) -> K <$> decodeNodeToClient ccfg v) (hpure (K ()))
 
 -- | At most one value for each type level index
 data AtMost :: [Type] -> Type -> Type where

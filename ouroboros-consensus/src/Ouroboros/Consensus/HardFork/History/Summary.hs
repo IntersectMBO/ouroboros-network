@@ -4,10 +4,12 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -64,10 +66,10 @@ import           Cardano.Binary (enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
-import           Ouroboros.Consensus.Util.Counting
-
 import           Ouroboros.Consensus.HardFork.History.EraParams
 import           Ouroboros.Consensus.HardFork.History.Util
+import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Util.Counting
 
 {-------------------------------------------------------------------------------
   Bounds
@@ -255,6 +257,9 @@ summaryWithExactly = Summary . exactlyWeakenNonEmpty
 newtype Shape xs = Shape { getShape :: Exactly xs EraParams }
   deriving (Show)
   deriving NoThunks via InspectHeapNamed "Shape" (Shape xs)
+
+deriving newtype instance SerialiseNodeToClient blk (Exactly xs EraParams)
+  => SerialiseNodeToClient blk (Shape xs)
 
 -- | There is only one era
 singletonShape :: EraParams -> Shape '[x]

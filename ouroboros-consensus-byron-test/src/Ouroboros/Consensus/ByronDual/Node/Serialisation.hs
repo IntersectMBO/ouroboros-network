@@ -9,6 +9,7 @@ module Ouroboros.Consensus.ByronDual.Node.Serialisation () where
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy
 
+import           Cardano.Binary
 import           Cardano.Chain.Slotting (EpochSlots)
 
 import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
@@ -140,6 +141,10 @@ instance SerialiseNodeToNode DualByronBlock (GenTxId DualByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance SerialiseNodeToClientConstraints DualByronBlock
+
+instance SerialiseNodeToClient DualByronBlock (DualLedgerConfig ByronBlock ByronSpecBlock) where
+  encodeNodeToClient ccfg versoin = encodeDualLedgerConfig toCBOR (encodeNodeToClient ccfg versoin)
+  decodeNodeToClient ccfg versoin = decodeDualLedgerConfig fromCBOR (decodeNodeToClient ccfg versoin)
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.

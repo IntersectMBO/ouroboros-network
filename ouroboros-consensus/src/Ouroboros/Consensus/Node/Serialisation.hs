@@ -1,11 +1,13 @@
-{-# LANGUAGE DefaultSignatures     #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Serialisation for sending things across the network.
 --
@@ -36,6 +38,7 @@ import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -129,30 +132,18 @@ defaultDecodeCBORinCBOR = unwrapCBORinCBOR (const <$> decode)
   Forwarding instances
 -------------------------------------------------------------------------------}
 
-instance SerialiseNodeToNode blk blk
-      => SerialiseNodeToNode blk (I blk) where
-  encodeNodeToNode cfg version (I h) =
-      encodeNodeToNode cfg version h
-  decodeNodeToNode cfg version =
-      I <$> decodeNodeToNode cfg version
+deriving newtype instance SerialiseNodeToNode blk blk
+                       => SerialiseNodeToNode blk (I blk)
 
-instance SerialiseNodeToClient blk blk
-      => SerialiseNodeToClient blk (I blk) where
-  encodeNodeToClient cfg version (I h) =
-      encodeNodeToClient cfg version h
-  decodeNodeToClient cfg version =
-      I <$> decodeNodeToClient cfg version
+deriving newtype instance SerialiseNodeToClient blk blk
+                       => SerialiseNodeToClient blk (I blk)
 
-instance SerialiseNodeToNode blk (GenTxId     blk)
-      => SerialiseNodeToNode blk (WrapGenTxId blk) where
-  encodeNodeToNode cfg version (WrapGenTxId h) =
-      encodeNodeToNode cfg version h
-  decodeNodeToNode cfg version =
-      WrapGenTxId <$> decodeNodeToNode cfg version
+deriving newtype instance SerialiseNodeToNode blk (GenTxId     blk)
+                       => SerialiseNodeToNode blk (WrapGenTxId blk)
 
-instance SerialiseNodeToClient blk (ApplyTxErr     blk)
-      => SerialiseNodeToClient blk (WrapApplyTxErr blk) where
-  encodeNodeToClient cfg version (WrapApplyTxErr h) =
-      encodeNodeToClient cfg version h
-  decodeNodeToClient cfg version =
-      WrapApplyTxErr <$> decodeNodeToClient cfg version
+deriving newtype instance SerialiseNodeToClient blk (ApplyTxErr     blk)
+                       => SerialiseNodeToClient blk (WrapApplyTxErr blk)
+
+deriving newtype instance SerialiseNodeToClient blk (LedgerConfig blk)
+                       => SerialiseNodeToClient blk (WrapLedgerConfig blk)
+

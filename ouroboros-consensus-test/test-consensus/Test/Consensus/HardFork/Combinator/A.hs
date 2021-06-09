@@ -43,7 +43,6 @@ import           Control.Monad.Except
 import qualified Data.Binary as B
 import           Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor.Identity (Identity)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -53,7 +52,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
-import           Cardano.Slotting.EpochInfo
+import           Cardano.Binary
 
 import           Test.Util.Time (dawnOfTime)
 
@@ -199,8 +198,24 @@ data PartialLedgerConfigA = LCfgA {
     }
   deriving NoThunks via OnlyCheckWhnfNamed "LCfgA" PartialLedgerConfigA
 
-type instance LedgerCfg (LedgerState BlockA) =
-    (EpochInfo Identity, PartialLedgerConfigA)
+instance ToCBOR PartialLedgerConfigA where
+  toCBOR (LCfgA k systemStart forgeTxs) = mconcat [
+      encodeListLen 3
+    , toCBOR k
+    , toCBOR systemStart
+    , encode forgeTxs
+    ]
+
+instance FromCBOR PartialLedgerConfigA where
+  fromCBOR = do
+    enforceSize "PartialLedgerConfigA" 3
+    LCfgA <$> fromCBOR <*> fromCBOR <*> decode
+
+instance SerialiseNodeToClient BlockA PartialLedgerConfigA where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
+
+type instance LedgerCfg (LedgerState BlockA) = PartialLedgerConfigA
 
 instance GetTip (LedgerState BlockA) where
   getTip = castPoint . lgrA_tip
@@ -243,9 +258,6 @@ instance LedgerSupportsProtocol BlockA where
 instance HasPartialConsensusConfig ProtocolA
 
 instance HasPartialLedgerConfig BlockA where
-  type PartialLedgerConfig BlockA = PartialLedgerConfigA
-
-  completeLedgerConfig _ ei pcfg = (History.toPureEpochInfo ei, pcfg)
 
 data TxPayloadA = InitiateAtoB
   deriving (Show, Eq, Generic, NoThunks, Serialise)
@@ -276,7 +288,7 @@ forgeBlockA tlc bno sno (TickedLedgerStateA st) _txs _ = BlkA {
     }
   where
     ledgerConfig :: PartialLedgerConfig BlockA
-    ledgerConfig = snd $ configLedger tlc
+    ledgerConfig = configLedger tlc
 
 blockForgingA :: Monad m => BlockForging m BlockA
 blockForgingA = BlockForging {
@@ -401,7 +413,7 @@ instance InspectLedger BlockA where
        _otherwise ->
          []
     where
-      k = stabilityWindowA (lcfgA_k (snd (configLedger cfg)))
+      k = stabilityWindowA (lcfgA_k (configLedger cfg))
 
 getConfirmationDepth :: LedgerState BlockA -> Maybe (SlotNo, Word64)
 getConfirmationDepth st = do

@@ -237,6 +237,9 @@ instance ( blockVersion ~ BlockNodeToClientVersion blk
           , (1,  do blockV <- arbitrary
                     return (WithVersion (queryVersion, blockV)
                                         (SomeSecond GetSystemStart)))
+          , (1,  do blockV <- arbitrary
+                    return (WithVersion (queryVersion, blockV)
+                                        (SomeSecond GetLedgerConfig)))
           ]
     where
       arbitraryBlockQuery :: QueryVersion

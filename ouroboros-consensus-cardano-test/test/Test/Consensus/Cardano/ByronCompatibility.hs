@@ -1,13 +1,15 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -26,10 +28,12 @@ import           Data.Coerce (Coercible, coerce)
 import           Data.SOP.BasicFunctors
 
 import qualified Cardano.Chain.Byron.API as CC
+import           Cardano.Chain.Genesis (Config)
 
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -38,12 +42,17 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
-import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))
+import           Data.SOP.Strict
+import           Ouroboros.Consensus.HardFork.Combinator
+                     (HardForkLedgerConfig (..), HasPartialLedgerConfig (..),
+                     NestedCtxt_ (..), PerEraLedgerConfig (..),
+                     WrapPartialLedgerConfig (..))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node ()
 
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.Node
 import           Ouroboros.Consensus.Shelley.Ledger.Config (CodecConfig (..))
 
@@ -159,6 +168,7 @@ deriving instance Show (NestedCtxt_ ByronToCardano Header a)
 unNestedCtxt_B2C :: NestedCtxt_ ByronToCardano f a -> NestedCtxt_ ByronBlock f a
 unNestedCtxt_B2C (NestedCtxt_B2C ctxt) = ctxt
 
+type instance LedgerCfg (LedgerState ByronToCardano) = LedgerCfg (LedgerState ByronBlock)
 type instance HeaderHash ByronToCardano = HeaderHash ByronBlock
 type instance ApplyTxErr ByronToCardano = ApplyTxErr ByronBlock
 
@@ -401,6 +411,27 @@ instance SerialiseResult ByronToCardano (BlockQuery ByronToCardano) where
                                       Crypto
                                       (CardanoQueryResult Crypto result))
 
+instance SerialiseNodeToClient ByronToCardano ByronPartialLedgerConfig where
+  encodeNodeToClient = encodeNodeToClientB2C
+    (Proxy @WrapPartialLedgerConfig)
+    (WrapPartialLedgerConfig @ByronBlock)
+  decodeNodeToClient = decodeNodeToClientB2C
+    (Proxy @WrapPartialLedgerConfig)
+    (\(HardForkLedgerConfig _ (PerEraLedgerConfig (WrapPartialLedgerConfig cfg :* _))
+      :: PartialLedgerConfig (CardanoBlock Crypto))
+      -> cfg
+    )
+
+instance SerialiseNodeToClient ByronToCardano Config where
+  encodeNodeToClient = encodeNodeToClientB2C
+    (Proxy @WrapLedgerConfig)
+    id
+  decodeNodeToClient = decodeNodeToClientB2C
+    (Proxy @WrapLedgerConfig)
+    (\(HardForkLedgerConfig _ (PerEraLedgerConfig (WrapPartialLedgerConfig (ByronPartialLedgerConfig cfg _) :* _)))
+      -> cfg
+    )
+
 instance SerialiseNodeToClientConstraints ByronToCardano
 
 {------------------------------------------------------------------------------
@@ -459,10 +490,16 @@ deriving instance Show (NestedCtxt_ CardanoToByron Header a)
 unNestedCtxt_C2B :: NestedCtxt_ CardanoToByron f a -> NestedCtxt_ ByronBlock f a
 unNestedCtxt_C2B (NestedCtxt_C2B ctxt) = ctxt
 
+type instance LedgerCfg (LedgerState CardanoToByron) = LedgerCfg (LedgerState (CardanoBlock Crypto))
 type instance HeaderHash CardanoToByron = HeaderHash ByronBlock
 type instance ApplyTxErr CardanoToByron = ApplyTxErr ByronBlock
 
 instance HasNetworkProtocolVersion CardanoToByron
+
+-- TODO
+-- instance HasPartialLedgerConfig CardanoToByron where
+--   type PartialLedgerConfig CardanoToByron = PartialLedgerConfig (CardanoBlock Crypto)
+--   completeLedgerConfig _ = completeLedgerConfig (Proxy @(CardanoBlock Crypto))
 
 instance ConvertRawHash CardanoToByron where
   toShortRawHash   _ = toShortRawHash   pb
@@ -684,6 +721,18 @@ instance SerialiseResult CardanoToByron (BlockQuery CardanoToByron) where
         (QueryResultSuccess r :: CardanoQueryResult Crypto result)
   decodeResult (CodecConfigC2B ccfg) () (QueryC2B q) =
       decodeResult ccfg byronNodeToClientVersion q
+
+instance SerialiseNodeToClient CardanoToByron (HardForkLedgerConfig (CardanoEras Crypto)) where
+  encodeNodeToClient = encodeNodeToClientC2B
+    (Proxy @WrapPartialLedgerConfig)
+    (WrapPartialLedgerConfig @(CardanoBlock Crypto))
+  -- We cannot decode. These tests use an old protocol version (see
+  -- @byronNodeToClientVersion@ and @cardanoNodeToClientVersion@) which means
+  -- encodeNodeToClient will only encode the Byron ledger config. To decode,
+  -- we'd need *all* ledger configs (i.e. for all eras). In practice, this is
+  -- fine as these tests are set up to decode using the @SerialiseNodeToClient
+  -- ByronBlock (LedgerConfig ByronBlock)@ instance.
+  decodeNodeToClient = error "LedgerConfig is not forwards compatible"
 
 instance SerialiseNodeToClientConstraints CardanoToByron
 

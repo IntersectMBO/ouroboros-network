@@ -44,6 +44,8 @@ import           Data.Void
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
+import           Cardano.Binary
+
 import           Test.Util.Time (dawnOfTime)
 
 import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
@@ -88,6 +90,18 @@ data instance ConsensusConfig ProtocolB = CfgB {
     , cfgB_leadInSlots :: Set SlotNo
     }
   deriving NoThunks via OnlyCheckWhnfNamed "CfgB" (ConsensusConfig ProtocolB)
+
+instance ToCBOR (ConsensusConfig ProtocolB) where
+  toCBOR (CfgB k leadInSlots) = mconcat [
+      encodeListLen 2
+    , toCBOR k
+    , toCBOR leadInSlots
+    ]
+
+instance FromCBOR (ConsensusConfig ProtocolB) where
+  fromCBOR = do
+    enforceSize "ConsensusConfig ProtocolB" 2
+    CfgB <$> fromCBOR <*> fromCBOR
 
 instance ConsensusProtocol ProtocolB where
   type ChainDepState ProtocolB = ()
@@ -418,6 +432,7 @@ instance Serialise (SerialisedHeader BlockB) where
   SerialiseNodeToClient
 -------------------------------------------------------------------------------}
 
+instance SerialiseNodeToClient BlockB ()
 instance SerialiseNodeToClient BlockB BlockB
 instance SerialiseNodeToClient BlockB (Serialised BlockB)
 instance SerialiseNodeToClient BlockB (GenTx BlockB)
