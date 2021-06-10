@@ -2,7 +2,6 @@ module Main (main) where
 
 import           Test.Tasty
 
-import qualified Test.Data.Monoid.Synchronisation as Synchronisation
 import qualified Test.Network.TypedProtocol.PingPong.Codec as PingPong
 import qualified Test.Network.TypedProtocol.ReqResp.Codec as ReqResp
 import qualified Test.Ouroboros.Network.Driver as Driver
@@ -22,7 +21,6 @@ tests =
   , Socket.tests
   , Subscription.tests
   , RateLimiting.tests
-  , Synchronisation.tests
   ]
 
 
