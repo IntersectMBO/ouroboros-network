@@ -211,7 +211,7 @@ data NodeVersion =       NodeToClientVersionV5 Word32
                        deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
-keepAliveReqEnc (NodeToNodeVersionV7 _ _) cookie =
+keepAliveReqEnc v cookie | v >= NodeToNodeVersionV7 minBound minBound =
        CBOR.encodeListLen 2
     <> CBOR.encodeWord 0
     <> CBOR.encodeWord16 cookie
@@ -223,7 +223,7 @@ keepAliveReq :: NodeVersion -> Word16 -> ByteString
 keepAliveReq v c = CBOR.toLazyByteString $ keepAliveReqEnc v c
 
 keepAliveDone :: NodeVersion -> ByteString
-keepAliveDone (NodeToNodeVersionV7 _ _) =
+keepAliveDone v | v >= NodeToNodeVersionV7 minBound minBound =
     CBOR.toLazyByteString $
          CBOR.encodeListLen 1
       <> CBOR.encodeWord 2
