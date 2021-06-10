@@ -15,6 +15,7 @@ package io-sim-classes
 
 package io-sim
   ghc-options: -Werror
+  flags: +asserts
 
 package monoidal-synchronisation
   ghc-options: -Werror
@@ -29,6 +30,9 @@ package typed-protocols-examples
 package network-mux
   ghc-options: -Werror
   flags: +ipv6 +asserts
+
+package ouroboros-network-testing
+  ghc-options: -Werror
 
 package ouroboros-network-framework
   ghc-options: -Werror
