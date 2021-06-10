@@ -27,6 +27,7 @@ module Ouroboros.Network.InboundGovernor
   , randomPrunePolicy
   -- * Trace
   , InboundGovernorTrace (..)
+  , RemoteSt (..)
   , AcceptConnectionsPolicyTrace (..)
   ) where
 
@@ -45,6 +46,7 @@ import           Data.Cache
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 import           Data.List (sortOn)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified System.Random as Rnd
@@ -116,6 +118,10 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                         tracer
                         (igsCountersCache state)
                         (inboundGovernorCounters state)
+      traceWith tracer $ TrRemoteState $
+            mkRemoteSt . csRemoteState
+        <$> igsConnections state
+
       event
         <- atomically $
                 (uncurry MuxFinished    <$> firstMuxToFinish state)
@@ -467,6 +473,22 @@ randomPrunePolicy stateVar mp n = do
 -- Trace
 --
 
+-- | Remote connection state tracked by inbound protocol governor.
+--
+data RemoteSt = RemoteWarmSt
+              | RemoteHotSt
+              | RemoteIdleSt
+              | RemoteColdSt
+  deriving Show
+
+
+mkRemoteSt :: RemoteState m -> RemoteSt
+mkRemoteSt  RemoteWarm    = RemoteWarmSt
+mkRemoteSt  RemoteHot     = RemoteHotSt
+mkRemoteSt (RemoteIdle _) = RemoteIdleSt
+mkRemoteSt  RemoteCold    = RemoteColdSt
+
+
 data InboundGovernorTrace peerAddr
     = TrNewConnection               !Provenance !(ConnectionId peerAddr)
     | TrResponderRestarted          !(ConnectionId peerAddr) !MiniProtocolNum
@@ -483,4 +505,5 @@ data InboundGovernorTrace peerAddr
     | TrMuxCleanExit                !(ConnectionId peerAddr)
     | TrMuxErrored                  !(ConnectionId peerAddr) SomeException
     | TrInboundGovernorCounters     !InboundGovernorCounters
+    | TrRemoteState                 !(Map (ConnectionId peerAddr) RemoteSt)
   deriving Show
