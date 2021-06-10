@@ -11,7 +11,7 @@ package ntp-client
 
 package io-sim-classes
   ghc-options: -Werror
-  flags: +asserts +checktvarinvariant
+  flags: +asserts
 
 package io-sim
   ghc-options: -Werror

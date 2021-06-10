@@ -76,11 +76,17 @@ type LazyTMVar m = Lazy.TMVar m
   Strict TVar
 -------------------------------------------------------------------------------}
 
+#if CHECK_TVAR_INVARIANT
 data StrictTVar m a = StrictTVar
    { invariant :: !(a -> Maybe String)
      -- ^ Invariant checked whenever updating the 'StrictTVar'.
    , tvar      :: !(LazyTVar m a)
    }
+#else
+newtype StrictTVar m a = StrictTVar
+   { tvar      :: LazyTVar m a
+   }
+#endif
 
 labelTVar :: MonadLabelledSTM m => StrictTVar m a -> String -> STM m ()
 labelTVar StrictTVar { tvar } = Lazy.labelTVar tvar
@@ -90,7 +96,11 @@ labelTVarIO v = atomically . labelTVar v
 
 castStrictTVar :: LazyTVar m ~ LazyTVar n
                => StrictTVar m a -> StrictTVar n a
+#if CHECK_TVAR_INVARIANT
 castStrictTVar StrictTVar{invariant, tvar} = StrictTVar{invariant, tvar}
+#else
+castStrictTVar StrictTVar{           tvar} = StrictTVar{           tvar}
+#endif
 
 -- | Get the underlying @TVar@
 --
@@ -100,7 +110,11 @@ toLazyTVar :: StrictTVar m a -> LazyTVar m a
 toLazyTVar StrictTVar { tvar } = tvar
 
 newTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
+#if CHECK_TVAR_INVARIANT
 newTVar !a = StrictTVar (const Nothing) <$> Lazy.newTVar a
+#else
+newTVar !a = StrictTVar                 <$> Lazy.newTVar a
+#endif
 
 newTVarIO :: MonadSTM m => a -> m (StrictTVar m a)
 newTVarIO = newTVarWithInvariantIO (const Nothing)
@@ -113,9 +127,14 @@ newTVarWithInvariantIO :: (MonadSTM m, HasCallStack)
                        => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
                        -> a
                        -> m (StrictTVar m a)
-newTVarWithInvariantIO invariant !a =
+#if CHECK_TVAR_INVARIANT
+newTVarWithInvariantIO  invariant !a =
     checkInvariant (invariant a) $
     StrictTVar invariant <$> Lazy.newTVarIO a
+#else
+newTVarWithInvariantIO _invariant !a =
+    StrictTVar           <$> Lazy.newTVarIO a
+#endif
 
 newTVarWithInvariantM :: (MonadSTM m, HasCallStack)
                       => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
@@ -131,9 +150,11 @@ readTVarIO :: MonadSTM m => StrictTVar m a -> m a
 readTVarIO StrictTVar { tvar } = Lazy.readTVarIO tvar
 
 writeTVar :: (MonadSTM m, HasCallStack) => StrictTVar m a -> a -> STM m ()
-writeTVar StrictTVar { tvar, invariant } !a =
-    checkInvariant (invariant a) $
-    Lazy.writeTVar tvar a
+writeTVar v !a =
+#if CHECK_TVAR_INVARIANT
+    checkInvariant (invariant v a) $
+#endif
+    Lazy.writeTVar (tvar v) a
 
 modifyTVar :: MonadSTM m => StrictTVar m a -> (a -> a) -> STM m ()
 modifyTVar v f = readTVar v >>= writeTVar v . f
