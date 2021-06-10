@@ -211,7 +211,7 @@ data NodeVersion =       NodeToClientVersionV5 Word32
                        deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
-keepAliveReqEnc (NodeToNodeVersionV7 _ _) cookie =
+keepAliveReqEnc v cookie | v >= NodeToNodeVersionV7 minBound minBound =
        CBOR.encodeListLen 2
     <> CBOR.encodeWord 0
     <> CBOR.encodeWord16 cookie
@@ -221,6 +221,15 @@ keepAliveReqEnc _ cookie =
 
 keepAliveReq :: NodeVersion -> Word16 -> ByteString
 keepAliveReq v c = CBOR.toLazyByteString $ keepAliveReqEnc v c
+
+keepAliveDone :: NodeVersion -> ByteString
+keepAliveDone v | v >= NodeToNodeVersionV7 minBound minBound =
+    CBOR.toLazyByteString $
+         CBOR.encodeListLen 1
+      <> CBOR.encodeWord 2
+keepAliveDone _ =
+    CBOR.toLazyByteString $
+      CBOR.encodeWord 2
 
 
 handshakeReqEnc :: [NodeVersion] -> CBOR.Encoding
@@ -450,6 +459,11 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
                       (NodeToClientVersionV8 _) -> return ()
                       _                       -> do
                           keepAlive bearer timeoutfn peerStr version (tdigest []) 0
+                          -- send terminating message
+                          _ <- write bearer timeoutfn $
+                                 wrap keepaliveNum InitiatorDir (keepAliveDone version)
+                          -- protocol idle timeout 
+                          threadDelay 5
 
     )
   where
