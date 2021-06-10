@@ -279,7 +279,7 @@ nullTracers = DiffusionTracers {
   , dtLedgerPeersTracer                          = nullTracer
   }
 
--- | Network Node argumets
+-- | Network Node arguments
 --
 data DiffusionArguments m = DiffusionArguments {
       daIPv4Address  :: Maybe (Either Socket.Socket AddrInfo)
@@ -324,7 +324,7 @@ data DiffusionArguments m = DiffusionArguments {
       -- @TIME_WAIT@ timeout.
       --
       -- This timeout will apply to after a connection has been closed, its
-      -- purpose is to be resilitent for delayed packets in the same way @TCP@
+      -- purpose is to be resilient for delayed packets in the same way @TCP@
       -- is using @TIME_WAIT@.
     }
 
@@ -367,7 +367,7 @@ combineMiniProtocolBundles (MiniProtocolBundle initiators)
          ]
 
 
--- TODO: we need initiator only mode for Deadalus, there's no reason why it
+-- TODO: we need initiator only mode for Daedalus, there's no reason why it
 -- should run a node-to-node server side.
 --
 data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
@@ -1200,7 +1200,7 @@ nodeDataFlow v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiff
 nodeDataFlow _ _ = Unidirectional
 
 
--- | For Node-To-Client protocol all connection are considered 'Unidrectional'.
+-- | For Node-To-Client protocol all connection are considered 'Unidirectional'.
 --
 localDataFlow :: NodeToClientVersion
               -> NodeToClientVersionData
