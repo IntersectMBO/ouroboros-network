@@ -110,9 +110,9 @@ jobs:
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
 
-    - name: Use cabal.project.local.ci.windows
+    - name: Use cabal.project.local.ci
       run: |
-        cat ./cabal.project.local.ci.windows >> ./cabal.project.local
+        cat ./cabal.project.local.ci >> ./cabal.project.local
 
         cat >> cabal.project.local <<EOF
         package cardano-crypto-praos
