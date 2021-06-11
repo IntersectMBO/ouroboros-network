@@ -13,6 +13,12 @@ package io-sim-classes
   ghc-options: -Werror
   flags: +asserts +checktvarinvariant
 
+package io-sim
+  ghc-options: -Werror
+
+package monoidal-synchronisation
+  ghc-options: -Werror
+
 package typed-protocols
   ghc-options: -Werror
 
@@ -30,3 +36,6 @@ package ouroboros-network-framework
 package ouroboros-network
   ghc-options: -Werror
   flags: +ipv6 +cddl +asserts
+
+package cardano-client
+  ghc-options: -Werror

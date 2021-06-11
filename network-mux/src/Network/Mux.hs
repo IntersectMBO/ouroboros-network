@@ -50,6 +50,7 @@ import           Data.Int (Int64)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isNothing)
+import           Data.Monoid.Synchronisation (FirstToFinish (..))
 
 import           Control.Applicative
 import qualified Control.Concurrent.JobPool as JobPool
@@ -360,19 +361,22 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
   where
     go :: MonitorCtx m mode -> m ()
     go !monitorCtx@MonitorCtx { mcOnDemandProtocols } = do
-      result <- atomically $
+      result <- atomically $ runFirstToFinish $
             -- wait for a mini-protocol thread to terminate
-            (EventJobResult <$> JobPool.collect jobpool)
+           (FirstToFinish $ EventJobResult <$> JobPool.collect jobpool)
 
             -- wait for a new control command
-        <|> (EventControlCmd <$> readTQueue cmdQueue)
+        <> (FirstToFinish $ EventControlCmd <$> readTQueue cmdQueue)
 
             -- or wait for data to arrive on the channels that do not yet have
             -- responder threads running
-        <|> foldr (<|>) retry
-              [ checkNonEmptyQueue (miniProtocolIngressQueue ptclState) >>
-                return (EventStartOnDemand ptclState ptclAction)
-              | (ptclState, ptclAction) <- Map.elems mcOnDemandProtocols ]
+        <> foldMap
+             (\(ptclState, ptclAction) ->
+               FirstToFinish $ do
+                 checkNonEmptyQueue (miniProtocolIngressQueue ptclState)
+                 return (EventStartOnDemand ptclState ptclAction)
+             )
+             mcOnDemandProtocols
 
       case result of
         -- Protocols that runs to completion are not automatically restarted.
