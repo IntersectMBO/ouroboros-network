@@ -32,6 +32,8 @@ import           Test.ThreadNet.TxGen (TxGen (..))
 
 import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
+import           Test.Shelley.Spec.Ledger.Generator.EraGen
+                     (EraGen (genEraTwoPhaseScripts))
 import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
@@ -130,7 +132,7 @@ mkGenEnv ::
   => WhetherToGeneratePPUs
   -> [CoreNode (MockCrypto h)]
   -> Gen.GenEnv (MockShelley h)
-mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
+mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace scriptSpace constants
   where
     -- Configuration of the transaction generator
     constants :: Gen.Constants
@@ -170,3 +172,8 @@ mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
             ksStakePools
           } =
             Gen.Presets.keySpace @(MockShelley h) constants
+
+    scriptSpace :: Gen.ScriptSpace (MockShelley h)
+    scriptSpace =
+      Gen.Presets.scriptSpace @(MockShelley h)
+           (genEraTwoPhaseScripts @(MockShelley h))

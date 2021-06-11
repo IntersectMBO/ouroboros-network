@@ -29,9 +29,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Storage.Serialisation
 
-import qualified Cardano.Ledger.Core as Core
-
-import qualified Shelley.Spec.Ledger.API as SL
 import           Test.Shelley.Spec.Ledger.Orphans ()
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -47,6 +44,8 @@ import           Ouroboros.Consensus.Shelley.Protocol
 
 import           Test.Cardano.Ledger.Allegra.Examples.Consensus
                      (ledgerExamplesAllegra)
+import           Test.Cardano.Ledger.Alonzo.Examples.Consensus
+                     (ledgerExamplesAlonzo)
 import           Test.Cardano.Ledger.Mary.Examples.Consensus
                      (ledgerExamplesMary)
 import           Test.Shelley.Spec.Ledger.Examples.Consensus
@@ -61,8 +60,8 @@ codecConfig :: CodecConfig (ShelleyBlock Ouroboros.Consensus.Shelley.Eras.Standa
 codecConfig = ShelleyCodecConfig
 
 fromShelleyLedgerExamples
-  :: (ShelleyBasedEra era , Core.PParams era ~ SL.PParams era)
-  => ShelleyLedgerExamples era -- ^
+  :: ShelleyBasedEra era
+  => ShelleyLedgerExamples era
   -> Golden.Examples (ShelleyBlock era)
 fromShelleyLedgerExamples ShelleyLedgerExamples {
                             sleResultExamples = ShelleyResultExamples{..}
@@ -138,4 +137,4 @@ examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
 examplesMary = fromShelleyLedgerExamples ledgerExamplesMary
 
 examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
-examplesAlonzo = mempty -- TODO fromShelleyLedgerExamples ledgerExamplesAlonzo
+examplesAlonzo = fromShelleyLedgerExamples ledgerExamplesAlonzo
