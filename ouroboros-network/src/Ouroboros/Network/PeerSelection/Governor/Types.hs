@@ -4,16 +4,46 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PatternSynonyms     #-}
 
-module Ouroboros.Network.PeerSelection.Governor.Types where
+module Ouroboros.Network.PeerSelection.Governor.Types
+  ( -- * P2P governor policies
+    PeerSelectionPolicy (..)
+  , PeerSelectionTargets (..)
+  , nullPeerSelectionTargets
+  , sanePeerSelectionTargets
+  , PickPolicy
+  , pickPeers
+
+  -- * P2P governor low level API
+  -- These records are needed to run the peer selection.
+  , PeerStateActions (..)
+  , PeerSelectionActions (..) 
+
+  -- * P2P govnernor internals
+  , PeerSelectionState (..)
+  , emptyPeerSelectionState
+  , assertPeerSelectionState
+  , establishedPeersStatus
+  , Guarded (GuardedSkip, Guarded)
+  , Decision (..)
+  , TimedDecision
+  , MkGuardedDecision
+  , Completion (..)
+
+  -- * Traces
+  , TracePeerSelection (..)
+  , DebugPeerSelection (..)
+  )where
 
 import           Data.Semigroup (Min(..))
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Set as Set
 import           Data.Set (Set)
+import           Data.Monoid.Synchronisation (FirstToFinish (..))
 
-import           Control.Applicative (Alternative((<|>)))
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.JobPool (Job)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
@@ -402,10 +432,23 @@ data Guarded m a =
     --
     GuardedSkip !(Maybe (Min Time))
 
-    -- | 'Guarded' is used to provide an action, possibly with a timeout, to
+    -- | 'Guarded' is used to provide an action through 'FirstToFinish'
+    -- synchronisation, possibly with a timeout, to
     -- the governor main loop.
     --
-  | Guarded     !(Maybe (Min Time)) (m a)
+  | Guarded'   !(Maybe (Min Time)) (FirstToFinish m a)
+
+
+-- | 'Guarded' constructor which provides an action, possibly with a timeout,
+-- to the governor main loop.  It hides the use of 'FirstToFinish'
+-- synchronisation.
+--
+pattern Guarded :: Maybe (Min Time) -> m a -> Guarded m a
+pattern Guarded a b <- Guarded' a (FirstToFinish b)
+  where
+    Guarded a b = Guarded' a (FirstToFinish b)
+
+{-# COMPLETE GuardedSkip, Guarded #-}
 
 -- | 'Guarded' constructor is absorbing in the sense that
 --
@@ -419,9 +462,9 @@ data Guarded m a =
 -- Ref. [absorbing element](https://en.wikipedia.org/wiki/Absorbing_element)
 --
 instance Alternative m => Semigroup (Guarded m a) where
-  Guarded     ta a <> Guarded     tb b = Guarded     (ta <> tb) (a <|> b)
-  Guarded     ta a <> GuardedSkip tb   = Guarded     (ta <> tb)  a
-  GuardedSkip ta   <> Guarded     tb b = Guarded     (ta <> tb)  b
+  Guarded'    ta a <> Guarded'    tb b = Guarded'    (ta <> tb) (a <> b)
+  Guarded'    ta a <> GuardedSkip tb   = Guarded'    (ta <> tb)  a
+  GuardedSkip ta   <> Guarded'    tb b = Guarded'    (ta <> tb)  b
   GuardedSkip ta   <> GuardedSkip tb   = GuardedSkip (ta <> tb)
 
 
