@@ -385,7 +385,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
             ]
         , daMiniProtocolParameters = miniProtocolParams
         , daRethrowPolicy = consensusRethrowPolicy (Proxy @blk)
-        , daLocalRethrowPolicy = mempty
+        , daLocalRethrowPolicy = consensusRethrowPolicy (Proxy @blk)
         , daLedgerPeersCtx = LedgerPeersConsensusInterface (getPeersFromCurrentLedgerAfterSlot kernel)
         , daPeerMetrics = peerMetrics
         , daBlockFetchMode = getFetchMode (getChainDB kernel) btime
