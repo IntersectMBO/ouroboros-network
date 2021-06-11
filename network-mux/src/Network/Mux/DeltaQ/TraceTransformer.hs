@@ -52,7 +52,7 @@ dqTracer sTvar tr = Tracer go
          >>= traceWith tr . formatSample
 
     processSample s
-      = (initialStatsA, constructSample s)
+      = (constructSample s, initialStatsA)
 
     formatSample (OneWaySample {..})
       = MuxTraceRecvDeltaQSample duration sumPackets sumTotalSDU

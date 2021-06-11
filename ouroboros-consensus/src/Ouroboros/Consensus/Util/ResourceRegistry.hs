@@ -68,7 +68,6 @@ import           Data.Maybe (catMaybes, listToMaybe)
 import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Tuple (swap)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeapNamed (..), OnlyCheckWhnfNamed (..),
@@ -511,7 +510,7 @@ updateState :: forall m a. IOLike m
             -> State (RegistryState m) a
             -> m a
 updateState rr f =
-    atomically $ stateTVar (registryState rr) (swap . runState f)
+    atomically $ stateTVar (registryState rr) (runState f)
 
 -- | Attempt to allocate a resource in a registry which is closed
 --

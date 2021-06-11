@@ -4,7 +4,6 @@
 module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 
 import           Data.Bifunctor (first)
-import           Data.Tuple (swap)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util ((...:), (.:))
@@ -55,7 +54,7 @@ openDBMock chunkInfo ccfg = do
         update_ f = atomically $ modifyTVar dbVar f
 
         update :: (DBModel blk -> (a, DBModel blk)) -> m a
-        update f = atomically $ stateTVar dbVar (swap . f)
+        update f = atomically $ stateTVar dbVar f
 
         updateE_ :: (DBModel blk -> Either (ImmutableDBError blk) (DBModel blk)) -> m ()
         updateE_ f = atomically $ do
