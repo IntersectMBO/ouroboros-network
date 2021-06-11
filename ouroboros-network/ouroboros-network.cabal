@@ -175,6 +175,7 @@ library
                        cardano-prelude,
                        cardano-slotting,
                        contra-tracer,
+                       monoidal-synchronisation,
 
                        io-sim-classes    >=0.1 && < 0.3,
                        network-mux       >=0.1 && <1.0,
