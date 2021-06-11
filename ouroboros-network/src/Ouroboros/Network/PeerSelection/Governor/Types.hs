@@ -5,7 +5,35 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.Governor.Types where
+module Ouroboros.Network.PeerSelection.Governor.Types
+  ( -- * P2P governor policies
+    PeerSelectionPolicy (..)
+  , PeerSelectionTargets (..)
+  , nullPeerSelectionTargets
+  , sanePeerSelectionTargets
+  , PickPolicy
+  , pickPeers
+
+  -- * P2P governor low level API
+  -- These records are needed to run the peer selection.
+  , PeerStateActions (..)
+  , PeerSelectionActions (..) 
+
+  -- * P2P govnernor internals
+  , PeerSelectionState (..)
+  , emptyPeerSelectionState
+  , assertPeerSelectionState
+  , establishedPeersStatus
+  , Guarded (..)
+  , Decision (..)
+  , TimedDecision
+  , MkGuardedDecision
+  , Completion (..)
+
+  -- * Traces
+  , TracePeerSelection (..)
+  , DebugPeerSelection (..)
+  ) where
 
 import           Data.Semigroup (Min(..))
 import qualified Data.Map.Strict as Map
