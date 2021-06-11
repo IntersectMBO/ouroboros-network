@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
@@ -35,6 +36,7 @@ import           Control.Tracer (Tracer)
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Bifoldable (Bifoldable (..))
 import           Data.Hashable
+import           Data.Word
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
 #if !defined(mingw32_HOST_OS)
@@ -125,15 +127,16 @@ instance Bifoldable Accepted where
 berkeleyAccept :: IOManager
                -> Socket
                -> Accept IO Socket SockAddr
-berkeleyAccept ioManager sock = go
+berkeleyAccept ioManager sock = go 0
     where
-      go = Accept (acceptOne `catch` handleException)
+      go cnt = Accept (acceptOne cnt `catch` handleException cnt)
 
       acceptOne
-        :: IO ( Accepted  Socket SockAddr
+        :: Word64
+        -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      acceptOne =
+      acceptOne !cnt =
         bracketOnError
 #if !defined(mingw32_HOST_OS)
           (Socket.accept sock)
@@ -143,19 +146,33 @@ berkeleyAccept ioManager sock = go
           (Socket.close . fst)
           $ \(sock', addr') -> do
             associateWithIOManager ioManager (Right sock')
-            return (Accepted sock' addr', go)
+
+            -- UNIX sockets don't provide a unique endpoint for the remote
+            -- side, but the InboundGovernor/Server requires one in order to
+            -- track connections.
+            -- So to differentiate clients we use a simple counter as the
+            -- remote end's address.
+            --
+            addr'' <- case addr' of
+                           Socket.SockAddrUnix _ ->
+                               return $ Socket.SockAddrUnix $
+                                   "temp-" ++ show cnt
+                           _                     -> return addr'
+
+            return (Accepted sock' addr'', go $ succ cnt)
 
       -- Only non-async exceptions will be caught and put into the
       -- AcceptFailure variant.
       handleException
-        :: SomeException
+        :: Word64
+        -> SomeException
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      handleException err =
+      handleException !cnt err =
         case fromException err of
           Just (SomeAsyncException _) -> throwIO err
-          Nothing                     -> pure (AcceptFailure err, go)
+          Nothing                     -> pure (AcceptFailure err, go cnt)
 
 -- | Local address, on Unix is associated with `Socket.AF_UNIX` family, on
 --
@@ -390,25 +407,27 @@ localSnocket ioManager path = Snocket {
     localAddress = LocalAddress path
 
     acceptNext :: Accept IO LocalSocket LocalAddress
-    acceptNext = go
+    acceptNext = go 0
       where
-        go = Accept (acceptOne `catch` handleIOException)
+        go cnt = Accept (acceptOne cnt `catch` handleIOException cnt)
 
         handleIOException
-          :: IOException
+          :: Word64
+          -> IOException
           -> IO ( Accepted  LocalSocket LocalAddress
                 , Accept IO LocalSocket LocalAddress
                 )
-        handleIOException err =
+        handleIOException !cnt err =
           pure ( AcceptFailure (toException err)
-               , go
+               , go cnt
                )
 
         acceptOne
-          :: IO ( Accepted  LocalSocket LocalAddress
+          :: Word64
+          -> IO ( Accepted  LocalSocket LocalAddress
                 , Accept IO LocalSocket LocalAddress
                 )
-        acceptOne =
+        acceptOne !cnt =
           bracketOnError
             (Win32.createNamedPipe
                  path
@@ -423,7 +442,13 @@ localSnocket ioManager path = Snocket {
              $ \hpipe -> do
               associateWithIOManager ioManager (Left hpipe)
               Win32.Async.connectNamedPipe hpipe
-              return (Accepted (LocalSocket hpipe) localAddress, go)
+              -- InboundGovernor/Server requires a unique address for the
+              -- remote end one in order to track connections.
+              -- So to differentiate clients we use a simple counter as the
+              -- remote end's address.
+              --
+              let addr = localAddressFromPath $ "temp-" ++ show cnt
+              return (Accepted (LocalSocket hpipe) addr, go $ succ cnt )
 
 -- local snocket on unix
 #else
