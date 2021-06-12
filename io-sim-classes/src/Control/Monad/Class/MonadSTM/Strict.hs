@@ -96,11 +96,8 @@ labelTVarIO v = atomically . labelTVar v
 
 castStrictTVar :: LazyTVar m ~ LazyTVar n
                => StrictTVar m a -> StrictTVar n a
-#if CHECK_TVAR_INVARIANT
-castStrictTVar StrictTVar{invariant, tvar} = StrictTVar{invariant, tvar}
-#else
-castStrictTVar StrictTVar{           tvar} = StrictTVar{           tvar}
-#endif
+castStrictTVar v@StrictTVar {tvar} =
+    mkStrictTVar (getInvariant v) tvar
 
 -- | Get the underlying @TVar@
 --
@@ -110,11 +107,8 @@ toLazyTVar :: StrictTVar m a -> LazyTVar m a
 toLazyTVar StrictTVar { tvar } = tvar
 
 newTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
-#if CHECK_TVAR_INVARIANT
-newTVar !a = StrictTVar (const Nothing) <$> Lazy.newTVar a
-#else
-newTVar !a = StrictTVar                 <$> Lazy.newTVar a
-#endif
+newTVar !a = (\tvar -> mkStrictTVar (const Nothing) tvar)
+         <$> Lazy.newTVar a
 
 newTVarIO :: MonadSTM m => a -> m (StrictTVar m a)
 newTVarIO = newTVarWithInvariantIO (const Nothing)
@@ -127,14 +121,10 @@ newTVarWithInvariantIO :: (MonadSTM m, HasCallStack)
                        => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
                        -> a
                        -> m (StrictTVar m a)
-#if CHECK_TVAR_INVARIANT
 newTVarWithInvariantIO  invariant !a =
-    checkInvariant (invariant a) $
-    StrictTVar invariant <$> Lazy.newTVarIO a
-#else
-newTVarWithInvariantIO _invariant !a =
-    StrictTVar           <$> Lazy.newTVarIO a
-#endif
+        checkInvariant (invariant a) $
+        (\tvar -> mkStrictTVar invariant tvar)
+    <$> Lazy.newTVarIO a
 
 newTVarWithInvariantM :: (MonadSTM m, HasCallStack)
                       => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
@@ -151,9 +141,7 @@ readTVarIO StrictTVar { tvar } = Lazy.readTVarIO tvar
 
 writeTVar :: (MonadSTM m, HasCallStack) => StrictTVar m a -> a -> STM m ()
 writeTVar v !a =
-#if CHECK_TVAR_INVARIANT
-    checkInvariant (invariant v a) $
-#endif
+    checkInvariant (getInvariant v a) $
     Lazy.writeTVar (tvar v) a
 
 modifyTVar :: MonadSTM m => StrictTVar m a -> (a -> a) -> STM m ()
@@ -246,6 +234,9 @@ isEmptyTMVar (StrictTMVar tmvar) = Lazy.isEmptyTMVar tmvar
   Dealing with invariants
 -------------------------------------------------------------------------------}
 
+getInvariant :: StrictTVar m a -> a -> Maybe String
+mkStrictTVar :: (a -> Maybe String) -> Lazy.TVar m a -> StrictTVar m a
+
 -- | Check invariant (if enabled) before continuing
 --
 -- @checkInvariant mErr x@ is equal to @x@ if @mErr == Nothing@, and throws
@@ -255,9 +246,16 @@ isEmptyTMVar (StrictTMVar tmvar) = Lazy.isEmptyTMVar tmvar
 -- invariants can reuse the same logic, rather than having to introduce new
 -- per-package flags.
 checkInvariant :: HasCallStack => Maybe String -> a -> a
+
 #if CHECK_TVAR_INVARIANT
-checkInvariant Nothing    k = k
-checkInvariant (Just err) _ = error $ "Invariant violation: " ++ err
+getInvariant StrictTVar {invariant} = invariant
+mkStrictTVar invariant  tvar = StrictTVar {invariant, tvar}
+
+checkInvariant Nothing    k  = k
+checkInvariant (Just err) _  = error $ "Invariant violation: " ++ err
 #else
-checkInvariant _err k       = k
+getInvariant _               = \_ -> Nothing
+mkStrictTVar _invariant tvar = StrictTVar {tvar}
+
+checkInvariant _err       k  = k
 #endif
