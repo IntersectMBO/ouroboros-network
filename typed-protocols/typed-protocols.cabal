@@ -21,7 +21,6 @@ library
   exposed-modules:   Network.TypedProtocol
                    , Network.TypedProtocol.Core
                    , Network.TypedProtocol.Codec
-                   , Network.TypedProtocol.Pipelined
                    , Network.TypedProtocol.Driver
                    , Network.TypedProtocol.Proofs
 
@@ -34,6 +33,7 @@ library
                    , TypeOperators
                    , BangPatterns
   build-depends:     base,
+                     singletons >= 3.0,
                      io-classes
 
   hs-source-dirs:    src

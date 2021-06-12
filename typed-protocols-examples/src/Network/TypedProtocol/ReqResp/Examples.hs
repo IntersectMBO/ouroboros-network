@@ -1,14 +1,18 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Network.TypedProtocol.ReqResp.Examples where
 
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Type
 
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Core
 
 -- | An example request\/response client which ignores received responses.
 --
@@ -53,6 +57,16 @@ reqRespClientMap = go []
 -- Pipelined example
 --
 
+data SingQueueRR (q :: Queue (ReqResp req resp)) where
+    SingEmptyRR :: SingQueueRR Empty
+    SingConsRR  :: SingQueueRR q
+                -> SingQueueRR (Tr StBusy StIdle <| q)
+
+snocRR :: SingQueueRR q
+       -> SingQueueRR (q |> Tr StBusy StIdle)
+snocRR  SingEmptyRR   = SingConsRR SingEmptyRR
+snocRR (SingConsRR q) = SingConsRR (snocRR q)
+
 -- | An example request\/response client that sends the given list of requests
 -- and collects the list of responses.
 --
@@ -69,24 +83,29 @@ reqRespClientMapPipelined :: forall req resp m.
                           => [req]
                           -> ReqRespClientPipelined req resp m [resp]
 reqRespClientMapPipelined reqs0 =
-    ReqRespClientPipelined (go [] Zero reqs0)
+    ReqRespClientPipelined (go [] SingEmptyRR reqs0)
   where
-    go :: [resp] -> Nat o -> [req] -> ReqRespSender req resp o resp m [resp]
-    go resps Zero reqs =
+    go :: forall (q :: Queue (ReqResp req resp)).
+          [resp]
+       -> SingQueueRR q
+       -> [req]
+       -> ReqRespIdle req resp q m [resp]
+
+    go resps SingEmptyRR reqs =
       case reqs of
         []        -> SendMsgDonePipelined (reverse resps)
-        req:reqs' -> sendReq resps Zero req reqs'
+        req:reqs' -> sendReq resps SingEmptyRR req reqs'
 
-    go resps (Succ o) reqs =
+    go resps q@(SingConsRR q') reqs =
       CollectPipelined
         (case reqs of
            []        -> Nothing
-           req:reqs' -> Just (sendReq resps (Succ o) req reqs'))
-        (\resp -> go (resp:resps) o reqs)
+           req:reqs' -> Just (sendReq resps q req reqs'))
+        (\resp -> pure $ go (resp:resps) q' reqs)
 
-    sendReq :: [resp] -> Nat o -> req -> [req]
-            -> ReqRespSender req resp o resp m [resp]
-    sendReq resps o req reqs' =
-      SendMsgReqPipelined req
-        (\resp -> return resp)
-        (go resps (Succ o) reqs')
+    sendReq :: [resp] -> SingQueueRR q -> req -> [req]
+            -> ReqRespIdle req resp q m [resp]
+    sendReq resps q req reqs' =
+      SendMsgReqPipelined
+        req
+        (go resps (snocRR q) reqs')

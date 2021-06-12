@@ -47,6 +47,7 @@ library
                      bytestring,
                      cborg,
                      serialise,
+                     singletons,
                      contra-tracer,
                      io-classes,
                      time,

@@ -8,6 +8,8 @@
 
 module Network.TypedProtocol.PingPong.Type where
 
+import           Data.Singletons
+
 import           Network.TypedProtocol.Core
 
 
@@ -35,6 +37,22 @@ data PingPong where
   StBusy :: PingPong
   StDone :: PingPong
 
+data SPingPong (st :: PingPong) where
+  SingIdle :: SPingPong StIdle
+  SingBusy :: SPingPong StBusy
+  SingDone :: SPingPong StDone
+
+deriving instance Show (SPingPong st)
+
+type instance Sing = SPingPong
+instance SingI StIdle where
+    sing = SingIdle
+instance SingI StBusy where
+    sing = SingBusy
+instance SingI StDone where
+    sing = SingDone
+
+
 instance Protocol PingPong where
 
   -- | The actual messages in our protocol.
@@ -54,33 +72,9 @@ instance Protocol PingPong where
     MsgPong :: Message PingPong StBusy StIdle
     MsgDone :: Message PingPong StIdle StDone
 
-  -- | We have to explain to the framework what our states mean, in terms of
-  -- who is expected to send and receive in the different states.
-  --
-  -- Idle states are where it is for the client to send a message.
-  --
-  data ClientHasAgency st where
-    TokIdle :: ClientHasAgency StIdle
-
-  -- | Busy states are where the server is expected to send a reply (a pong).
-  --
-  data ServerHasAgency st where
-    TokBusy :: ServerHasAgency StBusy
-
-  -- | In the done state neither client nor server can send messages.
-  --
-  data NobodyHasAgency st where
-    TokDone :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
+  type StateAgency StIdle = ClientAgency
+  type StateAgency StBusy = ServerAgency
+  type StateAgency StDone = NobodyAgency
 
 
 deriving instance Show (Message PingPong from to)
-
-instance Show (ClientHasAgency (st :: PingPong)) where
-  show TokIdle = "TokIdle"
-
-instance Show (ServerHasAgency (st :: PingPong)) where
-  show TokBusy = "TokBusy"

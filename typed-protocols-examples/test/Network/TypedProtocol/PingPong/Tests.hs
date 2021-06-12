@@ -1,9 +1,12 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
-
+-- orphaned arbitrary instances
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Network.TypedProtocol.PingPong.Tests
   ( tests
@@ -16,6 +19,7 @@ module Network.TypedProtocol.PingPong.Tests
 
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver.Simple
 import           Network.TypedProtocol.Proofs
 
@@ -31,7 +35,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.ST (runST)
-import           Control.Tracer (Tracer, nullTracer)
+import           Control.Tracer (nullTracer)
 import           Data.Functor.Identity (Identity (..))
 
 import qualified Data.ByteString.Lazy as LBS
@@ -99,23 +103,25 @@ directPipelined :: Monad m
                 -> PingPongServer          m b
                 -> m (a, b)
 directPipelined (PingPongClientPipelined client0) server0 =
-    go EmptyQ client0 server0
+    go SingEmpty client0 server0
   where
     go :: Monad m
-       => Queue n c
-       -> PingPongSender n c m a
-       -> PingPongServer     m b
+       => SingQueue q
+       -> PingPongClientIdle q m a
+       -> PingPongServer       m b
        -> m (a, b)
-    go EmptyQ (SendMsgDonePipelined clientResult) PingPongServer{recvMsgDone} =
+    go SingEmpty (SendMsgDonePipelined clientResult) PingPongServer{recvMsgDone} =
       pure (clientResult, recvMsgDone)
 
-    go q (SendMsgPingPipelined kPong client') PingPongServer{recvMsgPing} = do
+    go q (SendMsgPingPipelined client') PingPongServer{recvMsgPing} = do
       server' <- recvMsgPing
-      x       <- kPong
-      go (enqueue x q) client' server'
+      let singTr :: SingTrans (Tr StBusy StIdle)
+          singTr = SingTr
+      go (q |> singTr) client' server'
 
-    go (ConsQ x q) (CollectPipelined _ k) server =
-      go q (k x) server
+    go (SingCons q) (CollectPipelined _ k) server = do
+      client' <- k
+      go q client' server
 
 
 -- | Run a simple ping\/pong client and server, without going via the 'Peer'
@@ -179,10 +185,13 @@ prop_connect :: NonNegative Int -> Bool
 prop_connect (NonNegative n) =
   case runIdentity
          (connect
+           [] []
            (pingPongClientPeer (pingPongClientCount n))
            (pingPongServerPeer  pingPongServerCount))
 
-    of ((), n', TerminalStates TokDone TokDone) -> n == n'
+    of ((), n', TerminalStates SingDone ReflNobodyAgency
+                               SingDone ReflNobodyAgency) ->
+        n == n'
 
 
 --
@@ -198,11 +207,13 @@ connect_pipelined :: PingPongClientPipelined Identity [Either Int Int]
                   -> (Int, [Either Int Int])
 connect_pipelined client cs =
   case runIdentity
-         (connectPipelined cs
+         (connect cs []
             (pingPongClientPeerPipelined client)
             (pingPongServerPeer pingPongServerCount))
 
-    of (reqResps, n, TerminalStates TokDone TokDone) -> (n, reqResps)
+    of (reqResps, n, TerminalStates SingDone ReflNobodyAgency
+                                    SingDone ReflNobodyAgency) ->
+         (n, reqResps)
 
 
 -- | Using a client that forces maximum pipeling, show that irrespective of
@@ -283,11 +294,10 @@ prop_connect_pipelined5 choices (Positive omax) (NonNegative n) =
 --
 prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
              => NonNegative Int
-             -> Tracer m (Role, TraceSendRecv PingPong)
              -> m Bool
-prop_channel (NonNegative n) tr = do
+prop_channel (NonNegative n) = do
     ((), n') <- runConnectedPeers createConnectedChannels
-                                  tr
+                                  nullTracer
                                   codecPingPong client server
     return (n' == n)
   where
@@ -297,22 +307,22 @@ prop_channel (NonNegative n) tr = do
 
 prop_channel_IO :: NonNegative Int -> Property
 prop_channel_IO n =
-    ioProperty (prop_channel n nullTracer)
+    ioProperty (prop_channel n)
 
 prop_channel_ST :: NonNegative Int -> Bool
 prop_channel_ST n =
-    runSimOrThrow (prop_channel n nullTracer)
+    runSimOrThrow (prop_channel n)
 
 
 --
 -- Codec properties
 --
 
-instance Arbitrary (AnyMessageAndAgency PingPong) where
+instance Arbitrary (AnyMessage PingPong) where
   arbitrary = elements
-    [ AnyMessageAndAgency (ClientAgency TokIdle) MsgPing
-    , AnyMessageAndAgency (ServerAgency TokBusy) MsgPong
-    , AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
+    [ AnyMessage MsgPing
+    , AnyMessage MsgPong
+    , AnyMessage MsgDone
     ]
 
 instance Eq (AnyMessage PingPong) where
@@ -321,20 +331,20 @@ instance Eq (AnyMessage PingPong) where
   AnyMessage MsgDone == AnyMessage MsgDone = True
   _                  ==                  _ = False
 
-prop_codec_PingPong :: AnyMessageAndAgency PingPong -> Bool
+prop_codec_PingPong :: AnyMessage PingPong -> Bool
 prop_codec_PingPong =
     prop_codec
       runIdentity
       codecPingPong
 
-prop_codec_splits2_PingPong :: AnyMessageAndAgency PingPong -> Bool
+prop_codec_splits2_PingPong :: AnyMessage PingPong -> Bool
 prop_codec_splits2_PingPong =
     prop_codec_splits
       splits2
       runIdentity
       codecPingPong
 
-prop_codec_splits3_PingPong :: AnyMessageAndAgency PingPong -> Bool
+prop_codec_splits3_PingPong :: AnyMessage PingPong -> Bool
 prop_codec_splits3_PingPong =
     prop_codec_splits
       splits3
@@ -346,13 +356,13 @@ prop_codec_splits3_PingPong =
 --
 
 prop_codec_cbor_PingPong
-  :: AnyMessageAndAgency PingPong
+  :: AnyMessage PingPong
   -> Bool
 prop_codec_cbor_PingPong msg =
   runST $ prop_codecM CBOR.codecPingPong msg
 
 prop_codec_cbor_splits2_PingPong
-  :: AnyMessageAndAgency PingPong
+  :: AnyMessage PingPong
   -> Bool
 prop_codec_cbor_splits2_PingPong msg =
   runST $ prop_codec_splitsM
@@ -361,7 +371,7 @@ prop_codec_cbor_splits2_PingPong msg =
       msg
 
 prop_codec_cbor_splits3_PingPong
-  :: AnyMessageAndAgency PingPong
+  :: AnyMessage PingPong
   -> Bool
 prop_codec_cbor_splits3_PingPong msg =
   runST $ prop_codec_splitsM

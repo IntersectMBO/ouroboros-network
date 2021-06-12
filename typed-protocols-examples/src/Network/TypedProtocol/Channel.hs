@@ -159,8 +159,8 @@ createConnectedBufferedChannels sz = do
 -- | Create a pair of channels that are connected via N-place buffers.
 --
 -- This variant /fails/ when  'send' would exceed the maximum buffer size.
--- Use this variant when you want the 'PeerPipelined' to limit the pipelining
--- itself, and you want to check that it does not exceed the expected level of
+-- Use this variant when you want the 'Peer' to limit the pipelining itself,
+-- and you want to check that it does not exceed the expected level of
 -- pipelining.
 --
 -- This is primarily useful for testing protocols.

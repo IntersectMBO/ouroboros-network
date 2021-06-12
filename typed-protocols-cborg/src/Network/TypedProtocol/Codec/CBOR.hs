@@ -22,6 +22,7 @@ import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
+import           Data.Singletons
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Core
@@ -44,19 +45,19 @@ type DeserialiseFailure = CBOR.DeserialiseFailure
 mkCodecCborStrictBS
   :: forall ps m. MonadST m
 
-  => (forall (pr :: PeerRole) (st :: ps) (st' :: ps).
-             PeerHasAgency pr st
-          -> Message ps st st' -> CBOR.Encoding)
+  => (forall (st :: ps) (st' :: ps).
+             SingI st
+          => Message ps st st' -> CBOR.Encoding)
 
-  -> (forall (pr :: PeerRole) (st :: ps) s.
-             PeerHasAgency pr st
-          -> CBOR.Decoder s (SomeMessage st))
+  -> (forall (st :: ps) s.
+             SingI st
+          => CBOR.Decoder s (SomeMessage st))
 
   -> Codec ps DeserialiseFailure m BS.ByteString
 mkCodecCborStrictBS cborMsgEncode cborMsgDecode =
     Codec {
-      encode = \stok msg -> convertCborEncoder (cborMsgEncode stok) msg,
-      decode = \stok     -> convertCborDecoder (cborMsgDecode stok)
+      encode = \msg -> convertCborEncoder cborMsgEncode msg,
+      decode =         convertCborDecoder cborMsgDecode
     }
   where
     convertCborEncoder :: (a -> CBOR.Encoding) -> a -> BS.ByteString
@@ -98,19 +99,19 @@ convertCborDecoderBS cborDecode liftST =
 mkCodecCborLazyBS
   :: forall ps m. MonadST m
 
-  => (forall (pr :: PeerRole) (st :: ps) (st' :: ps).
-             PeerHasAgency pr st
-          -> Message ps st st' -> CBOR.Encoding)
+  => (forall (st :: ps) (st' :: ps).
+             SingI st
+          => Message ps st st' -> CBOR.Encoding)
 
-  -> (forall (pr :: PeerRole) (st :: ps) s.
-             PeerHasAgency pr st
-          -> CBOR.Decoder s (SomeMessage st))
+  -> (forall (st :: ps) s.
+             SingI st
+          => CBOR.Decoder s (SomeMessage st))
 
   -> Codec ps CBOR.DeserialiseFailure m LBS.ByteString
 mkCodecCborLazyBS  cborMsgEncode cborMsgDecode =
     Codec {
-      encode = \stok msg -> convertCborEncoder (cborMsgEncode stok) msg,
-      decode = \stok     -> convertCborDecoder (cborMsgDecode stok)
+      encode = \msg -> convertCborEncoder cborMsgEncode msg,
+      decode =         convertCborDecoder cborMsgDecode
     }
   where
     convertCborEncoder :: (a -> CBOR.Encoding) -> a -> LBS.ByteString

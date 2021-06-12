@@ -25,11 +25,11 @@ data ReqRespServer req resp m a = ReqRespServer {
 reqRespServerPeer
   :: Monad m
   => ReqRespServer req resp m a
-  -> Peer (ReqResp req resp) AsServer StIdle m a
+  -> Peer (ReqResp req resp) AsServer NonPipelined Empty StIdle m a
 reqRespServerPeer ReqRespServer{..} =
 
     -- In the 'StIdle' the server is awaiting a request message
-    Await (ClientAgency TokIdle) $ \msg ->
+    Await ReflClientAgency $ \msg ->
 
     -- The client got to choose between two messages and we have to handle
     -- either of them
@@ -37,10 +37,10 @@ reqRespServerPeer ReqRespServer{..} =
 
       -- The client sent the done transition, so we're in the 'StDone' state
       -- so all we can do is stop using 'done', with a return value.
-      MsgDone -> Effect $ Done TokDone <$> recvMsgDone
+      MsgDone -> Effect $ Done ReflNobodyAgency <$> recvMsgDone
 
       -- The client sent us a ping request, so now we're in the 'StBusy' state
       -- which means it's the server's turn to send.
       MsgReq req -> Effect $ do
         (resp, next) <- recvMsgReq req
-        pure $ Yield (ServerAgency TokBusy) (MsgResp resp) (reqRespServerPeer next)
+        pure $ Yield ReflServerAgency (MsgResp resp) (reqRespServerPeer next)
