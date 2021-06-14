@@ -53,10 +53,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
+import qualified Cardano.Ledger.BaseTypes as SL
 import           Cardano.Ledger.Era (Era)
 import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
-import           Shelley.Spec.Ledger.BaseTypes
 
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..))
@@ -92,7 +92,7 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
 -- | Forward to the ShelleyBlock instance. Only supports
 -- 'HardForkNodeToNodeDisabled', which is compatible with nodes running with
 -- 'ShelleyBlock'.
-instance ShelleyBasedEra era
+instance (ShelleyBasedEra era, FromCBOR (SL.TranslationContext era), ToCBOR (SL.TranslationContext era))
       => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
   supportedNodeToNodeVersions _ =
       Map.map HardForkNodeToNodeDisabled $
@@ -111,8 +111,8 @@ instance ShelleyBasedEra era
 -- | Use the default implementations. This means the serialisation of blocks
 -- includes an era wrapper. Each block should do this from the start to be
 -- prepared for future hard forks without having to do any bit twiddling.
-instance ShelleyBasedEra era => SerialiseHFC '[ShelleyBlock era]
-instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
+instance (ShelleyBasedEra era, FromCBOR (SL.TranslationContext era), ToCBOR (SL.TranslationContext era)) => SerialiseHFC '[ShelleyBlock era]
+instance (ShelleyBasedEra era, FromCBOR (SL.TranslationContext era), ToCBOR (SL.TranslationContext era)) => SerialiseConstraintsHFC (ShelleyBlock era)
 
 {-------------------------------------------------------------------------------
   Protocol type definition
@@ -199,7 +199,7 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
     }
   deriving (Generic, NoThunks)
 
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (ShelleyPartialLedgerConfig era) where
+instance (ShelleyBasedEra era, FromCBOR (SL.TranslationContext era), ToCBOR (SL.TranslationContext era)) => SerialiseNodeToClient (ShelleyBlock era) (ShelleyPartialLedgerConfig era) where
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
@@ -212,17 +212,17 @@ instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
       }
 
   -- Replace the dummy 'EpochInfo' with the real one
-  completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
+  completeLedgerConfig _ epochInfo' (ShelleyPartialLedgerConfig cfg _) =
       cfg {
           shelleyLedgerGlobals = (shelleyLedgerGlobals cfg) {
               SL.epochInfoWithErr =
                   hoistEpochInfo
                     (runExcept . withExceptT (T.pack . show))
-                    epochInfo
+                    epochInfo'
             }
         }
 
-instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
+instance (Era era, FromCBOR (SL.TranslationContext era)) => FromCBOR (ShelleyPartialLedgerConfig era) where
   fromCBOR =
     ShelleyPartialLedgerConfig
       <$> (ShelleyLedgerConfig
@@ -243,14 +243,15 @@ instance Era era => FromCBOR (ShelleyPartialLedgerConfig era) where
               <*> fromCBOR @Word64
               <*> fromCBOR @Natural
               <*> fromCBOR @Word64
-              <*> fromCBOR @ActiveSlotCoeff
+              <*> fromCBOR @SL.ActiveSlotCoeff
               <*> fromCBOR @SL.Network
               <*> fromCBOR @SystemStart
             )
+        <*> fromCBOR @(SL.TranslationContext era)
       )
       <*> fromCBOR @TriggerHardFork
 
-instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
+instance (Era era, ToCBOR (SL.TranslationContext era)) => ToCBOR (ShelleyPartialLedgerConfig era) where
   toCBOR
     (ShelleyPartialLedgerConfig
       (ShelleyLedgerConfig
@@ -269,6 +270,7 @@ instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
           networkId
           systemStart
         )
+        translationContext
       )
       triggerHardFork
     )
@@ -285,9 +287,10 @@ instance Era era => ToCBOR (ShelleyPartialLedgerConfig era) where
         <> toCBOR @Word64 quorum
         <> toCBOR @Natural maxMajorPV
         <> toCBOR @Word64 maxLovelaceSupply
-        <> toCBOR @ActiveSlotCoeff activeSlotCoeff
+        <> toCBOR @SL.ActiveSlotCoeff activeSlotCoeff
         <> toCBOR @SL.Network networkId
         <> toCBOR @SystemStart systemStart
+        <> toCBOR @(SL.TranslationContext era) translationContext
         -- TriggerHardFork
         <> toCBOR @TriggerHardFork triggerHardFork
 
