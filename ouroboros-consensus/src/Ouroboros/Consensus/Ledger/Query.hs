@@ -105,12 +105,17 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
       TopLevelQueryDisabled -> decodeBlockQuery
   where
     decodeBlockQuery = do
-      SomeSecond blockQuery <- decodeNodeToClient
-        @blk
-        @(SomeSecond BlockQuery blk)
-        codecConfig
-        blockVersion
-      return (SomeSecond (BlockQuery blockQuery))
+      tag <- decodeTag
+      case tag of
+        0 -> do
+          SomeSecond x <- decodeNodeToClient
+              @blk
+              @(SomeSecond BlockQuery blk)
+              codecConfig
+              blockVersion
+          return (SomeSecond (BlockQuery x))
+        1 -> return (SomeSecond GetPartialLedgerConfig)
+        _ -> fail $ "SomeSecond Query blk: unknown tag " ++ show tag
 
 instance SerialiseNodeToClient blk (SomeSecond BlockQuery blk) => SerialiseNodeToClient blk (SomeSecond Query blk) where
   encodeNodeToClient codecConfig blockVersion (SomeSecond query)
