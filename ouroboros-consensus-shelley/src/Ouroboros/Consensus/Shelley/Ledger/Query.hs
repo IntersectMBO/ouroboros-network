@@ -6,13 +6,16 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Consensus.Shelley.Ledger.Query (
-    BlockQuery (..)
+    BlockQuery (.., GetUTxO, GetFilteredUTxO)
   , NonMyopicMemberRewards (..)
   , querySupportedVersion
     -- * Serialisation
@@ -99,10 +102,21 @@ data instance BlockQuery (ShelleyBlock era) :: Type -> Type where
   -- pools, in an extensible fashion.
   GetStakeDistribution
     :: BlockQuery (ShelleyBlock era) (SL.PoolDistr (EraCrypto era))
-  GetFilteredUTxO
+
+  -- | Get a subset of the UTxO, filtered by address. Although this will
+  -- typically return a lot less data than 'GetUTxOWhole', it requires a linear
+  -- search over the UTxO and so cost O(n) time.
+  --
+  -- Only 'GetUTxOByTxIn' is efficient in time and space.
+  --
+  GetUTxOByAddress
     :: Set (SL.Addr (EraCrypto era))
     -> BlockQuery (ShelleyBlock era) (SL.UTxO era)
-  GetUTxO
+
+  -- | Get the /entire/ UTxO. This is only suitable for debug/testing purposes
+  -- because otherwise it is far too much data.
+  --
+  GetUTxOWhole
     :: BlockQuery (ShelleyBlock era) (SL.UTxO era)
 
   -- | Only for debugging purposes, we make no effort to ensure binary
@@ -162,6 +176,16 @@ data instance BlockQuery (ShelleyBlock era) :: Type -> Type where
   -- longer used (because mainnet has hard-forked to a newer version), it can be
   -- removed.
 
+pattern GetUTxO :: BlockQuery (ShelleyBlock era) (SL.UTxO era)
+pattern GetUTxO = GetUTxOWhole
+{-# DEPRECATED GetUTxO "Use 'GetUTxOWhole'" #-}
+
+pattern GetFilteredUTxO :: Set (SL.Addr (EraCrypto era))
+                        -> BlockQuery (ShelleyBlock era) (SL.UTxO era)
+pattern GetFilteredUTxO x = GetUTxOByAddress x
+{-# DEPRECATED GetFilteredUTxO "Use 'GetUTxOByAddress'" #-}
+
+
 instance Typeable era => ShowProxy (BlockQuery (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
@@ -180,9 +204,9 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
           getProposedPPUpdates st
         GetStakeDistribution ->
           SL.poolsByTotalStakeFraction globals st
-        GetFilteredUTxO addrs ->
+        GetUTxOByAddress addrs ->
           SL.getFilteredUTxO st addrs
-        GetUTxO ->
+        GetUTxOWhole ->
           SL.getUTxO st
         DebugEpochState ->
           getEpochState st
@@ -241,16 +265,16 @@ instance SameDepIndex (BlockQuery (ShelleyBlock era)) where
     = Just Refl
   sameDepIndex GetStakeDistribution _
     = Nothing
-  sameDepIndex (GetFilteredUTxO addrs) (GetFilteredUTxO addrs')
+  sameDepIndex (GetUTxOByAddress addrs) (GetUTxOByAddress addrs')
     | addrs == addrs'
     = Just Refl
     | otherwise
     = Nothing
-  sameDepIndex (GetFilteredUTxO _) _
+  sameDepIndex (GetUTxOByAddress _) _
     = Nothing
-  sameDepIndex GetUTxO GetUTxO
+  sameDepIndex GetUTxOWhole GetUTxOWhole
     = Just Refl
-  sameDepIndex GetUTxO _
+  sameDepIndex GetUTxOWhole _
     = Nothing
   sameDepIndex DebugEpochState DebugEpochState
     = Just Refl
@@ -296,8 +320,8 @@ instance ShelleyBasedEra era => ShowQuery (BlockQuery (ShelleyBlock era)) where
       GetCurrentPParams                          -> show
       GetProposedPParamsUpdates                  -> show
       GetStakeDistribution                       -> show
-      GetFilteredUTxO {}                         -> show
-      GetUTxO                                    -> show
+      GetUTxOByAddress {}                        -> show
+      GetUTxOWhole                               -> show
       DebugEpochState                            -> show
       GetCBOR {}                                 -> show
       GetFilteredDelegationsAndRewardAccounts {} -> show
@@ -315,8 +339,8 @@ querySupportedVersion = \case
     GetCurrentPParams                          -> (>= v1)
     GetProposedPParamsUpdates                  -> (>= v1)
     GetStakeDistribution                       -> (>= v1)
-    GetFilteredUTxO {}                         -> (>= v1)
-    GetUTxO                                    -> (>= v1)
+    GetUTxOByAddress {}                        -> (>= v1)
+    GetUTxOWhole                               -> (>= v1)
     DebugEpochState                            -> (>= v1)
     GetCBOR q                                  -> querySupportedVersion q
     GetFilteredDelegationsAndRewardAccounts {} -> (>= v1)
@@ -379,9 +403,9 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 4
     GetStakeDistribution ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 5
-    GetFilteredUTxO addrs ->
+    GetUTxOByAddress addrs ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> toCBOR addrs
-    GetUTxO ->
+    GetUTxOWhole ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 7
     DebugEpochState ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 8
@@ -411,8 +435,8 @@ decodeShelleyQuery = do
       (1, 3)  -> return $ SomeSecond GetCurrentPParams
       (1, 4)  -> return $ SomeSecond GetProposedPParamsUpdates
       (1, 5)  -> return $ SomeSecond GetStakeDistribution
-      (2, 6)  -> SomeSecond . GetFilteredUTxO <$> fromCBOR
-      (1, 7)  -> return $ SomeSecond GetUTxO
+      (2, 6)  -> SomeSecond . GetUTxOByAddress <$> fromCBOR
+      (1, 7)  -> return $ SomeSecond GetUTxOWhole
       (1, 8)  -> return $ SomeSecond DebugEpochState
       (2, 9)  -> (\(SomeSecond q) -> SomeSecond (GetCBOR q)) <$> decodeShelleyQuery
       (2, 10) -> SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
@@ -434,8 +458,8 @@ encodeShelleyResult query = case query of
     GetCurrentPParams                          -> toCBOR
     GetProposedPParamsUpdates                  -> toCBOR
     GetStakeDistribution                       -> toCBOR
-    GetFilteredUTxO {}                         -> toCBOR
-    GetUTxO                                    -> toCBOR
+    GetUTxOByAddress {}                        -> toCBOR
+    GetUTxOWhole                               -> toCBOR
     DebugEpochState                            -> toCBOR
     GetCBOR {}                                 -> encode
     GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
@@ -455,8 +479,8 @@ decodeShelleyResult query = case query of
     GetCurrentPParams                          -> fromCBOR
     GetProposedPParamsUpdates                  -> fromCBOR
     GetStakeDistribution                       -> fromCBOR
-    GetFilteredUTxO {}                         -> fromCBOR
-    GetUTxO                                    -> fromCBOR
+    GetUTxOByAddress {}                        -> fromCBOR
+    GetUTxOWhole                               -> fromCBOR
     DebugEpochState                            -> fromCBOR
     GetCBOR {}                                 -> decode
     GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
