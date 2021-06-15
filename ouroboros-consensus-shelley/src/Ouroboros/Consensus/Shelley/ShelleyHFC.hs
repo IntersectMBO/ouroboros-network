@@ -54,10 +54,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
+import           Cardano.Ledger.BaseTypes
 import           Cardano.Ledger.Era (Era, TranslationContext)
 import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
-import           Shelley.Spec.Ledger.BaseTypes
 
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..))

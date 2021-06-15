@@ -87,15 +87,16 @@ queryEncodeNodeToClient ::
   -> Encoding
 queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
   = case queryVersion of
-    TopLevelQueryDisabled -> case query of
-      BlockQuery blockQuery -> encodeNodeToClient
-        @blk
-        @(SomeSecond BlockQuery blk)
-        codecConfig
-        blockVersion
-        (SomeSecond blockQuery)
-      GetPartialLedgerConfig ->
-        encodeTag 1
+      TopLevelQueryDisabled ->
+        case query of
+          BlockQuery blockQuery -> encodeTag 0 <> encodeNodeToClient
+            @blk
+            @(SomeSecond BlockQuery blk)
+            codecConfig
+            blockVersion
+            (SomeSecond blockQuery)
+          GetPartialLedgerConfig ->
+            encodeTag 1
 
 queryDecodeNodeToClient ::
     forall blk. (

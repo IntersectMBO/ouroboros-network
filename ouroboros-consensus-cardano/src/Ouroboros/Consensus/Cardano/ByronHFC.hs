@@ -36,6 +36,8 @@ instance NoHardForks ByronBlock where
   getEraParams cfg =
       byronEraParamsNeverHardForks (byronGenesisConfig (configBlock cfg))
 
+  toPartialConsensusConfig _ = id
+
 {-------------------------------------------------------------------------------
   SupportedNetworkProtocolVersion instance
 -------------------------------------------------------------------------------}
