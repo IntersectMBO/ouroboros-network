@@ -10,8 +10,8 @@ local on_transmission_time = ProtoField.new ("Transmission Time", "ouroboros.ts"
 local on_length = ProtoField.new ("Length", "ouroboros.length", ftypes.UINT16)
 
 local conv_ids = {
-	[0x0000] = "MuxControl Initiator",
-	[0x8000] = "MuxControl Responder",
+	[0x0000] = "Handshake Initiator",
+	[0x8000] = "Handshake Responder",
 	[0x0001] = "DeltaQueue Initiator",
 	[0x8001] = "DeltaQueue Responder",
 	[0x0002] = "ChainSync Initiator",
@@ -24,6 +24,13 @@ local conv_ids = {
 	[0x0008] = "KeepAlive Initiator"
 }
 local on_conversation = ProtoField.uint16("ouroboros.conv", "Conversation", base.HEX, conv_ids, nil, "Conversation ids")
+
+local handshake_msg_codes = {
+        [0] = "MsgProposeVersions",
+        [1] = "MsgAcceptVersion",
+        [2] = "MsgRefuse"
+}
+local on_handshake_msg = ProtoField.uint8("ouroboros.handshakemsg", "Handshake Message", base.DEC, handshake_msg_codes, nil, "Handshake Message Types")
 
 local chainsync_msg_codes = {
 	[0] = "MsgRequestNext",
@@ -56,7 +63,8 @@ local txsubmission_msg_codes = {
 	[1] = "MsgReplyTxIds",
 	[2] = "MsgRequestTxs",
 	[3] = "MsgReplyTxs",
-	[4] = "MsgDone"
+	[4] = "MsgDone",
+	[6] = "MsgHello"
 }
 
 local on_txsubmission_msg = ProtoField.uint8("ouroboros.txsubmsg", "TxSubmission Message", base.DEC, txsubmission_msg_codes, nil, "TxSubmission Message Types")
@@ -76,6 +84,7 @@ ouroboros.fields = {
 	on_transmission_time,
 	on_conversation,
 	on_length,
+	on_handshake_msg,
 	on_chainsync_msg,
 	on_blockfetch_msg,
 	on_txsubmission_msg,
@@ -126,7 +135,7 @@ dissectOuroboros = function (tvbuf, pktinfo, root, offset)
 	local conv = tvbuf:range(offset + 4, 2)
 	local convId = conv:uint()
 
-	if (convId > 0x8000) then convId = convId - 0x8000
+	if (convId >= 0x8000) then convId = convId - 0x8000
 	end
 
 	subtree:add(on_transmission_time, tvbuf:range(offset, 4))
@@ -136,10 +145,11 @@ dissectOuroboros = function (tvbuf, pktinfo, root, offset)
 	-- XXX Without completly parsing the CBOR payload we can't be sure that this is
 	-- the correct message type since a CBOR message may be split into
 	-- multiple MUX segements.
-	if     convId == 2 then subtree:add(on_chainsync_msg, tvbuf:range(offset + 9, 1))
+	if     convId == 0 then subtree:add(on_handshake_msg, tvbuf:range(offset + 9, 1))
+	elseif convId == 2 then subtree:add(on_chainsync_msg, tvbuf:range(offset + 9, 1))
 	elseif convId == 3 then subtree:add(on_blockfetch_msg, tvbuf:range(offset + 9, 1))
 	elseif convId == 4 then subtree:add(on_txsubmission_msg, tvbuf:range(offset + 9, 1))
-	elseif convId == 8 then subtree:add(on_keepalive_msg, tvbuf:range(offset + 8, 1))
+	elseif convId == 8 then subtree:add(on_keepalive_msg, tvbuf:range(offset + 9, 1))
 	end
 
 	return ON_HDR_LEN + length
