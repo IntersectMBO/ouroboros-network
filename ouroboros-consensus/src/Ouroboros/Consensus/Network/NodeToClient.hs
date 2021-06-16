@@ -103,6 +103,7 @@ mkHandlers
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , QueryLedger blk
+     , ConfigSupportsNode blk
      )
   => NodeKernelArgs m remotePeer localPeer blk
   -> NodeKernel     m remotePeer localPeer blk

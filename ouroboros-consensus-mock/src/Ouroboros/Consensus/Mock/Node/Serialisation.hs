@@ -99,7 +99,7 @@ instance SerialiseNodeToNode (MockBlock ext) (GenTxId (MockBlock ext))
   possible.
 -------------------------------------------------------------------------------}
 
-instance Serialise ext => SerialiseNodeToClientConstraints (MockBlock ext)
+instance (Serialise ext, Typeable ext) => SerialiseNodeToClientConstraints (MockBlock ext)
 
 instance Serialise ext => SerialiseNodeToClient (MockBlock ext) (MockBlock ext) where
   encodeNodeToClient _ _ = defaultEncodeCBORinCBOR

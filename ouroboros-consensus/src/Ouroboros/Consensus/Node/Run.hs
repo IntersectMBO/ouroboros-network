@@ -17,6 +17,8 @@ module Ouroboros.Consensus.Node.Run (
   , RunNode
   ) where
 
+import           Data.Typeable (Typeable)
+
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
@@ -64,7 +66,8 @@ class ( ConvertRawHash blk
   estimateBlockSize :: Header blk -> SizeInBytes
 
 -- | Serialisation constraints needed by the node-to-client protocols
-class ( ConvertRawHash blk
+class ( Typeable blk
+      , ConvertRawHash blk
       , SerialiseNodeToClient blk blk
       , SerialiseNodeToClient blk (Serialised blk)
       , SerialiseNodeToClient blk (GenTx blk)
