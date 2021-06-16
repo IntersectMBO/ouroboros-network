@@ -52,7 +52,7 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
-import           Ouroboros.Consensus.Util ((.....:))
+import           Ouroboros.Consensus.Util ((......:))
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -139,7 +139,7 @@ byronBlockForging creds = BlockForging {
                                canBeLeader
                                slot
                                tickedPBftState
-    , forgeBlock       = return .....: forgeByronBlock
+    , forgeBlock       = return ......: forgeByronBlock
     }
   where
     canBeLeader = mkPBftCanBeLeader creds

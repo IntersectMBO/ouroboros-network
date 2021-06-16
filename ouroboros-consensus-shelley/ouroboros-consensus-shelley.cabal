@@ -46,6 +46,7 @@ library
                        Ouroboros.Consensus.Shelley.Protocol.Util
                        Ouroboros.Consensus.Shelley.ShelleyBased
                        Ouroboros.Consensus.Shelley.ShelleyHFC
+                       Ouroboros.Consensus.Shelley.TxLimits
 
   build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11

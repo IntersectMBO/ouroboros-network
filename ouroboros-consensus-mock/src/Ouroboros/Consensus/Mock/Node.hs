@@ -85,7 +85,7 @@ simpleBlockForging canBeLeader forgeExt = BlockForging {
     , canBeLeader      = canBeLeader
     , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
     , checkCanForge    = \_ _ _ _ _ -> return ()
-    , forgeBlock       = \cfg bno slot lst txs proof ->
+    , forgeBlock       = \cfg bno slot lst maxTxCapacityOverride txs proof ->
         return
           $ forgeSimple
               forgeExt
@@ -93,6 +93,7 @@ simpleBlockForging canBeLeader forgeExt = BlockForging {
               bno
               slot
               lst
+              maxTxCapacityOverride
               (map txForgetValidated txs)
               proof
     }

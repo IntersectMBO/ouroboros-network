@@ -210,10 +210,12 @@ forgeDualByronBlock
   -> BlockNo                            -- ^ Current block number
   -> SlotNo                             -- ^ Current slot number
   -> TickedLedgerState DualByronBlock   -- ^ Ledger
+  -> MaxTxCapacityOverride              -- ^ Do we override max tx capacity defined
+                                        --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx DualByronBlock)] -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
-forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
+forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride vtxs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -233,6 +235,7 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)
+             maxTxCapacityOverride
              (map vDualGenTxMain vtxs)
              isLeader
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -35,7 +36,8 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+                     (LedgerSupportsMempool (..), txForgetValidated)
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -51,7 +53,9 @@ forgeByronBlock
   -> BlockNo                         -- ^ Current block number
   -> SlotNo                          -- ^ Current slot number
   -> TickedLedgerState ByronBlock    -- ^ Current ledger
-  -> [Validated (GenTx ByronBlock)]  -- ^ Txs to add in the block
+  -> MaxTxCapacityOverride           -- ^ Do we override max tx capacity defined
+                                     --   by ledger (see MaxTxCapacityOverride)
+  -> [Validated (GenTx ByronBlock)]  -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
   -> ByronBlock
 forgeByronBlock cfg = forgeRegularBlock (configBlock cfg)
@@ -126,10 +130,12 @@ forgeRegularBlock
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
-  -> [Validated (GenTx ByronBlock)]    -- ^ Txs to add in the block
+  -> MaxTxCapacityOverride             -- ^ Do we override max tx capacity defined
+                                       --   by ledger (see MaxTxCapacityOverride)
+  -> [Validated (GenTx ByronBlock)]    -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeRegularBlock cfg bno sno st txs isLeader =
+forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
     forge $
       forgePBftFields
         (mkByronContextDSIGN cfg)
@@ -139,12 +145,21 @@ forgeRegularBlock cfg bno sno st txs isLeader =
     epochSlots :: CC.Slot.EpochSlots
     epochSlots = byronEpochSlots cfg
 
+    computedMaxTxCapacity = computeMaxTxCapacity st maxTxCapacityOverride
+
     blockPayloads :: BlockPayloads
     blockPayloads =
         foldr
           extendBlockPayloads
           initBlockPayloads
-          (map txForgetValidated txs)
+          (takeLargestPrefixThatFits 0 $ map txForgetValidated txs)
+
+    takeLargestPrefixThatFits acc = \case
+      tx : remainingTxs | fits -> tx : takeLargestPrefixThatFits acc' remainingTxs
+        where
+          acc' = acc + txInBlockSize tx
+          fits = acc' <= computedMaxTxCapacity
+      _ -> []
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)

@@ -95,7 +95,7 @@ pbftBlockForging canBeLeader = BlockForging {
                                canBeLeader
                                slot
                                tickedPBftState
-    , forgeBlock       = \cfg slot bno lst txs proof ->
+    , forgeBlock       = \cfg slot bno lst maxTxCapacityOverride txs proof ->
         return
           $ forgeSimple
               forgePBftExt
@@ -103,6 +103,7 @@ pbftBlockForging canBeLeader = BlockForging {
               slot
               bno
               lst
+              maxTxCapacityOverride
               (map txForgetValidated txs)
               proof
     }

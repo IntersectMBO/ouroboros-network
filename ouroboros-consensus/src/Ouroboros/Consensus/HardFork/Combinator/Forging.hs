@@ -291,6 +291,7 @@ hardForkForgeBlock ::
   -> BlockNo
   -> SlotNo
   -> TickedLedgerState (HardForkBlock xs)
+  -> MaxTxCapacityOverride
   -> [Validated (GenTx (HardForkBlock xs))]
   -> HardForkIsLeader xs
   -> m (HardForkBlock xs)
@@ -299,6 +300,7 @@ hardForkForgeBlock blockForging
                    bno
                    sno
                    (TickedHardForkLedgerState transition ledgerState)
+                   maxTxCapacityOverride
                    txs
                    isLeader =
         fmap (HardForkBlock . OneEraBlock)
@@ -375,5 +377,6 @@ hardForkForgeBlock blockForging
           bno
           sno
           ledgerState'
+          maxTxCapacityOverride
           (map unwrapValidatedGenTx txs')
           isLeader'

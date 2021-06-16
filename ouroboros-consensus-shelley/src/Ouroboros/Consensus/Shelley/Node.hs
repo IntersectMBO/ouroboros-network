@@ -65,6 +65,7 @@ import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Shelley.TxLimits
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
@@ -122,7 +123,7 @@ type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionErro
 -- In case the same credentials should be shared across multiple Shelley-based
 -- eras, use 'shelleySharedBlockForging'.
 shelleyBlockForging ::
-     forall m era. (ShelleyBasedEra era, IOLike m)
+     forall m era. (ShelleyBasedEra era, TxLimits era, IOLike m)
   => TPraosParams
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
@@ -136,8 +137,8 @@ shelleyBlockForging tpraosParams credentials =
 
 -- | Needed in 'shelleySharedBlockForging' because we can't partially apply
 -- equality constraints.
-class    (ShelleyBasedEra era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
-instance (ShelleyBasedEra era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+class    (ShelleyBasedEra era, TxLimits era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+instance (ShelleyBasedEra era, TxLimits era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
 
 -- | Create a 'BlockForging' record for each of the given Shelley-based eras,
 -- safely sharing the same set of credentials for all of them.
@@ -266,7 +267,7 @@ protocolInfoShelley protocolParamsShelleyBased
       protVer
 
 protocolInfoShelleyBased ::
-     forall m era. (IOLike m, ShelleyBasedEra era)
+     forall m era. (IOLike m, ShelleyBasedEra era, TxLimits era)
   => ProtocolParamsShelleyBased era
   -> Core.TranslationContext era
   -> SL.ProtVer
