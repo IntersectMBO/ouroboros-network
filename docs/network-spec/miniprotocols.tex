@@ -310,6 +310,7 @@ The messages of the Ping-Pong protocol do not carry any data.
 \renewcommand{\StDone}{\state{StDone}}
 \newcommand{\Request}{\msg{MsgReq}}
 \newcommand{\Response}{\msg{MsgResp}}
+\newcommand{\RespDone}{\msg{MsgDone}}
 
 \subsubsection{Description}
 The request response protocol is polymorphic in the request and response data that is being transmitted.
@@ -328,10 +329,11 @@ application of the protocol determines the types of the requests and responses.
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
   \node[state, green, initial]                                   (Idle)      {\StIdle};
   \node[state, blue, right of=Idle]                              (Busy)      {\StBusy};
-  \node[state, right of=Busy]                                    (Done)      {\StDone};
+  \node[state, below of=Idle]                                    (Done)      {\StDone};
 
-  \draw (Idle)         edge[]      node{\Request}           (Busy);
-  \draw (Busy)         edge[]      node{\Response}          (Done);
+  \draw (Idle)         edge[below, bend right] node{\Request}    (Busy);
+  \draw (Busy)         edge[above, bend right] node{\Response}   (Idle);
+  \draw (Idle)         edge[right]             node{\RespDone}   (Done);
 \end{tikzpicture}
 {\vskip 10pt}
 The protocol uses the following messages.
@@ -340,13 +342,16 @@ The protocol uses the following messages.
       The client sends a request to the server.
 \item [\Response{} $(response)$]
       The server replies with a response.
+\item [\RespDone{} $(done)$]
+      Terminate the protocol.
 \end{description}
 
 \begin{tabular}{|l|l|l|l|} \hline
 \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from         & message            & parameters             & to       \\ \hline\hline
+  from           & message            & parameters             & to          \\ \hline\hline
   \StIdle        & \Request           & $request$              & \StBusy     \\ \hline
-  \StBusy        & \Response          & $response$             & \StDone     \\ \hline
+  \StBusy        & \Response          & $response$             & \StIdle     \\ \hline
+  \StIdle        & \RespDone          &                        & \StDone     \\ \hline
 \end{tabular}
 
 \section{Handshake Mini Protocol}
