@@ -354,6 +354,7 @@ querySupportedVersion = \case
     v1 = ShelleyNodeToClientVersion1
     v2 = ShelleyNodeToClientVersion2
     v3 = ShelleyNodeToClientVersion3
+    v4 = ShelleyNodeToClientVersion4
 
 {-------------------------------------------------------------------------------
   Auxiliary
