@@ -6,7 +6,6 @@
 
 module Ouroboros.Consensus.HardFork.History.Caching (
     RunWithCachedSummary (..)
-  , cachedRunQueryThrow
   , runWithCachedSummary
   ) where
 
@@ -29,18 +28,9 @@ data RunWithCachedSummary (xs :: [Type]) m = RunWithCachedSummary {
       -- internal state (compute a new summary) and try again. If that /still/
       -- fails, the 'PastHorizonException' is returned.
       --
-      -- See also 'cachedRunQueryThrow'.
       cachedRunQuery :: forall a. Qry a
                      -> STM m (Either PastHorizonException a)
     }
-
--- | Wrapper around 'cachedRunQuery' which throws the 'PastHorizonException'
---
--- This is useful for callers who know that their queries should not be past
--- the horizon (and it would be a bug if they were).
-cachedRunQueryThrow :: (MonadSTM m, MonadThrow (STM m))
-                    => RunWithCachedSummary xs m -> Qry a -> STM m a
-cachedRunQueryThrow run qry = either throwIO return =<< cachedRunQuery run qry
 
 -- | Construct 'RunWithCachedSummary' given action that computes the summary
 --
