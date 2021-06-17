@@ -5,7 +5,7 @@
 -- | Derive 'EpochInfo'
 module Ouroboros.Consensus.HardFork.History.EpochInfo (
     dummyEpochInfo
-  , snapshotEpochInfo
+  , summaryToEpochInfo
   , toPureEpochInfo
   ) where
 
@@ -26,8 +26,8 @@ import           Ouroboros.Consensus.HardFork.History.Summary
 --
 -- When a particular request fails with a 'PastHorizon' error, we throw the
 -- error as a /pure/ exception. Such an exception would indicate a bug.
-snapshotEpochInfo :: forall xs. Summary xs -> EpochInfo (Except PastHorizonException)
-snapshotEpochInfo summary = EpochInfo {
+summaryToEpochInfo :: forall xs. Summary xs -> EpochInfo (Except PastHorizonException)
+summaryToEpochInfo summary = EpochInfo {
       epochInfoSize_  = \e -> runQuery' (epochToSize  e)
     , epochInfoFirst_ = \e -> runQuery' (epochToSlot' e)
     , epochInfoEpoch_ = \s -> runQuery' (fst <$> slotToEpoch' s)
