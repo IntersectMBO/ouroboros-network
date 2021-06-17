@@ -96,14 +96,10 @@ tests =
 -- | The protocol will run three instances of  `ReqResp` protocol; one for each
 -- state: warm, hot and established.
 --
-data ClientAndServerData req resp acc = ClientAndServerData {
-    responderAccumulatorFn       :: Fun (acc, req) (acc, resp),
-    -- ^ folding function as required by `mapAccumL`, `acc -> req -> (acc, res)`
-    -- written using QuickCheck's 'Fun' type; all three responders (hot \/ warm
-    -- and established) are using the same
-    -- accumulation function, but different initial values.
-    accumulatorInit              :: acc,
-    -- ^ initial value of accumulator
+data ClientAndServerData req = ClientAndServerData {
+    accumulatorInit              :: req,
+    -- ^ Initial value. In for each request the server sends back a list received requests (in
+    --   reverse order) terminating with the accumulatorInit.
     hotInitiatorRequests         :: [[req]],
     -- ^ list of requests run by the hot intiator in each round; Running
     -- multiple rounds allows us to test restarting of responders.
@@ -117,7 +113,7 @@ data ClientAndServerData req resp acc = ClientAndServerData {
 
 -- Number of rounds to exhoust all the requests.
 --
-numberOfRounds :: ClientAndServerData req resp acc ->  Int
+numberOfRounds :: ClientAndServerData req ->  Int
 numberOfRounds ClientAndServerData {
                   hotInitiatorRequests,
                   warmInitiatorRequests,
@@ -137,39 +133,29 @@ arbitraryList :: Arbitrary a =>  Gen [[a]]
 arbitraryList =
     resize 3 (listOf (resize 3 (listOf (resize 100 arbitrary))))
 
-instance ( Arbitrary req
-         , Arbitrary resp
-         , Arbitrary acc
-         , Function acc
-         , CoArbitrary acc
-         , Function req
-         , CoArbitrary req
-         ) => Arbitrary (ClientAndServerData req resp acc) where
+instance (Arbitrary req) => Arbitrary (ClientAndServerData req) where
     arbitrary =
       ClientAndServerData <$> arbitrary
-                          <*> arbitrary
                           <*> arbitraryList
                           <*> arbitraryList
                           <*> arbitraryList
 
-    shrink (ClientAndServerData fun ini hot warm est) = concat
-      [ shrink fun  <&> \ fun'  -> ClientAndServerData fun' ini  hot  warm  est
-      , shrink ini  <&> \ ini'  -> ClientAndServerData fun  ini' hot  warm  est
-      , shrink hot  <&> \ hot'  -> ClientAndServerData fun  ini  hot' warm  est
-      , shrink warm <&> \ warm' -> ClientAndServerData fun  ini  hot  warm' est
-      , shrink est  <&> \ est'  -> ClientAndServerData fun  ini  hot  warm  est'
+    shrink (ClientAndServerData ini hot warm est) = concat
+      [ shrink ini  <&> \ ini'  -> ClientAndServerData ini' hot  warm  est
+      , shrink hot  <&> \ hot'  -> ClientAndServerData ini  hot' warm  est
+      , shrink warm <&> \ warm' -> ClientAndServerData ini  hot  warm' est
+      , shrink est  <&> \ est'  -> ClientAndServerData ini  hot  warm  est'
       ]
 
-expectedResult :: ClientAndServerData req resp acc
-               -> ClientAndServerData req resp acc
-               -> [Bundle [resp]]
+expectedResult :: ClientAndServerData req
+               -> ClientAndServerData req
+               -> [Bundle [[req]]]
 expectedResult client@ClientAndServerData
                                    { hotInitiatorRequests
                                    , warmInitiatorRequests
                                    , establishedInitiatorRequests
                                    }
-               ClientAndServerData { responderAccumulatorFn
-                                   , accumulatorInit
+               ClientAndServerData { accumulatorInit
                                    } =
     go
       (take rounds $ hotInitiatorRequests         ++ repeat [])
@@ -177,23 +163,12 @@ expectedResult client@ClientAndServerData
       (take rounds $ establishedInitiatorRequests ++ repeat [])
   where
     rounds = numberOfRounds client
+    fn acc x = (x : acc, x : acc)
     go (a : as) (b : bs) (c : cs) =
       Bundle
-        (WithHot
-          (snd $ mapAccumL
-            (applyFun2 responderAccumulatorFn)
-            accumulatorInit
-            a))
-        (WithWarm
-          (snd $ mapAccumL
-            (applyFun2 responderAccumulatorFn)
-            accumulatorInit
-            b))
-        (WithEstablished
-          (snd $ mapAccumL
-            (applyFun2 responderAccumulatorFn)
-            accumulatorInit
-            c))
+        (WithHot         (snd $ mapAccumL fn [accumulatorInit] a))
+        (WithWarm        (snd $ mapAccumL fn [accumulatorInit] b))
+        (WithEstablished (snd $ mapAccumL fn [accumulatorInit] c))
       : go as bs cs
     go [] [] [] = []
     go _  _  _  = error "expectedResult: impossible happened"
@@ -221,9 +196,9 @@ withInitiatorOnlyConnectionManager
     :: forall peerAddr socket acc req resp m a.
        ( ConnectionManagerMonad m
 
+       , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
-       , Serialise req, Serialise resp
-       , Typeable req, Typeable resp
+       , Serialise req, Typeable req
        , Eq (LazySTM.TVar m (ConnectionState
                                 peerAddr
                                 (Handle 'InitiatorMode peerAddr ByteString m [resp] Void)
@@ -236,12 +211,12 @@ withInitiatorOnlyConnectionManager
        -- debugging
        , MonadAsync m
        , MonadLabelledSTM m
-       , MonadSay m, Show req, Show resp
+       , MonadSay m, Show req
        )
     => String
     -- ^ identifier (for logging)
     -> Snocket m socket peerAddr
-    -> ClientAndServerData req resp acc
+    -> ClientAndServerData req
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> (MuxConnectionManager
@@ -446,6 +421,7 @@ withBidirectionalConnectionManager
     :: forall peerAddr socket acc req resp m a.
        ( ConnectionManagerMonad m
 
+       , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
        , Serialise req, Serialise resp
        , Typeable req, Typeable resp
@@ -454,7 +430,7 @@ withBidirectionalConnectionManager
        -- debugging
        , MonadAsync m
        , MonadLabelledSTM m
-       , MonadSay m, Show req, Show resp
+       , MonadSay m, Show req
        )
     => String
     -- ^ identifier (for logging)
@@ -462,7 +438,7 @@ withBidirectionalConnectionManager
     -> socket
     -- ^ listening socket
     -> Maybe peerAddr
-    -> ClientAndServerData req resp acc
+    -> ClientAndServerData req
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> (MuxConnectionManager
@@ -474,7 +450,6 @@ withBidirectionalConnectionManager
     -> m a
 withBidirectionalConnectionManager name snocket socket localAddress
                                    ClientAndServerData {
-                                       responderAccumulatorFn,
                                        accumulatorInit,
                                        hotInitiatorRequests,
                                        warmInitiatorRequests,
@@ -614,8 +589,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
-                    responderAccumulatorFn
-                    accumulatorInit
+                    [accumulatorInit]
                     hotRequestsVar
                }
           ],
@@ -627,8 +601,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
-                    responderAccumulatorFn
-                    accumulatorInit
+                    [accumulatorInit]
                     warmRequestsVar
               }
           ],
@@ -640,8 +613,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     (Mux.MiniProtocolNum 3)
-                    responderAccumulatorFn
-                    accumulatorInit
+                    [accumulatorInit]
                     establishedRequestsVar
               }
           ]
@@ -649,11 +621,10 @@ withBidirectionalConnectionManager name snocket socket localAddress
 
     reqRespInitiatorAndResponder
       :: Mux.MiniProtocolNum
-      -> Fun (acc, req) (acc, resp)
       -> acc
       -> StrictTVar m [[req]]
       -> RunMiniProtocol InitiatorResponderMode ByteString m [resp] acc
-    reqRespInitiatorAndResponder protocolNum fn accInit requestsVar =
+    reqRespInitiatorAndResponder protocolNum accInit requestsVar =
       InitiatorAndResponderProtocol
         (MuxPeer
           ((name,"Initiator",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
@@ -672,13 +643,12 @@ withBidirectionalConnectionManager name snocket socket localAddress
         (MuxPeer
           ((name,"Responder",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
           codecReqResp
-          (reqRespServerPeer $ reqRespServerMapAccumL' (applyFun2 fn) accInit))
+          (reqRespServerPeer $ reqRespServerMapAccumL' accInit))
 
-    reqRespServerMapAccumL' :: (acc -> req -> (acc, resp))
-                            -> acc
-                            -> ReqRespServer req resp m acc
-    reqRespServerMapAccumL' fn = go
+    reqRespServerMapAccumL' :: acc -> ReqRespServer req resp m acc
+    reqRespServerMapAccumL' = go
       where
+        fn acc x = (x : acc, x : acc)
         go acc =
           ReqRespServer {
               recvMsgReq = \req ->
@@ -773,6 +743,7 @@ unidirectionalExperiment
        , MonadLabelledSTM m
        , MonadSay m
 
+       , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
        , Eq (LazySTM.TVar m (ConnectionState
                                 peerAddr
@@ -788,7 +759,7 @@ unidirectionalExperiment
        )
     => Snocket m socket peerAddr
     -> socket
-    -> ClientAndServerData req resp acc
+    -> ClientAndServerData req
     -> m Property
 unidirectionalExperiment snocket socket clientAndServerData = do
     withInitiatorOnlyConnectionManager
@@ -826,7 +797,7 @@ unidirectionalExperiment snocket socket clientAndServerData = do
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
 
-prop_unidirectional_Sim :: ClientAndServerData Int Int Int -> Property
+prop_unidirectional_Sim :: ClientAndServerData Int -> Property
 prop_unidirectional_Sim clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
@@ -841,7 +812,7 @@ prop_unidirectional_Sim clientAndServerData =
     serverAddr = Snocket.TestAddress (0 :: Int)
 
 prop_unidirectional_IO
-  :: ClientAndServerData Int Int Int
+  :: ClientAndServerData Int
   -> Property
 prop_unidirectional_IO clientAndServerData =
     ioProperty $ do
@@ -869,6 +840,7 @@ bidirectionalExperiment
        , MonadLabelledSTM m
        , MonadSay m
 
+       , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
        , Eq (LazySTM.TVar m (ConnectionState_ 'InitiatorResponderMode peerAddr m [resp] acc))
 
@@ -883,8 +855,8 @@ bidirectionalExperiment
     -> socket
     -> peerAddr
     -> peerAddr
-    -> ClientAndServerData req resp acc
-    -> ClientAndServerData req resp acc
+    -> ClientAndServerData req
+    -> ClientAndServerData req
     -> m Property
 bidirectionalExperiment
     useLock snocket socket0 socket1 localAddr0 localAddr1
@@ -970,7 +942,7 @@ bidirectionalExperiment
                 ))
 
 
-prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int Int Int -> ClientAndServerData Int Int Int -> Property
+prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int -> ClientAndServerData Int -> Property
 prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
     withSnocket debugTracer
@@ -992,8 +964,8 @@ prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
     script' = toBearerInfo <$> script
 
 prop_bidirectional_IO
-    :: ClientAndServerData Int Int Int
-    -> ClientAndServerData Int Int Int
+    :: ClientAndServerData Int
+    -> ClientAndServerData Int
     -> Property
 prop_bidirectional_IO data0 data1 =
     ioProperty $ do
