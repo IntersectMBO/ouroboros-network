@@ -133,7 +133,7 @@ arbitraryList :: Arbitrary a =>  Gen [[a]]
 arbitraryList =
     resize 3 (listOf (resize 3 (listOf (resize 100 arbitrary))))
 
-instance (Arbitrary req) => Arbitrary (ClientAndServerData req) where
+instance Arbitrary req => Arbitrary (ClientAndServerData req) where
     arbitrary =
       ClientAndServerData <$> arbitrary
                           <*> arbitraryList
@@ -173,6 +173,35 @@ expectedResult client@ClientAndServerData
     go [] [] [] = []
     go _  _  _  = error "expectedResult: impossible happened"
 
+noNextRequests :: forall stm req peerAddr. Applicative stm => Bundle (ConnectionId peerAddr -> stm [req])
+noNextRequests = pure $ \_ -> pure []
+
+-- | Next requests bundle for bidirectional and unidirectional experiments.
+oneshotNextRequests
+  :: forall req peerAddr m. MonadSTM m
+  => ClientAndServerData req
+  -> m (Bundle (ConnectionId peerAddr -> STM m [req]))
+oneshotNextRequests ClientAndServerData {
+                      hotInitiatorRequests,
+                      warmInitiatorRequests,
+                      establishedInitiatorRequests
+                    } = do
+    -- we pass a `StricTVar` with all the requests to each initiator.  This way
+    -- the each round (which runs a single instance of `ReqResp` protocol) will
+    -- use its own request list.
+    hotRequestsVar         <- newTVarIO hotInitiatorRequests
+    warmRequestsVar        <- newTVarIO warmInitiatorRequests
+    establishedRequestsVar <- newTVarIO establishedInitiatorRequests
+    return $ Bundle (WithHot hotRequestsVar)
+                    (WithWarm warmRequestsVar)
+                    (WithEstablished establishedRequestsVar)
+              <&> \ reqVar _ -> popRequests reqVar
+  where
+    popRequests requestsVar = do
+      requests <- readTVar requestsVar
+      case requests of
+        reqs : rest -> writeTVar requestsVar rest $> reqs
+        []          -> pure []
 
 --
 -- Various ConnectionManagers
@@ -184,13 +213,11 @@ type ConnectionManagerMonad m =
        )
 
 
--- | Initiator only connection manager.
---
 withInitiatorOnlyConnectionManager
-    :: forall peerAddr socket req resp m acc a.
+    :: forall peerAddr socket req resp m a.
        ( ConnectionManagerMonad m
 
-       , acc ~ [req], resp ~ [req]
+       , resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
        , Serialise req, Typeable req
        , MonadAsync m
@@ -200,29 +227,17 @@ withInitiatorOnlyConnectionManager
     => String
     -- ^ identifier (for logging)
     -> Snocket m socket peerAddr
-    -> ClientAndServerData req
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
+    -> Bundle (ConnectionId peerAddr -> STM m [req])
+    -- ^ Functions to get the next requests for a given connection
     -> (MuxConnectionManager
           InitiatorMode socket peerAddr
           UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager
-    name snocket
-    ClientAndServerData {
-        hotInitiatorRequests,
-        warmInitiatorRequests,
-        establishedInitiatorRequests
-      }
-    k = do
+withInitiatorOnlyConnectionManager name snocket nextRequests k = do
     mainThreadId <- myThreadId
-    -- we pass a `StricTVar` with all the reuqests to each initiator.  This way
-    -- the each round (which runs a single instance of `ReqResp` protocol) will
-    -- use its own request list.
-    hotRequestsVar         <- newTVarIO hotInitiatorRequests
-    warmRequestsVar        <- newTVarIO warmInitiatorRequests
-    establishedRequestsVar <- newTVarIO establishedInitiatorRequests
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
     withConnectionManager
       ConnectionManagerArguments {
@@ -259,10 +274,7 @@ withInitiatorOnlyConnectionManager
             haAcceptVersion = acceptableVersion,
             haTimeLimits = noTimeLimitsHandshake
           }
-        (unversionedProtocol
-          (clientApplication hotRequestsVar
-                             warmRequestsVar
-                             establishedRequestsVar))
+        (unversionedProtocol clientApplication)
         (mainThreadId, debugMuxErrorRethrowPolicy
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
@@ -291,69 +303,33 @@ withInitiatorOnlyConnectionManager
           }
         ]
 
-    clientApplication :: StrictTVar m [[req]]
-                      -> StrictTVar m [[req]]
-                      -> StrictTVar m [[req]]
-                      -> Bundle
+    clientApplication :: Bundle
                           (ConnectionId peerAddr
                             -> ControlMessageSTM m
                             -> [MiniProtocol InitiatorMode ByteString m [resp] Void])
-    clientApplication hotRequestsVar
-                      warmRequestsVar
-                      establishedRequestsVar = Bundle {
-        withHot = WithHot $ \_ _ ->
-          [ let miniProtocolNum = Mux.MiniProtocolNum 1
-            in MiniProtocol {
-                miniProtocolNum,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
-                miniProtocolRun =
-                  reqRespInitiator
-                    miniProtocolNum
-                    hotRequestsVar
-               }
-          ],
-        withWarm = WithWarm $ \_ _ ->
-          [ let miniProtocolNum = Mux.MiniProtocolNum 2
-            in MiniProtocol {
-                miniProtocolNum,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
-                miniProtocolRun =
-                  reqRespInitiator
-                    miniProtocolNum
-                    warmRequestsVar
-              }
-          ],
-        withEstablished = WithEstablished $ \_ _ ->
-          [ let miniProtocolNum = Mux.MiniProtocolNum 3
-            in MiniProtocol {
-                miniProtocolNum,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
-                miniProtocolRun =
-                  reqRespInitiator
-                    miniProtocolNum
-                    establishedRequestsVar
-              }
-          ]
-      }
+    clientApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums)
+                                <*> nextRequests
+
+      where nums = Bundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
+            mkProto miniProtocolNum nextRequest connId _ =
+              [MiniProtocol {
+                  miniProtocolNum,
+                  miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                  miniProtocolRun = reqRespInitiator miniProtocolNum
+                                                     (nextRequest connId)
+                }]
 
     reqRespInitiator :: Mux.MiniProtocolNum
-                     -> StrictTVar m [[req]]
+                     -> STM m [req]
                      -> RunMiniProtocol InitiatorMode ByteString m [resp] Void
-    reqRespInitiator protocolNum requestsVar =
+    reqRespInitiator protocolNum nextRequest =
       InitiatorProtocolOnly
         (MuxPeer
           ((name,"Initiator",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
           codecReqResp
           (Effect $ do
-            reqs <-
-              atomically $ do
-                requests <- readTVar requestsVar
-                case requests of
-                  (reqs : rest) -> do
-                    writeTVar requestsVar rest $> reqs
-                  [] -> pure []
-            pure $
-              reqRespClientPeer (reqRespClientMap reqs)))
+            reqs <- atomically nextRequest
+            pure $ reqRespClientPeer (reqRespClientMap reqs)))
 
 
 --
@@ -414,8 +390,7 @@ withBidirectionalConnectionManager
 
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
-       , Serialise req, Serialise resp
-       , Typeable req, Typeable resp
+       , Serialise req, Typeable req
 
        -- debugging
        , MonadAsync m
@@ -428,7 +403,10 @@ withBidirectionalConnectionManager
     -> socket
     -- ^ listening socket
     -> Maybe peerAddr
-    -> ClientAndServerData req
+    -> acc
+    -- ^ Initial state for the server
+    -> Bundle (ConnectionId peerAddr -> STM m [req])
+    -- ^ Functions to get the next requests for a given connection
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> (MuxConnectionManager
@@ -439,21 +417,9 @@ withBidirectionalConnectionManager
        -> m a)
     -> m a
 withBidirectionalConnectionManager name snocket socket localAddress
-                                   ClientAndServerData {
-                                       accumulatorInit,
-                                       hotInitiatorRequests,
-                                       warmInitiatorRequests,
-                                       establishedInitiatorRequests
-                                     }
-                                   k = do
+                                   accumulatorInit nextRequests k = do
     mainThreadId <- myThreadId
     inbgovControlChannel      <- Server.newControlChannel
-    -- as in the 'withInitiatorOnlyConnectionManager' we use a `StrictTVar` to
-    -- pass list of requests, but since we are also interested in the results we
-    -- need to have multable cells to pass the accumulators around.
-    hotRequestsVar            <- newTVarIO hotInitiatorRequests
-    warmRequestsVar           <- newTVarIO warmInitiatorRequests
-    establishedRequestsVar    <- newTVarIO establishedInitiatorRequests
     -- we are not using the randomness
     observableStateVar        <- Server.newObservableStateVarFromSeed 0
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
@@ -493,10 +459,7 @@ withBidirectionalConnectionManager name snocket socket localAddress
               haAcceptVersion = acceptableVersion,
               haTimeLimits = noTimeLimitsHandshake
             }
-          (unversionedProtocol
-            (serverApplication hotRequestsVar
-                               warmRequestsVar
-                                establishedRequestsVar))
+          (unversionedProtocol serverApplication)
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
@@ -561,76 +524,35 @@ withBidirectionalConnectionManager name snocket socket localAddress
           }
         ]
 
-    serverApplication :: StrictTVar m [[req]]
-                      -> StrictTVar m [[req]]
-                      -> StrictTVar m [[req]]
-                      -> Bundle
+    serverApplication :: Bundle
                           (ConnectionId peerAddr
-                      -> ControlMessageSTM m
-                      -> [MiniProtocol InitiatorResponderMode ByteString m [resp] acc])
-    serverApplication hotRequestsVar
-                      warmRequestsVar
-                      establishedRequestsVar
-                      = Bundle {
-        withHot = WithHot $ \_ _ ->
-          [ let miniProtocolNum = Mux.MiniProtocolNum 1
-            in MiniProtocol {
-                miniProtocolNum,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
-                miniProtocolRun =
-                  reqRespInitiatorAndResponder
-                    miniProtocolNum
-                    [accumulatorInit]
-                    hotRequestsVar
-               }
-          ],
-        withWarm = WithWarm $ \_ _ ->
-          [ let miniProtocolNum = Mux.MiniProtocolNum 2
-            in MiniProtocol {
-                miniProtocolNum,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
-                miniProtocolRun =
-                  reqRespInitiatorAndResponder
-                    miniProtocolNum
-                    [accumulatorInit]
-                    warmRequestsVar
-              }
-          ],
-        withEstablished = WithEstablished $ \_ _ ->
-          [ let miniProtocolNum = Mux.MiniProtocolNum 3
-            in MiniProtocol {
-                miniProtocolNum,
-                miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
-                miniProtocolRun =
-                  reqRespInitiatorAndResponder
-                    (Mux.MiniProtocolNum 3)
-                    [accumulatorInit]
-                    establishedRequestsVar
-              }
-          ]
-      }
+                            -> ControlMessageSTM m
+                            -> [MiniProtocol InitiatorResponderMode ByteString m [resp] acc])
+    serverApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums) <*> nextRequests
+      where nums = Bundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
+            mkProto miniProtocolNum nextRequest connId _ =
+              [MiniProtocol {
+                  miniProtocolNum,
+                  miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
+                  miniProtocolRun = reqRespInitiatorAndResponder
+                                        miniProtocolNum
+                                        accumulatorInit
+                                        (nextRequest connId)
+              }]
 
     reqRespInitiatorAndResponder
       :: Mux.MiniProtocolNum
       -> acc
-      -> StrictTVar m [[req]]
+      -> STM m [req]
       -> RunMiniProtocol InitiatorResponderMode ByteString m [resp] acc
-    reqRespInitiatorAndResponder protocolNum accInit requestsVar =
+    reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
         (MuxPeer
           ((name,"Initiator",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
           codecReqResp
           (Effect $ do
-            reqs <-
-              atomically $ do
-                requests <- readTVar requestsVar
-                case requests of
-                  (reqs : rest) -> do
-                    writeTVar requestsVar rest $> reqs
-                  [] -> pure []
-            pure $
-              reqRespClientPeer
-              (reqRespClientMap reqs)))
+            reqs <- atomically nextRequest
+            pure $ reqRespClientPeer (reqRespClientMap reqs)))
         (MuxPeer
           ((name,"Responder",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
           codecReqResp
@@ -745,11 +667,13 @@ unidirectionalExperiment
     -> ClientAndServerData req
     -> m Property
 unidirectionalExperiment snocket socket clientAndServerData = do
+    nextReqs <- oneshotNextRequests clientAndServerData
     withInitiatorOnlyConnectionManager
-      "client" snocket clientAndServerData
+      "client" snocket nextReqs
       $ \connectionManager ->
-        withBidirectionalConnectionManager
-          "server" snocket socket Nothing clientAndServerData
+        withBidirectionalConnectionManager "server" snocket socket Nothing
+                                           [accumulatorInit clientAndServerData]
+                                           noNextRequests
           $ \_ serverAddr serverAsync -> do
             link serverAsync
             -- client → server: connect
@@ -844,11 +768,17 @@ bidirectionalExperiment
     useLock snocket socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
       lock <- newTMVarIO ()
-      withBidirectionalConnectionManager
-        "node-0" snocket socket0 (Just localAddr0) clientAndServerData0
+      nextRequests0 <- oneshotNextRequests clientAndServerData0
+      nextRequests1 <- oneshotNextRequests clientAndServerData1
+      withBidirectionalConnectionManager "node-0" snocket socket0
+                                         (Just localAddr0)
+                                         [accumulatorInit clientAndServerData0]
+                                         nextRequests0
         (\connectionManager0 _serverAddr0 serverAsync0 ->
-          withBidirectionalConnectionManager
-            "node-1" snocket socket1 (Just localAddr1) clientAndServerData1
+          withBidirectionalConnectionManager "node-1" snocket socket1
+                                             (Just localAddr1)
+                                             [accumulatorInit clientAndServerData1]
+                                             nextRequests1
             (\connectionManager1 _serverAddr1 serverAsync1 -> do
               link serverAsync0
               link serverAsync1
