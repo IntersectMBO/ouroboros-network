@@ -8,7 +8,7 @@ import           Shelley.Spec.Ledger.API (Coin (..))
 
 degenerateAlonzoGenesis :: AlonzoGenesis
 degenerateAlonzoGenesis = AlonzoGenesis {
-     adaPerUTxOWord       = Coin 0
+     coinsPerUTxOWord     = Coin 0
    , collateralPercentage = 0
    , costmdls             = Map.empty
    , maxBlockExUnits      = mempty
