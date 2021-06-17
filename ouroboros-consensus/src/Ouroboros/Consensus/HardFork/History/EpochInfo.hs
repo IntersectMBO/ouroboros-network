@@ -5,6 +5,7 @@
 -- | Derive 'EpochInfo'
 module Ouroboros.Consensus.HardFork.History.EpochInfo (
     dummyEpochInfo
+  , interpreterToEpochInfo
   , summaryToEpochInfo
   , toPureEpochInfo
   ) where
@@ -23,21 +24,23 @@ import           Ouroboros.Consensus.HardFork.History.Summary
 -------------------------------------------------------------------------------}
 
 -- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
---
--- When a particular request fails with a 'PastHorizon' error, we throw the
--- error as a /pure/ exception. Such an exception would indicate a bug.
 summaryToEpochInfo :: forall xs. Summary xs -> EpochInfo (Except PastHorizonException)
-summaryToEpochInfo summary = EpochInfo {
-      epochInfoSize_  = \e -> runQuery' (epochToSize  e)
-    , epochInfoFirst_ = \e -> runQuery' (epochToSlot' e)
-    , epochInfoEpoch_ = \s -> runQuery' (fst <$> slotToEpoch' s)
+summaryToEpochInfo = interpreterToEpochInfo . mkInterpreter
+
+-- | Construct an 'EpochInfo' for a /snapshot/ of the ledger state
+interpreterToEpochInfo :: forall xs. Interpreter xs
+                       -> EpochInfo (Except PastHorizonException)
+interpreterToEpochInfo i = EpochInfo {
+      epochInfoSize_  = \e -> interpretQuery' (epochToSize  e)
+    , epochInfoFirst_ = \e -> interpretQuery' (epochToSlot' e)
+    , epochInfoEpoch_ = \s -> interpretQuery' (fst <$> slotToEpoch' s)
 
     , epochInfoSlotToRelativeTime_ = \s ->
-        runQuery' (fst <$> slotToWallclock s)
+        interpretQuery' (fst <$> slotToWallclock s)
     }
   where
-    runQuery' :: HasCallStack => Qry a -> Except PastHorizonException a
-    runQuery' q = either throwError pure $ runQuery q summary
+    interpretQuery' :: HasCallStack => Qry a -> Except PastHorizonException a
+    interpretQuery' q = either throwError pure $ interpretQuery i q
 
 -- | A dummy 'EpochInfo' that always throws an 'error'.
 --
