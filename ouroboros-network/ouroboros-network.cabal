@@ -262,6 +262,7 @@ library ouroboros-protocol-tests
 
                        io-classes,
                        io-sim,
+                       network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,
                        typed-protocols
