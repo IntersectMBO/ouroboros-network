@@ -5,6 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Network.Protocol.Handshake.Test where
@@ -26,12 +27,17 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow ( MonadCatch
                                                 , MonadThrow
+                                                , bracket
                                                 )
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs
+import           Network.Mux.Types ( MiniProtocolNum (..)
+                                   , MiniProtocolDir (..)
+                                   , muxBearerAsChannel
+                                   )
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
@@ -42,6 +48,9 @@ import           Ouroboros.Network.Driver.Simple ( runPeer
                                                  , runConnectedPeers
                                                  , runConnectedPeersAsymmetric
                                                  )
+import           Ouroboros.Network.Snocket (TestAddress (..))
+import qualified Ouroboros.Network.Snocket as Snocket
+import           Simulation.Network.Snocket
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Client
@@ -68,6 +77,8 @@ tests =
         , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
         , testProperty "simultaneous open ST"  prop_channel_simultaneous_open_ST
         , testProperty "simultaneous open IO"  prop_channel_simultaneous_open_IO
+        , testProperty "simultaneous open SimNet"
+                                               prop_channel_simultaneous_open_SimNet
         , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
         , testProperty "codec RefuseReason"    prop_codec_RefuseReason
         , testProperty "codec"                 prop_codec_Handshake
@@ -574,9 +585,13 @@ prop_channel_simultaneous_open createChannels clientVersions serverVersions =
                     acceptableVersion
                     serverVersions
     (clientRes', serverRes') <-
-      (fst <$> runPeer nullTracer versionNumberHandshakeCodec clientChannel client)
+      (fst <$> runPeer nullTracer
+                      -- (("client",) `contramap` Tracer Debug.traceShowM)
+                       versionNumberHandshakeCodec clientChannel client)
         `concurrently`
-      (fst <$> runPeer nullTracer versionNumberHandshakeCodec serverChannel client')
+      (fst <$> runPeer nullTracer
+                      -- (("server",) `contramap` Tracer Debug.traceShowM)
+                       versionNumberHandshakeCodec serverChannel client')
     pure $
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
@@ -610,6 +625,63 @@ prop_channel_simultaneous_open_IO (ArbitraryVersions clientVersions serverVersio
                  createConnectedChannels
                  clientVersions
                  serverVersions
+
+
+prop_channel_simultaneous_open_SimNet :: ArbitraryVersions -> Property
+prop_channel_simultaneous_open_SimNet
+  (ArbitraryVersions clientVersions serverVersions) =
+  runSimOrThrow $
+    let attenuation = noAttenuation { biConnectionDelay = 1 } in
+    withSnocket nullTracer
+                (singletonScript attenuation)
+                (TestAddress (0 :: Int)) $ \sn -> do
+      let addr  = Snocket.TestAddress 1
+          addr' = Snocket.TestAddress 2
+      -- listening snockets
+      bracket (Snocket.open  sn Snocket.TestFamily)
+              (Snocket.close sn) $ \fdLst ->
+        bracket (Snocket.open  sn Snocket.TestFamily)
+                (Snocket.close sn) $ \fdLst' -> do
+          Snocket.bind sn fdLst  addr
+          Snocket.bind sn fdLst' addr'
+          Snocket.listen sn fdLst
+          Snocket.listen sn fdLst'
+          -- connection snockets
+          bracket ((,) <$> Snocket.open sn Snocket.TestFamily
+                       <*> Snocket.open sn Snocket.TestFamily
+                  )
+                  (\(fdConn, fdConn') -> 
+                      -- we need concurrently close both sockets: they need to
+                      -- communicate between each other while they close.
+                      Snocket.close sn fdConn
+                      `concurrently_`
+                      Snocket.close sn fdConn'
+                  ) $ \(fdConn, fdConn') -> do
+            Snocket.bind sn fdConn  addr
+            Snocket.bind sn fdConn' addr'
+            concurrently_
+              (Snocket.connect sn fdConn  addr')
+              (Snocket.connect sn fdConn' addr)
+            bearer  <- Snocket.toBearer
+                        sn 1
+                        nullTracer
+                        -- (("client",) `contramap` Tracer Debug.traceShowM)
+                        fdConn
+            bearer' <- Snocket.toBearer
+                        sn 1
+                        nullTracer
+                        -- (("server",) `contramap` Tracer Debug.traceShowM)
+                        fdConn'
+            let chann  = fromChannel
+                       $ muxBearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
+                chann' = fromChannel
+                       $ muxBearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
+            res <- prop_channel_simultaneous_open
+              (pure (chann, chann'))
+              clientVersions
+              serverVersions
+            return res
+          
 
 --
 -- Codec tests
