@@ -695,23 +695,23 @@ mkSnocket state tr = Snocket { getLocalAddr
         fd <- atomically (readTVar fdVar)
         case fd of
           FDUninitialised {} ->
-            throwIO invalidError
+            throwIO (invalidError "uninitialised file descriptor")
           FDListening {} ->
-            throwIO invalidError
+            throwIO (invalidError "listening snocket")
           FDConnected _ conn -> do
             traceWith tr (STBearer fd)
             return $ attenuationChannelAsMuxBearer (connSDUSize conn)
                                                    sduTimeout muxTracer
                                                    (connChannelLocal conn)
           FDClosed {} ->
-            throwIO invalidError
+            throwIO (invalidError "closed snocket")
       where
         -- io errors
-        invalidError = IOError
+        invalidError desc = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.toBearer"
-          , ioe_description = "Invalid argument"
+          , ioe_description = "Invalid argument: " ++ desc
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
