@@ -1,10 +1,12 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Network.Protocol.Handshake.Test where
@@ -25,14 +27,23 @@ import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST (MonadST)
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow ( MonadCatch
+                                                , MonadMask
                                                 , MonadThrow
+                                                , bracket
                                                 )
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs
+import           Network.Mux.Types ( MiniProtocolNum (..)
+                                   , MiniProtocolDir (..)
+                                   , muxBearerAsChannel
+                                   )
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
@@ -43,6 +54,9 @@ import           Ouroboros.Network.Driver.Simple ( runPeer
                                                  , runConnectedPeers
                                                  , runConnectedPeersAsymmetric
                                                  )
+import           Ouroboros.Network.Snocket (TestAddress (..))
+import qualified Ouroboros.Network.Snocket as Snocket
+import           Simulation.Network.Snocket
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Client
@@ -82,6 +96,8 @@ tests =
               prop_channel_simultaneous_open_ST
           , testProperty "simultaneous open IO"
               prop_channel_simultaneous_open_IO
+          , testProperty "simultaneous open SimNet"
+              prop_channel_simultaneous_open_SimNet
           ]
 
         , testGroup "NodeToNode"
@@ -93,7 +109,8 @@ tests =
               prop_channel_simultaneous_open_NodeToNode_ST
           , testProperty "simultaneous open IO" 
               prop_channel_simultaneous_open_NodeToNode_IO
-
+          , testProperty "simultaneous open SimNet"
+              prop_channel_simultaneous_open_NodeToNode_SimNet
           ]
 
         , testGroup "NodeToClient"
@@ -105,6 +122,8 @@ tests =
               prop_channel_simultaneous_open_NodeToClient_ST
           , testProperty "simultaneous open IO" 
               prop_channel_simultaneous_open_NodeToClient_IO
+          , testProperty "simultaneous open SimNet"
+              prop_channel_simultaneous_open_NodeToClient_SimNet
           ]
 
         , testProperty "codec RefuseReason"    prop_codec_RefuseReason
@@ -853,9 +872,13 @@ prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersi
                     acceptableVersion
                     serverVersions
     (clientRes', serverRes') <-
-      (fst <$> runPeer nullTracer codec clientChannel client)
+      (fst <$> runPeer nullTracer
+                      -- (("client",) `contramap` Tracer Debug.traceShowM)
+                       codec clientChannel client)
         `concurrently`
-      (fst <$> runPeer nullTracer codec {-versionNumberHandshakeCodec-} serverChannel client')
+      (fst <$> runPeer nullTracer
+                      -- (("server",) `contramap` Tracer Debug.traceShowM)
+                       codec serverChannel client')
     pure $
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
@@ -949,6 +972,118 @@ prop_channel_simultaneous_open_NodeToClient_IO
                     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                     clientVersions
                     serverVersions
+
+
+prop_channel_simultaneous_open_sim
+    :: forall vNumber vData m.
+       ( MonadAsync       m
+       , MonadCatch       m
+       , MonadLabelledSTM m
+       , MonadMask        m
+       , MonadST          m
+       , MonadThrow  (STM m)
+       , MonadTime        m
+       , MonadTimer       m
+       , Acceptable vData
+       , Ord vNumber
+       )
+    => Codec (Handshake vNumber CBOR.Term)
+              CBOR.DeserialiseFailure m ByteString
+    -> VersionDataCodec CBOR.Term vNumber vData
+    -> Versions vNumber vData Bool
+    -> Versions vNumber vData Bool
+    -> m Property
+prop_channel_simultaneous_open_sim codec versionDataCodec
+                                   clientVersions serverVersions =
+    let attenuation = noAttenuation { biConnectionDelay = 1 } in
+    withSnocket nullTracer
+                (singletonScript attenuation)
+                (TestAddress (0 :: Int)) $ \sn -> do
+      let addr  = Snocket.TestAddress 1
+          addr' = Snocket.TestAddress 2
+      -- listening snockets
+      bracket (Snocket.open  sn Snocket.TestFamily)
+              (Snocket.close sn) $ \fdLst ->
+        bracket (Snocket.open  sn Snocket.TestFamily)
+                (Snocket.close sn) $ \fdLst' -> do
+          Snocket.bind sn fdLst  addr
+          Snocket.bind sn fdLst' addr'
+          Snocket.listen sn fdLst
+          Snocket.listen sn fdLst'
+          -- connection snockets
+          bracket ((,) <$> Snocket.open sn Snocket.TestFamily
+                       <*> Snocket.open sn Snocket.TestFamily
+                  )
+                  (\(fdConn, fdConn') -> 
+                      -- we need concurrently close both sockets: they need to
+                      -- communicate between each other while they close.
+                      Snocket.close sn fdConn
+                      `concurrently_`
+                      Snocket.close sn fdConn'
+                  ) $ \(fdConn, fdConn') -> do
+            Snocket.bind sn fdConn  addr
+            Snocket.bind sn fdConn' addr'
+            concurrently_
+              (Snocket.connect sn fdConn  addr')
+              (Snocket.connect sn fdConn' addr)
+            bearer  <- Snocket.toBearer
+                        sn 1
+                        nullTracer
+                        -- (("client",) `contramap` Tracer Debug.traceShowM)
+                        fdConn
+            bearer' <- Snocket.toBearer
+                        sn 1
+                        nullTracer
+                        -- (("server",) `contramap` Tracer Debug.traceShowM)
+                        fdConn'
+            let chann  = fromChannel
+                       $ muxBearerAsChannel bearer  (MiniProtocolNum 0) InitiatorDir
+                chann' = fromChannel
+                       $ muxBearerAsChannel bearer' (MiniProtocolNum 0) InitiatorDir
+            res <- prop_channel_simultaneous_open
+              (pure (chann, chann'))
+              codec
+              versionDataCodec
+              clientVersions
+              serverVersions
+            return res
+          
+
+prop_channel_simultaneous_open_SimNet :: ArbitraryVersions
+                                                        -> Property
+prop_channel_simultaneous_open_SimNet
+  (ArbitraryVersions clientVersions serverVersions) =
+    runSimOrThrow $ prop_channel_simultaneous_open_sim 
+      versionNumberHandshakeCodec
+      (cborTermVersionDataCodec dataCodecCBORTerm)
+      clientVersions
+      serverVersions
+
+prop_channel_simultaneous_open_NodeToNode_SimNet :: ArbitraryNodeToNodeVersions
+                                                 -> ArbitraryNodeToNodeVersions
+                                                 -> Property
+prop_channel_simultaneous_open_NodeToNode_SimNet
+    (ArbitraryNodeToNodeVersions clientVersions)
+    (ArbitraryNodeToNodeVersions serverVersions) =
+      runSimOrThrow $ prop_channel_simultaneous_open_sim
+        (codecHandshake nodeToNodeVersionCodec)
+        (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+        clientVersions
+        serverVersions
+
+prop_channel_simultaneous_open_NodeToClient_SimNet :: ArbitraryNodeToClientVersions
+                                                   -> ArbitraryNodeToClientVersions
+                                                   -> Property
+prop_channel_simultaneous_open_NodeToClient_SimNet
+    (ArbitraryNodeToClientVersions clientVersions)
+    (ArbitraryNodeToClientVersions serverVersions) =
+      runSimOrThrow $ prop_channel_simultaneous_open_sim
+        (codecHandshake nodeToClientVersionCodec)
+        (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+        clientVersions
+        serverVersions
+
+
 
 --
 -- Codec tests
