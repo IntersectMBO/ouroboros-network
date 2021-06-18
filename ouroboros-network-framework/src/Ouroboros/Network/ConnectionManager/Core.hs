@@ -46,6 +46,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 
 import           Data.Monoid.Synchronisation
+import           Data.Wedge
 
 import           Network.Mux.Types (MuxMode)
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
@@ -416,15 +417,6 @@ defaultProtocolIdleTimeout = 5
 
 defaultResetTimeout :: DiffTime
 defaultResetTimeout = 5
-
-
--- | A wedge product
--- <https://hackage.haskell.org/package/smash/docs/Data-Wedge.html#t:Wedge>
---
-data Wedge a b =
-    Nowhere
-  | Here a
-  | There b
 
 
 -- | Instruction used internally in @unregisterOutboundConnectionImpl@, e.g. in
