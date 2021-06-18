@@ -260,6 +260,7 @@ library ouroboros-protocol-tests
 
                        io-sim,
                        io-sim-classes,
+                       network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,
                        ouroboros-network-testing,
