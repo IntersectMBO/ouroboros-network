@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -16,10 +17,10 @@
 -- `ouroboros-network:test' components.
 --
 module Simulation.Network.Snocket
+  (
   -- * Simulated Snocket
-  ( NetworkState
-  , newNetworkState
-  , mkSnocket
+    withSnocket
+  , ResourceException (..)
   , SnocketTrace (..)
 
   , BearerInfo (..)
@@ -41,17 +42,19 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer, contramap, traceWith)
+import           Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
 import           GHC.IO.Exception
 
 import           Data.Bifoldable (bitraverse_)
+import           Data.Foldable (traverse_)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
 
 import           Data.Wedge
@@ -236,6 +239,68 @@ newNetworkState bearerInfoScript peerAddr = atomically $
     <*> initScriptSTM bearerInfoScript
 
 
+data ResourceException addr
+  = NotReleasedListeningSockets [addr]              (Maybe SomeException)
+  | NotReleasedConnections      [NormalisedId addr] (Maybe SomeException)
+  deriving (Show, Typeable)
+
+instance (Typeable addr, Show addr)
+      => Exception (ResourceException addr)
+
+
+-- | A bracket which runs a network simulation.  When the simulation
+-- terminates it verifies that all listening sockets and all connections are
+-- closed.  It might throw 'ResourceException'.
+--
+withSnocket
+    :: forall m peerAddr a.
+       ( MonadCatch       m
+       , MonadLabelledSTM m
+       , MonadMask        m
+       , MonadTime        m
+       , MonadTimer       m
+       , MonadThrow  (STM m)
+       , Enum     peerAddr
+       , Ord      peerAddr
+       , Typeable peerAddr
+       , Show     peerAddr
+       )
+    => Tracer m (WithAddr (TestAddress peerAddr)
+                          (SnocketTrace m (TestAddress peerAddr)))
+    -> Script BearerInfo
+    -> TestAddress peerAddr
+    -- ^ the largest ephemeral address
+    -> (Snocket m (FD m (TestAddress peerAddr)) (TestAddress peerAddr)
+        -> m a)
+    -> m a
+withSnocket tr script (TestAddress peerAddr) k = do
+    st <- newNetworkState script peerAddr
+    a <- k (mkSnocket st tr)
+         `catch`
+         \e -> do re <- checkResources st (Just e)
+                  traverse_ throwIO re
+                  throwIO e
+    re <- checkResources st Nothing
+    traverse_ throwIO re
+    return a
+  where
+    -- verify that all sockets are closed
+    checkResources :: NetworkState m (TestAddress peerAddr)
+                   -> Maybe SomeException
+                   -> m (Maybe (ResourceException (TestAddress peerAddr)))
+    checkResources NetworkState { nsListeningFDs, nsConnections } err = do
+      (lstFDMap, connMap) <- atomically $ (,) <$> readTVar nsListeningFDs
+                                              <*> readTVar nsConnections
+      if |  not (Map.null lstFDMap)
+         -> return $ Just (NotReleasedListeningSockets (Map.keys lstFDMap) err)
+
+         |  not (Map.null connMap)
+         -> return $ Just (NotReleasedConnections      (Map.keys connMap) err)
+
+         |  otherwise
+         -> return   Nothing
+
+
 
 
 -- | Channel together with information needed by the other end, e.g. address of
@@ -320,6 +385,12 @@ newtype FD m peerAddr = FD { fdVar :: (StrictTVar m (FD_ m peerAddr)) }
 -- Simulated snockets
 --
 
+data WithAddr addr event =
+    WithAddr { waLocalAddr :: Maybe addr
+             , waEvent     :: event
+             }
+  deriving Show
+
 
 data SnocketTrace m addr
     = STConnect      (FD_ m addr) addr
@@ -347,7 +418,8 @@ mkSnocket :: forall m addr.
              , Ord addr
              )
           => NetworkState m (TestAddress addr)
-          -> Tracer m (SnocketTrace m (TestAddress addr))
+          -> Tracer m (WithAddr (TestAddress addr)
+                                (SnocketTrace m (TestAddress addr)))
           -> Snocket m (FD m (TestAddress addr)) (TestAddress addr)
 mkSnocket state tr = Snocket { getLocalAddr
                              , getRemoteAddr
@@ -362,17 +434,34 @@ mkSnocket state tr = Snocket { getLocalAddr
                              , toBearer
                              }
   where
-    getLocalAddr :: FD m (TestAddress addr) -> m (TestAddress addr)
-    getLocalAddr FD { fdVar } = do
+    getLocalAddrM :: FD m (TestAddress addr) -> m (Maybe (TestAddress addr))
+    getLocalAddrM FD { fdVar } = do
         fd_ <- atomically (readTVar fdVar)
-        case fd_ of
-          -- Socket would not error; it would return '0.0.0.0:0'.
-          FDUninitialised Nothing         -> throwIO ioe
-          FDUninitialised (Just peerAddr) -> return peerAddr
-          FDListening peerAddr _          -> return peerAddr
+        return $ case fd_ of
+          FDUninitialised Nothing         -> Nothing
+          FDUninitialised (Just peerAddr) -> Just peerAddr
+          FDListening peerAddr _          -> Just peerAddr
           FDConnected ConnectionId { localAddress } _
-                                          -> return localAddress
-          FDClosed {}                     -> throwIO ioe
+                                          -> Just localAddress
+          FDClosed {}                     -> Nothing
+
+    traceWith' :: FD m (TestAddress addr)
+               -> SnocketTrace m (TestAddress addr)
+               -> m ()
+    traceWith' fd =
+      let tr' :: Tracer m (SnocketTrace m (TestAddress addr))
+          tr' = (\ev -> flip WithAddr ev <$> getLocalAddrM fd)
+                `contramapM` tr
+      in traceWith tr'
+
+    getLocalAddr :: FD m (TestAddress addr) -> m (TestAddress addr)
+    getLocalAddr fd = do
+        maddr <- getLocalAddrM fd
+        case maddr of
+          Just addr -> return addr
+          -- Socket would not error for an @FDUninitialised Nothing@; it would
+          -- return '0.0.0.0:0'.
+          Nothing   -> throwIO ioe
       where
         ioe = IOError
                 { ioe_handle      = Nothing
@@ -419,10 +508,10 @@ mkSnocket state tr = Snocket { getLocalAddr
 
 
     connect :: FD m (TestAddress addr) -> TestAddress addr -> m ()
-    connect FD { fdVar = fdVarLocal } remoteAddress = do
-        fd <- atomically (readTVar fdVarLocal)
-        traceWith tr (STConnect fd remoteAddress)
-        case fd of
+    connect fd@FD { fdVar = fdVarLocal } remoteAddress = do
+        fd_ <- atomically (readTVar fdVarLocal)
+        traceWith' fd (STConnect fd_ remoteAddress)
+        case fd_ of
           FDUninitialised mbLocalAddr -> do
             bearerInfo <- stepScript (nsBearerInfo state)
             threadDelay (biConnectionDelay bearerInfo)
@@ -452,12 +541,16 @@ mkSnocket state tr = Snocket { getLocalAddr
                   assert (remoteAddress' == remoteAddress) $ do
                   (channelLocal, channelRemote)  <-
                     newConnectedAttenuatedChannelPair
-                      (STAttenuatedChannelTrace connId
-                       `contramap` tr)
-                      (STAttenuatedChannelTrace ConnectionId
-                        { localAddress  = remoteAddress
-                        , remoteAddress = localAddress
-                        }
+                      ( ( WithAddr (Just localAddress)
+                        . STAttenuatedChannelTrace connId
+                        )
+                        `contramap` tr)
+                      ( ( WithAddr (Just localAddress)
+                        . STAttenuatedChannelTrace ConnectionId
+                            { localAddress  = remoteAddress
+                            , remoteAddress = localAddress
+                            }
+                        )
                        `contramap` tr)
                       Attenuation
                         { aReadAttenuation  = biOutboundAttenuation  bearerInfo
@@ -484,9 +577,9 @@ mkSnocket state tr = Snocket { getLocalAddr
                 (Nothing, Just FDClosed {}) ->
                   return (Left notConnectedIOError)
             case res of
-              Left e    -> traceWith tr (STConnectError fd remoteAddress e)
+              Left e    -> traceWith' fd (STConnectError fd_ remoteAddress e)
                         >> throwIO e
-              Right fd' -> traceWith tr (STConnected fd') 
+              Right fd' -> traceWith' fd (STConnected fd') 
 
           FDConnected {} ->
             throwIO connectedIOError
@@ -526,22 +619,22 @@ mkSnocket state tr = Snocket { getLocalAddr
 
 
     bind :: FD m (TestAddress addr) -> TestAddress addr -> m ()
-    bind FD { fdVar } addr = do
+    bind fd@FD { fdVar } addr = do
         res <- atomically $ do
           boundSet <- readTVar (nsBoundAddresses state)
           when (addr `Set.member` boundSet)
                (throwSTM addressInUseError)
-          fd <- readTVar fdVar
-          case fd of
+          fd_ <- readTVar fdVar
+          case fd_ of
             FDUninitialised Nothing -> do
               writeTVar fdVar (FDUninitialised (Just addr))
               return Nothing
             _ ->
-              return (Just (fd, invalidError))
+              return (Just (fd_, invalidError))
         case res of
-          Nothing      -> return ()
-          Just (fd, e) -> traceWith tr (STBindError fd addr e)
-                       >> throwIO e
+          Nothing       -> return ()
+          Just (fd_, e) -> traceWith' fd (STBindError fd_ addr e)
+                        >> throwIO e
       where
         invalidError = IOError
           { ioe_handle      = Nothing
@@ -653,16 +746,16 @@ mkSnocket state tr = Snocket { getLocalAddr
 
     close :: FD m (TestAddress addr)
           -> m ()
-    close FD { fdVar } =
+    close fd@FD { fdVar } =
       uninterruptibleMask_ $ do
         (fd', mq) <- atomically $ do
-          fd <- readTVar fdVar
-          let (wConnId, fd') = case fd of
+          fd_ <- readTVar fdVar
+          let (wConnId, fd') = case fd_ of
                      FDUninitialised {}   -> (Nowhere,     FDClosed Nothing)
                      FDConnected connId _ -> (Here connId, FDClosed (Just connId))
                      FDListening addr _   -> (There addr,  FDClosed Nothing)
                      FDClosed    connId   -> (Nowhere,     FDClosed connId)
-              mq = case fd of
+              mq = case fd_ of
                      FDConnected _ conn -> Just (connChannelLocal conn)
                      _                  -> Nothing
 
@@ -680,26 +773,26 @@ mkSnocket state tr = Snocket { getLocalAddr
             wConnId
 
           return (fd', mq)
-        traceWith tr (STClosing fd' (isJust mq))
+        traceWith' fd (STClosing fd' (isJust mq))
         case mq of
           Nothing -> return ()
           Just q  -> acClose q
-        traceWith tr (STClosed fd')
+        traceWith' fd (STClosed fd')
 
 
     toBearer :: DiffTime
              -> Tracer m MuxTrace
              -> FD m (TestAddress addr)
              -> m (MuxBearer m)
-    toBearer sduTimeout muxTracer FD { fdVar } = do
-        fd <- atomically (readTVar fdVar)
-        case fd of
+    toBearer sduTimeout muxTracer fd@FD { fdVar } = do
+        fd_ <- atomically (readTVar fdVar)
+        case fd_ of
           FDUninitialised {} ->
             throwIO (invalidError "uninitialised file descriptor")
           FDListening {} ->
             throwIO (invalidError "listening snocket")
           FDConnected _ conn -> do
-            traceWith tr (STBearer fd)
+            traceWith' fd (STBearer fd_)
             return $ attenuationChannelAsMuxBearer (connSDUSize conn)
                                                    sduTimeout muxTracer
                                                    (connChannelLocal conn)

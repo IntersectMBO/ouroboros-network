@@ -71,7 +71,7 @@ import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Server2 (ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
-import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
+import           Ouroboros.Network.Snocket (Snocket, TestAddress (..), socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
@@ -811,13 +811,15 @@ unidirectionalExperiment snocket socket clientAndServerData = do
 
 prop_unidirectional_Sim :: ClientAndServerData Int Int Int -> Property
 prop_unidirectional_Sim clientAndServerData =
-  simulatedPropertyWithTimeout 7200 $ do
-    net   <- newNetworkState (singletonScript noAttenuation) 10
-    let snock = mkSnocket net debugTracer
-    fd <- Snocket.open snock Snocket.TestFamily
-    Snocket.bind   snock fd serverAddr
-    Snocket.listen snock fd
-    unidirectionalExperiment snock fd clientAndServerData
+  simulatedPropertyWithTimeout 7200 $
+    withSnocket nullTracer
+                (singletonScript noAttenuation)
+                (TestAddress 10) $ \snock ->
+      bracket (Snocket.open snock Snocket.TestFamily)
+              (Snocket.close snock) $ \fd -> do
+        Snocket.bind   snock fd serverAddr
+        Snocket.listen snock fd
+        unidirectionalExperiment snock fd clientAndServerData
   where
     serverAddr = Snocket.TestAddress (0 :: Int)
 
@@ -955,21 +957,22 @@ bidirectionalExperiment
 
 prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int Int Int -> ClientAndServerData Int Int Int -> Property
 prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
-  simulatedPropertyWithTimeout 7200 $ do
-    net <- newNetworkState script' 10
-    let snock = mkSnocket net debugTracer
-    bracket ((,) <$> Snocket.open snock Snocket.TestFamily
-                 <*> Snocket.open snock Snocket.TestFamily)
-            (\ (socket0, socket1) -> Snocket.close snock socket0 >>
-                                     Snocket.close snock socket1)
-      $ \ (socket0, socket1) -> do
-        let addr0 = Snocket.TestAddress (0 :: Int)
-            addr1 = Snocket.TestAddress 1
-        Snocket.bind   snock socket0 addr0
-        Snocket.bind   snock socket1 addr1
-        Snocket.listen snock socket0
-        Snocket.listen snock socket1
-        bidirectionalExperiment snock socket0 socket1 addr0 addr1 data0 data1
+  simulatedPropertyWithTimeout 7200 $
+    withSnocket debugTracer
+                script'
+                (TestAddress 10) $ \snock ->
+      bracket ((,) <$> Snocket.open snock Snocket.TestFamily
+                   <*> Snocket.open snock Snocket.TestFamily)
+              (\ (socket0, socket1) -> Snocket.close snock socket0 >>
+                                       Snocket.close snock socket1)
+        $ \ (socket0, socket1) -> do
+          let addr0 = Snocket.TestAddress (0 :: Int)
+              addr1 = Snocket.TestAddress 1
+          Snocket.bind   snock socket0 addr0
+          Snocket.bind   snock socket1 addr1
+          Snocket.listen snock socket0
+          Snocket.listen snock socket1
+          bidirectionalExperiment snock socket0 socket1 addr0 addr1 data0 data1
   where
     script' = toBearerInfo <$> script
 
