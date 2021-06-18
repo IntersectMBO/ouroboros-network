@@ -21,6 +21,7 @@ extra-source-files:  CHANGELOG.md
 
 library
   exposed-modules:     Data.Cache
+                       Data.Wedge
                        Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
