@@ -184,11 +184,11 @@ clientServerSimulation
     => Script BearerInfo
     -> [payload]
     -> m (Maybe Bool)
-clientServerSimulation script payloads = do
-    ns <- newNetworkState script 0
-    withAsync (server ns) $ \_serverAsync -> do
-      res <- untilSuccess (client ns)
-      return (Just res)
+clientServerSimulation script payloads =
+    withSnocket nullTracer script (TestAddress 0) $ \snocket ->
+      withAsync (server snocket) $ \_serverAsync -> do
+        res <- untilSuccess (client snocket)
+        return (Just res)
 
   where
     reqRespProtocolNum :: MiniProtocolNum
@@ -203,9 +203,9 @@ clientServerSimulation script payloads = do
     clientPeer :: Peer (ReqResp payload payload) AsClient StIdle m Bool
     clientPeer = reqRespClientPeer (pingClient payloads)
 
-    server :: NetworkState m TestAddr
+    server :: TestSnocket m
            -> m ()
-    server ns = do
+    server snocket = do
         labelThisThread "server"
         threadsVar <- newTVarIO Set.empty
         bracket (open snocket TestFamily)
@@ -218,13 +218,6 @@ clientServerSimulation script payloads = do
             threads <- atomically (readTVar threadsVar)
             traverse_ cancel threads
       where
-        snocket :: TestSnocket m
-        snocket = mkSnocket ns (("server",) `contramap`
-                                  traceTime
-                                   (   Tracer (say . show)
-                                    -- <> Tracer Debug.traceShowM
-                                   ))
-
         acceptLoop :: StrictTVar m (Set (Async m ()))
                    -> Accept m (TestFD m) TestAddr
                    -> m ()
@@ -282,9 +275,9 @@ clientServerSimulation script payloads = do
                   say $ "SERVER HANDLER " ++ show res
 
 
-    client :: NetworkState m TestAddr
+    client :: TestSnocket m
            -> m Bool
-    client ns = do
+    client snocket = do
         labelThisThread "client"
         bracket (openToConnect snocket serverAddr)
                 (close snocket)
@@ -329,13 +322,6 @@ clientServerSimulation script payloads = do
                         (Left err) -> throwIO err
                         (Right b)  -> return b
                         -- Right _         -> error "client: mux died"
-      where
-        snocket :: TestSnocket m
-        snocket = mkSnocket ns (("client",) `contramap`
-                                  traceTime
-                                   (   Tracer (say . show)
-                                    -- <> Tracer Debug.traceShowM
-                                   ))
 
 --
 -- Generators
