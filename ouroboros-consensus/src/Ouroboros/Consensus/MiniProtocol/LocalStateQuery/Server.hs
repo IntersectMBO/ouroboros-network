@@ -13,7 +13,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util.IOLike
 
 localStateQueryServer ::
-     forall m blk. (IOLike m, QueryLedger blk)
+     forall m blk. (IOLike m, QueryLedger blk, ConfigSupportsNode blk)
   => ExtLedgerCfg blk
   -> STM m (Point blk)
      -- ^ Get tip point

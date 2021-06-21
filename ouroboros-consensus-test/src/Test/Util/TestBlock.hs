@@ -65,6 +65,8 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
+import           Data.Time.Calendar (fromGregorian)
+import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
@@ -76,6 +78,7 @@ import           Test.QuickCheck hiding (Result)
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -250,6 +253,15 @@ data instance StorageConfig TestBlock = TestBlockStorageConfig
 
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
+
+instance ConfigSupportsNode TestBlock where
+  getSystemStart = const (SystemStart dummyDate)
+    where
+      --  This doesn't matter much
+      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
+
+  getNetworkMagic = const (NetworkMagic 42)
+
 
 {-------------------------------------------------------------------------------
   NestedCtxt

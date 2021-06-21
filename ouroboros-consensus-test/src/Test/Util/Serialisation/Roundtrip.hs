@@ -217,19 +217,35 @@ data WithVersion v a = WithVersion v a
 -- @('WithVersion' v a)@.
 type ArbitraryWithVersion v a = (Arbitrary (WithVersion v a), Eq a, Show a)
 
-instance ( Arbitrary (WithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk))
-         , blockVersion ~ BlockNodeToClientVersion blk
+instance ( blockVersion ~ BlockNodeToClientVersion blk
+         , Arbitrary blockVersion
+         , Arbitrary (WithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk))
          )
       => Arbitrary (WithVersion (QueryVersion, blockVersion) (SomeSecond Query blk)) where
   arbitrary = do
     queryVersion <- arbitrary
     case queryVersion of
-      Query.TopLevelQueryDisabled -> do
-        WithVersion blockV (SomeSecond someBlockQuery) <- arbitrary
-        return (WithVersion (queryVersion, blockV) (SomeSecond (BlockQuery someBlockQuery)))
-      -- TODO This case statement will cause a warning when we add a new top
+      -- This case statement will cause a warning when we add a new top
       -- level query and hence a new QueryVersion. In that case we should
       -- support such top level `Query` constructors in this Arbitrary instance.
+      Query.TopLevelQueryDisabled ->
+        arbitraryBlockQuery queryVersion
+
+      Query.QueryVersion1 ->
+        frequency
+          [ (15, arbitraryBlockQuery queryVersion)
+          , (1,  do blockV <- arbitrary
+                    return (WithVersion (queryVersion, blockV)
+                                        (SomeSecond GetSystemStart)))
+          ]
+    where
+      arbitraryBlockQuery :: QueryVersion
+                          -> Gen (WithVersion (QueryVersion, blockVersion)
+                                              (SomeSecond Query blk))
+      arbitraryBlockQuery queryVersion = do
+        WithVersion blockV (SomeSecond someBlockQuery) <- arbitrary
+        return (WithVersion (queryVersion, blockV)
+                            (SomeSecond (BlockQuery someBlockQuery)))
 
 -- | This is @OVERLAPPABLE@ because we have to override the default behaviour
 -- for e.g. 'Query's.

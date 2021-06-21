@@ -8,8 +8,15 @@ import           Ouroboros.Network.NodeToClient.Version
 
 -- | Version of the `Query blk` type.
 data QueryVersion
+    -- | Only the 'BlockQuery' constructor of 'Query' is supported. The binary
+    -- encoding is backwards compatible: it does not introduce any constructor
+    -- tag around the 'BlockQuery'.
   = TopLevelQueryDisabled
-  -- ^ Only the @BlockQuery@ constructor of @Query@ is supported.
+
+    -- | Multiple top level queries are now supported. The encoding now has
+    -- constructor tags for the different top level queries. Specifically V1
+    -- adds support for 'GetSystemStart'.
+  | QueryVersion1
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 -- | Get the @QueryVersion@ supported by this @NodeToClientVersion@.
@@ -23,4 +30,4 @@ nodeToClientVersionToQueryVersion x = case x of
   NodeToClientV_6 -> TopLevelQueryDisabled
   NodeToClientV_7 -> TopLevelQueryDisabled
   NodeToClientV_8 -> TopLevelQueryDisabled
-  NodeToClientV_9 -> TopLevelQueryDisabled
+  NodeToClientV_9 -> QueryVersion1
