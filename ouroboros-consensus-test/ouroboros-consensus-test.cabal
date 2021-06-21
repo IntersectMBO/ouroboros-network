@@ -110,7 +110,7 @@ library
                      , tree-diff
                      , utf8-string
 
-                     , io-sim-classes
+                     , io-classes
                      , io-sim
                      , typed-protocols
                      , ouroboros-network
@@ -179,7 +179,7 @@ test-suite test-consensus
                      , time
                      , tree-diff
 
-                     , io-sim-classes
+                     , io-classes
                      , io-sim
                      , typed-protocols
                      , ouroboros-network
@@ -265,7 +265,7 @@ test-suite test-storage
                      , tree-diff
                      , vector
 
-                     , io-sim-classes
+                     , io-classes
                      , io-sim
                      , ouroboros-network
                      , ouroboros-network-testing

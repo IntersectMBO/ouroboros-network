@@ -45,7 +45,7 @@ library
   build-depends:     base,
                      bytestring,
                      contra-tracer,
-                     io-sim-classes,
+                     io-classes,
                      time,
                      typed-protocols
 
@@ -71,7 +71,7 @@ test-suite test
                    , contra-tracer
                    , typed-protocols
                    , typed-protocols-examples
-                   , io-sim-classes
+                   , io-classes
                    , io-sim
                    , QuickCheck
                    , tasty

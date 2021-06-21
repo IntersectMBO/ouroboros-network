@@ -20,7 +20,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus-shelley-test
           ./ouroboros-consensus-test
           ./io-sim
-          ./io-sim-classes
+          ./io-classes
           ./ntp-client
           ./cardano-client
 
@@ -34,7 +34,7 @@ constraints:
 package Win32-network
   tests: True
 
-package io-sim-classes
+package io-classes
   flags: +asserts
 
 package network-mux

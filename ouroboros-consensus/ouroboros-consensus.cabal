@@ -313,7 +313,7 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
-                     , io-sim-classes    >=0.2   && <0.3
+                     , io-classes        >=0.2   && <0.3
                      , typed-protocols
                      , network-mux
                      , ouroboros-network-framework

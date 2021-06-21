@@ -40,7 +40,7 @@ library
                        ScopedTypeVariables,
                        TypeFamilies
   build-depends:       base              >=4.9 && <4.15,
-                       io-sim-classes    >=0.2 && <0.3,
+                       io-classes        >=0.2 && <0.3,
                        exceptions        >=0.10,
                        containers,
                        psqueues          >=0.2 && <0.3,
@@ -67,8 +67,8 @@ test-suite test
   build-depends:       base,
                        array,
                        containers,
+                       io-classes,
                        io-sim,
-                       io-sim-classes,
                        QuickCheck,
                        tasty,
                        tasty-quickcheck,

@@ -110,7 +110,7 @@ class ( Monad stm
   modifyTVar'  :: TVar_ stm a -> (a -> a) -> stm ()
   modifyTVar' v f = readTVar v >>= \x -> writeTVar v $! f x
 
-  -- | @since io-sim-classes-0.2.0.0
+  -- | @since io-classes-0.2.0.0
   stateTVar    :: TVar_ stm s -> (s -> (a, s)) -> stm a
   stateTVar    = stateTVarDefault
 
