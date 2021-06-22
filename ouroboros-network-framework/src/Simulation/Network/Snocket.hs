@@ -15,7 +15,7 @@
 -- library, since it is needed in `ouroboros-network-framework:test` and
 -- `ouroboros-network:test' components.
 --
-module Ouroboros.Network.IOSim
+module Simulation.Network.Snocket
   -- * Simulated Snocket
   ( NetworkState
   , newNetworkState
