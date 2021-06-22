@@ -62,7 +62,6 @@ import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.IOSim
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
@@ -76,9 +75,10 @@ import           Ouroboros.Network.Server2 (ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
 import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
+import           Simulation.Network.Snocket
 
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
-import           Test.Ouroboros.Network.IOSim (NonFailingBearerInfoScript(..), toBearerInfo)
+import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), toBearerInfo)
 
 tests :: TestTree
 tests =

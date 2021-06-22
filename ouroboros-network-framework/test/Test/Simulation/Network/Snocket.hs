@@ -12,7 +12,7 @@
 
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
-module Test.Ouroboros.Network.IOSim
+module Test.Simulation.Network.Snocket
   ( tests
   , BearerInfoScript(..)
   , NonFailingBearerInfoScript(..)
@@ -54,9 +54,9 @@ import           Ouroboros.Network.Driver.Simple
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.IOSim
 import           Ouroboros.Network.Util.ShowProxy
 import           Ouroboros.Network.Testing.Utils (Delay (..))
+import           Simulation.Network.Snocket
 
 import           Network.Mux
 import           Network.Mux.Types (SDUSize (..))
@@ -77,7 +77,7 @@ import qualified Debug.Trace as Debug
 
 tests :: TestTree
 tests =
-    testGroup "Ouroboros.Network.IOSim"
+    testGroup "Simulation.Network.Snocket"
     [ testGroup "generators"
       [ testProperty "shrinker AbsBearerInfo" prop_shrinker_AbsBearerInfo
       , testProperty "shrinker BearerInfoScript" prop_shrinker_BearerInfoScript
