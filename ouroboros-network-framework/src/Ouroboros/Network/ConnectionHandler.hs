@@ -248,13 +248,19 @@ makeConnectionHandler muxTracer singMuxMode
     outboundConnectionHandler socket
                               PromiseWriter { writePromise }
                               tracer
-                              connectionId@ConnectionId { remoteAddress }
+                              connectionId@ConnectionId { localAddress
+                                                        , remoteAddress }
                               mkMuxBearer
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
         runWithUnmask unmask =
           classifyExceptions tracer remoteAddress OutboundError $ do
+            labelThisThread (concat ["out-conn-hndlr-"
+                                    , show localAddress
+                                    , "-"
+                                    , show remoteAddress
+                                    ])
             handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
             hsResult <-
               unmask (runHandshakeClient handshakeBearer
@@ -309,13 +315,19 @@ makeConnectionHandler muxTracer singMuxMode
     inboundConnectionHandler socket
                              PromiseWriter { writePromise }
                              tracer
-                             connectionId@ConnectionId { remoteAddress }
+                             connectionId@ConnectionId { localAddress
+                                                       , remoteAddress }
                              mkMuxBearer
         = MaskedAction { runWithUnmask }
       where
         runWithUnmask :: (forall x. m x -> m x) -> m ()
         runWithUnmask unmask =
           classifyExceptions tracer remoteAddress InboundError $ do
+            labelThisThread (concat ["in-conn-hndlr-"
+                                    , show localAddress
+                                    , "-"
+                                    , show remoteAddress
+                                    ])
             handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
             hsResult <-
               unmask (runHandshakeServer handshakeBearer
