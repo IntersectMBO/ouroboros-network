@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -45,6 +47,9 @@ import           Data.Functor (void)
 import           Data.Ix (Ix (..))
 import           Data.Word
 import qualified Data.ByteString.Lazy as BL
+import           Quiet
+
+import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
@@ -217,7 +222,8 @@ data MuxBearer m = MuxBearer {
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
-  deriving Show
+  deriving Generic
+  deriving Show via Quiet SDUSize
 
 -- | A channel which wraps each message as an 'MuxSDU' using giving
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.
