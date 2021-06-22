@@ -105,10 +105,11 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
 run :: forall muxMode socket peerAddr versionNumber m a b.
-       ( MonadAsync m
-       , MonadCatch m
-       , MonadTime  m
-       , MonadTimer m
+       ( MonadAsync    m
+       , MonadCatch    m
+       , MonadTime     m
+       , MonadTimer    m
+       , MonadEvaluate m
        , HasResponder muxMode ~ True
        , Ord      peerAddr
        )

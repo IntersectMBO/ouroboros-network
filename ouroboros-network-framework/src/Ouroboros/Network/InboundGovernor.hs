@@ -82,10 +82,11 @@ import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChan
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
 inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a b.
-                   ( MonadAsync m
-                   , MonadCatch m
-                   , MonadTime  m
-                   , MonadTimer m
+                   ( MonadAsync    m
+                   , MonadCatch    m
+                   , MonadTime     m
+                   , MonadTimer    m
+                   , MonadEvaluate m
                    , Ord peerAddr
                    , HasResponder muxMode ~ True
                    )
@@ -323,12 +324,12 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
           res <- promotedToWarmRemote connectionManager
                                       (remoteAddress connId)
           traceWith tracer (TrPromotedToWarmRemote connId res)
-          assert (resultInState res /= UnknownConnectionSt) $ do
-            let state' = updateRemoteState
-                           connId
-                           RemoteWarm
-                           state
-            inboundGovernorLoop state'
+          _ <- evaluate $ assert (resultInState res /= UnknownConnectionSt)
+          let state' = updateRemoteState
+                         connId
+                         RemoteWarm
+                         state
+          inboundGovernorLoop state'
 
         RemotePromotedToHot connId -> do
           traceWith tracer (TrPromotedToHotRemote connId)
