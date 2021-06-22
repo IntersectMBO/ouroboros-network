@@ -877,7 +877,8 @@ bidirectionalExperiment
        , Typeable req, Typeable resp
        , Show acc
        )
-    => Snocket m socket peerAddr
+    => Bool
+    -> Snocket m socket peerAddr
     -> socket
     -> socket
     -> peerAddr
@@ -886,13 +887,9 @@ bidirectionalExperiment
     -> ClientAndServerData req resp acc
     -> m Property
 bidirectionalExperiment
-    snocket socket0 socket1 localAddr0 localAddr1
+    useLock snocket socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
       lock <- newTMVarIO ()
-      -- connect lock: only one side can run 'requestOutboundConnection' in
-      -- turn.  Otherwise when both sides call 'requestOutboundConnection' they
-      -- both will run 'connect' and one of the calls will fail.  Using a lock
-      -- forces to block until negotiation is done, which is not ideal.
       withBidirectionalConnectionManager
         "node-0" snocket socket0 (Just localAddr0) clientAndServerData0
         (\connectionManager0 _serverAddr0 serverAsync0 ->
@@ -913,7 +910,7 @@ bidirectionalExperiment
                 (replicateM
                   (numberOfRounds clientAndServerData0)
                   (bracket
-                    (withLock lock
+                    (withLock useLock lock
                       (requestOutboundConnection
                         connectionManager0
                         localAddr1))
@@ -935,7 +932,7 @@ bidirectionalExperiment
                 (replicateM
                   (numberOfRounds clientAndServerData1)
                   (bracket
-                    (withLock lock
+                    (withLock useLock lock
                       (requestOutboundConnection
                         connectionManager1
                         localAddr0))
@@ -990,7 +987,7 @@ prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
           Snocket.bind   snock socket1 addr1
           Snocket.listen snock socket0
           Snocket.listen snock socket1
-          bidirectionalExperiment snock socket0 socket1 addr0 addr1 data0 data1
+          bidirectionalExperiment False snock socket0 socket1 addr0 addr1 data0 data1
   where
     script' = toBearerInfo <$> script
 
@@ -1028,6 +1025,7 @@ prop_bidirectional_IO data0 data1 =
             Socket.listen socket1 10
 
             bidirectionalExperiment
+              True
               (socketSnocket iomgr)
               socket0
               socket1
@@ -1074,10 +1072,12 @@ connectionManagerTracer =
 withLock :: ( MonadSTM   m
             , MonadThrow m
             )
-         => StrictTMVar m ()
+         => Bool
+         -> StrictTMVar m ()
          -> m a
          -> m a
-withLock v m =
+withLock False _v m = m
+withLock True   v m =
     bracket (atomically $ takeTMVar v)
             (atomically . putTMVar v)
             (const m)
