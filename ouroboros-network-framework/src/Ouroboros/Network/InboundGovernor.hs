@@ -84,6 +84,7 @@ import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChan
 inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a b.
                    ( MonadAsync    m
                    , MonadCatch    m
+                   , MonadEvaluate m
                    , MonadThrow    m
                    , MonadThrow    (STM m)
                    , MonadTime     m
@@ -325,12 +326,12 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
           res <- promotedToWarmRemote connectionManager
                                       (remoteAddress connId)
           traceWith tracer (TrPromotedToWarmRemote connId res)
-          assert (resultInState res /= UnknownConnectionSt) $ do
-            let state' = updateRemoteState
-                           connId
-                           RemoteWarm
-                           state
-            inboundGovernorLoop state'
+          _ <- evaluate $ assert (resultInState res /= UnknownConnectionSt)
+          let state' = updateRemoteState
+                         connId
+                         RemoteWarm
+                         state
+          inboundGovernorLoop state'
 
         RemotePromotedToHot connId -> do
           traceWith tracer (TrPromotedToHotRemote connId)
