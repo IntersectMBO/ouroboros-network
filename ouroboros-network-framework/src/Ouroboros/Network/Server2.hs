@@ -107,6 +107,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
 run :: forall muxMode socket peerAddr versionNumber m a b.
        ( MonadAsync    m
        , MonadCatch    m
+       , MonadEvaluate m
        , MonadThrow   (STM m)
        , MonadTime     m
        , MonadTimer    m
