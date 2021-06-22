@@ -1093,10 +1093,16 @@ simulatedPropertyWithTimeout t test =
     tr = runSimTrace $ timeout t test
 
 ppTrace_ :: Trace a -> String
-ppTrace_ tr = intercalate "\n" $ map fmt events
+ppTrace_ tr = concat
+    [     "====== Trace ======\n"
+    , intercalate "\n" $ map fmt events
+    , "\n\n====== Say Events ======\n"
+    , intercalate "\n" $ selectTraceEventsSay' tr
+    , "\n"
+    ]
   where
     events = traceEvents tr
     w      = maximum [ length name | (_, _, Just name, _) <- events ]
 
-    fmt (t, tid, lbl, e) = printf "%-10s - %-13s %-*s - %s" (show t) (show tid) w (fromMaybe "" lbl) (show e)
+    fmt (t, tid, lbl, e) = printf "%-24s - %-13s %-*s - %s" (show t) (show tid) w (fromMaybe "" lbl) (show e)
 
