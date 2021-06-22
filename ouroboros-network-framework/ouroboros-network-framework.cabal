@@ -58,7 +58,6 @@ library
                        Ouroboros.Network.Server.RateLimiting
                        Ouroboros.Network.Server2
                        Ouroboros.Network.Snocket
-                       Ouroboros.Network.IOSim
                        Ouroboros.Network.Socket
 
                        Ouroboros.Network.Subscription
@@ -68,6 +67,8 @@ library
                        Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
+
+                       Simulation.Network.Snocket
 
   other-modules:       Ouroboros.Network.Linger
   -- other-extensions:
@@ -131,7 +132,7 @@ test-suite test
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
                        Test.Ouroboros.Network.RateLimiting
-                       Test.Ouroboros.Network.IOSim
+                       Test.Simulation.Network.Snocket
 
   build-depends:       base
                      , bytestring
