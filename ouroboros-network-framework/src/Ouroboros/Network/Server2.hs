@@ -110,6 +110,7 @@ run :: forall muxMode socket peerAddr versionNumber m a b.
        , MonadTime  m
        , MonadTimer m
        , MonadThrow (STM m)
+       , MonadEvaluate m
        , HasResponder muxMode ~ True
        , Ord      peerAddr
        )
