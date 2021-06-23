@@ -2,9 +2,9 @@
 
 # Ouroboros-Network
 
-* io-sim - `IOSim` simulator monad which supports asynchronous exceptions,
+* `io-sim` - `IOSim` simulator monad which supports asynchronous exceptions,
   `STM` transactions and `async` interface, timers.
-* io-sim-classes - type classes, all of them have instance for both `IOSim` and
+* `io-classes` - type classes, all of them have instance for both `IOSim` and
   `IO`.
 * `typed-protocols` - session type framework with support of [protocol pipelining](https://en.wikipedia.org/wiki/Protocol_pipelining)
   * See 45min Haskell eXchange 2019 [talk](https://skillsmatter.com/skillscasts/14633-45-minute-talk-by-duncan-coutts) by @dcoutts.

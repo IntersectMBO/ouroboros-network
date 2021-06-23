@@ -51,7 +51,7 @@ test-suite test
                      , tasty
                      , tasty-quickcheck
 
-                     , io-sim-classes
+                     , io-classes
                      , io-sim
                      , monoidal-synchronisation
   default-language: Haskell2010

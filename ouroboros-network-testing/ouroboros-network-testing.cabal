@@ -51,8 +51,8 @@ library
                        TypeInType
   build-depends:       base              >=4.9 && <4.15,
                        contra-tracer,
+                       io-classes,
                        io-sim,
-                       io-sim-classes,
 
                        cborg             >=0.2.1 && <0.3,
                        serialise         >=0.2 && <0.3,

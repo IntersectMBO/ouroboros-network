@@ -38,7 +38,7 @@ common demo-deps
 
 library
   build-depends:       base            >=4.9 && <4.15,
-                       io-sim-classes  >=0.1 && <0.3,
+                       io-classes      >=0.1 && <0.3,
                        contra-tracer   >=0.1 && <0.2,
                        monoidal-synchronisation
                                        >=0.1 && <0.2,
@@ -108,7 +108,7 @@ test-suite test
                        Test.Mux.Timeout
   default-language:    Haskell2010
   build-depends:       base,
-                       io-sim-classes,
+                       io-classes,
                        io-sim            >=0.2 && < 0.3,
                        contra-tracer,
                        network-mux,
@@ -154,7 +154,7 @@ executable mux-demo
   build-depends:       base,
                        directory,
                        network-mux,
-                       io-sim-classes,
+                       io-classes,
                        contra-tracer,
                        stm,
 
@@ -175,7 +175,7 @@ executable cardano-ping
   build-depends:       base,
                        aeson,
                        network-mux,
-                       io-sim-classes,
+                       io-classes,
                        contra-tracer,
 
                        bytestring,

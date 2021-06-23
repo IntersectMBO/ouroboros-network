@@ -136,14 +136,14 @@ jobs:
           cat "$x"
         done
 
-    - name: Build io-sim-classes [build]
+    - name: Build io-classes [build]
       # +checktvarinvariant is set in cabal.project.local.ci
-      run: cabal --builddir="$CABAL_BUILDDIR" build -f -checktvarinvariant io-sim-classes
+      run: cabal --builddir="$CABAL_BUILDDIR" build -f -checktvarinvariant io-classes
 
     - name: Set checkinvariant flag
       run: |
         cat >> cabal.project.local <<EOF
-        package io-sim-classes
+        package io-classes
           flags: +checktvarinvariant
         EOF
 
@@ -160,8 +160,8 @@ jobs:
     - name: io-sim [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run io-sim:test
 
-    - name: io-sim-classes [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run io-sim-classes:test
+    - name: io-classes [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" run io-classes:test
 
     - name: typed-protocols-examples [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-examples:tests

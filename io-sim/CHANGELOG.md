@@ -7,4 +7,4 @@
 ## 0.2.0.0
 
 * First version published on Hackage.
-* Depends on `io-sim-classes-0.2.0.0`.
+* Depends on `io-classes-0.2.0.0`.

@@ -39,7 +39,7 @@ a G-set for the former.  We use
 for the former and a newtype wrapper `Time` for the later (provided for this
 package).  `DiffTime` is used consistently across all the type classes which is
 one of the few departures from the `base` interface.  One example is
-[threadDelay](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadTimer.html#v:threadDela)
+[threadDelay](https://hackage.haskell.org/package/io-classes/docs/Control-Monad-Class-MonadTimer.html#v:threadDela)
 (provided by `MonadDelay`) which is using `DiffTime` (being in seconds) rather
 than passing microseconds as an `Int` - as it is done by `base` package.
 Provided `threadDelay` function is safely against overflows, this is especially
@@ -70,19 +70,19 @@ on top of
 [ghc-heap](https://gitlab.haskell.org/ghc/ghc/-/tree/master/libraries/ghc-heap)
 was successfully used to eliminate such bugs in a large system.  We strongly
 recommend to use `Control.Monad.Class.MonadSTM.Strict`.  It exposes the
-[MonadSTM](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadSTM.html#t:MonadSTM)
+[MonadSTM](https://hackage.haskell.org/package/io-classes/docs/Control-Monad-Class-MonadSTM.html#t:MonadSTM)
 interface and gives access to
 [StrictTVar](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadSTM-Strict.html#t:StrictTVar)'s
 in place of non-strict
-[TVar](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadSTM.html#t:TVar)'s.
+[TVar](https://hackage.haskell.org/package/io-classes/docs/Control-Monad-Class-MonadSTM.html#t:TVar)'s.
 
 ## Threads API
 
 We draw a line between `base` api and `async` api.  The former one is provided
 by
-[MonadFork](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadFork.html#t:MonadFork)
+[MonadFork](https://hackage.haskell.org/package/io-classes/docs/Control-Monad-Class-MonadFork.html#t:MonadFork)
 the latter by
-[MonadAsync](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadFork.html#t:MonadAsync).
+[MonadAsync](https://hackage.haskell.org/package/io-classes/docs/Control-Monad-Class-MonadFork.html#t:MonadAsync).
 Both are shallow abstractions around APIs exposed by the `base` and `async`
 packages.
 
@@ -92,5 +92,5 @@ packages.
   provides an API to the
   [Debug.Trace](https://hackage.haskell.org/package/base/docs/Debug-Trace.html)
   eventlog interface.
-* [MonadST](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadST.html#t:MonadST): provides a way to lift `ST`-computations.
-* [MonadSay](https://hackage.haskell.org/package/io-sim-classes/docs/Control-Monad-Class-MonadSay.html#t:MonadSay): dummy debugging interface
+* [MonadST](https://hackage.haskell.org/package/io-classes/docs/Control-Monad-Class-MonadST.html#t:MonadST): provides a way to lift `ST`-computations.
+* [MonadSay](https://hackage.haskell.org/package/io-classes/docs/Control-Monad-Class-MonadSay.html#t:MonadSay): dummy debugging interface

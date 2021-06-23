@@ -75,7 +75,7 @@ library
                      , cardano-prelude
                      , contra-tracer
 
-                     , io-sim-classes  >=0.1   && < 0.3
+                     , io-classes      >=0.1   && < 0.3
                      , monoidal-synchronisation
                                        >=0.1   && < 0.2
                      , network         >=3.1.2   && < 3.2
@@ -135,7 +135,7 @@ test-suite test
                      , contra-tracer
 
                      , io-sim
-                     , io-sim-classes
+                     , io-classes
                      , network-mux
                      , ouroboros-network-framework
                      , ouroboros-network-testing
@@ -174,7 +174,7 @@ executable demo-ping-pong
 
                        contra-tracer,
 
-                       io-sim-classes,
+                       io-classes,
                        network-mux,
                        ouroboros-network-framework,
                        typed-protocols,

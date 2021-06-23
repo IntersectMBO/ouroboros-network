@@ -9,7 +9,7 @@ main = defaultMain tests
 
 tests :: TestTree
 tests =
-  testGroup "io-sim-classes"
+  testGroup "io-classes"
     [ Test.MonadTimer.tests
     ]
 
