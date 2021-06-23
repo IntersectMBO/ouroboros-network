@@ -104,8 +104,8 @@ tests =
 --
 data ClientAndServerData req = ClientAndServerData {
     accumulatorInit              :: req,
-    -- ^ Initial value. In for each request the server sends back a list received requests (in
-    --   reverse order) terminating with the accumulatorInit.
+    -- ^ Initial value. For each request the server sends back a list received
+    -- requests (in reverse order) terminating with the accumulatorInit.
     hotInitiatorRequests         :: [[req]],
     -- ^ list of requests run by the hot intiator in each round; Running
     -- multiple rounds allows us to test restarting of responders.
@@ -139,7 +139,7 @@ arbitraryList :: Arbitrary a =>  Gen [[a]]
 arbitraryList =
     resize 3 (listOf (resize 3 (listOf (resize 100 arbitrary))))
 
-instance (Arbitrary req) => Arbitrary (ClientAndServerData req) where
+instance Arbitrary req => Arbitrary (ClientAndServerData req) where
     arbitrary =
       ClientAndServerData <$> arbitrary
                           <*> arbitraryList
@@ -179,8 +179,8 @@ expectedResult client@ClientAndServerData
     go [] [] [] = []
     go _  _  _  = error "expectedResult: impossible happened"
 
-noNextRequests :: forall m req peerAddr. MonadSTM m => m (Bundle (ConnectionId peerAddr -> STM m [req]))
-noNextRequests = pure (pure $ \ _ -> pure []) -- Monadic only to pin down `m` since `STM` is a non-injective type family
+noNextRequests :: forall stm req peerAddr. Applicative stm => Bundle (ConnectionId peerAddr -> stm [req])
+noNextRequests = pure $ \_ -> pure []
 
 -- | Next requests bundle for bidirectional and unidirectional experiments.
 oneshotNextRequests
@@ -198,7 +198,9 @@ oneshotNextRequests ClientAndServerData {
     hotRequestsVar         <- newTVarIO hotInitiatorRequests
     warmRequestsVar        <- newTVarIO warmInitiatorRequests
     establishedRequestsVar <- newTVarIO establishedInitiatorRequests
-    return $ Bundle (WithHot hotRequestsVar) (WithWarm warmRequestsVar) (WithEstablished establishedRequestsVar)
+    return $ Bundle (WithHot hotRequestsVar)
+                    (WithWarm warmRequestsVar)
+                    (WithEstablished establishedRequestsVar)
               <&> \ reqVar _ -> popRequests reqVar
   where
     popRequests requestsVar = do
@@ -224,10 +226,10 @@ type ConnectionState_ muxMode peerAddr m a b =
                        m
 
 withInitiatorOnlyConnectionManager
-    :: forall peerAddr socket acc req resp m a.
+    :: forall peerAddr socket req resp m a.
        ( ConnectionManagerMonad m
 
-       , acc ~ [req], resp ~ [req]
+       , resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
        , Serialise req, Typeable req
        , Eq (LazySTM.TVar m (ConnectionState
@@ -326,14 +328,16 @@ withInitiatorOnlyConnectionManager name snocket localAddr nextRequests k = do
                           (ConnectionId peerAddr
                             -> ControlMessageSTM m
                             -> [MiniProtocol InitiatorMode ByteString m [resp] Void])
-    clientApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums) <*> nextRequests
+    clientApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums)
+                                <*> nextRequests
 
       where nums = Bundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
             mkProto miniProtocolNum nextRequest connId _ =
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
-                  miniProtocolRun = reqRespInitiator miniProtocolNum (nextRequest connId)
+                  miniProtocolRun = reqRespInitiator miniProtocolNum
+                                                     (nextRequest connId)
                 }]
 
     reqRespInitiator :: Mux.MiniProtocolNum
@@ -402,9 +406,7 @@ withBidirectionalConnectionManager
 
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
-       , Serialise req, Serialise resp
-       , Typeable req, Typeable resp
-       , Eq (LazySTM.TVar m (ConnectionState_ InitiatorResponderMode peerAddr m [resp] acc))
+       , Serialise req, Typeable req
 
        -- debugging
        , MonadAsync m
@@ -689,12 +691,12 @@ unidirectionalExperiment
     -> m Property
 unidirectionalExperiment snocket socket clientAndServerData = do
     nextReqs <- oneshotNextRequests clientAndServerData
-    noServerReqs <- noNextRequests
     withInitiatorOnlyConnectionManager
       "client" snocket Nothing nextReqs
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" snocket socket Nothing
-                                           [accumulatorInit clientAndServerData] noServerReqs
+                                           [accumulatorInit clientAndServerData]
+                                           noNextRequests
           $ \_ serverAddr serverAsync -> do
             link serverAsync
             -- client → server: connect
@@ -792,11 +794,15 @@ bidirectionalExperiment
       lock <- newTMVarIO ()
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
-      withBidirectionalConnectionManager "node-0" snocket socket0 (Just localAddr0)
-                                         [accumulatorInit clientAndServerData0] nextRequests0
+      withBidirectionalConnectionManager "node-0" snocket socket0
+                                         (Just localAddr0)
+                                         [accumulatorInit clientAndServerData0]
+                                         nextRequests0
         (\connectionManager0 _serverAddr0 serverAsync0 ->
-          withBidirectionalConnectionManager "node-1" snocket socket1 (Just localAddr1)
-                                             [accumulatorInit clientAndServerData1] nextRequests1
+          withBidirectionalConnectionManager "node-1" snocket socket1
+                                             (Just localAddr1)
+                                             [accumulatorInit clientAndServerData1]
+                                             nextRequests1
             (\connectionManager1 _serverAddr1 serverAsync1 -> do
               link serverAsync0
               link serverAsync1
@@ -1214,7 +1220,7 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ name
         _ <- forkIO $ do
-          labelMe name
+          labelThisThread name
           withInitiatorOnlyConnectionManager
               name snocket (Just localAddr) (mkNextRequests connVar) $ \ connectionManager ->
             connectionLoop SingInitiatorMode localAddr lock propVar cc connectionManager Map.empty connVar
@@ -1233,7 +1239,7 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ name
         _ <- forkIO $ do
-          labelMe name
+          labelThisThread name
           withBidirectionalConnectionManager
                 name snocket fd (Just localAddr) serverAcc
                 (mkNextRequests connVar) $ \ connectionManager _ serverAsync -> do
@@ -1340,9 +1346,6 @@ ppScript (MultiNodeScript script) = intercalate "\n" $ go 0 script
 --
 -- Utils
 --
-
-labelMe :: MonadFork m => String -> m ()
-labelMe l = myThreadId >>= (`labelThread` l)
 
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 debugTracer = Tracer $
