@@ -50,7 +50,10 @@ import           Test.QuickCheck
 import           Test.Tasty.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 
+import           Control.Concurrent.JobPool
+
 import qualified Network.Mux as Mux
+import           Network.Mux.Types (MuxRuntimeError (..))
 import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Core
 
@@ -1111,7 +1114,8 @@ multinodeExperiment
     -> req
     -> MultiNodeScript req peerAddr
     -> m Property
-multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript script) = do
+multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript script) =
+  withJobPool $ \jobpool -> do
   -- Avoid parallel connections. This can cause one side to think that the existing connection
   -- should be used and the other side thinking that there should be two separate connections,
   -- causing the latter to wait on messages that never come.
@@ -1121,8 +1125,8 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
   -- mini-protocol run.
   propVar <- newTVarIO (property True)
   labelTVarIO propVar "propVar"
-  cc <- startServerConnectionHandler "main-server" [accInit] serverAddr lock propVar
-  loop lock (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) propVar script
+  cc <- startServerConnectionHandler "main-server" [accInit] serverAddr lock propVar jobpool
+  loop lock (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) propVar script jobpool
   where
 
     loop :: StrictTMVar m ()
@@ -1130,54 +1134,55 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
          -> Map.Map peerAddr (TQueue m (ConnectionHandlerMessage peerAddr req))
          -> StrictTVar m Property
          -> [ConnectionEvent req peerAddr]
+         -> JobPool () m (Maybe SomeException)
          -> m Property
-    loop _ _ _ propVar [] = do
+    loop _ _ _ propVar [] _ = do
       threadDelay 3600
       atomically $ readTVar propVar
-    loop lock nodeAccs servers propVar (event : events) =
+    loop lock nodeAccs servers propVar (event : events) jobpool =
       case event of
 
         StartClient delay localAddr -> do
           threadDelay delay
-          cc <- startClientConnectionHandler ("client-" ++ show localAddr) localAddr lock propVar
-          loop lock nodeAccs (Map.insert localAddr cc servers) propVar events
+          cc <- startClientConnectionHandler ("client-" ++ show localAddr) localAddr lock propVar jobpool
+          loop lock nodeAccs (Map.insert localAddr cc servers) propVar events jobpool
 
         StartServer delay localAddr nodeAcc -> do
           threadDelay delay
-          cc <- startServerConnectionHandler ("node-" ++ show localAddr) [nodeAcc] localAddr lock propVar
-          loop lock (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) propVar events
+          cc <- startServerConnectionHandler ("node-" ++ show localAddr) [nodeAcc] localAddr lock propVar jobpool
+          loop lock (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) propVar events jobpool
 
         InboundConnection delay nodeAddr -> do
           threadDelay delay
           acc <- getAcc serverAddr
           sendMsg nodeAddr $ NewConnection serverAddr acc
-          loop lock nodeAccs servers propVar events
+          loop lock nodeAccs servers propVar events jobpool
 
         OutboundConnection delay nodeAddr -> do
           threadDelay delay
           acc <- getAcc nodeAddr
           sendMsg serverAddr $ NewConnection nodeAddr acc
-          loop lock nodeAccs servers propVar events
+          loop lock nodeAccs servers propVar events jobpool
 
         CloseInboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg remoteAddr $ Disconnect serverAddr
-          loop lock nodeAccs servers propVar events
+          loop lock nodeAccs servers propVar events jobpool
 
         CloseOutboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg serverAddr $ Disconnect remoteAddr
-          loop lock nodeAccs servers propVar events
+          loop lock nodeAccs servers propVar events jobpool
 
         InboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg nodeAddr $ RunMiniProtocols serverAddr reqs
-          loop lock nodeAccs servers propVar events
+          loop lock nodeAccs servers propVar events jobpool
 
         OutboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg serverAddr $ RunMiniProtocols nodeAddr reqs
-          loop lock nodeAccs servers propVar events
+          loop lock nodeAccs servers propVar events jobpool
       where
         sendMsg :: peerAddr -> ConnectionHandlerMessage peerAddr req -> m ()
         sendMsg addr msg = atomically $
@@ -1213,24 +1218,39 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
     startClientConnectionHandler :: String -> peerAddr
                                  -> StrictTMVar m ()
                                  -> StrictTVar m Property
+                                 -> JobPool () m (Maybe SomeException)
                                  -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
-    startClientConnectionHandler name localAddr lock propVar = do
+    startClientConnectionHandler name localAddr lock propVar jobpool = do
         cc      <- atomically $ newTQueue
         labelTQueueIO cc $ "cc/" ++ name
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ name
-        _ <- forkIO $ do
-          labelThisThread name
-          withInitiatorOnlyConnectionManager
-              name snocket (Just localAddr) (mkNextRequests connVar) $ \ connectionManager ->
-            connectionLoop SingInitiatorMode localAddr lock propVar cc connectionManager Map.empty connVar
+        threadId <- myThreadId
+        forkJob jobpool
+          $ Job
+              ( withInitiatorOnlyConnectionManager
+                    name snocket (Just localAddr) (mkNextRequests connVar)
+                  ( \ connectionManager -> do
+                    connectionLoop SingInitiatorMode localAddr lock propVar cc connectionManager Map.empty connVar
+                    return Nothing
+                  )
+                `catch` (\(e :: SomeException) ->
+                        case fromException e :: Maybe MuxRuntimeError of
+                          Nothing -> throwIO e
+                          Just {} -> throwTo threadId e
+                                  >> throwIO e)
+              )
+              (return . Just)
+              ()
+              name
         return cc
 
     startServerConnectionHandler :: String -> acc -> peerAddr
                                  -> StrictTMVar m ()
                                  -> StrictTVar m Property
+                                 -> JobPool () m (Maybe SomeException)
                                  -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
-    startServerConnectionHandler name serverAcc localAddr lock propVar = do
+    startServerConnectionHandler name serverAcc localAddr lock propVar jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
         Snocket.listen snocket fd
@@ -1238,13 +1258,27 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
         labelTQueueIO cc $ "cc/" ++ name
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ name
-        _ <- forkIO $ do
-          labelThisThread name
-          withBidirectionalConnectionManager
-                name snocket fd (Just localAddr) serverAcc
-                (mkNextRequests connVar) $ \ connectionManager _ serverAsync -> do
-            link serverAsync
-            connectionLoop SingInitiatorResponderMode localAddr lock propVar cc connectionManager Map.empty connVar
+        threadId <- myThreadId
+        forkJob jobpool
+              $ Job
+                  (  withBidirectionalConnectionManager
+                          name snocket fd (Just localAddr) serverAcc
+                          (mkNextRequests connVar)
+                          (\ connectionManager _ serverAsync -> do
+                             link serverAsync
+                             connectionLoop SingInitiatorResponderMode localAddr lock propVar cc connectionManager Map.empty connVar
+                             return Nothing
+                          )
+                    `catch` (\(e :: SomeException) ->
+                            case fromException e :: Maybe MuxRuntimeError of
+                              Nothing -> throwIO e
+                              Just {} -> throwTo threadId e
+                                      >> throwIO e)
+                    `finally` Snocket.close snocket fd
+                  )
+                  (return . Just)
+                  ()
+                  name
         return cc
 
     connectionLoop
