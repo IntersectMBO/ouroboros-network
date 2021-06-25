@@ -20,11 +20,15 @@ module Ouroboros.Consensus.Block.Forging (
   , forgeStateUpdateInfoFromUpdateInfo
     -- * 'UpdateInfo'
   , UpdateInfo (..)
+    -- * 'MaxTxCapacityOverride'
+  , MaxTxCapacityOverride (..)
+  , computeMaxTxCapacity
   ) where
 
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Kind (Type)
 import           Data.Text (Text)
+import           Data.Word (Word32)
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -141,10 +145,44 @@ data BlockForging m blk = BlockForging {
         -> BlockNo                      -- Current block number
         -> SlotNo                       -- Current slot number
         -> TickedLedgerState blk        -- Current ledger state
+        -> MaxTxCapacityOverride        -- Do we override max tx capacity defined
+                                        -- by ledger (see MaxTxCapacityOverride)
         -> [Validated (GenTx blk)]      -- Contents of the mempool
         -> IsLeader (BlockProtocol blk) -- Proof we are leader
         -> m blk
     }
+
+-- | The maximum transaction capacity of a block is computed by taking the max
+-- block size from the protocol parameters in the current ledger state and
+-- subtracting the size of the header.
+--
+-- It is possible to override this maximum transaction capacity with a lower
+-- value. We ignore higher values than the ledger state's max block size. Such
+-- blocks would be rejected by the ledger anyway.
+data MaxTxCapacityOverride
+  = NoMaxTxCapacityOverride
+    -- ^ Don't override the maximum transaction capacity as computed from the
+    -- current ledger state.
+  | MaxTxCapacityOverride !Word32
+    -- ^ Use the following maximum size in bytes for the transaction capacity
+    -- of a block.
+    -- Compute maximum block transaction capacity
+    --
+    -- We allow the override to /reduce/ the maximum size, but not increase
+    -- it. This is important because any blocks exceeding the max block size
+    -- are invalid according to the ledger and we want certainly don't want to
+    -- forge invalid blocks.
+
+computeMaxTxCapacity ::
+     LedgerSupportsMempool blk
+  => TickedLedgerState blk
+  -> MaxTxCapacityOverride
+  -> Word32
+computeMaxTxCapacity ledger maxTxCapacityOverride = case maxTxCapacityOverride of
+      NoMaxTxCapacityOverride     -> noOverride
+      MaxTxCapacityOverride txCap -> noOverride `min` txCap
+  where
+    noOverride = maxTxCapacity ledger
 
 data ShouldForge blk =
     -- | Before check whether we are a leader in this slot, we tried to update

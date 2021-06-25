@@ -45,7 +45,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
-import           Ouroboros.Consensus.Util ((.....:), (.:))
+import           Ouroboros.Consensus.Util ((......:), (.:))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node
@@ -71,7 +71,7 @@ dualByronBlockForging creds = BlockForging {
     , updateForgeState = \cfg ->
         fmap castForgeStateUpdateInfo .: updateForgeState (dualTopLevelConfigMain cfg)
     , checkCanForge    = checkCanForge . dualTopLevelConfigMain
-    , forgeBlock       = return .....: forgeDualByronBlock
+    , forgeBlock       = return ......: forgeDualByronBlock
     }
   where
     BlockForging {..} = byronBlockForging creds

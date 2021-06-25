@@ -126,6 +126,7 @@ exampleBlock =
       (BlockNo 1)
       (SlotNo 1)
       (applyChainTick ledgerConfig (SlotNo 1) ledgerStateAfterEBB)
+      NoMaxTxCapacityOverride
       [ValidatedByronTx exampleGenTx]
       (fakeMkIsLeader leaderCredentials)
   where
