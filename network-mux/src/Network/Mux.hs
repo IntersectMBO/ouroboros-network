@@ -249,7 +249,7 @@ miniProtocolJob tracer egressQueue
         readTVar w >>= check . BL.null
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar (Right result)
-          `orElse` (throwSTM (MuxError (MuxBlockedOnCompletionVar miniProtocolNum) ""))
+          `orElse` throwSTM (MuxBlockedOnCompletionVar miniProtocolNum)
         case remainder of
           Just trailing ->
             modifyTVar miniProtocolIngressQueue (BL.append trailing)
@@ -495,6 +495,7 @@ traceMuxBearerState :: Tracer m MuxTrace -> MuxBearerState -> m ()
 traceMuxBearerState tracer state =
     traceWith tracer (MuxTraceState state)
 
+
 --
 -- Starting mini-protocol threads
 --
@@ -527,7 +528,10 @@ traceMuxBearerState tracer state =
 -- irrespective of the 'StartOnDemandOrEagerly' value.
 --
 runMiniProtocol :: forall mode m a.
-                   MonadSTM m
+                   ( MonadSTM   m
+                   , MonadThrow m
+                   , MonadThrow (STM m)
+                   )
                 => Mux mode m
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
@@ -547,8 +551,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       -- indicate a thread is running (or ready to start on demand)
       status <- readTVar miniProtocolStatusVar
       unless (status == StatusIdle) $
-        error $ "runMiniProtocol: protocol thread already running for "
-             ++ show ptclNum ++ " " ++ show ptclDir'
+        throwSTM (ProtocolAlreadyRunning ptclNum ptclDir' status)
       let !status' = case startMode of
                        StartOnDemand -> StatusStartOnDemand
                        StartEagerly  -> StatusRunning
@@ -567,8 +570,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
     -- It is a programmer error to get the wrong protocol, but this is also
     -- very easy to avoid.
   | otherwise
-  = error $ "runMiniProtocol: no such protocol num and mode in this mux: "
-         ++ show ptclNum ++ " " ++ show ptclDir'
+  = throwIO (UnknownProtocol ptclNum ptclDir')
   where
     ptclDir' = protocolDirEnum ptclDir
 
