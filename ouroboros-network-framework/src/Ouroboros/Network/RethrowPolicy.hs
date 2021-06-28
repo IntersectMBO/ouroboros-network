@@ -47,6 +47,7 @@ module Ouroboros.Network.RethrowPolicy
 
 import           Control.Exception
 
+import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.Mux.Trace (MuxError)
 
 
@@ -111,5 +112,12 @@ mkRethrowPolicy fn =
 
 muxErrorRethrowPolicy, ioErrorRethrowPolicy :: RethrowPolicy
 
-muxErrorRethrowPolicy = mkRethrowPolicy $ \_ (_ :: MuxError) -> ShutdownPeer
+muxErrorRethrowPolicy = mkRethrowPolicy ( \_ (_ :: MuxError) -> ShutdownPeer )
+                     <> mkRethrowPolicy ( \_ (e :: MuxRuntimeError) ->
+                                          case e of
+                                            ProtocolAlreadyRunning    {} -> ShutdownPeer
+                                            UnknownProtocol           {} -> ShutdownNode
+                                            MuxBlockedOnCompletionVar {} -> ShutdownPeer
+                                        )
+
 ioErrorRethrowPolicy  = mkRethrowPolicy $ \_ (_ :: IOError)  -> ShutdownPeer

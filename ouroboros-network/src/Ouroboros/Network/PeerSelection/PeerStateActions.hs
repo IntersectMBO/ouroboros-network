@@ -538,6 +538,7 @@ withPeerStateActions
        ( MonadAsync         m
        , MonadCatch         m
        , MonadMask          m
+       , MonadThrow    (STM m)
        , HasInitiator muxMode ~ True
        , Typeable versionNumber
        , Show     versionNumber
@@ -974,6 +975,7 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
 startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature) peerAddr m a b.
                   ( MonadAsync m
                   , MonadCatch m
+                  , MonadThrow (STM m)
                   , HasInitiator muxMode ~ True
                   )
                => TokProtocolTemperature pt
