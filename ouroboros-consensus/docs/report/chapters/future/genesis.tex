@@ -1328,6 +1328,7 @@ date (because our tip is too far from the wallclock). However, this scenario
 needs special case anyway; we will come back to it in \cref{low-density}.
 
 \subsection{Block production}
+\label{sec:block-production-when-behind}
 
 In principle, block production can happen even when the node is not up to date.
 There is however not much point: any blocks that the node will produce while it
@@ -1499,3 +1500,178 @@ entirely. However, how this works when we switch back from being up to date
 to not being up to date would require careful thought.
 
 \end{itemize}
+
+\section{Suboptimal chain selection}
+
+The Ouroboros papers assume, by way of simplification, that nodes broadcast
+entire chains to each other. Every node collects all of these chains, and
+every slot selects the best chain they saw. In addition, the Ouroboros analysis
+assumes a constant $\Delta$, such that chains are submitted to all nodes in
+the network within $\Delta$ slots. A consequence of $\Delta > 1$ is that
+a newly forged block might not make it to the next slot leader in time; when
+this happens, that next slot leader will forge their block on a different tip
+instead, resulting in a short fork. As long as the chain propagation delay
+stays within $\Delta$, however, the Ouroboros analysis guarantees that
+consensus will nonetheless be achieved.
+
+In the implementation, each node follow the chains of its upstream peers as
+chains of \emph{headers}. These headers provide us with sufficient context to do
+chain selection and pick the best chain\footnote{Technically speaking this is a
+preliminary chain selection, because the chain we chose might contain invalid
+blocks. If this is the case, we will notice when we download the blocks and
+attempt to actually adopt the chain in the chain database. We will then
+disconnect from the peer that served us the offending chain, at which point a
+different chain might now be the preferred chain. This introduces a delay in
+selecting the optimal valid chain, but we accept this risk as sufficiently small
+that we do not pre-emptively download blocks from all chains. After all, there
+is little incentive for an attacker with the right to produce blocks to produce
+\emph{invalid} blocks.}. Under normal circumstances this is the \emph{only}
+chain we will download the blocks of and adopt, but occassionally we might want
+to download blocks from chains \emph{other} than the best chain, perhaps because
+downloading that best chain is taking a very long time (it might even be the
+case that the remote node is intentionally trying to stall us, as a form of
+denial of service attack). We will refer to this as \emph{suboptimal chain
+selection}; in this section we will discuss the conditions under which this is
+sound. Note that a simple argument that we might anyway not yet have seen the
+optimal chain does not hold water, due to the $\Delta$ guarantee.
+
+TODO\todo{TODO}: Should we think harder about pre-emptively download blocks?
+After all, a node giving us invalid blocks is \emph{also} introducing delays,
+which is precisely the kind of thing we are worried about here.
+One difference is that with an invalid block, we will disconnect; however,
+nothing is stopping a node from doing this again and again.
+I see two possible solutions: pre-emptively download blocks after all, or
+(more appealing) associate invalid blocks with signer keys?
+
+\subsection{Fundamental principles}
+
+We will take as our starting point the following two fundamental principles:
+
+\begin{description}
+\item[No unnecessary delays]
+The propagation of the best chain must not be unnecessarily delayed. Since in
+our implementation nodes only propagate their \emph{own} chain, this means that
+the \emph{adoption} of the best chain must not be unnecessarily delayed.
+
+\item[The network respects $\Delta$]
+It is not in fact very clear how the value of $\Delta$ as it is used in the
+Ouroboros paper relates to the implementation, which differs from the paper
+rather significantly. However, what we \emph{can} say is that when we get to
+forge a block, \emph{either} we received all blocks we should have received
+``within $\Delta$'', in which case forging that block on top of the best chain
+we have available matches the paper; \emph{or} some blocks got delayed ``more
+than $\Delta$'', and we end up forging on the ``wrong'' chain. It can not,
+however, be the task of chain selection to detect such violations of $\Delta$
+(much less try to fix them); indeed, we have no guarantee of establishing
+consensus when $\Delta$ is respected even if we do \emph{not} do suboptional
+chain selection. Thus, we will assume that when we forge a block, it is always
+sound to forge that block on top of the best chain we have seen (on the
+assumption that we do not introduce unnecessary delays).
+
+\end{description}
+
+An immediate consequence of the no unnecessary delays principle is that if
+blockfetch decides to download a suboptimal chain, it must do so
+\emph{concurrently} (rather than \emph{instead of} downloading the optimal
+chain). Failure to do so would mean that suboptimal chain selection could
+introduce delays in the propagation of the optimal chain. Worse, this would
+happen precisely when the propagation of that optimal chain is \emph{already}
+delayed, thus introducing the possibility of compound error.
+
+\subsection{Implementation}
+
+A somewhat subtle consequence of the no unnecessary delays principle is that if
+we adopt a suboptimal chain, we should still be able to \emph{adopt} the optimal
+chain if and when it becomes available. After all, if we were to adopt a
+suboptimal chain and then be unable to adopt the optimal one, we would not
+propagate it \emph{at all}, never mind without unnecessary delays.
+
+The only thing that could prevent the chain database from adopting a particular
+chain is the rollback limit $k$. This suggests the following implementation:
+
+\begin{definition}[Suboptimal chain selection]
+Chainsync presents blockfetch with a list of chains. Whenever block fetch
+decides to download a chain that is strictly worse than another chain,
+it can do so under two conditions:
+
+\begin{itemize}
+\item It will continue to try and download the better chain, concurrently
+with downloading the suboptimal one.
+
+This must be guaranteed by the block fetch client.
+\item It must not download more than $k$ blocks from the suboptimal chain after
+the intersection with the optimal chain.
+
+Chainsync can enforce this by simply truncating suboptimal chains after $k$
+blocks after the intersection point before presenting them to blockfetch.
+\end{itemize}
+\end{definition}
+
+There is one subtlety here: we are checking the $k$ limit when we instruct
+blockfetch to download blocks, but this does not automatically mean that when
+the chain database is presented with those blocks by blockfetch, the property
+still holds. Fortunately, we can argue that it does.
+
+Let $S$ be the suboptimal chain presented to block fetch and $O$ the optimal
+chain at the time chainsync made its decision. We need to consider whether by
+the time the chain database runs chain selection, there is a \emph{new} optimal
+chain $O'$ such that adopting $S$ would make it impossible to adopt $O'$, where
+it \emph{would} have been possible to switch from $O$ to $O'$. If the
+intersection between $O$ and $O'$ is \emph{after} the intersection between $O$
+and $S$, this is trivial:
+
+\begin{center}
+\begin{tikzpicture}[yscale=0.5]
+\draw (0,0) node{$\bullet$} -- ++(1,1) -- ++(3,0) node{$\bullet$} node[right]{$O$};
+\draw (0,0) -- ++(1,-1) -- ++(2,0) node{$\bullet$} node[right]{$S$};
+\draw (1,1) node{$\bullet$} -- ++(1,1) -- ++(3,0) node{$\bullet$} node[right]{$O'$};
+\end{tikzpicture}
+\end{center}
+
+Since we can roll back from $S$ to the intersection point with $O$, we can
+clearly also switch from $S$ to $O'$. If the intersection is further back,
+the situation is a bit more subtle:
+
+\begin{center}
+\begin{tikzpicture}[yscale=0.5]
+\draw (0,0) node{$\bullet$} -- ++(1,1) -- ++(3,0) node{$\bullet$} node[right]{$O$};
+\draw (0,0) -- ++(1,-1) -- ++(2,0) node{$\bullet$} node[right]{$S$};
+\draw (-1,1) node{$\bullet$} -- (0,0);
+\draw (-1,1) -- ++(1,1) -- ++(5,0) node{$\bullet$} node[right]{$O'$};
+\end{tikzpicture}
+\end{center}
+
+By assumption we can switch from $O$ to $O'$. This means that the distance from
+$O$ to the intersection with $O'$ is $k$ blocks or less. Moreover, $O$ must be
+at least as long as $S$ (otherwise $O$ could not be preferred over $S$, and $S$
+would not be suboptimal). This means that the distance from $S$ to the
+intersection with $O'$ must also be at most $k$, and hence we can switch from
+$S$ to $O'$. This means that adoping $S$ does not prevent us from switching to
+any other chain $O'$ that we could have switched to from $O$. \qed
+
+Under exceptional circumstances it is possible that if we \emph{ourselves} forge
+a block on top of a suboptimal chain, the distance from that suboptimal chain to
+the intersecion with the optimal one might now exceed $k$. However, the
+``network respects $\Delta$'' principle saves us from having to treat this as a
+special case.
+
+\subsection{When the node is behind}
+
+To a certain extend, no special provisions need to be made when the node is
+behind. The rule that prohibits adopting more than $k$ blocks from suboptimal
+chains still guarantees that we can continue to switch to the optimal chain
+once we get its blocks; the only difference is that we might hit that limit
+much more quickly.
+
+However, we do have to be careful: when we are behind we cannot rely on the
+property that if we have the right to produce a block in the current slot then
+we must have seen the relevant predecessor to use. We might be able to solve
+this by not producing blocks when we are behind, but this leads to complications
+elsewhere (for example, support for low density chains, \cref{low-density}).
+TODO\todo{TODO}: Unlike what the report says, we in fact decided we \emph{do}
+want to produce blocks when behind, to avoid attackers being able to trick us
+into skipping our slot; we should update that section
+(\cref{sec:block-production-when-behind}) and then refer to it here.
+
+It is therefore probably safer to disable suboptimal chain selection when we
+are behind.
