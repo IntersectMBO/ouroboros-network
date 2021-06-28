@@ -132,5 +132,7 @@ blockFetchServer tracer chainDB _version registry = senderSide
 -- | Events traced by the Block Fetch Server.
 data TraceBlockFetchServerEvent blk =
     -- | The server sent a block to the peer.
+    -- This traces the start, not the end, of block sending.
+    --
     TraceBlockFetchServerSendBlock !(Point blk)
   deriving (Eq, Show)
