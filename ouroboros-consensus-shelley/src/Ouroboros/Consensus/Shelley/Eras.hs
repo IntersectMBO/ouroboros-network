@@ -42,6 +42,7 @@ import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Alonzo (AlonzoEra)
 import qualified Cardano.Ledger.Alonzo.PParams as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import           Cardano.Ledger.BaseTypes
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)
@@ -137,17 +138,29 @@ class ( SL.ShelleyBasedEra era
   -- etc.
   shelleyBasedEraName :: proxy era -> Text
 
+  scriptsWereOK :: proxy era -> Core.TxInBlock era -> Bool
+
 instance SL.PraosCrypto c => ShelleyBasedEra (ShelleyEra c) where
   shelleyBasedEraName _ = "Shelley"
+
+  scriptsWereOK _ _ = True
 
 instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
   shelleyBasedEraName _ = "Allegra"
 
+  scriptsWereOK _ _ = True
+
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
 
+  scriptsWereOK _ _ = True
+
 instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
   shelleyBasedEraName _ = "Alonzo"
+
+  scriptsWereOK _ vtx = b
+    where
+      Alonzo.IsValidating b = Alonzo.isValidating vtx
 
 {-------------------------------------------------------------------------------
   TxInBlock wrapper
