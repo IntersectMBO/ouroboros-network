@@ -354,11 +354,6 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
     -- number greater than the one provided.
   , snapshotTxsAfter    :: idx -> [(Validated (GenTx blk), idx)]
 
-    -- | Get as many transactions (oldest to newest) from the mempool
-    -- snapshot, along with their ticket number, such that their combined size
-    -- is <= the given limit (in bytes).
-  , snapshotTxsForSize  :: Word32 -> [(Validated (GenTx blk), idx)]
-
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
   , snapshotLookupTx    :: idx -> Maybe (Validated (GenTx blk))
