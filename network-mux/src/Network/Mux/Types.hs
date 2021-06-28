@@ -39,10 +39,13 @@ module Network.Mux.Types (
     , msLength
     , RemoteClockModel (..)
     , remoteClockPrecision
+
+    , MuxRuntimeError (..)
     ) where
 
 import           Prelude hiding (read)
 
+import           Control.Exception (Exception)
 import           Data.Functor (void)
 import           Data.Ix (Ix (..))
 import           Data.Word
@@ -173,7 +176,7 @@ data MiniProtocolState mode m = MiniProtocolState {
      }
 
 data MiniProtocolStatus = StatusIdle | StatusStartOnDemand | StatusRunning
-  deriving Eq
+  deriving (Eq, Show)
 
 data MuxSDUHeader = MuxSDUHeader {
       mhTimestamp :: !RemoteClockModel
@@ -255,3 +258,15 @@ muxBearerAsChannel bearer ptclNum ptclDir =
 
       noTimeout :: TimeoutFn m
       noTimeout _ r = Just <$> r
+
+--
+-- Errors
+--
+
+data MuxRuntimeError =
+    ProtocolAlreadyRunning    !MiniProtocolNum !MiniProtocolDir !MiniProtocolStatus
+  | UnknownProtocol           !MiniProtocolNum !MiniProtocolDir
+  | MuxBlockedOnCompletionVar !MiniProtocolNum
+  deriving Show
+
+instance Exception MuxRuntimeError

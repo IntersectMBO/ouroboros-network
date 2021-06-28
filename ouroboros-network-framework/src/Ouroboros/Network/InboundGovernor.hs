@@ -82,12 +82,13 @@ import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChan
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
 inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a b.
-                   ( MonadAsync m
-                   , MonadCatch m
-                   , MonadTime  m
-                   , MonadTimer m
-                   , MonadThrow (STM m)
+                   ( MonadAsync    m
+                   , MonadCatch    m
                    , MonadEvaluate m
+                   , MonadThrow    m
+                   , MonadThrow    (STM m)
+                   , MonadTime     m
+                   , MonadTimer    m
                    , Ord peerAddr
                    , HasResponder muxMode ~ True
                    )
