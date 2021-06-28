@@ -156,7 +156,7 @@ pureTryAddTxs cfg txSize tx is
                (isMempoolSize is)
               )
     where
-      (eVtx, vr) = extendVRNew cfg tx txSize $ validationResultFromIS is
+      (eVtx, vr) = extendVRNew cfg txSize tx $ validationResultFromIS is
       is'        = internalStateFromVR vr
 
 -- | A datatype containing the state resulting after removing the requested

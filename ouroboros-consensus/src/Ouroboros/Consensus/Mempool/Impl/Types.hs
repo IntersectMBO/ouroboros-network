@@ -220,13 +220,13 @@ extendVRPrevApplied cfg txTicket vr =
 -- again.
 extendVRNew :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
             => LedgerConfig blk
-            -> GenTx blk
             -> (GenTx blk -> TxSizeInBytes)
+            -> GenTx blk
             -> ValidationResult (GenTx blk) blk
             -> ( Either (ApplyTxErr blk) (Validated (GenTx blk))
                , ValidationResult (GenTx blk) blk
                )
-extendVRNew cfg tx txSize vr = assert (isNothing vrNewValid) $
+extendVRNew cfg txSize tx vr = assert (isNothing vrNewValid) $
     case runExcept (applyTx cfg vrSlotNo tx vrAfter) of
       Left err         ->
         ( Left err
