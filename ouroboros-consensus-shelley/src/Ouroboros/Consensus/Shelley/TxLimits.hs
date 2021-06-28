@@ -22,12 +22,12 @@ import           Ouroboros.Consensus.Shelley.Eras (AllegraEra, AlonzoEra,
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Ledger.Mempool
 
-class ( Monoid (Measure era)
-      ) => TxLimits era where
-  type Measure era
-  lessEq :: Measure era -> Measure era -> Bool
-  txMeasure :: Validated (GenTx (ShelleyBlock era)) -> Measure era
-  maxCapacity :: Ticked (LedgerState (ShelleyBlock era)) -> Measure era
+class ( Monoid (Measure blk)
+      ) => TxLimits blk where
+  type Measure blk
+  lessEq :: Measure blk -> Measure blk -> Bool
+  txMeasure :: Validated (GenTx blk) -> Measure blk
+  maxCapacity :: Ticked (LedgerState blk) -> Measure blk
 
 newtype ByteSize = ByteSize { unByteSize :: Word32 }
   deriving stock (Show, Eq, Ord)
@@ -38,20 +38,20 @@ instance Semigroup ByteSize where
 instance Monoid ByteSize where
   mempty = ByteSize 0
 
-instance (SL.PraosCrypto c) => TxLimits (ShelleyEra c) where
-  type Measure (ShelleyEra c) = ByteSize
+instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (ShelleyEra c)) where
+  type Measure (ShelleyBlock (ShelleyEra c)) = ByteSize
   lessEq      = (<=)
   txMeasure   = ByteSize . txInBlockSize . txForgetValidated
   maxCapacity = ByteSize . maxTxCapacity
 
-instance (SL.PraosCrypto c) => TxLimits (AllegraEra c) where
-  type Measure (AllegraEra c) = ByteSize
+instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (AllegraEra c)) where
+  type Measure (ShelleyBlock (AllegraEra c)) = ByteSize
   lessEq      = (<=)
   txMeasure   = ByteSize . txInBlockSize . txForgetValidated
   maxCapacity = ByteSize . maxTxCapacity
 
-instance (SL.PraosCrypto c) => TxLimits (MaryEra c) where
-  type Measure (MaryEra c) = ByteSize
+instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (MaryEra c)) where
+  type Measure (ShelleyBlock (MaryEra c)) = ByteSize
   lessEq      = (<=)
   txMeasure   = ByteSize . txInBlockSize . txForgetValidated
   maxCapacity = ByteSize . maxTxCapacity
@@ -69,9 +69,9 @@ instance Monoid AlonzoMeasure where
   mempty = AlonzoMeasure mempty mempty
 
 instance ( SL.PraosCrypto c
-         ) => TxLimits (AlonzoEra c) where
+         ) => TxLimits (ShelleyBlock (AlonzoEra c)) where
 
-  type Measure (AlonzoEra c) = AlonzoMeasure
+  type Measure (ShelleyBlock (AlonzoEra c)) = AlonzoMeasure
 
   lessEq (AlonzoMeasure bs1 exu1) (AlonzoMeasure bs2 exu2) =
     bs1 <= bs2 && pointWiseExUnits (<=) exu1 exu2

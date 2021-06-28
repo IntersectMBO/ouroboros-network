@@ -41,7 +41,7 @@ import qualified Ouroboros.Consensus.Shelley.TxLimits as TL
 -------------------------------------------------------------------------------}
 
 forgeShelleyBlock ::
-     forall m era. (ShelleyBasedEra era, TL.TxLimits era, Monad m)
+     forall m era. (ShelleyBasedEra era, TL.TxLimits (ShelleyBlock era), Monad m)
   => HotKey (EraCrypto era) m
   -> TPraosCanBeLeader (EraCrypto era)
   -> TopLevelConfig (ShelleyBlock era)
@@ -71,14 +71,14 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger _maxTxCapaci
       $ takeLargestPrefixThatFits mempty txs
 
     takeLargestPrefixThatFits ::
-         TL.Measure era
+         TL.Measure (ShelleyBlock era)
       -> [Validated (GenTx (ShelleyBlock era))]
       -> [Validated (GenTx (ShelleyBlock era))]
     takeLargestPrefixThatFits acc = \case
       (tx : remainingTxs) | fits -> tx : takeLargestPrefixThatFits acc' remainingTxs
         where
           acc' = acc <> TL.txMeasure tx
-          fits = TL.lessEq @era acc' (TL.maxCapacity tickedLedger)
+          fits = TL.lessEq @(ShelleyBlock era) acc' (TL.maxCapacity tickedLedger)
       _ -> []
 
     extractTxInBlock :: (Validated (GenTx (ShelleyBlock era))) -> SL.TxInBlock era
