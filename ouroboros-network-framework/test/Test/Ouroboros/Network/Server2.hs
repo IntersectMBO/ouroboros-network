@@ -497,7 +497,8 @@ withBidirectionalConnectionManager name snocket socket localAddress
                     serverObservableStateVar = observableStateVar
                   }
               )
-              (\serverAsync -> k connectionManager serverAddr serverAsync)
+              (\serverAsync -> link serverAsync
+                            >> k connectionManager serverAddr serverAsync)
           `catch` \(e :: SomeException) -> do
             say (show e)
             throwIO e
@@ -688,8 +689,7 @@ unidirectionalExperiment snocket socket clientAndServerData = do
         withBidirectionalConnectionManager "server" snocket socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
-          $ \_ serverAddr serverAsync -> do
-            link serverAsync
+          $ \_ serverAddr _serverAsync -> do
             -- client → server: connect
             (rs :: [Either SomeException (Bundle [resp])]) <-
                 replicateM
@@ -788,14 +788,12 @@ bidirectionalExperiment
                                          (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
-        (\connectionManager0 _serverAddr0 serverAsync0 ->
+        (\connectionManager0 _serverAddr0 _serverAsync0 ->
           withBidirectionalConnectionManager "node-1" snocket socket1
                                              (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
                                              nextRequests1
-            (\connectionManager1 _serverAddr1 serverAsync1 -> do
-              link serverAsync0
-              link serverAsync1
+            (\connectionManager1 _serverAddr1 _serverAsync1 -> do
               -- runInitiatorProtocols returns a list of results per each
               -- protocol in each bucket (warm \/ hot \/ established); but
               -- we run only one mini-protocol. We can use `concat` to
@@ -1251,8 +1249,7 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
                   (  withBidirectionalConnectionManager
                           name snocket fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
-                          (\ connectionManager _ serverAsync -> do
-                             link serverAsync
+                          (\ connectionManager _ _serverAsync -> do
                              connectionLoop SingInitiatorResponderMode localAddr lock propVar cc connectionManager Map.empty connVar
                              return Nothing
                           )
