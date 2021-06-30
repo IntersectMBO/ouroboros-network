@@ -17,8 +17,9 @@
 -- `ouroboros-network:test' components.
 --
 module Simulation.Network.Snocket
+  (
   -- * Simulated Snocket
-  ( withSnocket
+    withSnocket
   , ResourceException (..)
   , SnocketTrace (..)
   , SockType (..)
