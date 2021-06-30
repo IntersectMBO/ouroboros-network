@@ -33,6 +33,7 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Monad.Class.MonadTimer (MonadDelay, threadDelay)
 import           Control.Monad.Class.MonadSTM.Strict
 
 import           Control.Concurrent.JobPool (JobPool, Job (..))
@@ -538,6 +539,7 @@ withPeerStateActions
        ( MonadAsync         m
        , MonadCatch         m
        , MonadMask          m
+       , MonadDelay         m
        , HasInitiator muxMode ~ True
        , Typeable versionNumber
        , Show     versionNumber
@@ -832,6 +834,9 @@ withPeerStateActions timeout
         traceWith spsTracer (PeerStatusChangeFailure
                              (HotToWarm pchConnectionId)
                              ActiveCold)
+        -- Instead of reporting the failure at once we give the monitor a
+        -- chance to notice the cold peer.
+        threadDelay 0.20
         throwIO $ ColdDeactivationException pchConnectionId
 
 
@@ -875,6 +880,9 @@ withPeerStateActions timeout
                  traceWith spsTracer (PeerStatusChangeFailure
                                       (WarmToHot pchConnectionId)
                                       ActiveCold)
+                 -- Instead of reporting the failure at once we give the monitor
+                 -- a chance to notice the cold peer.
+                 threadDelay 0.20
                  throwIO $ ColdDeactivationException pchConnectionId
 
 
