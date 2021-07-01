@@ -254,7 +254,7 @@ type ConnectionManagerMonad m =
 
 
 withInitiatorOnlyConnectionManager
-    :: forall peerAddr socket req resp m a.
+    :: forall name peerAddr socket req resp m a.
        ( ConnectionManagerMonad m
 
        , resp ~ [req]
@@ -263,8 +263,9 @@ withInitiatorOnlyConnectionManager
        , MonadAsync m
        , MonadLabelledSTM m
        , MonadSay m, Show req
+       , Show name
        )
-    => String
+    => name
     -- ^ identifier (for logging)
     -> Timeouts
     -> Snocket m socket peerAddr
@@ -284,9 +285,9 @@ withInitiatorOnlyConnectionManager name timeouts snocket localAddr nextRequests 
     withConnectionManager
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
-          cmTracer    = (name,)
+          cmTracer    = WithName name
                         `contramap` nullTracer,
-          cmTrTracer  = ((name,) . fmap abstractState)
+          cmTrTracer  = (WithName name . fmap abstractState)
                         `contramap` nullTracer,
          -- MuxTracer
           cmMuxTracer = muxTracer,
@@ -414,7 +415,7 @@ assertRethrowPolicy =
 -- across warm \/ how \/ established) protocols.
 --
 withBidirectionalConnectionManager
-    :: forall peerAddr socket acc req resp m a.
+    :: forall name peerAddr socket acc req resp m a.
        ( ConnectionManagerMonad m
 
        , acc ~ [req], resp ~ [req]
@@ -425,10 +426,12 @@ withBidirectionalConnectionManager
        , MonadAsync m
        , MonadLabelledSTM m
        , MonadSay m, Show req
+       , Show name
        )
-    => String
+    => name
     -> Timeouts
     -- ^ identifier (for logging)
+    -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
     -> Snocket m socket peerAddr
     -> socket
     -- ^ listening socket
@@ -446,21 +449,21 @@ withBidirectionalConnectionManager
        -> Async m Void
        -> m a)
     -> m a
-withBidirectionalConnectionManager name timeouts snocket socket localAddress
+withBidirectionalConnectionManager name timeouts trTracer snocket socket localAddress
                                    accumulatorInit nextRequests k = do
     mainThreadId <- myThreadId
     inbgovControlChannel      <- Server.newControlChannel
     -- we are not using the randomness
     observableStateVar        <- Server.newObservableStateVarFromSeed 0
-    let muxTracer = (name,) `contramap` nullTracer -- mux tracer
+    let muxTracer = WithName name `contramap` nullTracer -- mux tracer
 
     withConnectionManager
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
-          cmTracer    = (name,)
+          cmTracer    = WithName name
                         `contramap` nullTracer,
-          cmTrTracer  = ((name,) . fmap abstractState)
-                        `contramap` nullTracer,
+          cmTrTracer  = (WithName name . fmap abstractState)
+                        `contramap` trTracer,
           -- MuxTracer
           cmMuxTracer    = muxTracer,
           cmIPv4Address  = localAddress,
@@ -483,7 +486,7 @@ withBidirectionalConnectionManager name timeouts snocket socket localAddress
           serverMiniProtocolBundle
           HandshakeArguments {
               -- TraceSendRecv
-              haHandshakeTracer = (name,) `contramap` nullTracer,
+              haHandshakeTracer = WithName name `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
               haVersionDataCodec = cborTermVersionDataCodec unversionedProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
@@ -504,8 +507,8 @@ withBidirectionalConnectionManager name timeouts snocket socket localAddress
                 ServerArguments {
                     serverSockets = socket :| [],
                     serverSnocket = snocket,
-                    serverTracer = (name,) `contramap` nullTracer, -- ServerTrace
-                    serverInboundGovernorTracer = (name,) `contramap` nullTracer, -- InboundGovernorTrace
+                    serverTracer = WithName name `contramap` nullTracer, -- ServerTrace
+                    serverInboundGovernorTracer = WithName name `contramap` nullTracer, -- InboundGovernorTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = tProtocolIdleTimeout timeouts,
@@ -579,13 +582,13 @@ withBidirectionalConnectionManager name timeouts snocket socket localAddress
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
         (MuxPeer
-          ((name,"Initiator",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
+          (WithName (name,"Initiator",protocolNum) `contramap` nullTracer) -- TraceSendRecv
           codecReqResp
           (Effect $ do
             reqs <- atomically nextRequest
             pure $ reqRespClientPeer (reqRespClientMap reqs)))
         (MuxPeer
-          ((name,"Responder",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
+          (WithName (name,"Responder",protocolNum) `contramap` nullTracer) -- TraceSendRecv
           codecReqResp
           (reqRespServerPeer $ reqRespServerMapAccumL' accInit))
 
@@ -703,7 +706,7 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
     withInitiatorOnlyConnectionManager
       "client" timeouts snocket Nothing nextReqs
       $ \connectionManager ->
-        withBidirectionalConnectionManager "server" timeouts
+        withBidirectionalConnectionManager "server" timeouts nullTracer
                                            snocket socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
@@ -804,13 +807,13 @@ bidirectionalExperiment
       lock <- newTMVarIO ()
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
-      withBidirectionalConnectionManager "node-0" timeouts
+      withBidirectionalConnectionManager "node-0" timeouts nullTracer
                                          snocket socket0
                                          (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
         (\connectionManager0 _serverAddr0 _serverAsync0 ->
-          withBidirectionalConnectionManager "node-1" timeouts
+          withBidirectionalConnectionManager "node-1" timeouts nullTracer
                                              snocket socket1
                                              (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
@@ -1099,6 +1102,18 @@ data ConnectionHandlerMessage peerAddr req
     -- ^ Run a bundle of mini protocols against the server at the given address (requires an active
     --   connection).
 
+
+data Name addr = Client addr
+               | Node addr
+               | MainServer
+  deriving Eq
+
+instance Show addr => Show (Name addr) where
+    show (Client addr) = "client-" ++ show addr
+    show (Node   addr) = "node-"   ++ show addr
+    show  MainServer   = "main-server"
+
+
 -- | Run a central server that talks to any number of clients and other nodes.
 multinodeExperiment
     :: forall peerAddr socket acc req resp m.
@@ -1108,13 +1123,6 @@ multinodeExperiment
        , MonadSay m
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
-       , Eq (LazySTM.TVar m (ConnectionState
-                                peerAddr
-                                (Handle 'InitiatorMode peerAddr ByteString m [resp] Void)
-                                (HandleError 'InitiatorMode UnversionedProtocol)
-                                (UnversionedProtocol, UnversionedProtocolData)
-                                m))
-       , Eq (LazySTM.TVar m (ConnectionState_ InitiatorResponderMode peerAddr m [resp] acc))
        , Serialise req, Show req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
@@ -1136,7 +1144,7 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
   -- mini-protocol run.
   propVar <- newTVarIO (property True)
   labelTVarIO propVar "propVar"
-  cc <- startServerConnectionHandler "main-server" [accInit] serverAddr lock propVar jobpool
+  cc <- startServerConnectionHandler MainServer [accInit] serverAddr lock propVar jobpool
   loop lock (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) propVar script jobpool
   where
 
@@ -1155,12 +1163,12 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
 
         StartClient delay localAddr -> do
           threadDelay delay
-          cc <- startClientConnectionHandler ("client-" ++ show localAddr) localAddr lock propVar jobpool
+          cc <- startClientConnectionHandler (Client localAddr) localAddr lock propVar jobpool
           loop lock nodeAccs (Map.insert localAddr cc servers) propVar events jobpool
 
         StartServer delay localAddr nodeAcc -> do
           threadDelay delay
-          cc <- startServerConnectionHandler ("node-" ++ show localAddr) [nodeAcc] localAddr lock propVar jobpool
+          cc <- startServerConnectionHandler (Node localAddr) [nodeAcc] localAddr lock propVar jobpool
           loop lock (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) propVar events jobpool
 
         InboundConnection delay nodeAddr -> do
@@ -1226,16 +1234,17 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
     assertProperty :: StrictTVar m Property -> Property -> STM m ()
     assertProperty propVar p = modifyTVar propVar (.&&. p)
 
-    startClientConnectionHandler :: String -> peerAddr
+    startClientConnectionHandler :: Name peerAddr
+                                 -> peerAddr
                                  -> StrictTMVar m ()
                                  -> StrictTVar m Property
                                  -> JobPool () m (Maybe SomeException)
                                  -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
     startClientConnectionHandler name localAddr lock propVar jobpool = do
         cc      <- atomically $ newTQueue
-        labelTQueueIO cc $ "cc/" ++ name
+        labelTQueueIO cc $ "cc/" ++ show name
         connVar <- newTVarIO Map.empty
-        labelTVarIO connVar $ "connVar/" ++ name
+        labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
         forkJob jobpool
           $ Job
@@ -1253,10 +1262,12 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
               )
               (return . Just)
               ()
-              name
+              (show name)
         return cc
 
-    startServerConnectionHandler :: String -> acc -> peerAddr
+    startServerConnectionHandler :: Name peerAddr
+                                 -> acc
+                                 -> peerAddr
                                  -> StrictTMVar m ()
                                  -> StrictTVar m Property
                                  -> JobPool () m (Maybe SomeException)
@@ -1266,14 +1277,15 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
         Snocket.bind   snocket fd localAddr
         Snocket.listen snocket fd
         cc      <- atomically $ newTQueue
-        labelTQueueIO cc $ "cc/" ++ name
+        labelTQueueIO cc $ "cc/" ++ show name
         connVar <- newTVarIO Map.empty
-        labelTVarIO connVar $ "connVar/" ++ name
+        labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
         forkJob jobpool
               $ Job
                   (  withBidirectionalConnectionManager
-                          name simTimeouts snocket fd (Just localAddr) serverAcc
+                          name simTimeouts nullTracer
+                          snocket fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           (\ connectionManager _ _serverAsync -> do
                              connectionLoop SingInitiatorResponderMode localAddr lock propVar cc connectionManager Map.empty connVar
@@ -1288,7 +1300,7 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
                   )
                   (return . Just)
                   ()
-                  name
+                  (show name)
         return cc
 
     connectionLoop
@@ -1390,6 +1402,14 @@ ppScript (MultiNodeScript script) = intercalate "\n" $ go 0 script
 --
 -- Utils
 --
+
+data WithName name event = WithName {
+    wnName  :: name,
+    wnEvent :: event
+  }
+  deriving Show
+
+type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
 
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 debugTracer = Tracer $
