@@ -705,8 +705,8 @@ withConnectionManager ConnectionManagerArguments {
                                               }
                                  ]
 
-                    traceCounters stateVar
                     traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
+                    traceCounters stateVar
 
       -- start connection thread
       connThread <- asyncWithUnmask $ \unmask ->
@@ -986,9 +986,9 @@ withConnectionManager ConnectionManagerArguments {
                        , Nothing
                        , UnsupportedState TerminatedSt )
 
+      traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
       traverse_ cancel mbThread
       traceCounters stateVar
-      traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
       return result
 
 
