@@ -21,7 +21,7 @@ module Test.Ouroboros.Network.Server2
   ) where
 
 import           Control.Exception (AssertionFailed)
-import           Control.Monad (replicateM)
+import           Control.Monad (replicateM, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadFork
@@ -631,24 +631,12 @@ runInitiatorProtocols
     -> m (Bundle a)
 runInitiatorProtocols
     singMuxMode mux
-    (Bundle (WithHot  [hotPtcl])
-            (WithWarm [warmPtcl])
-            (WithEstablished [establishedPtcl])) = do
-      -- start all protocols
-      hotSTM <- runInitiator hotPtcl
-      warmSTM <- runInitiator warmPtcl
-      establishedSTM <- runInitiator establishedPtcl
-
-      -- await for their termination
-      hotRes <- atomically hotSTM
-      warmRes <- atomically warmSTM
-      establishedRes <- atomically establishedSTM
-      case (hotRes, warmRes, establishedRes) of
-        (Left err, _, _) -> throwIO err
-        (_, Left err, _) -> throwIO err
-        (_, _, Left err) -> throwIO err
-        (Right hot, Right warm, Right established) ->
-          pure $ Bundle (WithHot hot) (WithWarm warm) (WithEstablished established)
+    bundle
+     = do -- start all mini-protocols
+          bundle' <- traverse runInitiator (head <$> bundle)
+          -- await for their termination
+          traverse (atomically >=> either throwIO return)
+                   bundle'
   where
     runInitiator :: MiniProtocol muxMode ByteString m a b
                  -> m (STM m (Either SomeException a))
@@ -665,10 +653,6 @@ runInitiatorProtocols
             InitiatorProtocolOnly initiator -> initiator
             InitiatorAndResponderProtocol initiator _ -> initiator)
           . fromChannel)
-
-runInitiatorProtocols _singMuxMode _mux (Bundle {}) =
-    error "runInitiatorProtocols: unsupported"
-
 
 --
 -- Experiments \/ Demos & Properties
