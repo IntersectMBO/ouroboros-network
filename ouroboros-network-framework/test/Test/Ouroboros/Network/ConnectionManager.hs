@@ -25,6 +25,7 @@
 
 module Test.Ouroboros.Network.ConnectionManager
   ( tests
+  , verifyAbstractTransition
   ) where
 
 import           Prelude hiding (read)
@@ -1766,6 +1767,8 @@ verifyAbstractTransition Transition { fromState, toState } =
       -- @Negotiated^{Unidirectional}_{Inbound}
       (UnnegotiatedSt Inbound, InboundIdleSt Unidirectional) -> True
 
+      -- 'unregisterOutboundConnection' might perfrom
+      (InboundIdleSt Duplex, InboundIdleSt Duplex) -> True
       -- @Awake^{Duplex}_{Remote}
       (InboundIdleSt Duplex, InboundSt Duplex) -> True
       -- @Commit^{Duplex}
