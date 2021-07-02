@@ -35,10 +35,11 @@ import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (($>), (<&>))
-import           Data.List (mapAccumL, intercalate, (\\), tails, delete)
+import           Data.Functor (void, ($>), (<&>))
+import           Data.List (mapAccumL, intercalate, (\\), delete)
 import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.Map as Map
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
@@ -87,6 +88,7 @@ import           Simulation.Network.Snocket
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
 import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), toBearerInfo)
+import           Test.Ouroboros.Network.ConnectionManager (verifyAbstractTransition)
 
 tests :: TestTree
 tests =
@@ -95,10 +97,7 @@ tests =
   , testProperty "unidirectional_Sim" prop_unidirectional_Sim
   , testProperty "bidirectional_IO"   prop_bidirectional_IO
   , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
-  -- This test fails now with:
-  -- > NotReleasedListeningSockets [TestAddress 0] Nothing
-  -- which is likely due to rebasing.  This is fixed a few commits later. 
-  --, testProperty "multinode_Sim"      prop_multinode_Sim
+  , testProperty "multinode_Sim"      prop_multinode_Sim
   ]
 
 
@@ -1067,9 +1066,13 @@ instance (Arbitrary peerAddr, Arbitrary req, Eq peerAddr) =>
         (shrinkBundle r <&> \ r' -> OutboundMiniprotocols d  a r') ++
         (shrinkDelay  d <&> \ d' -> OutboundMiniprotocols d' a r)
 
+-- | The concrete address type used by simulations.
+--
+type SimAddr = Snocket.TestAddress Int
+
 -- | We use a wrapper for test addresses since the Arbitrary instance for Snocket.TestAddress only
 --   generates addresses between 1 and 4.
-newtype TestAddr = TestAddr { unTestAddr :: Snocket.TestAddress Int }
+newtype TestAddr = TestAddr { unTestAddr :: SimAddr }
   deriving (Show, Eq, Ord)
 
 instance Arbitrary TestAddr where
@@ -1077,9 +1080,8 @@ instance Arbitrary TestAddr where
 
 -- | Each node in the multi-node experiment is controlled by a thread responding to these messages.
 data ConnectionHandlerMessage peerAddr req
-  = NewConnection peerAddr [req]
-    -- ^ Connect to the server at the given address. Needs to know the `accumulatorInit` of the
-    --   server in order to validate the responses.
+  = NewConnection peerAddr
+    -- ^ Connect to the server at the given address.
   | Disconnect peerAddr
     -- ^ Disconnect from the server at the given address.
   | RunMiniProtocols peerAddr (Bundle [req])
@@ -1098,6 +1100,14 @@ instance Show addr => Show (Name addr) where
     show  MainServer   = "main-server"
 
 
+data ExperimentError addr =
+      NodeNotRunningException addr
+    | NoActiveConnection addr addr
+    | SimulationTimeout
+  deriving (Typeable, Show)
+
+instance ( Show addr, Typeable addr ) => Exception (ExperimentError addr)
+
 -- | Run a central server that talks to any number of clients and other nodes.
 multinodeExperiment
     :: forall peerAddr socket acc req resp m.
@@ -1111,95 +1121,74 @@ multinodeExperiment
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        )
-    => Snocket m socket peerAddr
+    => Tracer m (WithName (Name peerAddr)
+                          (AbstractTransitionTrace peerAddr))
+    -> Snocket m socket peerAddr
     -> Snocket.AddressFamily peerAddr
     -> peerAddr
     -> req
     -> MultiNodeScript req peerAddr
-    -> m Property
-multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript script) =
+    -> m ()
+multinodeExperiment trTracer snocket addrFamily serverAddr accInit (MultiNodeScript script) =
   withJobPool $ \jobpool -> do
-  -- Avoid parallel connections. This can cause one side to think that the existing connection
-  -- should be used and the other side thinking that there should be two separate connections,
-  -- causing the latter to wait on messages that never come.
-  lock <- newTMVarIO ()
-  labelTMVarIO lock "lock"
-  -- TVar keeping the resulting property. Connection handler threads update this after each
-  -- mini-protocol run.
-  propVar <- newTVarIO (property True)
-  labelTVarIO propVar "propVar"
-  cc <- startServerConnectionHandler MainServer [accInit] serverAddr lock propVar jobpool
-  loop lock (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) propVar script jobpool
+  cc <- startServerConnectionHandler MainServer [accInit] serverAddr jobpool
+  loop (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) script jobpool
   where
 
-    loop :: StrictTMVar m ()
-         -> Map.Map peerAddr acc
+    loop :: Map.Map peerAddr acc
          -> Map.Map peerAddr (TQueue m (ConnectionHandlerMessage peerAddr req))
-         -> StrictTVar m Property
          -> [ConnectionEvent req peerAddr]
          -> JobPool () m (Maybe SomeException)
-         -> m Property
-    loop _ _ _ propVar [] _ = do
-      threadDelay 3600
-      atomically $ readTVar propVar
-    loop lock nodeAccs servers propVar (event : events) jobpool =
+         -> m ()
+    loop _ _ [] _ = threadDelay 3600
+    loop nodeAccs servers (event : events) jobpool =
       case event of
 
         StartClient delay localAddr -> do
           threadDelay delay
-          cc <- startClientConnectionHandler (Client localAddr) localAddr lock propVar jobpool
-          loop lock nodeAccs (Map.insert localAddr cc servers) propVar events jobpool
+          cc <- startClientConnectionHandler (Client localAddr) localAddr jobpool
+          loop nodeAccs (Map.insert localAddr cc servers) events jobpool
 
         StartServer delay localAddr nodeAcc -> do
           threadDelay delay
-          cc <- startServerConnectionHandler (Node localAddr) [nodeAcc] localAddr lock propVar jobpool
-          loop lock (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) propVar events jobpool
+          cc <- startServerConnectionHandler (Node localAddr) [nodeAcc] localAddr jobpool
+          loop (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) events jobpool
 
         InboundConnection delay nodeAddr -> do
           threadDelay delay
-          acc <- getAcc serverAddr
-          sendMsg nodeAddr $ NewConnection serverAddr acc
-          loop lock nodeAccs servers propVar events jobpool
+          sendMsg nodeAddr $ NewConnection serverAddr
+          loop nodeAccs servers events jobpool
 
         OutboundConnection delay nodeAddr -> do
           threadDelay delay
-          acc <- getAcc nodeAddr
-          sendMsg serverAddr $ NewConnection nodeAddr acc
-          loop lock nodeAccs servers propVar events jobpool
+          sendMsg serverAddr $ NewConnection nodeAddr
+          loop nodeAccs servers events jobpool
 
         CloseInboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg remoteAddr $ Disconnect serverAddr
-          loop lock nodeAccs servers propVar events jobpool
+          loop nodeAccs servers events jobpool
 
         CloseOutboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg serverAddr $ Disconnect remoteAddr
-          loop lock nodeAccs servers propVar events jobpool
+          loop nodeAccs servers events jobpool
 
         InboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg nodeAddr $ RunMiniProtocols serverAddr reqs
-          loop lock nodeAccs servers propVar events jobpool
+          loop nodeAccs servers events jobpool
 
         OutboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg serverAddr $ RunMiniProtocols nodeAddr reqs
-          loop lock nodeAccs servers propVar events jobpool
+          loop nodeAccs servers events jobpool
       where
         sendMsg :: peerAddr -> ConnectionHandlerMessage peerAddr req -> m ()
         sendMsg addr msg = atomically $
           case Map.lookup addr servers of
-            Nothing -> assertProperty propVar $ counterexample (show addr ++ " is not a started node") False
+            Nothing -> throwIO (NodeNotRunningException addr)
             Just cc -> writeTQueue cc msg
-
-        getAcc :: peerAddr -> m acc
-        getAcc addr =
-          case Map.lookup addr nodeAccs of
-            Nothing  -> do
-              assertPropertyIO propVar $ counterexample (show addr ++ " is not a started server node") False
-              return []
-            Just acc -> return acc
 
     mkNextRequests :: StrictTVar m (Map.Map (ConnectionId peerAddr) (Bundle (TQueue m [req]))) ->
                       Bundle (ConnectionId peerAddr -> STM m [req])
@@ -1212,19 +1201,11 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
             Nothing -> retry
             Just qs -> readTQueue (projectBundle tok qs)
 
-    assertPropertyIO :: StrictTVar m Property -> Property -> m ()
-    assertPropertyIO propVar p = atomically $ assertProperty propVar p
-
-    assertProperty :: StrictTVar m Property -> Property -> STM m ()
-    assertProperty propVar p = modifyTVar propVar (.&&. p)
-
     startClientConnectionHandler :: Name peerAddr
                                  -> peerAddr
-                                 -> StrictTMVar m ()
-                                 -> StrictTVar m Property
                                  -> JobPool () m (Maybe SomeException)
                                  -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
-    startClientConnectionHandler name localAddr lock propVar jobpool = do
+    startClientConnectionHandler name localAddr jobpool  = do
         cc      <- atomically $ newTQueue
         labelTQueueIO cc $ "cc/" ++ show name
         connVar <- newTVarIO Map.empty
@@ -1235,7 +1216,7 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
               ( withInitiatorOnlyConnectionManager
                     name simTimeouts snocket (Just localAddr) (mkNextRequests connVar)
                   ( \ connectionManager -> do
-                    connectionLoop SingInitiatorMode localAddr lock propVar cc connectionManager Map.empty connVar
+                    connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
                     return Nothing
                   )
                 `catch` (\(e :: SomeException) ->
@@ -1252,11 +1233,9 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
     startServerConnectionHandler :: Name peerAddr
                                  -> acc
                                  -> peerAddr
-                                 -> StrictTMVar m ()
-                                 -> StrictTVar m Property
                                  -> JobPool () m (Maybe SomeException)
                                  -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
-    startServerConnectionHandler name serverAcc localAddr lock propVar jobpool = do
+    startServerConnectionHandler name serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
         Snocket.listen snocket fd
@@ -1267,14 +1246,14 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
         threadId <- myThreadId
         forkJob jobpool
               $ Job
-                  (  withBidirectionalConnectionManager
-                          name simTimeouts nullTracer
-                          snocket fd (Just localAddr) serverAcc
-                          (mkNextRequests connVar)
-                          (\ connectionManager _ _serverAsync -> do
-                             connectionLoop SingInitiatorResponderMode localAddr lock propVar cc connectionManager Map.empty connVar
-                             return Nothing
-                          )
+                  ( withBidirectionalConnectionManager
+                      name simTimeouts trTracer
+                      snocket fd (Just localAddr) serverAcc
+                      (mkNextRequests connVar)
+                      ( \ connectionManager _ _serverAsync -> do
+                        connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
+                        return Nothing
+                      )
                     `catch` (\(e :: SomeException) ->
                             case fromException e :: Maybe MuxRuntimeError of
                               Nothing -> throwIO e
@@ -1291,15 +1270,13 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
          :: (HasInitiator muxMode ~ True)
          => SingMuxMode muxMode
          -> peerAddr
-         -> StrictTMVar m ()
-         -> StrictTVar m Property
          -> TQueue m (ConnectionHandlerMessage peerAddr req)                          -- control channel
          -> MuxConnectionManager muxMode socket peerAddr UnversionedProtocol ByteString m [resp] a
-         -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a, acc)     -- active connections
+         -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a)          -- active connections
          -> StrictTVar m (Map.Map (ConnectionId peerAddr) (Bundle (TQueue m [req])))  -- mini protocol queues
          -> m ()
-    connectionLoop muxMode localAddr lock propVar cc cm connMap connVar = atomically (readTQueue cc) >>= \ case
-      NewConnection remoteAddr remoteAcc -> do
+    connectionLoop muxMode localAddr cc cm connMap connVar = atomically (readTQueue cc) >>= \ case
+      NewConnection remoteAddr -> do
         let mkQueue :: forall pt. TokProtocolTemperature pt -> STM m (TQueue m [req])
             mkQueue tok = do
               q <- newTQueue
@@ -1310,48 +1287,113 @@ multinodeExperiment snocket addrFamily serverAddr accInit (MultiNodeScript scrip
               q <$ labelTQueue q ("protoVar." ++ temp ++ "@" ++ show localAddr)
         qs <- atomically $ traverse id $ makeBundle mkQueue
         atomically $ modifyTVar connVar $ Map.insert (connId remoteAddr) qs
-        connHandle <- withLock False lock $ requestOutboundConnection cm remoteAddr
+        connHandle <- requestOutboundConnection cm remoteAddr
         case connHandle of
-          Connected _ _ h -> do
-            connectionLoop muxMode localAddr lock propVar cc cm (Map.insert remoteAddr (h, remoteAcc) connMap) connVar
-          Disconnected _ err ->
-            failureIO $ "connection failure: " ++ show err
+          Connected _ _ h ->
+            connectionLoop muxMode localAddr cc cm (Map.insert remoteAddr h connMap) connVar
+          Disconnected {} -> return ()
       Disconnect remoteAddr -> do
         atomically $ modifyTVar connVar $ Map.delete (connId remoteAddr)
         _ <- unregisterOutboundConnection cm remoteAddr
-        connectionLoop muxMode localAddr lock propVar cc cm (Map.delete remoteAddr connMap) connVar
+        connectionLoop muxMode localAddr cc cm (Map.delete remoteAddr connMap) connVar
       RunMiniProtocols remoteAddr reqs -> do
         atomically $ do
           mqs <- (Map.lookup $ connId remoteAddr) <$> readTVar connVar
           case mqs of
-            Nothing -> failure $ "No active connection " ++ show localAddr ++ " => " ++ show remoteAddr
+            Nothing ->
+              throwIO (NoActiveConnection localAddr remoteAddr)
             Just qs -> do
               sequence_ $ writeTQueue <$> qs <*> reqs
         case Map.lookup remoteAddr connMap of
-          Nothing -> failureIO $ "no connection " ++ show localAddr ++ " => " ++ show remoteAddr
-          Just (Handle mux muxBundle _, acc)  -> do
-            rs <- try @_ @SomeException $ runInitiatorProtocols muxMode mux muxBundle
-            case rs of
-              Left err -> failureIO $ "protocol error: " ++ show err
-              Right r  -> assertPropertyIO propVar $ r === fmap (drop 2 . reverse .  tails . (++ acc) . reverse) reqs
-        connectionLoop muxMode localAddr lock propVar cc cm connMap connVar
+          Nothing -> throwIO (NoActiveConnection localAddr remoteAddr)
+          Just (Handle mux muxBundle _)  ->
+            -- TODO:
+            -- At times this throws 'ProtocolAlreadyRunning'.
+            void $ try @_ @SomeException
+                 $ runInitiatorProtocols muxMode mux muxBundle
+        connectionLoop muxMode localAddr cc cm connMap connVar
       where
-        connId remoteAddr = ConnectionId{ localAddress = localAddr, remoteAddress = remoteAddr }
+        connId remoteAddr = ConnectionId { localAddress  = localAddr
+                                         , remoteAddress = remoteAddr }
 
-        failureIO :: String -> m ()
-        failureIO = atomically . failure
 
-        failure :: String -> STM m ()
-        failure err = assertProperty propVar $ counterexample err False
+newtype AllProperty = AllProperty { getAllProperty :: Property }
+
+instance Semigroup AllProperty where
+    AllProperty a <> AllProperty b = AllProperty (a .&&. b)
+
+instance Monoid AllProperty where
+    mempty = AllProperty (property True)
+
 
 -- | Property wrapping `multinodeExperiment`.
 prop_multinode_Sim :: Int -> MultiNodeScript Int TestAddr -> Property
-prop_multinode_Sim serverAcc script' =
-  simulatedPropertyWithTimeout 7200 $
-    withSnocket debugTracer (singletonScript noAttenuation) (TestAddress 10) $ \snocket ->
-    let script  = unTestAddr <$> script' in
-    counterexample (ppScript script) <$>
-      multinodeExperiment snocket Snocket.TestFamily (Snocket.TestAddress 0) serverAcc script
+prop_multinode_Sim serverAcc script =
+  let evs :: [AbstractTransitionTrace SimAddr]
+      evs = map wnEvent
+          . filter ((MainServer ==) . wnName)
+          $ (selectTraceEventsDynamic' (runSimTrace sim)
+              :: [WithName (Name SimAddr)
+                           (AbstractTransitionTrace SimAddr)])
+        where
+          sim :: IOSim s ()
+          sim = do
+            mb <- timeout 7200
+                    ( withSnocket debugTracer
+                                  (singletonScript noAttenuation)
+                                  (Snocket.TestAddress 10)
+                    $ \snocket ->
+                       multinodeExperiment (Tracer traceM)
+                                           snocket
+                                           Snocket.TestFamily
+                                           (Snocket.TestAddress 0)
+                                           serverAcc
+                                           (unTestAddr <$> script)
+                    )
+            case mb of
+              Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+              Just a  -> return a
+
+  in   counterexample (ppScript script)
+     . getAllProperty
+     . foldMap ( foldMap ( \ tr
+                          -> AllProperty
+                           . (counterexample $! ("\nUnexpected transition: " ++ ppTransition tr))
+                           . verifyAbstractTransition
+                           $ tr
+                         )
+               )
+     . concat
+     . Map.elems
+     . splitConns
+     $ evs
+  where
+    splitConns :: [AbstractTransitionTrace SimAddr]
+               -> Map SimAddr [[AbstractTransition]]
+    splitConns as = splitConn <$> tracesByAddr
+      where
+        splitConn :: [AbstractTransition] -> [[AbstractTransition]]
+        splitConn [] = []
+        splitConn (t : ts) =
+          case span (\  tr@Transition { fromState }
+                     -> fromState /= UnknownConnectionSt
+                     && tr        /= Transition TerminatedSt
+                                                (UnnegotiatedSt Inbound)
+                    ) ts of
+                 (cs, ts') -> (t : cs) : splitConn ts'
+
+        tracesByAddr :: Map SimAddr [AbstractTransition]
+        tracesByAddr =
+          Map.fromListWith
+            (flip (++))
+            ( map (\  TransitionTrace { ttPeerAddr, ttTransition }
+                   -> (ttPeerAddr, [ttTransition]))
+            $ as
+            )
+
+ppTransition :: AbstractTransition -> String
+ppTransition Transition {fromState, toState} =
+    printf "%-30s → %s" (show fromState) (show toState)
 
 ppScript :: (Show peerAddr, Show req) => MultiNodeScript peerAddr req -> String
 ppScript (MultiNodeScript script) = intercalate "\n" $ go 0 script
