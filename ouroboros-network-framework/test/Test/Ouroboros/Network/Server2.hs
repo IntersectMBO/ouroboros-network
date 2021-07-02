@@ -1024,7 +1024,7 @@ shrinkBundle (Bundle (WithHot hot) (WithWarm warm) (WithEstablished est)) =
 instance (Arbitrary peerAddr, Arbitrary req, Eq peerAddr) =>
          Arbitrary (MultiNodeScript req peerAddr) where
   arbitrary = do
-      NonNegative len <- scale (`div` 2) arbitrary
+      Positive len <- scale ((* 2) . (`div` 3)) arbitrary
       MultiNodeScript <$> go (ScriptState [] [] [] [] []) (len :: Integer)
     where     -- Divide delays by 100 to avoid running in to protocol and SDU timeouts if waiting
               -- too long between connections and mini protocols.
@@ -1032,8 +1032,8 @@ instance (Arbitrary peerAddr, Arbitrary req, Eq peerAddr) =>
       go _ 0 = pure []
       go s@ScriptState{..} n = do
         event <- frequency $
-                    [ (1, StartClient             <$> delay <*> newClient)
-                    , (1, StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
+                    [ (4, StartClient             <$> delay <*> newClient)
+                    , (4, StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
                     [ (4, InboundConnection       <$> delay <*> elements possibleInboundConnections)  | not $ null possibleInboundConnections] ++
                     [ (4, OutboundConnection      <$> delay <*> elements possibleOutboundConnections) | not $ null possibleOutboundConnections] ++
                     [ (4, CloseInboundConnection  <$> delay <*> elements inboundConnections)  | not $ null $ inboundConnections ] ++
