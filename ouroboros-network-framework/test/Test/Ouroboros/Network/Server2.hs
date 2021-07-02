@@ -35,13 +35,17 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import           Codec.Serialise.Class (Serialise)
+import           Data.Bifoldable
+import           Data.Bifunctor
+import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (void, ($>), (<&>))
-import           Data.List (mapAccumL, intercalate, (\\), delete)
+import           Data.List (dropWhileEnd, find, mapAccumL, intercalate, (\\), delete)
 import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Map (Map)
+import qualified Data.List.Octopus as Octopus
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, fromJust, isJust)
+import           Data.Monoid (Sum (..))
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
@@ -98,6 +102,9 @@ tests =
   , testProperty "bidirectional_IO"   prop_bidirectional_IO
   , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
   , testProperty "multinode_Sim"      prop_multinode_Sim
+  , testGroup "generators"
+    [ testProperty "MultiNodeScript"  prop_generator_MultiNodeScript
+    ]
   ]
 
 --
@@ -1082,6 +1089,51 @@ instance (Arbitrary peerAddr, Arbitrary req, Eq peerAddr) =>
         (shrinkBundle r <&> \ r' -> OutboundMiniprotocols d  a r') ++
         (shrinkDelay  d <&> \ d' -> OutboundMiniprotocols d' a r)
 
+
+prop_generator_MultiNodeScript :: MultiNodeScript Int TestAddr -> Property
+prop_generator_MultiNodeScript (MultiNodeScript script) =
+    label ("Number of events: " ++ within_ 10 (length script))
+  $ label ( "Number of servers: "
+          ++ ( within_ 2
+             . length
+             . filter (\ ev -> case ev of
+                         StartServer {} -> True
+                         _              -> False
+                      )
+                      $ script
+             ))
+  $ label ("Number of clients: "
+          ++ ( within_ 2
+             . length
+             . filter (\ ev -> case ev of
+                         StartClient {} -> True
+                         _              -> False
+                      )
+             $ script
+             ))
+  $ label ("Active connections: "
+          ++ ( within_ 5
+             . length
+             . filter (\ ev -> case ev of
+                         InboundMiniprotocols {}  -> True
+                         OutboundMiniprotocols {} -> True
+                         _                        -> False)
+             $ script
+             ))
+  $ label ("Closed connections: "
+          ++ ( within_ 5
+             . length
+             . filter (\ ev -> case ev of
+                         CloseInboundConnection {}  -> True
+                         CloseOutboundConnection {} -> True
+                         _                          -> False)
+             $ script
+             ))
+  $ True
+
+
+
+
 -- | The concrete address type used by simulations.
 --
 type SimAddr = Snocket.TestAddress Int
@@ -1340,6 +1392,83 @@ multinodeExperiment trTracer snocket addrFamily serverAddr accInit (MultiNodeScr
                                          , remoteAddress = remoteAddr }
 
 
+-- | Test property together with classifiction.
+data TestProperty = TestProperty {
+    tpProperty             :: !Property,
+    -- ^ 'True' if property is true
+
+    tpNumberOfTransitions :: !(Sum Int),
+    -- ^ number of all transitions
+
+    tpNumberOfConnections :: !(Sum Int),
+    -- ^ number of all connections
+   
+    --
+    -- classifcation of connections
+    --
+    tpNegotiatedDataFlows :: ![NegotiatedDataFlow],
+    tpEffectiveDataFlows  :: ![EffectiveDataFlow],
+    tpTerminationTypes    :: ![TerminationType],
+    tpActivityTypes       :: ![ActivityType],
+
+    tpTransitions         :: ![AbstractTransition]
+
+  }
+
+instance Show TestProperty where
+    show tp =
+      concat [ "TestProperty "
+             , "{ tpNumberOfTransitions = " ++ show (tpNumberOfTransitions tp)
+             , ", tpNumberOfConnections = " ++ show (tpNumberOfConnections tp)
+             , ", tpNegotiatedDataFlows = " ++ show (tpNegotiatedDataFlows tp)
+             , ", tpTerminationTypes = "    ++ show (tpTerminationTypes tp)
+             , ", tpActivityTypes = "       ++ show (tpActivityTypes tp)
+             , ", tpTransitions = "         ++ show (tpTransitions tp)
+             , "}"
+             ]
+
+instance Semigroup TestProperty where
+  (<>) (TestProperty a0 a1 a2 a3 a4 a5 a6 a7)
+       (TestProperty b0 b1 b2 b3 b4 b5 b6 b7) =
+      TestProperty (a0 .&&. b0)
+                   (a1 <> b1)
+                   (a2 <> b2)
+                   (a3 <> b3)
+                   (a4 <> b4)
+                   (a5 <> b5)
+                   (a6 <> b6)
+                   (a7 <> b7)
+
+instance Monoid TestProperty where
+    mempty = TestProperty (property True)
+                          mempty mempty mempty
+                          mempty mempty mempty mempty
+
+mkProperty :: TestProperty -> Property
+mkProperty TestProperty { tpProperty
+                        , tpNumberOfTransitions = Sum numberOfTransitions_
+                        , tpNumberOfConnections = Sum numberOfConnections_
+                        , tpNegotiatedDataFlows
+                        , tpEffectiveDataFlows
+                        , tpTerminationTypes
+                        , tpActivityTypes
+                        , tpTransitions
+                        } =
+     label (concat [ "Number of transitions: "
+                   , within_ 10 numberOfTransitions_
+                   ]
+           )
+   . label (concat [ "Number of connections: "
+                   , show numberOfConnections_
+                   ]
+           )
+   . tabulate "Negotiated DataFlow" (map show tpNegotiatedDataFlows)
+   . tabulate "Effective DataFLow"  (map show tpEffectiveDataFlows)
+   . tabulate "Termination"         (map show tpTerminationTypes)
+   . tabulate "Activity Type"       (map show tpActivityTypes)
+   . tabulate "Transitions"         (map ppTransition tpTransitions)
+   $ tpProperty
+
 newtype AllProperty = AllProperty { getAllProperty :: Property }
 
 instance Semigroup AllProperty where
@@ -1349,15 +1478,48 @@ instance Monoid AllProperty where
     mempty = AllProperty (property True)
 
 
+data ActivityType
+    = IdleConn
+
+    -- | Active connections are onces that reach any of the state:
+    --
+    -- - 'InboundSt'
+    -- - 'OutobundUniSt'
+    -- - 'OutboundDupSt'
+    -- - 'DuplexSt'
+    --
+    | ActiveConn
+    deriving (Eq, Show)
+
+data TerminationType
+    = ErroredTermination
+    | CleanTermination
+    deriving (Eq, Show)
+
+data NegotiatedDataFlow
+    = NotNegotiated
+
+    -- | Negotiated value of 'DataFlow'
+    | NegotiatedDataFlow DataFlow
+    deriving (Eq, Show)
+
+data EffectiveDataFlow
+    -- | Unlike the negotiated 'DataFlow' this indicates if the connection has
+    -- ever been in 'DuplexSt'
+    --
+    = EffectiveDataFlow DataFlow
+    deriving (Eq, Show)
+
 -- | Property wrapping `multinodeExperiment`.
 prop_multinode_Sim :: Int -> MultiNodeScript Int TestAddr -> Property
 prop_multinode_Sim serverAcc script =
-  let evs :: [AbstractTransitionTrace SimAddr]
-      evs = map wnEvent
-          . filter ((MainServer ==) . wnName)
-          $ (selectTraceEventsDynamic' (runSimTrace sim)
-              :: [WithName (Name SimAddr)
-                           (AbstractTransitionTrace SimAddr)])
+  let evs :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
+      evs = fmap wnEvent
+          . Octopus.filter ((MainServer ==) . wnName)
+          . octoSelectTraceEventsDynamic
+              @()
+              @(WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+          $ runSimTrace sim
         where
           sim :: IOSim s ()
           sim = do
@@ -1377,42 +1539,123 @@ prop_multinode_Sim serverAcc script =
               Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
               Just a  -> return a
 
-  in   counterexample (ppScript script)
-     . getAllProperty
-     . foldMap ( foldMap ( \ tr
-                          -> AllProperty
-                           . (counterexample $! ("\nUnexpected transition: " ++ ppTransition tr))
-                           . verifyAbstractTransition
-                           $ tr
-                         )
-               )
-     . concat
-     . Map.elems
-     . splitConns
-     $ evs
+  in counterexample (ppScript script)
+   . mkProperty
+   . bifoldMap
+      ( \ case
+          MainReturn {} -> mempty
+          v             -> mempty { tpProperty = counterexample (show v) False }
+      )
+      ( \ trs
+       -> TestProperty {
+            tpProperty =
+                (counterexample $!
+                  (  "\nconnection:\n"
+                  ++ intercalate "\n" (map ppTransition trs))
+                  )
+              . getAllProperty
+              . foldMap ( \ tr
+                         -> AllProperty
+                          . (counterexample $!
+                              (  "\nUnexpected transition: "
+                              ++ ppTransition tr)
+                              )
+                          . verifyAbstractTransition
+                          $ tr
+                        )
+              $ trs,
+            tpNumberOfTransitions = Sum (length trs),
+            tpNumberOfConnections = Sum 1,
+            tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
+            tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
+            tpTerminationTypes    = [classifyTermination        trs],
+            tpActivityTypes       = [classifyActivityType       trs],
+            tpTransitions         = trs
+         }
+      )
+   . splitConns
+   $ evs
   where
-    splitConns :: [AbstractTransitionTrace SimAddr]
-               -> Map SimAddr [[AbstractTransition]]
-    splitConns as = splitConn <$> tracesByAddr
-      where
-        splitConn :: [AbstractTransition] -> [[AbstractTransition]]
-        splitConn [] = []
-        splitConn (t : ts) =
-          case span (\  tr@Transition { fromState }
-                     -> fromState /= UnknownConnectionSt
-                     && tr        /= Transition TerminatedSt
-                                                (UnnegotiatedSt Inbound)
-                    ) ts of
-                 (cs, ts') -> (t : cs) : splitConn ts'
 
-        tracesByAddr :: Map SimAddr [AbstractTransition]
-        tracesByAddr =
-          Map.fromListWith
-            (flip (++))
-            ( map (\  TransitionTrace { ttPeerAddr, ttTransition }
-                   -> (ttPeerAddr, [ttTransition]))
-            $ as
-            )
+    -- classify negotiated data flow
+    classifyNegotiatedDataFlow :: [AbstractTransition] -> NegotiatedDataFlow
+    classifyNegotiatedDataFlow as =
+      case find ( \ tr
+                 -> case toState tr of
+                      OutboundUniSt    -> True
+                      OutboundDupSt {} -> True
+                      InboundIdleSt {} -> True
+                      _                -> False
+                ) as of
+         Nothing -> NotNegotiated
+         Just tr ->
+           case toState tr of
+             OutboundUniSt      -> NegotiatedDataFlow Unidirectional
+             OutboundDupSt {}   -> NegotiatedDataFlow Duplex
+             (InboundIdleSt df) -> NegotiatedDataFlow df
+             _                  -> error "impossible happened!"
+
+    -- classify effective data flow
+    classifyEffectiveDataFlow :: [AbstractTransition] -> EffectiveDataFlow
+    classifyEffectiveDataFlow as =
+      case find ((== DuplexSt) . toState) as of
+        Nothing -> EffectiveDataFlow Unidirectional
+        Just _  -> EffectiveDataFlow Duplex
+
+    -- classify termination
+    classifyTermination :: [AbstractTransition] -> TerminationType
+    classifyTermination as =
+      case last $ dropWhileEnd
+                    (== (Transition TerminatedSt TerminatedSt))
+                $ dropWhileEnd
+                    (== (Transition TerminatedSt UnknownConnectionSt))
+                $ as of
+        Transition { fromState = TerminatingSt
+                   , toState   = TerminatedSt
+                   } -> CleanTermination
+        _            -> ErroredTermination
+
+    -- classify if a connection is active or not
+    classifyActivityType :: [AbstractTransition] -> ActivityType
+    classifyActivityType as =
+      case find ( \ tr
+                 -> case toState tr of
+                      InboundSt     {} -> True
+                      OutboundUniSt    -> True
+                      OutboundDupSt {} -> True
+                      DuplexSt      {} -> True
+                      _                -> False
+                ) as of
+        Nothing -> IdleConn
+        Just {} -> ActiveConn
+
+splitConns :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
+           -> Octopus (Value ()) [AbstractTransition]
+splitConns =
+    bimap id fromJust
+  . Octopus.filter isJust
+  -- there might be some connections in the state, push them onto the 'Octopus'
+  . (\(s, o) -> foldr (\a as -> Octopus.Cons (Just a) as) o (Map.elems s))
+  . bimapAccumL
+      ( \ s a -> ( s, a))
+      ( \ s TransitionTrace { ttPeerAddr, ttTransition } ->
+          case ttTransition of
+            Transition _ UnknownConnectionSt ->
+              case ttPeerAddr `Map.lookup` s of
+                Nothing  -> ( Map.insert ttPeerAddr [ttTransition] s
+                            , Nothing
+                            )
+                Just trs -> ( Map.delete ttPeerAddr s
+                            , Just (reverse $ ttTransition : trs)
+                            )
+            _ ->            ( Map.alter ( \ case 
+                                              Nothing -> Just [ttTransition]
+                                              Just as -> Just (ttTransition : as)
+                                        ) ttPeerAddr s
+                            , Nothing
+                            )
+      )
+      Map.empty
 
 ppTransition :: AbstractTransition -> String
 ppTransition Transition {fromState, toState} =
@@ -1464,11 +1707,6 @@ debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 debugTracer = Tracer $
   \msg -> (,msg) <$> getCurrentTime >>= say . show
 
--- | Convenience function to create a Bundle. Could move to Ouroboros.Network.Mux.
-makeBundle :: (forall pt. TokProtocolTemperature pt -> a) -> Bundle a
-makeBundle f = Bundle (WithHot         $ f TokHot)
-                      (WithWarm        $ f TokWarm)
-                      (WithEstablished $ f TokEstablished)
 
 connectionManagerTracer
   :: ( MonadSay  m
@@ -1508,6 +1746,19 @@ withLock True   v m =
             (atomically . putTMVar v)
             (const m)
 
+
+-- | Convenience function to create a Bundle. Could move to Ouroboros.Network.Mux.
+makeBundle :: (forall pt. TokProtocolTemperature pt -> a) -> Bundle a
+makeBundle f = Bundle (WithHot         $ f TokHot)
+                      (WithWarm        $ f TokWarm)
+                      (WithEstablished $ f TokEstablished)
+
+
+
+-- TODO: we should use @traceResult True@; the `prop_unidirectional_Sim` and
+-- `prop_bidirectional_Sim` test are failing with `<<io-sim sloppy shutdown>>`
+-- exception.
+--
 simulatedPropertyWithTimeout :: DiffTime -> (forall s. IOSim s Property) -> Property
 simulatedPropertyWithTimeout t test =
   counterexample ("\nTrace:\n" ++ ppTrace_ tr) $
@@ -1532,3 +1783,13 @@ ppTrace_ tr = concat
 
     fmt (t, tid, lbl, e) = printf "%-24s - %-13s %-*s - %s" (show t) (show tid) w (fromMaybe "" lbl) (show e)
 
+
+within_ :: Int -> Int -> String
+within_ _ 0 = "0"
+within_ a b = let x = b `div` a in
+              concat [ if b < a
+                         then "1"
+                         else show $ x * a
+                     , " - "
+                     , show $ x * a + a - 1
+                     ]
