@@ -191,19 +191,15 @@ data MaxTxCapacityOverride blk
 type family Overrides blk
 
 computeMaxTxCapacity ::
-     forall blk . (TxLimits blk, Overrides blk ~ Measure blk)
+     forall blk. (TxLimits blk, Overrides blk ~ Measure blk)
   => TickedLedgerState blk
   -> MaxTxCapacityOverride blk
   -> Measure blk
 computeMaxTxCapacity ledger maxTxCapacityOverride = case maxTxCapacityOverride of
-      NoMaxTxCapacityOverride     -> noOverride
-      MaxTxCapacityOverride txCap -> noOverride `minMeasure` txCap
+      NoMaxTxCapacityOverride     -> ledgerLimit
+      MaxTxCapacityOverride txCap -> pointwiseMin @blk ledgerLimit txCap
   where
-    noOverride = maxCapacity ledger
-    minMeasure x y
-      | lessEq @blk x y = x
-      | otherwise  = y
-
+    ledgerLimit = maxCapacity ledger
 
 -- | Filters out all transactions that do not fit the maximum size that is
 -- passed to this function as the first argument. Value of that first argument
