@@ -26,9 +26,9 @@ local conv_ids = {
 local on_conversation = ProtoField.uint16("ouroboros.conv", "Conversation", base.HEX, conv_ids, nil, "Conversation ids")
 
 local handshake_msg_codes = {
-        [0] = "MsgProposeVersions",
-        [1] = "MsgAcceptVersion",
-        [2] = "MsgRefuse"
+	[0] = "MsgProposeVersions",
+	[1] = "MsgAcceptVersion",
+	[2] = "MsgRefuse"
 }
 local on_handshake_msg = ProtoField.uint8("ouroboros.handshakemsg", "Handshake Message", base.DEC, handshake_msg_codes, nil, "Handshake Message Types")
 
@@ -107,7 +107,6 @@ function ouroboros.dissector(tvbuf, pktinfo, root)
 			pktinfo.desegment_offset = offset
 			result = -result
 			pktinfo.desegment_len = result
-
 			return pktlen
 		end
 	end
@@ -131,7 +130,7 @@ dissectOuroboros = function (tvbuf, pktinfo, root, offset)
 	
 	pktinfo.cols.protocol = ouroboros.name
 
- 	local subtree = root:add(ouroboros, tvbuf(), "Ouroboros")
+	local subtree = root:add(ouroboros, tvbuf(), "Ouroboros")
 	local conv = tvbuf:range(offset + 4, 2)
 	local convId = conv:uint()
 
@@ -157,3 +156,5 @@ end
 
 local tcp_port = DissectorTable.get("tcp.port")
 tcp_port:add(6061, ouroboros)
+
+-- vim: noexpandtab
