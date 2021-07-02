@@ -71,7 +71,6 @@ import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
-import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.IOManager
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
@@ -82,6 +81,7 @@ import           Ouroboros.Network.Protocol.Handshake.Codec ( cborTermVersionDat
                                                             , noTimeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
+import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Server2 (ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
@@ -340,6 +340,7 @@ withInitiatorOnlyConnectionManager name timeouts snocket localAddr nextRequests 
           }
         (unversionedProtocol clientApplication)
         (mainThreadId, debugMuxErrorRethrowPolicy
+                    <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
                     <> assertRethrowPolicy))
       (\_ -> HandshakeFailure)
@@ -407,6 +408,11 @@ debugMuxErrorRethrowPolicy =
           MuxIOException _ -> ShutdownPeer
           MuxBearerClosed  -> ShutdownPeer
           _                -> ShutdownNode
+
+debugMuxRuntimeErrorRethrowPolicy :: RethrowPolicy
+debugMuxRuntimeErrorRethrowPolicy =
+    mkRethrowPolicy $
+      \_ (_ :: MuxRuntimeError) -> ShutdownNode
 
 debugIOErrorRethrowPolicy :: RethrowPolicy
 debugIOErrorRethrowPolicy =
@@ -508,6 +514,7 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
             }
           (unversionedProtocol serverApplication)
           (mainThreadId,   debugMuxErrorRethrowPolicy
+                        <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
                         <> assertRethrowPolicy))
           (\_ -> HandshakeFailure)
