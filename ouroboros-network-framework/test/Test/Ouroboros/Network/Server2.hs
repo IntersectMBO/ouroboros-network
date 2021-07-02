@@ -32,7 +32,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.Bifoldable
@@ -308,7 +308,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr next
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
           cmTracer    = WithName name
-                        `contramap` connectionManagerTracer,
+                        `contramap` nullTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
                         `contramap` trTracer,
          -- MuxTracer
@@ -482,7 +482,7 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
           cmTracer    = WithName name
-                        `contramap` connectionManagerTracer,
+                        `contramap` nullTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
                         `contramap` trTracer,
           -- MuxTracer
@@ -1749,31 +1749,6 @@ type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 debugTracer = Tracer $
   \msg -> (,msg) <$> getCurrentTime >>= say . show
-
-
-connectionManagerTracer
-  :: ( MonadSay  m
-     , MonadTime m
-     , Show peerAddr
-     , Show versionNumber
-     , Show versionData
-     , Show name
-     )
-  => Tracer m (WithName name
-                        (ConnectionManagerTrace peerAddr
-                           (ConnectionHandlerTrace versionNumber versionData)))
-connectionManagerTracer =
-    Tracer
-      $ \msg ->
-        case msg of
-          WithName _ TrConnectError{}
-            -> -- this way 'debugTracer' does not trigger a warning :)
-              traceWith debugTracer msg
-          WithName _ (TrConnectionHandler _ TrError {})
-            ->
-              traceWith debugTracer msg
-          WithName _ _ ->
-              pure ()
 
 
 withLock :: ( MonadSTM   m
