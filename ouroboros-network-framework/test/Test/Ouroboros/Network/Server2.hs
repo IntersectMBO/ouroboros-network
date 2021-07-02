@@ -291,6 +291,7 @@ withInitiatorOnlyConnectionManager
     => name
     -- ^ identifier (for logging)
     -> Timeouts
+    -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
     -> Snocket m socket peerAddr
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
@@ -302,7 +303,7 @@ withInitiatorOnlyConnectionManager
           UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager name timeouts snocket localAddr nextRequests k = do
+withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr nextRequests k = do
     mainThreadId <- myThreadId
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
     withConnectionManager
@@ -311,14 +312,14 @@ withInitiatorOnlyConnectionManager name timeouts snocket localAddr nextRequests 
           cmTracer    = WithName name
                         `contramap` nullTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
-                        `contramap` nullTracer,
+                        `contramap` trTracer,
          -- MuxTracer
           cmMuxTracer = muxTracer,
           cmIPv4Address = localAddr,
           cmIPv6Address = Nothing,
           cmAddressType = \_ -> Just IPv4Address,
           cmSnocket = snocket,
-          connectionDataFlow = const Duplex,
+          connectionDataFlow = const Unidirectional,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
@@ -719,7 +720,7 @@ unidirectionalExperiment
 unidirectionalExperiment timeouts snocket socket clientAndServerData = do
     nextReqs <- oneshotNextRequests clientAndServerData
     withInitiatorOnlyConnectionManager
-      "client" timeouts snocket Nothing nextReqs
+      "client" timeouts nullTracer snocket Nothing nextReqs
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts nullTracer
                                            snocket socket Nothing
@@ -1210,13 +1211,16 @@ multinodeExperiment
                           (AbstractTransitionTrace peerAddr))
     -> Snocket m socket peerAddr
     -> Snocket.AddressFamily peerAddr
+    -- ^ either run the main node in 'Duplex' or 'Unidirectional' mode.
     -> peerAddr
     -> req
+    -> DataFlow
     -> MultiNodeScript req peerAddr
     -> m ()
-multinodeExperiment trTracer snocket addrFamily serverAddr accInit (MultiNodeScript script) =
+multinodeExperiment trTracer snocket addrFamily serverAddr accInit
+                             dataFlow0 (MultiNodeScript script) =
   withJobPool $ \jobpool -> do
-  cc <- startServerConnectionHandler MainServer [accInit] serverAddr jobpool
+  cc <- startServerConnectionHandler MainServer dataFlow0 [accInit] serverAddr jobpool
   loop (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) script jobpool
   where
 
@@ -1236,7 +1240,7 @@ multinodeExperiment trTracer snocket addrFamily serverAddr accInit (MultiNodeScr
 
         StartServer delay localAddr nodeAcc -> do
           threadDelay delay
-          cc <- startServerConnectionHandler (Node localAddr) [nodeAcc] localAddr jobpool
+          cc <- startServerConnectionHandler (Node localAddr) Duplex [nodeAcc] localAddr jobpool
           loop (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) events jobpool
 
         InboundConnection delay nodeAddr -> do
@@ -1299,7 +1303,7 @@ multinodeExperiment trTracer snocket addrFamily serverAddr accInit (MultiNodeScr
         forkJob jobpool
           $ Job
               ( withInitiatorOnlyConnectionManager
-                    name simTimeouts snocket (Just localAddr) (mkNextRequests connVar)
+                    name simTimeouts nullTracer snocket (Just localAddr) (mkNextRequests connVar)
                   ( \ connectionManager -> do
                     connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
                     return Nothing
@@ -1316,11 +1320,12 @@ multinodeExperiment trTracer snocket addrFamily serverAddr accInit (MultiNodeScr
         return cc
 
     startServerConnectionHandler :: Name peerAddr
+                                 -> DataFlow
                                  -> acc
                                  -> peerAddr
                                  -> JobPool () m (Maybe SomeException)
                                  -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
-    startServerConnectionHandler name serverAcc localAddr jobpool = do
+    startServerConnectionHandler name dataFlow serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
         Snocket.listen snocket fd
@@ -1329,27 +1334,47 @@ multinodeExperiment trTracer snocket addrFamily serverAddr accInit (MultiNodeScr
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
-        forkJob jobpool
-              $ Job
-                  ( withBidirectionalConnectionManager
-                      name simTimeouts trTracer
-                      snocket fd (Just localAddr) serverAcc
-                      (mkNextRequests connVar)
-                      ( \ connectionManager _ _serverAsync -> do
-                        connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
-                        return Nothing
+        let job =
+              case dataFlow of
+                Duplex ->
+                  Job ( withBidirectionalConnectionManager
+                          name simTimeouts trTracer snocket fd (Just localAddr) serverAcc
+                          (mkNextRequests connVar)
+                          ( \ connectionManager _ _serverAsync -> do
+                            connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
+                            return Nothing
+                          )
+                        `catch` (\(e :: SomeException) ->
+                                case fromException e :: Maybe MuxRuntimeError of
+                                  Nothing -> throwIO e
+                                  Just {} -> throwTo threadId e
+                                          >> throwIO e)
+                        `finally` Snocket.close snocket fd
                       )
-                    `catch` (\(e :: SomeException) ->
-                            case fromException e :: Maybe MuxRuntimeError of
-                              Nothing -> throwIO e
-                              Just {} -> throwTo threadId e
-                                      >> throwIO e)
-                    `finally` Snocket.close snocket fd
-                  )
-                  (return . Just)
-                  ()
-                  (show name)
+                      (return . Just)
+                      ()
+                      (show name)
+                Unidirectional ->
+                  Job ( withInitiatorOnlyConnectionManager
+                          name simTimeouts trTracer snocket (Just localAddr)
+                          (mkNextRequests connVar)
+                          ( \ connectionManager -> do
+                            connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
+                            return Nothing
+                          )
+                        `catch` (\(e :: SomeException) ->
+                                case fromException e :: Maybe MuxRuntimeError of
+                                  Nothing -> throwIO e
+                                  Just {} -> throwTo threadId e
+                                          >> throwIO e)
+                        `finally` Snocket.close snocket fd
+                      )
+                      (return . Just)
+                      ()
+                      (show name)
+        forkJob jobpool job
         return cc
+      where
 
     connectionLoop
          :: (HasInitiator muxMode ~ True)
@@ -1488,6 +1513,15 @@ instance Semigroup AllProperty where
 instance Monoid AllProperty where
     mempty = AllProperty (property True)
 
+newtype ArbDataFlow = ArbDataFlow DataFlow
+  deriving Show
+
+instance Arbitrary ArbDataFlow where
+    arbitrary = ArbDataFlow <$> frequency [ (3, pure Duplex)
+                                          , (1, pure Unidirectional)
+                                          ]
+    shrink (ArbDataFlow Duplex)         = [ArbDataFlow Unidirectional]
+    shrink (ArbDataFlow Unidirectional) = []
 
 data ActivityType
     = IdleConn
@@ -1522,8 +1556,8 @@ data EffectiveDataFlow
     deriving (Eq, Show)
 
 -- | Property wrapping `multinodeExperiment`.
-prop_multinode_Sim :: Int -> MultiNodeScript Int TestAddr -> Property
-prop_multinode_Sim serverAcc script =
+prop_multinode_Sim :: Int -> ArbDataFlow -> MultiNodeScript Int TestAddr -> Property
+prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
   let evs :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
       evs = fmap wnEvent
           . Trace.filter ((MainServer ==) . wnName)
@@ -1544,6 +1578,7 @@ prop_multinode_Sim serverAcc script =
                                            Snocket.TestFamily
                                            (Snocket.TestAddress 0)
                                            serverAcc
+                                           dataFlow
                                            (unTestAddr <$> script)
                     )
             case mb of
