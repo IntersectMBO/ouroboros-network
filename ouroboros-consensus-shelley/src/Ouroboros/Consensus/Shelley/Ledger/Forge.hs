@@ -27,6 +27,7 @@ import           Ouroboros.Consensus.Util.Assert
 import qualified Cardano.Ledger.Era as SL (TxInBlock, hashTxSeq, toTxSeq)
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TL
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
@@ -34,7 +35,6 @@ import           Ouroboros.Consensus.Shelley.Ledger.Integrity
 import           Ouroboros.Consensus.Shelley.Ledger.Mempool
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
-import qualified Ouroboros.Consensus.Shelley.TxLimits as TL
 
 {-------------------------------------------------------------------------------
   Forging
@@ -45,13 +45,13 @@ forgeShelleyBlock ::
   => HotKey (EraCrypto era) m
   -> TPraosCanBeLeader (EraCrypto era)
   -> TopLevelConfig (ShelleyBlock era)
-  -> BlockNo                                -- ^ Current block number
-  -> SlotNo                                 -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock era)   -- ^ Current ledger
-  -> MaxTxCapacityOverride                  -- ^ Do we override max tx capacity defined
-                                            --   by ledger (see MaxTxCapacityOverride)
-  -> [Validated (GenTx (ShelleyBlock era))] -- ^ Txs to add in the block
-  -> TPraosIsLeader (EraCrypto era)         -- ^ Leader proof
+  -> BlockNo                                   -- ^ Current block number
+  -> SlotNo                                    -- ^ Current slot number
+  -> TickedLedgerState (ShelleyBlock era)      -- ^ Current ledger
+  -> MaxTxCapacityOverride (ShelleyBlock era)  -- ^ Do we override max tx capacity defined
+                                               --   by ledger (see MaxTxCapacityOverride)
+  -> [Validated (GenTx (ShelleyBlock era))]    -- ^ Txs to add in the block
+  -> TPraosIsLeader (EraCrypto era)            -- ^ Leader proof
   -> m (ShelleyBlock era)
 forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger _maxTxCapacityOverride txs isLeader = do
     tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody

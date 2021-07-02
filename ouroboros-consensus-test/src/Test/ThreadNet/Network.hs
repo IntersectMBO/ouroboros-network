@@ -813,7 +813,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -> BlockNo
             -> SlotNo
             -> TickedLedgerState blk
-            -> MaxTxCapacityOverride
+            -> MaxTxCapacityOverride blk
             -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk

@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -34,6 +35,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- ** Convenience re-exports
   , EpochInfo
   , Except
+    -- ** Overrides
+  , Overrides
+  , hardForkMaxTxCapacityOverrideToNP
   ) where
 
 import           Data.Kind (Type)
@@ -45,6 +49,7 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Block.Forging
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -130,6 +135,20 @@ newtype instance StorageConfig (HardForkBlock xs) = HardForkStorageConfig {
       hardForkStorageConfigPerEra :: PerEraStorageConfig xs
     }
   deriving newtype (NoThunks)
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+type instance Overrides (HardForkBlock xs) = NP MaxTxCapacityOverride xs
+
+hardForkMaxTxCapacityOverrideToNP ::
+     (All Top xs)
+  => MaxTxCapacityOverride (HardForkBlock xs)
+  -> NP MaxTxCapacityOverride xs
+hardForkMaxTxCapacityOverrideToNP = \case
+  NoMaxTxCapacityOverride -> hpure NoMaxTxCapacityOverride
+  MaxTxCapacityOverride v -> v
 
 {-------------------------------------------------------------------------------
   Ledger config

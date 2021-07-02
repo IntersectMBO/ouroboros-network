@@ -42,12 +42,17 @@ import           Cardano.Binary (Annotator (..), FromCBOR (..),
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
+import           Cardano.Ledger.Alonzo.Scripts (ExUnits (..), pointWiseExUnits)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Mempool.TxLimits
+import           Ouroboros.Consensus.Shelley.Eras (AllegraEra, AlonzoEra,
+                     MaryEra, ShelleyEra)
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
+import           Cardano.Ledger.Alonzo.PParams
 import qualified Cardano.Ledger.Era as SL (Crypto, TxInBlock, TxSeq, fromTxSeq)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
@@ -255,3 +260,58 @@ theLedgerLens ::
 theLedgerLens f x =
         (\y -> x{tickedShelleyLedgerState = y})
     <$> SL.overNewEpochState f (tickedShelleyLedgerState x)
+
+{-------------------------------------------------------------------------------
+  Tx Limits
+-------------------------------------------------------------------------------}
+
+instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (ShelleyEra c)) where
+  type Measure (ShelleyBlock (ShelleyEra c)) = ByteSize
+  lessEq      = (<=)
+  txMeasure   = ByteSize . txInBlockSize . txForgetValidated
+  maxCapacity = ByteSize . maxTxCapacity
+
+instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (AllegraEra c)) where
+  type Measure (ShelleyBlock (AllegraEra c)) = ByteSize
+  lessEq      = (<=)
+  txMeasure   = ByteSize . txInBlockSize . txForgetValidated
+  maxCapacity = ByteSize . maxTxCapacity
+
+instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (MaryEra c)) where
+  type Measure (ShelleyBlock (MaryEra c)) = ByteSize
+  lessEq      = (<=)
+  txMeasure   = ByteSize . txInBlockSize . txForgetValidated
+  maxCapacity = ByteSize . maxTxCapacity
+
+data AlonzoMeasure = AlonzoMeasure {
+    byteSize :: ByteSize
+  , exUnits  :: ExUnits
+  } deriving stock (Show, Eq)
+
+instance Semigroup AlonzoMeasure where
+  (AlonzoMeasure bs1 exu1) <> (AlonzoMeasure bs2 exu2) =
+    AlonzoMeasure (bs1 <> bs2) (exu1 <> exu2)
+
+instance Monoid AlonzoMeasure where
+  mempty = AlonzoMeasure mempty mempty
+
+instance ( SL.PraosCrypto c
+         ) => TxLimits (ShelleyBlock (AlonzoEra c)) where
+
+  type Measure (ShelleyBlock (AlonzoEra c)) = AlonzoMeasure
+
+  lessEq (AlonzoMeasure bs1 exu1) (AlonzoMeasure bs2 exu2) =
+    bs1 <= bs2 && pointWiseExUnits (<=) exu1 exu2
+
+  txMeasure validatedGenTx@(ShelleyValidatedTx _ tx) =
+    AlonzoMeasure {
+        byteSize = ByteSize . txInBlockSize $ txForgetValidated validatedGenTx
+      , exUnits  = getField @"totExunits" tx
+      }
+
+  maxCapacity ledgerState =
+    let pparams  = getPParams $ tickedShelleyLedgerState ledgerState
+    in AlonzoMeasure {
+        byteSize = ByteSize $ maxTxCapacity ledgerState
+      , exUnits  = getField @"_maxTxExUnits" pparams
+      }
