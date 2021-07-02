@@ -217,6 +217,7 @@ forgeDualByronBlock
   -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
 forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride vtxs isLeader =
+    -- for simplicity we assume that MaxTxCapacityOverride is not modified by tests
     assert isNoMaxTxCapacityOverride $
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
@@ -224,7 +225,6 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride 
     -- the two blocks (which we would have gotten if we would have elaborated
     -- the block instead). Fortunately, this is okay, since the bridge for the
     -- block can be computed from the bridge information of all of the txs.
-
     DualBlock {
         dualBlockMain   = main
       , dualBlockAux    = Just aux
