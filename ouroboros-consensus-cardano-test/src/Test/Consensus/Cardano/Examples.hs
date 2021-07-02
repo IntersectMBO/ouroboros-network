@@ -1,4 +1,6 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -22,20 +24,18 @@ module Test.Consensus.Cardano.Examples (
   , examples
   ) where
 
-import           Data.Coerce (Coercible)
+import           Data.Coerce (coerce)
 import           Data.SOP.Strict
 
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
-import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (Exactly (..))
-import           Ouroboros.Consensus.Util.SOP (Index (..))
+import           Ouroboros.Consensus.Util.SOP (Index (..), himap)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
@@ -48,7 +48,9 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 
 import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.CanHardFork ()
+import           Ouroboros.Consensus.Cardano.CanHardFork
+                     (ByronPartialLedgerConfig (..),
+                     ShelleyPartialLedgerConfig (..), TriggerHardFork (..))
 
 import           Test.Util.Serialisation.Golden (Examples, Labelled, labelled)
 import qualified Test.Util.Serialisation.Golden as Golden
@@ -71,29 +73,77 @@ eraExamples =
 
 -- | By using this function, we can't forget to update this test when adding a
 -- new era to 'CardanoEras'.
-combineEras ::
+mkCardanoExamples ::
      NP Examples (CardanoEras Crypto)
   -> Examples (CardanoBlock Crypto)
-combineEras = mconcat . hcollapse . hap eraInjections
+mkCardanoExamples perEraExamples = Golden.Examples {
+        exampleBlock            = coerce $ viaInject @I                 (coerce Golden.exampleBlock)
+      , exampleSerialisedBlock  =          viaInject                            Golden.exampleSerialisedBlock
+      , exampleHeader           =          viaInject                            Golden.exampleHeader
+      , exampleSerialisedHeader =          viaInject                            Golden.exampleSerialisedHeader
+      , exampleHeaderHash       = coerce $ viaInject @WrapHeaderHash    (coerce Golden.exampleHeaderHash)
+      , exampleGenTx            =          viaInject                            Golden.exampleGenTx
+      , exampleGenTxId          = coerce $ viaInject @WrapGenTxId       (coerce Golden.exampleGenTxId)
+      , exampleApplyTxErr       = coerce $ viaInject @WrapApplyTxErr    (coerce Golden.exampleApplyTxErr)
+      , exampleQuery            =          viaInject                            Golden.exampleQuery
+      , exampleResult           =          viaInject                            Golden.exampleResult
+      , exampleAnnTip           =          viaInject                            Golden.exampleAnnTip
+      , exampleLedgerState      =          viaInject                            Golden.exampleLedgerState
+      , exampleChainDepState    = coerce $ viaInject @WrapChainDepState (coerce Golden.exampleChainDepState)
+      , exampleExtLedgerState   =          viaInject                            Golden.exampleExtLedgerState
+      , exampleSlotNo           = coerce $ viaInject @(K SlotNo)        (coerce Golden.exampleSlotNo)
+      , exampleLedgerConfig     = exampleLedgerConfigCardano
+      }
   where
-    eraInjections :: NP (Examples -.-> K (Examples (CardanoBlock Crypto)))
-                        (CardanoEras Crypto)
-    eraInjections =
-           fn (K . injExamples "Byron"   IZ)
-        :* fn (K . injExamples "Shelley" (IS IZ))
-        :* fn (K . injExamples "Allegra" (IS (IS IZ)))
-        :* fn (K . injExamples "Mary"    (IS (IS (IS IZ))))
-        :* fn (K . injExamples "Alonzo"  (IS (IS (IS (IS IZ)))))
-        :* Nil
+    viaInject ::
+         forall f. Inject f
+      => (forall blk. Examples blk -> Labelled (f blk))
+      -> Labelled (f (CardanoBlock Crypto))
+    viaInject getExamples =
+          mconcat
+        $ hcollapse
+        $ himap (\ix -> K . inj ix . getExamples) perEraExamplesPrefixed
+      where
+        inj :: forall blk. Index (CardanoEras Crypto) blk -> Labelled (f blk) -> Labelled (f (CardanoBlock Crypto))
+        inj idx = fmap (fmap (inject exampleStartBounds idx))
 
-    injExamples ::
-         String
-      -> Index (CardanoEras Crypto) blk
-      -> Examples blk
-      -> Examples (CardanoBlock Crypto)
-    injExamples eraName idx =
-          Golden.prefixExamples eraName
-        . inject exampleStartBounds idx
+    perEraExamplesPrefixed :: NP Examples (CardanoEras Crypto)
+    perEraExamplesPrefixed = hzipWith (\(K eraName) es -> Golden.prefixExamples eraName es) perEraNames perEraExamples
+      where
+        perEraNames = K "Byron"
+                   :* K "Shelley"
+                   :* K "Allegra"
+                   :* K "Mary"
+                   :* K "Alonzo"
+                   :* Nil
+
+    exampleLedgerConfigCardano :: Labelled (HardForkLedgerConfig (CardanoEras Crypto))
+    exampleLedgerConfigCardano = [
+        ( Nothing
+        , HardForkLedgerConfig
+            cardanoShape
+            (PerEraLedgerConfig (
+                 WrapPartialLedgerConfig (ByronPartialLedgerConfig   lcByron   (TriggerHardForkAtEpoch shelleyTransitionEpoch))
+              :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcShelley (TriggerHardForkAtEpoch (History.boundEpoch allegraStartBound)))
+              :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcAllegra (TriggerHardForkAtEpoch (History.boundEpoch maryStartBound)))
+              :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcMary    (TriggerHardForkAtEpoch (History.boundEpoch alonzoStartBound)))
+              :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcAlonzo  TriggerHardForkNever)
+              :* Nil))
+        )
+      | WrapLedgerConfig lcByron   <- labelledLcByron
+      , WrapLedgerConfig lcShelley <- labelledLcShelley
+      , WrapLedgerConfig lcAllegra <- labelledLcAllegra
+      , WrapLedgerConfig lcMary    <- labelledLcMary
+      , WrapLedgerConfig lcAlonzo  <- labelledLcAlonzo
+      ]
+      where
+        (    Comp labelledLcByron
+          :* Comp labelledLcShelley
+          :* Comp labelledLcAllegra
+          :* Comp labelledLcMary
+          :* Comp labelledLcAlonzo
+          :* Nil
+          ) = hmap (Comp . fmap (WrapLedgerConfig . snd) . Golden.exampleLedgerConfig) perEraExamples
 
 {-------------------------------------------------------------------------------
   Inject instances
@@ -107,34 +157,6 @@ instance Inject Serialised where
 instance Inject SomeResult where
   inject _ idx (SomeResult q r) =
       SomeResult (QueryIfCurrent (injectQuery idx q)) (Right r)
-
-instance Inject Examples where
-  inject startBounds (idx :: Index xs x) Golden.Examples {..} = Golden.Examples {
-        exampleBlock            = inj (Proxy @I)                       exampleBlock
-      , exampleSerialisedBlock  = inj (Proxy @Serialised)              exampleSerialisedBlock
-      , exampleHeader           = inj (Proxy @Header)                  exampleHeader
-      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)        exampleSerialisedHeader
-      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)          exampleHeaderHash
-      , exampleGenTx            = inj (Proxy @GenTx)                   exampleGenTx
-      , exampleGenTxId          = inj (Proxy @WrapGenTxId)             exampleGenTxId
-      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)          exampleApplyTxErr
-      , exampleQuery            = inj (Proxy @(SomeSecond BlockQuery)) exampleQuery
-      , exampleResult           = inj (Proxy @SomeResult)              exampleResult
-      , exampleAnnTip           = inj (Proxy @AnnTip)                  exampleAnnTip
-      , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
-      , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)          exampleExtLedgerState
-      , exampleSlotNo           =                                      exampleSlotNo
-      }
-    where
-      inj ::
-           forall f a b.
-           ( Inject f
-           , Coercible a (f x)
-           , Coercible b (f (HardForkBlock xs))
-           )
-        => Proxy f -> Labelled a -> Labelled b
-      inj p = fmap (fmap (inject' p startBounds idx))
 
 {-------------------------------------------------------------------------------
   Setup
@@ -273,7 +295,7 @@ multiEraExamples = mempty {
 -- | The examples: the examples from each individual era lifted in to
 -- 'CardanoBlock' /and/ the multi-era examples.
 examples :: Examples (CardanoBlock Crypto)
-examples = combineEras eraExamples <> multiEraExamples
+examples = mkCardanoExamples eraExamples <> multiEraExamples
 
 -- | Applying a Shelley thing to a Byron ledger
 exampleEraMismatchByron :: MismatchEraInfo (CardanoEras Crypto)

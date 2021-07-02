@@ -107,8 +107,8 @@ be adding is the Alonzo era, which comes after the Mary era.
 * In `Test.Consensus.Cardano.Serialisation`, update `testCodecCfg` and
   `dictNestedHdr`.
 
-* In `Test.Consensus.Cardano.Examples`, update `eraExamples`, `combineEras`, and
-  the rest.
+* In `Test.Consensus.Cardano.Examples`, update `eraExamples`,
+  `mkCardanoExamples`, and the rest.
 
 * In `Test.Consensus.Cardano.Golden`, update the `ToGoldenDirectory` instances.
 
