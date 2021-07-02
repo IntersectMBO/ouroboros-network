@@ -113,6 +113,9 @@ injectHardForkState startBounds idx x =
 instance Inject I where
   inject _ = injectNS' (Proxy @I)
 
+instance Inject (K a) where
+  inject _ _ (K a) = K a
+
 instance Inject Header where
   inject _ = injectNS' (Proxy @Header)
 

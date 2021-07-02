@@ -21,6 +21,12 @@ module Test.Consensus.Shelley.Examples (
 
 import qualified Data.Set as Set
 
+import           Cardano.Slotting.EpochInfo (fixedEpochInfo)
+import           Cardano.Slotting.Time (mkSlotLength)
+
+import qualified Cardano.Ledger.Era as Core
+import           Cardano.Ledger.Shelley.Genesis (mkShelleyGlobals)
+
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
@@ -28,6 +34,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
 
 import           Test.Cardano.Ledger.Shelley.Orphans ()
 
@@ -77,6 +84,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleQuery            = queries
     , exampleResult           = results
     , exampleAnnTip           = unlabelled annTip
+    , exampleLedgerConfig     = unlabelled ledgerConfig
     , exampleLedgerState      = unlabelled ledgerState
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
@@ -127,6 +135,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
+    ledgerConfig = exampleShelleyLedgerConfig sleTranslationContext
 
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
 examplesShelley = fromShelleyLedgerExamples ledgerExamplesShelley
@@ -139,3 +148,16 @@ examplesMary = fromShelleyLedgerExamples ledgerExamplesMary
 
 examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
 examplesAlonzo = fromShelleyLedgerExamples ledgerExamplesAlonzo
+
+exampleShelleyLedgerConfig :: Core.TranslationContext era -> ShelleyLedgerConfig era
+exampleShelleyLedgerConfig translationContext = ShelleyLedgerConfig {
+      shelleyLedgerCompactGenesis = compactGenesis testShelleyGenesis
+    , shelleyLedgerGlobals = mkShelleyGlobals
+        testShelleyGenesis
+        epochInfo
+        26
+    , shelleyLedgerTranslationContext = translationContext
+    }
+  where
+    epochInfo  = fixedEpochInfo (EpochSize 4) slotLength
+    slotLength = mkSlotLength (secondsToNominalDiffTime 7)

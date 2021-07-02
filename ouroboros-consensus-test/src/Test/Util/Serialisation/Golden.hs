@@ -42,8 +42,10 @@ import qualified Data.ByteString.Char8 as Strict8 (unpack)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.UTF8 as BS.UTF8
 import           Data.List (nub)
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
+import qualified Data.Set as Set
 import           Data.TreeDiff (Expr (..), ToExpr (..), ansiWlEditExpr, ediff)
 import           GHC.Stack (HasCallStack)
 import           System.Directory (createDirectoryIfMissing)
@@ -56,7 +58,7 @@ import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SlotNo, SomeSecond)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
@@ -80,6 +82,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 import           Test.Tasty
 import           Test.Tasty.Golden.Advanced (goldenTest)
+import           Test.Tasty.QuickCheck (counterexample, testProperty)
 
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
@@ -172,15 +175,20 @@ goldenTestCBOR testName example enc goldenFile =
               ]
 
 goldenTests ::
-     HasCallStack
+     forall a. HasCallStack
   => TestName
   -> Labelled a
   -> (a -> Encoding)
   -> FilePath  -- ^ Folder containing the golden files
   -> TestTree
 goldenTests testName examples enc goldenFolder
-  | nub labels /= labels
-  = error $ "Examples with the same label for " <> testName
+  | not (null (drop maxSize examples))
+  = testProperty testName $ counterexample
+        ("Too many examples (>" <> show maxSize <> "). Consider reducing the " <>
+        "number of examples so that tests don't take forever.")
+        False
+  | not (null duplicateLabels)
+  = error $ "Examples with the same label for " <> testName <> ". Duplicate labels:\n" <> show duplicateLabels
   | [(Nothing, example)] <- examples
     -- If there's just a single unlabelled example, no need for grouping,
     -- which makes the output more verbose.
@@ -194,8 +202,14 @@ goldenTests testName examples enc goldenFolder
               Just label -> testName <> "_" <> label
       ]
   where
+    duplicateLabels :: Set.Set (Maybe String)
+    duplicateLabels = Set.fromList (labels List.\\ nub labels)
+
     labels :: [Maybe String]
-    labels = map fst examples
+    labels = fst <$> examples
+
+    maxSize :: Int
+    maxSize = 100
 
 {-------------------------------------------------------------------------------
   Examples
@@ -221,6 +235,7 @@ data Examples blk = Examples {
     , exampleQuery            :: Labelled (SomeSecond BlockQuery blk)
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
+    , exampleLedgerConfig     :: Labelled (LedgerConfig blk)
     , exampleLedgerState      :: Labelled (LedgerState blk)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
     , exampleExtLedgerState   :: Labelled (ExtLedgerState blk)
@@ -240,6 +255,7 @@ emptyExamples = Examples {
     , exampleQuery            = mempty
     , exampleResult           = mempty
     , exampleAnnTip           = mempty
+    , exampleLedgerConfig     = mempty
     , exampleLedgerState      = mempty
     , exampleChainDepState    = mempty
     , exampleExtLedgerState   = mempty
@@ -264,6 +280,7 @@ combineExamples f e1 e2 = Examples {
     , exampleQuery            = combine exampleQuery
     , exampleResult           = combine exampleResult
     , exampleAnnTip           = combine exampleAnnTip
+    , exampleLedgerConfig     = combine exampleLedgerConfig
     , exampleLedgerState      = combine exampleLedgerState
     , exampleChainDepState    = combine exampleChainDepState
     , exampleExtLedgerState   = combine exampleExtLedgerState
@@ -438,8 +455,12 @@ goldenTest_SerialiseNodeToClient ::
   -> TestTree
 goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
     testGroup "SerialiseNodeToClient" [
-        testVersion (nodeToClientVersionToQueryVersion version, blockVersion)
-      | (version, blockVersion) <- nub $ Map.toList $ supportedNodeToClientVersions $ Proxy @blk
+        testVersion (queryVersion, blockVersion)
+      | (queryVersion, blockVersion) <- nub $
+            fmap (first nodeToClientVersionToQueryVersion)
+          $ Map.toList
+          $ supportedNodeToClientVersions
+          $ Proxy @blk
       ]
   where
     testVersion :: (QueryVersion, BlockNodeToClientVersion blk) -> TestTree
@@ -451,6 +472,7 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
         , test "ApplyTxErr"      exampleApplyTxErr      enc'
         , test "Query"           exampleQuery           enc'
         , test "SlotNo"          exampleSlotNo          enc'
+        , test "LedgerConfig"    exampleLedgerConfig    enc'
         , test "Result"          exampleResult          encRes
         ]
       where
@@ -461,7 +483,7 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
         encRes :: SomeResult blk -> Encoding
         encRes (SomeResult q r) = encodeResult codecConfig blockVersion q r
 
-        test :: TestName -> Labelled a -> (a -> Encoding) -> TestTree
+        test :: HasCallStack => TestName -> Labelled a -> (a -> Encoding) -> TestTree
         test testName exampleValues enc =
             goldenTests
               testName
