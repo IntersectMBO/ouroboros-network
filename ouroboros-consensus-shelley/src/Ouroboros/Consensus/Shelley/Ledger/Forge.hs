@@ -53,7 +53,7 @@ forgeShelleyBlock ::
   -> [Validated (GenTx (ShelleyBlock era))]    -- ^ Txs to add in the block
   -> TPraosIsLeader (EraCrypto era)            -- ^ Leader proof
   -> m (ShelleyBlock era)
-forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger _maxTxCapacityOverride txs isLeader = do
+forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger maxTxCapacityOverride txs isLeader = do
     tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody
     let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
     return $
@@ -70,6 +70,8 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger _maxTxCapaci
       . fmap extractTxInBlock
       $ takeLargestPrefixThatFits mempty txs
 
+    computedMaxTxCapacity = computeMaxTxCapacity tickedLedger maxTxCapacityOverride
+
     takeLargestPrefixThatFits ::
          TL.Measure (ShelleyBlock era)
       -> [Validated (GenTx (ShelleyBlock era))]
@@ -78,7 +80,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger _maxTxCapaci
       (tx : remainingTxs) | fits -> tx : takeLargestPrefixThatFits acc' remainingTxs
         where
           acc' = acc <> TL.txMeasure tx
-          fits = TL.lessEq @(ShelleyBlock era) acc' (TL.maxCapacity tickedLedger)
+          fits = TL.lessEq @(ShelleyBlock era) acc' computedMaxTxCapacity
       _ -> []
 
     extractTxInBlock :: (Validated (GenTx (ShelleyBlock era))) -> SL.TxInBlock era
