@@ -52,7 +52,7 @@ import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SomeSecond)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
@@ -217,6 +217,7 @@ data Examples blk = Examples {
     , exampleQuery            :: Labelled (SomeSecond BlockQuery blk)
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
+    , exampleLedgerConfig     :: Labelled (LedgerConfig blk)
     , exampleLedgerState      :: Labelled (LedgerState blk)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
     , exampleExtLedgerState   :: Labelled (ExtLedgerState blk)
@@ -235,6 +236,7 @@ emptyExamples = Examples {
     , exampleQuery            = mempty
     , exampleResult           = mempty
     , exampleAnnTip           = mempty
+    , exampleLedgerConfig     = mempty
     , exampleLedgerState      = mempty
     , exampleChainDepState    = mempty
     , exampleExtLedgerState   = mempty
@@ -258,6 +260,7 @@ combineExamples f e1 e2 = Examples {
     , exampleQuery            = combine exampleQuery
     , exampleResult           = combine exampleResult
     , exampleAnnTip           = combine exampleAnnTip
+    , exampleLedgerConfig     = combine exampleLedgerConfig
     , exampleLedgerState      = combine exampleLedgerState
     , exampleChainDepState    = combine exampleChainDepState
     , exampleExtLedgerState   = combine exampleExtLedgerState
@@ -442,6 +445,7 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
         , test "GenTx"           exampleGenTx           enc'
         , test "ApplyTxErr"      exampleApplyTxErr      enc'
         , test "Query"           exampleQuery           enc'
+        , test "LedgerConfig"    exampleLedgerConfig    enc'
         , test "Result"          exampleResult          encRes
         ]
       where

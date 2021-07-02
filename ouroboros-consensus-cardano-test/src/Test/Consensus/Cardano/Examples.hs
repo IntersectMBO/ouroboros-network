@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -23,7 +24,25 @@ module Test.Consensus.Cardano.Examples (
   ) where
 
 import           Data.Coerce (Coercible)
+import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
+import           Data.Time
+import           Data.Time.Calendar.OrdinalDate (fromOrdinalDate)
+
+import           Cardano.Crypto.Hash
+import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Time
+
+import           Cardano.Ledger.Alonzo.Genesis
+import           Cardano.Ledger.Alonzo.Language
+import           Cardano.Ledger.Alonzo.Scripts
+import           Cardano.Ledger.BaseTypes (Network (Mainnet), Nonce (..),
+                     unitIntervalFromRational)
+import           Cardano.Ledger.Coin (Coin (Coin))
+import qualified Cardano.Ledger.Era as Core
+import           Cardano.Ledger.Keys
+import           Shelley.Spec.Ledger.Genesis
+import           Shelley.Spec.Ledger.PParams
 
 import           Ouroboros.Network.Block (Serialised (..))
 
@@ -44,11 +63,14 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
+                     ShelleyLedgerConfig (..), compactGenesis)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 
 import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.CanHardFork ()
+import           Ouroboros.Consensus.Cardano.CanHardFork
+                     (ByronPartialLedgerConfig (..),
+                     ShelleyPartialLedgerConfig (..), TriggerHardFork (..))
 
 import           Test.Util.Serialisation.Golden (Examples, Labelled, labelled)
 import qualified Test.Util.Serialisation.Golden as Golden
@@ -121,6 +143,7 @@ instance Inject Examples where
       , exampleQuery            = inj (Proxy @(SomeSecond BlockQuery)) exampleQuery
       , exampleResult           = inj (Proxy @SomeResult)              exampleResult
       , exampleAnnTip           = inj (Proxy @AnnTip)                  exampleAnnTip
+      , exampleLedgerConfig     = mempty -- We rely on `combineEras` to make use of the example ledger configs
       , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
       , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)          exampleExtLedgerState
@@ -267,6 +290,7 @@ multiEraExamples = mempty {
         , ("AnytimeShelley",     exampleResultAnytimeShelley)
         , ("HardFork",           exampleResultHardFork)
         ]
+    , Golden.exampleLedgerConfig = Golden.unlabelled exampleLedgerConfigCardano
     }
 
 -- | The examples: the examples from each individual era lifted in to
@@ -335,3 +359,90 @@ exampleResultAnytimeShelley =
 exampleResultHardFork :: SomeResult (CardanoBlock Crypto)
 exampleResultHardFork =
     SomeResult (QueryHardFork GetInterpreter) (History.mkInterpreter summary)
+
+exampleLedgerConfigCardano :: HardForkLedgerConfig (CardanoEras Crypto)
+exampleLedgerConfigCardano = HardForkLedgerConfig
+  cardanoShape
+  ( PerEraLedgerConfig
+    -- We use 10, 20, 30, 40, ... as the transition epochs
+    (  WrapPartialLedgerConfig (ByronPartialLedgerConfig   lcByron   (TriggerHardForkAtEpoch shelleyTransitionEpoch))
+    :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcShelley (TriggerHardForkAtEpoch 20))
+    :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcAllegra (TriggerHardForkAtEpoch 30))
+    :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcMary    (TriggerHardForkAtEpoch 40))
+    :* WrapPartialLedgerConfig (ShelleyPartialLedgerConfig lcAlonzo  TriggerHardForkNever)
+    :* Nil
+    )
+  ) -- PerEraLedgerConfig
+  where
+    Golden.Examples { Golden.exampleLedgerConfig = lcByronEs } :* _ = eraExamples
+    lcByron   = snd $ head lcByronEs
+    lcShelley = arbitraryPartialShelleyLedgerConfig ()
+    lcAllegra = arbitraryPartialShelleyLedgerConfig ()
+    lcMary    = arbitraryPartialShelleyLedgerConfig ()
+    lcAlonzo  = arbitraryPartialShelleyLedgerConfig @(AlonzoEra StandardCrypto)
+      AlonzoGenesis {
+          coinsPerUTxOWord     = Coin 1 -- :: Coin,
+        , costmdls             = Map.fromList [(PlutusV1, CostModel (Map.fromList [("A", 79), ("V", 78)]))]
+        , prices               = Prices (Coin 90) (Coin 91) -- :: Prices,
+        , maxTxExUnits         = ExUnits 123 123
+        , maxBlockExUnits      = ExUnits 223 223
+        , maxValSize           = 1234
+        , collateralPercentage = 20
+        , maxCollateralInputs  = 30
+        }
+
+    arbitraryPartialShelleyLedgerConfig :: Core.TranslationContext era -> ShelleyLedgerConfig era
+    arbitraryPartialShelleyLedgerConfig translationContext = ShelleyLedgerConfig {
+      shelleyLedgerCompactGenesis = compactGenesis genesis
+    , shelleyLedgerGlobals = mkShelleyGlobals
+        genesis
+        epochInfo
+        26
+    , shelleyLedgerTranslationContext = translationContext
+    }
+      where
+        epochInfo = fixedEpochInfo epochSize slotLength
+
+        epochSize = EpochSize 4
+
+        slotLength' = secondsToNominalDiffTime 7
+        slotLength = mkSlotLength slotLength'
+
+        genesis = ShelleyGenesis {
+            sgSystemStart       = UTCTime (fromOrdinalDate 2021 100) (secondsToDiffTime 1000)
+          , sgNetworkMagic      = 1
+          , sgNetworkId         = Mainnet
+          , sgActiveSlotsCoeff  = 2
+          , sgSecurityParam     = 3
+          , sgEpochLength       = epochSize
+          , sgSlotsPerKESPeriod = 5
+          , sgMaxKESEvolutions  = 6
+          , sgSlotLength        = slotLength'
+          , sgUpdateQuorum      = 8
+          , sgMaxLovelaceSupply = 9000
+          , sgProtocolParams    = PParams {
+                _minfeeA = 10
+              , _minfeeB = 11
+              , _maxBBSize = 1200
+              , _maxTxSize = 1300
+              , _maxBHSize = 1400
+              , _keyDeposit = Coin 15
+              , _poolDeposit = Coin 16
+              , _eMax = 170
+              , _nOpt = 18
+              , _a0 = 0.19
+              , _rho = unitIntervalFromRational 0.21
+              , _tau = unitIntervalFromRational 0.22
+              , _d = unitIntervalFromRational 0.23
+              , _extraEntropy = Nonce (UnsafeHash "724")
+              , _protocolVersion = ProtVer 25 26
+              , _minUTxOValue = Coin 27
+              , _minPoolCost = Coin 28
+              }
+          , sgGenDelegs         = Map.fromList [
+              (KeyHash (UnsafeHash "829"), GenDelegPair (KeyHash (UnsafeHash "929")) (UnsafeHash "1029"))
+            , (KeyHash (UnsafeHash "830"), GenDelegPair (KeyHash (UnsafeHash "930")) (UnsafeHash "1030"))
+            ]
+          , sgInitialFunds      = Map.empty -- This is cleared by `compactGenesis`
+          , sgStaking           = emptyGenesisStaking -- This is cleared by `compactGenesis`
+        }

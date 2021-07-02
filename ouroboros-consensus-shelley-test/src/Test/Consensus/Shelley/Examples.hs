@@ -78,6 +78,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleQuery            = queries
     , exampleResult           = results
     , exampleAnnTip           = unlabelled annTip
+    , exampleLedgerConfig     = mempty
     , exampleLedgerState      = unlabelled ledgerState
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
