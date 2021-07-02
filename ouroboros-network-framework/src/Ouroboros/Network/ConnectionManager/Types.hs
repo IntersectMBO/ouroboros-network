@@ -839,7 +839,7 @@ data Transition' state = Transition
     { fromState :: !state
     , toState   :: !state
     }
-  deriving (Show, Functor)
+  deriving (Eq, Functor, Show)
 
 type Transition state   = Transition' (MaybeUnknown state)
 type AbstractTransition = Transition' AbstractState
