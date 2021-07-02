@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Block.Forging (
   , MaxTxCapacityOverride (..)
   , Overrides
   , computeMaxTxCapacity
+  , takeLargestPrefixThatFits
   ) where
 
 import           Control.Tracer (Tracer, traceWith)
@@ -202,6 +203,24 @@ computeMaxTxCapacity ledger maxTxCapacityOverride = case maxTxCapacityOverride o
     minMeasure x y
       | lessEq @blk x y = x
       | otherwise  = y
+
+
+-- | Filters out all transactions that do not fit the maximum size that is
+-- passed to this function as the first argument. Value of that first argument
+-- will most often by calculated by calling computeMaxTxCapacity
+takeLargestPrefixThatFits ::
+     forall blk. TxLimits blk
+  => Measure blk
+  -> [Validated (GenTx blk)]
+  -> [Validated (GenTx blk)]
+takeLargestPrefixThatFits computedMaxTxCapacity = go mempty
+  where
+    go acc = \case
+      (tx : remainingTxs) | fits -> tx : go acc' remainingTxs
+        where
+          acc' = acc <> txMeasure tx
+          fits = lessEq @blk acc' computedMaxTxCapacity
+      _ -> []
 
 data ShouldForge blk =
     -- | Before check whether we are a leader in this slot, we tried to update

@@ -68,20 +68,9 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger maxTxCapacit
         SL.toTxSeq @era
       . Seq.fromList
       . fmap extractTxInBlock
-      $ takeLargestPrefixThatFits mempty txs
+      $ takeLargestPrefixThatFits computedMaxTxCapacity txs
 
     computedMaxTxCapacity = computeMaxTxCapacity tickedLedger maxTxCapacityOverride
-
-    takeLargestPrefixThatFits ::
-         TL.Measure (ShelleyBlock era)
-      -> [Validated (GenTx (ShelleyBlock era))]
-      -> [Validated (GenTx (ShelleyBlock era))]
-    takeLargestPrefixThatFits acc = \case
-      (tx : remainingTxs) | fits -> tx : takeLargestPrefixThatFits acc' remainingTxs
-        where
-          acc' = acc <> TL.txMeasure tx
-          fits = TL.lessEq @(ShelleyBlock era) acc' computedMaxTxCapacity
-      _ -> []
 
     extractTxInBlock :: (Validated (GenTx (ShelleyBlock era))) -> SL.TxInBlock era
     extractTxInBlock (ShelleyValidatedTx _ tx) = tx

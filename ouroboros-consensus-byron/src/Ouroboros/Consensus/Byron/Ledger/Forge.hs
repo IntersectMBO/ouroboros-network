@@ -38,7 +38,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (LedgerSupportsMempool (..), txForgetValidated)
-import           Ouroboros.Consensus.Mempool.TxLimits
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -153,14 +152,7 @@ forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
         foldr
           extendBlockPayloads
           initBlockPayloads
-          (takeLargestPrefixThatFits 0 txs)
-
-    takeLargestPrefixThatFits acc = \case
-      tx : remainingTxs | fits -> tx : takeLargestPrefixThatFits acc' remainingTxs
-        where
-          acc' = acc + txMeasure tx
-          fits = acc' <= computedMaxTxCapacity
-      _ -> []
+          (takeLargestPrefixThatFits computedMaxTxCapacity txs)
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)
