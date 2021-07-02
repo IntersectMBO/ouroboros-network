@@ -85,7 +85,7 @@ import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Server2 (ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
-import           Ouroboros.Network.Snocket (Snocket, TestAddress (..), socketSnocket)
+import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket
@@ -756,7 +756,7 @@ prop_unidirectional_Sim clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
                 (singletonScript noAttenuation)
-                (TestAddress 10) $ \snock ->
+                (Snocket.TestAddress 10) $ \snock ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
         Snocket.bind   snock fd serverAddr
@@ -909,13 +909,14 @@ prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
     withSnocket debugTracer
                 script'
-                (TestAddress 10) $ \snock ->
+                (Snocket.TestAddress 10) $ \snock ->
       bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                    <*> Snocket.open snock Snocket.TestFamily)
               (\ (socket0, socket1) -> Snocket.close snock socket0 >>
                                        Snocket.close snock socket1)
         $ \ (socket0, socket1) -> do
-          let addr0 = Snocket.TestAddress (0 :: Int)
+          let addr0, addr1 :: SimAddr
+              addr0 = Snocket.TestAddress 0
               addr1 = Snocket.TestAddress 1
           Snocket.bind   snock socket0 addr0
           Snocket.bind   snock socket1 addr1
