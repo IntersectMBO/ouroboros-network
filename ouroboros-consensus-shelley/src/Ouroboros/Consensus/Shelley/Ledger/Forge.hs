@@ -24,7 +24,9 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.Assert
 
-import qualified Cardano.Ledger.Era as SL (TxInBlock, hashTxSeq, toTxSeq)
+import qualified Cardano.Ledger.Core as Core (Tx)
+import qualified Cardano.Ledger.Era as SL (hashTxSeq, toTxSeq)
+import qualified Shelley.Spec.Ledger.API as SL (extractTx)
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TL
@@ -67,13 +69,13 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger maxTxCapacit
     body =
         SL.toTxSeq @era
       . Seq.fromList
-      . fmap extractTxInBlock
+      . fmap extractTx
       $ takeLargestPrefixThatFits computedMaxTxCapacity txs
 
     computedMaxTxCapacity = computeMaxTxCapacity tickedLedger maxTxCapacityOverride
 
-    extractTxInBlock :: (Validated (GenTx (ShelleyBlock era))) -> SL.TxInBlock era
-    extractTxInBlock (ShelleyValidatedTx _ tx) = tx
+    extractTx :: (Validated (GenTx (ShelleyBlock era))) -> Core.Tx era
+    extractTx (ShelleyValidatedTx _txid vtx) = SL.extractTx vtx
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =
       SL.BHeader tpraosToSign tpraosSignature

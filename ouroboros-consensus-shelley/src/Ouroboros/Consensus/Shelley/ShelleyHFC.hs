@@ -308,17 +308,18 @@ instance ( ShelleyBasedEra era
         }
 
 instance ( ShelleyBasedEra era
-         , SL.TranslateEra era SL.Tx
+         , SL.TranslateEra era WrapTx
          ) => SL.TranslateEra era (GenTx :.: ShelleyBlock) where
-  type TranslationError era (GenTx :.: ShelleyBlock) = SL.TranslationError era SL.Tx
+  type TranslationError era (GenTx :.: ShelleyBlock) = SL.TranslationError era WrapTx
   translateEra ctxt (Comp (ShelleyTx _txId tx)) =
-    -- TODO will the txId stay the same? If so, we could avoid recomputing it
-    Comp . mkShelleyTx <$> SL.translateEra ctxt tx
+        Comp . mkShelleyTx . unwrapTx @era
+    <$> SL.translateEra ctxt (WrapTx @(SL.PreviousEra era) tx)
 
 instance ( ShelleyBasedEra era
-         , SL.TranslateEra era WrapTxInBlock
+         , SL.TranslateEra era WrapTx
          ) => SL.TranslateEra era (WrapValidatedGenTx :.: ShelleyBlock) where
-  type TranslationError era (WrapValidatedGenTx :.: ShelleyBlock) = SL.TranslationError era WrapTxInBlock
-  translateEra ctxt (Comp (WrapValidatedGenTx (ShelleyValidatedTx _txId tx))) =
-        Comp . WrapValidatedGenTx . mkShelleyValidatedTx . unwrapTxInBlock @era
-    <$> SL.translateEra ctxt (WrapTxInBlock @(SL.PreviousEra era) tx)
+  type TranslationError era (WrapValidatedGenTx :.: ShelleyBlock) = SL.TranslationError era WrapTx
+  translateEra ctxt (Comp (WrapValidatedGenTx (ShelleyValidatedTx _txId vtx))) =
+        Comp . WrapValidatedGenTx
+      . mkShelleyValidatedTx . SL.coerceValidated
+    <$> SL.translateValidated @era @WrapTx ctxt (SL.coerceValidated vtx)

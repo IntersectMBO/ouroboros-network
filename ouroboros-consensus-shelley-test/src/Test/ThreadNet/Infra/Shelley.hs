@@ -550,6 +550,7 @@ networkId = SL.Testnet
 mkMASetDecentralizationParamTxs ::
      forall era.
      ( ShelleyBasedEra era
+     , Core.Tx era ~ SL.Tx era
      , Core.TxBody era ~ MA.TxBody era
      , Core.PParams era ~ SL.PParams era
      , Core.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era

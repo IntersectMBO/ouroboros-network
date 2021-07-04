@@ -124,10 +124,9 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , EraCrypto era1 ~ EraCrypto era2
   , SL.PreviousEra era2 ~ era1
 
-  , SL.TranslateEra       era2 SL.Tx
   , SL.TranslateEra       era2 SL.NewEpochState
   , SL.TranslateEra       era2 SL.ShelleyGenesis
-  , SL.TranslateEra       era2 WrapTxInBlock
+  , SL.TranslateEra       era2 WrapTx
 
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void

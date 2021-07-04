@@ -583,7 +583,4 @@ translateValidatedTxMaryToAlonzoWrapper ::
        (ShelleyBlock (MaryEra c))
        (ShelleyBlock (AlonzoEra c))
 translateValidatedTxMaryToAlonzoWrapper ctxt = InjectValidatedTx $
-      fmap (\(WrapTxInBlock tx) -> WrapValidatedGenTx (mkShelleyValidatedTx tx))
-    . eitherToMaybe . runExcept
-    . SL.translateEra @(AlonzoEra c) ctxt
-    . (\(WrapValidatedGenTx (ShelleyValidatedTx _txId tx)) -> WrapTxInBlock tx)
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
