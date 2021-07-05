@@ -24,7 +24,6 @@ module Ouroboros.Consensus.Mempool.Impl.Pure (
 import           Control.Exception (assert)
 import           Data.Maybe (isJust, isNothing)
 import qualified Data.Set as Set
-import           Data.Word (Word32)
 
 import           Control.Monad (join)
 import           Control.Tracer
@@ -302,7 +301,6 @@ implSnapshotFromIS
 implSnapshotFromIS is = MempoolSnapshot {
       snapshotTxs         = implSnapshotGetTxs         is
     , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
-    , snapshotTxsForSize  = implSnapshotGetTxsForSize  is
     , snapshotLookupTx    = implSnapshotGetTx          is
     , snapshotHasTx       = implSnapshotHasTx          is
     , snapshotMempoolSize = implSnapshotGetMempoolSize is
@@ -319,12 +317,6 @@ implSnapshotFromIS is = MempoolSnapshot {
                           -> [(Validated (GenTx blk), TicketNo)]
   implSnapshotGetTxsAfter IS{isTxs} =
     TxSeq.toTuples . snd . TxSeq.splitAfterTicketNo isTxs
-
-  implSnapshotGetTxsForSize :: InternalState blk
-                            -> Word32
-                            -> [(Validated (GenTx blk), TicketNo)]
-  implSnapshotGetTxsForSize IS{isTxs} =
-    TxSeq.toTuples . fst . TxSeq.splitAfterTxSize isTxs
 
   implSnapshotGetTx :: InternalState blk
                     -> TicketNo
