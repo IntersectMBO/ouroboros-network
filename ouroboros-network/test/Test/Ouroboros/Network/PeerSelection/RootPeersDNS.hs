@@ -311,12 +311,12 @@ tracerTestTraceEvent = dynamicTracer
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM
 
-selectRootPeerDNSTraceEvents :: Trace a -> [(Time, TestTraceEvent Failure)]
+selectRootPeerDNSTraceEvents :: SimTrace a -> [(Time, TestTraceEvent Failure)]
 selectRootPeerDNSTraceEvents = go
   where
-    go (Trace t _ _ (EventLog e) trace)
+    go (SimTrace t _ _ (EventLog e) trace)
      | Just x <- fromDynamic e    = (t,x) : go trace
-    go (Trace _ _ _ _ trace)      =         go trace
+    go (SimTrace _ _ _ _ trace)   =         go trace
     go (TraceMainException _ e _) = throw e
     go (TraceDeadlock      _   _) = [] -- expected result in many cases
     go (TraceMainReturn    _ _ _) = []

@@ -1,3 +1,4 @@
+{-# LANGUAGE ExplicitNamespaces  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -19,8 +20,11 @@ module Control.Monad.IOSim (
   setCurrentTime,
   unshareClock,
   -- * Simulation trace
-  Trace(..),
-  TraceEvent(..),
+  type SimTrace,
+  Trace (Cons, Nil, Trace, SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock),
+  SimResult(..),
+  SimEvent(..),
+  SimEventType(..),
   ThreadLabel,
   Labelled (..),
   traceEvents,
@@ -31,6 +35,9 @@ module Control.Monad.IOSim (
   selectTraceEventsDynamic',
   selectTraceEventsSay,
   selectTraceEventsSay',
+  traceSelectTraceEvents,
+  traceSelectTraceEventsDynamic,
+  traceSelectTraceEventsSay,
   printTraceEventsSay,
   -- * Eventlog
   EventlogEvent(..),
@@ -39,14 +46,18 @@ module Control.Monad.IOSim (
   execReadTVar,
   -- * Deprecated interfaces
   SimM,
-  SimSTM
+  SimSTM,
+  TraceEvent
   ) where
 
 import           Prelude
 
 import           Data.Dynamic (fromDynamic)
 import           Data.List (intercalate)
+import           Data.Bifoldable
 import           Data.Typeable (Typeable)
+
+import           Data.List.Trace
 
 import           Control.Exception (throw)
 
@@ -59,50 +70,49 @@ import           Control.Monad.IOSim.Internal
 
 
 selectTraceEvents
-    :: (TraceEvent -> Maybe b)
-    -> Trace a
+    :: (SimEventType -> Maybe b)
+    -> SimTrace a
     -> [b]
-selectTraceEvents fn = go
-  where
-    go (Trace _ _ _ ev trace) = case fn ev of
-      Just x  -> x : go trace
-      Nothing ->     go trace
-    go (TraceMainException _ e _)       = throw (FailureException e)
-    go (TraceDeadlock      _   threads) = throw (FailureDeadlock threads)
-    go (TraceMainReturn    _ _ _)       = []
+selectTraceEvents fn =
+      bifoldr ( \ v _
+               -> case v of
+                    MainException _ e _       -> throw (FailureException e)
+                    Deadlock      _   threads -> throw (FailureDeadlock threads)
+                    MainReturn    _ _ _       -> []
+              )
+              ( \ b acc -> b : acc )
+              []
+    . traceSelectTraceEvents fn
 
 selectTraceEvents'
-    :: (TraceEvent -> Maybe b)
-    -> Trace a
+    :: (SimEventType -> Maybe b)
+    -> SimTrace a
     -> [b]
-selectTraceEvents' fn = go
-  where
-    go (Trace _ _ _ ev trace) = case fn ev of
-      Just x  -> x : go trace
-      Nothing ->     go trace
-    go (TraceMainException _ _ _) = []
-    go (TraceDeadlock      _ _)   = []
-    go (TraceMainReturn    _ _ _) = []
+selectTraceEvents' fn =
+      bifoldr ( \ _ _   -> []  )
+              ( \ b acc -> b : acc )
+              []
+    . traceSelectTraceEvents fn
 
 -- | Select all the traced values matching the expected type. This relies on
 -- the sim's dynamic trace facility.
 --
 -- For convenience, this throws exceptions for abnormal sim termination.
 --
-selectTraceEventsDynamic :: forall a b. Typeable b => Trace a -> [b]
+selectTraceEventsDynamic :: forall a b. Typeable b => SimTrace a -> [b]
 selectTraceEventsDynamic = selectTraceEvents fn
   where
-    fn :: TraceEvent -> Maybe b
+    fn :: SimEventType -> Maybe b
     fn (EventLog dyn) = fromDynamic dyn
     fn _              = Nothing
 
 -- | Like 'selectTraceEventsDynamic' but returns partial trace if an excpetion
 -- is found in it.
 --
-selectTraceEventsDynamic' :: forall a b. Typeable b => Trace a -> [b]
+selectTraceEventsDynamic' :: forall a b. Typeable b => SimTrace a -> [b]
 selectTraceEventsDynamic' = selectTraceEvents' fn
   where
-    fn :: TraceEvent -> Maybe b
+    fn :: SimEventType -> Maybe b
     fn (EventLog dyn) = fromDynamic dyn
     fn _              = Nothing
 
@@ -110,20 +120,20 @@ selectTraceEventsDynamic' = selectTraceEvents' fn
 --
 -- For convenience, this throws exceptions for abnormal sim termination.
 --
-selectTraceEventsSay :: Trace a -> [String]
+selectTraceEventsSay :: SimTrace a -> [String]
 selectTraceEventsSay = selectTraceEvents fn
   where
-    fn :: TraceEvent -> Maybe String
+    fn :: SimEventType -> Maybe String
     fn (EventSay s) = Just s
     fn _            = Nothing
 
 -- | Like 'selectTraceEventsSay' but return partial trace if an exception is
 -- found in it.
 --
-selectTraceEventsSay' :: Trace a -> [String]
+selectTraceEventsSay' :: SimTrace a -> [String]
 selectTraceEventsSay' = selectTraceEvents' fn
   where
-    fn :: TraceEvent -> Maybe String
+    fn :: SimEventType -> Maybe String
     fn (EventSay s) = Just s
     fn _            = Nothing
 
@@ -131,8 +141,43 @@ selectTraceEventsSay' = selectTraceEvents' fn
 --
 -- For convenience, this throws exceptions for abnormal sim termination.
 --
-printTraceEventsSay :: Trace a -> IO ()
+printTraceEventsSay :: SimTrace a -> IO ()
 printTraceEventsSay = mapM_ print . selectTraceEventsSay
+
+
+-- | The most general select function.  It is a _total_ function.
+--
+traceSelectTraceEvents
+    :: (SimEventType -> Maybe b)
+    -> SimTrace a
+    -> Trace (SimResult a) b
+traceSelectTraceEvents fn = bifoldr ( \ v _acc -> Nil v )
+                                    ( \ eventCtx acc
+                                     -> case fn (seType eventCtx) of
+                                          Nothing -> acc
+                                          Just b  -> Cons b acc
+                                    )
+                                    undefined -- it is ignored
+
+-- | Select dynamic events.  It is a _total_ function.
+--
+traceSelectTraceEventsDynamic :: forall a b. Typeable b
+                              => SimTrace a -> Trace (SimResult a) b
+traceSelectTraceEventsDynamic = traceSelectTraceEvents fn
+  where
+    fn :: SimEventType -> Maybe b
+    fn (EventLog dyn) = fromDynamic dyn
+    fn _              = Nothing
+
+
+-- | Select say events.  It is a _total_ function.
+--
+traceSelectTraceEventsSay :: forall a.  SimTrace a -> Trace (SimResult a) String
+traceSelectTraceEventsSay = traceSelectTraceEvents fn
+  where
+    fn :: SimEventType -> Maybe String
+    fn (EventSay s) = Just s
+    fn _            = Nothing
 
 -- | Simulation termination with failure
 --
@@ -183,24 +228,24 @@ runSimOrThrow mainAction =
 runSimStrictShutdown :: forall a. (forall s. IOSim s a) -> Either Failure a
 runSimStrictShutdown mainAction = traceResult True (runSimTrace mainAction)
 
-traceResult :: Bool -> Trace a -> Either Failure a
+traceResult :: Bool -> SimTrace a -> Either Failure a
 traceResult strict = go
   where
-    go (Trace _ _ _ _ t)                = go t
+    go (SimTrace _ _ _ _ t)             = go t
     go (TraceMainReturn _ _ tids@(_:_))
                                | strict = Left (FailureSloppyShutdown tids)
     go (TraceMainReturn _ x _)          = Right x
     go (TraceMainException _ e _)       = Left (FailureException e)
     go (TraceDeadlock   _   threads)    = Left (FailureDeadlock threads)
 
-traceEvents :: Trace a -> [(Time, ThreadId, Maybe ThreadLabel, TraceEvent)]
-traceEvents (Trace time tid tlbl event t) = (time, tid, tlbl, event)
-                                          : traceEvents t
-traceEvents _                             = []
+traceEvents :: SimTrace a -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+traceEvents (SimTrace time tid tlbl event t) = (time, tid, tlbl, event)
+                                             : traceEvents t
+traceEvents _                                = []
 
 
 
 -- | See 'runSimTraceST' below.
 --
-runSimTrace :: forall a. (forall s. IOSim s a) -> Trace a
+runSimTrace :: forall a. (forall s. IOSim s a) -> SimTrace a
 runSimTrace mainAction = runST (runSimTraceST mainAction)
