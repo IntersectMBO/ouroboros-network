@@ -10,6 +10,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -37,7 +38,10 @@ module Control.Monad.IOSim.Internal (
   ThreadId,
   ThreadLabel,
   Labelled (..),
-  Trace (..),
+  Trace,
+  Octopus (Trace, TraceMainReturn, TraceMainException, TraceDeadlock),
+  EventCtx (..),
+  Value (..),
   TraceEvent (..),
   liftST,
   execReadTVar
@@ -48,6 +52,7 @@ import           Prelude hiding (read)
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
 import qualified Data.List as List
+import           Data.List.Octopus (Octopus (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.OrdPSQ (OrdPSQ)
@@ -587,11 +592,42 @@ labelledThreads threadMap =
 -- See also: 'traceEvents', 'traceResult', 'selectTraceEvents',
 -- 'selectTraceEventsDynamic' and 'printTraceEventsSay'.
 --
-data Trace a = Trace !Time !ThreadId !(Maybe ThreadLabel) !TraceEvent (Trace a)
-             | TraceMainReturn    !Time a             ![Labelled ThreadId]
-             | TraceMainException !Time SomeException ![Labelled ThreadId]
-             | TraceDeadlock      !Time               ![Labelled ThreadId]
-  deriving Show
+data EventCtx = EventCtx {
+    ecTime        :: !Time,
+    ecThreadId    :: !ThreadId,
+    ecThreadLabel :: !(Maybe ThreadLabel),
+    ecTraceEvent  :: !TraceEvent
+  }
+
+data Value a
+    = MainReturn    !Time a             ![Labelled ThreadId]
+    | MainException !Time SomeException ![Labelled ThreadId]
+    | Deadlock      !Time               ![Labelled ThreadId]
+    deriving Show
+
+
+type Trace a = Octopus (Value a) EventCtx
+
+pattern Trace :: Time -> ThreadId -> Maybe ThreadLabel -> TraceEvent -> Trace a
+              -> Trace a
+pattern Trace time threadId threadLabel traceEvent trace =
+    Cons (EventCtx time threadId threadLabel traceEvent)
+         trace
+
+pattern TraceMainReturn :: Time -> a -> [Labelled ThreadId]
+                        -> Trace a
+pattern TraceMainReturn time a threads = Nil (MainReturn time a threads)
+
+pattern TraceMainException :: Time -> SomeException -> [Labelled ThreadId]
+                           -> Trace a
+pattern TraceMainException time err threads = Nil (MainException time err threads)
+
+pattern TraceDeadlock :: Time -> [Labelled ThreadId]
+                      -> Trace a
+pattern TraceDeadlock time threads = Nil (Deadlock time threads)
+
+{-# COMPLETE Trace, TraceMainReturn, TraceMainException, TraceDeadlock #-}
+
 
 data TraceEvent
   = EventSay  String
