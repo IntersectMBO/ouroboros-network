@@ -46,11 +46,11 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.Mempool.TxLimits
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.TxLimits
 
 import           Ouroboros.Consensus.Cardano.CanHardFork
                      (ShelleyPartialLedgerConfig (..), forecastAcrossShelley,
@@ -119,8 +119,8 @@ pattern ShelleyBasedHardForkNodeToClientVersion1 =
 type ShelleyBasedHardForkConstraints era1 era2 =
   ( ShelleyBasedEra era1
   , ShelleyBasedEra era2
-  , TxLimits era1
-  , TxLimits era2
+  , TxLimits (ShelleyBlock era1)
+  , TxLimits (ShelleyBlock era2)
   , EraCrypto era1 ~ EraCrypto era2
   , SL.PreviousEra era2 ~ era1
 

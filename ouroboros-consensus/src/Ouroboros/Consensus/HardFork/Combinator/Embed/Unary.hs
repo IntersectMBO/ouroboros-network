@@ -193,6 +193,10 @@ instance Isomorphic BlockConfig where
   project = defaultProjectNP
   inject  = defaultInjectNP
 
+instance Isomorphic MaxTxCapacityOverride where
+  project = hd . hardForkMaxTxCapacityOverrideToNP
+  inject = MaxTxCapacityOverride . singletonNP
+
 instance Isomorphic CodecConfig where
   project = defaultProjectNP
   inject  = defaultInjectNP
@@ -447,7 +451,7 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    bno
                                    sno
                                    (unComp (inject (Comp tickedLgrSt)))
-                                   maxTxCapacityOverride
+                                   (inject maxTxCapacityOverride)
                                    (inject' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (inject' (Proxy @(WrapIsLeader blk)) isLeader)
       }
@@ -491,7 +495,7 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    bno
                                    sno
                                    (unComp (project (Comp tickedLgrSt)))
-                                   maxTxCapacityOverride
+                                   (project maxTxCapacityOverride)
                                    (project' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (project' (Proxy @(WrapIsLeader blk)) isLeader)
       }

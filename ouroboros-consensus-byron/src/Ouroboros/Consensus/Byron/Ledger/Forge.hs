@@ -50,13 +50,13 @@ import           Ouroboros.Consensus.Byron.Protocol
 forgeByronBlock
   :: HasCallStack
   => TopLevelConfig ByronBlock
-  -> BlockNo                         -- ^ Current block number
-  -> SlotNo                          -- ^ Current slot number
-  -> TickedLedgerState ByronBlock    -- ^ Current ledger
-  -> MaxTxCapacityOverride           -- ^ Do we override max tx capacity defined
-                                     --   by ledger (see MaxTxCapacityOverride)
-  -> [Validated (GenTx ByronBlock)]  -- ^ Txs to consider adding in the block
-  -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
+  -> BlockNo                          -- ^ Current block number
+  -> SlotNo                           -- ^ Current slot number
+  -> TickedLedgerState ByronBlock     -- ^ Current ledger
+  -> MaxTxCapacityOverride ByronBlock -- ^ Do we override max tx capacity defined
+                                      --   by ledger (see MaxTxCapacityOverride)
+  -> [Validated (GenTx ByronBlock)]   -- ^ Txs to consider adding in the block
+  -> PBftIsLeader PBftByronCrypto     -- ^ Leader proof ('IsLeader')
   -> ByronBlock
 forgeByronBlock cfg = forgeRegularBlock (configBlock cfg)
 
@@ -130,7 +130,7 @@ forgeRegularBlock
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
-  -> MaxTxCapacityOverride             -- ^ Do we override max tx capacity defined
+  -> MaxTxCapacityOverride ByronBlock  -- ^ Do we override max tx capacity defined
                                        --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx ByronBlock)]    -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
@@ -152,14 +152,7 @@ forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
         foldr
           extendBlockPayloads
           initBlockPayloads
-          (takeLargestPrefixThatFits 0 $ map txForgetValidated txs)
-
-    takeLargestPrefixThatFits acc = \case
-      tx : remainingTxs | fits -> tx : takeLargestPrefixThatFits acc' remainingTxs
-        where
-          acc' = acc + txInBlockSize tx
-          fits = acc' <= computedMaxTxCapacity
-      _ -> []
+          (takeLargestPrefixThatFits computedMaxTxCapacity txs)
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)
@@ -171,14 +164,14 @@ forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
     updatePayload = CC.Update.payload (bpUpProposal blockPayloads)
                                       (bpUpVotes blockPayloads)
 
-    extendBlockPayloads :: GenTx ByronBlock
+    extendBlockPayloads :: Validated (GenTx ByronBlock)
                         -> BlockPayloads
                         -> BlockPayloads
-    extendBlockPayloads genTx bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} =
+    extendBlockPayloads validatedGenTx bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} =
       -- TODO: We should try to use 'recoverProof' (and other variants of
       -- 'recoverBytes') here as opposed to throwing away the serializations
       -- (the 'ByteString' annotations) with 'void' as we're currently doing.
-      case genTx of
+      case txForgetValidated validatedGenTx of
         ByronTx             _ tx   -> bp { bpTxs        = void tx : bpTxs }
         ByronDlg            _ cert -> bp { bpDlgCerts   = void cert : bpDlgCerts }
         -- TODO: We should throw an error if we encounter multiple

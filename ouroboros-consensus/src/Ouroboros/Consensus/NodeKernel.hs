@@ -117,7 +117,7 @@ data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
     , initChainDB             :: StorageConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
     , blockForging            :: [BlockForging m blk]
-    , maxTxCapacityOverride   :: MaxTxCapacityOverride
+    , maxTxCapacityOverride   :: MaxTxCapacityOverride blk
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
     , blockFetchConfiguration :: BlockFetchConfiguration
@@ -394,7 +394,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
 forkBlockForging
     :: forall m remotePeer localPeer blk.
        (IOLike m, RunNode blk)
-    => MaxTxCapacityOverride
+    => MaxTxCapacityOverride blk
     -> InternalState m remotePeer localPeer blk
     -> BlockForging m blk
     -> m ()

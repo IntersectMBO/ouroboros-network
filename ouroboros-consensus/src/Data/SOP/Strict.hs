@@ -22,6 +22,7 @@ module Data.SOP.Strict (
     -- * NP
     NP (..)
   , hd
+  , singletonNP
   , tl
     -- * NS
   , NS (..)
@@ -59,6 +60,9 @@ type instance AllN       NP c = All c
 type instance AllZipN    NP c = AllZip c
 type instance Prod       NP   = NP
 type instance SListIN    NP   = SListI
+
+singletonNP :: f x -> NP f '[x]
+singletonNP fx = fx :* Nil
 
 hd :: NP f (x ': xs) -> f x
 hd (x :* _) = x

@@ -25,6 +25,7 @@ module Ouroboros.Consensus.ByronDual.Ledger (
   ) where
 
 import           Codec.Serialise
+import           Control.Exception (assert)
 import           Data.ByteString (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -207,35 +208,40 @@ bridgeTransactionIds = Spec.Test.transactionIds
 forgeDualByronBlock
   :: HasCallStack
   => TopLevelConfig DualByronBlock
-  -> BlockNo                            -- ^ Current block number
-  -> SlotNo                             -- ^ Current slot number
-  -> TickedLedgerState DualByronBlock   -- ^ Ledger
-  -> MaxTxCapacityOverride              -- ^ Do we override max tx capacity defined
-                                        --   by ledger (see MaxTxCapacityOverride)
-  -> [Validated (GenTx DualByronBlock)] -- ^ Txs to add in the block
-  -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
+  -> BlockNo                              -- ^ Current block number
+  -> SlotNo                               -- ^ Current slot number
+  -> TickedLedgerState DualByronBlock     -- ^ Ledger
+  -> MaxTxCapacityOverride DualByronBlock -- ^ Do we override max tx capacity defined
+                                          --   by ledger (see MaxTxCapacityOverride)
+  -> [Validated (GenTx DualByronBlock)]   -- ^ Txs to add in the block
+  -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
 forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride vtxs isLeader =
+    -- for simplicity we assume that MaxTxCapacityOverride is not modified by tests
+    assert isNoMaxTxCapacityOverride $
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
     -- the two blocks (which we would have gotten if we would have elaborated
     -- the block instead). Fortunately, this is okay, since the bridge for the
     -- block can be computed from the bridge information of all of the txs.
-
     DualBlock {
         dualBlockMain   = main
       , dualBlockAux    = Just aux
       , dualBlockBridge = mconcat $ map vDualGenTxBridge vtxs
       }
   where
+    isNoMaxTxCapacityOverride = case maxTxCapacityOverride of
+      NoMaxTxCapacityOverride -> True
+      MaxTxCapacityOverride _ -> False
+
     main :: ByronBlock
     main = forgeByronBlock
              (dualTopLevelConfigMain cfg)
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)
-             maxTxCapacityOverride
+             NoMaxTxCapacityOverride
              (map vDualGenTxMain vtxs)
              isLeader
 

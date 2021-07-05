@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 {-# LANGUAGE UndecidableSuperClasses  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -61,11 +62,11 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Mempool.TxLimits
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Shelley.TxLimits
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
@@ -123,7 +124,7 @@ type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionErro
 -- In case the same credentials should be shared across multiple Shelley-based
 -- eras, use 'shelleySharedBlockForging'.
 shelleyBlockForging ::
-     forall m era. (ShelleyBasedEra era, TxLimits era, IOLike m)
+     forall m era. (ShelleyBasedEra era, TxLimits (ShelleyBlock era), IOLike m)
   => TPraosParams
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
@@ -137,8 +138,8 @@ shelleyBlockForging tpraosParams credentials =
 
 -- | Needed in 'shelleySharedBlockForging' because we can't partially apply
 -- equality constraints.
-class    (ShelleyBasedEra era, TxLimits era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
-instance (ShelleyBasedEra era, TxLimits era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+class    (ShelleyBasedEra era, TxLimits (ShelleyBlock era), EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+instance (ShelleyBasedEra era, TxLimits (ShelleyBlock era), EraCrypto era ~ c) => ShelleyEraWithCrypto c era
 
 -- | Create a 'BlockForging' record for each of the given Shelley-based eras,
 -- safely sharing the same set of credentials for all of them.
@@ -253,7 +254,7 @@ data ProtocolParamsAlonzo = ProtocolParamsAlonzo {
     }
 
 protocolInfoShelley ::
-     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c))
+     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c), TxLimits (ShelleyBlock (ShelleyEra c)))
   => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
@@ -267,7 +268,7 @@ protocolInfoShelley protocolParamsShelleyBased
       protVer
 
 protocolInfoShelleyBased ::
-     forall m era. (IOLike m, ShelleyBasedEra era, TxLimits era)
+     forall m era. (IOLike m, ShelleyBasedEra era, TxLimits (ShelleyBlock era))
   => ProtocolParamsShelleyBased era
   -> Core.TranslationContext era
   -> SL.ProtVer
