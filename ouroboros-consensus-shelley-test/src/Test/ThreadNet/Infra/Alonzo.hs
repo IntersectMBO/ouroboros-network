@@ -15,5 +15,5 @@ degenerateAlonzoGenesis = AlonzoGenesis {
    , maxCollateralInputs  = 0
    , maxTxExUnits         = mempty
    , maxValSize           = 0
-   , prices               = Prices (Coin 0) (Coin 0)
+   , prices               = Prices minBound minBound
    }

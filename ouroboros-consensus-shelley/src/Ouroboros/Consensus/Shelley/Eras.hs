@@ -110,7 +110,7 @@ class ( SL.ShelleyBasedEra era
 
       , HasField "_maxBHSize" (Core.PParams era) Natural
       , HasField "_maxTxSize" (Core.PParams era) Natural
-      , HasField "_a0" (Core.PParams era) Rational
+      , HasField "_a0" (Core.PParams era) NonNegativeInterval
       , HasField "_nOpt" (Core.PParams era) Natural
       , HasField "_rho" (Core.PParams era) UnitInterval
       , HasField "_tau" (Core.PParams era) UnitInterval
