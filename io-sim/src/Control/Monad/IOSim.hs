@@ -19,7 +19,10 @@ module Control.Monad.IOSim (
   setCurrentTime,
   unshareClock,
   -- * Simulation trace
-  Trace(..),
+  Trace,
+  Octopus (Trace, TraceMainReturn, TraceMainException, TraceDeadlock),
+  Value(..),
+  EventCtx(..),
   TraceEvent(..),
   ThreadLabel,
   Labelled (..),
@@ -31,6 +34,9 @@ module Control.Monad.IOSim (
   selectTraceEventsDynamic',
   selectTraceEventsSay,
   selectTraceEventsSay',
+  octoSelectTraceEvents,
+  octoSelectTraceEventsDynamic,
+  octoSelectTraceEventsSay,
   printTraceEventsSay,
   -- * Eventlog
   EventlogEvent(..),
@@ -46,6 +52,7 @@ import           Prelude
 
 import           Data.Dynamic (fromDynamic)
 import           Data.List (intercalate)
+import           Data.Bifoldable
 import           Data.Typeable (Typeable)
 
 import           Control.Exception (throw)
@@ -56,33 +63,33 @@ import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 
 import           Control.Monad.IOSim.Internal
+import           Data.List.Octopus
 
 
 selectTraceEvents
     :: (TraceEvent -> Maybe b)
     -> Trace a
     -> [b]
-selectTraceEvents fn = go
-  where
-    go (Trace _ _ _ ev trace) = case fn ev of
-      Just x  -> x : go trace
-      Nothing ->     go trace
-    go (TraceMainException _ e _)       = throw (FailureException e)
-    go (TraceDeadlock      _   threads) = throw (FailureDeadlock threads)
-    go (TraceMainReturn    _ _ _)       = []
+selectTraceEvents fn =
+      bifoldr ( \ v _
+               -> case v of
+                    MainException _ e _       -> throw (FailureException e)
+                    Deadlock      _   threads -> throw (FailureDeadlock threads)
+                    MainReturn    _ _ _       -> []
+              )
+              ( \ b acc -> b : acc )
+              []
+    . octoSelectTraceEvents fn
 
 selectTraceEvents'
     :: (TraceEvent -> Maybe b)
     -> Trace a
     -> [b]
-selectTraceEvents' fn = go
-  where
-    go (Trace _ _ _ ev trace) = case fn ev of
-      Just x  -> x : go trace
-      Nothing ->     go trace
-    go (TraceMainException _ _ _) = []
-    go (TraceDeadlock      _ _)   = []
-    go (TraceMainReturn    _ _ _) = []
+selectTraceEvents' fn =
+      bifoldr ( \ _ _   -> []  )
+              ( \ b acc -> b : acc )
+              []
+    . octoSelectTraceEvents fn
 
 -- | Select all the traced values matching the expected type. This relies on
 -- the sim's dynamic trace facility.
@@ -133,6 +140,41 @@ selectTraceEventsSay' = selectTraceEvents' fn
 --
 printTraceEventsSay :: Trace a -> IO ()
 printTraceEventsSay = mapM_ print . selectTraceEventsSay
+
+
+-- | The most general select function.  It is a _total_ function.
+--
+octoSelectTraceEvents
+    :: (TraceEvent -> Maybe b)
+    -> Trace a
+    -> Octopus (Value a) b
+octoSelectTraceEvents fn = bifoldr ( \ v _acc -> Nil v )
+                                   ( \ eventCtx acc
+                                    -> case fn (ecTraceEvent eventCtx) of
+                                         Nothing -> acc
+                                         Just b  -> Cons b acc
+                                   )
+                                   undefined -- it is ignored
+
+-- | Select dynamic events.  It is a _total_ function.
+--
+octoSelectTraceEventsDynamic :: forall a b. Typeable b
+                             => Trace a -> Octopus (Value a) b
+octoSelectTraceEventsDynamic = octoSelectTraceEvents fn
+  where
+    fn :: TraceEvent -> Maybe b
+    fn (EventLog dyn) = fromDynamic dyn
+    fn _              = Nothing
+
+
+-- | Select say events.  It is a _total_ function.
+--
+octoSelectTraceEventsSay :: forall a.  Trace a -> Octopus (Value a) String
+octoSelectTraceEventsSay = octoSelectTraceEvents fn
+  where
+    fn :: TraceEvent -> Maybe String
+    fn (EventSay s) = Just s
+    fn _            = Nothing
 
 -- | Simulation termination with failure
 --
