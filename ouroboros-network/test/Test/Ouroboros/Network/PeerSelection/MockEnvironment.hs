@@ -162,7 +162,7 @@ validGovernorMockEnvironment GovernorMockEnvironment {
 --
 -- The result is an execution trace.
 --
-runGovernorInMockEnvironment :: GovernorMockEnvironment -> Trace Void
+runGovernorInMockEnvironment :: GovernorMockEnvironment -> SimTrace Void
 runGovernorInMockEnvironment mockEnv =
     runSimTrace $ do
       policy  <- mockPeerSelectionPolicy                mockEnv
@@ -484,12 +484,12 @@ tracerTestTraceEvent = dynamicTracer
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM
 
-selectPeerSelectionTraceEvents :: Trace a -> [(Time, TestTraceEvent)]
+selectPeerSelectionTraceEvents :: SimTrace a -> [(Time, TestTraceEvent)]
 selectPeerSelectionTraceEvents = go
   where
-    go (Trace t _ _ (EventLog e) trace)
+    go (SimTrace t _ _ (EventLog e) trace)
      | Just x <- fromDynamic e    = (t,x) : go trace
-    go (Trace _ _ _ _ trace)      =         go trace
+    go (SimTrace _ _ _ _ trace)   =         go trace
     go (TraceMainException _ e _) = throw e
     go (TraceDeadlock      _   _) = [] -- expected result in many cases
     go (TraceMainReturn    _ _ _) = []

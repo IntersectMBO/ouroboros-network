@@ -894,7 +894,7 @@ prop_timeout_no_deadlock_IO = ioProperty prop_timeout_no_deadlockM
 runSimTraceSay :: (forall s. IOSim s a) -> [String]
 runSimTraceSay action = selectTraceSay (runSimTrace action)
 
-selectTraceSay :: Trace a -> [String]
-selectTraceSay (Trace _ _ _ (EventSay msg) trace) = msg : selectTraceSay trace
-selectTraceSay (Trace _ _ _ _              trace) = selectTraceSay trace
-selectTraceSay  _                                 = []
+selectTraceSay :: SimTrace a -> [String]
+selectTraceSay (SimTrace _ _ _ (EventSay msg) trace) = msg : selectTraceSay trace
+selectTraceSay (SimTrace _ _ _ _              trace) = selectTraceSay trace
+selectTraceSay  _                                    = []

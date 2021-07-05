@@ -21,7 +21,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.IOSim
+import           Control.Monad.IOSim hiding (SimResult)
 import           Control.Tracer (nullTracer, contramap, Tracer (..), showTracing, traceWith)
 
 import qualified Codec.CBOR.Encoding as CBOR
@@ -330,18 +330,18 @@ data SimResult a = SimReturn a [String]
 
 -- Traverses a list of trace events and returns the result along with all log messages.
 -- Incase of a pure exception, ie an assert, all tracers evaluated so far are returned.
-evaluateTrace :: Trace a -> IO (SimResult a)
+evaluateTrace :: SimTrace a -> IO (SimResult a)
 evaluateTrace = go []
   where
     go as tr = do
       r <- try (evaluate tr)
       case r of
-        Right (Trace _ _ _ (EventSay s) tr') -> go (s : as) tr'
-        Right (Trace _ _ _ _ tr' )           -> go as tr'
-        Right (TraceMainReturn _ a _)        -> pure $ SimReturn a (reverse as)
-        Right (TraceMainException _ e _)     -> pure $ SimException e (reverse as)
-        Right (TraceDeadlock _ _)            -> pure $ SimDeadLock (reverse as)
-        Left  (SomeException e)              -> pure $ SimException (SomeException e) (reverse as)
+        Right (SimTrace _ _ _ (EventSay s) tr') -> go (s : as) tr'
+        Right (SimTrace _ _ _ _ tr' )           -> go as tr'
+        Right (TraceMainReturn _ a _)           -> pure $ SimReturn a (reverse as)
+        Right (TraceMainException _ e _)        -> pure $ SimException e (reverse as)
+        Right (TraceDeadlock _ _)               -> pure $ SimDeadLock (reverse as)
+        Left  (SomeException e)                 -> pure $ SimException (SomeException e) (reverse as)
 
 data WithThreadAndTime a = WithThreadAndTime {
       wtatOccuredAt    :: !Time
