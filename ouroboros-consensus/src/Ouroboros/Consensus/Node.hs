@@ -625,6 +625,7 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
     -- Consensus Team, with input from Node Team)
   , srnTraceChainDB                :: Tracer m (ChainDB.TraceEvent blk)
     -- ^ ChainDB Tracer
+  , srnMaxTxCapacityOverride       :: MaxTxCapacityOverride blk
   }
 
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
@@ -700,13 +701,20 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
     llrnCustomiseNodeKernelArgs ::
          NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-    llrnCustomiseNodeKernelArgs = overBlockFetchConfiguration $
-          maybe id
-            (\mc bfc -> bfc { bfcMaxConcurrencyDeadline = mc })
-            srnBfcMaxConcurrencyDeadline
-        . maybe id
-            (\mc bfc -> bfc { bfcMaxConcurrencyBulkSync = mc })
-            srnBfcMaxConcurrencyBulkSync
+    llrnCustomiseNodeKernelArgs =
+        overrideMaxTxCapacityOverride
+      . (overBlockFetchConfiguration modifyBlockFetchConfiguration)
+      where
+        overrideMaxTxCapacityOverride args = args {
+              maxTxCapacityOverride = srnMaxTxCapacityOverride
+            }
+        modifyBlockFetchConfiguration =
+            maybe id
+              (\mc bfc -> bfc { bfcMaxConcurrencyDeadline = mc })
+              srnBfcMaxConcurrencyDeadline
+          . maybe id
+              (\mc bfc -> bfc { bfcMaxConcurrencyBulkSync = mc })
+              srnBfcMaxConcurrencyBulkSync
 
     -- Limit the node version unless srnEnableInDevelopmentVersions is set
     limitToLatestReleasedVersion :: forall k v.
