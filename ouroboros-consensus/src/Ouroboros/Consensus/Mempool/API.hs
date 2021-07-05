@@ -419,38 +419,38 @@ instance Monoid MempoolSize where
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
   = TraceMempoolAddedTx
-      !(Validated (GenTx blk))
+      (Validated (GenTx blk))
       -- ^ New, valid transaction that was added to the Mempool.
-      !MempoolSize
+      MempoolSize
       -- ^ The size of the Mempool before adding the transaction.
-      !MempoolSize
+      MempoolSize
       -- ^ The size of the Mempool after adding the transaction.
   | TraceMempoolRejectedTx
-      !(GenTx blk)
+      (GenTx blk)
       -- ^ New, invalid transaction thas was rejected and thus not added to
       -- the Mempool.
-      !(ApplyTxErr blk)
+      (ApplyTxErr blk)
       -- ^ The reason for rejecting the transaction.
-      !MempoolSize
+      MempoolSize
       -- ^ The current size of the Mempool.
   | TraceMempoolRemoveTxs
-      ![Validated (GenTx blk)]
+      [Validated (GenTx blk)]
       -- ^ Previously valid transactions that are no longer valid because of
       -- changes in the ledger state. These transactions have been removed
       -- from the Mempool.
-      !MempoolSize
+      MempoolSize
       -- ^ The current size of the Mempool.
   | TraceMempoolManuallyRemovedTxs
-      ![GenTxId blk]
+      [GenTxId blk]
       -- ^ Transactions that have been manually removed from the Mempool.
-      ![Validated (GenTx blk)]
+      [Validated (GenTx blk)]
       -- ^ Previously valid transactions that are no longer valid because they
       -- dependend on transactions that were manually removed from the
       -- Mempool. These transactions have also been removed from the Mempool.
       --
       -- This list shares not transactions with the list of manually removed
       -- transactions.
-      !MempoolSize
+      MempoolSize
       -- ^ The current size of the Mempool.
 
 deriving instance ( Eq (GenTx blk)
