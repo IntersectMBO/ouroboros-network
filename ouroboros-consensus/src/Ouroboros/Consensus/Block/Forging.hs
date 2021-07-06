@@ -190,14 +190,22 @@ data MaxTxCapacityOverride blk
 
 type family Overrides blk
 
+-- | Computes maximum capacity for a given block type.
+-- If node operator chose not to override this value, we choose the default value
+-- from ledger (ledgerLimit).
+-- If node operator chose to override this value, they will provide an
+-- override function Measure blk -> Measure blk, which we apply with the ledger
+-- default. Result of calling this override is compared (pointwiseMin) with the
+-- ledger default, and the result of that is returned to the caller of the
+-- computeMaxTxCapacity
 computeMaxTxCapacity ::
-     forall blk. (TxLimits blk, Overrides blk ~ Measure blk)
+     forall blk. (TxLimits blk, Overrides blk ~ (Measure blk -> Measure blk))
   => TickedLedgerState blk
   -> MaxTxCapacityOverride blk
   -> Measure blk
 computeMaxTxCapacity ledger maxTxCapacityOverride = case maxTxCapacityOverride of
-      NoMaxTxCapacityOverride     -> ledgerLimit
-      MaxTxCapacityOverride txCap -> pointwiseMin @blk ledgerLimit txCap
+      NoMaxTxCapacityOverride              -> ledgerLimit
+      MaxTxCapacityOverride modifyCapacity -> pointwiseMin @blk ledgerLimit (modifyCapacity ledgerLimit)
   where
     ledgerLimit = maxCapacity ledger
 

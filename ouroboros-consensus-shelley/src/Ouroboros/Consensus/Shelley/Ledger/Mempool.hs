@@ -264,7 +264,8 @@ theLedgerLens f x =
 {-------------------------------------------------------------------------------
   Tx Limits
 -------------------------------------------------------------------------------}
-type instance Overrides (ShelleyBlock era) = Measure (ShelleyBlock era)
+type instance Overrides (ShelleyBlock era) =
+  Measure (ShelleyBlock era) -> Measure (ShelleyBlock era)
 
 instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (ShelleyEra c)) where
   type Measure (ShelleyBlock (ShelleyEra c)) = ByteSize
