@@ -53,6 +53,7 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.Alonzo.PParams
+import           Cardano.Ledger.Alonzo.Tx (ValidatedTx (..), totExUnits)
 import qualified Cardano.Ledger.Era as SL (Crypto, TxInBlock, TxSeq, fromTxSeq)
 import qualified Shelley.Spec.Ledger.API as SL
 import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
@@ -60,6 +61,9 @@ import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
+                     (ShelleyLedgerConfig (shelleyLedgerGlobals),
+                     Ticked (TickedShelleyLedgerState, tickedShelleyLedgerState),
+                     getPParams)
 
 data instance GenTx (ShelleyBlock era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(SL.Tx era)
   deriving stock    (Generic)
@@ -310,7 +314,7 @@ instance ( SL.PraosCrypto c
   txMeasure validatedGenTx@(ShelleyValidatedTx _ tx) =
     AlonzoMeasure {
         byteSize = ByteSize . txInBlockSize $ txForgetValidated validatedGenTx
-      , exUnits  = getField @"totExunits" tx
+      , exUnits  = totExUnits tx
       }
 
   maxCapacity ledgerState =

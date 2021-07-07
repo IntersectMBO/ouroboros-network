@@ -40,6 +40,7 @@ import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe.Strict (maybeToStrictMaybe)
 import           Data.Ratio (denominator, numerator)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
@@ -69,8 +70,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
-import qualified Cardano.Ledger.BaseTypes as SL (truncateUnitInterval,
-                     unitIntervalFromRational)
+import           Cardano.Ledger.BaseTypes (boundRational)
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
 import qualified Cardano.Ledger.Era as Core
@@ -94,6 +94,7 @@ import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
 
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
+import           Test.Shelley.Spec.Ledger.Utils (unsafeBoundRational)
 
 {-------------------------------------------------------------------------------
   The decentralization parameter
@@ -289,7 +290,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
-    , sgActiveSlotsCoeff      = f
+    , sgActiveSlotsCoeff      = unsafeBoundRational f
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = mkEpochSize k f
     , sgSlotsPerKESPeriod     = slotsPerEvolution kesCfg
@@ -324,7 +325,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
     pparams :: SL.PParams era
     pparams = SL.emptyPParams
       { SL._d               =
-          SL.unitIntervalFromRational $ decentralizationParamToRational d
+          unsafeBoundRational (decentralizationParamToRational d)
       , SL._maxBBSize       = 10000 -- TODO
       , SL._maxBHSize       = 1000 -- TODO
       , SL._protocolVersion = pVer
@@ -384,7 +385,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
                   -- Each core node pledges its full stake to the pool.
                 , SL._poolPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
                 , SL._poolCost = SL.Coin 1
-                , SL._poolMargin = SL.truncateUnitInterval 0
+                , SL._poolMargin = minBound
                   -- Reward accounts live in a separate "namespace" to other
                   -- accounts, so it should be fine to use the same address.
                 , SL._poolRAcnt = SL.RewardAcnt networkId $ mkCredential cnDelegateKey
@@ -501,8 +502,8 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
         [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
           , SL.emptyPParamsUpdate
               { SL._d =
-                  SL.SJust $
-                  SL.unitIntervalFromRational $
+                  maybeToStrictMaybe $
+                  boundRational $
                   decentralizationParamToRational dNew
               , SL._protocolVersion =
                   SL.SJust pVer
@@ -641,8 +642,8 @@ mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
         [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
           , SL.emptyPParamsUpdate
               { SL._d =
-                  SL.SJust $
-                  SL.unitIntervalFromRational $
+                  maybeToStrictMaybe $
+                  boundRational $
                   decentralizationParamToRational dNew
               , SL._protocolVersion =
                   SL.SJust pVer

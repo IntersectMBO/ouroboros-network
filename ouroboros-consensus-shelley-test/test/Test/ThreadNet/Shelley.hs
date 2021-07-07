@@ -33,7 +33,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
 import qualified Cardano.Ledger.BaseTypes as SL (UnitInterval,
-                     mkNonceFromNumber, unitIntervalToRational)
+                     mkNonceFromNumber, unboundRational)
 import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
@@ -349,7 +349,7 @@ prop_simple_real_tpraos_convergence TestSetup
             ) $
           counterexample msg $
           dWasFreeToVary .||.
-            SL.unitIntervalToRational actual ===
+            SL.unboundRational actual ===
               decentralizationParamToRational expected
         | (nid, lsUnticked) <- finalLedgers
         ]

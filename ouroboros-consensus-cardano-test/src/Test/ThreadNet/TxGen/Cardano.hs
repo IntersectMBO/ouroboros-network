@@ -35,12 +35,11 @@ import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
-import qualified Cardano.Ledger.BaseTypes as SL (truncateUnitInterval)
+import qualified Cardano.Ledger.Address as SL (BootstrapAddress (..))
 import qualified Cardano.Ledger.Hashes as SL
 import qualified Cardano.Ledger.SafeHash as SL
 import           Cardano.Ledger.Val ((<->))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.Address as SL (BootstrapAddress (..))
 import qualified Shelley.Spec.Ledger.Address.Bootstrap as SL
                      (makeBootstrapWitness)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
@@ -255,7 +254,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
     poolParams pledge = SL.PoolParams
         { SL._poolCost   = SL.Coin 1
         , SL._poolMD     = SL.SNothing
-        , SL._poolMargin = SL.truncateUnitInterval 0
+        , SL._poolMargin = minBound
         , SL._poolOwners = Set.singleton $ Shelley.mkKeyHash poolSK
         , SL._poolPledge = pledge
         , SL._poolId     = Shelley.mkKeyHash poolSK
