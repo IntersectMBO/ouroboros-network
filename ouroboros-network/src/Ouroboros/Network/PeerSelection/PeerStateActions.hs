@@ -608,13 +608,16 @@ withPeerStateActions PeerStateActionsArguments {
           --
           WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
             traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
+            _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
             atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           WithSomeProtocolTemperature (WithWarm MiniProtocolError{}) -> do
             traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
+            _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
             atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           WithSomeProtocolTemperature (WithEstablished MiniProtocolError{}) -> do
             -- update 'pchPeerState' and log (as the two other transition to
             -- cold state.
+            _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
             state <- atomically $ do
               peerState <- readTVar pchPeerState
               writeTVar pchPeerState (PeerStatus PeerCold)
@@ -839,6 +842,7 @@ withPeerStateActions PeerStateActionsArguments {
       case res of
         Nothing -> do
           Mux.stopMux pchMux
+          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure
                                 (HotToWarm pchConnectionId)
@@ -846,6 +850,7 @@ withPeerStateActions PeerStateActionsArguments {
           throwIO (DeactivationTimeout pchConnectionId)
 
         Just (SomeErrored errs) -> do
+          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure
                                 (HotToCold pchConnectionId)
