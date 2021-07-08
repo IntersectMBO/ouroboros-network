@@ -592,14 +592,14 @@ withPeerStateActions timeout
         -- mini-protocols runs toward the given peer.
         r <-
           atomically $
-            ((WithSomeProtocolTemperature . WithHot)
-              <$> awaitFirstResult TokHot pchAppHandles)
+            (WithSomeProtocolTemperature . WithEstablished
+              <$> awaitFirstResult TokEstablished pchAppHandles)
           `orElse`
-            ((WithSomeProtocolTemperature . WithWarm)
+            (WithSomeProtocolTemperature . WithWarm
               <$> awaitFirstResult TokWarm pchAppHandles)
           `orElse`
-            ((WithSomeProtocolTemperature . WithEstablished)
-              <$> awaitFirstResult TokEstablished pchAppHandles)
+            (WithSomeProtocolTemperature . WithHot
+              <$> awaitFirstResult TokHot pchAppHandles)
 
         traceWith spsTracer (PeerMonitoringResult pchConnectionId r)
         case r of
