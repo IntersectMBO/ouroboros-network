@@ -1,5 +1,5 @@
 \chapter{Mini Protocols}
-\label{state-machine-section}
+\label{chapter:mini-protocols}
 
 \section{Mini Protocols and Protocol Families}
 A mini protocol is a well defined and modular building block of
@@ -14,20 +14,12 @@ The initiator is the dual of the responder and vice versa.
 (The terms client/server and consumer/producer are also used sometimes.)
 At any time a node will typically run many instances of mini protocols, including many instances of the
 same mini protocol.
-Each mini protocol instance of the node communicates with the dual
-instance of exactly one peer.
-All mini protocols that communicate with the same peer
-share a single communication channel (pipe or socket)
-and a multiplexer/de-multiplexer is used to multiplex the protocols over that channel.
-Section~\ref{multiplexing-section} describes the multiplexing layer.
+Each mini protocol instance of the node communicates with the dual instance of
+exactly one peer.
 
 The set of mini protocols that run on a connection between two participants of the system
 depends on the role of the participants, i.e. whether the node acts as a full node or just
 a block chain consumer, for example a wallet.
-\wip{
-Section~\ref{peer-setup-section} describes how a connection between two nodes
-that run a set of mini protocols is set up.
-}
 
 \section{Protocols as State Machines}
 The implementation of the mini protocols uses a generic framework for state machines.
@@ -101,7 +93,6 @@ following pieces of information:
   Protocols use a small set of $Labels$ typically $|Labels| \leq 10$.
   The state machine framework requires that messages can be serialised,
   transferred over the network and de-serialised by the receiver.
-  The binary format for messages is described in appendix~\ref{CBOR-section}.
 
 \item[Agency]
   A node has agency if it is expected to send the next message.
@@ -126,10 +117,10 @@ following pieces of information:
       many arrows go from a green state (client has the agency) to a blue
       state (server has the agency) or vice versa.
 
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green]              (A)      {$A$};
-  \node[state, blue ,right of=A]   (B)      {$B$};
+  \node[state, mygreen]              (A)      {$A$};
+  \node[state, myblue ,right of=A]   (B)      {$B$};
   \draw (A)            edge[above]          node{Message}   (B);
 \end{tikzpicture}
 
@@ -138,10 +129,10 @@ following pieces of information:
       both client and server transition to state $B$.
       As $B$ is blue the agency also changes from client to server.
 
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, blue]               (C)      {$C$};
-  \node[state, blue ,right of=A]   (D)      {$D$};
+  \node[state, myblue]               (C)      {$C$};
+  \node[state, myblue ,right of=A]   (D)      {$D$};
   \draw (A)            edge[above]               node{Message}   (B);
 \end{tikzpicture}
 
@@ -250,7 +241,7 @@ see~\url{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}.
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for
 Node-to-Node nor for the Node-to-Client protocols.
-\subsection{Ping-Pong Protocol}
+\subsection{Ping-Pong mini-protocol}
 \label{ping-pong-protocol}
 \haddockref{Network.TypedProtocol.PingPong.Type}{typed-protocols-examples/Network-TypedProtocol-PingPong-Type\#t:PingPong}
 \newcommand{\Ping}{\msg{MsgPing}}
@@ -263,23 +254,25 @@ The Ping-Pong protocol is very simple because the messages do not carry any data
 because the Ping-Pong client and the Ping-Pong server do not access the internal state of the node.
 
 \subsubsection{State Machine}
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]                            (Idle)      {\StIdle};
-  \node[state, right of=Idle]                             (Done)      {\StDone};
-  \node[state, blue, below of=Idle]                       (Busy)      {\StBusy};
+\begin{figure}[h]
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, mygreen, initial]                            (Idle)      {\StIdle};
+    \node[state, right of=Idle]                             (Done)      {\StDone};
+    \node[state, myblue, below of=Idle]                       (Busy)      {\StBusy};
 
-  \draw (Idle)         edge[above]               node{\MsgDone}                  (Done);
-  \draw (Idle)         edge[left, bend right]    node{\Ping}                     (Busy);
-  \draw (Busy)         edge[right, bend right]   node{\Pong}                     (Idle);
-\end{tikzpicture}
+    \draw (Idle)         edge[above]               node{\MsgDone}                  (Done);
+    \draw (Idle)         edge[left, bend right]    node{\Ping}                     (Busy);
+    \draw (Busy)         edge[right, bend right]   node{\Pong}                     (Idle);
+  \end{tikzpicture}
+\end{figure}
 
 \begin{figure}[ht]
-\begin{tabular}{|l|l|} \hline
-\multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \StIdle \\  \hline
-  Server has Agency & \StBusy \\  \hline
-\end{tabular}
+  \begin{tabular}{|l|l|} \hline
+  \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \StIdle \\  \hline
+    Server has Agency & \StBusy \\  \hline
+  \end{tabular}
 \end{figure}
 
 The protocol uses the following messages.
@@ -293,16 +286,19 @@ The messages of the Ping-Pong protocol do not carry any data.
       Terminate the protocol.
 \end{description}
 
-\begin{tabular}{|l|l|l|}
-  \hline
-  \multicolumn{3}{|c|}{Transition table} \\ \hline
-  from state   & message            & to state    \\ \hline\hline
-  \StIdle        & \Ping              & \StBusy   \\ \hline
-  \StBusy        & \Pong              & \StIdle   \\ \hline
-  \StIdle        & \MsgDone           & \StDone       \\ \hline
-\end{tabular}
+\begin{table}[h]
+  \begin{tabular}{|l|l|l|}
+    \hline
+    \multicolumn{3}{|c|}{Transition table} \\ \hline
+    from state   & message            & to state    \\ \hline\hline
+    \StIdle        & \Ping              & \StBusy   \\ \hline
+    \StBusy        & \Pong              & \StIdle   \\ \hline
+    \StIdle        & \MsgDone           & \StDone   \\ \hline
+  \end{tabular}
+  \caption{Ping-Pong mini-protocol messages.}
+\end{table}
 
-\subsection{Request Response Protocol}
+\subsection{Request-Response mini-protocol}
 \label{request-response-protocol}
 \haddockref{Network.TypedProtocol.ReqResp.Type}{typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 \renewcommand{\StIdle}{\state{StIdle}}
@@ -325,10 +321,10 @@ application of the protocol determines the types of the requests and responses.
   Server has Agency & \StBusy \\ \hline
 \end{tabular}
 {\vskip 10pt}
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]                                   (Idle)      {\StIdle};
-  \node[state, blue, right of=Idle]                              (Busy)      {\StBusy};
+  \node[state, mygreen, initial]                                   (Idle)      {\StIdle};
+  \node[state, myblue, right of=Idle]                              (Busy)      {\StBusy};
   \node[state, below of=Idle]                                    (Done)      {\StDone};
 
   \draw (Idle)         edge[below, bend right] node{\Request}    (Busy);
@@ -346,15 +342,18 @@ The protocol uses the following messages.
       Terminate the protocol.
 \end{description}
 
-\begin{tabular}{|l|l|l|l|} \hline
-\multicolumn{4}{|c|}{Transition table} \\ \hline
-  from           & message            & parameters             & to          \\ \hline\hline
-  \StIdle        & \Request           & $request$              & \StBusy     \\ \hline
-  \StBusy        & \Response          & $response$             & \StIdle     \\ \hline
-  \StIdle        & \RespDone          &                        & \StDone     \\ \hline
-\end{tabular}
+\begin{table}[h]
+  \begin{tabular}{|l|l|l|l|} \hline
+  \multicolumn{4}{|c|}{Transition table} \\ \hline
+    from           & message            & parameters             & to          \\ \hline\hline
+    \StIdle        & \Request           & $request$              & \StBusy     \\ \hline
+    \StBusy        & \Response          & $response$             & \StIdle     \\ \hline
+    \StIdle        & \RespDone          &                        & \StDone     \\ \hline
+  \end{tabular}
+  \caption{Request-Response mini-protocol messages.}
+\end{table}
 
-\section{Handshake Mini Protocol}
+\section{Handshake mini-protocol}
 \haddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type\#t:Handshake}
 \label{handshake-protocol}
 \newcommand{\StPropose}{\state{StPropose}}
@@ -383,24 +382,27 @@ These callback functions are specific for the supported protocol versions.
 
 \subsection{State machine}
 
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \StPropose \\ \hline
-  Server has Agency & \StConfirm \\  \hline
-\end{tabular}
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \StPropose \\ \hline
+    Server has Agency & \StConfirm \\  \hline
+  \end{tabular}
+\end{figure}
 
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=6cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]                                     (Propose)    {\StPropose};
-  \node[state, blue, right of=Propose]                             (Confirm)    {\StConfirm};
-  \node[state, right of=Confirm]                                   (Done)       {\StDone};
+\begin{figure}[h]
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=6cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, mygreen, initial]                                     (Propose)    {\StPropose};
+    \node[state, myblue, right of=Propose]                             (Confirm)    {\StConfirm};
+    \node[state, right of=Confirm]                                   (Done)       {\StDone};
 
-  \draw (Propose)      edge[]      node{\MsgProposeVersions}          (Confirm);
-  \draw (Confirm)      edge[above, bend left]       node{\MsgAcceptVersion}     (Done);
-  \draw (Confirm)      edge[below, bend right]      node{\MsgRefuse}            (Done);
-
-\end{tikzpicture}
+    \draw (Propose)      edge[]      node{\MsgProposeVersions}          (Confirm);
+    \draw (Confirm)      edge[above, bend left]       node{\MsgAcceptVersion}     (Done);
+    \draw (Confirm)      edge[below, bend right]      node{\MsgRefuse}            (Done);
+  \end{tikzpicture}
+\end{figure}
 
 Messages of the protocol:
 \begin{description}
@@ -412,13 +414,16 @@ Messages of the protocol:
       The server refuses the proposed versions.
 \end{description}
 
-\begin{tabular}{|l|l|l|l|} \hline
-\multicolumn{4}{|c|}{Transition table} \\ \hline
-  from        & message/event      & parameters                   & to          \\ \hline\hline
-  \StPropose    & \MsgProposeVersions   & $versionTable$          & \StConfirm    \\ \hline
-  \StConfirm    & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
-  \StConfirm    & \MsgRefuse            & $reason$                & \StDone \\ \hline
-\end{tabular}
+\begin{table}[h]
+  \begin{tabular}{|l|l|l|l|} \hline
+  \multicolumn{4}{|c|}{Transition table} \\ \hline
+    from          & message/event         & parameters              & to                \\ \hline\hline
+    \StPropose    & \MsgProposeVersions   & $versionTable$          & \StConfirm        \\ \hline
+    \StConfirm    & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
+    \StConfirm    & \MsgRefuse            & $reason$                & \StDone           \\ \hline
+  \end{tabular}
+  \caption{Handhsake mini-protocol messages.}
+\end{table}
 
 \subsection{Client and Server Implementation}
 Section~\ref{handshake-cddl} contains the CDDL-specification of the binary format of the handshake messages.
@@ -488,7 +493,7 @@ client protocol.
 \subsubsection{Node to client handshake mini-protocol}
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/handshake-node-to-client.cddl}
 
-\section{Chain-Sync Protocol}
+\section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
 \haddockref{Ouroboros.Network.Protocol.ChainSync.Type}{ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type\#t:ChainSync}
 \newcommand{\StCanAwait}{\state{StCanAwait}}
@@ -518,34 +523,36 @@ is used to transfer full blocks.
 
 \subsection{State Machine}
 
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \StIdle \\  \hline
-  Server has Agency & \StCanAwait, \StMustReply, \StIntersect \\ \hline
-\end{tabular}
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \StIdle \\  \hline
+    Server has Agency & \StCanAwait, \StMustReply, \StIntersect \\ \hline
+  \end{tabular}
+\end{figure}
 
 \begin{figure}[ht]
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=5.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]                            (Idle)      {\StIdle};
-  \node[state, right of=Idle]                             (Done)      {\StDone};
-  \node[state, blue, below left of=Idle]                  (CanAwait)  {\StCanAwait};
-  \node[state, blue, right of=CanAwait]                   (MustReply) {\StMustReply};
-  \node[state, blue, above of=Idle]                       (Intersect) {\StIntersect};
+  \begin{tikzpicture}[->,auto,node distance=5.5cm,semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, mygreen, initial]                            (Idle)      {\StIdle};
+    \node[state, right of=Idle]                               (Done)      {\StDone};
+    \node[state, myblue, below left of=Idle]                  (CanAwait)  {\StCanAwait};
+    \node[state, myblue, right of=CanAwait]                   (MustReply) {\StMustReply};
+    \node[state, myblue, above of=Idle]                       (Intersect) {\StIntersect};
 
-  \draw (Idle)         edge[left, bend right]      node{\MsgRequestNext}           (CanAwait);
-  \draw (CanAwait)     edge[below, bend right]     node{\MsgAwaitReply}            (MustReply);
-  \draw (CanAwait)     edge[above,bend right=45]   node{\MsgRollForward}           (Idle);
-  \draw (MustReply)    edge[right,bend right=45]   node{\MsgRollForward}           (Idle);
-  \draw (CanAwait)     edge[above,bend right=80]   node{\MsgRollBackward}          (Idle);
-  \draw (MustReply)    edge[right,bend right=80]   node{\MsgRollBackward}          (Idle);
-  \draw (Idle)         edge[right, bend right]     node{\MsgFindIntersect}         (Intersect);
-  \draw (Intersect)    edge[above, bend right=45]  node[below = 4mm]{\MsgIntersectFound}     (Idle);
-  \draw (Intersect)    edge[above, bend right=80]  node[above = 4mm]{\MsgIntersectNotFound}  (Idle);
-  \draw (Idle)         edge[above]                 node{\MsgDone}                  (Done);
-\end{tikzpicture}
-\caption{State machine of the chain sync protocol.}
+    \draw[->] (Idle.south west)  to[out=200, in=60]  node[fill=white, pos = 0.4, left=-10mm]{\MsgRequestNext}     (CanAwait.140);
+    \draw[->] (CanAwait.270)     to[out=-40, in=230] node[fill=white, below]{\MsgAwaitReply}                      (MustReply.270);
+    \draw (CanAwait.north east)  to[out=10, in=270]  node[fill=white, pos = 0.6, left=-7mm]{\MsgRollForward}      (Idle.230);
+    \draw (CanAwait.south east)  to[out=10, in=270]  node[fill=white, pos = 0.5, right=-10mm]{\MsgRollBackward}   (Idle.305);
+    \draw (MustReply.20)  to[out=60, in=0]           node[fill=white, pos = 0.5, right=-5mm]{\MsgRollBackward}    (Idle.20);
+    \draw (MustReply.60)  to[out=60, in=0]           node[fill=white, pos = 0.4, left=-15mm]{\MsgRollForward}     (Idle.340);
+    \draw (Idle)          edge[right, bend right]    node[fill=white, pos=0.3, left=-30mm]{\MsgFindIntersect}     (Intersect);
+    \draw (Intersect.200) to[out=220, in=160]        node[fill=white, pos=0.3, left=-10mm]{\MsgIntersectNotFound} (Idle.160);
+    \draw (Intersect.240) to[out=230, in=120]        node[fill=white, pos=0.6, left=-30mm]{\MsgIntersectFound}    (Idle.120);
+    \draw (Idle)          edge[above]                node{\MsgDone}                                               (Done);
+  \end{tikzpicture}
+\caption{State machine of the Chain-Sync mini-protocol.}
 \label{chain-sync-automata}
 \end{figure}
 
@@ -581,22 +588,24 @@ The protocol uses the following messages:
       Terminate the protocol.
 \end{description}
 
-\begin{tabular}{|l|l|l|l|}
-  \hline
-  \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state & message             & parameters                          & to state    \\ \hline\hline
-  \StIdle      & \MsgRequestNext        &                                     & \StCanAwait   \\ \hline
-  \StIdle      & \MsgFindIntersect      & $\langle point\rangle$              & \StIntersect  \\ \hline
-  \StIdle      & \MsgDone            &                                     & \StDone       \\ \hline
-  \StCanAwait  & \MsgAwaitReply         &                                     & \StMustReply  \\ \hline
-  \StCanAwait  & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
-  \StCanAwait  & \MsgRollBackward       & $header_{old}$, $tip$                & \StIdle       \\ \hline
-  \StMustReply & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
-  \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                 & \StIdle       \\ \hline
-  \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$            & \StIdle       \\ \hline
-  \StIntersect & \MsgIntersectNotFound  & $tip$                               & \StIdle       \\ \hline
-
-\end{tabular}
+\begin{table}[h]
+  \begin{tabular}{|l|l|l|l|}
+    \hline
+    \multicolumn{4}{|c|}{Transition table} \\ \hline
+    from state & message             & parameters                          & to state    \\ \hline\hline
+    \StIdle      & \MsgRequestNext        &                                     & \StCanAwait   \\ \hline
+    \StIdle      & \MsgFindIntersect      & $\langle point\rangle$              & \StIntersect  \\ \hline
+    \StIdle      & \MsgDone            &                                     & \StDone       \\ \hline
+    \StCanAwait  & \MsgAwaitReply         &                                     & \StMustReply  \\ \hline
+    \StCanAwait  & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
+    \StCanAwait  & \MsgRollBackward       & $header_{old}$, $tip$                & \StIdle       \\ \hline
+    \StMustReply & \MsgRollForward        & $header$, $tip$                     & \StIdle       \\ \hline
+    \StMustReply & \MsgRollBackward       & $point_{old}$, $tip$                 & \StIdle       \\ \hline
+    \StIntersect & \MsgIntersectFound     & $point_{intersect}$, $tip$            & \StIdle       \\ \hline
+    \StIntersect & \MsgIntersectNotFound  & $tip$                               & \StIdle       \\ \hline
+  \end{tabular}
+  \caption{Chain-Sync mini-protocol messages.}
+\end{table}
 
 \newcommand{\readpointer}{\emph{read-pointer}}
 \subsection{Implementation of the Chain Producer}
@@ -757,7 +766,7 @@ Here are some cases to consider:
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/chain-sync.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
-\section{Block Fetch Protocol}
+\section{Block-Fetch mini-protocol}
 \label{block-fetch-protocol}
 \haddockref{Ouroboros.Network.Protocol.BlockFetch.Type}{ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type\#t:BlockFetch}
 
@@ -778,28 +787,34 @@ The block fetching mechanism enables a node to download a range of blocks.
 
 \subsection{State machine}
 
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \StIdle            \\  \hline
-  Server has Agency & \StBusy, \StStreaming \\ \hline
-\end{tabular}
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \StIdle            \\  \hline
+    Server has Agency & \StBusy, \StStreaming \\ \hline
+  \end{tabular}
+\end{figure}
 
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green,initial] at (-1cm,0cm)  (Idle)      {\StIdle};
-  \node[state]                at (4cm,0cm)   (Done)      {\StDone};
-  \node[state, blue]          at (-3cm,-3cm) (Busy)      {\StBusy};
-  \node[state, blue]          at (4cm,-3cm)  (Streaming) {\StStreaming};
+\begin{figure}[h]
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, mygreen,initial] at (-1cm,0cm)  (Idle)      {\StIdle};
+    \node[state]                  at (4cm,0cm)   (Done)      {\StDone};
+    \node[state, myblue]          at (-3cm,-3cm) (Busy)      {\StBusy};
+    \node[state, myblue]          at (4cm,-3cm)  (Streaming) {\StStreaming};
 
-  \draw (Idle)         edge[above]                node{\MsgClientDone}                  (Done);
-  \draw (Idle)         edge[left,bend right]      node{\MsgRequestRange}                (Busy);
-  \draw (Busy)         edge[above,bend right]     node{\MsgNoBlocks}                    (Idle);
-  \draw (Busy)         edge[below]                node{\MsgStartBatch}                  (Streaming);
-  \draw (Streaming)    edge[loop right]           node{\MsgBlock}                       (Streaming);
-  \draw (Streaming)    edge[right]                node{\MsgBatchDone}                   (Idle);
-\end{tikzpicture}
+    \draw (Idle)         edge[above]                node[fill=white]{\MsgClientDone}                  (Done);
+    \draw (Idle)         edge[left,bend right]      node[fill=white]{\MsgRequestRange}                (Busy);
+    \draw (Busy)         edge[above,bend right]     node[fill=white]{\MsgNoBlocks}                    (Idle);
+    \draw (Busy)         edge[below]                node[fill=white]{\MsgStartBatch}                  (Streaming);
+    \draw (Streaming)    edge[loop right]           node[fill=white,left=-10mm]{\MsgBlock}            (Streaming);
+    \draw (Streaming)    edge[right]                node[fill=white,left=-15mm]{\MsgBatchDone}        (Idle);
+  \end{tikzpicture}
+  \caption{State machine of the block-fetch mini-protocol.}
+\end{figure}
 
+\paragraph{Protocol messages}
 \begin{description}
 \item [\MsgRequestRange{} {\boldmath $(range)$}]
   The client requests a {\boldmath $range$} of blocks from the server.
@@ -815,36 +830,42 @@ The block fetching mechanism enables a node to download a range of blocks.
   The client terminates the protocol.
 \end{description}
 
-Transition table:
+Transition table is shown in table~\ref{table:block-fetch}.
 
-\begin{tabular}{|l|l|l|l|}
-  \hline
-  \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state   & message             & parameters             & to state    \\ \hline\hline
-  \StIdle        & \MsgClientDone         &                        & \StDone       \\ \hline
-  \StIdle        & \MsgRequestRange       & $range$                & \StBusy       \\ \hline
-  \StBusy        & \MsgNoBlocks           &                        & \StIdle       \\ \hline
-  \StBusy        & \MsgStartBatch         &                        & \StStreaming  \\ \hline
-  \StStreaming   & \MsgBlock              & $body$                 & \StStreaming  \\ \hline
-  \StStreaming   & \MsgBatchDone          &                        & \StIdle       \\ \hline
-\end{tabular}
+\begin{table}[h]
+  \begin{center}
+    \begin{tabular}{|l|l|l|l|}
+      \hline
+      \multicolumn{4}{|c|}{Transition table} \\ \hline
+      from state     & message                & parameters             & to state      \\ \hline\hline
+      \StIdle        & \MsgClientDone         &                        & \StDone       \\ \hline
+      \StIdle        & \MsgRequestRange       & $range$                & \StBusy       \\ \hline
+      \StBusy        & \MsgNoBlocks           &                        & \StIdle       \\ \hline
+      \StBusy        & \MsgStartBatch         &                        & \StStreaming  \\ \hline
+      \StStreaming   & \MsgBlock              & $body$                 & \StStreaming  \\ \hline
+      \StStreaming   & \MsgBatchDone          &                        & \StIdle       \\ \hline
+    \end{tabular}
+  \end{center}
+  \caption{Block-Fetch mini-protocol messages.}
+  \label{table:block-fetch}
+\end{table}
 
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/block-fetch.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
-\section{TxSubmission Protocol}
+\section{Tx-Submission mini-protocol}
 \subsection{Version 1}
 \haddockref{Ouroboros.Network.Protocol.TxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type\#t:TxSubmission}
 \label{tx-submission-protocol}
-\newcommand{\TxIdsBlocking}   {\state{StTxIdsBlocking}}
-\newcommand{\TxIdsNonBlocking}{\state{StTxIdsNonBlocking}}
-\newcommand{\Txs}             {\state{StTxs}}
-\newcommand{\RequestTxIdsNB}  {\trans{MsgRequestTxIdsNonBlocking}}
-\newcommand{\RequestTxIdsB}   {\trans{MsgRequestTxIdsBlocking}}
-\newcommand{\ReplyTxIds}      {\trans{MsgReplyTxIds}}
-\newcommand{\RequestTxs}      {\trans{MsgRequestTxs}}
-\newcommand{\ReplyTxs}        {\trans{MsgReplyTxs}}
+\newcommand{\StTxIdsBlocking}    {\state{StTxIdsBlocking}}
+\newcommand{\StTxIdsNonBlocking} {\state{StTxIdsNonBlocking}}
+\newcommand{\StTxs}              {\state{StTxs}}
+\newcommand{\MsgRequestTxIdsNB}  {\trans{MsgRequestTxIdsNonBlocking}}
+\newcommand{\MsgRequestTxIdsB}   {\trans{MsgRequestTxIdsBlocking}}
+\newcommand{\MsgReplyTxIds}      {\trans{MsgReplyTxIds}}
+\newcommand{\MsgRequestTxs}      {\trans{MsgRequestTxs}}
+\newcommand{\MsgReplyTxs}        {\trans{MsgReplyTxs}}
 
 \subsubsection{Description}
 The node-to-node transaction submission protocol is used to transfer transactions between full nodes.
@@ -865,65 +886,71 @@ The version 1 of the protocol is only used by the node-to-node protocol version
 5 and earlier.
 \subsubsection{State machine}
 
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Server has Agency & \StIdle \\  \hline
-  Client has Agency & \TxIdsBlocking, \TxIdsNonBlocking, \Txs \\ \hline
-\end{tabular}
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\\hline
+    Server has Agency & \StIdle  \\\hline
+    Client has Agency & \MsgRequestTxIdsNB, \MsgRequestTxIdsB, \StTxIdsNonBlocking, \StTxs \\\hline
+  \end{tabular}
+\end{figure}
 
 \begin{figure}[h]
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=5.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, blue, initial](A) at ( 0,  0) {\StIdle};
-  \node[state]               (B) at ( 8, -4) {\StDone};
-  \node[state, green]        (C) at ( 4, -4) {\TxIdsBlocking};
-  \node[state, green]        (D) at (-4, -4) {\TxIdsNonBlocking};
-  \node[state, green]        (E) at ( 0,  4) {\Txs};
-  \draw (C)  edge[above]                    node[below]{\MsgDone}                                 (B);
-  \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\RequestTxIdsB}   (C);
-  \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\ReplyTxIds}     (A);
-  \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\RequestTxIdsNB} (D);
-  \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\ReplyTxIds}      (A);
-  \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center]{\RequestTxs}      (E);
-  \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center]{\ReplyTxs}        (A);
-\end{tikzpicture}
-\caption{State machine of the transaction submission protocol.}
-\label{tx-submission-automata}
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=5.5cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, myblue, initial](A) at ( 0,  0) {\StIdle};
+    \node[state]                 (B) at ( 9, -4) {\StDone};
+    \node[state, mygreen]        (C) at ( 4, -4) {\StTxIdsBlocking};
+    \node[state, mygreen]        (D) at (-4, -4) {\StTxIdsNonBlocking};
+    \node[state, mygreen]        (E) at ( 0,  4) {\StTxs};
+    \draw (C)  edge[above]                    node[below]{\MsgDone}                                                (B);
+    \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\MsgRequestTxIdsB}               (C);
+    \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\MsgReplyTxIds}     (A);
+    \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\MsgReplyTxIds}                  (A);
+    \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\MsgRequestTxIdsNB} (D);
+    \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center, above = 2pt]{\MsgRequestTxs}     (E);
+    \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center, below = 2pt]{\MsgReplyTxs}       (A);
+  \end{tikzpicture}
+  \caption{State machine of the Tx-Submission mini-protocol (version 1).}
+  \label{tx-submission-automata-v1}
 \end{figure}
-Messages of the protocol:
+
+\paragraph{Protocol messages}
 \begin{description}
-\item [\RequestTxIdsB{} {\boldmath $(ack,req)$}]
+\item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
       The client will block until new transactions are available.
-\item [\RequestTxIdsNB{} {\boldmath $(ack,req)$}]
+\item [\MsgRequestTxIdsNB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
       The client immediately replies (possible with an empty list).
-\item [\ReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
+\item [\MsgReplyTxIds{} {\boldmath ($\langle (id, size) \rangle$) }]
       The client replies with a list of available transactions.
       The list contains pairs of transactions ids and the corresponding size of the transaction in bytes.
       In the blocking case the reply is guaranteed to contain at least one transaction.
       In the non-blocking case, the reply may contain an empty list.
-\item [\RequestTxs{} {\boldmath ($\langle ids \rangle$)}]
+\item [\MsgRequestTxs{} {\boldmath ($\langle ids \rangle$)}]
       The server requests transactions by sending a list of transaction-ids.
-\item [\ReplyTxs{} {\boldmath ($\langle txs \rangle$})]
+\item [\MsgReplyTxs{} {\boldmath ($\langle txs \rangle$})]
       The client replies with a list transaction.
 \item [\MsgDone]
       The client terminates the mini protocol.
 \end{description}
 
-\begin{tabular}{|l|l|l|l|}
-  \hline
-  \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state        & message             & parameters                    & to state          \\ \hline\hline
-  \StIdle             & \RequestTxIdsB      & $ack$,$req$                   & \TxIdsBlocking    \\ \hline
-  \TxIdsBlocking    & \ReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-  \StIdle             & \RequestTxIdsNB     & $ack$,$req$                   & \TxIdsNonBlocking \\ \hline
-  \TxIdsNonBlocking & \ReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-  \StIdle             & \RequestTxs         & $\langle ids \rangle$         & \Txs              \\ \hline
-  \Txs              & \ReplyTxs           & $\langle txs \rangle$         & \StIdle             \\ \hline
-  \RequestTxIdsB    & \MsgDone            &                               & \StDone             \\ \hline
-\end{tabular}
+\begin{table}[h]
+  \begin{tabular}{|l|l|l|l|}
+    \hline
+    \multicolumn{4}{|c|}{Transition table} \\ \hline
+    from state          & message                & parameters                    & to state            \\ \hline\hline
+    \StIdle             & \MsgRequestTxIdsB      & $ack$,$req$                   & \StTxIdsBlocking    \\ \hline
+    \StTxIdsBlocking    & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
+    \StIdle             & \MsgRequestTxIdsNB     & $ack$,$req$                   & \StTxIdsNonBlocking \\ \hline
+    \StTxIdsNonBlocking & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
+    \StIdle             & \MsgRequestTxs         & $\langle ids \rangle$         & \StTxs              \\ \hline
+    \StTxs              & \MsgReplyTxs           & $\langle txs \rangle$         & \StIdle             \\ \hline
+    \MsgRequestTxIdsB   & \MsgDone               &                               & \StDone             \\ \hline
+  \end{tabular}
+  \caption{Tx-Submission mini-protocol (version 1) messages.}
+\end{table}
 \subsubsection{CDDL encoding specification}\label{tx-submission-cddl}
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/tx-submission.cddl}
 See appendix \ref{cddl-common} for common definitions.
@@ -943,52 +970,58 @@ conversation with \MsgHello{} the version 1 of the protocol takes over.
 The version 2 is used by version 6 of node-to-node protocol.
 \subsubsection{State machine}
 
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Server has Agency & \StIdle \\  \hline
-  Client has Agency & \TxIdsBlocking, \TxIdsNonBlocking, \Txs \\ \hline
-\end{tabular}
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Server has Agency & \StIdle \\  \hline
+    Client has Agency & \StTxIdsBlocking, \StTxIdsNonBlocking, \StTxs \\ \hline
+  \end{tabular}
+\end{figure}
 
 \begin{figure}[h]
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
+\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
   \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial] (I) at (-4,  0) {\Hello};
-  \node[state, blue]           (A) at ( 0,  0) {\StIdle};
-  \node[state]                 (B) at ( 8, -4) {\StDone};
-  \node[state, green]          (C) at ( 4, -4) {\TxIdsBlocking};
-  \node[state, green]          (D) at (-4, -4) {\TxIdsNonBlocking};
-  \node[state, green]          (E) at ( 0,  4) {\Txs};
-  \draw (I)  edge[above]                    node[above]{\MsgHello}                                (A);
-  \draw (C)  edge[above]                    node[below]{\MsgDone}                                 (B);
-  \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\RequestTxIdsB}   (C);
-  \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\ReplyTxIds}     (A);
-  \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\RequestTxIdsNB} (D);
-  \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\ReplyTxIds}      (A);
-  \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center]{\RequestTxs}      (E);
-  \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center]{\ReplyTxs}        (A);
+  \node[state, mygreen, initial] (I) at (-4,  0) {\Hello};
+  \node[state, myblue]           (A) at ( 0,  0) {\StIdle};
+  \node[state]                   (B) at ( 9, -4) {\StDone};
+  \node[state, mygreen]          (C) at ( 4, -4) {\StTxIdsBlocking};
+  \node[state, mygreen]          (D) at (-4, -4) {\StTxIdsNonBlocking};
+  \node[state, mygreen]          (E) at ( 0,  4) {\StTxs};
+  \draw (I)  edge[above]                    node[above]{\MsgHello}                                               (A);
+  \draw (C)  edge[above]                    node[below]{\MsgDone}                                                (B);
+  \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\MsgRequestTxIdsB}               (C);
+  \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\MsgReplyTxIds}     (A);
+  \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\MsgReplyTxIds}                  (A);
+  \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\MsgRequestTxIdsNB} (D);
+  \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center, above = 2pt]{\MsgRequestTxs}     (E);
+  \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center, below = 2pt]{\MsgReplyTxs}       (A);
 \end{tikzpicture}
-\caption{State machine of the transaction submission protocol.}
-\label{tx-submission-automata}
+  \caption{State machine of the Tx-Submission mini-protocol (version 2).}
+\label{tx-submission-automata-v2}
 \end{figure}
-Messages of the protocol:
+
+\paragraph{Protocol messages}
 \begin{description}
 \item [\MsgHello] initial message of the protocol
 \end{description}
 
-\begin{tabular}{|l|l|l|l|}
-  \hline
-  \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state        & message             & parameters                    & to state          \\ \hline\hline
-  \Hello            & \MsgHello           &                               & \StIdle             \\ \hline
-  \StIdle             & \RequestTxIdsB      & $ack$,$req$                   & \TxIdsBlocking    \\ \hline
-  \TxIdsBlocking    & \ReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-  \StIdle             & \RequestTxIdsNB     & $ack$,$req$                   & \TxIdsNonBlocking \\ \hline
-  \TxIdsNonBlocking & \ReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-  \StIdle             & \RequestTxs         & $\langle ids \rangle$         & \Txs              \\ \hline
-  \Txs              & \ReplyTxs           & $\langle txs \rangle$         & \StIdle             \\ \hline
-  \RequestTxIdsB    & \MsgDone            &                               & \StDone             \\ \hline
-\end{tabular}
+\begin{table}[h]
+  \begin{tabular}{|l|l|l|l|}
+    \hline
+    \multicolumn{4}{|c|}{Transition table} \\ \hline
+    from state        & message             & parameters                    & to state          \\ \hline\hline
+    \Hello            & \MsgHello           &                               & \StIdle             \\ \hline
+    \StIdle             & \MsgRequestTxIdsB      & $ack$,$req$                   & \StTxIdsBlocking    \\ \hline
+    \StTxIdsBlocking    & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
+    \StIdle             & \MsgRequestTxIdsNB     & $ack$,$req$                   & \StTxIdsNonBlocking \\ \hline
+    \StTxIdsNonBlocking & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
+    \StIdle             & \MsgRequestTxs         & $\langle ids \rangle$         & \StTxs              \\ \hline
+    \StTxs              & \MsgReplyTxs           & $\langle txs \rangle$         & \StIdle             \\ \hline
+    \MsgRequestTxIdsB    & \MsgDone            &                               & \StDone             \\ \hline
+  \end{tabular}
+  \caption{Tx-Submission mini-protocol (version 2) messages.}
+\end{table}
 \subsubsection{CDDL encoding specification}\label{tx-submission2-cddl}
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/tx-submission2.cddl}
 See version 1 of the mini-protocol in section~\ref{tx-submission-cddl} and
@@ -1045,34 +1078,36 @@ Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
 two purposes: to provide keep alive messages, and do round trip time
 measurments.
 
-% \newcommand{\StDone}{\state{Done}}
 \newcommand{\Client}{\state{StClient}}
 \newcommand{\Server}{\state{StServer}}
 \newcommand{\MsgKeepAlive}{\trans{MsgKeepAlive}}
 \newcommand{\MsgKeepAliveResponse}{\trans{MsgKeepAliveResponse}}
-% \newcommand{\MsgDone}{\trans{MsgDone}}
 \subsection{State machine}
 
 \begin{figure}[h]
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \Client  \\ \hline
-  Server has Agency & \Server  \\ \hline
-\end{tabular}
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \Client  \\ \hline
+    Server has Agency & \Server  \\ \hline
+  \end{tabular}
 \end{figure}
 
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, green, initial]        (Client)  {\Client};
-  \node[state, blue, right of=Client] (Server)  {\Server};
-  \node[state, below of=Client]       (Done)    {\StDone};
+\begin{figure}[h]
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, mygreen, initial]        (Client)  {\Client};
+    \node[state, myblue, right of=Client] (Server)  {\Server};
+    \node[state, below of=Client]         (Done)    {\StDone};
 
-  \draw (Client) edge[above, bend left=45] node{\MsgKeepAlive}         (Server);
-  \draw (Server) edge[below, bend left=45] node{\MsgKeepAliveResponse} (Client);
-  \draw (Client) edge[left]                node{\MsgDone}              (Done);
-\end{tikzpicture}
+    \draw (Client) edge[above, bend left=45] node{\MsgKeepAlive}         (Server);
+    \draw (Server) edge[below, bend left=45] node{\MsgKeepAliveResponse} (Client);
+    \draw (Client) edge[left]                node{\MsgDone}              (Done);
+  \end{tikzpicture}
+  \caption{State machine of the keep alive protocol.}
+\end{figure}
 
+\paragraph{Protocol messages}
 \begin{description}
 \item [\MsgKeepAlive{} $cookie$]
   Keep alive message.  The $cookie$ value is a \texttt{Word16} value which allows to
@@ -1088,7 +1123,7 @@ measurments.
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/keep-alive.cddl}
 
-\section{Local Transaction Submission Mini Protocol}
+\section{Local Tx-Submission mini-protocol}
 \haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}
 \label{local-tx-submission-protocol}
 \subsection{Description}
@@ -1107,43 +1142,48 @@ The protocol follows a simple request-response pattern:
 Note, that the local transaction submission protocol is a push based protocol where the client
 creates a workload for the server.
 This is acceptable because is protocol is only for use between a node and local client.
-\newcommand{\SubmitTx}{\trans{SubmitTx}}
-\newcommand{\AcceptTx}{\trans{AcceptTx}}
-\newcommand{\RejectTx}{\trans{RejectTx}}
+\newcommand{\MsgSubmitTx}{\trans{MsgSubmitTx}}
+\newcommand{\MsgAcceptTx}{\trans{MsgAcceptTx}}
+\newcommand{\MsgRejectTx}{\trans{MsgRejectTx}}
 \subsection{State machine}
 
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Client has Agency & \StIdle \\ \hline
-  Server has Agency & \StBusy \\  \hline
-\end{tabular}
+\begin{figure}[h]
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \StIdle \\ \hline
+    Server has Agency & \StBusy \\  \hline
+  \end{tabular}
+\end{figure}
 
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=4cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, blue, initial]                                     (Idle)     {\StIdle};
-  \node[state, right of=Idle]                                     (Done)     {\StDone};
-  \node[state, green, above of=Idle]                              (Busy)     {\StBusy};
+\begin{figure}[h]
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm, semithick]
+    \tikzstyle{every state}=[fill=red,draw=none,text=white]
+    \node[state, myblue, initial]                                     (Idle)     {\StIdle};
+    \node[state, right of=Idle]                                       (Done)     {\StDone};
+    \node[state, mygreen, above of=Idle]                              (Busy)     {\StBusy};
 
-  \draw (Idle)         edge[]                          node{\MsgDone}           (Done);
-  \draw (Idle)         edge[right, bend right=45]      node{\SubmitTx}          (Busy);
-  \draw (Busy)         edge[left, bend right=45]       node[below = 3mm]{\AcceptTx}          (Idle);
-  \draw (Busy)         edge[left, bend right=80]       node[above = 3mm]{\RejectTx}          (Idle);
-\end{tikzpicture}
+    \draw (Idle)         edge[]              node{\MsgDone}           (Done);
+    \draw (Idle.0)       to[out=30,  in=330] node[fill=white, left=-2mm]{\MsgSubmitTx}    (Busy.0);
+    \draw (Busy.185)     to[out=180, in=180, looseness=2] node[fill=white, right=10mm, below=3mm]{\MsgAcceptTx} (Idle.175);
+    \draw (Busy.190)     to[out=240, in=120] node[fill=white, left=10mm, above=3mm]{\MsgRejectTx}  (Idle.170);
+  \end{tikzpicture}
+\caption{State machine of the Local Tx-Submission mini-protocol.}
+\end{figure}
 
-Messages of the protocol:
+\paragraph{Protocol messages}
 \begin{description}
-\item [\SubmitTx{} {\boldmath $(t)$}]
+\item [\MsgSubmitTx{} {\boldmath $(t)$}]
       The client submits a transaction.
-\item [\AcceptTx]
+\item [\MsgAcceptTx]
       The server accepts the transaction.
-\item [\RejectTx{} {\boldmath $(reason)$}]
+\item [\MsgRejectTx{} {\boldmath $(reason)$}]
       The server rejects the transactions and replies with the $reason$.
 \item [\MsgDone]
       The client terminates the mini protocol.
 \end{description}
 
-\section{Local State Query Mini Protocol}
+\section{Local State Query mini-protocol}
 \label{local-state-query-protocol}
 \haddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type\#t:LocalStateQuery}
 \newcommand{\StAcquiring}{\state{Acquiring}}
@@ -1167,45 +1207,48 @@ state which is done by the server, or running queries against the acquired
 ledger state.
 
 \subsection{State machine}
-
 \begin{figure}[h]
-\begin{tabular}{|l|l|}
-  \hline
-  \multicolumn{2}{|c|}{Agency} \\ \hline
-  Server has Agency & \StIdle{}, \StAcquired{} \\ \hline
-  Client has Agency & \StAcquiring{}, \StQuerying{} \\ \hline
-\end{tabular}
+  \begin{tabular}{|l|l|}
+    \hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Server has Agency & \StIdle{}, \StAcquired{} \\ \hline
+    Client has Agency & \StAcquiring{}, \StQuerying{} \\ \hline
+  \end{tabular}
 \end{figure}
 
 \begin{figure}[h]
-\begin{tikzpicture}[->,=>stealth',shorten >=1pt,auto,node distance=4cm,semithick]
-  \tikzstyle{every state}=[fill=red,draw,none,text=white]
-  \node[state, green, initial] (Idle) {\StIdle};
-  \node[state, blue, right of=Idle] (Acquiring) {\StAcquiring};
-  \node[state, green, right of=Acquiring] (Acquired) {\StAcquired};
-  \node[state, blue, right of=Acquired] (Querying) {\StQuerying};
+  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4cm,semithick]
+    \tikzstyle{every state}=[fill=red,draw,none,text=white]
+    \node[state, mygreen, initial] (Idle) {\StIdle};
+    \node[state, myblue, right of=Idle] (Acquiring) {\StAcquiring};
+    \node[state, mygreen, right of=Acquiring] (Acquired) {\StAcquired};
+    \node[state, myblue, right of=Acquired] (Querying) {\StQuerying};
 
-  \draw (Idle)      edge[bend left=45] node{\MsgAcquire}   (Acquiring);
-  \draw (Acquiring) edge[bend left=45] node{\MsgFailure}   (Idle);
-  \draw (Acquiring) edge[bend left=45] node{\MsgAcquired}  (Acquired);
-  \draw (Acquired)  edge[bend left=45] node{\MsgReAcquire} (Acquiring);
-  \draw (Acquired)  edge[bend left=45] node{\MsgQuery}     (Querying);
-  \draw (Querying)  edge[bend left=45] node{\MsgResult}    (Acquired);
-\end{tikzpicture}
+    \draw (Idle)      edge[bend left=45] node{\MsgAcquire}   (Acquiring);
+    \draw (Acquiring) edge[bend left=45] node{\MsgFailure}   (Idle);
+    \draw (Acquiring) edge[bend left=45] node{\MsgAcquired}  (Acquired);
+    \draw (Acquired)  edge[bend left=45] node{\MsgReAcquire} (Acquiring);
+    \draw (Acquired)  edge[bend left=45] node{\MsgQuery}     (Querying);
+    \draw (Querying)  edge[bend left=45] node{\MsgResult}    (Acquired);
+  \end{tikzpicture}
+  \caption{State machine of the Local State Query mini-protocol.}
 \end{figure}
 
+\paragraph{Protocol messages}
+% TODO description of each message
 \begin{figure}[h]
-\begin{tabular}{|l|l|l|l|}
-  \hline
-  \multicolumn{4}{|c|}{Transition table} \\ \hline
-  from state          & message             & parameters          & to state \\ \hline\hline
-  \StIdle             & \MsgAcquire         & $Maybe\ point$      & \StAcquiring \\\hline
-  \StAcquiring        & \MsgFailure         & $AcquireFailure$    & \StIdle      \\\hline
-  \StAcquiring        & \MsgAcquired        &                     & \StAcquired  \\\hline
-  \StAcquired         & \MsgReAcquire       & $Maybe\ point$      & \StAcquiring \\\hline
-  \StAcquired         & \MsgQuery           & $query$             & \StQuerying  \\\hline
-  \StQuerying         & \MsgResult          & $result$            & \StAcquired  \\\hline
-\end{tabular}
+  \begin{tabular}{|l|l|l|l|}
+    \hline
+    \multicolumn{4}{|c|}{Transition table} \\ \hline
+    from state          & message             & parameters          & to state \\ \hline\hline
+    \StIdle             & \MsgAcquire         & $Maybe\ point$      & \StAcquiring \\\hline
+    \StAcquiring        & \MsgFailure         & $AcquireFailure$    & \StIdle      \\\hline
+    \StAcquiring        & \MsgAcquired        &                     & \StAcquired  \\\hline
+    \StAcquired         & \MsgReAcquire       & $Maybe\ point$      & \StAcquiring \\\hline
+    \StAcquired         & \MsgQuery           & $query$             & \StQuerying  \\\hline
+    \StQuerying         & \MsgResult          & $result$            & \StAcquired  \\\hline
+  \end{tabular}
+  \caption{Local State Query mini-protocol messages.}
 \end{figure}
 
 where $AcquireFailure$ is either $AcquireFailurePointTooOld$ or
@@ -1254,24 +1297,24 @@ The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
 The node-to-node protocol consists of the following protocols:
 
 \begin{itemize}
-  \item chain synchronisation mini-protocol for headers
-  \item block fetch mini-protocol
-  \item transaction submission mini-protocol (from $NodeToNodeV\_6$ the version
-        2 is used)
-  \item keep alive mini-protocol (from $NodeToNodeV\_3$)
+  \item chain-sync mini-protocol for headers (section~\ref{chain-sync-protocol}
+  \item block fetch mini-protocol (section~\ref{block-fetch-protocol})
+  \item transaction submission mini-protocol;  from $NodeToNodeV\_6$ the version
+    2 is used  (section~\ref{tx-submission-protocol})
+  \item keep alive mini-protocol; from $NodeToNodeV\_3$ (section~\ref{keep-alive-protocol})
 \end{itemize}
 
 Currently there are the following versions of the node-to-node protocol:
 \begin{figure}[h]
-\begin{tabular}{l|l}
-  version         & description \\\hline\hline
-  $NodeToNodeV\_1$ & initial version \\\hline
-  $NodeToNodeV\_2$ & block size hints \\\hline
-  $NodeToNodeV\_3$ & introduction of keep-alive mini-protocol \\\hline
-  $NodeToNodeV\_4$ & introduction of diffusion mode in handshake mini-protocol \\\hline
-  $NodeToNodeV\_5$ & \\\hline
-  $NodeToNodeV\_6$ & transaction submission version 2 \\\hline
-\end{tabular}
+  \begin{tabular}{l|l}
+    version         & description \\\hline\hline
+    $NodeToNodeV\_1$ & initial version \\\hline
+    $NodeToNodeV\_2$ & block size hints \\\hline
+    $NodeToNodeV\_3$ & introduction of keep-alive mini-protocol \\\hline
+    $NodeToNodeV\_4$ & introduction of diffusion mode in handshake mini-protocol \\\hline
+    $NodeToNodeV\_5$ & \\\hline
+    $NodeToNodeV\_6$ & transaction submission version 2 \\\hline
+  \end{tabular}
 \end{figure}
 
 \section{Node-to-client protocol}
@@ -1280,24 +1323,24 @@ Currently there are the following versions of the node-to-node protocol:
 
 The node-to-client protocol consists of the following protocols:
 \begin{itemize}
-  \item chains synchronisation mini-protocols for blocks
-  \item local transaction submission mini-protocol
-  \item local state query mini-protocol (from version $NodeToClient\_2$)
+  \item chains synchronisation mini-protocols for blocks (section~\ref{chain-sync-protocol})
+  \item local transaction submission mini-protocol (section~\ref{local-tx-submission-protocol})
+  \item local state query mini-protocol; from version $NodeToClient\_2$ (section~\ref{local-state-query-protocol})
 \end{itemize}
 
 Currenty there are the following version of the node-to-client protocol:
 \begin{figure}[h]
-\begin{tabular}{l|l}
-  version & description \\\hline\hline
-  $NodeToClientV\_1$ & initial version\\\hline
-  $NodeToClientV\_2$ & added local-query mini-protocol\\\hline
-  $NodeToClientV\_3$ & \\\hline
-  $NodeToClientV\_4$ & new queries added to local state query mini-protocol\\\hline
-  $NodeToClientV\_5$ & allegra \\\hline
-  $NodeToClientV\_6$ & mary \\\hline
-  $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
-  $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
-\end{tabular}
+  \begin{tabular}{l|l}
+    version & description \\\hline\hline
+    $NodeToClientV\_1$ & initial version\\\hline
+    $NodeToClientV\_2$ & added local-query mini-protocol\\\hline
+    $NodeToClientV\_3$ & \\\hline
+    $NodeToClientV\_4$ & new queries added to local state query mini-protocol\\\hline
+    $NodeToClientV\_5$ & allegra \\\hline
+    $NodeToClientV\_6$ & mary \\\hline
+    $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
+    $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
+  \end{tabular}
 \end{figure}
 
 

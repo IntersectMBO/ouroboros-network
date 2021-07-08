@@ -673,15 +673,15 @@ simplifies the implementation.
 
 \begin{figure}[p]
   {\begin{tikzpicture}[scale=0.66]
-    \node                                     (init)                       at ( 2,   2)   {\small\InitialState};
-    \node[inbound_outbound_state]             (ReservedOutboundState)      at ( 0,-0.25)  {\small\ReservedOutboundState};
-    \node[inbound_outbound_state]             (UnnegotiatedStateIn)        at ( 5.5, -3)  {\small\UnnegotiatedStateIn};
-    \node[inbound_outbound_state,anchor=west] (InboundIdleStateDup)        at ( 0, -7.0)  {\small\InboundIdleStateDup};
-    \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 7, -7)    {\small\InboundIdleStateUni};
-    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 7.5, -12) {\small\InboundStateUni};
-    \node[inbound_outbound_state,anchor=west] (InboundStateDup)            at ( 0,  -12)  {\small\InboundStateDup};
-    \node[inbound_outbound_state]             (TerminatingState)           at ( 6,  -16)  {\small\TerminatingState};
-    \node[inbound_outbound_state]             (TerminatedState)            at ( 6,  -19)  {\small\TerminatedState};
+    \node                                     (init)                       at ( 2,   2)     {\small\InitialState};
+    \node[inbound_outbound_state]             (ReservedOutboundState)      at ( 0,-0.25)    {\small\ReservedOutboundState};
+    \node[inbound_outbound_state]             (UnnegotiatedStateIn)        at ( 5.5, -3)    {\small\UnnegotiatedStateIn};
+    \node[inbound_outbound_state,anchor=west] (InboundIdleStateDup)        at ( -0.5, -7.0) {\small\InboundIdleStateDup};
+    \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 7.5, -7)    {\small\InboundIdleStateUni};
+    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 7.5, -12)   {\small\InboundStateUni};
+    \node[inbound_outbound_state,anchor=west] (InboundStateDup)            at ( 0,  -12)    {\small\InboundStateDup};
+    \node[inbound_outbound_state]             (TerminatingState)           at ( 6,  -16)    {\small\TerminatingState};
+    \node[inbound_outbound_state]             (TerminatedState)            at ( 6,  -19)    {\small\TerminatedState};
 
 
     \draw[->] (init) -- node[fill=white,pos=0.425,above left]{\small\Reserve}                                      (ReservedOutboundState);
