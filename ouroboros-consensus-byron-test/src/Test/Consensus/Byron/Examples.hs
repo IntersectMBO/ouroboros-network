@@ -1,5 +1,6 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE TypeApplications         #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Consensus.Byron.Examples (
     -- * Setup
@@ -126,12 +127,12 @@ exampleBlock =
       (BlockNo 1)
       (SlotNo 1)
       (applyChainTick ledgerConfig (SlotNo 1) ledgerStateAfterEBB)
-      NoMaxTxCapacityOverride
+      (noOverride @ByronBlock)
       [ValidatedByronTx exampleGenTx]
       (fakeMkIsLeader leaderCredentials)
   where
     -- | Normally, we'd have to use 'checkIsLeader' to produce this proof.
-    fakeMkIsLeader (ByronLeaderCredentials signKey dlgCert _ _) = PBftIsLeader {
+    fakeMkIsLeader (ByronLeaderCredentials signKey dlgCert _ _ _) = PBftIsLeader {
           pbftIsLeaderSignKey = SignKeyByronDSIGN signKey
         , pbftIsLeaderDlgCert = dlgCert
         }

@@ -813,11 +813,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -> BlockNo
             -> SlotNo
             -> TickedLedgerState blk
-            -> MaxTxCapacityOverride blk
             -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk
-          customForgeBlock origBlockForging cfg' currentBno currentSlot tickedLdgSt maxTxCapacityOverride txs prf = do
+          customForgeBlock origBlockForging cfg' currentBno currentSlot tickedLdgSt txs prf = do
             let currentEpoch = HFF.futureSlotToEpoch future currentSlot
 
             -- EBBs are only ever possible in the first era
@@ -842,7 +841,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    currentBno
                    currentSlot
                    tickedLdgSt
-                   maxTxCapacityOverride
                    txs
                    prf
               Just forgeEbbEnv -> do
@@ -879,7 +877,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
                            currentBno
                            currentSlot
                            tickedLdgSt'
-                           maxTxCapacityOverride
                            txs
                            prf
 
@@ -980,7 +977,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
             , initChainDB             = nodeInitChainDB
             , blockForging            = blockForging
             , blockFetchSize          = estimateBlockSize
-            , maxTxCapacityOverride   = NoMaxTxCapacityOverride
             , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
             , keepAliveRng            = kaRng
             , miniProtocolParameters  = MiniProtocolParameters {

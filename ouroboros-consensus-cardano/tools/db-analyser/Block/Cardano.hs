@@ -113,15 +113,19 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         }
       ProtocolParamsShelley {
           shelleyProtVer = ProtVer 2 0
+        , shelleyOverrides = Overrides id
         }
       ProtocolParamsAllegra {
           allegraProtVer = ProtVer 3 0
+        , allegraOverrides = Overrides id
         }
       ProtocolParamsMary {
           maryProtVer    = ProtVer 4 0
+        , maryOverrides = Overrides id
         }
       ProtocolParamsAlonzo {
           alonzoProtVer  = ProtVer 5 0
+        , alonzoOverrides = Overrides id
         }
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = ()

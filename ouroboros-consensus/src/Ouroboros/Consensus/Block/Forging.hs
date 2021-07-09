@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE RankNTypes           #-}
@@ -20,10 +21,10 @@ module Ouroboros.Consensus.Block.Forging (
   , forgeStateUpdateInfoFromUpdateInfo
     -- * 'UpdateInfo'
   , UpdateInfo (..)
-    -- * 'MaxTxCapacityOverride'
-  , MaxTxCapacityOverride (..)
-  , Overrides
+    -- * 'Overrides'
+  , Overrides (..)
   , computeMaxTxCapacity
+  , noOverride
   , takeLargestPrefixThatFits
   ) where
 
@@ -148,47 +149,12 @@ data BlockForging m blk = BlockForging {
         -> BlockNo                      -- Current block number
         -> SlotNo                       -- Current slot number
         -> TickedLedgerState blk        -- Current ledger state
-        -> MaxTxCapacityOverride blk    -- Do we override max tx capacity defined
-                                        -- by ledger (see MaxTxCapacityOverride)
         -> [Validated (GenTx blk)]      -- Contents of the mempool
         -> IsLeader (BlockProtocol blk) -- Proof we are leader
         -> m blk
     }
 
--- | The maximum transaction capacity of a block is computed differently for
--- different eras and it is defined by ledger. We capture that by encoding an
--- associated type family Measure (in a typeclass TxLimits).
--- Early ledgers considered only block size (measured in bytes), thus their
--- 'Measure' was in fact just 'ByteSize'. The max capacity was computed by taking
--- the max block size from the protocol parameters in the current ledger state
--- and subtracting the size of the header. Other ledgers defined more complicated
--- 'Measure' - example would be Alonzo - where we limit block by size and execution
--- units. See Ouroboros.Consensus.Mempool.TxLimits for more details.
---
--- It is possible to override this maximum transaction capacity with a lower
--- value. We ignore higher values than the ledger state's max block size. Such
--- blocks would be rejected by the ledger anyway.
---
--- Overrides for most blocks will be just their 'Measure', meaning that
--- Overrides blk ~ Measure blk, however for a 'HardForkBlock xs' Overrides
--- becomes an NP MaxTxCapacityOverride xs. In other words MaxTxCapacityOverride for
--- HardForkBlock xs is a product of MaxTxCapacityOverride for all blocks defined
--- in given HardForkBlock
-data MaxTxCapacityOverride blk
-  = NoMaxTxCapacityOverride
-    -- ^ Don't override the maximum transaction capacity as computed from the
-    -- current ledger state.
-  | MaxTxCapacityOverride !(Overrides blk)
-    -- ^ Use the following maximum size in bytes for the transaction capacity
-    -- of a block.
-    -- Compute maximum block transaction capacity
-    --
-    -- We allow the override to /reduce/ the maximum size, but not increase
-    -- it. This is important because any blocks exceeding the max block size
-    -- are invalid according to the ledger and we want certainly don't want to
-    -- forge invalid blocks.
-
-type family Overrides blk
+newtype Overrides blk = Overrides { unOverrides :: Measure blk -> Measure blk }
 
 -- | Computes maximum capacity for a given block type.
 -- If node operator chose not to override this value, we choose the default value
@@ -199,15 +165,16 @@ type family Overrides blk
 -- ledger default, and the result of that is returned to the caller of the
 -- computeMaxTxCapacity
 computeMaxTxCapacity ::
-     forall blk. (TxLimits blk, Overrides blk ~ (Measure blk -> Measure blk))
+     forall blk. TxLimits blk
   => TickedLedgerState blk
-  -> MaxTxCapacityOverride blk
+  -> Overrides blk
   -> Measure blk
-computeMaxTxCapacity ledger maxTxCapacityOverride = case maxTxCapacityOverride of
-      NoMaxTxCapacityOverride              -> ledgerLimit
-      MaxTxCapacityOverride modifyCapacity -> pointwiseMin @blk ledgerLimit (modifyCapacity ledgerLimit)
-  where
-    ledgerLimit = maxCapacity ledger
+computeMaxTxCapacity ledger (Overrides modifyCapacity) =
+  let ledgerLimit = maxCapacity ledger
+  in  pointwiseMin @blk ledgerLimit (modifyCapacity ledgerLimit)
+
+noOverride :: Overrides blk
+noOverride = Overrides id
 
 -- | Filters out all transactions that do not fit the maximum size that is
 -- passed to this function as the first argument. Value of that first argument

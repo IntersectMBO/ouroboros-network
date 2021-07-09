@@ -410,10 +410,10 @@ protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
   -> ProtocolParamsShelleyBased (ShelleyEra c)
-  -> ProtocolParamsShelley
-  -> ProtocolParamsAllegra
-  -> ProtocolParamsMary
-  -> ProtocolParamsAlonzo
+  -> ProtocolParamsShelley c
+  -> ProtocolParamsAllegra c
+  -> ProtocolParamsMary c
+  -> ProtocolParamsAlonzo c
   -> ProtocolTransitionParamsShelleyBased (ShelleyEra c)
   -> ProtocolTransitionParamsShelleyBased (AllegraEra c)
   -> ProtocolTransitionParamsShelleyBased (MaryEra c)
@@ -430,15 +430,19 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       }
                     ProtocolParamsShelley {
                         shelleyProtVer = protVerShelley
+                      , shelleyOverrides
                       }
                     ProtocolParamsAllegra {
                         allegraProtVer = protVerAllegra
+                      , allegraOverrides
                       }
                     ProtocolParamsMary {
                         maryProtVer = protVerMary
+                      , maryOverrides
                       }
                     ProtocolParamsAlonzo {
                         alonzoProtVer = protVerAlonzo
+                      , alonzoOverrides
                       }
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
@@ -732,7 +736,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockForgingShelleyBased = do
         shelleyBased <-
           traverse
-            (shelleySharedBlockForging (Proxy @(ShelleyBasedEras c)) tpraosParams)
+            (flip (shelleySharedBlockForging (Proxy @(ShelleyBasedEras c)) tpraosParams) overrides)
             credssShelleyBased
         return $ reassoc <$> shelleyBased
       where
@@ -740,6 +744,9 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
              NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)
           -> OptNP 'False (BlockForging m) (CardanoEras c)
         reassoc = OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+
+    overrides :: NP (Overrides :.: ShelleyBlock) (ShelleyBasedEras c)
+    overrides = (Comp shelleyOverrides) :* (Comp allegraOverrides) :* (Comp maryOverrides) :* (Comp alonzoOverrides) :* Nil
 
 protocolClientInfoCardano
   :: forall c.

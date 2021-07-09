@@ -49,16 +49,16 @@ import           Ouroboros.Consensus.Byron.Protocol
 
 forgeByronBlock
   :: HasCallStack
-  => TopLevelConfig ByronBlock
+  => Overrides ByronBlock             -- ^ Do we override max tx capacity defined
+  -> TopLevelConfig ByronBlock
   -> BlockNo                          -- ^ Current block number
   -> SlotNo                           -- ^ Current slot number
   -> TickedLedgerState ByronBlock     -- ^ Current ledger
-  -> MaxTxCapacityOverride ByronBlock -- ^ Do we override max tx capacity defined
-                                      --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx ByronBlock)]   -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto     -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeByronBlock cfg = forgeRegularBlock (configBlock cfg)
+forgeByronBlock overrides cfg bno sno st txs isLeader =
+  forgeRegularBlock (configBlock cfg) bno sno st overrides txs isLeader
 
 forgeEBB
   :: BlockConfig ByronBlock
@@ -130,12 +130,12 @@ forgeRegularBlock
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
-  -> MaxTxCapacityOverride ByronBlock  -- ^ Do we override max tx capacity defined
+  -> Overrides ByronBlock              -- ^ Do we override max tx capacity defined
                                        --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx ByronBlock)]    -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
+forgeRegularBlock cfg bno sno st overrides txs isLeader =
     forge $
       forgePBftFields
         (mkByronContextDSIGN cfg)
@@ -145,7 +145,7 @@ forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
     epochSlots :: CC.Slot.EpochSlots
     epochSlots = byronEpochSlots cfg
 
-    computedMaxTxCapacity = computeMaxTxCapacity st maxTxCapacityOverride
+    computedMaxTxCapacity = computeMaxTxCapacity st overrides
 
     blockPayloads :: BlockPayloads
     blockPayloads =

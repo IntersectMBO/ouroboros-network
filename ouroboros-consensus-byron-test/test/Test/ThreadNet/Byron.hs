@@ -1349,6 +1349,7 @@ updSignKey genSK extCfg cid eno newSK =
       , blcDlgCert    = newCert
       , blcCoreNodeId = cid
       , blcLabel      = "Updated Byron credentials"
+      , blcOverrides  = noOverride @ByronBlock
       }
   where
     newCert =

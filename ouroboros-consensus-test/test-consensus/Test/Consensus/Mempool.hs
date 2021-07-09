@@ -414,9 +414,9 @@ instance Arbitrary TestSetup where
   arbitrary = sized $ \n -> do
     extraCapacity <- fromIntegral <$> choose (0, n)
     testSetup <- fst <$> genTestSetupWithExtraCapacity n extraCapacity
-    noOverride <- arbitrary
+    noOverrideMempool <- arbitrary
     return $
-      if noOverride
+      if noOverrideMempool
       then testSetup { testMempoolCapOverride = NoMempoolCapacityBytesOverride }
       else testSetup
 
@@ -633,10 +633,10 @@ instance Arbitrary TestSetupWithTxs where
     testSetup' <- case testMempoolCapOverride testSetup of
       NoMempoolCapacityBytesOverride -> return testSetup
       MempoolCapacityBytesOverride (MempoolCapacityBytes mpCap) -> do
-        noOverride <- arbitrary
+        noOverrideMempool <- arbitrary
         return testSetup {
               testMempoolCapOverride =
-                if noOverride
+                if noOverrideMempool
                 then NoMempoolCapacityBytesOverride
                 else MempoolCapacityBytesOverride $ MempoolCapacityBytes $
                        mpCap + txSizesInBytes (map fst txs)

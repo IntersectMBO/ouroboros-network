@@ -52,7 +52,7 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
-import           Ouroboros.Consensus.Util ((......:))
+import           Ouroboros.Consensus.Util ((.....:))
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -76,8 +76,8 @@ data ByronLeaderCredentials = ByronLeaderCredentials {
       --
       -- Useful when the node is running with multiple sets of credentials.
     , blcLabel      :: Text
+    , blcOverrides  :: Overrides ByronBlock
     }
-  deriving (Show)
 
 -- | Make the 'ByronLeaderCredentials', with a couple sanity checks:
 --
@@ -90,8 +90,9 @@ mkByronLeaderCredentials ::
   -> Crypto.SigningKey
   -> Delegation.Certificate
   -> Text
+  -> Overrides ByronBlock
   -> Either ByronLeaderCredentialsError ByronLeaderCredentials
-mkByronLeaderCredentials gc sk cert lbl = do
+mkByronLeaderCredentials gc sk cert lbl overrides = do
     guard (Delegation.delegateVK cert == Crypto.toVerification sk)
       ?! NodeSigningKeyDoesNotMatchDelegationCertificate
 
@@ -100,10 +101,11 @@ mkByronLeaderCredentials gc sk cert lbl = do
              ?! DelegationCertificateNotFromGenesisKey
 
     return ByronLeaderCredentials {
-      blcSignKey     = sk
-    , blcDlgCert     = cert
-    , blcCoreNodeId  = nid
-    , blcLabel       = lbl
+        blcSignKey     = sk
+      , blcDlgCert     = cert
+      , blcCoreNodeId  = nid
+      , blcLabel       = lbl
+      , blcOverrides   = overrides
     }
   where
     (?!) :: Maybe a -> e -> Either e a
@@ -139,13 +141,13 @@ byronBlockForging creds = BlockForging {
                                canBeLeader
                                slot
                                tickedPBftState
-    , forgeBlock       = return ......: forgeByronBlock
+    , forgeBlock       = return .....: forgeByronBlock (blcOverrides creds)
     }
   where
     canBeLeader = mkPBftCanBeLeader creds
 
 mkPBftCanBeLeader :: ByronLeaderCredentials -> CanBeLeader (PBft PBftByronCrypto)
-mkPBftCanBeLeader (ByronLeaderCredentials sk cert nid _) = PBftCanBeLeader {
+mkPBftCanBeLeader (ByronLeaderCredentials sk cert nid _ _) = PBftCanBeLeader {
       pbftCanBeLeaderCoreNodeId = nid
     , pbftCanBeLeaderSignKey    = SignKeyByronDSIGN sk
     , pbftCanBeLeaderDlgCert    = cert

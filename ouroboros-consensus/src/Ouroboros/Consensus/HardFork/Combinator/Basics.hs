@@ -37,7 +37,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , Except
     -- ** Overrides
   , Overrides
-  , hardForkMaxTxCapacityOverrideToNP
   ) where
 
 import           Data.Kind (Type)
@@ -135,20 +134,6 @@ newtype instance StorageConfig (HardForkBlock xs) = HardForkStorageConfig {
       hardForkStorageConfigPerEra :: PerEraStorageConfig xs
     }
   deriving newtype (NoThunks)
-
-{-------------------------------------------------------------------------------
-  Forging
--------------------------------------------------------------------------------}
-
-type instance Overrides (HardForkBlock xs) = NP MaxTxCapacityOverride xs
-
-hardForkMaxTxCapacityOverrideToNP ::
-     (All Top xs)
-  => MaxTxCapacityOverride (HardForkBlock xs)
-  -> NP MaxTxCapacityOverride xs
-hardForkMaxTxCapacityOverrideToNP = \case
-  NoMaxTxCapacityOverride -> hpure NoMaxTxCapacityOverride
-  MaxTxCapacityOverride v -> v
 
 {-------------------------------------------------------------------------------
   Ledger config

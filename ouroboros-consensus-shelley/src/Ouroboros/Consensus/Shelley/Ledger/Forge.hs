@@ -43,17 +43,17 @@ import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 forgeShelleyBlock ::
      forall m era. (ShelleyBasedEra era, TL.TxLimits (ShelleyBlock era), Monad m)
   => HotKey (EraCrypto era) m
+  -> Overrides (ShelleyBlock era)           -- ^ Do we override max tx capacity defined
+                                            --   by ledger (see MaxTxCapacityOverride)
   -> TPraosCanBeLeader (EraCrypto era)
   -> TopLevelConfig (ShelleyBlock era)
-  -> BlockNo                                   -- ^ Current block number
-  -> SlotNo                                    -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock era)      -- ^ Current ledger
-  -> MaxTxCapacityOverride (ShelleyBlock era)  -- ^ Do we override max tx capacity defined
-                                               --   by ledger (see MaxTxCapacityOverride)
-  -> [Validated (GenTx (ShelleyBlock era))]    -- ^ Txs to add in the block
-  -> TPraosIsLeader (EraCrypto era)            -- ^ Leader proof
+  -> BlockNo                                -- ^ Current block number
+  -> SlotNo                                 -- ^ Current slot number
+  -> TickedLedgerState (ShelleyBlock era)   -- ^ Current ledger
+  -> [Validated (GenTx (ShelleyBlock era))] -- ^ Txs to add in the block
+  -> TPraosIsLeader (EraCrypto era)         -- ^ Leader proof
   -> m (ShelleyBlock era)
-forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger maxTxCapacityOverride txs isLeader = do
+forgeShelleyBlock hotKey overrides canBeLeader cfg curNo curSlot tickedLedger txs isLeader = do
     tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody
     let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
     return $
@@ -70,7 +70,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger maxTxCapacit
       . fmap extractTxInBlock
       $ takeLargestPrefixThatFits computedMaxTxCapacity txs
 
-    computedMaxTxCapacity = computeMaxTxCapacity tickedLedger maxTxCapacityOverride
+    computedMaxTxCapacity = computeMaxTxCapacity tickedLedger overrides
 
     extractTxInBlock :: (Validated (GenTx (ShelleyBlock era))) -> SL.TxInBlock era
     extractTxInBlock (ShelleyValidatedTx _ tx) = tx

@@ -21,6 +21,7 @@ import           Test.Tasty.QuickCheck
 
 import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 
+import           Ouroboros.Consensus.Block.Forging
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
@@ -500,15 +501,19 @@ mkProtocolCardanoAndHardForkTxs
           }
         ProtocolParamsShelley {
             shelleyProtVer = SL.ProtVer shelleyMajorVersion 0
+          , shelleyOverrides = Overrides id
           }
         ProtocolParamsAllegra {
             allegraProtVer = SL.ProtVer allegraMajorVersion 0
+          , allegraOverrides = Overrides id
           }
         ProtocolParamsMary {
             maryProtVer    = SL.ProtVer maryMajorVersion    0
+          , maryOverrides = Overrides id
           }
         ProtocolParamsAlonzo {
             alonzoProtVer  = SL.ProtVer alonzoMajorVersion  0
+          , alonzoOverrides = Overrides id
           }
         protocolParamsByronShelley
         ProtocolTransitionParamsShelleyBased {

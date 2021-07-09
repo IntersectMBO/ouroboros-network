@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -211,14 +212,10 @@ forgeDualByronBlock
   -> BlockNo                              -- ^ Current block number
   -> SlotNo                               -- ^ Current slot number
   -> TickedLedgerState DualByronBlock     -- ^ Ledger
-  -> MaxTxCapacityOverride DualByronBlock -- ^ Do we override max tx capacity defined
-                                          --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx DualByronBlock)]   -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
-forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride vtxs isLeader =
-    -- for simplicity we assume that MaxTxCapacityOverride is not modified by tests
-    assert isNoMaxTxCapacityOverride $
+forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -231,17 +228,14 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride 
       , dualBlockBridge = mconcat $ map vDualGenTxBridge vtxs
       }
   where
-    isNoMaxTxCapacityOverride = case maxTxCapacityOverride of
-      NoMaxTxCapacityOverride -> True
-      MaxTxCapacityOverride _ -> False
 
     main :: ByronBlock
     main = forgeByronBlock
+             (noOverride @ByronBlock)
              (dualTopLevelConfigMain cfg)
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)
-             NoMaxTxCapacityOverride
              (map vDualGenTxMain vtxs)
              isLeader
 

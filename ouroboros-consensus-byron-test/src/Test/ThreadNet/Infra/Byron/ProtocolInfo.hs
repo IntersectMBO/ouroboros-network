@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.ThreadNet.Infra.Byron.ProtocolInfo (
     mkLeaderCredentials
@@ -21,6 +22,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
+import           Ouroboros.Consensus.Block.Forging
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -77,6 +79,7 @@ mkLeaderCredentials genesisConfig genesisSecrets (CoreNodeId i) =
         dlgKey
         dlgCert
         "ThreadNet"
+        (noOverride @ByronBlock)
   where
     dlgKey :: Crypto.SigningKey
     dlgKey = fromMaybe (error "dlgKey") $

@@ -46,6 +46,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import qualified Cardano.Ledger.Era as SL
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.Block.Forging
 import           Ouroboros.Consensus.Mempool.TxLimits
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -257,6 +258,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
           protocolParamsShelleyBased
           ()  -- trivial translation context
           protVer1
+          (Comp $ Overrides id)
 
     eraParams1 :: History.EraParams
     eraParams1 = shelleyEraParams genesis1
@@ -289,6 +291,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
             }
           transCtxt2
           protVer2
+          (Comp $ Overrides id)
 
     eraParams2 :: History.EraParams
     eraParams2 = shelleyEraParams genesis2

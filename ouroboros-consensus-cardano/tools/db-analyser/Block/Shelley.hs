@@ -27,6 +27,7 @@ import qualified Shelley.Spec.Ledger.API as SL
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
+import           Ouroboros.Consensus.Block.Forging
 import           Ouroboros.Consensus.Shelley.Eras (ShelleyBasedEra,
                      StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
@@ -84,6 +85,7 @@ mkShelleyProtocolInfo genesis initialNonce =
         }
       ProtocolParamsShelley {
           shelleyProtVer = SL.ProtVer 2 0
+        , shelleyOverrides = Overrides id
         }
 
 parseShelleyArgs :: Parser ShelleyBlockArgs

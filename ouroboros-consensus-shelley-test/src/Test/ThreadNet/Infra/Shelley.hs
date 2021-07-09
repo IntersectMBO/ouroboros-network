@@ -60,6 +60,7 @@ import           Cardano.Crypto.VRF (SignKeyVRF, VRFAlgorithm, VerKeyVRF,
                      deriveVerKeyVRF, genKeyVRF, seedSizeVRF)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Block.Forging
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -418,6 +419,7 @@ mkProtocolShelley genesis initialNonce protVer coreNode =
         }
       ProtocolParamsShelley {
           shelleyProtVer = protVer
+        , shelleyOverrides = Overrides id
         }
 {-------------------------------------------------------------------------------
   Necessary transactions for updating the 'DecentralizationParam'
