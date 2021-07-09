@@ -55,7 +55,7 @@ data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
   deriving NoThunks via AllowThunk (LedgerState ByronSpecBlock)
 
 newtype ByronSpecLedgerError = ByronSpecLedgerError {
-      unByronSpecLedgerError :: [[Spec.PredicateFailure Spec.CHAIN]]
+      unByronSpecLedgerError :: [Spec.PredicateFailure Spec.CHAIN]
     }
   deriving (Show, Eq)
   deriving NoThunks via AllowThunk ByronSpecLedgerError
