@@ -49,7 +49,6 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
 import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-import qualified Test.Ouroboros.Network.PeerSelection.Json
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
@@ -110,7 +109,6 @@ tests =
     , testProperty "progresses towards active local root peers target (from above)"
                    prop_governor_target_active_local_above
     ]
-  , Test.Ouroboros.Network.PeerSelection.Json.tests
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
