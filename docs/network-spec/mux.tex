@@ -1,15 +1,14 @@
 \chapter{Multiplexing mini-protocols}
-\label{connection-management}
+\label{chapter:multiplexer}
 
 \section{The Multiplexing Layer}
 \label{multiplexing-section}
-Multiplexing is used to run several mini protocols in parallel over a single
-channel (for example a single TCP connection).
-Figure~\ref{mux-diagram} shows an example of two nodes, each running three
-mini protocols and a multiplexer/de-multiplexer.
-All the data that is transmitted between the nodes passes through the MUX/DEMUX of the nodes.
-There is a fixed pairing of the mini protocol instances, i.e. each mini protocol instance only
-communicates with its dual instance.
+Multiplexing is used to run several mini protocols in parallel over
+a bidirectional bearer (for example a TCP connection).
+Figure~\ref{mux-diagram} ilustrates multiplexing of three mini-protocols over
+a single duplex bearer.  The multiplexer guarantees a fixed pairing of
+mini-protocol instances, each mini-protocol only communicates with its counter
+part on the remote end.
 
 \begin{figure}[ht]
 \pgfdeclareimage[height=7cm]{mux-diagram}{figure/mux.png}
@@ -20,43 +19,63 @@ communicates with its dual instance.
 \label{mux-diagram}
 \end{figure}
 
-The implementation of the mini protocol also handles the serialisation and de-serialisation of its messages.
-The mini protocols write chunks of bytes to the MUX and read chunks of bytes from the DEMUX.
-The MUX reads the data from the mini protocols, splits the data into segments, adds a segment header
-and transmits the segments to the DEMUX of its peer.
-The DEMUX uses the segment's headers to reassemble the byte streams for the mini protocols on its side.
-The multiplexing protocol itself is completely agnostic to the structure of the multiplexed data.
+
+The multiplexer is agnostic to the bearer it runs over, however it assume that
+the bearer guarantees an ordered and reliable transport layer\footnote{Slightly
+more relaxed property is required: in order delivery of multiplexer segments
+which belong to the same mini-protocol.} and it requires the bearer to be
+\href{https://www.wikiwand.com/en/Duplex_(telecommunications)\#/Full-duplex}{full-duplex}
+to allow simultaneous reads and writes\footnote{Note that one can always pair
+two unidirectional bearers to form a duplex bearer, we use this to define
+a duplex bearer out of unix pipes, or queues (for intra-process communication
+only).}.  The multiplexer is agnostic to the serialisation used by
+a mini-protocol (which we specify in section~\ref{chapter:mini-protocols}).
+Multiplexer specifies its own framing / binary serialisation format, which is
+described in section~\ref{section:wire-format}.  The multiplexer allows to use
+each mini-protocol in either direction.
+
+The multiplexer exposes interface which hides all the multiplexer details,
+a single mini-protocol communication can be written as if it would only
+communicate with its instance on the remote end.  When the muliplexer is
+instructed to send bytes of some mini-protocol, it splits the data into
+segments, adds a segment header, encodes it and transmits the segments over the
+bearer.  When reading data from the network, segment's headers are used
+reassemble mini-protocol byte streams.
 
 \subsection{Wire Format}
-\haddockref{Ouroboros.Network.Mux.Egress}{network-mux/Network-Mux-Egress}
-\begin{table}[ht]
-\centering
-\begingroup
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}
-  \hline
-  0&1&2&3&4&5&6&7&8&9&0&1&2&3&4&5&6&7&8&9&0&1&2&3&4&5&6&7&8&9&0&1 \\ \hline
-  \multicolumn{32}{|c|}{Transmission Time} \\ \hline
-  \multicolumn{1}{|c|}{$M$}
-  &\multicolumn{15}{|c|}{Mini Protocol ID}
-  &\multicolumn{16}{|c|}{Payload-length $n$} \\ \hline
-  \multicolumn{32}{|c|}{} \\
-  \multicolumn{32}{|c|}{Payload of $n$ Bytes} \\
-  \multicolumn{32}{|c|}{} \\ \hline
-\end{tabular}
-\endgroup
-\caption{Multiplexing-segments}
-\label{segment-header}
+\label{section:wire-format}
+
+\begin{table}
+  \begin{center}
+    \begingroup
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+      \hline
+      0&1&2&3&4&5&6&7&8&9&0&1&2&3&4&5&6&7&8&9&0&1&2&3&4&5&6&7&8&9&0&1 \\ \hline
+      \multicolumn{32}{|c|}{Transmission Time} \\ \hline
+      \multicolumn{1}{|c|}{$M$}
+      &\multicolumn{15}{|c|}{Mini Protocol ID}
+      &\multicolumn{16}{|c|}{Payload-length $n$} \\ \hline
+      \multicolumn{32}{|c|}{} \\
+      \multicolumn{32}{|c|}{Payload of $n$ Bytes} \\
+      \multicolumn{32}{|c|}{} \\ \hline
+    \end{tabular}
+    \endgroup
+    \caption{Multiplexer's segment binary encoding, see
+    \href{https://input-output-hk.github.io/ouroboros-network/network-mux/Network-Mux-Codec}{Network.Mux.Codec}.}
+    \label{segment-header}
+  \end{center}
 \end{table}
 
 Table~\ref{segment-header} shows the layout of the data segments of the multiplexing protocol
-(big-endian bit order).
-The segment header contains the following data:
+in big-endian bit order.  The segment header contains the following data:
 \begin{description}
 \item[Transmission Time]
   The transmission time is a time stamp based the lower 32 bits of the sender's monotonic clock with a
   resolution of one microsecond.
-\item[Mini Protocol ID] The unique ID of the mini protocol as in Table~\ref{mini-protocol-id}.
+\item[Mini Protocol ID] The unique ID of the mini protocol as in
+  tables~\ref{table:node-to-node-protocol-numbers}
+    and~\ref{table:node-to-client-protocol-numbers}.
 \item[Payload Length] The payload length is the size of the segment payload in Bytes.
   The maximum payload length that is supported by the multiplexing wire format is $2^{16}-1$.
   Note, that an instance of the protocol can choose a smaller limit for the size of segments it transmits.
@@ -66,15 +85,13 @@ The segment header contains the following data:
 \end{description}
 
 \subsection{Fairness and Flow-Control in the Multiplexer}
-The Shelley network protocol requires that the multiplexer uses a fair scheduling of the mini protocols.
-
-The reference Haskell implementation of multiplexer uses a round-robin-schedule of the mini protocols
-to choose the next data segment to transmit.
-If a mini protocol does not have new data available when it is scheduled, it is skipped.
-A mini protocol can transmit at most one segment of data every time it is scheduled
-and it will only be rescheduled immediately if no other mini protocol has data available.
-Each mini protocol is implemented as a separate Haskell thread.
-These threads can signal the multiplexer at any time that they have new data available.
+The Shelley network protocol requires that the multiplexer uses a fair
+scheduling of the mini protocols.  Haskell implementation of
+multiplexer uses a round-robin-schedule of the mini protocols to choose the
+next data segment to transmit.  If a mini protocol does not have new data
+available when it is scheduled, it is skipped.  A mini-protocol can transmit at
+most one segment of data every time it is scheduled and it will only be
+rescheduled immediately if no other mini protocol is ready to send data.
 
 From the point of view of the mini protocols, there is a one-message buffer between the egress of
 the mini protocol and the ingress of the multiplexer.
@@ -86,127 +103,56 @@ For example, although the multiplexing protocol itself is agnostic to the underl
 the data, the multiplexer may try to avoid splitting small mini protocol messages into two segments.
 The multiplexer may also try to merge multiple messages from one mini protocol into a
 single segment.
-Note that, the messages within a segment must all belong to the same mini protocol.
+Note that, the messages within a segment must all belong to the same mini-protocol.
 
 \subsection{Flow-control and Buffering in the Demultiplexer}
 \label{mux-flow-control}
-The demultiplexer eagerly reads data from its ingress.
+The demultiplexer eagerly reads data from the bearer.
 There is a fixed size buffer between the egress of the demultiplexer and the ingress of
 the mini protocols.
 Each mini protocol implements its own mechanism for flow control which guarantees that this buffer
-never overflows (See Section~\ref{pipelining}.).
+never overflows (see Section~\ref{pipelining}.).
 If the demultiplexer detects an overflow of the buffer, it means that the peer violated the
 protocol and the MUX/DEMUX layer shuts down the connection to the peer.
 
-\hide{
-The size of the buffers is listed in Table~\ref{demux-buffers}.
-}
+\todo[inline]{Specify ingress buffer sizes for each mini-protocol}
 
-%\section{Setup, Shutdown and Management of Connections}
-%\label{peer-setup-section}
-%In addition to the exchange of blocks and transactions, as required by Ouroboros,
-%the network layer also handles several administrative tasks.
-%This section describes the parts of the protocol that deal with setting up, shutting down and
-%managing a connection between two peers.
-%In this section, we use the term {\bf connection} or {\bf bearer} for the multiplexing-layer object
-%that manages the mini protocol threads, the buffers and the OS-level connection
-%(for example TCP socket) that deals with one peer of the node.
-%
-%The multiplexing layer (Section~\ref{multiplexing-section}) is the central crossing between
-%the mini protocols and the network channel.
-%Therefore, the reference implementation takes the approach
-%of implementing the functions for connection management in the same part of the source code
-%that also implements the multiplexing layer itself.
-%
-%This section describes the protocol and sketches a possible implementation.
-%Roughly the implementation performs the following tasks:
-%\begin{itemize}
-%\item Open a socket/ acquire resources from the OS.
-%\item Negotiate the protocol version with the handshake mini protocol
-%      (Section \ref{handshake-protocol}.
-%\item Spawn the threads that run the mini protocols.
-%\item Measure transmission times and amount of in-flight data.
-%\item Catch exceptions that are thrown by the mini protocols.
-%\item Shutdown the connection in case of an error.
-%\item Handle a shutdown request from the peer.
-%\item Shutdown the threads that run the mini protocols.
-%\item Close Socket/ free resources.
-%\end{itemize}
-
-\newcommand{\Larval}{\state{Larval}}
-\newcommand{\Connected}{\state{Connected}}
-\newcommand{\Mature}{\state{Mature}}
-\newcommand{\Dying}{\state{Dying}}
-\newcommand{\Dead}{\state{Dead}}
-
-\section{Life Cycle of a bearer}
-\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=1.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, initial]                           (Larval)       {\Larval};
-  \node[state, below of=Larval]                   (Connected)    {\Connected};
-  \node[state, below of=Connected]                (Mature)       {\Mature};
-  \node[state, below of=Mature]                   (Dying)        {\Dying};
-  \node[state, below of=Dying]                    (Dead)         {\Dead};
-  \draw (Larval)            edge[]      node{OS connect}         (Connected);
-  \draw (Connected)         edge[]      node{agree protocol versions, start mini protocols}    (Mature);
-  \draw (Mature)         edge[]      node{termination of any mini protocol}           (Dying);
-  \draw (Dying)         edge[]      node{transmission of messages that are already buffered,OS disconnect}
-         (Dead);
-\end{tikzpicture}
-
-A connection passes through several stages during its life cycle.
-\begin{description}
-\item[\Larval]    The connection exists but nothing has been initialised yet.
-\item[\Connected] The OS-level primitives (sockets or pipes) are connected.
-\item[\Mature] The mini protocols are running.
-\item[\Dying]  One of the mini protocols has terminated.
-\item[\Dead] The connection has been terminated.
-\end{description}
-
-\newcommand{\InitReq}{\msg{InitReq}}
-\newcommand{\InitRsp}{\msg{InitRsp}}
-\newcommand{\InitFail}{\msg{InitFail}}
-
+\section{Node-to-node and node-to-client protocol numbers}
 \noindent\haddockref{Network.Mux.Types}{network-mux/Network-Mux-Types}
 \newline\haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}
 \newline\haddockref{Ouroboros.Network.NodeToClient}{ouroboros-network/Ouroboros-Network-NodeToClient}
-\hide{Update needed !}
+
+Ouroboros network defines two protocols: \emph{node-to-node} and
+\emph{node-to-client} protocols.  \emph{Node-to-node} is used for inter node
+communication across the Internet, while \emph{node-to-client} is a inter
+process communication, usedy by clients, e.g. a wallet, db-sync, etc.  Each of them consists of a bundle of mini-protocols (see chapter~\ref{chapter:mini-protocols})
+consists of a bundle of mini-protocols.  The protocol numbers of both protocols
+are specified in tables~\ref{table:node-to-node-protocol-numbers}
+and~\ref{table:node-to-client-protocol-numbers}.
 \begin{table}[ht]
-\centering
-\begin{tabular}{|l|l|l|l|}
-  \hline
-  ID & Mini Protocol                         & NtN  & NtC \\ \hline
-  0  & MUX-Control                           & Yes  & Yes \\ \hline
-  % 1  & DeltaQ                                & Yes  & Yes \\ \hline
-  2  & Chain-Sync instantiated to headers    & Yes  & No \\ \hline
-  3  & Block-Fetch                           & Yes  & No  \\ \hline
-  4  & TxSubmission                          & Yes  & No   \\ \hline
-  5  & Chain-Sync instantiated to blocks     & No   & Yes  \\ \hline
-  6  & Local TxSubmission                    & No   & Yes  \\ \hline
-  7  & Local State Query                     & No   & Yes \\\hline
-  8  & Keep-alive                            & Yes  & No  \\\hline
-\end{tabular}
-\caption{Mini Protocol IDs}
-\label{mini-protocol-id}
+  \begin{center}
+    \begin{tabular}{l|c}
+      mini-protocol                                                      & mini-protocol number \\\hline
+      \hyperref[handshake-protocol]{Handshake}                           & 0  \\
+      \hyperref[chain-sync-protocol]{Chain-Sync} \small{(instantiated to headers)} & 2  \\
+      \hyperref[block-fetch-protocol]{Block-Fetch}                       & 3  \\
+      \hyperref[tx-submission-protocol]{TxSubmission}                    & 4  \\
+      \hyperref[keep-alive-protocol]{Keep-alive}                         & 8  \\
+    \end{tabular}
+  \end{center}
+  \caption{Node-to-node protocol numbers}
+  \label{table:node-to-node-protocol-numbers}
 \end{table}
-
-\subsection{Default Mini Protocol Sets for Node-to-Node and Node-to-Client}
-Table~\ref{mini-protocol-id} show which mini protocols are enabled for node-to-node
-and node-to-client communication.
-Mux-Control and DeltaQ are enabled for all connections.
-The communication between two full nodes (NtN) is fully symmetric.
-Both nodes run initiator and responder instances of the
-Chain-Sync, the Block-Fetch and the Transaction-Submission protocol.
-Node-to-Client (NtC) is a connection between a full node and a client that does not take part in
-Ouroboros protocol itself and only consumes data, for example a wallet or a block chain explorer.
-In a NtC setup, the node only runs the producer side of the Chain-Sync protocol and the client only the
-consumer side.
-The Chain-Sync protocol is polymorphic in the type of blocks that are transmitted.
-NtN uses a Chain-Sync instance which only transmits block headers, while the NtC instance transmits
-full blocks.
-The two variants of Chain-Sync use different protocol IDs.
-
-
-\subsection{Error Handling}
-When a mini protocol thread detects that a peer violates the mini protocol it throws an exception.
-The MUX-layer catches the exceptions from the mini protocol threads and shuts down the connection.
+\begin{table}[ht]
+  \begin{center}
+    \begin{tabular}{l|c}
+      mini-protocol                                                     & mini-protocol number \\\hline
+      \hyperref[handshake-protocol]{Handshake}                          & 0 \\
+      \hyperref[chain-sync-protocol]{Chain-Sync} \small{(instantiated to blocks)} & 5 \\
+      \hyperref[local-tx-submission-protocol]{Local TxSubmission}       & 6 \\
+      \hyperref[local-state-query-protocol]{Local State Query}          & 7 \\
+    \end{tabular}
+  \end{center}
+  \caption{Node-to-client protocol numbers}
+  \label{table:node-to-client-protocol-numbers}
+\end{table}
