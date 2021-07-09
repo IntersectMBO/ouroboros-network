@@ -105,9 +105,6 @@ tests =
     , testProperty "progresses towards active local root peers target (from above)"
                    prop_governor_target_active_local_above
     ]
-  , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
-  , testProperty "governor connection status"       prop_governor_connstatus
-  , testProperty "governor no livelock"             prop_governor_nolivelock
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others
