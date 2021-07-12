@@ -401,7 +401,7 @@ publicRootPeersProvider tracer
 --
 resolveDomainAddresses
   :: forall exception resolver m.
-  (MonadThrow m, MonadAsync m, Exception exception)
+     (MonadThrow m, MonadAsync m, Exception exception)
   => Tracer m TracePublicRootPeers
   -> TimeoutFn m
   -> DNS.ResolvConf
