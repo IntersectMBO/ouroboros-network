@@ -124,16 +124,6 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
              . Map.assocs
              $ available'
 
-    _simpleDemotionPolicy :: PickPolicy SockAddr m
-    _simpleDemotionPolicy _ _ _ available pickNum = do
-      available' <- addRand available (,)
-      return $ Set.fromList
-             . map fst
-             . take pickNum
-             . sortOn snd
-             . Map.assocs
-             $ available'
-
     -- Failures lowers r
     failWeight :: (SockAddr -> Int)
                 -> SockAddr
