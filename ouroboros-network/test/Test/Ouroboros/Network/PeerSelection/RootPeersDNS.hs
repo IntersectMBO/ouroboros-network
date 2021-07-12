@@ -154,7 +154,7 @@ simpleMockRoots = MockRoots localRootPeers dnsMap (mkStdGen 60)
 -- Adds DNS Lookup function for IOSim with different timeout and lookup
 -- delays for every attempt.
 mockDNSActions :: forall exception s.
-               Map Domain [IPv4]
+                  Map Domain [IPv4]
                -> StrictTVar (IOSim s) StdGen
                -> DNSActions () exception (IOSim s)
 mockDNSActions dnsMap stdGenVar =
@@ -169,9 +169,9 @@ mockDNSActions dnsMap stdGenVar =
  where
    genDiffTime :: Integer -> Integer -> StdGen -> DiffTime
    genDiffTime lo hi =
-    picosecondsToDiffTime
-    . fst
-    . uniformR (lo * 1000000000, hi * 1000000000)
+       picosecondsToDiffTime
+     . fst
+     . uniformR (lo * 1_000_000_000, hi * 1_000_000_000)
 
    dnsResolverResource      _ = return (constantResource ())
    dnsAsyncResolverResource _ = return (constantResource ())
@@ -319,7 +319,7 @@ selectPublicRootResultEvents trace = [ (t, (domain, map fst r))
 --
 prop_local_preservesGroupNumberAndTargets :: MockRoots -> Property
 prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _) =
-    let tr = take 1000
+    let tr = take 1_000
               $ selectLocalRootGroupsEvents
               $ selectLocalRootPeersEvents
               $ selectRootPeerDNSTraceEvents
@@ -346,7 +346,7 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _) =
 --
 prop_local_resolvesDomainsCorrectly :: MockRoots -> Property
 prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) =
-    let tr = take 1000
+    let tr = take 1_000
               $ selectLocalRootResultEvents
               $ selectLocalRootPeersEvents
               $ selectRootPeerDNSTraceEvents
@@ -364,7 +364,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) =
 -- after a successful DNS lookup the result list is updated correctly.
 prop_local_updatesDomainsCorrectly :: MockRoots -> Property
 prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _) =
-    let tr = take 1000
+    let tr = take 1_000
               $ selectLocalRootPeersEvents
               $ selectRootPeerDNSTraceEvents
               $ runSimTrace
@@ -467,7 +467,7 @@ prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) n =
 prop_resolveDomainAddresses_resolvesDomainsCorrectly :: MockRoots -> Property
 prop_resolveDomainAddresses_resolvesDomainsCorrectly
   mockRoots@(MockRoots _ dnsMap _) =
-    within 1000000 $
+    within 1_000_000 $
       lookupLoop mockRoots dnsMap === dnsMap
   where
     -- Perform public root DNS lookup until no failures
