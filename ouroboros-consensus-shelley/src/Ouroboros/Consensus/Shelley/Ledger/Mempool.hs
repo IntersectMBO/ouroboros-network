@@ -27,6 +27,8 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
   , mkShelleyTx
   , mkShelleyValidatedTx
   , perTxOverhead
+  -- * Exported for tests
+  , AlonzoMeasure (..)
   ) where
 
 import           Control.Monad.Except (Except)
@@ -42,7 +44,7 @@ import           Cardano.Binary (Annotator (..), FromCBOR (..),
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
-import           Cardano.Ledger.Alonzo.Scripts (ExUnits (..), pointWiseExUnits)
+import           Cardano.Ledger.Alonzo.Scripts (ExUnits (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -275,21 +277,18 @@ theLedgerLens f x =
 
 instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (ShelleyEra c)) where
   type Measure (ShelleyBlock (ShelleyEra c)) = ByteSize
-  lessEq       = (<=)
   txMeasure    = ByteSize . txInBlockSize . txForgetValidated
   maxCapacity  = ByteSize . txsMaxBytes
   pointwiseMin = min
 
 instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (AllegraEra c)) where
   type Measure (ShelleyBlock (AllegraEra c)) = ByteSize
-  lessEq       = (<=)
   txMeasure    = ByteSize . txInBlockSize . txForgetValidated
   maxCapacity  = ByteSize . txsMaxBytes
   pointwiseMin = min
 
 instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (MaryEra c)) where
   type Measure (ShelleyBlock (MaryEra c)) = ByteSize
-  lessEq       = (<=)
   txMeasure    = ByteSize . txInBlockSize . txForgetValidated
   maxCapacity  = ByteSize . txsMaxBytes
   pointwiseMin = min
@@ -310,9 +309,6 @@ instance ( SL.PraosCrypto c
          ) => TxLimits (ShelleyBlock (AlonzoEra c)) where
 
   type Measure (ShelleyBlock (AlonzoEra c)) = AlonzoMeasure
-
-  lessEq (AlonzoMeasure bs1 exu1) (AlonzoMeasure bs2 exu2) =
-    bs1 <= bs2 && pointWiseExUnits (<=) exu1 exu2
 
   txMeasure (ShelleyValidatedTx _txid vtx) =
     AlonzoMeasure {

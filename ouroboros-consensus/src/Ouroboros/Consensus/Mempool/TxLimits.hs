@@ -18,6 +18,7 @@ module Ouroboros.Consensus.Mempool.TxLimits (
   , Overrides
   , TxLimits (..)
   , applyOverrides
+  , lessEq
   , mkOverrides
   , noOverrides
   ) where
@@ -42,13 +43,19 @@ import           Ouroboros.Consensus.Ticked (Ticked (..))
 -- eras (starting with Alonzo) this measure was a bit more complex
 -- as it had to take other factors into account (like execution units).
 -- For details please see the individual instances for the TxLimits.
-class (Monoid (Measure blk)) => TxLimits blk where
+class (Eq (Measure blk), Monoid (Measure blk)) => TxLimits blk where
   type Measure blk
 
-  lessEq       :: Measure blk -> Measure blk -> Bool
   txMeasure    :: Validated (GenTx blk) -> Measure blk
   maxCapacity  :: Ticked (LedgerState blk) -> Measure blk
   pointwiseMin :: Measure blk -> Measure blk -> Measure blk
+
+-- | Is every part of the first measure less-than-or-equal-to the corresponding
+-- part of the second measure?
+--
+-- See <https://en.wikipedia.org/wiki/Product_order>.
+lessEq :: forall blk. TxLimits blk => Measure blk -> Measure blk -> Bool
+lessEq x y = x == pointwiseMin @blk x y
 
 newtype ByteSize = ByteSize { unByteSize :: Word32 }
   deriving stock (Show, Eq, Ord)
