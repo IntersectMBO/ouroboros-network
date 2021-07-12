@@ -71,11 +71,9 @@ forgeShelleyBlock hotKey canBeLeader cfg maxTxCapacityOverrides curNo curSlot ti
         SL.toTxSeq @era
       . Seq.fromList
       . fmap extractTx
-      $ takeLargestPrefixThatFits maxTxCapacity txs
+      $ takeLargestPrefixThatFits maxTxCapacityOverrides tickedLedger txs
 
-    maxTxCapacity = computeMaxTxCapacity tickedLedger maxTxCapacityOverrides
-
-    extractTx :: (Validated (GenTx (ShelleyBlock era))) -> Core.Tx era
+    extractTx :: Validated (GenTx (ShelleyBlock era)) -> Core.Tx era
     extractTx (ShelleyValidatedTx _txid vtx) = SL.extractTx vtx
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =

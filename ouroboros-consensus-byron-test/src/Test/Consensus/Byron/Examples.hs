@@ -124,7 +124,7 @@ exampleBlock :: ByronBlock
 exampleBlock =
     forgeRegularBlock
       cfg
-      TxLimits.noOverrides
+      (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
       (BlockNo 1)
       (SlotNo 1)
       (applyChainTick ledgerConfig (SlotNo 1) ledgerStateAfterEBB)

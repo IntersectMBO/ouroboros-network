@@ -85,10 +85,9 @@ import           Ouroboros.Consensus.Mempool.TxLimits
 -------------------------------------------------------------------------------}
 
 instance TxLimits ByronBlock where
-  type Measure ByronBlock = ByteSize
-  txMeasure    = ByteSize . txInBlockSize . txForgetValidated
-  maxCapacity  = ByteSize . txsMaxBytes
-  pointwiseMin = min
+  type TxMeasure ByronBlock = ByteSize
+  txMeasure        = ByteSize . txInBlockSize . txForgetValidated
+  txsBlockCapacity = ByteSize . txsMaxBytes
 
 {-------------------------------------------------------------------------------
   Transactions

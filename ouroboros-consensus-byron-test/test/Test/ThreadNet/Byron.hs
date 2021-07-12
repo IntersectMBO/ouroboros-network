@@ -1301,7 +1301,10 @@ mkRekeyUpd genesisConfig genesisSecrets cid pInfo eno newSK =
         Just _  ->
           let genSK = genesisSecretFor genesisConfig genesisSecrets cid
               creds' = updSignKey genSK bcfg cid (coerce eno) newSK
-              blockForging' = byronBlockForging TxLimits.noOverrides creds'
+              blockForging' =
+                byronBlockForging
+                  (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+                  creds'
               pInfo' = pInfo { pInfoBlockForging = return [blockForging'] }
 
           in Just TestNodeInitialization

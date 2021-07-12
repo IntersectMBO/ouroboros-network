@@ -63,7 +63,7 @@ mkProtocolByron params coreNodeId genesisConfig genesisSecrets =
           , byronProtocolVersion        = theProposedProtocolVersion
           , byronSoftwareVersion        = theProposedSoftwareVersion
           , byronLeaderCredentials      = Just leaderCredentials
-          , byronMaxTxCapacityOverrides = TxLimits.noOverrides
+          , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
 
 mkLeaderCredentials

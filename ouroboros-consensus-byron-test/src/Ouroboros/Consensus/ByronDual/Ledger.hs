@@ -230,7 +230,7 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     main :: ByronBlock
     main = forgeByronBlock
              (dualTopLevelConfigMain cfg)
-             TxLimits.noOverrides
+             (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)

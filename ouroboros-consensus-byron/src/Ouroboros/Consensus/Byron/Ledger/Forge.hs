@@ -146,14 +146,12 @@ forgeRegularBlock cfg maxTxCapacityOverrides bno sno st txs isLeader =
     epochSlots :: CC.Slot.EpochSlots
     epochSlots = byronEpochSlots cfg
 
-    maxTxCapacity = computeMaxTxCapacity st maxTxCapacityOverrides
-
     blockPayloads :: BlockPayloads
     blockPayloads =
         foldr
           extendBlockPayloads
           initBlockPayloads
-          (takeLargestPrefixThatFits maxTxCapacity txs)
+          (takeLargestPrefixThatFits maxTxCapacityOverrides st txs)
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)

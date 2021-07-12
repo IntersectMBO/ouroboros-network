@@ -75,7 +75,10 @@ dualByronBlockForging creds = BlockForging {
     , forgeBlock       = return .....: forgeDualByronBlock
     }
   where
-    BlockForging {..} = byronBlockForging TxLimits.noOverrides creds
+    BlockForging {..} =
+      byronBlockForging
+        (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+        creds
 
 {-------------------------------------------------------------------------------
   ProtocolInfo

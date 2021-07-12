@@ -419,7 +419,7 @@ mkProtocolShelley genesis initialNonce protVer coreNode =
         }
       ProtocolParamsShelley {
           shelleyProtVer                = protVer
-        , shelleyMaxTxCapacityOverrides = TxLimits.noOverrides
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
 {-------------------------------------------------------------------------------
   Necessary transactions for updating the 'DecentralizationParam'

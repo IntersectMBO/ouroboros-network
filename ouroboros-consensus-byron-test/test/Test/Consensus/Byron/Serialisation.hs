@@ -109,7 +109,7 @@ testCfg = pInfoConfig protocolInfo
         , byronProtocolVersion        = CC.Update.ProtocolVersion 1 0 0
         , byronSoftwareVersion        = CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2
         , byronLeaderCredentials      = Nothing
-        , byronMaxTxCapacityOverrides = TxLimits.noOverrides
+        , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
 
 -- | Matches the values used for the generators.

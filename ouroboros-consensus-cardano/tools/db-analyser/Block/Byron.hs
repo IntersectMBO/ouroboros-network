@@ -141,5 +141,5 @@ mkByronProtocolInfo genesisConfig signatureThreshold =
       , byronProtocolVersion        = Update.ProtocolVersion 1 0 0
       , byronSoftwareVersion        = Update.SoftwareVersion (Update.ApplicationName "db-analyser") 2
       , byronLeaderCredentials      = Nothing
-      , byronMaxTxCapacityOverrides = TxLimits.noOverrides
+      , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
       }

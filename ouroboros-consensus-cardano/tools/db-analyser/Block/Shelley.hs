@@ -85,7 +85,7 @@ mkShelleyProtocolInfo genesis initialNonce =
         }
       ProtocolParamsShelley {
           shelleyProtVer                = SL.ProtVer 2 0
-        , shelleyMaxTxCapacityOverrides = TxLimits.noOverrides
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
 
 parseShelleyArgs :: Parser ShelleyBlockArgs

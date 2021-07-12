@@ -1,12 +1,10 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DerivingStrategies   #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | Limits on the ledger-specific _measure_ (eg size) of a sequence of
 -- transactions
@@ -15,15 +13,21 @@
 -- > import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 module Ouroboros.Consensus.Mempool.TxLimits (
     ByteSize (..)
-  , Overrides
   , TxLimits (..)
+  , (Ouroboros.Consensus.Mempool.TxLimits.<=)
+    -- * Restricting more strongly than the ledger's limits
+  , Overrides
   , applyOverrides
-  , lessEq
+  , getOverrides
   , mkOverrides
-  , noOverrides
+  , noOverridesMeasure
   ) where
 
+import           Data.Coerce (coerce)
 import           Data.Word (Word32)
+
+import           Data.Measure (BoundedMeasure, Measure)
+import qualified Data.Measure as Measure
 
 import           Ouroboros.Consensus.Ledger.Abstract (Validated)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
@@ -43,46 +47,71 @@ import           Ouroboros.Consensus.Ticked (Ticked (..))
 -- eras (starting with Alonzo) this measure was a bit more complex
 -- as it had to take other factors into account (like execution units).
 -- For details please see the individual instances for the TxLimits.
-class (Eq (Measure blk), Monoid (Measure blk)) => TxLimits blk where
-  type Measure blk
+class BoundedMeasure (TxMeasure blk) => TxLimits blk where
+  type TxMeasure blk
 
-  txMeasure    :: Validated (GenTx blk) -> Measure blk
-  maxCapacity  :: Ticked (LedgerState blk) -> Measure blk
-  pointwiseMin :: Measure blk -> Measure blk -> Measure blk
+  -- | What is the measure an individual tx?
+  txMeasure        :: Validated (GenTx blk)    -> TxMeasure blk
 
--- | Is every part of the first measure less-than-or-equal-to the corresponding
--- part of the second measure?
---
--- See <https://en.wikipedia.org/wiki/Product_order>.
-lessEq :: forall blk. TxLimits blk => Measure blk -> Measure blk -> Bool
-lessEq x y = x == pointwiseMin @blk x y
+  -- | What is the allowed capacity for txs in an individual block?
+  txsBlockCapacity :: Ticked (LedgerState blk) -> TxMeasure blk
+
+-- | Is every component of the first value less-than-or-equal-to the
+-- corresponding component of the second value?
+(<=) :: Measure a => a -> a -> Bool
+(<=) = (Measure.<=)
+
+{-------------------------------------------------------------------------------
+  ByteSize
+-------------------------------------------------------------------------------}
 
 newtype ByteSize = ByteSize { unByteSize :: Word32 }
-  deriving stock (Show, Eq, Ord)
+  deriving stock (Show)
+  deriving newtype (Eq, Ord)
+  deriving newtype (BoundedMeasure, Measure)
 
-instance Semigroup ByteSize where
-  (ByteSize bs1) <> (ByteSize bs2) = ByteSize $ bs1 + bs2
+{-------------------------------------------------------------------------------
+  Overrides
+-------------------------------------------------------------------------------}
 
-instance Monoid ByteSize where
-  mempty = ByteSize 0
-
--- | How to override the limits set by the ledger state
+-- | An override that lowers a capacity limit
 --
--- The forge logic must use the 'pointwiseMin'imum of the limits from ledger
--- state and from the result of this override.
-newtype Overrides blk = Overrides (Measure blk -> Measure blk)
+-- Specifically, we use this override to let the node operator limit the total
+-- 'TxMeasure' of transactions in blocks even more severely than would the
+-- ledger state's 'txsBlockCapacity'. The forge logic will use the 'Measure.min'
+-- (ie the lattice's @meet@ operator) to combine this override with the capacity
+-- given by the ledger state. More concretely, that will typically be a
+-- componentwise minimum operation, along each of the components\/dimensions of
+-- @'TxMeasure' blk@.
+--
+-- This newtype wrapper distinguishes the intention of this particular
+-- 'TxMeasure' as such an override. We use 'TxMeasure' in different ways in this
+-- code base. The newtype also allows us to distinguish the one most appropriate
+-- monoid among many offered by the 'TxLimits' superclass constraints: it is the
+-- monoid induced by the bounded meet-semilattice (see 'BoundedMeasure') that is
+-- relevant to the notion of /overriding/ the ledger's block capacity.
+newtype Overrides blk =
+  -- This constructor is not exported.
+  Overrides {getOverrides :: TxMeasure blk}
 
--- | Do not alter the limits set by the ledger state
-noOverrides :: Overrides blk
-noOverrides = Overrides id
+instance TxLimits blk => Monoid (Overrides blk) where
+  mempty = Overrides noOverridesMeasure
 
-mkOverrides :: (Measure blk -> Measure blk) -> Overrides blk
+instance TxLimits blk => Semigroup (Overrides blk) where
+  (<>) = coerce $ Measure.min @(TxMeasure blk)
+
+-- | @'applyOverrides' 'noOverrides' m = m@
+noOverridesMeasure :: BoundedMeasure a => a
+noOverridesMeasure = Measure.maxBound
+
+-- | Smart constructor for 'Overrides'.
+mkOverrides :: TxMeasure blk -> Overrides blk
 mkOverrides = Overrides
 
--- | Apply the override function and then take the pointwise minimum
-applyOverrides :: forall blk.
+-- | Apply the override
+applyOverrides ::
      TxLimits blk
   => Overrides blk
-  -> Measure blk
-  -> Measure blk
-applyOverrides (Overrides f) m = pointwiseMin @blk m (f m)
+  -> TxMeasure blk
+  -> TxMeasure blk
+applyOverrides (Overrides m') m = Measure.min m' m

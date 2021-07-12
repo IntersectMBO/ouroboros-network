@@ -257,7 +257,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
           protocolParamsShelleyBased
           ()  -- trivial translation context
           protVer1
-          TxLimits.noOverrides
+          (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
 
     eraParams1 :: History.EraParams
     eraParams1 = shelleyEraParams genesis1
@@ -290,7 +290,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
             }
           transCtxt2
           protVer2
-          TxLimits.noOverrides
+          (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
 
     eraParams2 :: History.EraParams
     eraParams2 = shelleyEraParams genesis2

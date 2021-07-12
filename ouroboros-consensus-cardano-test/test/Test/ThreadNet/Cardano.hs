@@ -493,7 +493,7 @@ mkProtocolCardanoAndHardForkTxs
           , byronProtocolVersion        = propPV
           , byronSoftwareVersion        = softVerByron
           , byronLeaderCredentials      = Just leaderCredentialsByron
-          , byronMaxTxCapacityOverrides = TxLimits.noOverrides
+          , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsShelleyBased {
             shelleyBasedGenesis           = genesisShelley
@@ -502,19 +502,19 @@ mkProtocolCardanoAndHardForkTxs
           }
         ProtocolParamsShelley {
             shelleyProtVer                = SL.ProtVer shelleyMajorVersion 0
-          , shelleyMaxTxCapacityOverrides = TxLimits.noOverrides
+          , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsAllegra {
             allegraProtVer                = SL.ProtVer allegraMajorVersion 0
-          , allegraMaxTxCapacityOverrides = TxLimits.noOverrides
+          , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsMary {
             maryProtVer                   = SL.ProtVer maryMajorVersion    0
-          , maryMaxTxCapacityOverrides    = TxLimits.noOverrides
+          , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsAlonzo {
             alonzoProtVer                 = SL.ProtVer alonzoMajorVersion  0
-          , alonzoMaxTxCapacityOverrides  = TxLimits.noOverrides
+          , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         protocolParamsByronShelley
         ProtocolTransitionParamsShelleyBased {

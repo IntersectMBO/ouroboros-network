@@ -21,7 +21,6 @@ module Ouroboros.Consensus.Block.Forging (
     -- * 'UpdateInfo'
   , UpdateInfo (..)
     -- * Selecting transaction sequence prefixes
-  , computeMaxTxCapacity
   , takeLargestPrefixThatFits
   ) where
 
@@ -30,6 +29,7 @@ import           Data.Kind (Type)
 import           Data.Text (Text)
 import           GHC.Stack
 
+import qualified Data.Measure as Measure
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
@@ -152,36 +152,27 @@ data BlockForging m blk = BlockForging {
         -> m blk
     }
 
--- | Computes maximum tx capacity
+-- | The prefix of transactions to include in the block
 --
--- It queries the ledger state for the current limit and then applies the given
--- override. The result is the pointwise minimum of the ledger-specific capacity
--- and the result of the override. In other words, the override can only reduce
--- (parts of) the 'TxLimits.Measure'.
-computeMaxTxCapacity ::
-     TxLimits blk
-  => TickedLedgerState blk
-  -> TxLimits.Overrides blk
-  -> TxLimits.Measure blk
-computeMaxTxCapacity ledger overrides =
-    TxLimits.applyOverrides overrides (TxLimits.maxCapacity ledger)
-
--- | Filters out all transactions that do not fit the maximum size that is
--- passed to this function as the first argument. Value of that first argument
--- will most often by calculated by calling 'computeMaxTxCapacity'
+-- Filters out all transactions that do not fit the maximum size of total
+-- transactions in a single block, which is determined by querying the ledger
+-- state for the current limit and the given override. The result is the
+-- pointwise minimum of the ledger-specific capacity and the result of the
+-- override. In other words, the override can only reduce (parts of) the
+-- 'TxLimits.TxMeasure'.
 takeLargestPrefixThatFits ::
-     forall blk. TxLimits blk
-  => TxLimits.Measure blk
+     TxLimits blk
+  => TxLimits.Overrides blk
+  -> TickedLedgerState blk
   -> [Validated (GenTx blk)]
   -> [Validated (GenTx blk)]
-takeLargestPrefixThatFits maxTxCapacity = go mempty
+takeLargestPrefixThatFits overrides ledger txs =
+    Measure.take TxLimits.txMeasure capacity txs
   where
-    go acc = \case
-      (tx : remainingTxs) | fits -> tx : go acc' remainingTxs
-        where
-          acc' = acc <> TxLimits.txMeasure tx
-          fits = TxLimits.lessEq @blk acc' maxTxCapacity
-      _ -> []
+    capacity =
+      TxLimits.applyOverrides
+        overrides
+        (TxLimits.txsBlockCapacity ledger)
 
 data ShouldForge blk =
     -- | Before check whether we are a leader in this slot, we tried to update

@@ -106,7 +106,7 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , byronProtocolVersion        = Byron.Update.ProtocolVersion 1 2 0
         , byronSoftwareVersion        = Byron.Update.SoftwareVersion (Byron.Update.ApplicationName "db-analyser") 2
         , byronLeaderCredentials      = Nothing
-        , byronMaxTxCapacityOverrides = TxLimits.noOverrides
+        , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsShelleyBased {
           shelleyBasedGenesis           = genesisShelley
@@ -115,19 +115,19 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         }
       ProtocolParamsShelley {
           shelleyProtVer                = ProtVer 2 0
-        , shelleyMaxTxCapacityOverrides = TxLimits.noOverrides
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAllegra {
           allegraProtVer                = ProtVer 3 0
-        , allegraMaxTxCapacityOverrides = TxLimits.noOverrides
+        , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsMary {
           maryProtVer                   = ProtVer 4 0
-        , maryMaxTxCapacityOverrides    = TxLimits.noOverrides
+        , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAlonzo {
           alonzoProtVer                 = ProtVer 5 0
-        , alonzoMaxTxCapacityOverrides  = TxLimits.noOverrides
+        , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = ()
