@@ -29,7 +29,8 @@ import qualified Cardano.Ledger.Era as SL (hashTxSeq, toTxSeq)
 import qualified Shelley.Spec.Ledger.API as SL (extractTx)
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TL
+import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
@@ -43,19 +44,19 @@ import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 -------------------------------------------------------------------------------}
 
 forgeShelleyBlock ::
-     forall m era. (ShelleyBasedEra era, TL.TxLimits (ShelleyBlock era), Monad m)
+     forall m era. (ShelleyBasedEra era, TxLimits (ShelleyBlock era), Monad m)
   => HotKey (EraCrypto era) m
   -> TPraosCanBeLeader (EraCrypto era)
   -> TopLevelConfig (ShelleyBlock era)
+  -> TxLimits.Overrides (ShelleyBlock era)     -- ^ How to override max tx
+                                               -- capacity defined by ledger
   -> BlockNo                                   -- ^ Current block number
   -> SlotNo                                    -- ^ Current slot number
   -> TickedLedgerState (ShelleyBlock era)      -- ^ Current ledger
-  -> MaxTxCapacityOverride (ShelleyBlock era)  -- ^ Do we override max tx capacity defined
-                                               --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx (ShelleyBlock era))]    -- ^ Txs to add in the block
   -> TPraosIsLeader (EraCrypto era)            -- ^ Leader proof
   -> m (ShelleyBlock era)
-forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger maxTxCapacityOverride txs isLeader = do
+forgeShelleyBlock hotKey canBeLeader cfg maxTxCapacityOverrides curNo curSlot tickedLedger txs isLeader = do
     tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody
     let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
     return $
@@ -72,7 +73,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger maxTxCapacit
       . fmap extractTx
       $ takeLargestPrefixThatFits computedMaxTxCapacity txs
 
-    computedMaxTxCapacity = computeMaxTxCapacity tickedLedger maxTxCapacityOverride
+    computedMaxTxCapacity = computeMaxTxCapacity tickedLedger maxTxCapacityOverrides
 
     extractTx :: (Validated (GenTx (ShelleyBlock era))) -> Core.Tx era
     extractTx (ShelleyValidatedTx _txid vtx) = SL.extractTx vtx

@@ -91,8 +91,6 @@ instance TxLimits ByronBlock where
   maxCapacity  = ByteSize . maxTxCapacity
   pointwiseMin = min
 
-type instance Overrides ByronBlock = ByteSize -> ByteSize
-
 {-------------------------------------------------------------------------------
   Transactions
 -------------------------------------------------------------------------------}

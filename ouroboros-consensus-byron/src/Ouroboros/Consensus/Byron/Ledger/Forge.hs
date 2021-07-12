@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (LedgerSupportsMempool (..), txForgetValidated)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -50,11 +51,11 @@ import           Ouroboros.Consensus.Byron.Protocol
 forgeByronBlock
   :: HasCallStack
   => TopLevelConfig ByronBlock
+  -> TxLimits.Overrides ByronBlock    -- ^ How to override max tx capacity
+                                      --   defined by ledger
   -> BlockNo                          -- ^ Current block number
   -> SlotNo                           -- ^ Current slot number
   -> TickedLedgerState ByronBlock     -- ^ Current ledger
-  -> MaxTxCapacityOverride ByronBlock -- ^ Do we override max tx capacity defined
-                                      --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx ByronBlock)]   -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto     -- ^ Leader proof ('IsLeader')
   -> ByronBlock
@@ -127,15 +128,15 @@ initBlockPayloads = BlockPayloads
 forgeRegularBlock
   :: HasCallStack
   => BlockConfig ByronBlock
+  -> TxLimits.Overrides ByronBlock     -- ^ How to override max tx capacity
+                                       --   defined by ledger
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
-  -> MaxTxCapacityOverride ByronBlock  -- ^ Do we override max tx capacity defined
-                                       --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx ByronBlock)]    -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
+forgeRegularBlock cfg maxTxCapacityOverrides bno sno st txs isLeader =
     forge $
       forgePBftFields
         (mkByronContextDSIGN cfg)
@@ -145,7 +146,7 @@ forgeRegularBlock cfg bno sno st maxTxCapacityOverride txs isLeader =
     epochSlots :: CC.Slot.EpochSlots
     epochSlots = byronEpochSlots cfg
 
-    computedMaxTxCapacity = computeMaxTxCapacity st maxTxCapacityOverride
+    computedMaxTxCapacity = computeMaxTxCapacity st maxTxCapacityOverrides
 
     blockPayloads :: BlockPayloads
     blockPayloads =

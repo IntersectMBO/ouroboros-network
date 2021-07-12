@@ -22,6 +22,7 @@ import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Update as CC.Update
 
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Serialisation ()
 import           Ouroboros.Consensus.Util (Dict (..))
@@ -108,6 +109,7 @@ testCfg = pInfoConfig protocolInfo
         , byronProtocolVersion        = CC.Update.ProtocolVersion 1 0 0
         , byronSoftwareVersion        = CC.Update.SoftwareVersion (CC.Update.ApplicationName "Cardano Test") 2
         , byronLeaderCredentials      = Nothing
+        , byronMaxTxCapacityOverrides = TxLimits.noOverrides
         }
 
 -- | Matches the values used for the generators.

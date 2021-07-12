@@ -62,7 +62,8 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Mempool.TxLimits
+import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -126,10 +127,16 @@ type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionErro
 shelleyBlockForging ::
      forall m era. (ShelleyBasedEra era, TxLimits (ShelleyBlock era), IOLike m)
   => TPraosParams
+  -> TxLimits.Overrides (ShelleyBlock era)
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
-shelleyBlockForging tpraosParams credentials =
-    aux <$> shelleySharedBlockForging (Proxy @'[era]) tpraosParams credentials
+shelleyBlockForging tpraosParams maxTxCapacityOverrides credentials =
+      fmap aux
+    $ shelleySharedBlockForging
+        (Proxy @'[era])
+        tpraosParams
+        credentials
+        (Comp maxTxCapacityOverrides :* Nil)
   where
     aux ::
          NP (BlockForging m :.: ShelleyBlock) '[era]
@@ -155,7 +162,8 @@ shelleySharedBlockForging ::
   => Proxy eras
   -> TPraosParams
   -> TPraosLeaderCredentials c
-  -> m (NP (BlockForging m :.: ShelleyBlock) eras)
+  -> NP    (TxLimits.Overrides :.: ShelleyBlock) eras
+  -> m (NP (BlockForging m     :.: ShelleyBlock) eras)
 shelleySharedBlockForging
                     _
                     TPraosParams {..}
@@ -163,14 +171,21 @@ shelleySharedBlockForging
                         tpraosLeaderCredentialsInitSignKey = initSignKey
                       , tpraosLeaderCredentialsCanBeLeader = canBeLeader
                       , tpraosLeaderCredentialsLabel       = label
-                      } = do
+                      }
+                    maxTxCapacityOverridess = do
     hotKey <- HotKey.mkHotKey @m @c initSignKey startPeriod tpraosMaxKESEvo
-    return $ hcpure (Proxy @(ShelleyEraWithCrypto c)) (Comp (aux hotKey))
+    return $
+      hcmap
+        (Proxy @(ShelleyEraWithCrypto c))
+        (aux hotKey)
+        maxTxCapacityOverridess
   where
     aux ::
          forall era. ShelleyEraWithCrypto c era
-      => HotKey c m -> BlockForging m (ShelleyBlock era)
-    aux hotKey = BlockForging {
+      => HotKey c m
+      -> (TxLimits.Overrides :.: ShelleyBlock) era
+      -> (BlockForging m     :.: ShelleyBlock) era
+    aux hotKey (Comp maxTxCapacityOverrides) = Comp $ BlockForging {
           forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
         , canBeLeader      = canBeLeader
         , updateForgeState = \_ curSlot _ ->
@@ -181,7 +196,12 @@ shelleySharedBlockForging
                                    (configConsensus cfg)
                                    forgingVRFHash
                                    curSlot
-        , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
+        , forgeBlock       = \cfg ->
+            forgeShelleyBlock
+              hotKey
+              canBeLeader
+              cfg
+              maxTxCapacityOverrides
         }
 
     forgingVRFHash :: SL.Hash c (SL.VerKeyVRF c)
@@ -234,58 +254,68 @@ data ProtocolParamsShelleyBased era = ProtocolParamsShelleyBased {
     }
 
 -- | Parameters needed to run Shelley
-data ProtocolParamsShelley = ProtocolParamsShelley {
-      shelleyProtVer :: SL.ProtVer
+data ProtocolParamsShelley c = ProtocolParamsShelley {
+      shelleyProtVer                :: SL.ProtVer
+    , shelleyMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (ShelleyEra c))
     }
 
 -- | Parameters needed to run Allegra
-data ProtocolParamsAllegra = ProtocolParamsAllegra {
-      allegraProtVer :: SL.ProtVer
+data ProtocolParamsAllegra c = ProtocolParamsAllegra {
+      allegraProtVer                :: SL.ProtVer
+    , allegraMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (AllegraEra c))
     }
 
 -- | Parameters needed to run Mary
-data ProtocolParamsMary = ProtocolParamsMary {
-      maryProtVer :: SL.ProtVer
+data ProtocolParamsMary c = ProtocolParamsMary {
+      maryProtVer                :: SL.ProtVer
+    , maryMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (MaryEra c))
     }
 
 -- | Parameters needed to run Alonzo
-data ProtocolParamsAlonzo = ProtocolParamsAlonzo {
-      alonzoProtVer :: SL.ProtVer
+data ProtocolParamsAlonzo c = ProtocolParamsAlonzo {
+      alonzoProtVer                :: SL.ProtVer
+    , alonzoMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (AlonzoEra c))
     }
 
 protocolInfoShelley ::
      forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c), TxLimits (ShelleyBlock (ShelleyEra c)))
   => ProtocolParamsShelleyBased (ShelleyEra c)
-  -> ProtocolParamsShelley
+  -> ProtocolParamsShelley c
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
 protocolInfoShelley protocolParamsShelleyBased
                     ProtocolParamsShelley {
-                        shelleyProtVer = protVer
+                        shelleyProtVer                = protVer
+                      , shelleyMaxTxCapacityOverrides = maxTxCapacityOverrides
                       } =
     protocolInfoShelleyBased
       protocolParamsShelleyBased
       ()  -- trivial translation context
       protVer
+      maxTxCapacityOverrides
 
 protocolInfoShelleyBased ::
      forall m era. (IOLike m, ShelleyBasedEra era, TxLimits (ShelleyBlock era))
   => ProtocolParamsShelleyBased era
   -> Core.TranslationContext era
   -> SL.ProtVer
-  -> ProtocolInfo m (ShelleyBlock era)
+  -> TxLimits.Overrides (ShelleyBlock era)
+  -> ProtocolInfo m     (ShelleyBlock era)
 protocolInfoShelleyBased ProtocolParamsShelleyBased {
                              shelleyBasedGenesis           = genesis
                            , shelleyBasedInitialNonce      = initialNonce
                            , shelleyBasedLeaderCredentials = credentialss
                            }
                          transCtxt
-                         protVer =
+                         protVer
+                         maxTxCapacityOverrides =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
       , pInfoBlockForging =
-          traverse (shelleyBlockForging tpraosParams) credentialss
+          traverse
+            (shelleyBlockForging tpraosParams maxTxCapacityOverrides)
+            credentialss
       }
   where
 

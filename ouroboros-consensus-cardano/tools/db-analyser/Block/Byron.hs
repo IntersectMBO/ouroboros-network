@@ -26,6 +26,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.UTxO as Chain
 import qualified Cardano.Chain.Update as Update
 
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -140,4 +141,5 @@ mkByronProtocolInfo genesisConfig signatureThreshold =
       , byronProtocolVersion        = Update.ProtocolVersion 1 0 0
       , byronSoftwareVersion        = Update.SoftwareVersion (Update.ApplicationName "db-analyser") 2
       , byronLeaderCredentials      = Nothing
+      , byronMaxTxCapacityOverrides = TxLimits.noOverrides
       }

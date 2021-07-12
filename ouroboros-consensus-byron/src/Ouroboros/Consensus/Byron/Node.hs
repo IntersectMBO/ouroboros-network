@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -52,7 +53,7 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
-import           Ouroboros.Consensus.Util ((......:))
+import           Ouroboros.Consensus.Util ((....:))
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -127,9 +128,10 @@ type instance ForgeStateUpdateError ByronBlock = Void
 
 byronBlockForging
   :: Monad m
-  => ByronLeaderCredentials
+  => TxLimits.Overrides ByronBlock
+  -> ByronLeaderCredentials
   -> BlockForging m ByronBlock
-byronBlockForging creds = BlockForging {
+byronBlockForging maxTxCapacityOverrides creds = BlockForging {
       forgeLabel       = blcLabel creds
     , canBeLeader
     , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
@@ -139,7 +141,7 @@ byronBlockForging creds = BlockForging {
                                canBeLeader
                                slot
                                tickedPBftState
-    , forgeBlock       = return ......: forgeByronBlock
+    , forgeBlock       = \cfg -> return ....: forgeByronBlock cfg maxTxCapacityOverrides
     }
   where
     canBeLeader = mkPBftCanBeLeader creds
@@ -167,6 +169,7 @@ data ProtocolParamsByron = ProtocolParamsByron {
     , byronProtocolVersion        :: Update.ProtocolVersion
     , byronSoftwareVersion        :: Update.SoftwareVersion
     , byronLeaderCredentials      :: Maybe ByronLeaderCredentials
+    , byronMaxTxCapacityOverrides :: TxLimits.Overrides ByronBlock
     }
 
 protocolInfoByron ::
@@ -179,6 +182,7 @@ protocolInfoByron ProtocolParamsByron {
                     , byronProtocolVersion        = pVer
                     , byronSoftwareVersion        = sVer
                     , byronLeaderCredentials      = mLeaderCreds
+                    , byronMaxTxCapacityOverrides = maxTxCapacityOverrides
                     } =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -198,7 +202,9 @@ protocolInfoByron ProtocolParamsByron {
           , headerState = genesisHeaderState S.empty
           }
       , pInfoBlockForging =
-          return $ byronBlockForging <$> maybeToList mLeaderCreds
+            return
+          $ fmap (byronBlockForging maxTxCapacityOverrides)
+          $ maybeToList mLeaderCreds
       }
   where
     compactedGenesisConfig = compactGenesisConfig genesisConfig

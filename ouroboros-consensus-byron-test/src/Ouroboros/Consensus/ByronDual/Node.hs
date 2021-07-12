@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -45,7 +46,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
-import           Ouroboros.Consensus.Util ((......:), (.:))
+import           Ouroboros.Consensus.Util ((.....:), (.:))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node
@@ -71,10 +72,10 @@ dualByronBlockForging creds = BlockForging {
     , updateForgeState = \cfg ->
         fmap castForgeStateUpdateInfo .: updateForgeState (dualTopLevelConfigMain cfg)
     , checkCanForge    = checkCanForge . dualTopLevelConfigMain
-    , forgeBlock       = return ......: forgeDualByronBlock
+    , forgeBlock       = return .....: forgeDualByronBlock
     }
   where
-    BlockForging {..} = byronBlockForging creds
+    BlockForging {..} = byronBlockForging TxLimits.noOverrides creds
 
 {-------------------------------------------------------------------------------
   ProtocolInfo

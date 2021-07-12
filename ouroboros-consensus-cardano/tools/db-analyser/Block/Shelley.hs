@@ -25,6 +25,7 @@ import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as CL
 import qualified Shelley.Spec.Ledger.API as SL
 
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
 import           Ouroboros.Consensus.Shelley.Eras (ShelleyBasedEra,
@@ -83,7 +84,8 @@ mkShelleyProtocolInfo genesis initialNonce =
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
-          shelleyProtVer = SL.ProtVer 2 0
+          shelleyProtVer                = SL.ProtVer 2 0
+        , shelleyMaxTxCapacityOverrides = TxLimits.noOverrides
         }
 
 parseShelleyArgs :: Parser ShelleyBlockArgs

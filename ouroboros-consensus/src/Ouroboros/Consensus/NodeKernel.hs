@@ -12,8 +12,7 @@
 
 module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
-    MaxTxCapacityOverride (..)
-  , MempoolCapacityBytesOverride (..)
+    MempoolCapacityBytesOverride (..)
   , NodeKernel (..)
   , NodeKernelArgs (..)
   , TraceForgeEvent (..)
@@ -117,7 +116,6 @@ data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
     , initChainDB             :: StorageConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
     , blockForging            :: [BlockForging m blk]
-    , maxTxCapacityOverride   :: MaxTxCapacityOverride blk
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
     , blockFetchConfiguration :: BlockFetchConfiguration
@@ -134,7 +132,7 @@ initNodeKernel
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
-initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverride
+initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
                                    , blockForging, chainDB, initChainDB
                                    , blockFetchConfiguration
                                    } = do
@@ -143,7 +141,7 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
 
     st <- initInternalState args
 
-    mapM_ (forkBlockForging maxTxCapacityOverride st) blockForging
+    mapM_ (forkBlockForging st) blockForging
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              mempool } = st
@@ -394,11 +392,10 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
 forkBlockForging
     :: forall m remotePeer localPeer blk.
        (IOLike m, RunNode blk)
-    => MaxTxCapacityOverride blk
-    -> InternalState m remotePeer localPeer blk
+    => InternalState m remotePeer localPeer blk
     -> BlockForging m blk
     -> m ()
-forkBlockForging maxTxCapacityOverride IS{..} blockForging =
+forkBlockForging IS{..} blockForging =
       void
     $ forkLinkedWatcher registry threadLabel
     $ knownSlotWatcher btime
@@ -532,7 +529,6 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
             bcBlockNo
             currentSlot
             tickedLedgerState
-            maxTxCapacityOverride
             txs
             proof
 

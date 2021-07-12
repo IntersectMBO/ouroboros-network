@@ -25,7 +25,6 @@ module Ouroboros.Consensus.ByronDual.Ledger (
   ) where
 
 import           Codec.Serialise
-import           Control.Exception (assert)
 import           Data.ByteString (ByteString)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -47,6 +46,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -211,14 +211,10 @@ forgeDualByronBlock
   -> BlockNo                              -- ^ Current block number
   -> SlotNo                               -- ^ Current slot number
   -> TickedLedgerState DualByronBlock     -- ^ Ledger
-  -> MaxTxCapacityOverride DualByronBlock -- ^ Do we override max tx capacity defined
-                                          --   by ledger (see MaxTxCapacityOverride)
   -> [Validated (GenTx DualByronBlock)]   -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
-forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride vtxs isLeader =
-    -- for simplicity we assume that MaxTxCapacityOverride is not modified by tests
-    assert isNoMaxTxCapacityOverride $
+forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -231,17 +227,13 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger maxTxCapacityOverride 
       , dualBlockBridge = mconcat $ map vDualGenTxBridge vtxs
       }
   where
-    isNoMaxTxCapacityOverride = case maxTxCapacityOverride of
-      NoMaxTxCapacityOverride -> True
-      MaxTxCapacityOverride _ -> False
-
     main :: ByronBlock
     main = forgeByronBlock
              (dualTopLevelConfigMain cfg)
+             TxLimits.noOverrides
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)
-             NoMaxTxCapacityOverride
              (map vDualGenTxMain vtxs)
              isLeader
 

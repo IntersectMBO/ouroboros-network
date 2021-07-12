@@ -3,12 +3,23 @@
 {-# LANGUAGE DerivingStrategies   #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+
+-- | Limits on the ledger-specific _measure_ (eg size) of a sequence of
+-- transactions
+--
+-- > import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+-- > import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 module Ouroboros.Consensus.Mempool.TxLimits (
     ByteSize (..)
+  , Overrides
   , TxLimits (..)
+  , applyOverrides
+  , mkOverrides
+  , noOverrides
   ) where
 
 import           Data.Word (Word32)
@@ -32,7 +43,6 @@ import           Ouroboros.Consensus.Ticked (Ticked (..))
 -- as it had to take other factors into account (like execution units).
 -- For details please see the individual instances for the TxLimits.
 class (Monoid (Measure blk)) => TxLimits blk where
-
   type Measure blk
 
   lessEq       :: Measure blk -> Measure blk -> Bool
@@ -48,3 +58,24 @@ instance Semigroup ByteSize where
 
 instance Monoid ByteSize where
   mempty = ByteSize 0
+
+-- | How to override the limits set by the ledger state
+--
+-- The forge logic must use the 'pointwiseMin'imum of the limits from ledger
+-- state and from the result of this override.
+newtype Overrides blk = Overrides (Measure blk -> Measure blk)
+
+-- | Do not alter the limits set by the ledger state
+noOverrides :: Overrides blk
+noOverrides = Overrides id
+
+mkOverrides :: (Measure blk -> Measure blk) -> Overrides blk
+mkOverrides = Overrides
+
+-- | Apply the override function and then take the pointwise minimum
+applyOverrides :: forall blk.
+     TxLimits blk
+  => Overrides blk
+  -> Measure blk
+  -> Measure blk
+applyOverrides (Overrides f) m = pointwiseMin @blk m (f m)

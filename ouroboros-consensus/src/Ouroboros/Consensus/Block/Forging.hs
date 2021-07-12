@@ -20,9 +20,7 @@ module Ouroboros.Consensus.Block.Forging (
   , forgeStateUpdateInfoFromUpdateInfo
     -- * 'UpdateInfo'
   , UpdateInfo (..)
-    -- * 'MaxTxCapacityOverride'
-  , MaxTxCapacityOverride (..)
-  , Overrides
+    -- * Selecting transaction sequence prefixes
   , computeMaxTxCapacity
   , takeLargestPrefixThatFits
   ) where
@@ -37,7 +35,8 @@ import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Mempool.TxLimits
+import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 
@@ -148,73 +147,31 @@ data BlockForging m blk = BlockForging {
         -> BlockNo                      -- Current block number
         -> SlotNo                       -- Current slot number
         -> TickedLedgerState blk        -- Current ledger state
-        -> MaxTxCapacityOverride blk    -- Do we override max tx capacity defined
-                                        -- by ledger (see MaxTxCapacityOverride)
         -> [Validated (GenTx blk)]      -- Contents of the mempool
         -> IsLeader (BlockProtocol blk) -- Proof we are leader
         -> m blk
     }
 
--- | The maximum transaction capacity of a block is computed differently for
--- different eras and it is defined by ledger. We capture that by encoding an
--- associated type family Measure (in a typeclass TxLimits).
--- Early ledgers considered only block size (measured in bytes), thus their
--- 'Measure' was in fact just 'ByteSize'. The max capacity was computed by taking
--- the max block size from the protocol parameters in the current ledger state
--- and subtracting the size of the header. Other ledgers defined more complicated
--- 'Measure' - example would be Alonzo - where we limit block by size and execution
--- units. See Ouroboros.Consensus.Mempool.TxLimits for more details.
+-- | Computes maximum tx capacity
 --
--- It is possible to override this maximum transaction capacity with a lower
--- value. We ignore higher values than the ledger state's max block size. Such
--- blocks would be rejected by the ledger anyway.
---
--- Overrides for most blocks will be just their 'Measure', meaning that
--- Overrides blk ~ Measure blk, however for a 'HardForkBlock xs' Overrides
--- becomes an NP MaxTxCapacityOverride xs. In other words MaxTxCapacityOverride for
--- HardForkBlock xs is a product of MaxTxCapacityOverride for all blocks defined
--- in given HardForkBlock
-data MaxTxCapacityOverride blk
-  = NoMaxTxCapacityOverride
-    -- ^ Don't override the maximum transaction capacity as computed from the
-    -- current ledger state.
-  | MaxTxCapacityOverride !(Overrides blk)
-    -- ^ Use the following maximum size in bytes for the transaction capacity
-    -- of a block.
-    -- Compute maximum block transaction capacity
-    --
-    -- We allow the override to /reduce/ the maximum size, but not increase
-    -- it. This is important because any blocks exceeding the max block size
-    -- are invalid according to the ledger and we want certainly don't want to
-    -- forge invalid blocks.
-
-type family Overrides blk
-
--- | Computes maximum capacity for a given block type.
--- If node operator chose not to override this value, we choose the default value
--- from ledger (ledgerLimit).
--- If node operator chose to override this value, they will provide an
--- override function Measure blk -> Measure blk, which we apply with the ledger
--- default. Result of calling this override is compared (pointwiseMin) with the
--- ledger default, and the result of that is returned to the caller of the
--- computeMaxTxCapacity
+-- It queries the ledger state for the current limit and then applies the given
+-- override. The result is the pointwise minimum of the ledger-specific capacity
+-- and the result of the override. In other words, the override can only reduce
+-- (parts of) the 'TxLimits.Measure'.
 computeMaxTxCapacity ::
-     forall blk. (TxLimits blk, Overrides blk ~ (Measure blk -> Measure blk))
+     TxLimits blk
   => TickedLedgerState blk
-  -> MaxTxCapacityOverride blk
-  -> Measure blk
-computeMaxTxCapacity ledger maxTxCapacityOverride = case maxTxCapacityOverride of
-      NoMaxTxCapacityOverride              -> ledgerLimit
-      MaxTxCapacityOverride modifyCapacity -> pointwiseMin @blk ledgerLimit (modifyCapacity ledgerLimit)
-  where
-    ledgerLimit = maxCapacity ledger
+  -> TxLimits.Overrides blk
+  -> TxLimits.Measure blk
+computeMaxTxCapacity ledger overrides =
+    TxLimits.applyOverrides overrides (TxLimits.maxCapacity ledger)
 
 -- | Filters out all transactions that do not fit the maximum size that is
 -- passed to this function as the first argument. Value of that first argument
--- will most often by calculated by calling computeMaxTxCapacity
+-- will most often by calculated by calling 'computeMaxTxCapacity'
 takeLargestPrefixThatFits ::
      forall blk. TxLimits blk
-  => Measure blk
+  => TxLimits.Measure blk
   -> [Validated (GenTx blk)]
   -> [Validated (GenTx blk)]
 takeLargestPrefixThatFits computedMaxTxCapacity = go mempty
@@ -222,8 +179,8 @@ takeLargestPrefixThatFits computedMaxTxCapacity = go mempty
     go acc = \case
       (tx : remainingTxs) | fits -> tx : go acc' remainingTxs
         where
-          acc' = acc <> txMeasure tx
-          fits = lessEq @blk acc' computedMaxTxCapacity
+          acc' = acc <> TxLimits.txMeasure tx
+          fits = TxLimits.lessEq @blk acc' computedMaxTxCapacity
       _ -> []
 
 data ShouldForge blk =
