@@ -1571,7 +1571,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
                          -> AllProperty
                           . (counterexample $!
                               (  "\nUnexpected transition: "
-                              ++ ppTransition tr)
+                              ++ show tr)
                               )
                           . verifyAbstractTransition
                           $ tr
