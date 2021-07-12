@@ -125,7 +125,7 @@ instance ShelleyBasedEra era
 
   reapplyTx = reapplyShelleyTx
 
-  maxTxCapacity TickedShelleyLedgerState { tickedShelleyLedgerState = shelleyState } =
+  txsMaxBytes TickedShelleyLedgerState { tickedShelleyLedgerState = shelleyState } =
       fromIntegral maxBlockBodySize - fixedBlockBodyOverhead
     where
       maxBlockBodySize = getField @"_maxBBSize" $ getPParams shelleyState
@@ -277,21 +277,21 @@ instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (ShelleyEra c)) where
   type Measure (ShelleyBlock (ShelleyEra c)) = ByteSize
   lessEq       = (<=)
   txMeasure    = ByteSize . txInBlockSize . txForgetValidated
-  maxCapacity  = ByteSize . maxTxCapacity
+  maxCapacity  = ByteSize . txsMaxBytes
   pointwiseMin = min
 
 instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (AllegraEra c)) where
   type Measure (ShelleyBlock (AllegraEra c)) = ByteSize
   lessEq       = (<=)
   txMeasure    = ByteSize . txInBlockSize . txForgetValidated
-  maxCapacity  = ByteSize . maxTxCapacity
+  maxCapacity  = ByteSize . txsMaxBytes
   pointwiseMin = min
 
 instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (MaryEra c)) where
   type Measure (ShelleyBlock (MaryEra c)) = ByteSize
   lessEq       = (<=)
   txMeasure    = ByteSize . txInBlockSize . txForgetValidated
-  maxCapacity  = ByteSize . maxTxCapacity
+  maxCapacity  = ByteSize . txsMaxBytes
   pointwiseMin = min
 
 data AlonzoMeasure = AlonzoMeasure {
@@ -323,7 +323,7 @@ instance ( SL.PraosCrypto c
   maxCapacity ledgerState =
     let pparams  = getPParams $ tickedShelleyLedgerState ledgerState
     in AlonzoMeasure {
-        byteSize = ByteSize $ maxTxCapacity ledgerState
+        byteSize = ByteSize $ txsMaxBytes ledgerState
       , exUnits  = getField @"_maxBlockExUnits" pparams
       }
 

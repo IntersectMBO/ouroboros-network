@@ -345,7 +345,7 @@ computeMempoolCapacity st = \case
     NoMempoolCapacityBytesOverride        -> noOverride
     MempoolCapacityBytesOverride override -> override
   where
-    noOverride = MempoolCapacityBytes (maxTxCapacity st * 2)
+    noOverride = MempoolCapacityBytes (txsMaxBytes st * 2)
 
 {-------------------------------------------------------------------------------
   Snapshot of the mempool

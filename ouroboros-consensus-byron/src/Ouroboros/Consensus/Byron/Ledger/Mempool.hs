@@ -88,7 +88,7 @@ instance TxLimits ByronBlock where
   type Measure ByronBlock = ByteSize
   lessEq       = (<=)
   txMeasure    = ByteSize . txInBlockSize . txForgetValidated
-  maxCapacity  = ByteSize . maxTxCapacity
+  maxCapacity  = ByteSize . txsMaxBytes
   pointwiseMin = min
 
 {-------------------------------------------------------------------------------
@@ -139,7 +139,7 @@ instance LedgerSupportsMempool ByronBlock where
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
 
-  maxTxCapacity st =
+  txsMaxBytes st =
     CC.getMaxBlockSize (tickedByronLedgerState st) - byronBlockEncodingOverhead
 
   txInBlockSize =

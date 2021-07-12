@@ -260,7 +260,7 @@ instance LedgerSupportsMempool BlockB where
   applyTx   = \_ _ _wti tx -> case tx of {}
   reapplyTx = \_ _ vtx -> case vtx of {}
 
-  maxTxCapacity _ = maxBound
+  txsMaxBytes   _ = maxBound
   txInBlockSize _ = 0
 
   txForgetValidated = \case {}

@@ -95,7 +95,7 @@ class ( UpdateLedger blk
   --
   -- This is (conservatively) computed by subtracting the header size and any
   -- other fixed overheads from the maximum block size.
-  maxTxCapacity :: TickedLedgerState blk -> Word32
+  txsMaxBytes :: TickedLedgerState blk -> Word32
 
   -- | Return the post-serialisation size in bytes of a 'GenTx' /when it is
   -- embedded in a block/. This size might differ from the size of the

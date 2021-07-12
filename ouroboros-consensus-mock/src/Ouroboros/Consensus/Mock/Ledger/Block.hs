@@ -436,7 +436,7 @@ instance MockProtocolSpecific c ext
 
   -- Large value so that the Mempool tests never run out of capacity when they
   -- don't override it.
-  maxTxCapacity = const 1000000000
+  txsMaxBytes   = const 1000000000
   txInBlockSize = txSize
 
   txForgetValidated = forgetValidatedSimpleGenTx

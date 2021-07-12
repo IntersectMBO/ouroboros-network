@@ -599,7 +599,7 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
                                            tickedDualLedgerStateBridge
         }
 
-  maxTxCapacity = maxTxCapacity . tickedDualLedgerStateMain
+  txsMaxBytes   = txsMaxBytes . tickedDualLedgerStateMain
   txInBlockSize = txInBlockSize . dualGenTxMain
 
   txForgetValidated vtx =

@@ -320,7 +320,7 @@ instance LedgerSupportsMempool BlockA where
 
   reapplyTx cfg slot = fmap fst .: (applyTx cfg DoNotIntervene slot . forgetValidatedGenTxA)
 
-  maxTxCapacity _ = maxBound
+  txsMaxBytes   _ = maxBound
   txInBlockSize _ = 0
 
   txForgetValidated = forgetValidatedGenTxA
