@@ -294,8 +294,8 @@ instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (MaryEra c)) where
   pointwiseMin = min
 
 data AlonzoMeasure = AlonzoMeasure {
-    byteSize :: ByteSize
-  , exUnits  :: ExUnits
+    byteSize :: !ByteSize
+  , exUnits  :: !ExUnits
   } deriving stock (Show, Eq)
 
 instance Semigroup AlonzoMeasure where
