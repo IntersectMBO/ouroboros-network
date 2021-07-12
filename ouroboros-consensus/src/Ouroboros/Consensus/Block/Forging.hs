@@ -174,13 +174,13 @@ takeLargestPrefixThatFits ::
   => TxLimits.Measure blk
   -> [Validated (GenTx blk)]
   -> [Validated (GenTx blk)]
-takeLargestPrefixThatFits computedMaxTxCapacity = go mempty
+takeLargestPrefixThatFits maxTxCapacity = go mempty
   where
     go acc = \case
       (tx : remainingTxs) | fits -> tx : go acc' remainingTxs
         where
           acc' = acc <> TxLimits.txMeasure tx
-          fits = TxLimits.lessEq @blk acc' computedMaxTxCapacity
+          fits = TxLimits.lessEq @blk acc' maxTxCapacity
       _ -> []
 
 data ShouldForge blk =
