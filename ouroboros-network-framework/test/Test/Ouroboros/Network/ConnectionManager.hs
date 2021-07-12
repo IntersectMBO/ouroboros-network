@@ -1721,6 +1721,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       --
 
       -- @Reserve@
+      (TerminatedSt, ReservedOutboundSt) -> True
       (UnknownConnectionSt, ReservedOutboundSt) -> True
       -- @Connected@
       (ReservedOutboundSt, UnnegotiatedSt Outbound) -> True
@@ -1759,6 +1760,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       --
 
       -- @Accepted@
+      (TerminatedSt, UnnegotiatedSt Inbound) -> True
       (UnknownConnectionSt, UnnegotiatedSt Inbound) -> True
       -- @Overwritten@
       (ReservedOutboundSt, UnnegotiatedSt Inbound) -> True
