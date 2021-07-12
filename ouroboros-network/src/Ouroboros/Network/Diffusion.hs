@@ -85,29 +85,29 @@ import qualified Ouroboros.Network.NodeToClient as NTC
 import           Ouroboros.Network.RethrowPolicy (RethrowPolicy)
 import           Ouroboros.Network.BlockFetch (FetchMode)
 import           Ouroboros.Network.Mux
-                 ( Bundle
-                 , MiniProtocol
-                 , MuxMode (..)
-                 , OuroborosApplication
-                 , ControlMessage
-                 )
+                  ( Bundle
+                  , MiniProtocol
+                  , MuxMode (..)
+                  , OuroborosApplication
+                  , ControlMessage
+                  )
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-                 ( LedgerPeersConsensusInterface
-                 , TraceLedgerPeers
-                 , RelayAddress
-                 , UseLedgerAfter
-                 )
+                  ( LedgerPeersConsensusInterface
+                  , TraceLedgerPeers
+                  , RelayAddress
+                  , UseLedgerAfter
+                  )
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 
 import qualified Ouroboros.Network.Diffusion.Common as Common
 import           Ouroboros.Network.Diffusion.Common
-                 ( DiffusionInitializationTracer
-                 , DiffusionFailure
-                 , daDiffusionMode
-                 , dtExtra
-                 , daExtra
-                 , dapExtra
-                 )
+                  ( DiffusionInitializationTracer
+                  , DiffusionFailure
+                  , daDiffusionMode
+                  , dtExtra
+                  , daExtra
+                  , dapExtra
+                  )
 import qualified Ouroboros.Network.Diffusion.P2P as P2P
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
 

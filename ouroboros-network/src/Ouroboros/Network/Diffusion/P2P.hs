@@ -315,22 +315,25 @@ data DiffusionApplicationsExtra ntnAddr m =
     -- | configuration of mini-protocol parameters; they impact size limits of
     -- mux ingress queues.
     --
-    daMiniProtocolParameters :: MiniProtocolParameters
+      daMiniProtocolParameters :: MiniProtocolParameters
 
     -- | /node-to-node/ rethrow policy
     --
-    , daRethrowPolicy      :: RethrowPolicy
+    , daRethrowPolicy          :: RethrowPolicy
 
     -- | /node-to-client/ rethrow policy
     --
-    , daLocalRethrowPolicy :: RethrowPolicy
+    , daLocalRethrowPolicy     :: RethrowPolicy
 
-    , daPeerMetrics        :: PeerMetrics m ntnAddr
+    -- | 'PeerMetrics' used by peer selection policy (see
+    -- 'simplePeerSelectionPolicy')
+    --
+    , daPeerMetrics            :: PeerMetrics m ntnAddr
 
     -- | Used by churn-governor
     --
-    , daBlockFetchMode     :: STM m FetchMode
-    }
+    , daBlockFetchMode         :: STM m FetchMode
+  }
 
 -- | Diffusion will always run initiator of node-to-node protocols, but in some
 -- configurations, i.e. 'InitiatorOnlyDiffusionMode', it will not run the
