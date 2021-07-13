@@ -1227,7 +1227,7 @@ withLocalSocket iocp tracer localAddress k =
              case addr of
                   (Socket.SockAddrUnix path) -> do
                     traceWith tracer (UsingSystemdSocket path)
-                    return (Left ( Snocket.localSnocket iocp path
+                    return (Left ( Snocket.localSnocket iocp
                                  , LocalSocket sd
                                  ))
                   _  -> do
@@ -1236,9 +1236,9 @@ withLocalSocket iocp tracer localAddress k =
 #endif
          Right addr -> do
              let sn :: LocalSnocket
-                 sn = Snocket.localSnocket iocp addr
+                 sn = Snocket.localSnocket iocp
              traceWith tracer $ CreateSystemdSocketForSnocketPath addr
-             sd <- Snocket.open sn Snocket.LocalFamily
+             sd <- Snocket.open sn (Snocket.LocalFamily (Snocket.LocalAddress addr))
              traceWith tracer $ CreatedLocalSocket addr
              return (Right (sn, sd, addr))
     )
