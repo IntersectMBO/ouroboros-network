@@ -199,12 +199,15 @@ newtype TestAddress addr = TestAddress { getTestAddress :: addr }
 -- sockets, 'LocalFamily' used for 'LocalAddress'es (either Unix sockets or
 -- Windows named pipe addresses), and 'TestFamily' for testing purposes.
 --
+-- 'LocalFamily' requires 'LocalAddress', this is needed to provide path of the
+-- openned Win32 'HANDLE'.
+--
 data AddressFamily addr where
 
     SocketFamily :: !Socket.Family
                  -> AddressFamily Socket.SockAddr
 
-    LocalFamily  :: AddressFamily LocalAddress
+    LocalFamily  :: !LocalAddress -> AddressFamily LocalAddress
 
     -- using a newtype wrapper make pattern matches on @AddressFamily@ complete,
     -- e.g. it makes 'AddressFamily' injective:
@@ -212,8 +215,8 @@ data AddressFamily addr where
     --
     TestFamily   :: AddressFamily (TestAddress addr)
 
-deriving instance Eq (AddressFamily addr)
-deriving instance Show (AddressFamily addr)
+deriving instance Eq   addr => Eq   (AddressFamily addr)
+deriving instance Show addr => Show (AddressFamily addr)
 
 
 -- | Abstract communication interface that can be used by more than
@@ -227,7 +230,7 @@ data Snocket m fd addr = Snocket {
   , addrFamily :: addr -> AddressFamily addr
 
   -- | Open a file descriptor  (socket / namedPipe).  For named pipes this is
-  -- using 'CreateNamedPipe' syscall, for Berkeley sockets 'socket' is used..
+  -- using 'CreateNamedPipe' syscall, for Berkeley sockets 'socket' is used.
   --
   , open          :: AddressFamily addr -> m fd
 
@@ -237,7 +240,7 @@ data Snocket m fd addr = Snocket {
     -- For named pipes we need full 'addr' rather than just address family as
     -- it is for sockets.
     --
-  , openToConnect :: addr ->  m fd
+  , openToConnect :: addr -> m fd
 
     -- | `connect` is only needed for Berkeley sockets, for named pipes this is
     -- no-op.
@@ -359,25 +362,41 @@ type LocalHandle = Socket
 #endif
 
 -- | System dependent LocalSnocket type
+--
+#if defined(mingw32_HOST_OS)
+data LocalSocket = LocalSocket { getLocalHandle :: LocalHandle
+                               , getLocalPath   :: LocalAddress
+                               }
+    deriving (Eq, Generic)
+    deriving Show via Quiet LocalSocket
+#else
 newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
+#endif
 
 -- | System dependent LocalSnocket
 type    LocalSnocket = Snocket IO LocalSocket LocalAddress
 
-localSnocket :: IOManager -> FilePath -> LocalSnocket
-#if defined(mingw32_HOST_OS)
-localSnocket ioManager path = Snocket {
-      getLocalAddr  = \_ -> return localAddress
-    , getRemoteAddr = \_ -> return localAddress
-    , addrFamily  = \_ -> LocalFamily
 
-    , open = \_addrFamily -> do
+-- | Create a 'LocalSnocket'.
+--
+-- On /Windows/, there is no way to get path associated to a named pipe.  To go
+-- around this, the address passed to 'open' via 'LocalFamily' will be
+-- referenced by 'LocalSocket'.
+--
+localSnocket :: IOManager -> LocalSnocket
+#if defined(mingw32_HOST_OS)
+localSnocket ioManager = Snocket {
+      getLocalAddr  = return . getLocalPath
+    , getRemoteAddr = return . getLocalPath
+    , addrFamily    = LocalFamily
+
+    , open = \(LocalFamily addr) -> do
         hpipe <- Win32.createNamedPipe
-                   path
+                   (getFilePath addr)
                    (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
-                   (Win32.pIPE_TYPE_BYTE .|. Win32.pIPE_READMODE_BYTE)
+                   (Win32.pIPE_TYPE_BYTE     .|. Win32.pIPE_READMODE_BYTE)
                    Win32.pIPE_UNLIMITED_INSTANCES
                    65536   -- outbound pipe size
                    16384   -- inbound pipe size
@@ -390,7 +409,7 @@ localSnocket ioManager path = Snocket {
           `catch` \(SomeAsyncException _) -> do
             Win32.closeHandle hpipe
             throwIO e
-        pure (LocalSocket hpipe)
+        pure (LocalSocket hpipe addr)
 
     -- To connect, simply create a file whose name is the named pipe name.
     , openToConnect  = \(LocalAddress pipeName) -> do
@@ -408,16 +427,16 @@ localSnocket ioManager path = Snocket {
           `catch` \(SomeAsyncException _) -> do
             Win32.closeHandle hpipe
             throwIO e
-        return (LocalSocket hpipe)
+        return (LocalSocket hpipe (LocalAddress pipeName))
     , connect  = \_ _ -> pure ()
 
     -- Bind and listen are no-op.
     , bind     = \_ _ -> pure ()
     , listen   = \_ -> pure ()
 
-    , accept   = \sock@(LocalSocket hpipe) -> Accept $ do
+    , accept   = \sock@(LocalSocket hpipe addr) -> Accept $ do
           Win32.Async.connectNamedPipe hpipe
-          return (Accepted sock localAddress, acceptNext)
+          return (Accepted sock addr, acceptNext 0 addr)
 
       -- Win32.closeHandle is not interrupible
     , close    = Win32.closeHandle . getLocalHandle
@@ -425,36 +444,29 @@ localSnocket ioManager path = Snocket {
     , toBearer = \_sduTimeout tr -> pure . namedPipeAsBearer tr . getLocalHandle
     }
   where
-    localAddress :: LocalAddress
-    localAddress = LocalAddress path
-
-    acceptNext :: Accept IO LocalSocket LocalAddress
-    acceptNext = go 0
+    acceptNext :: Word64 -> LocalAddress -> Accept IO LocalSocket LocalAddress
+    acceptNext !cnt addr = Accept (acceptOne `catch` handleIOException)
       where
-        go cnt = Accept (acceptOne cnt `catch` handleIOException cnt)
-
         handleIOException
-          :: Word64
-          -> IOException
+          :: IOException
           -> IO ( Accepted  LocalSocket LocalAddress
                 , Accept IO LocalSocket LocalAddress
                 )
-        handleIOException !cnt err =
+        handleIOException err =
           pure ( AcceptFailure (toException err)
-               , go cnt
+               , acceptNext (succ cnt) addr
                )
 
         acceptOne
-          :: Word64
-          -> IO ( Accepted  LocalSocket LocalAddress
+          :: IO ( Accepted  LocalSocket LocalAddress
                 , Accept IO LocalSocket LocalAddress
                 )
-        acceptOne !cnt =
+        acceptOne =
           bracketOnError
             (Win32.createNamedPipe
-                 path
+                 (getFilePath addr)
                  (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
-                 (Win32.pIPE_TYPE_BYTE .|. Win32.pIPE_READMODE_BYTE)
+                 (Win32.pIPE_TYPE_BYTE     .|. Win32.pIPE_READMODE_BYTE)
                  Win32.pIPE_UNLIMITED_INSTANCES
                  65536    -- outbound pipe size
                  16384    -- inbound pipe size
@@ -469,17 +481,17 @@ localSnocket ioManager path = Snocket {
               -- So to differentiate clients we use a simple counter as the
               -- remote end's address.
               --
-              let addr = localAddressFromPath $ "temp-" ++ show cnt
-              return (Accepted (LocalSocket hpipe) addr, go $ succ cnt )
+              let addr' = LocalAddress $ "\\\\.\\pipe\\ouroboros-network-temp-" ++ show cnt
+              return (Accepted (LocalSocket hpipe addr') addr', acceptNext (succ cnt) addr)
 
 -- local snocket on unix
 #else
 
-localSnocket ioManager _ =
+localSnocket ioManager =
     Snocket {
         getLocalAddr  = fmap toLocalAddress . Socket.getSocketName . getLocalHandle
       , getRemoteAddr = fmap toLocalAddress . Socket.getPeerName . getLocalHandle
-      , addrFamily    = const LocalFamily
+      , addrFamily    = LocalFamily
       , connect       = \(LocalSocket s) addr ->
           Socket.connect s (fromLocalAddress addr)
       , bind          = \(LocalSocket fd) addr -> Socket.bind fd (fromLocalAddress addr)
@@ -488,7 +500,7 @@ localSnocket ioManager _ =
                       . berkeleyAccept ioManager
                       . getLocalHandle
       , open          = openSocket
-      , openToConnect = \_addr -> openSocket LocalFamily
+      , openToConnect = \addr -> openSocket (LocalFamily addr)
       , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
       , toBearer      = \df tr (LocalSocket sd) -> pure (Mx.socketAsMuxBearer df tr sd)
       }
@@ -501,7 +513,7 @@ localSnocket ioManager _ =
     fromLocalAddress = SockAddrUnix . getFilePath
 
     openSocket :: AddressFamily LocalAddress -> IO LocalSocket
-    openSocket LocalFamily = do
+    openSocket (LocalFamily _addr) = do
       sd <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
@@ -535,7 +547,7 @@ socketFileDescriptor = fmap (FileDescriptor . fromIntegral) . Socket.unsafeFdSoc
 localSocketFileDescriptor :: LocalSocket -> IO FileDescriptor
 #if defined(mingw32_HOST_OS)
 localSocketFileDescriptor =
-  \(LocalSocket fd) -> case ptrToIntPtr fd of
+  \(LocalSocket fd _) -> case ptrToIntPtr fd of
     IntPtr i -> return (FileDescriptor i)
 #else
 localSocketFileDescriptor = socketFileDescriptor . getLocalHandle

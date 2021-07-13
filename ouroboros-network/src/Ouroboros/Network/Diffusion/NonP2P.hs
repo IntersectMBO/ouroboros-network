@@ -349,14 +349,14 @@ runDataDiffusion tracers
                    (Socket.SockAddrUnix path) -> do
                      traceWith dtDiffusionInitializationTracer
                       $ UsingSystemdSocket path
-                     return (LocalSocket sd, Snocket.localSnocket iocp path)
+                     return (LocalSocket sd, Snocket.localSnocket iocp)
                    unsupportedAddr -> do
                      traceWith dtDiffusionInitializationTracer
                       $ UnsupportedLocalSystemdSocket unsupportedAddr
                      throwIO UnsupportedLocalSocketType
 #endif
             Right addr -> do
-              let sn = Snocket.localSnocket iocp addr
+              let sn = Snocket.localSnocket iocp
               traceWith dtDiffusionInitializationTracer
                 $ CreateSystemdSocketForSnocketPath addr
               sd <- Snocket.open
