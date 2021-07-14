@@ -37,7 +37,6 @@ module Simulation.Network.Snocket
 
 import           Prelude hiding (read)
 
-import           Control.Monad (when)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -53,8 +52,6 @@ import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
 
@@ -194,10 +191,6 @@ data NetworkState m addr = NetworkState {
       --
       nsConnections       :: StrictTVar m (Map (NormalisedId addr) (Connection m)),
 
-      -- | Set of all used addresses.
-      --
-      nsBoundAddresses    :: StrictTVar m (Set addr),
-
       -- | Get an unused ephemeral address.
       --
       nsNextEphemeralAddr :: STM m addr,
@@ -285,8 +278,6 @@ newNetworkState bearerInfoScript peerAddr = atomically $
     <$> newTVar Map.empty
     -- nsConnections
     <*> newTVar Map.empty
-    -- nsBoundAddresses
-    <*> newTVar Set.empty
     -- nsNextEphemeralAddr
     <*> do (v :: StrictTVar m peerAddr) <- newTVar peerAddr
            return $ do
@@ -437,11 +428,11 @@ instance Show addr => Show (FD_ m addr) where
                                     , show (connSDUSize conn)
                                     ]
     show (FDConnected connId conn)  = concat
-                                        [ "FDConnected "
-                                        , show connId
-                                        , " "
-                                        , show (connSDUSize conn)
-                                        ]
+                                    [ "FDConnected "
+                                    , show connId
+                                    , " "
+                                    , show (connSDUSize conn)
+                                    ]
     show (FDClosed mbConnId)        = "FDClosed " ++ show mbConnId
 
 
@@ -769,9 +760,6 @@ mkSnocket state tr = Snocket { getLocalAddr
     bind :: FD m (TestAddress addr) -> TestAddress addr -> m ()
     bind fd@FD { fdVar } addr = do
         res <- atomically $ do
-          boundSet <- readTVar (nsBoundAddresses state)
-          when (addr `Set.member` boundSet)
-               (throwSTM addressInUseError)
           fd_ <- readTVar fdVar
           case fd_ of
             FDUninitialised Nothing -> do
@@ -789,15 +777,6 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.bind"
           , ioe_description = "Invalid argument"
-          , ioe_errno       = Nothing
-          , ioe_filename    = Nothing
-          }
-
-        addressInUseError = IOError
-          { ioe_handle      = Nothing
-          , ioe_type        = ResourceBusy
-          , ioe_location    = "Ouroboros.Network.Snocket.Sim.bind"
-          , ioe_description = "Address already in use"
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
