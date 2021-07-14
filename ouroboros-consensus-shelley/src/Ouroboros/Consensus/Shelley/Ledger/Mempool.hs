@@ -322,7 +322,7 @@ instance ( SL.PraosCrypto c
     let pparams  = getPParams $ tickedShelleyLedgerState ledgerState
     in AlonzoMeasure {
         byteSize = ByteSize $ maxTxCapacity ledgerState
-      , exUnits  = getField @"_maxTxExUnits" pparams
+      , exUnits  = getField @"_maxBlockExUnits" pparams
       }
 
   pointwiseMin (AlonzoMeasure bs1 (ExUnits mem1 steps1)) (AlonzoMeasure bs2 (ExUnits mem2 steps2)) =
