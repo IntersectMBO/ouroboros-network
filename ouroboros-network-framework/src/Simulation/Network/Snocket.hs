@@ -54,6 +54,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
+import           Text.Printf (printf)
 
 import           Data.Wedge
 
@@ -499,7 +500,8 @@ mkSnocket :: forall m addr.
              , MonadMask          m
              , MonadTime          m
              , MonadTimer         m
-             , Ord addr
+             , Ord  addr
+             , Show addr
              )
           => NetworkState m (TestAddress addr)
           -> Tracer m (WithAddr (TestAddress addr)
@@ -518,38 +520,44 @@ mkSnocket state tr = Snocket { getLocalAddr
                              , toBearer
                              }
   where
-    getLocalAddrM :: FD m (TestAddress addr) -> m (Maybe (TestAddress addr))
+    getLocalAddrM :: FD m (TestAddress addr)
+                  -> m (Either (FD_ m (TestAddress addr))
+                               (TestAddress addr))
     getLocalAddrM FD { fdVar } = do
         fd_ <- atomically (readTVar fdVar)
         return $ case fd_ of
-          FDUninitialised Nothing         -> Nothing
-          FDUninitialised (Just peerAddr) -> Just peerAddr
-          FDListening peerAddr _          -> Just peerAddr
+          FDUninitialised Nothing         -> Left fd_
+          FDUninitialised (Just peerAddr) -> Right peerAddr
+          FDListening peerAddr _          -> Right peerAddr
           FDConnecting ConnectionId { localAddress } _
-                                          -> Just localAddress
+                                          -> Right localAddress
           FDConnected  ConnectionId { localAddress } _
-                                          -> Just localAddress
-          FDClosed {}                     -> Nothing
+                                          -> Right localAddress
+          FDClosed {}                     -> Left fd_
 
-    getRemoteAddrM :: FD m (TestAddress addr) -> m (Maybe (TestAddress addr))
+    getRemoteAddrM :: FD m (TestAddress addr)
+                   -> m (Either (FD_ m (TestAddress addr))
+                                (TestAddress addr))
     getRemoteAddrM FD { fdVar } = do
         fd_ <- atomically (readTVar fdVar)
         return $ case fd_ of
-          FDUninitialised {}         -> Nothing
-          FDListening {}             -> Nothing
+          FDUninitialised {}         -> Left fd_
+          FDListening {}             -> Left fd_
           FDConnecting ConnectionId { remoteAddress } _
-                                     -> Just remoteAddress
+                                     -> Right remoteAddress
           FDConnected  ConnectionId { remoteAddress } _
-                                     -> Just remoteAddress
-          FDClosed {}                -> Nothing
+                                     -> Right remoteAddress
+          FDClosed {}                -> Left fd_
 
     traceWith' :: FD m (TestAddress addr)
                -> SnocketTrace m (TestAddress addr)
                -> m ()
     traceWith' fd =
       let tr' :: Tracer m (SnocketTrace m (TestAddress addr))
-          tr' = (\ev -> (\a b -> WithAddr a b ev) <$> getLocalAddrM  fd
-                                                  <*> getRemoteAddrM fd)
+          tr' = (\ev -> (\a b -> WithAddr (hush a)
+                                          (hush b) ev)
+                    <$> getLocalAddrM  fd
+                    <*> getRemoteAddrM fd)
                 `contramapM` tr
       in traceWith tr'
 
@@ -561,16 +569,17 @@ mkSnocket state tr = Snocket { getLocalAddr
     getLocalAddr fd = do
         maddr <- getLocalAddrM fd
         case maddr of
-          Just addr -> return addr
+          Right addr -> return addr
           -- Socket would not error for an @FDUninitialised Nothing@; it would
           -- return '0.0.0.0:0'.
-          Nothing   -> throwIO ioe
+          Left fd_   -> throwIO (ioe fd_)
       where
-        ioe = IOError
+        ioe :: FD_ m (TestAddress addr) -> IOError
+        ioe fd_ = IOError
                 { ioe_handle      = Nothing
                 , ioe_type        = InvalidArgument
                 , ioe_location    = "Ouroboros.Network.Snocket.Sim.getLocalAddr"
-                , ioe_description = "Transport endpoint is not connected"
+                , ioe_description = printf "Transport endpoint (%s) is not connected" (show fd_)
                 , ioe_errno       = Nothing
                 , ioe_filename    = Nothing
                 }
@@ -579,14 +588,15 @@ mkSnocket state tr = Snocket { getLocalAddr
     getRemoteAddr fd = do
       maddr <- getRemoteAddrM fd
       case maddr of
-        Just addr -> return addr
-        Nothing   -> throwIO ioe
+        Right addr -> return addr
+        Left fd_   -> throwIO (ioe fd_)
       where
-        ioe = IOError
+        ioe :: FD_ m (TestAddress addr) -> IOError
+        ioe fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.getRemoteAddr"
-          , ioe_description = "Transport endpoint is not connected"
+          , ioe_description = printf "Transport endpoint is not connected" (show fd_)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -624,7 +634,7 @@ mkSnocket state tr = Snocket { getLocalAddr
               conMap <- readTVar (nsConnections state)
               case Map.lookup (normaliseId connId) conMap of
                 Just      Connection { connState = Established } ->
-                  throwSTM connectedIOError
+                  throwSTM (connectedIOError fd_)
                 Just conn@Connection { connState = HalfOpened } -> do
                   let conn' = conn { connState = Established }
                   writeTVar fdVarLocal (FDConnecting connId conn')
@@ -661,13 +671,13 @@ mkSnocket state tr = Snocket { getLocalAddr
               case (efd, lstFd) of
                 -- error cases
                 (_, Nothing) ->
-                  return (Left connectIOError)
+                  return (Left (connectIOError connId))
                 (_, Just FDUninitialised {}) ->
-                  return (Left connectIOError)
+                  return (Left (connectIOError connId))
                 (_, Just FDConnecting {}) ->
-                  return (Left invalidError)
+                  return (Left (invalidError fd_))
                 (_, Just FDConnected {}) ->
-                  return (Left connectIOError)
+                  return (Left (connectIOError connId))
                 (_, Just FDClosed {}) ->
                   return (Left notConnectedIOError)
 
@@ -699,7 +709,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                                      , cwiChannelRemote = connChannelLocal
                                      }
                     Nothing ->
-                      throwSTM connectIOError
+                      throwSTM (connectIOError connId)
 
                   return (Right (fd_', NormalOpen))
 
@@ -709,13 +719,13 @@ mkSnocket state tr = Snocket { getLocalAddr
               Right (fd_', o) -> traceWith' fd (STConnected fd_' o)
 
           FDConnecting {} ->
-            throwIO invalidError
+            throwIO (invalidError fd_)
 
           FDConnected {} ->
-            throwIO connectedIOError
+            throwIO (connectedIOError fd_)
 
           FDListening {} ->
-            throwIO connectedIOError
+            throwIO (connectedIOError fd_)
 
           FDClosed {} ->
             throwIO notConnectedIOError
@@ -729,29 +739,32 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
-        connectIOError = IOError
+        connectIOError :: ConnectionId (TestAddress addr) -> IOError
+        connectIOError connId = IOError
           { ioe_handle      = Nothing
           , ioe_type        = OtherError
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.connect"
-          , ioe_description = "connect failure"
+          , ioe_description = printf "connect failure (%s)" (show connId)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
 
-        connectedIOError = IOError
+        connectedIOError :: FD_ m (TestAddress addr) -> IOError
+        connectedIOError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = AlreadyExists
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.connect"
-          , ioe_description = "Transport endpoint is already connected"
+          , ioe_description = printf "Transport endpoint (%s) is already connected" (show fd_)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
 
-        invalidError = IOError
+        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.bind"
-          , ioe_description = "Invalid argument"
+          , ioe_description = printf "Invalid argument (%s)" (show fd_)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -766,17 +779,17 @@ mkSnocket state tr = Snocket { getLocalAddr
               writeTVar fdVar (FDUninitialised (Just addr))
               return Nothing
             _ ->
-              return (Just (fd_, invalidError))
+              return (Just (fd_, invalidError fd_))
         case res of
           Nothing       -> return ()
           Just (fd_, e) -> traceWith' fd (STBindError fd_ addr e)
                         >> throwIO e
       where
-        invalidError = IOError
+        invalidError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.bind"
-          , ioe_description = "Invalid argument"
+          , ioe_description = printf "Invalid argument (%s)" (show fd_)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -788,7 +801,7 @@ mkSnocket state tr = Snocket { getLocalAddr
         case fd_ of
           FDUninitialised Nothing ->
             -- Berkeley socket would not error; but then 'bind' would fail;
-            throwSTM invalidError
+            throwSTM $ invalidError fd_
 
           FDUninitialised (Just addr) -> do
             queue <- newTBQueue bound
@@ -796,23 +809,24 @@ mkSnocket state tr = Snocket { getLocalAddr
             modifyTVar (nsListeningFDs state) (Map.insert addr fd)
             
           FDConnected {} ->
-            throwSTM invalidError
+            throwSTM $ invalidError fd_
           FDConnecting {} ->
-            throwSTM invalidError
+            throwSTM $ invalidError fd_
           FDListening {} ->
             return ()
           FDClosed {} ->
-            throwSTM invalidError
+            throwSTM $ invalidError fd_
       where
         -- TODO: 'listen' should take this as an explicit argument
         bound :: Natural
         bound = 10
 
-        invalidError = IOError
+        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.listen"
-          , ioe_description = "Invalid argument"
+          , ioe_description = printf "Invalid argument (%s)" (show fd_)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -830,15 +844,15 @@ mkSnocket state tr = Snocket { getLocalAddr
               -- 'berkeleyAccept' used by 'socketSnocket' will return
               -- 'IOException's with 'AcceptFailure', we match this behaviour
               -- here.
-              return ( AcceptFailure (toException invalidError)
+              return ( AcceptFailure (toException $ invalidError fd)
                      , accept_
                      )
             FDConnecting {} ->
-              return ( AcceptFailure (toException invalidError)
+              return ( AcceptFailure (toException $ invalidError fd)
                      , accept_
                      )
             FDConnected {} ->
-              return ( AcceptFailure (toException invalidError)
+              return ( AcceptFailure (toException $ invalidError fd)
                      , accept_
                      )
             FDListening localAddress queue -> do
@@ -863,15 +877,16 @@ mkSnocket state tr = Snocket { getLocalAddr
                      , accept_
                      )
             FDClosed {} ->
-              return ( AcceptFailure (toException invalidError)
+              return ( AcceptFailure (toException $ invalidError fd)
                      , accept_
                      )
 
-        invalidError = IOError
+        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError fd = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
-          , ioe_description = "Invalid argument"
+          , ioe_description = printf "Invalid argument (%s)" (show fd)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -932,25 +947,32 @@ mkSnocket state tr = Snocket { getLocalAddr
         fd_ <- atomically (readTVar fdVar)
         case fd_ of
           FDUninitialised {} ->
-            throwIO (invalidError "uninitialised file descriptor")
+            throwIO (invalidError fd_)
           FDListening {} ->
-            throwIO (invalidError "listening snocket")
+            throwIO (invalidError fd_)
           FDConnecting _ _ -> do
-            throwIO (invalidError "connecting")
+            throwIO (invalidError fd_)
           FDConnected _ conn -> do
             traceWith' fd (STBearer fd_)
             return $ attenuationChannelAsMuxBearer (connSDUSize conn)
                                                    sduTimeout muxTracer
                                                    (connChannelLocal conn)
           FDClosed {} ->
-            throwIO (invalidError "closed snocket")
+            throwIO (invalidError fd_)
       where
         -- io errors
-        invalidError desc = IOError
+        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.toBearer"
-          , ioe_description = "Invalid argument: " ++ desc
+          , ioe_description = printf "Invalid argument (%s)" (show fd_)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
+
+
+hush :: Either a b -> Maybe b
+hush Left {}   = Nothing
+hush (Right a) = Just a
+{-# INLINE hush #-}
