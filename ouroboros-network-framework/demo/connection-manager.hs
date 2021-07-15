@@ -245,14 +245,14 @@ withBidirectionalConnectionManager snocket socket
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
               haVersionDataCodec = cborTermVersionDataCodec unversionedProtocolDataCodec,
-              haVersions = unversionedProtocol
-                            (serverApplication
-                              hotRequestsVar
-                              warmRequestsVar
-                              establishedRequestsVar),
               haAcceptVersion = acceptableVersion,
               haTimeLimits = timeLimitsHandshake
             }
+          (unversionedProtocol
+             (serverApplication
+                hotRequestsVar
+                warmRequestsVar
+                establishedRequestsVar))
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy))
           (\_ -> HandshakeFailure)

@@ -336,10 +336,10 @@ withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr next
             haHandshakeTracer = (name,) `contramap` nullTracer,
             haHandshakeCodec = unversionedHandshakeCodec,
             haVersionDataCodec = cborTermVersionDataCodec unversionedProtocolDataCodec,
-            haVersions = unversionedProtocol clientApplication,
             haAcceptVersion = acceptableVersion,
             haTimeLimits = noTimeLimitsHandshake
           }
+        (unversionedProtocol clientApplication)
         (mainThreadId, debugMuxErrorRethrowPolicy
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
@@ -510,10 +510,10 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
               haHandshakeTracer = WithName name `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
               haVersionDataCodec = cborTermVersionDataCodec unversionedProtocolDataCodec,
-              haVersions = unversionedProtocol serverApplication,
               haAcceptVersion = acceptableVersion,
               haTimeLimits = noTimeLimitsHandshake
             }
+          (unversionedProtocol serverApplication)
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy

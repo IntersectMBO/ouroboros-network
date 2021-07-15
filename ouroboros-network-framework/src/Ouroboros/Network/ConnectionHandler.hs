@@ -190,7 +190,8 @@ makeConnectionHandler
     -- evidence that we can use mux with it.
     -> MiniProtocolBundle muxMode
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
-                          (OuroborosBundle muxMode peerAddr ByteString m a b)
+    -> Versions versionNumber versionData
+                (OuroborosBundle muxMode peerAddr ByteString m a b)
     -> (ThreadId m, RethrowPolicy)
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
@@ -198,6 +199,7 @@ makeConnectionHandler
 makeConnectionHandler muxTracer singMuxMode
                       miniProtocolBundle
                       handshakeArguments
+                      versionedApplication
                       (mainThreadId, rethrowPolicy) =
     ConnectionHandler {
         connectionHandler =
@@ -263,7 +265,8 @@ makeConnectionHandler muxTracer singMuxMode
             hsResult <-
               unmask (runHandshakeClient handshakeBearer
                                          connectionId
-                                         handshakeArguments)
+                                         handshakeArguments
+                                         versionedApplication)
               -- 'runHandshakeClient' only deals with protocol limit errors or
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.
@@ -329,7 +332,8 @@ makeConnectionHandler muxTracer singMuxMode
             hsResult <-
               unmask (runHandshakeServer handshakeBearer
                                          connectionId
-                                         handshakeArguments)
+                                         handshakeArguments
+                                         versionedApplication)
               -- 'runHandshakeServer' only deals with protocol limit errors or
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.

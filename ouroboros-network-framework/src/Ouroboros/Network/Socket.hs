@@ -99,7 +99,6 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.IOManager (IOManager)
 import           Ouroboros.Network.Snocket (Snocket)
@@ -256,10 +255,10 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
           haHandshakeTracer  = nctHandshakeTracer,
           haHandshakeCodec   = handshakeCodec,
           haVersionDataCodec = versionDataCodec,
-          haVersions         = versions,
           haAcceptVersion    = acceptVersion,
           haTimeLimits       = handshakeTimeLimits
         }
+        versions
     ts_end <- getMonotonicTime
     case app_e of
          Left (HandshakeProtocolLimit err) -> do
@@ -383,10 +382,10 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
               haHandshakeTracer  = handshakeTracer,
               haHandshakeCodec   = handshakeCodec,
               haVersionDataCodec = versionDataCodec,
-              haVersions         = versions,
               haAcceptVersion    = acceptVersion,
               haTimeLimits       = handshakeTimeLimits
             }
+           versions
 
         case app_e of
              Left (HandshakeProtocolLimit err) -> do
