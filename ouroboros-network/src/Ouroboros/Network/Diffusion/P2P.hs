@@ -629,16 +629,15 @@ runDataDiffusion tracers
                             haVersionDataCodec =
                               cborTermVersionDataCodec
                                 NodeToClient.nodeToClientCodecCBORTerm,
-                            haVersions =
-                                  (\(OuroborosApplication apps)
-                                    -> Bundle
-                                        (WithHot apps)
-                                        (WithWarm (\_ _ -> []))
-                                        (WithEstablished (\_ _ -> [])))
-                              <$> daLocalResponderApplication,
                             haAcceptVersion = acceptableVersion,
                             haTimeLimits = noTimeLimitsHandshake
                           }
+                        ( ( \ (OuroborosApplication apps)
+                           -> Bundle
+                                (WithHot apps)
+                                (WithWarm (\_ _ -> []))
+                                (WithEstablished (\_ _ -> []))
+                          ) <$> daLocalResponderApplication )
                         (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
 
                     localConnectionManagerArguments
@@ -754,10 +753,10 @@ runDataDiffusion tracers
                             haVersionDataCodec =
                               cborTermVersionDataCodec
                                 NodeToNode.nodeToNodeCodecCBORTerm,
-                            haVersions = daApplicationInitiatorMode,
                             haAcceptVersion = acceptableVersion,
                             haTimeLimits = timeLimitsHandshake
                           }
+                        daApplicationInitiatorMode
                         (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
                 withConnectionManager
@@ -890,10 +889,10 @@ runDataDiffusion tracers
                              haVersionDataCodec =
                               cborTermVersionDataCodec
                                 NodeToNode.nodeToNodeCodecCBORTerm,
-                             haVersions = daApplicationInitiatorResponderMode,
                              haAcceptVersion = acceptableVersion,
                              haTimeLimits = timeLimitsHandshake
                            }
+                         daApplicationInitiatorResponderMode
                          (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
                 withConnectionManager
