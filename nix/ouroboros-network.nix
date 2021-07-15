@@ -29,14 +29,20 @@ let
     inherit compiler-nix-name src;
     modules = [
 
-      # Compile all local packages with -Werror:
       {
+        # Compile all local packages with -Werror:
         packages = lib.genAttrs projectPackages
           (name: { configureFlags = [ "--ghc-option=-Werror" ]; });
       }
       {
+        # Apply profiling arg to all library components in the build:
         enableLibraryProfiling = profiling;
+
+        # Command-line options for test suites:
+        packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags = lib.mkForce [ "--no-create" ];
       }
+
+      # Options specific to the windows cross-compiled build:
       ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
         # Allow reinstallation of Win32
         nonReinstallablePkgs =
@@ -94,6 +100,7 @@ let
         packages.ouroboros-consensus-test.components.tests.test-infra.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
         packages.ouroboros-consensus-test.components.tests.test-storage.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
       })
+      # Options for when not compiling to windows:
       ({ pkgs, ... }: lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
         packages.ouroboros-network.flags.cddl = true;
         packages.ouroboros-network.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];

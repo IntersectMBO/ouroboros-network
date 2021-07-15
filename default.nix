@@ -41,7 +41,7 @@ let
 
     checks = recurseIntoAttrs {
       # `checks.tests` collect results of executing the tests:
-      tests = collectChecks haskellPackages;
+      tests = collectChecks' haskellPackages;
     };
 
     # These are not run on hydra, but will be built separately in a nightly
