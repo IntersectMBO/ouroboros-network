@@ -18,6 +18,7 @@ module Test.Ouroboros.Network.PeerSelection (tests) where
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
 import           Data.List (groupBy, foldl')
+import qualified Data.IP as IP
 import           Data.Maybe (listToMaybe, isNothing, fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -1898,6 +1899,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
+      (curry IP.toSockAddr)
       timeout
       DNS.defaultResolvConf
       readDomains
