@@ -12,16 +12,12 @@ module Ouroboros.Network.Diffusion.Common
 
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
 import           Control.Exception (SomeException, Exception)
 import           Control.Tracer (Tracer, nullTracer)
 
-import           Network.Socket
-                  ( SockAddr
-                  , AddrInfo
-                  , Socket
-                  )
 import           Network.Mux
                   ( WithMuxBearer
                   , MuxTrace
@@ -39,63 +35,59 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers
                   )
 import           Ouroboros.Network.NodeToNode
                   ( ConnectionId
-                  , NodeToNodeVersion
                   , AcceptedConnectionsLimit
                   , DiffusionMode
                   )
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.NodeToClient
-                  ( LocalAddress
-                  , Versions
-                  , NodeToClientVersion
+                  ( Versions
                   )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
 
 -- TODO: use LocalAddress where appropriate rather than 'path'.
 --
-data DiffusionInitializationTracer
-  = RunServer !(NonEmpty SockAddr)
-  | RunLocalServer !LocalAddress
-  | UsingSystemdSocket !FilePath
+data DiffusionInitializationTracer ntnAddr ntcAddr
+  = RunServer !(NonEmpty ntnAddr)
+  | RunLocalServer !ntcAddr
+  | UsingSystemdSocket !ntcAddr
   -- Rename as 'CreateLocalSocket'
-  | CreateSystemdSocketForSnocketPath !FilePath
-  | CreatedLocalSocket !FilePath
-  | ConfiguringLocalSocket !FilePath !FileDescriptor
-  | ListeningLocalSocket !FilePath !FileDescriptor
-  | LocalSocketUp  !FilePath !FileDescriptor
+  | CreateSystemdSocketForSnocketPath !ntcAddr
+  | CreatedLocalSocket !ntcAddr
+  | ConfiguringLocalSocket !ntcAddr !FileDescriptor
+  | ListeningLocalSocket !ntcAddr !FileDescriptor
+  | LocalSocketUp  !ntcAddr !FileDescriptor
   -- Rename as 'CreateServerSocket'
-  | CreatingServerSocket !SockAddr
-  | ConfiguringServerSocket !SockAddr
-  | ListeningServerSocket !SockAddr
-  | ServerSocketUp !SockAddr
+  | CreatingServerSocket !ntnAddr
+  | ConfiguringServerSocket !ntnAddr
+  | ListeningServerSocket !ntnAddr
+  | ServerSocketUp !ntnAddr
   -- Rename as 'UnsupportedLocalSocketType'
-  | UnsupportedLocalSystemdSocket !SockAddr
+  | UnsupportedLocalSystemdSocket !ntnAddr
   -- Remove (this is impossible case), there's no systemd on Windows
   | UnsupportedReadySocketCase
   | DiffusionErrored SomeException
     deriving Show
 
 -- TODO: add a tracer for these misconfiguration
-data DiffusionFailure = UnsupportedLocalSocketType
+data DiffusionFailure ntnAddr = UnsupportedLocalSocketType
                       | UnsupportedReadySocket -- Windows only
-                      | UnexpectedIPv4Address
-                      | UnexpectedIPv6Address
-                      | UnexpectedUnixAddress
+                      | UnexpectedIPv4Address ntnAddr
+                      | UnexpectedIPv6Address ntnAddr
                       | NoSocket
   deriving (Eq, Show)
 
-instance Exception DiffusionFailure
+instance (Typeable ntnAddr, Show ntnAddr) => Exception (DiffusionFailure ntnAddr)
 
 -- | Common DiffusionTracers interface between P2P and NonP2P
 --
-data DiffusionTracers p2p = DiffusionTracers {
+data DiffusionTracers p2p ntnAddr ntnVersion ntcAddr ntcVersion m = DiffusionTracers {
       -- | Mux tracer
       dtMuxTracer
-        :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
+        :: Tracer m (WithMuxBearer (ConnectionId ntnAddr) MuxTrace)
 
       -- | Handshake protocol tracer
     , dtHandshakeTracer
-        :: Tracer IO NodeToNode.HandshakeTr
+        :: Tracer m (NodeToNode.HandshakeTr ntnAddr ntnVersion)
 
       --
       -- NodeToClient tracers
@@ -103,25 +95,26 @@ data DiffusionTracers p2p = DiffusionTracers {
 
       -- | Mux tracer for local clients
     , dtLocalMuxTracer
-        :: Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
+        :: Tracer m (WithMuxBearer (ConnectionId ntcAddr) MuxTrace)
 
       -- | Handshake protocol tracer for local clients
     , dtLocalHandshakeTracer
-        :: Tracer IO NodeToClient.HandshakeTr
+        :: Tracer m (NodeToClient.HandshakeTr ntcAddr ntcVersion)
 
       -- | Diffusion initialisation tracer
     , dtDiffusionInitializationTracer
-        :: Tracer IO DiffusionInitializationTracer
+        :: Tracer m (DiffusionInitializationTracer ntnAddr ntcAddr)
 
       -- | Ledger Peers tracer
     , dtLedgerPeersTracer
-        :: Tracer IO TraceLedgerPeers
+        :: Tracer m TraceLedgerPeers
 
       -- | P2P or NonP2P DiffusionTracers
     , dtExtra :: p2p
     }
 
-nullTracers :: p2p -> DiffusionTracers p2p
+nullTracers :: Applicative m => p2p -> DiffusionTracers p2p ntnAddr ntnVersion
+                                                            ntcAddr ntcVersion m
 nullTracers p2pNullTracers = DiffusionTracers {
   dtMuxTracer                       = nullTracer
   , dtHandshakeTracer               = nullTracer
@@ -134,18 +127,18 @@ nullTracers p2pNullTracers = DiffusionTracers {
 
 -- | Common DiffusionArguments interface between P2P and NonP2P
 --
-data DiffusionArguments p2p = DiffusionArguments {
+data DiffusionArguments p2p ntnFd ntnAddr ntcFd ntcAddr = DiffusionArguments {
       -- | an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
       --
-      daIPv4Address  :: Maybe (Either Socket AddrInfo)
+      daIPv4Address  :: Maybe (Either ntnFd ntnAddr)
 
       -- | an @IPV4@ socket ready to accept connections or an @IPv6@ addresses
       --
-    , daIPv6Address  :: Maybe (Either Socket AddrInfo)
+    , daIPv6Address  :: Maybe (Either ntnFd ntnAddr)
 
       -- | an @AF_UNIX@ socket ready to accept connections or an @AF_UNIX@
       -- socket path
-    , daLocalAddress :: Maybe (Either Socket FilePath)
+    , daLocalAddress :: Maybe (Either ntcFd ntcAddr)
 
       -- | parameters for limiting number of accepted connections
       --
@@ -163,7 +156,13 @@ data DiffusionArguments p2p = DiffusionArguments {
 
 -- | Common DiffusionArguments interface between P2P and NonP2P
 --
-data DiffusionApplications p2p ntnAddr ntcAddr ntnVersionData ntcVersionData m =
+-- TODO: we need initiator only mode for Daedalus, there's no reason why we
+-- should run a node-to-node server for it.
+--
+data DiffusionApplications p2p
+                           ntnAddr ntnVersion ntnVersionData
+                           ntcAddr ntcVersion ntcVersionData
+                           m =
   DiffusionApplications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
@@ -171,7 +170,7 @@ data DiffusionApplications p2p ntnAddr ntcAddr ntnVersionData ntcVersionData m =
       -- 'daApplicationInitiatorMode', 'daApplicationInitiatorResponderMode'.
       --
       daApplicationInitiatorMode
-        :: Versions NodeToNodeVersion
+        :: Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorMode ntnAddr
@@ -180,7 +179,7 @@ data DiffusionApplications p2p ntnAddr ntcAddr ntnVersionData ntcVersionData m =
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
     , daApplicationInitiatorResponderMode
-        :: Versions NodeToNodeVersion
+        :: Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorResponderMode ntnAddr
@@ -189,7 +188,7 @@ data DiffusionApplications p2p ntnAddr ntcAddr ntnVersionData ntcVersionData m =
     -- | NodeToClient responder application (server role)
     --
     , daLocalResponderApplication
-        :: Versions NodeToClientVersion
+        :: Versions ntcVersion
                     ntcVersionData
                     (OuroborosApplication
                       ResponderMode ntcAddr
