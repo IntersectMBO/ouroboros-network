@@ -122,6 +122,8 @@
 }
 
 \definecolor{shadecolor}{rgb}{.6,0.6,0.8}
+\definecolor{mygreen}{rgb}{0.109804,0.698039,0.341176}
+\definecolor{myblue}{rgb}{0.360784,0.423529,255}
 \usetikzlibrary{arrows,calc,matrix,shapes}
 \tikzset{every scope/.style={>=triangle 60,thick}}
 \exhyphenpenalty 10000
@@ -132,20 +134,32 @@
 
 \begin{document}
 
-\title{The Shelley Networking Protocol \\
-  {\small (Version 1.2.0 , Revision \input{revisioncount})} \\
-  {\large \sc An IOHK technical report}}
-\author{Duncan Coutts \\ {\small \texttt{duncan@well-typed.com}} \\
-                         {\small \texttt{duncan.coutts@iohk.io}}
-   \and Alex Vieth \\ {\small \texttt{alex@well-typed.com}}
-   \and Neil Davies \\ {\small \texttt{neil.davies@pnsol.com}} \\
-                       {\small \texttt{neil.davies@iohk.io}}
-   \and Marcin Szamotulski \\ {\small \texttt{marcin.szamotulski@iohk.io}}
-   \and Karl Knutsson \\ {\small \texttt{karl.knutsson@iohk.io}}
-   \and Marc Fontaine \\ {\small \texttt{marc.fontaine@iohk.io}}
-   \and Armando Santos \\ {\small \texttt{armando@well-typed.com}}
-   }
-\date{\today}
+\title{The Shelley Networking Protocol}
+\author{
+  Duncan Coutts \\
+  {\small \texttt{duncan@well-typed.com}} \\
+  {\small \texttt{duncan.coutts@iohk.io}}
+\and
+  Neil Davies \\
+  {\small \texttt{neil.davies@pnsol.com}} \\
+  {\small \texttt{neil.davies@iohk.io}}
+\and
+  Karl Knutsson \\
+  {\small \texttt{karl.knutsson@iohk.io}}
+\and
+  Marc Fontaine \\
+  {\small \texttt{marc.fontaine@iohk.io}}
+\and
+  Armando Santos \\
+  {\small \texttt{armando@well-typed.com}}
+\and
+  Marcin Szamotulski \\
+  {\small \texttt{marcin.szamotulski@iohk.io}}
+\and
+  Alex Vieth \\
+  {\small \texttt{alex@well-typed.com}}
+}
+\date{{\small Version 1.3.0, \today}}
 
 \maketitle
 
@@ -170,12 +184,13 @@
 \begin{description}
 \item[Version 1.0.0 Nov 2019, State machines and wire format for Ouroboros-Network-1.0.0.]
 \item[Version 1.1.0 Apr 2021, Connection Manager for Ouroboros-Network-Framework.]
-\item[Version 1.2.0 Apr 2021, TxSubmission2 protocol, LocalStateQuery protocol, KeepAlive protocol]
+\item[Version 1.2.0 Apr 2021, tx-submission version 2, local-state-query, keep-alive mini-protocols]
+\item[Version 1.3.0 Jul 2021, Review of the multiplexer documentation]
 \end{description}
 % \include{intro}
 \include{architecture}
-\include{miniprotocols}
 \include{mux}
+\include{miniprotocols}
 \include{connection-manager}
 % \include{rest}
 
