@@ -329,7 +329,7 @@ mkDiffusionTracersP2P
   -> Tracer IO NTC.HandshakeTr
   -> Tracer IO DiffusionInitializationTracer
   -> Tracer IO TraceLedgerPeers
-  -> Tracer IO (TraceLocalRootPeers IOException)
+  -> Tracer IO (TraceLocalRootPeers SockAddr IOException)
   -> Tracer IO TracePublicRootPeers
   -> Tracer IO (TracePeerSelection SockAddr)
   -> Tracer
