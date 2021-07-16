@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.PeerSelection.Simple
   ( withPeerSelectionActions
@@ -33,19 +34,22 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 
 withPeerSelectionActions
-  :: Tracer IO (TraceLocalRootPeers IOException)
+  :: forall peeraddr peerconn a.
+     Ord peeraddr
+  => Tracer IO (TraceLocalRootPeers peeraddr IOException)
   -> Tracer IO TracePublicRootPeers
+  -> (IP -> Socket.PortNumber -> peeraddr)
   -> TimeoutFn IO
   -> STM IO PeerSelectionTargets
   -> STM IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
   -> STM IO [RelayAddress]
   -- ^ public root peers
-  -> PeerStateActions Socket.SockAddr peerconn IO
+  -> PeerStateActions peeraddr peerconn IO
   -> (NumberOfPeers -> STM IO ())
-  -> STM IO (Maybe (Set Socket.SockAddr, DiffTime))
+  -> STM IO (Maybe (Set peeraddr, DiffTime))
   -> (Maybe (Async IO Void)
-      -> PeerSelectionActions Socket.SockAddr peerconn IO
+      -> PeerSelectionActions peeraddr peerconn IO
       -> IO a)
   -- ^ continuation, recieves a handle to the local roots peer provider thread
   -- (only if local root peers where non-empty).
@@ -53,6 +57,7 @@ withPeerSelectionActions
 withPeerSelectionActions
   localRootTracer
   publicRootTracer
+  toPeerAddr
   timeout
   readTargets
   readLocalRootPeers
@@ -72,6 +77,7 @@ withPeerSelectionActions
     withAsync
       (localRootPeersProvider
         localRootTracer
+        toPeerAddr
         timeout
         DNS.defaultResolvConf
         localRootsVar
@@ -83,7 +89,7 @@ withPeerSelectionActions
     -- (for example because the node hasn't synced far enough) we fall back
     -- to using the manually configured bootstrap root peers.
     requestLedgerPeers :: DNSActions DNS.Resolver IOException IO
-                       -> Int -> IO (Set Socket.SockAddr, DiffTime)
+                       -> Int -> IO (Set peeraddr, DiffTime)
     requestLedgerPeers dnsActions n = do
         atomically $ reqLedgerPeers $ NumberOfPeers $ fromIntegral n
         peers_m <- atomically getLedgerPeers
@@ -95,9 +101,10 @@ withPeerSelectionActions
     -- `/etc/resolv.conf`:
     -- https://github.com/input-output-hk/cardano-node/issues/731
     requestPublicRootPeers :: DNSActions DNS.Resolver IOException IO
-                           -> Int -> IO (Set Socket.SockAddr, DiffTime)
+                           -> Int -> IO (Set peeraddr, DiffTime)
     requestPublicRootPeers dnsActions n =
       publicRootPeersProvider publicRootTracer
+                              toPeerAddr
                               timeout
                               DNS.defaultResolvConf
                               readPublicRootPeers
