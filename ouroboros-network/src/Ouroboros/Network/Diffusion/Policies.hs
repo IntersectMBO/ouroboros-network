@@ -13,8 +13,6 @@ import qualified Data.Set as Set
 import           Data.Word (Word32)
 import           System.Random
 
-import           Network.Socket (SockAddr)
-
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.PeerMetric
 
@@ -37,11 +35,14 @@ closeConnectionTimeout :: DiffTime
 closeConnectionTimeout = 120
 
 
-simplePeerSelectionPolicy :: forall m. MonadSTM m
+simplePeerSelectionPolicy :: forall m peerAddr.
+                             ( MonadSTM m
+                             , Ord peerAddr
+                             )
                           => StrictTVar m StdGen
                           -> STM m ChurnMode
-                          -> PeerMetrics m SockAddr
-                          -> PeerSelectionPolicy SockAddr m
+                          -> PeerMetrics m peerAddr
+                          -> PeerSelectionPolicy peerAddr m
 simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
       policyPickKnownPeersForGossip = simplePromotionPolicy,
       policyPickColdPeersToPromote  = simplePromotionPolicy,
@@ -60,9 +61,9 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
   where
 
      -- Add scaled random number in order to prevent ordering based on SockAddr
-    addRand :: Set.Set SockAddr
-            -> (SockAddr -> Word32 -> (SockAddr, Word32))
-            -> STM m (Map.Map SockAddr Word32)
+    addRand :: Set.Set peerAddr
+            -> (peerAddr -> Word32 -> (peerAddr, Word32))
+            -> STM m (Map.Map peerAddr Word32)
     addRand available scaleFn = do
       inRng <- readTVar rngVar
 
@@ -72,7 +73,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
       writeTVar rngVar rng'
       return available'
 
-    hotDemotionPolicy :: PickPolicy SockAddr m
+    hotDemotionPolicy :: PickPolicy peerAddr m
     hotDemotionPolicy _ _ _ available pickNum = do
         mode <- getChurnMode
         scores <- case mode of
@@ -91,7 +92,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
 
     -- Randomly pick peers to demote, peeers with knownPeerTepid set are twice
     -- as likely to be demoted.
-    warmDemotionPolicy :: PickPolicy SockAddr m
+    warmDemotionPolicy :: PickPolicy peerAddr m
     warmDemotionPolicy _ _ isTepid available pickNum = do
       available' <- addRand available (tepidWeight isTepid)
       return $ Set.fromList
@@ -104,7 +105,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
 
     -- Randomly pick peers to forget, peers with failures are more likely to
     -- be forgotten.
-    coldForgetPolicy :: PickPolicy SockAddr m
+    coldForgetPolicy :: PickPolicy peerAddr m
     coldForgetPolicy _ failCnt _ available pickNum = do
       available' <- addRand available (failWeight failCnt)
       return $ Set.fromList
@@ -114,7 +115,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
              . Map.assocs
              $ available'
 
-    simplePromotionPolicy :: PickPolicy SockAddr m
+    simplePromotionPolicy :: PickPolicy peerAddr m
     simplePromotionPolicy _ _ _ available pickNum = do
       available' <- addRand available (,)
       return $ Set.fromList
@@ -125,18 +126,18 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
              $ available'
 
     -- Failures lowers r
-    failWeight :: (SockAddr -> Int)
-                -> SockAddr
+    failWeight :: (peerAddr -> Int)
+                -> peerAddr
                 -> Word32
-                -> (SockAddr, Word32)
+                -> (peerAddr, Word32)
     failWeight failCnt peer r =
         (peer, r `div` fromIntegral (failCnt peer + 1))
 
     -- Tepid flag cuts r in half
-    tepidWeight :: (SockAddr -> Bool)
-                -> SockAddr
+    tepidWeight :: (peerAddr -> Bool)
+                -> peerAddr
                 -> Word32
-                -> (SockAddr, Word32)
+                -> (peerAddr, Word32)
     tepidWeight isTepid peer r =
           if isTepid peer then (peer, r `div` 2)
                           else (peer, r)
