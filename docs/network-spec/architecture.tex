@@ -3,15 +3,15 @@
 \section{Protocols and node design}
 There are two protocols which support different sets of mini-protocols:
 \begin{itemize}
-  \item\hyperref[table:node-to-node-protocol-numbers]{node-to-node} protocol
+  \item\hyperref[section:node-to-node-protocol]{node-to-node protocol}
     for communication between different nodes usually run by different
     entities across the globe.  It consists of
     \hyperref[chain-sync-protocol]{chain-sync},
     \hyperref[block-fetch-protocol]{block-fetch},
     \hyperref[tx-submission-protocol]{tx-submission} and
     \hyperref[keep-alive-protocol]{keep-alive} mini-protocols.
-  \item\hyperref[table:node-to-client-protocol-numbers]{node-to-client}
-    protocol for intra-process communication, which allows to build
+  \item\hyperref[section:node-to-client-protocol]{node-to-client
+    protocol} for intra-process communication, which allows to build
     applications that need access to the blockchain, ledger, e.g. a wallet, an
     explorer, etc.  It consists of \hyperref[chain-sync-protocol]{chain-sync},
     \hyperref[local-tx-submission-protocol]{local-tx-submission} and

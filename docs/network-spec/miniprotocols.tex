@@ -891,7 +891,7 @@ The version 1 of the protocol is only used by the node-to-node protocol version
     \hline
     \multicolumn{2}{|c|}{Agency} \\\hline
     Server has Agency & \StIdle  \\\hline
-    Client has Agency & \MsgRequestTxIdsNB, \MsgRequestTxIdsB, \StTxIdsNonBlocking, \StTxs \\\hline
+    Client has Agency & \StTxIdsNonBlocking, \StTxIdsBlocking, \StTxs \\\hline
   \end{tabular}
 \end{figure}
 
@@ -1076,7 +1076,7 @@ A blocking request on the other side, waits until at least one transaction is av
 \subsection{Description}
 Keep alive mini-protocol is a member of node-to-node protocol.  It is used for
 two purposes: to provide keep alive messages, and do round trip time
-measurments.
+measurements.
 
 \newcommand{\Client}{\state{StClient}}
 \newcommand{\Server}{\state{StServer}}
@@ -1198,11 +1198,11 @@ This is acceptable because is protocol is only for use between a node and local 
 \newcommand{\MsgReAcquire}{\trans{MsgReAcquire}}
 
 \subsection{Description}
-Local State Query mini-protocol allows to query the consensus \/ ledger state.
+Local State Query mini-protocol allows to query the consensus / ledger state.
 This mini protocol is part of the Node-to-Client protocol, hence it is only
 used by local (and thus trusted) clients.  Possible queries depend on the era
 (Byron, Shelly, etc) and are not specified in this document.  The protocol
-specifies basic operations like acquiring / releaseing the consensus \/ ledger
+specifies basic operations like acquiring / releasing the consensus / ledger
 state which is done by the server, or running queries against the acquired
 ledger state.
 
@@ -1250,7 +1250,6 @@ ledger state.
   \end{tabular}
   \caption{Local State Query mini-protocol messages.}
 \end{figure}
-
 where $AcquireFailure$ is either $AcquireFailurePointTooOld$ or
 $AcquireFailurePointNotOnChain$.
 
@@ -1291,67 +1290,63 @@ The buffer sizes are listed in Table~\ref{bla} in Section~\ref{blub}.
 }
 
 \section{Node-to-node protocol}
+\label{section:node-to-node-protocol}
 \haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}\newline
 \haddockref{Ouroboros.Network.NodeToNode.Version}{ouroboros-network/Ouroboros-Network-NodeToNode-Version}\newline
 
-The node-to-node protocol consists of the following protocols:
-
+The \textit{node-to-node protocol} consists of the following protocols:
 \begin{itemize}
-  \item chain-sync mini-protocol for headers (section~\ref{chain-sync-protocol}
-  \item block fetch mini-protocol (section~\ref{block-fetch-protocol})
-  \item transaction submission mini-protocol;  from $NodeToNodeV\_6$ the version
+  \item \textit{chain-sync mini-protocol} for headers (section~\ref{chain-sync-protocol})
+  \item \textit{block-fetch mini-protocol} (section~\ref{block-fetch-protocol})
+  \item \textit{tx-submission mini-protocol};  from $NodeToNodeV\_6$ the version
     2 is used  (section~\ref{tx-submission-protocol})
   \item keep alive mini-protocol; from $NodeToNodeV\_3$ (section~\ref{keep-alive-protocol})
 \end{itemize}
-
-Currently there are the following versions of the node-to-node protocol:
+Currently supported versions of the \textit{node-to-node protocol} are listed
+in table~\ref{table:node-to-node-protocol-versions}.
 \begin{figure}[h]
-  \begin{tabular}{l|l}
-    version         & description \\\hline\hline
-    $NodeToNodeV\_1$ & initial version \\\hline
-    $NodeToNodeV\_2$ & block size hints \\\hline
-    $NodeToNodeV\_3$ & introduction of keep-alive mini-protocol \\\hline
-    $NodeToNodeV\_4$ & introduction of diffusion mode in handshake mini-protocol \\\hline
-    $NodeToNodeV\_5$ & \\\hline
-    $NodeToNodeV\_6$ & transaction submission version 2 \\\hline
-  \end{tabular}
+  \begin{center}
+    \begin{tabular}{l|l}
+      version         & description \\\hline\hline
+      $NodeToNodeV\_1$ & initial version \\\hline
+      $NodeToNodeV\_2$ & block size hints \\\hline
+      $NodeToNodeV\_3$ & introduction of keep-alive mini-protocol \\\hline
+      $NodeToNodeV\_4$ & introduction of diffusion mode in handshake mini-protocol \\\hline
+      $NodeToNodeV\_5$ & \\\hline
+      $NodeToNodeV\_6$ & transaction submission version 2 \\\hline
+    \end{tabular}
+    \caption{Node-to-node protocol versions}
+    \label{table:node-to-node-protocol-versions}
+  \end{center}
 \end{figure}
 
 \section{Node-to-client protocol}
+\label{section:node-to-client-protocol}
 \haddockref{Ouroboros.Network.NodeToClient}{ouroboros-network/Ouroboros-Network-NodeToClient}\newline
 \haddockref{Ouroboros.Network.NodeToClient.Version}{ouroboros-network/Ouroboros-Network-NodeToClient-Version}\newline
 
-The node-to-client protocol consists of the following protocols:
+The \textit{node-to-client protocol} consists of the following protocols:
 \begin{itemize}
-  \item chains synchronisation mini-protocols for blocks (section~\ref{chain-sync-protocol})
-  \item local transaction submission mini-protocol (section~\ref{local-tx-submission-protocol})
-  \item local state query mini-protocol; from version $NodeToClient\_2$ (section~\ref{local-state-query-protocol})
+  \item \textit{chain-sync mini-protocol} for blocks (section~\ref{chain-sync-protocol})
+  \item \textit{local-tx-submission mini-protocol} (section~\ref{local-tx-submission-protocol})
+  \item \textit{local-state-query mini-protocol}; from version $NodeToClient\_2$ (section~\ref{local-state-query-protocol})
 \end{itemize}
-
-Currenty there are the following version of the node-to-client protocol:
+Supported versions of \textit{node-to-client protocol} are listed in
+table~\ref{table:node-to-client-protocol-versions}.
 \begin{figure}[h]
-  \begin{tabular}{l|l}
-    version & description \\\hline\hline
-    $NodeToClientV\_1$ & initial version\\\hline
-    $NodeToClientV\_2$ & added local-query mini-protocol\\\hline
-    $NodeToClientV\_3$ & \\\hline
-    $NodeToClientV\_4$ & new queries added to local state query mini-protocol\\\hline
-    $NodeToClientV\_5$ & allegra \\\hline
-    $NodeToClientV\_6$ & mary \\\hline
-    $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
-    $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
-  \end{tabular}
+  \begin{center}
+    \begin{tabular}{l|l}
+      version & description \\\hline\hline
+      $NodeToClientV\_1$ & initial version\\\hline
+      $NodeToClientV\_2$ & added local-query mini-protocol\\\hline
+      $NodeToClientV\_3$ & \\\hline
+      $NodeToClientV\_4$ & new queries added to local state query mini-protocol\\\hline
+      $NodeToClientV\_5$ & allegra \\\hline
+      $NodeToClientV\_6$ & mary \\\hline
+      $NodeToClientV\_7$ & new queries added to local state query mini-protocol\\\hline
+      $NodeToClientV\_8$ & codec changed for local state query mini-protocol\\\hline
+    \end{tabular}
+    \caption{Node-to-client protocol versions}
+    \label{table:node-to-client-protocol-versions}
+  \end{center}
 \end{figure}
-
-
-
-% \wip{
-  % \section{DeltaQ Mini Protocol}
-
-  % WIP : Explain DeltaQ measurement back pressure and how we deal with slow
-  % connection.  See Section % ~\ref{deltaq-discussion}.  The DeltaQ mini
-  % protocol does not transmit is own messages.  Instead it relies on the time
-  % stamps that the multiplexing layer (Section~\ref{multiplexing-section}) adds
-  % to the messages of other mini protocols.
-% }
-

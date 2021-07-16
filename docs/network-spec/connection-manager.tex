@@ -4,7 +4,7 @@
 
 % TODO:
 % I realised that it would be nicer to structure the spec a bit differently.
-% First describe each transition in general terms, without refering to the
+% First describe each transition in general terms, without referring to the
 % implementation, and in a subsequent section introduce implementation details.
 
 \chapter{Connection Manager State Machine Specification}
@@ -64,7 +64,7 @@
 \def\ipvfour{\textsf{ipv4}}
 \def\ipvsix{\textsf{ipv6}}
 
-% Conncection manager's states
+% Connection manager's states
 \def\InitialState{\textbullet}
 \def\FinalState{\textbullet}
 \def\ReservedOutboundState{\texttt{ReservedOutboundState}}
@@ -295,7 +295,7 @@ Figure \ref{fig:high-level-arch} shows the high-level architecture of how the 3 
 with each other. A single \Connmngr{} is shared between the \emph{Server} and \ptopgov{},
 where, in case of an \emph{Outbound Duplex} connection is negotiated, the \emph{Server} is
 notified via a control channel. Although in this document we will use Server and IPG
-interchangibly, it is worth to keep them separate concepts for possible future
+interchangeably, it is worth to keep them separate concepts for possible future
 developments.
 
 \section{Connection Manager}
@@ -303,7 +303,7 @@ developments.
 \subsection{Overview}
 
 \Connmngr{} is a lower-level component responsible for managing connections and its
-resources. Its responsabilities consist of:
+resources. Its responsibilities consist of:
 
 \begin{itemize}
     \item Tracking each connection, in order to keep an eye on the bounded resources;
@@ -808,7 +808,6 @@ Both commit transitions:
   \item \CommitDup{}
   \item \CommitUni{}
 \end{itemize}
-
 need to detect idleness during time interval (which we call: \text{protocol
 idle timeout}). If during this time frame inbound traffic on any responder
 mini-protocol is detected, one of the \AwakeDupRem{} or \AwakeUniRem{}
@@ -980,9 +979,9 @@ the connection. The consequences of this are:
   \item the system will not keep the socket in \texttt{TIME\_WAIT} state, which
     was designed to:
     \begin{itemize}
-      \item provide enough time for finall \texttt{ACK} to be received;
+      \item provide enough time for final \texttt{ACK} to be received;
       \item protect the connection from packets that arrive late. Such
-        packets could interfer with a new connection
+        packets could interfere with a new connection
         (see~\cite{stevens2003unix}).
     \end{itemize}
 \end{itemize}
@@ -1371,7 +1370,7 @@ the server side calls this method only after all responder mini-protocols where
 idle for \textit{protocol idle timeout}.
 
 \texttt{unregisterInboundConnection} might be called when the connection is in
-\OutboundStateDup{}. This can, though very rarelly, happen as a race between
+\OutboundStateDup{}. This can, though very rarely, happen as a race between
 \AwakeDupRem{} and \DemotedToColdDupRem{}\footnote{race is not the right term,
 these transitions are concurrent and independent}. Lets consider the
 following sequence of transitions:
@@ -1584,7 +1583,7 @@ connection thread, close the socket).
 \textit{Inbound protocol governor} keeps track of responder side of the protocol for
 both inbound and outbound duplex connections.  Unidirectional outbound
 connections are not tracked by \inbgov{}.  The server and connection manager
-are responsible to notify it about new connenctions once they are negotiated.
+are responsible to notify it about new connections once they are negotiated.
 Figure~\ref{fig:inbgov-state-machine} presents the state machine that drives
 changes to connection states tracked by \inbgov{}.  As in the connection
 manager case there is an implicit transition from every state to the
@@ -1605,11 +1604,11 @@ terminating state, which represents mux failures, or mini-protocol changes.
     \draw[->] (RemoteCold.155)      -- node[right]{\AwakeRemote} (RemoteEstablished.205);
     \draw[->] (RemoteCold)          -- node[right]{\CommitRemote} (FinalState);
   \end{tikzpicture}
-  \caption{Inbount protocol governor state machine}
+  \caption{Inbound protocol governor state machine}
   \label{fig:inbgov-state-machine}
 \end{figure}
 
-There is a map \(\Phi\) from the subgraph of connection manager state machine
+There is a map \(\Phi\) from the sub-graph of connection manager state machine
 which represents negotiated inbound or duplex outbound connections to the
 \inbgov{} state machine. \(\Phi\) is specified by the following table:
 \begin{align*}
@@ -1621,7 +1620,7 @@ which represents negotiated inbound or duplex outbound connections to the
   & \Phi(\text{\TerminatingState})    & =\; & \text{\FinalState} \\
   & \Phi(\text{\TerminatedState})     & =\; & \text{\FinalState} \\
 \end{align*}
-Furhtermore, \(\Phi\) gives rise to a functor: any transformation that has
+Furthermore, \(\Phi\) gives rise to a functor: any transformation that has
 \textsf{Local} subscript is mapped to identity, and:
 \begin{lstlisting}
 *'$\Phi$(\textsf{a\textsubscript{Local}}) = \textsf{id}'*
