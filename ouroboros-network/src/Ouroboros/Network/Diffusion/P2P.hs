@@ -9,6 +9,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
+-- `withLocalSocket` has some constraints that are only required on Windows.
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 #if !defined(mingw32_HOST_OS)
 #define POSIX
 #endif
@@ -31,15 +34,19 @@ module Ouroboros.Network.Diffusion.P2P
 import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Exception
+import           Control.Exception (IOException)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import           Data.Foldable (asum)
+import           Data.IP (IP)
 import qualified Data.IP as IP
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map (Map)
 import           Data.Maybe (catMaybes, maybeToList)
+import           Data.Set (Set)
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Kind (Type)
@@ -54,18 +61,21 @@ import           Network.Mux
                   , MiniProtocolDirection (..)
                   )
 import qualified Network.DNS as DNS
-import           Network.Socket (SockAddr (..), Socket, AddrInfo)
+import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Snocket
                   ( LocalAddress
                   , LocalSnocket
                   , LocalSocket (..)
+                  , FileDescriptor
+                  , Snocket
                   , SocketSnocket
                   , localSocketFileDescriptor
                   )
 import qualified Ouroboros.Network.Snocket as Snocket
 
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -81,6 +91,7 @@ import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                   ( resolveDomainAccessPoint
+                  , DomainAccessPoint
                   , RelayAccessPoint(..)
                   , TraceLocalRootPeers(..)
                   , TracePublicRootPeers(..)
@@ -124,59 +135,65 @@ import           Ouroboros.Network.NodeToNode
                   , NodeToNodeVersionData (..)
                   , AcceptedConnectionsLimit (..)
                   , DiffusionMode (..)
+                  , RemoteAddress
                   , chainSyncProtocolLimits
                   , blockFetchProtocolLimits
                   , txSubmissionProtocolLimits
                   , keepAliveProtocolLimits
-                  , nodeToNodeHandshakeCodec
                   )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 
 -- | P2P DiffusionTracers Extras
 --
-data TracersExtra = TracersExtra {
+data TracersExtra ntnAddr ntnVersion ntnVersionData
+                  ntcAddr ntcVersion ntcVersionData =
+    TracersExtra {
       dtTraceLocalRootPeersTracer
-        :: Tracer IO (TraceLocalRootPeers SockAddr IOException)
+        :: Tracer IO (TraceLocalRootPeers ntnAddr IOException)
 
     , dtTracePublicRootPeersTracer
         :: Tracer IO TracePublicRootPeers
 
     , dtTracePeerSelectionTracer
-        :: Tracer IO (TracePeerSelection SockAddr)
+        :: Tracer IO (TracePeerSelection ntnAddr)
 
     , dtDebugPeerSelectionInitiatorTracer
         :: Tracer IO (DebugPeerSelection
-                       SockAddr
-                         (NodeToNodePeerConnectionHandle
-                            InitiatorMode
-                            Void))
+                       ntnAddr
+                       (PeerConnectionHandle
+                         InitiatorMode
+                         ntnAddr
+                         ByteString
+                         IO () Void))
 
     , dtDebugPeerSelectionInitiatorResponderTracer
         :: Tracer IO (DebugPeerSelection
-                       SockAddr
-                         (NodeToNodePeerConnectionHandle
-                            InitiatorResponderMode
-                            ()))
+                       ntnAddr
+                       (PeerConnectionHandle
+                         InitiatorResponderMode
+                         ntnAddr
+                         ByteString
+                         IO () ()))
 
     , dtTracePeerSelectionCounters
         :: Tracer IO PeerSelectionCounters
 
     , dtPeerSelectionActionsTracer
-        :: Tracer IO (PeerSelectionActionsTrace SockAddr)
+        :: Tracer IO (PeerSelectionActionsTrace ntnAddr)
 
     , dtConnectionManagerTracer
         :: Tracer IO (ConnectionManagerTrace
-                       SockAddr
-                       (ConnectionHandlerTrace
-                          NodeToNodeVersion
-                          NodeToNodeVersionData))
+                      ntnAddr
+                      (ConnectionHandlerTrace
+                         ntnVersion
+                         ntnVersionData))
 
     , dtServerTracer
-        :: Tracer IO (ServerTrace SockAddr)
+        :: Tracer IO (ServerTrace ntnAddr)
 
     , dtInboundGovernorTracer
-        :: Tracer IO (InboundGovernorTrace SockAddr)
+        :: Tracer IO (InboundGovernorTrace ntnAddr)
 
       --
       -- NodeToClient tracers
@@ -185,24 +202,23 @@ data TracersExtra = TracersExtra {
       -- | Connection manager tracer for local clients
     , dtLocalConnectionManagerTracer
         :: Tracer IO (ConnectionManagerTrace
-                       LocalAddress
+                       ntcAddr
                        (ConnectionHandlerTrace
-                          NodeToClientVersion
-                          NodeToClientVersionData))
+                          ntcVersion
+                          ntcVersionData))
 
       -- | Server tracer for local clients
     , dtLocalServerTracer
-        :: Tracer IO (ServerTrace LocalAddress)
+        :: Tracer IO (ServerTrace ntcAddr)
 
       -- | Inbound protocol governor tracer for local clients
     , dtLocalInboundGovernorTracer
-        :: Tracer IO (InboundGovernorTrace LocalAddress)
+        :: Tracer IO (InboundGovernorTrace ntcAddr)
     }
 
-nullTracers :: TracersExtra
-nullTracers = p2pNullTracers
-  where
-  p2pNullTracers =
+nullTracers :: TracersExtra ntnAddr ntnVersion ntnVersionData
+                            ntcAddr ntcVersion ntcVersionData
+nullTracers = 
     TracersExtra {
         dtTraceLocalRootPeersTracer                  = nullTracer
       , dtTracePublicRootPeersTracer                 = nullTracer
@@ -299,12 +315,12 @@ combineMiniProtocolBundles (MiniProtocolBundle initiators)
          ]
 
 
--- | P2P DiffusionApplications Extras
+-- | P2P Applications Extras
 --
 -- TODO: we need initiator only mode for Deadalus, there's no reason why it
 -- should run a node-to-node server side.
 --
-data ApplicationsExtra =
+data ApplicationsExtra ntnAddr =
     ApplicationsExtra {
     -- | configuration of mini-protocol parameters; they impact size limits of
     -- mux ingress queues.
@@ -322,7 +338,7 @@ data ApplicationsExtra =
     -- | 'PeerMetrics' used by peer selection policy (see
     -- 'simplePeerSelectionPolicy')
     --
-    , daPeerMetrics            :: PeerMetrics IO SockAddr
+    , daPeerMetrics            :: PeerMetrics IO ntnAddr
 
     -- | Used by churn-governor
     --
@@ -351,17 +367,17 @@ data HasMuxMode (f :: MuxMode -> Type) where
 -- | Node-To-Node connection manager requires extra data when running in
 -- 'InitiatorResponderMode'.
 --
-data ConnectionManagerDataInMode (mode :: MuxMode) where
+data ConnectionManagerDataInMode peerAddr (mode :: MuxMode) where
     CMDInInitiatorMode
-      :: ConnectionManagerDataInMode InitiatorMode
+      :: ConnectionManagerDataInMode peerAddr InitiatorMode
 
     CMDInInitiatorResponderMode
       :: Server.ControlChannel IO
           (Server.NewConnection
-            SockAddr
-            (Handle InitiatorResponderMode SockAddr ByteString IO () ()))
+            peerAddr
+            (Handle InitiatorResponderMode peerAddr ByteString IO () ()))
       -> StrictTVar IO Server.InboundGovernorObservableState
-      -> ConnectionManagerDataInMode InitiatorResponderMode
+      -> ConnectionManagerDataInMode peerAddr InitiatorResponderMode
 
 
 --
@@ -370,40 +386,43 @@ data ConnectionManagerDataInMode (mode :: MuxMode) where
 -- Node-To-Client diffusion is only used in 'ResponderMode'.
 --
 
-type NodeToClientHandle =
-    Handle ResponderMode LocalAddress ByteString IO Void ()
+type NodeToClientHandle ntcAddr =
+    Handle ResponderMode ntcAddr ByteString IO Void ()
 
-type NodeToClientHandleError =
-    HandleError ResponderMode NodeToClientVersion
+type NodeToClientHandleError ntcVersion =
+    HandleError ResponderMode ntcVersion
 
-type NodeToClientConnectionHandler =
+type NodeToClientConnectionHandler
+      ntcFd ntcAddr ntcVersion ntcVersionData =
     ConnectionHandler
       ResponderMode
-      (ConnectionHandlerTrace NodeToClientVersion NodeToClientVersionData)
-      LocalSocket
-      LocalAddress
-      NodeToClientHandle
-      NodeToClientHandleError
-      (NodeToClientVersion, NodeToClientVersionData)
+      (ConnectionHandlerTrace ntcVersion ntcVersionData)
+      ntcFd
+      ntcAddr
+      (NodeToClientHandle ntcAddr)
+      (NodeToClientHandleError ntcVersion)
+      (ntcVersion, ntcVersionData)
       IO
 
-type NodeToClientConnectionManagerArguments =
+type NodeToClientConnectionManagerArguments
+      ntcFd ntcAddr ntcVersion ntcVersionData =
     ConnectionManagerArguments
-      (ConnectionHandlerTrace NodeToClientVersion NodeToClientVersionData)
-      LocalSocket
-      LocalAddress
-      NodeToClientHandle
-      NodeToClientHandleError
-      (NodeToClientVersion, NodeToClientVersionData)
+      (ConnectionHandlerTrace ntcVersion ntcVersionData)
+      ntcFd
+      ntcAddr
+      (NodeToClientHandle ntcAddr)
+      (NodeToClientHandleError ntcVersion)
+      (ntcVersion, ntcVersionData)
       IO
 
-type NodeToClientConnectionManager =
+type NodeToClientConnectionManager
+      ntcFd ntcAddr ntcVersion ntcVersionData =
     ConnectionManager
       ResponderMode
-      LocalSocket
-      LocalAddress
-      NodeToClientHandle
-      NodeToClientHandleError
+      ntcFd
+      ntcAddr
+      (NodeToClientHandle ntcAddr)
+      (NodeToClientHandleError ntcVersion)
       IO
 
 --
@@ -412,63 +431,72 @@ type NodeToClientConnectionManager =
 -- Node-To-Node diffusion runs in either 'InitiatorMode' or 'InitiatorResponderMode'.
 --
 
-type NodeToNodeHandle (mode :: MuxMode) a =
-    Handle mode SockAddr ByteString IO () a
+type NodeToNodeHandle
+       (mode :: MuxMode)
+       ntnAddr
+       a =
+    Handle mode ntnAddr ByteString IO () a
 
-type NodeToNodeHandleError (mode :: MuxMode) =
-    HandleError mode NodeToNodeVersion
-
-type NodeToNodeConnectionHandler (mode :: MuxMode) a =
+type NodeToNodeConnectionHandler
+       (mode :: MuxMode)
+       ntnFd ntnAddr ntnVersion ntnVersionData
+       a =
     ConnectionHandler
       mode
-     (ConnectionHandlerTrace NodeToNodeVersion NodeToNodeVersionData)
-     Socket
-     SockAddr
-      (NodeToNodeHandle mode a)
-      (NodeToNodeHandleError mode)
-     (NodeToNodeVersion, NodeToNodeVersionData)
-     IO
-
-type NodeToNodeConnectionManagerArguments (mode :: MuxMode) a =
-    ConnectionManagerArguments
-      (ConnectionHandlerTrace NodeToNodeVersion NodeToNodeVersionData)
-      Socket
-      SockAddr
-      (NodeToNodeHandle mode a)
-      (NodeToNodeHandleError mode)
-      (NodeToNodeVersion, NodeToNodeVersionData)
+      (ConnectionHandlerTrace ntnVersion ntnVersionData)
+      ntnFd
+      ntnAddr
+      (NodeToNodeHandle mode ntnAddr a)
+      (HandleError mode ntnVersion)
+      (ntnVersion, ntnVersionData)
       IO
 
-type NodeToNodeConnectionManager (mode :: MuxMode) a =
+type NodeToNodeConnectionManagerArguments
+       (mode :: MuxMode)
+       ntnFd ntnAddr ntnVersion ntnVersionData
+       a =
+    ConnectionManagerArguments
+      (ConnectionHandlerTrace ntnVersion ntnVersionData)
+      ntnFd
+      ntnAddr
+      (NodeToNodeHandle mode ntnAddr a)
+      (HandleError mode ntnVersion)
+      (ntnVersion, ntnVersionData)
+      IO
+
+type NodeToNodeConnectionManager
+       (mode :: MuxMode)
+       ntnFd ntnAddr ntnVersion
+       a =
     ConnectionManager
       mode
-      Socket
-      SockAddr
-      (NodeToNodeHandle mode a)
-      (NodeToNodeHandleError mode)
+      ntnFd
+      ntnAddr
+      (NodeToNodeHandle mode ntnAddr a)
+      (HandleError mode ntnVersion)
       IO
 
 --
 -- Governor type aliases
 --
 
-type NodeToNodePeerConnectionHandle (mode :: MuxMode) a =
+type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr a =
     PeerConnectionHandle
       mode
-      SockAddr
+      ntnAddr
       ByteString
       IO () a
 
-type NodeToNodePeerStateActions (mode :: MuxMode) a =
+type NodeToNodePeerStateActions (mode :: MuxMode) ntnAddr a =
     Governor.PeerStateActions
-      SockAddr
-      (NodeToNodePeerConnectionHandle mode a)
+      ntnAddr
+      (NodeToNodePeerConnectionHandle mode ntnAddr a)
       IO
 
-type NodeToNodePeerSelectionActions (mode :: MuxMode) a =
+type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr a =
     Governor.PeerSelectionActions
-      SockAddr
-      (NodeToNodePeerConnectionHandle mode a)
+      ntnAddr
+      (NodeToNodePeerConnectionHandle mode ntnAddr a)
       IO
 
 -- | Main entry point for data diffusion service.  It allows to:
@@ -482,70 +510,177 @@ type NodeToNodePeerSelectionActions (mode :: MuxMode) a =
 --
 run
     :: Tracers
+         RemoteAddress NodeToNodeVersion
+         LocalAddress  NodeToClientVersion
     -> TracersExtra
+         RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+         LocalAddress  NodeToClientVersion NodeToClientVersionData
     -> Arguments
+         Socket      RemoteAddress
+         LocalSocket LocalAddress
     -> ArgumentsExtra
     -> Applications
-    -> ApplicationsExtra
+         RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+         LocalAddress  NodeToClientVersion NodeToClientVersionData
+    -> ApplicationsExtra RemoteAddress
     -> IO Void
-run tracers
-    tracersExtra
-    Arguments
-      { daIPv4Address
-      , daIPv6Address
-      , daLocalAddress
-      , daAcceptedConnectionsLimit
-      , daMode = diffusionMode
-      }
-    ArgumentsExtra
-      { daPeerSelectionTargets
-      , daReadLocalRootPeers
-      , daReadPublicRootPeers
-      , daReadUseLedgerAfter
-      , daProtocolIdleTimeout
-      , daTimeWaitTimeout
-      }
-    Applications
-      { daApplicationInitiatorMode
-      , daApplicationInitiatorResponderMode
-      , daLocalResponderApplication
-      , daLedgerPeersCtx
-      }
-    ApplicationsExtra
-        { daMiniProtocolParameters
-        , daRethrowPolicy
-        , daLocalRethrowPolicy
-        , daPeerMetrics
-        , daBlockFetchMode
-        } =
+run tracers tracersExtra
+    args    argsExtra
+    apps    appsExtra =
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
     -- socket / windows named pipe.
-    handle (\e -> traceWith tracer (DiffusionErrored e)
-               >> throwIO e) $
-    withIOManager $ \iocp -> do
+    handle (\e -> traceWith (dtDiffusionInitializationTracer tracers)
+                            (DiffusionErrored e)
+               >> throwIO e)
+         $ withIOManager $ \iocp -> do
+             let ntnSnocket :: SocketSnocket
+                 ntnSnocket = Snocket.socketSnocket iocp
 
+                 ntcSnocket :: LocalSnocket
+                 ntcSnocket = Snocket.localSnocket iocp
+
+                 ntnHandshakeArgs =
+                   HandshakeArguments {
+                       haHandshakeTracer = dtHandshakeTracer tracers,
+                       haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
+                       haVersionDataCodec =
+                         cborTermVersionDataCodec
+                           NodeToNode.nodeToNodeCodecCBORTerm,
+                       haAcceptVersion = acceptableVersion,
+                       haTimeLimits = timeLimitsHandshake
+                     }
+
+                 ntcHandshakeArgs =
+                   HandshakeArguments {
+                       haHandshakeTracer  = dtLocalHandshakeTracer tracers,
+                       haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
+                       haVersionDataCodec =
+                         cborTermVersionDataCodec
+                           NodeToClient.nodeToClientCodecCBORTerm,
+                       haAcceptVersion = acceptableVersion,
+                       haTimeLimits = noTimeLimitsHandshake
+                     }
+
+                 domainResolver :: [DomainAccessPoint]
+                                -> IO (Map DomainAccessPoint (Set Socket.SockAddr))
+                 domainResolver =
+                   resolveDomainAccessPoint
+                     (dtTracePublicRootPeersTracer tracersExtra)
+                     DNS.defaultResolvConf
+                     ioDNSActions
+
+             runDataDiffusionM
+               ntnSnocket
+               ntnHandshakeArgs
+               socketAddressType
+               nodeDataFlow
+               (curry IP.toSockAddr)
+               domainResolver
+               ntcSnocket
+               ntcHandshakeArgs
+               localSocketFileDescriptor
+               tracers tracersExtra
+               args argsExtra
+               apps appsExtra
+
+
+runDataDiffusionM
+    :: forall ntnFd ntnAddr ntnVersion ntnVersionData
+              ntcFd ntcAddr ntcVersion ntcVersionData m.
+       ( Monad m
+       , Typeable ntnAddr
+       , Ord      ntnAddr
+       , Show     ntnAddr
+       , Typeable ntnVersion
+       , Ord      ntnVersion
+       , Show     ntnVersion
+       , Typeable ntcAddr
+       , Ord      ntcAddr
+       , Show     ntcAddr
+       , Ord      ntcVersion
+       , m ~ IO
+       )
+    => Snocket m ntnFd ntnAddr
+    -> HandshakeArguments (ConnectionId ntnAddr) ntnVersion ntnVersionData m
+    -> (ntnAddr -> Maybe AddressType)
+    -> (ntnVersion -> ntnVersionData -> DataFlow)
+    -> (IP -> Socket.PortNumber -> ntnAddr)
+    -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set ntnAddr)))
+    -> Snocket m ntcFd ntcAddr
+    -> HandshakeArguments (ConnectionId ntcAddr) ntcVersion ntcVersionData m
+    -> (ntcFd -> m FileDescriptor)
+    -> Tracers ntnAddr ntnVersion
+               ntcAddr ntcVersion
+    -> TracersExtra ntnAddr ntnVersion ntnVersionData
+                    ntcAddr ntcVersion ntcVersionData
+    -> Arguments ntnFd ntnAddr
+                 ntcFd ntcAddr
+    -> ArgumentsExtra
+    -> Applications
+         ntnAddr ntnVersion ntnVersionData
+         ntcAddr ntcVersion ntcVersionData
+    -> ApplicationsExtra ntnAddr
+    -> m Void
+runDataDiffusionM ntnSnocket ntnHandshakeArgs
+                  ntnAddressType ntnDataFlow
+                  ntnToPeerAddr
+                  domainResolver
+                  ntcSnocket ntcHandshakeArgs
+                  ntcGetFileDescriptor
+                  tracers
+                  tracersExtra
+                  Arguments
+                  { daIPv4Address
+                  , daIPv6Address
+                  , daLocalAddress
+                  , daAcceptedConnectionsLimit
+                  , daMode = diffusionMode
+                  }
+                  ArgumentsExtra
+                  { daPeerSelectionTargets
+                  , daReadLocalRootPeers
+                  , daReadPublicRootPeers
+                  , daReadUseLedgerAfter
+                  , daProtocolIdleTimeout
+                  , daTimeWaitTimeout
+                  }
+                  Applications
+                  { daApplicationInitiatorMode
+                  , daApplicationInitiatorResponderMode
+                  , daLocalResponderApplication
+                  , daLedgerPeersCtx
+                  }
+                  ApplicationsExtra
+                  { daMiniProtocolParameters
+                  , daRethrowPolicy
+                  , daLocalRethrowPolicy
+                  , daPeerMetrics
+                  , daBlockFetchMode
+                  } = do
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
     mainThreadId <- myThreadId
 
     cmIPv4Address
-      <- traverse (either Socket.getSocketName (pure . Socket.addrAddress))
+      <- traverse (either (Snocket.getLocalAddr ntnSnocket) pure)
                   daIPv4Address
     case cmIPv4Address of
-      Just SockAddrInet  {} -> pure ()
-      Just SockAddrInet6 {} -> throwIO UnexpectedIPv6Address
-      Just SockAddrUnix  {} -> throwIO UnexpectedUnixAddress
-      Nothing               -> pure ()
+      Just addr | Just IPv4Address <- ntnAddressType addr
+                -> pure ()
+                | otherwise
+                -> throwIO (UnexpectedIPv4Address addr)
+      Nothing   -> pure ()
 
     cmIPv6Address
-      <- traverse (either Socket.getSocketName (pure . Socket.addrAddress))
+      <- traverse (either (Snocket.getLocalAddr ntnSnocket) pure)
                   daIPv6Address
     case cmIPv6Address of
-      Just SockAddrInet {}  -> throwIO UnexpectedIPv4Address
-      Just SockAddrInet6 {} -> pure ()
-      Just SockAddrUnix {}  -> throwIO UnexpectedUnixAddress
-      Nothing               -> pure ()
+      Just addr | Just IPv6Address <- ntnAddressType addr
+                -> pure ()
+                | otherwise
+                -> throwIO (UnexpectedIPv6Address addr)
+      Nothing   -> pure ()
 
     -- control channel for the server; only required in
     -- @'InitiatorResponderMode' :: 'MuxMode'@
@@ -582,48 +717,37 @@ run tracers
           min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
       }
 
-    let -- snocket for remote communication.
-        snocket :: SocketSnocket
-        snocket = Snocket.socketSnocket iocp
-
-        localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
+    let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
         --
         -- local connection manager
         --
-        localThread :: Maybe (IO Void)
+        localThread :: Maybe (m Void)
         localThread =
           case daLocalAddress of
             Nothing -> Nothing
             Just localAddr ->
-               Just $ withLocalSocket iocp tracer localAddr
-                       $ \localSnocket localSocket -> do
+              Just $ withLocalSocket tracer ntcGetFileDescriptor ntcSnocket localAddr
+                       $ \localSocket -> do
                 let localConnectionHandler :: NodeToClientConnectionHandler
+                                                ntcFd ntcAddr ntcVersion ntcVersionData
                     localConnectionHandler =
                       makeConnectionHandler
                         dtLocalMuxTracer
                         SingResponderMode
                         localMiniProtocolBundle
-                        HandshakeArguments {
-                            haHandshakeTracer = dtLocalHandshakeTracer,
-                            haHandshakeCodec =
-                              NodeToClient.nodeToClientHandshakeCodec,
-                            haVersionDataCodec =
-                              cborTermVersionDataCodec
-                                NodeToClient.nodeToClientCodecCBORTerm,
-                            haAcceptVersion = acceptableVersion,
-                            haTimeLimits = noTimeLimitsHandshake
-                          }
-                        (     (\(OuroborosApplication apps)
-                                -> Bundle
-                                    (WithHot apps)
-                                    (WithWarm (\_ _ -> []))
-                                    (WithEstablished (\_ _ -> [])))
-                          <$> daLocalResponderApplication)
+                        ntcHandshakeArgs
+                        ( ( \ (OuroborosApplication apps)
+                           -> Bundle
+                                (WithHot apps)
+                                (WithWarm (\_ _ -> []))
+                                (WithEstablished (\_ _ -> []))
+                          ) <$> daLocalResponderApplication )
                         (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
 
                     localConnectionManagerArguments
                       :: NodeToClientConnectionManagerArguments
+                           ntcFd ntcAddr ntcVersion ntcVersionData
                     localConnectionManagerArguments =
                       ConnectionManagerArguments {
                           cmTracer              = dtLocalConnectionManagerTracer,
@@ -632,7 +756,7 @@ run tracers
                           cmIPv4Address         = Nothing,
                           cmIPv6Address         = Nothing,
                           cmAddressType         = const Nothing,
-                          cmSnocket             = localSnocket,
+                          cmSnocket             = ntcSnocket,
                           cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                           cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
                           connectionDataFlow    = uncurry localDataFlow,
@@ -646,7 +770,8 @@ run tracers
                   localConnectionHandler
                   classifyHandleError
                   (InResponderMode localControlChannel)
-                  $ \(localConnectionManager :: NodeToClientConnectionManager)
+                  $ \(localConnectionManager :: NodeToClientConnectionManager
+                                                  ntcFd ntcAddr ntcVersion ntcVersionData) 
                     -> do
 
                   --
@@ -654,13 +779,13 @@ run tracers
                   --
 
                   traceWith tracer . RunLocalServer
-                    =<< Snocket.getLocalAddr localSnocket localSocket
+                    =<< Snocket.getLocalAddr ntcSnocket localSocket
 
                   Async.withAsync
                     (Server.run
                       ServerArguments {
                           serverSockets               = localSocket :| [],
-                          serverSnocket               = localSnocket,
+                          serverSnocket               = ntcSnocket,
                           serverTracer                = dtLocalServerTracer,
                           serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
                           serverInboundIdleTimeout    = local_PROTOCOL_IDLE_TIMEOUT,
@@ -674,18 +799,15 @@ run tracers
         -- remote connection manager
         --
 
-        remoteThread :: IO Void
+        remoteThread :: m Void
         remoteThread =
           withLedgerPeers
             ledgerPeersRng
-            (curry IP.toSockAddr)
+            ntnToPeerAddr
             dtLedgerPeersTracer
             daReadUseLedgerAfter
             daLedgerPeersCtx
-            (resolveDomainAccessPoint
-              dtTracePublicRootPeersTracer
-              DNS.defaultResolvConf
-              ioDNSActions)
+            domainResolver
             $ \requestLedgerPeers ledgerPeerThread ->
             case cmdInMode of
               -- InitiatorOnlyMode
@@ -693,7 +815,10 @@ run tracers
               -- Run peer selection only
               HasInitiator CMDInInitiatorMode -> do
                 let connectionManagerArguments
-                      :: NodeToNodeConnectionManagerArguments InitiatorMode Void
+                      :: NodeToNodeConnectionManagerArguments
+                           InitiatorMode
+                           ntnFd ntnAddr ntnVersion ntnVersionData
+                           Void
                     connectionManagerArguments =
                       ConnectionManagerArguments {
                           cmTracer              = dtConnectionManagerTracer,
@@ -701,9 +826,9 @@ run tracers
                           cmMuxTracer           = dtMuxTracer,
                           cmIPv4Address,
                           cmIPv6Address,
-                          cmAddressType         = socketAddressType,
-                          cmSnocket             = snocket,
-                          connectionDataFlow    = uncurry nodeDataFlow,
+                          cmAddressType         = ntnAddressType,
+                          cmSnocket             = ntnSnocket,
+                          connectionDataFlow    = uncurry ntnDataFlow,
                           cmPrunePolicy         =
                             case cmdInMode of
                               HasInitiator CMDInInitiatorMode ->
@@ -718,21 +843,16 @@ run tracers
                         }
 
                     connectionHandler
-                      :: NodeToNodeConnectionHandler InitiatorMode Void
+                      :: NodeToNodeConnectionHandler
+                           InitiatorMode
+                           ntnFd ntnAddr ntnVersion ntnVersionData
+                           Void
                     connectionHandler =
                       makeConnectionHandler
                         dtMuxTracer
                         SingInitiatorMode
                         miniProtocolBundleInitiatorMode
-                        HandshakeArguments {
-                            haHandshakeTracer = dtHandshakeTracer,
-                            haHandshakeCodec = nodeToNodeHandshakeCodec,
-                            haVersionDataCodec =
-                              cborTermVersionDataCodec
-                                NodeToNode.nodeToNodeCodecCBORTerm,
-                            haAcceptVersion = acceptableVersion,
-                            haTimeLimits = timeLimitsHandshake
-                          }
+                        ntnHandshakeArgs
                         daApplicationInitiatorMode
                         (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
@@ -742,7 +862,9 @@ run tracers
                   classifyHandleError
                   NotInResponderMode
                   $ \(connectionManager
-                      :: NodeToNodeConnectionManager InitiatorMode Void) -> do
+                      :: NodeToNodeConnectionManager
+                           InitiatorMode ntnFd ntnAddr ntnVersion Void)
+                    -> do
 #ifdef POSIX
                   -- TODO: this can be removed once trace reporting will be
                   -- merged.
@@ -773,7 +895,7 @@ run tracers
                         spsConnectionManager = connectionManager
                       }
                     $ \(peerStateActions
-                          :: NodeToNodePeerStateActions InitiatorMode Void) ->
+                          :: NodeToNodePeerStateActions InitiatorMode ntnAddr Void) ->
                     --
                     -- Run peer selection (p2p governor)
                     --
@@ -781,45 +903,45 @@ run tracers
                     withPeerSelectionActions
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
-                      (curry IP.toSockAddr)
+                      ntnToPeerAddr
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
                       peerStateActions
                       requestLedgerPeers
                       $ \mbLocalPeerSelectionActionsThread
-                         (peerSelectionActions
-                            :: NodeToNodePeerSelectionActions
-                                 InitiatorMode Void) ->
+                      (peerSelectionActions
+                        :: NodeToNodePeerSelectionActions
+                        InitiatorMode ntnAddr Void) ->
 
                       Async.withAsync
-                        (Governor.peerSelectionGovernor
-                          dtTracePeerSelectionTracer
-                          dtDebugPeerSelectionInitiatorTracer
-                          dtTracePeerSelectionCounters
-                          fuzzRng
-                          peerSelectionActions
-                          (Diffusion.Policies.simplePeerSelectionPolicy
-                            policyRngVar (readTVar churnModeVar) daPeerMetrics))
-                        $ \governorThread ->
-                          Async.withAsync
-                            (Governor.peerChurnGovernor
-                              dtTracePeerSelectionTracer
-                              daPeerMetrics
-                              churnModeVar
-                              churnRng
-                              daBlockFetchMode
-                              daPeerSelectionTargets
-                              peerSelectionTargetsVar)
-                            $ \churnGovernorThread ->
+                      (Governor.peerSelectionGovernor
+                      dtTracePeerSelectionTracer
+                      dtDebugPeerSelectionInitiatorTracer
+                      dtTracePeerSelectionCounters
+                      fuzzRng
+                      peerSelectionActions
+                      (Diffusion.Policies.simplePeerSelectionPolicy
+                      policyRngVar (readTVar churnModeVar) daPeerMetrics))
+                      $ \governorThread ->
+                        Async.withAsync
+                        (Governor.peerChurnGovernor
+                        dtTracePeerSelectionTracer
+                        daPeerMetrics
+                        churnModeVar
+                        churnRng
+                        daBlockFetchMode
+                        daPeerSelectionTargets
+                        peerSelectionTargetsVar)
+                        $ \churnGovernorThread ->
 
                               -- wait for any thread to fail
                               snd <$> Async.waitAny
-                                (maybeToList mbLocalPeerSelectionActionsThread
-                                ++ [ governorThread
-                                   , ledgerPeerThread
-                                   , churnGovernorThread
-                                   ])
+                              (maybeToList mbLocalPeerSelectionActionsThread
+                              ++ [ governorThread
+                                 , ledgerPeerThread
+                                 , churnGovernorThread
+                                 ])
 
 
               -- InitiatorResponderMode
@@ -831,6 +953,7 @@ run tracers
                 let connectionManagerArguments
                       :: NodeToNodeConnectionManagerArguments
                           InitiatorResponderMode
+                          ntnFd ntnAddr ntnVersion ntnVersionData
                           ()
                     connectionManagerArguments =
                       ConnectionManagerArguments {
@@ -839,9 +962,9 @@ run tracers
                           cmMuxTracer           = dtMuxTracer,
                           cmIPv4Address,
                           cmIPv6Address,
-                          cmAddressType         = socketAddressType,
-                          cmSnocket             = snocket,
-                          connectionDataFlow    = uncurry nodeDataFlow,
+                          cmAddressType         = ntnAddressType,
+                          cmSnocket             = ntnSnocket,
+                          connectionDataFlow    = uncurry ntnDataFlow,
                           cmPrunePolicy         =
                             case cmdInMode of
                               HasInitiatorResponder (CMDInInitiatorResponderMode _ serverStateVar) ->
@@ -854,21 +977,14 @@ run tracers
                     connectionHandler
                       :: NodeToNodeConnectionHandler
                           InitiatorResponderMode
+                          ntnFd ntnAddr ntnVersion ntnVersionData
                           ()
                     connectionHandler =
                       makeConnectionHandler
                          dtMuxTracer
                          SingInitiatorResponderMode
                          miniProtocolBundleInitiatorResponderMode
-                         HandshakeArguments {
-                             haHandshakeTracer = dtHandshakeTracer,
-                             haHandshakeCodec = nodeToNodeHandshakeCodec,
-                             haVersionDataCodec =
-                              cborTermVersionDataCodec
-                                NodeToNode.nodeToNodeCodecCBORTerm,
-                             haAcceptVersion = acceptableVersion,
-                             haTimeLimits = timeLimitsHandshake
-                           }
+                         ntnHandshakeArgs
                          daApplicationInitiatorResponderMode
                          (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
@@ -878,7 +994,7 @@ run tracers
                   classifyHandleError
                   (InResponderMode controlChannel)
                   $ \(connectionManager
-                        :: NodeToNodeConnectionManager InitiatorResponderMode ()) -> do
+                        :: NodeToNodeConnectionManager InitiatorResponderMode ntnFd ntnAddr ntnVersion ()) -> do
 #ifdef POSIX
                   _ <- Signals.installHandler
                     Signals.sigUSR1
@@ -907,7 +1023,7 @@ run tracers
                       }
                     $ \(peerStateActions
                           :: NodeToNodePeerStateActions
-                               InitiatorResponderMode ()) ->
+                               InitiatorResponderMode ntnAddr ()) ->
 
                     --
                     -- Run peer selection (p2p governor)
@@ -916,7 +1032,7 @@ run tracers
                     withPeerSelectionActions
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
-                      (curry IP.toSockAddr)
+                      ntnToPeerAddr
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
@@ -925,7 +1041,7 @@ run tracers
                       $ \mbLocalPeerRootProviderThread
                         (peerSelectionActions
                            :: NodeToNodePeerSelectionActions
-                                InitiatorResponderMode ()) ->
+                                InitiatorResponderMode ntnAddr ()) ->
 
                       Async.withAsync
                         (Governor.peerSelectionGovernor
@@ -936,17 +1052,13 @@ run tracers
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
                             policyRngVar (readTVar churnModeVar) daPeerMetrics))
-                        $ \governorThread -> do
-                        let mkAddr :: AddrInfo -> (Socket.Family, SockAddr)
-                            mkAddr addr = ( Socket.addrFamily  addr
-                                          , Socket.addrAddress addr
-                                          )
-
-                        withSockets tracer snocket
-                                    (catMaybes
-                                      [ fmap (fmap mkAddr) daIPv4Address
-                                      , fmap (fmap mkAddr) daIPv6Address
-                                      ])
+                        $ \governorThread ->
+                        withSockets tracer ntnSnocket
+                                    ( catMaybes
+                                        [ daIPv4Address
+                                        , daIPv6Address
+                                        ]
+                                    )
                                     $ \sockets addresses -> do
                           --
                           -- Run server
@@ -956,7 +1068,7 @@ run tracers
                             (Server.run
                               ServerArguments {
                                   serverSockets               = sockets,
-                                  serverSnocket               = snocket,
+                                  serverSnocket               = ntnSnocket,
                                   serverTracer                = dtServerTracer,
                                   serverInboundGovernorTracer = dtInboundGovernorTracer,
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
@@ -997,8 +1109,6 @@ run tracers
     Tracers {
         dtMuxTracer
       , dtLocalMuxTracer
-      , dtHandshakeTracer
-      , dtLocalHandshakeTracer
       , dtLedgerPeersTracer
       -- the tracer
       , dtDiffusionInitializationTracer = tracer
@@ -1135,8 +1245,8 @@ nodeDataFlow _ _ = Unidirectional
 
 -- | For Node-To-Client protocol all connection are considered 'Unidirectional'.
 --
-localDataFlow :: NodeToClientVersion
-              -> NodeToClientVersionData
+localDataFlow :: ntcVersion
+              -> ntcVersionData
               -> DataFlow
 localDataFlow _ _ = Unidirectional
 
@@ -1145,33 +1255,38 @@ localDataFlow _ _ = Unidirectional
 -- Socket utility functions
 --
 
-withSockets :: Tracer IO InitializationTracer
-            -> SocketSnocket
-            -> [Either Socket.Socket (Socket.Family, SockAddr)]
-            -> (NonEmpty Socket.Socket -> NonEmpty Socket.SockAddr -> IO a)
-            -> IO a
+withSockets :: forall m ntnFd ntnAddr ntcAddr a.
+               ( MonadThrow m
+               , Typeable ntnAddr
+               , Show     ntnAddr
+               )
+            => Tracer m (InitializationTracer ntnAddr ntcAddr)
+            -> Snocket m ntnFd ntnAddr
+            -> [Either ntnFd ntnAddr]
+            -> (NonEmpty ntnFd -> NonEmpty ntnAddr -> m a)
+            -> m a
 withSockets tracer sn addresses k = go [] addresses
   where
     go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
-    go []   []       = throw NoSocket
+    go []   []       = throwIO (NoSocket :: Failure ntnAddr)
     go !acc []       =
       let acc' = NonEmpty.fromList (reverse acc)
       in (k $! (fst <$> acc')) $! (snd <$> acc')
 
-    withSocket :: Either Socket.Socket (Socket.Family, SockAddr)
-               -> ((Socket.Socket, Socket.SockAddr) -> IO a)
-               -> IO a
+    withSocket :: Either ntnFd ntnAddr
+               -> ((ntnFd, ntnAddr) -> m a)
+               -> m a
     withSocket (Left sock) f =
       bracket
         (pure sock)
         (Snocket.close sn)
         $ \_sock -> do
-          !addr <- Socket.getSocketName sock
+          !addr <- Snocket.getLocalAddr sn sock
           f (sock, addr)
-    withSocket (Right (fam, !addr)) f =
+    withSocket (Right addr) f =
       bracket
         (do traceWith tracer (CreatingServerSocket addr)
-            Snocket.open sn (Snocket.SocketFamily fam))
+            Snocket.open sn (Snocket.addrFamily sn addr))
         (Snocket.close sn)
         $ \sock -> do
           traceWith tracer $ ConfiguringServerSocket addr
@@ -1182,57 +1297,55 @@ withSockets tracer sn addresses k = go [] addresses
           f (sock, addr)
 
 
-withLocalSocket :: IOManager
-                -> Tracer IO InitializationTracer
-                -> Either Socket.Socket FilePath
-                -> (LocalSnocket -> LocalSocket -> IO a)
+withLocalSocket :: forall ntnAddr ntcFd ntcAddr a.
+                   ( -- Win32 only constraints:
+                     Typeable ntnAddr
+                   , Show     ntnAddr
+                   )
+                => Tracer IO (InitializationTracer ntnAddr ntcAddr)
+                -> (ntcFd -> IO FileDescriptor)
+                -> Snocket IO ntcFd ntcAddr
+                -> Either ntcFd ntcAddr
+                -> (ntcFd -> IO a)
                 -> IO a
-withLocalSocket iocp tracer localAddress k =
+withLocalSocket tracer getFileDescriptor sn localAddress k =
   bracket
     (
       case localAddress of
 #if defined(mingw32_HOST_OS)
          -- Windows uses named pipes so can't take advantage of existing sockets
-         Left _ -> traceWith tracer UnsupportedReadySocketCase
-                >> throwIO UnsupportedReadySocket
+         Left _ -> traceWith tracer (UnsupportedReadySocketCase
+                                       :: DiffusionInitializationTracer ntnAddr ntcAddr)
+                >> throwIO (UnsupportedReadySocket :: DiffusionFailure ntnAddr)
 #else
          Left sd -> do
-             addr <- Socket.getSocketName sd
-             case addr of
-                  (Socket.SockAddrUnix path) -> do
-                    traceWith tracer (UsingSystemdSocket path)
-                    return (Left ( Snocket.localSnocket iocp
-                                 , LocalSocket sd
-                                 ))
-                  _  -> do
-                    traceWith tracer $ UnsupportedLocalSystemdSocket addr
-                    throwIO UnsupportedLocalSocketType
+             addr <- Snocket.getLocalAddr sn sd
+             traceWith tracer (UsingSystemdSocket addr)
+             return (Left sd)
 #endif
          Right addr -> do
-             let sn :: LocalSnocket
-                 sn = Snocket.localSnocket iocp
              traceWith tracer $ CreateSystemdSocketForSnocketPath addr
-             sd <- Snocket.open sn (Snocket.LocalFamily (Snocket.LocalAddress addr))
+             sd <- Snocket.open sn (Snocket.addrFamily sn addr)
              traceWith tracer $ CreatedLocalSocket addr
-             return (Right (sn, sd, addr))
+             return (Right (sd, addr))
     )
     -- We close the socket here, even if it was provided to us.
     (\case
-      Left  (sn, sd)    -> Snocket.close sn sd
-      Right (sn, sd, _) -> Snocket.close sn sd
+      Right (sd, _) -> Snocket.close sn sd
+      Left   sd     -> Snocket.close sn sd
     )
     $ \case
       -- unconfigured socket
-      Right (sn, sd, addr) -> do
+      Right (sd, addr) -> do
         traceWith tracer . ConfiguringLocalSocket addr
-           =<< localSocketFileDescriptor sd
-        Snocket.bind sn sd (NodeToClient.LocalAddress addr)
+           =<< getFileDescriptor sd
+        Snocket.bind sn sd addr
         traceWith tracer . ListeningLocalSocket addr
-           =<< localSocketFileDescriptor sd
+           =<< getFileDescriptor sd
         Snocket.listen sn sd
         traceWith tracer . LocalSocketUp addr
-           =<< localSocketFileDescriptor sd
-        k sn sd
+           =<< getFileDescriptor sd
+        k sd
 
       -- pre-configured systemd socket
-      Left (sn, sd) -> k sn sd
+      Left sd -> k sd
