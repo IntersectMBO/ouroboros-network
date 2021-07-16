@@ -1,104 +1,105 @@
 \chapter{System Architecture}
 
-\section{Data Flow in a Node}
-Nodes maintain connections with the peers that have been chosen
-with help of the peer selection process.
-Suppose node $A$ is connected to node $B$.
-The Ouroboros protocol schedules a node $N$ to generate a new block in a given time slot.
-Depending on the location of nodes $A$, $B$ and $N$ in the network topology and whether the new
-block arrives first at $A$ or $B$, $A$ can be either up-stream or down-stream of $B$.
-Therefore, node $A$ runs an instance of the client side of the chain-sync mini protocol
-that talks with a server instance of chain-sync at node $B$ and also a server instance of chain sync
-that talks with a client instance at $B$.
-The situation is similar for the other mini protocols (block fetch, transaction submission, etc).
-The set of mini protocols that runs over a connection is determined by the version of the network
-protocol, i.e.  Node-to-Node, Node-to-Wallet and Node-to-Chain-Consumer
-connections use different sets of mini protocols (e.g. different protocol
-versions).  The version is negotiated when a new connection is established
-using protocol which is described in Chapter~\ref{connection-management}.
-\hide{Add description of this protocol in Chapter~\ref{connection-management}
-and link it.}
+\section{Protocols and node design}
+There are two protocols which support different sets of mini-protocols:
+\begin{itemize}
+  \item\hyperref[table:node-to-node-protocol-numbers]{node-to-node} protocol
+    for communication between different nodes usually run by different
+    entities across the globe.  It consists of
+    \hyperref[chain-sync-protocol]{chain-sync},
+    \hyperref[block-fetch-protocol]{block-fetch},
+    \hyperref[tx-submission-protocol]{tx-submission} and
+    \hyperref[keep-alive-protocol]{keep-alive} mini-protocols.
+  \item\hyperref[table:node-to-client-protocol-numbers]{node-to-client}
+    protocol for intra-process communication, which allows to build
+    applications that need access to the blockchain, ledger, e.g. a wallet, an
+    explorer, etc.  It consists of \hyperref[chain-sync-protocol]{chain-sync},
+    \hyperref[local-tx-submission-protocol]{local-tx-submission} and
+    \hyperref[local-state-query-protocol]{local-state-query} mini-protocols.
+\end{itemize}
 
-\begin{figure}[ht]
+Chain-sync mini-protocol (the node-to-node version) is used to replicate
+a remote chain of headers; block-fetch mini-protocol to download blocks and
+tx-submission to desiminate transactions across the network.
+
+\begin{figure}
   \pgfdeclareimage[height=15cm]{node-diagram-chains-state}{figure/node-diagram-concurrency.pdf}
   \begin{center}
     \pgfuseimage{node-diagram-chains-state}
   \end{center}
-  \caption{Data flow inside a Node}
+  \caption{Cardano Node}
   \label{node-diagram-concurrency}
 \end{figure}
 
-Figure~\ref{node-diagram-concurrency} illustrates parts of the data flow in a node.
-Circles represents a thread that runs one of the mini protocols (the mini protocols are explained in
-Chapter~\ref{chapter:mini-protocols}).
-There are two kinds of data flows:
-mini protocols communicate with mini protocols of other nodes by sending and receiving messages;
-and, within a node, they communicate by reading from- and writing to- a shared
-mutable variable, which are represented by boxes in
-Figure~\ref{node-diagram-concurrency}.
-\href{https://en.wikipedia.org/wiki/Software_transactional_memory}{Software transactional memory}
-(STM) is a mechanism for safe and lock-free concurrent
-access to mutable state and the reference implementation makes intensive use of
-this abstraction (see \cite{stm:harris2006}).
+Figure~\ref{node-diagram-concurrency} illustrates design of a node.  Circles
+represents threads that run one of the mini-protocols.  
+Each mini-protocols communicate with a remote node over the network.
+Threads communicate communicate by means of a shared mutable variables, which
+are represented by boxes in Figure~\ref{node-diagram-concurrency}.
+We heavily use
+\href{https://en.wikipedia.org/wiki/Software_transactional_memory}{Software
+transactional memory} (STM), which is a mechanism for safe and lock-free
+concurrent access to mutable state (see \cite{stm:harris2006}).
+
+The ouroboros-network supports multiplexing mini-protocols, which allows to run
+node-to-node or node-to-client protocol on a single bearer, e.g. a TCP
+connection, other bearers are also supported.  This means that chain-sync,
+block-fetch and tx-submission mini-protocols will share a single TCP
+connection.  The multiplexer, its framing is described in
+Chapter~\ref{chapter:multiplexer}.
 
 \section{Congestion Control}
-A central design goal of the system is robust operation at high workloads.
-For example, it is a normal working condition of the networking design
-that transactions arrive at a higher rate than the number
-that can be included in blockchain.
-An increase of the rate at which transactions are submitted must not cause a decrease
-of the block chain quality.
+A central design goal of the system is robust operation at high workloads.  For
+example, it is a normal working condition of the networking design that
+transactions arrive at a higher rate than the number that can be included in
+blockchain.  An increase of the rate at which transactions are submitted must
+not cause a decrease of the block chain quality.
 
-Point-to-point TCP bearers do not deal well with overloading.
-A TCP connection has a certain maximal bandwidth,
-i.e. a certain maximum load that it can handle relatively reliably under normal conditions.
-If the connection is ever overloaded,
-the performance characteristics will degrade rapidly unless
-the load presented to the TCP connection is appropriately managed.
+Point-to-point TCP bearers do not deal well with overloading.  A TCP connection
+has a certain maximal bandwidth, i.e. a certain maximum load that it can handle
+relatively reliably under normal conditions.  If the connection is ever
+overloaded, the performance characteristics will degrade rapidly unless the
+load presented to the TCP connection is appropriately managed.
 
-At the same time, the node itself has a limit on the rate at which it can process data.
-In particular, a node may have to share its processing power with other processes that run on the
-same machine/operation system instance, which means that a node may get slowed down for some reason,
-and the system may get in a situation
-where there is more data available from the network than the node can process.
-The design must operate appropriately in this situation and recover form transient conditions.
-In any condition, a node must not exceed its memory limits,
-that is there must be defined limits, breaches of which being treated like protocol violations.
+At the same time, the node itself has a limit on the rate at which it can
+process data.  In particular, a node may have to share its processing power
+with other processes that run on the same machine/operation system instance,
+which means that a node may get slowed down for some reason, and the system may
+get in a situation where there is more data available from the network than the
+node can process.  The design must operate appropriately in this situation and
+recover form transient conditions.  In any condition, a node must not exceed
+its memory limits, that is there must be defined limits, breaches of which
+being treated like protocol violations.
 
-Of cause it makes no sense if the system design is robust,
-but so defensive that it fails to meet performance goals.
-An example would be a protocol that never transmits a message unless it has received an
-explicit ACK for the previous message. This approach might avoid overloading the network,
-but would waste most of the potential bandwidth.
+Of cause it makes no sense if the system design is robust, but so defensive
+that it fails to meet performance goals.  An example would be a protocol that
+never transmits a message unless it has received an explicit ACK for the
+previous message. This approach might avoid overloading the network, but would
+waste most of the potential bandwidth.  To avoid such performance problems, our
+implementation is heavily using protocol pipelining.
 
 
 \section{Real-time Constraints and Coordinated Universal Time}
-Ouroboros models the passage of physical time as an infinite sequence of time slots,
-i.e. contiguous, equal-length intervals of time,
-and assigns slot leaders (nodes that are eligible to create a new block) to those time slots.
-At the beginning of a time slot, the slot leader selects the block chain and transactions that are the basis
-for the new block, then it creates the new block and sends the new block to its peers.
-When the new block reaches the next block leader before the beginning of next time slot,
-the next block leader can extend the block chain upon this block (if the block
-did not arrive on time the next leader will create a new block anyway).
+Ouroboros models the passage of physical time as an infinite sequence of time
+slots, i.e. contiguous, equal-length intervals of time, and assigns slot
+leaders (nodes that are eligible to create a new block) to those time slots.
+At the beginning of a time slot, the slot leader selects the block chain and
+transactions that are the basis for the new block, then it creates the new
+block and sends the new block to its peers.  When the new block reaches the
+next block leader before the beginning of next time slot, the next block leader
+can extend the block chain upon this block (if the block did not arrive on time
+the next leader will create a new block anyway).
 
-There are some trade-offs when choosing the slot time that is used for the protocol but
-basically the slot length should be long enough such that a new block has a good chance to reach the
-next slot leader in time.
-A chosen value for the slot length is 20 seconds.
-It is assumed that the clock skews between the local clocks of the nodes is small with respect to the
-slot length.
+There are some trade-offs when choosing the slot time that is used for the
+protocol but basically the slot length should be long enough such that a new
+block has a good chance to reach the next slot leader in time.  It is assumed
+that the clock skews between the local clocks of the nodes is small with
+respect to the slot length.
 
-However, no matter how accurate the local clocks of the nodes are with respect to the time slots
-the effects of a possible clock skew must still be carefully considered.
-For example, when a node time-stamps incoming blocks with its local clock time, it may encounter
-blocks that are created in the future
-with respect to the local clock of the node.
-The node must then decide whether this is because of a clock skew or whether the node considers this
-as adversarial behavior of an other node.
-
-\wip{TODO :: get feedback from the researchers on this. Tentative policy: allow 200ms to 1s
-explain the problem in detail.
-A node cannot forward a block from the future.
-This is complicated !
-}
+However, no matter how accurate the local clocks of the nodes are with respect
+to the time slots the effects of a possible clock skew must still be carefully
+considered.  For example, when a node time-stamps incoming blocks with its
+local clock time, it may encounter blocks that are created in the future with
+respect to the local clock of the node.  The node must then decide whether this
+is because of a clock skew or whether the node considers this as adversarial
+behavior of an other node.
