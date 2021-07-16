@@ -156,8 +156,9 @@ import           Ouroboros.Network.Snocket
 
 
 -- The Handshake tracer types are simply terrible.
-type HandshakeTr = WithMuxBearer (ConnectionId Socket.SockAddr)
-    (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
+type HandshakeTr ntnAddr ntnVersion =
+    WithMuxBearer (ConnectionId ntnAddr)
+                  (TraceSendRecv (Handshake ntnVersion CBOR.Term))
 
 -- | 'Hanshake' codec for the @node-to-node@ protocol suite.
 --
