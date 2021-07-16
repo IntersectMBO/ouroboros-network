@@ -35,7 +35,7 @@ import           Control.Exception (IOException)
 import           Control.Tracer (Tracer)
 
 import           Network.Mux (WithMuxBearer, MuxTrace)
-import           Network.Socket (SockAddr, Socket, AddrInfo)
+import           Network.Socket (SockAddr, Socket)
 
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                   ( TracePublicRootPeers
@@ -75,6 +75,7 @@ import           Ouroboros.Network.NodeToNode
 import qualified Ouroboros.Network.NodeToNode as NTN
 import           Ouroboros.Network.NodeToClient
                   ( LocalAddress
+                  , LocalSocket
                   , NodeToClientVersionData
                   , Versions
                   , ConnectionId
@@ -116,7 +117,14 @@ import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
 newtype DiffusionTracers =
     DiffusionTracers
       (Common.DiffusionTracers
-        (Either NonP2P.DiffusionTracersExtra P2P.DiffusionTracersExtra))
+        (Either NonP2P.DiffusionTracersExtra
+                (P2P.DiffusionTracersExtra
+                       RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+                       LocalAddress  NodeToClientVersion NodeToClientVersionData
+                       IO))
+        RemoteAddress NodeToNodeVersion
+        LocalAddress  NodeToClientVersion
+        IO)
 
 -- | NonP2P null tracers
 --
@@ -138,21 +146,22 @@ newtype DiffusionArguments m =
         :: Common.DiffusionArguments
             (Either NonP2P.DiffusionArgumentsExtra
                     (P2P.DiffusionArgumentsExtra m))
+            Socket      RemoteAddress
+            LocalSocket LocalAddress
+
     }
 
 -- | DiffusionApplications for either P2P or Non-P2P node
 --
-newtype DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
+newtype DiffusionApplications =
   DiffusionApplications
    (Common.DiffusionApplications
      (Either
         NonP2P.DiffusionApplicationsExtra
-        (P2P.DiffusionApplicationsExtra ntnAddr m))
-     ntnAddr
-     ntcAddr
-     ntnVersionData
-     ntcVersionData
-     m
+        (P2P.DiffusionApplicationsExtra RemoteAddress IO))
+     RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+     LocalAddress  NodeToClientVersion NodeToClientVersionData
+     IO
    )
 
 -- | Construct a value of NonP2P DiffusionArguments data type.
@@ -160,9 +169,9 @@ newtype DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m =
 -- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
 mkDiffusionArgumentsNonP2P
-  :: Maybe (Either Socket AddrInfo)
-  -> Maybe (Either Socket AddrInfo)
-  -> Maybe (Either Socket FilePath)
+  :: Maybe (Either Socket RemoteAddress)
+  -> Maybe (Either Socket RemoteAddress)
+  -> Maybe (Either LocalSocket LocalAddress)
   -> AcceptedConnectionsLimit
   -> DiffusionMode
   -> IPSubscriptionTarget
@@ -183,9 +192,9 @@ mkDiffusionArgumentsNonP2P
 -- function in order to avoid exporting the P2P and NonP2P internal modules.
 --
 mkDiffusionArgumentsP2P
-  :: Maybe (Either Socket AddrInfo)
-  -> Maybe (Either Socket AddrInfo)
-  -> Maybe (Either Socket FilePath)
+  :: Maybe (Either Socket RemoteAddress)
+  -> Maybe (Either Socket RemoteAddress)
+  -> Maybe (Either LocalSocket LocalAddress)
   -> AcceptedConnectionsLimit
   -> DiffusionMode
   -> NTN.PeerSelectionTargets
@@ -213,30 +222,25 @@ mkDiffusionArgumentsP2P
 mkDiffusionApplicationsNonP2P
   :: Versions
       NodeToNodeVersion
-      ntnVersionData
+      NodeToNodeVersionData
       (Bundle
-         (ConnectionId ntnAddr
-          -> STM m ControlMessage
-          -> [MiniProtocol 'InitiatorMode ByteString m () Void]))
+         (ConnectionId RemoteAddress
+          -> STM IO ControlMessage
+          -> [MiniProtocol 'InitiatorMode ByteString IO () Void]))
   -> Versions
        NodeToNodeVersion
-       ntnVersionData
+       NodeToNodeVersionData
        (Bundle
-          (ConnectionId ntnAddr
-           -> STM m ControlMessage
-           -> [MiniProtocol 'InitiatorResponderMode ByteString m () ()]))
+          (ConnectionId RemoteAddress
+           -> STM IO ControlMessage
+           -> [MiniProtocol 'InitiatorResponderMode ByteString IO () ()]))
   -> Versions
        NodeToClientVersion
-       ntcVersionData
-       (OuroborosApplication 'ResponderMode ntcAddr ByteString m Void ())
-  -> LedgerPeersConsensusInterface m
+       NodeToClientVersionData
+       (OuroborosApplication 'ResponderMode LocalAddress ByteString IO Void ())
+  -> LedgerPeersConsensusInterface IO
   -> NTC.ErrorPolicies
   -> DiffusionApplications
-       ntnAddr
-       ntcAddr
-       ntnVersionData
-       ntcVersionData
-       m
 mkDiffusionApplicationsNonP2P
   a1 a2 a3 a4 a5 =
     DiffusionApplications
@@ -253,34 +257,29 @@ mkDiffusionApplicationsNonP2P
 mkDiffusionApplicationsP2P
   :: Versions
       NodeToNodeVersion
-      ntnVersionData
+      NodeToNodeVersionData
       (Bundle
-         (ConnectionId ntnAddr
-          -> STM m ControlMessage
-          -> [MiniProtocol 'InitiatorMode ByteString m () Void]))
+         (ConnectionId RemoteAddress
+          -> STM IO ControlMessage
+          -> [MiniProtocol 'InitiatorMode ByteString IO () Void]))
   -> Versions
        NodeToNodeVersion
-       ntnVersionData
+       NodeToNodeVersionData
        (Bundle
-          (ConnectionId ntnAddr
-           -> STM m ControlMessage
-           -> [MiniProtocol 'InitiatorResponderMode ByteString m () ()]))
+          (ConnectionId RemoteAddress
+           -> STM IO ControlMessage
+           -> [MiniProtocol 'InitiatorResponderMode ByteString IO () ()]))
   -> Versions
        NodeToClientVersion
-       ntcVersionData
-       (OuroborosApplication 'ResponderMode ntcAddr ByteString m Void ())
-  -> LedgerPeersConsensusInterface m
+       NodeToClientVersionData
+       (OuroborosApplication 'ResponderMode LocalAddress ByteString IO Void ())
+  -> LedgerPeersConsensusInterface IO
   -> MiniProtocolParameters
   -> RethrowPolicy
   -> RethrowPolicy
-  -> PeerMetrics m ntnAddr
-  -> STM m FetchMode
+  -> PeerMetrics IO RemoteAddress
+  -> STM IO FetchMode
   -> DiffusionApplications
-       ntnAddr
-       ntcAddr
-       ntnVersionData
-       ntcVersionData
-       m
 mkDiffusionApplicationsP2P
   a1 a2 a3 a4 a5 a6
   a7 a8 a9 =
@@ -297,10 +296,10 @@ mkDiffusionApplicationsP2P
 --
 mkDiffusionTracersNonP2P
   :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
-  -> Tracer IO NTN.HandshakeTr
+  -> Tracer IO (NTN.HandshakeTr RemoteAddress NodeToNodeVersion)
   -> Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
-  -> Tracer IO NTC.HandshakeTr
-  -> Tracer IO DiffusionInitializationTracer
+  -> Tracer IO (NTC.HandshakeTr LocalAddress NodeToClientVersion)
+  -> Tracer IO (DiffusionInitializationTracer SockAddr LocalAddress)
   -> Tracer IO TraceLedgerPeers
   -> Tracer IO (NTN.WithIPList (NTC.SubscriptionTrace SockAddr))
   -> Tracer IO (NTN.WithDomainName (NTC.SubscriptionTrace SockAddr))
@@ -324,10 +323,10 @@ mkDiffusionTracersNonP2P
 --
 mkDiffusionTracersP2P
   :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
-  -> Tracer IO NTN.HandshakeTr
+  -> Tracer IO (NTN.HandshakeTr RemoteAddress NodeToNodeVersion)
   -> Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
-  -> Tracer IO NTC.HandshakeTr
-  -> Tracer IO DiffusionInitializationTracer
+  -> Tracer IO (NTC.HandshakeTr LocalAddress NodeToClientVersion)
+  -> Tracer IO (DiffusionInitializationTracer SockAddr LocalAddress)
   -> Tracer IO TraceLedgerPeers
   -> Tracer IO (TraceLocalRootPeers SockAddr IOException)
   -> Tracer IO TracePublicRootPeers
@@ -335,12 +334,12 @@ mkDiffusionTracersP2P
   -> Tracer
        IO
        (DebugPeerSelection
-          SockAddr (P2P.NodeToNodePeerConnectionHandle 'InitiatorMode Void))
+          SockAddr (P2P.NodeToNodePeerConnectionHandle 'InitiatorMode SockAddr Void))
   -> Tracer
        IO
        (DebugPeerSelection
           SockAddr
-          (P2P.NodeToNodePeerConnectionHandle 'InitiatorResponderMode ()))
+          (P2P.NodeToNodePeerConnectionHandle 'InitiatorResponderMode SockAddr ()))
   -> Tracer IO PeerSelectionCounters
   -> Tracer IO (PeerSelectionActionsTrace SockAddr)
   -> Tracer
@@ -379,11 +378,6 @@ runDataDiffusion
   :: DiffusionTracers
   -> DiffusionArguments IO
   -> DiffusionApplications
-       RemoteAddress
-       LocalAddress
-       NodeToNodeVersionData
-       NodeToClientVersionData
-       IO
   -> IO ()
 runDataDiffusion
   (DiffusionTracers

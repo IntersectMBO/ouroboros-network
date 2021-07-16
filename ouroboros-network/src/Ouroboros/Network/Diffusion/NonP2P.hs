@@ -23,7 +23,7 @@ import           Data.Maybe (maybeToList)
 import           Data.Foldable (asum)
 import           Data.Void (Void)
 
-import           Network.Socket (SockAddr)
+import           Network.Socket (Socket, SockAddr)
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Snocket
@@ -38,12 +38,16 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import            Ouroboros.Network.NodeToClient (NodeToClientVersionData)
+import           Ouroboros.Network.NodeToClient
+                  ( NodeToClientVersion
+                  , NodeToClientVersionData
+                  )
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode
                   ( AcceptConnectionsPolicyTrace (..)
                   , DiffusionMode (..)
                   , RemoteAddress
+                  , NodeToNodeVersion
                   , NodeToNodeVersionData
                   )
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
@@ -57,13 +61,7 @@ import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Tracers
-import           Ouroboros.Network.Diffusion.Common
-                  ( DiffusionTracers(..)
-                  , DiffusionArguments(..)
-                  , DiffusionApplications(..)
-                  , DiffusionInitializationTracer(..)
-                  , DiffusionFailure(..)
-                  )
+import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 
 -- | NonP2P DiffusionTracers Extras
 --
@@ -164,13 +162,16 @@ mkResponderApp bundle =
 
 runDataDiffusion
     :: DiffusionTracers DiffusionTracersExtra
+                        RemoteAddress NodeToNodeVersion
+                        LocalAddress  NodeToClientVersion
+                        IO
     -> DiffusionArguments DiffusionArgumentsExtra
+                          Socket      RemoteAddress
+                          LocalSocket LocalAddress
     -> DiffusionApplications
          DiffusionApplicationsExtra
-         RemoteAddress
-         LocalAddress
-         NodeToNodeVersionData
-         NodeToClientVersionData
+         RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+         LocalAddress  NodeToClientVersion NodeToClientVersionData
          IO
     -> IO ()
 runDataDiffusion tracers
@@ -190,6 +191,8 @@ runDataDiffusion tracers
     let -- snocket for remote communication.
         snocket :: SocketSnocket
         snocket = Snocket.socketSnocket iocp
+        localSnocket :: LocalSnocket
+        localSnocket = Snocket.localSnocket iocp
         addresses = maybeToList daIPv4Address
                  ++ maybeToList daIPv6Address
 
@@ -205,11 +208,10 @@ runDataDiffusion tracers
 
         serverActions = case daDiffusionMode of
           InitiatorAndResponderDiffusionMode ->
-            runServer snocket networkState . fmap Socket.addrAddress
-              <$> addresses
+            runServer snocket networkState <$> addresses
           InitiatorOnlyDiffusionMode -> []
 
-        localServerAction = runLocalServer iocp networkLocalState
+        localServerAction = runLocalServer localSnocket networkLocalState
           <$> maybeToList daLocalAddress
 
         actions =
@@ -263,7 +265,7 @@ runDataDiffusion tracers
           case daIPv4Address of
               Just (Right ipv4) -> do
                 return LocalAddresses
-                  { laIpv4 = anyIPv4Addr (Socket.addrAddress ipv4)
+                  { laIpv4 = anyIPv4Addr ipv4
                   , laIpv6 = Nothing
                   , laUnix = Nothing
                   }
@@ -288,7 +290,7 @@ runDataDiffusion tracers
             Just (Right ipv6) -> do
               return LocalAddresses
                 { laIpv4 = Nothing
-                , laIpv6 = anyIPv6Addr (Socket.addrAddress ipv6)
+                , laIpv6 = anyIPv6Addr ipv6
                 , laUnix = Nothing
                 }
 
@@ -324,72 +326,65 @@ runDataDiffusion tracers
     remoteErrorPolicy = NodeToNode.remoteNetworkErrorPolicy <> daErrorPolicies
     localErrorPolicy  = NodeToNode.localNetworkErrorPolicy <> daErrorPolicies
 
-    runLocalServer :: IOManager
+    runLocalServer :: LocalSnocket
                    -> NetworkMutableState LocalAddress
-                   -> Either Socket.Socket FilePath
+                   -> Either LocalSocket  LocalAddress
                    -> IO ()
-    runLocalServer iocp networkLocalState localAddress =
+    runLocalServer sn networkLocalState localAddress =
       bracket
         localServerInit
         localServerCleanup
         localServerBody
       where
-        localServerInit :: IO (LocalSocket, LocalSnocket)
+        localServerInit :: IO LocalSocket
         localServerInit =
           case localAddress of
 #if defined(mingw32_HOST_OS)
             -- Windows uses named pipes so can't take advantage of existing sockets
             Left _ -> do
               traceWith dtDiffusionInitializationTracer UnsupportedReadySocketCase
-              throwIO UnsupportedReadySocket
+              throwIO (UnsupportedReadySocket :: DiffusionFailure RemoteAddress)
 #else
             Left sd -> do
-              a <- Socket.getSocketName sd
-              case a of
-                   (Socket.SockAddrUnix path) -> do
-                     traceWith dtDiffusionInitializationTracer
-                      $ UsingSystemdSocket path
-                     return (LocalSocket sd, Snocket.localSnocket iocp)
-                   unsupportedAddr -> do
-                     traceWith dtDiffusionInitializationTracer
-                      $ UnsupportedLocalSystemdSocket unsupportedAddr
-                     throwIO UnsupportedLocalSocketType
+              addr <- Snocket.getLocalAddr sn sd
+              traceWith dtDiffusionInitializationTracer
+                $ UsingSystemdSocket addr
+              return sd
 #endif
             Right addr -> do
-              let sn = Snocket.localSnocket iocp
               traceWith dtDiffusionInitializationTracer
                 $ CreateSystemdSocketForSnocketPath addr
               sd <- Snocket.open
                     sn
-                    (Snocket.addrFamily sn $ Snocket.localAddressFromPath addr)
+                    (Snocket.addrFamily sn addr)
               traceWith dtDiffusionInitializationTracer
                 $ CreatedLocalSocket addr
-              return (sd, sn)
+              return sd
 
         -- We close the socket here, even if it was provided for us.
-        localServerCleanup :: (LocalSocket, LocalSnocket) -> IO ()
-        localServerCleanup (sd, sn) = Snocket.close sn sd
+        localServerCleanup :: LocalSocket -> IO ()
+        localServerCleanup = Snocket.close sn
 
-        localServerBody :: (LocalSocket, LocalSnocket) -> IO ()
-        localServerBody (sd, sn) = do
+        localServerBody :: LocalSocket -> IO ()
+        localServerBody sd = do
           case localAddress of
                -- If a socket was provided it should be ready to accept
                Left _ -> pure ()
-               Right path -> do
+               Right addr -> do
                  traceWith dtDiffusionInitializationTracer
-                  . ConfiguringLocalSocket path
+                  . ConfiguringLocalSocket addr
                     =<< localSocketFileDescriptor sd
 
-                 Snocket.bind sn sd $ Snocket.localAddressFromPath path
+                 Snocket.bind sn sd addr 
 
                  traceWith dtDiffusionInitializationTracer
-                  . ListeningLocalSocket path
+                  . ListeningLocalSocket addr
                     =<< localSocketFileDescriptor sd
 
                  Snocket.listen sn sd
 
                  traceWith dtDiffusionInitializationTracer
-                  . LocalSocketUp path
+                  . LocalSocketUp addr
                     =<< localSocketFileDescriptor sd
 
           traceWith dtDiffusionInitializationTracer
