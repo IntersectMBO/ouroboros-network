@@ -21,7 +21,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq)
 import           Data.Void (Void)
-import           Data.IP (IPv4, toIPv4w, fromHostAddress)
+import           Data.IP (IPv4, toIPv4w, fromHostAddress, toSockAddr)
 import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.ByteString.Char8 (pack)
 import           Data.Set (Set)
@@ -214,6 +214,7 @@ mockLocalRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) = do
       genVar <- newTVarIO stdGen
 
       localRootPeersProvider tracerTraceLocalRoots
+                             (curry toSockAddr)
                              MonadTimer.timeout
                              DNSResolver.defaultResolvConf
                              resultVar
@@ -230,6 +231,7 @@ mockPublicRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) n = do
       genVar <- newTVarIO stdGen
 
       publicRootPeersProvider tracerTracePublicRoots
+                              (curry toSockAddr)
                               MonadTimer.timeout
                               DNSResolver.defaultResolvConf
                               (readTVar localRootPeersVar)
@@ -255,11 +257,11 @@ mockResolveDomainAddresses (MockRoots localRootPeers dnsMap stdGen) = do
 -- Utils for properties
 --
 
-data TestTraceEvent exception = RootPeerDNSLocal  (TraceLocalRootPeers exception)
+data TestTraceEvent exception = RootPeerDNSLocal  (TraceLocalRootPeers SockAddr exception)
                               | RootPeerDNSPublic TracePublicRootPeers
   deriving Show
 
-tracerTraceLocalRoots :: Tracer (IOSim s) (TraceLocalRootPeers Failure)
+tracerTraceLocalRoots :: Tracer (IOSim s) (TraceLocalRootPeers SockAddr Failure)
 tracerTraceLocalRoots = contramap RootPeerDNSLocal tracerTestTraceEvent
 
 tracerTracePublicRoots :: Tracer (IOSim s) TracePublicRootPeers
@@ -282,14 +284,14 @@ selectRootPeerDNSTraceEvents = go
     go (TraceMainReturn    _ _ _) = []
 
 selectLocalRootPeersEvents :: [(Time, TestTraceEvent Failure)]
-                           -> [(Time, TraceLocalRootPeers Failure)]
+                           -> [(Time, TraceLocalRootPeers SockAddr Failure)]
 selectLocalRootPeersEvents trace = [ (t, e) | (t, RootPeerDNSLocal e) <- trace ]
 
-selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers Failure)]
+selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
                             -> [(Time, Seq (Int, Map SockAddr PeerAdvertise))]
 selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- trace ]
 
-selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers Failure)]
+selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
                             -> [(Time, (Domain, [IPv4]))]
 selectLocalRootResultEvents trace = [ (t, (domain, map fst r))
                                     | (t, TraceLocalRootResult (DomainAddress domain _) r) <- trace ]

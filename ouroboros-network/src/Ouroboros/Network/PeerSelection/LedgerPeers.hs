@@ -41,7 +41,6 @@ import           Data.Set (Set)
 import           Data.Word
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
-import           Network.Socket (SockAddr)
 import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
@@ -197,19 +196,21 @@ pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
 
 
 -- | Run the LedgerPeers worker thread.
-runLedgerPeers :: forall m.
+runLedgerPeers :: forall m peerAddr.
                       ( MonadAsync m
                       , MonadTime m
+                      , Ord peerAddr
                       )
                => StdGen
+               -> (IP.IP -> Socket.PortNumber -> peerAddr)
                -> Tracer m TraceLedgerPeers
                -> STM m UseLedgerAfter
                -> LedgerPeersConsensusInterface m
-               -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
+               -> ([DomainAddress] -> m (Map DomainAddress (Set peerAddr)))
                -> STM m NumberOfPeers
-               -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
+               -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                -> m Void
-runLedgerPeers inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
+runLedgerPeers inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
                getReq putRsp = do
     go inRng (Time 0) Map.empty
   where
@@ -267,9 +268,9 @@ runLedgerPeers inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{..}
                go rng'' ts peerMap'
 
     -- Randomly pick one of the addresses returned in the DNS result.
-    pickDomainAddrs :: (StdGen, Set SockAddr)
-                    -> Set SockAddr
-                    -> (StdGen, Set SockAddr)
+    pickDomainAddrs :: (StdGen, Set peerAddr)
+                    -> Set peerAddr
+                    -> (StdGen, Set peerAddr)
     pickDomainAddrs (rng, pickedAddrs) addrs | Set.null addrs = (rng, pickedAddrs)
     pickDomainAddrs (rng, pickedAddrs) addrs =
         let (ix, rng') = randomR (0, Set.size addrs - 1) rng
@@ -279,10 +280,10 @@ runLedgerPeers inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{..}
 
     -- Divide the picked peers form the ledger into addresses we can use directly and
     -- domain names that we need to resolve.
-    splitPeers :: (Set SockAddr, [DomainAddress])
+    splitPeers :: (Set peerAddr, [DomainAddress])
                -> RelayAddress
-               -> (Set SockAddr, [DomainAddress])
+               -> (Set peerAddr, [DomainAddress])
     splitPeers (addrs, domains) (RelayDomain domain) = (addrs, domain : domains)
     splitPeers (addrs, domains) (RelayAddress ip port) =
-        let !addr = IP.toSockAddr (ip, port) in
+        let !addr = toPeerAddr ip port in
         (Set.insert addr addrs, domains)
