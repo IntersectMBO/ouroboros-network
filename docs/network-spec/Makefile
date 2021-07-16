@@ -38,7 +38,3 @@ $(DOCNAME).pdf: $(DOCNAME).tex
 
 clean:
 	latexmk -CA
-
-.PHONY: updaterevision
-updaterevision:
-	git log --follow --oneline ./ |wc -l > ./revisioncount.tex
