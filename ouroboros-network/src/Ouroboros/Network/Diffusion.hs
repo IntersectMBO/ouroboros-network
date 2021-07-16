@@ -121,7 +121,7 @@ newtype DiffusionTracers =
                 (P2P.DiffusionTracersExtra
                        RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                        LocalAddress  NodeToClientVersion NodeToClientVersionData
-                       IO))
+                       IOException IO))
         RemoteAddress NodeToNodeVersion
         LocalAddress  NodeToClientVersion
         IO)
@@ -334,12 +334,12 @@ mkDiffusionTracersP2P
   -> Tracer
        IO
        (DebugPeerSelection
-          SockAddr (P2P.NodeToNodePeerConnectionHandle 'InitiatorMode SockAddr Void))
+          SockAddr (P2P.NodeToNodePeerConnectionHandle 'InitiatorMode SockAddr IO Void))
   -> Tracer
        IO
        (DebugPeerSelection
           SockAddr
-          (P2P.NodeToNodePeerConnectionHandle 'InitiatorResponderMode SockAddr ()))
+          (P2P.NodeToNodePeerConnectionHandle 'InitiatorResponderMode SockAddr IO ()))
   -> Tracer IO PeerSelectionCounters
   -> Tracer IO (PeerSelectionActionsTrace SockAddr)
   -> Tracer
