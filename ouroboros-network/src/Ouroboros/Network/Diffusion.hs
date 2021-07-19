@@ -1,405 +1,121 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Diffusion
   (
   -- * Common API
-    DiffusionTracers
-  , DiffusionArguments
-  , getDiffusionArguments
-  , daDiffusionMode
-  , DiffusionApplications
-  , runDataDiffusion
-  , DiffusionInitializationTracer(..)
-  , DiffusionFailure
-  -- * Non P2P API
-  , nullTracersNonP2P
-  , mkDiffusionTracersNonP2P
-  , mkDiffusionArgumentsNonP2P
-  , mkDiffusionApplicationsNonP2P
-  -- * P2P API
-  , nullTracersP2P
-  , mkDiffusionTracersP2P
-  , mkDiffusionArgumentsP2P
-  , mkDiffusionApplicationsP2P
+    P2P (..)
+  , InitializationTracer(..)
+  , Tracers (..)
+  , nullTracers
+  , ExtraTracers (..)
+  , Failure
+  , Arguments (..)
+  , ExtraArguments (..)
+  , Applications (..)
+  , ExtraApplications (..)
+  -- * Run data diffusion
+  , run
   )
   where
 
-import           Control.Monad.Class.MonadSTM (STM)
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Void (Void)
-import           Data.Map.Strict (Map)
-import           Data.Time (DiffTime)
 import           Data.Functor (void)
 import           Control.Exception (IOException)
-import           Control.Tracer (Tracer)
 
-import           Network.Mux (WithMuxBearer, MuxTrace)
-import           Network.Socket (SockAddr, Socket)
-
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                  ( TracePublicRootPeers
-                  , TraceLocalRootPeers
-                  )
-import           Ouroboros.Network.PeerSelection.Governor.Types
-                  ( TracePeerSelection
-                  , DebugPeerSelection
-                  , PeerSelectionCounters
-                  )
-import           Ouroboros.Network.ConnectionManager.Types
-                  ( ConnectionManagerTrace
-                  )
-import           Ouroboros.Network.PeerSelection.PeerStateActions
-                  ( PeerSelectionActionsTrace
-                  )
-import           Ouroboros.Network.ConnectionHandler
-                  ( ConnectionHandlerTrace
-                  )
-import           Ouroboros.Network.Server2
-                  ( ServerTrace
-                  )
-import           Ouroboros.Network.InboundGovernor
-                  ( InboundGovernorTrace
-                  )
+import           Network.Socket (Socket)
 
 import           Ouroboros.Network.NodeToNode
                   ( RemoteAddress
                   , NodeToNodeVersionData
-                  , DiffusionMode
                   , NodeToNodeVersion
-                  , MiniProtocolParameters
-                  , AcceptedConnectionsLimit
-                  , IPSubscriptionTarget
-                  , DnsSubscriptionTarget
                   )
-import qualified Ouroboros.Network.NodeToNode as NTN
 import           Ouroboros.Network.NodeToClient
                   ( LocalAddress
                   , LocalSocket
                   , NodeToClientVersionData
-                  , Versions
-                  , ConnectionId
                   , NodeToClientVersion
                   )
-import qualified Ouroboros.Network.NodeToClient as NTC
 
-import           Ouroboros.Network.RethrowPolicy (RethrowPolicy)
-import           Ouroboros.Network.BlockFetch (FetchMode)
-import           Ouroboros.Network.Mux
-                  ( Bundle
-                  , MiniProtocol
-                  , MuxMode (..)
-                  , OuroborosApplication
-                  , ControlMessage
-                  )
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                  ( LedgerPeersConsensusInterface
-                  , TraceLedgerPeers
-                  , RelayAddress
-                  , UseLedgerAfter
-                  )
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-
-import qualified Ouroboros.Network.Diffusion.Common as Common
-import           Ouroboros.Network.Diffusion.Common
-                  ( DiffusionInitializationTracer
-                  , DiffusionFailure
-                  , daDiffusionMode
-                  , dtExtra
-                  , daExtra
-                  , dapExtra
-                  )
-import qualified Ouroboros.Network.Diffusion.P2P as P2P
+import           Ouroboros.Network.Diffusion.Common as Common
+import qualified Ouroboros.Network.Diffusion.P2P    as P2P
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
 
--- | DiffusionTracers for either P2P or Non-P2P node
+-- | Promoted data types.
 --
-newtype DiffusionTracers =
-    DiffusionTracers
-      (Common.DiffusionTracers
-        (Either NonP2P.DiffusionTracersExtra
-                (P2P.DiffusionTracersExtra
-                       RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-                       LocalAddress  NodeToClientVersion NodeToClientVersionData
-                       IOException IO))
-        RemoteAddress NodeToNodeVersion
-        LocalAddress  NodeToClientVersion
-        IO)
+data P2P = P2P | NonP2P
 
--- | NonP2P null tracers
+
+-- | Tracers which depend on p2p mode.
 --
-nullTracersNonP2P :: DiffusionTracers
-nullTracersNonP2P =
-  DiffusionTracers (Common.nullTracers (Left NonP2P.nullTracers))
+data ExtraTracers (p2p :: P2P) where
+  P2PTracers
+    :: P2P.TracersExtra
+           RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
+           LocalAddress   NodeToClientVersion NodeToClientVersionData
+           IOException IO
+    -> ExtraTracers 'P2P
 
--- | P2P null tracers
+  NonP2PTracers
+    :: NonP2P.TracersExtra
+    -> ExtraTracers 'NonP2P
+
+
+-- | Diffusion arguments which depend on p2p mode.
 --
-nullTracersP2P :: DiffusionTracers
-nullTracersP2P =
-  DiffusionTracers (Common.nullTracers (Right P2P.nullTracers))
+data ExtraArguments (p2p :: P2P) m where
+  P2PArguments
+    :: P2P.ArgumentsExtra m
+    -> ExtraArguments 'P2P m
 
--- | DiffusionArguments for either P2P or Non-P2P node
+  NonP2PArguments
+    :: NonP2P.ArgumentsExtra
+    -> ExtraArguments 'NonP2P m
+
+
+-- | Application data which depend on p2p mode.
 --
-newtype DiffusionArguments m =
-  DiffusionArguments
-    { getDiffusionArguments
-        :: Common.DiffusionArguments
-            (Either NonP2P.DiffusionArgumentsExtra
-                    (P2P.DiffusionArgumentsExtra m))
-            Socket      RemoteAddress
-            LocalSocket LocalAddress
+data ExtraApplications (p2p :: P2P) n2nAddr m where
+  P2PApplications
+    :: P2P.ApplicationsExtra ntnAddr m
+    -> ExtraApplications 'P2P ntnAddr m
 
-    }
+  NonP2PApplications
+    :: NonP2P.ApplicationsExtra
+    -> ExtraApplications 'NonP2P ntnAddr m
 
--- | DiffusionApplications for either P2P or Non-P2P node
+
+-- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
 --
-newtype DiffusionApplications =
-  DiffusionApplications
-   (Common.DiffusionApplications
-     (Either
-        NonP2P.DiffusionApplicationsExtra
-        (P2P.DiffusionApplicationsExtra RemoteAddress IO))
-     RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-     LocalAddress  NodeToClientVersion NodeToClientVersionData
-     IO
-   )
+run :: forall (p2p :: P2P).
+       Tracers
+         RemoteAddress NodeToNodeVersion
+         LocalAddress  NodeToClientVersion
+         IO
+    -> ExtraTracers p2p
+    -> Arguments
+         Socket      RemoteAddress 
+         LocalSocket LocalAddress
+    -> ExtraArguments p2p IO
+    -> Applications
+         RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
+         LocalAddress   NodeToClientVersion NodeToClientVersionData
+         IO
+    -> ExtraApplications p2p RemoteAddress IO
+    -> IO ()
+run tracers (P2PTracers tracersExtra)
+            args (P2PArguments argsExtra)
+            apps (P2PApplications appsExtra) =
+    void $
+    P2P.run tracers tracersExtra
+            args argsExtra
+            apps appsExtra
+run tracers (NonP2PTracers tracersExtra)
+            args (NonP2PArguments argsExtra)
+            apps (NonP2PApplications appsExtra) =
+    NonP2P.run tracers tracersExtra
+               args argsExtra
+               apps appsExtra
 
--- | Construct a value of NonP2P DiffusionArguments data type.
--- 'ouroboros-consensus' needs access to this constructor so we export this
--- function in order to avoid exporting the P2P and NonP2P internal modules.
---
-mkDiffusionArgumentsNonP2P
-  :: Maybe (Either Socket RemoteAddress)
-  -> Maybe (Either Socket RemoteAddress)
-  -> Maybe (Either LocalSocket LocalAddress)
-  -> AcceptedConnectionsLimit
-  -> DiffusionMode
-  -> IPSubscriptionTarget
-  -> [DnsSubscriptionTarget]
-  -> DiffusionArguments m
-mkDiffusionArgumentsNonP2P
-  a1 a2 a3 a4 a5 a6
-  a7 =
-    DiffusionArguments
-    $ Common.DiffusionArguments
-      a1 a2 a3 a4 a5
-    $ Left
-    $ NonP2P.DiffusionArgumentsExtra
-      a6 a7
-
--- | Construct a value of P2P DiffusionArguments data type.
--- 'ouroboros-consensus' needs access to this constructor so we export this
--- function in order to avoid exporting the P2P and NonP2P internal modules.
---
-mkDiffusionArgumentsP2P
-  :: Maybe (Either Socket RemoteAddress)
-  -> Maybe (Either Socket RemoteAddress)
-  -> Maybe (Either LocalSocket LocalAddress)
-  -> AcceptedConnectionsLimit
-  -> DiffusionMode
-  -> NTN.PeerSelectionTargets
-  -> STM m [(Int, Map RelayAddress NTN.PeerAdvertise)]
-  -> STM m [RelayAddress]
-  -> STM m UseLedgerAfter
-  -> DiffTime
-  -> DiffTime
-  -> DiffusionArguments m
-mkDiffusionArgumentsP2P
-  a1 a2 a3 a4 a5 a6
-  a7 a8 a9 a10 a11
-  =
-    DiffusionArguments
-    $ Common.DiffusionArguments
-      a1 a2 a3 a4 a5
-    $ Right
-    $ P2P.DiffusionArgumentsExtra
-      a6 a7 a8 a9 a10 a11
-
--- | Construct a value of NonP2P DiffusionApplications data type.
--- 'ouroboros-consensus' needs access to this constructor so we export this
--- function in order to avoid exporting the P2P and NonP2P internal modules.
---
-mkDiffusionApplicationsNonP2P
-  :: Versions
-      NodeToNodeVersion
-      NodeToNodeVersionData
-      (Bundle
-         (ConnectionId RemoteAddress
-          -> STM IO ControlMessage
-          -> [MiniProtocol 'InitiatorMode ByteString IO () Void]))
-  -> Versions
-       NodeToNodeVersion
-       NodeToNodeVersionData
-       (Bundle
-          (ConnectionId RemoteAddress
-           -> STM IO ControlMessage
-           -> [MiniProtocol 'InitiatorResponderMode ByteString IO () ()]))
-  -> Versions
-       NodeToClientVersion
-       NodeToClientVersionData
-       (OuroborosApplication 'ResponderMode LocalAddress ByteString IO Void ())
-  -> LedgerPeersConsensusInterface IO
-  -> NTC.ErrorPolicies
-  -> DiffusionApplications
-mkDiffusionApplicationsNonP2P
-  a1 a2 a3 a4 a5 =
-    DiffusionApplications
-    $ Common.DiffusionApplications
-      a1 a2 a3 a4
-    $ Left
-    $ NonP2P.DiffusionApplicationsExtra
-      a5
-
--- | Construct a value of P2P DiffusionApplications data type.
--- 'ouroboros-consensus' needs access to this constructor so we export this
--- function in order to avoid exporting the P2P and NonP2P internal modules.
---
-mkDiffusionApplicationsP2P
-  :: Versions
-      NodeToNodeVersion
-      NodeToNodeVersionData
-      (Bundle
-         (ConnectionId RemoteAddress
-          -> STM IO ControlMessage
-          -> [MiniProtocol 'InitiatorMode ByteString IO () Void]))
-  -> Versions
-       NodeToNodeVersion
-       NodeToNodeVersionData
-       (Bundle
-          (ConnectionId RemoteAddress
-           -> STM IO ControlMessage
-           -> [MiniProtocol 'InitiatorResponderMode ByteString IO () ()]))
-  -> Versions
-       NodeToClientVersion
-       NodeToClientVersionData
-       (OuroborosApplication 'ResponderMode LocalAddress ByteString IO Void ())
-  -> LedgerPeersConsensusInterface IO
-  -> MiniProtocolParameters
-  -> RethrowPolicy
-  -> RethrowPolicy
-  -> PeerMetrics IO RemoteAddress
-  -> STM IO FetchMode
-  -> DiffusionApplications
-mkDiffusionApplicationsP2P
-  a1 a2 a3 a4 a5 a6
-  a7 a8 a9 =
-    DiffusionApplications
-    $ Common.DiffusionApplications
-      a1 a2 a3 a4
-    $ Right
-    $ P2P.DiffusionApplicationsExtra
-      a5 a6 a7 a8 a9
-
--- | Construct a value of NonP2P DiffusionTracers data type.
--- 'ouroboros-consensus' needs access to this constructor so we export this
--- function in order to avoid exporting the P2P and NonP2P internal modules.
---
-mkDiffusionTracersNonP2P
-  :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
-  -> Tracer IO (NTN.HandshakeTr RemoteAddress NodeToNodeVersion)
-  -> Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
-  -> Tracer IO (NTC.HandshakeTr LocalAddress NodeToClientVersion)
-  -> Tracer IO (DiffusionInitializationTracer SockAddr LocalAddress)
-  -> Tracer IO TraceLedgerPeers
-  -> Tracer IO (NTN.WithIPList (NTC.SubscriptionTrace SockAddr))
-  -> Tracer IO (NTN.WithDomainName (NTC.SubscriptionTrace SockAddr))
-  -> Tracer IO (NTN.WithDomainName NTN.DnsTrace)
-  -> Tracer IO (NTC.WithAddr SockAddr NTC.ErrorPolicyTrace)
-  -> Tracer IO (NTC.WithAddr LocalAddress NTC.ErrorPolicyTrace)
-  -> Tracer IO NTN.AcceptConnectionsPolicyTrace
-  -> DiffusionTracers
-mkDiffusionTracersNonP2P
-  a1 a2 a3 a4 a5 a6 a7 a8 a9
-  a10 a11 a12 =
-    DiffusionTracers
-    $ Common.DiffusionTracers
-      a1 a2 a3 a4 a5 a6
-    $ Left $ NonP2P.DiffusionTracersExtra
-      a7 a8 a9 a10 a11 a12
-
--- | Construct a value of P2P DiffusionTracers data type.
--- ouroboros-consensus needs access to this constructor so we export this
--- function in order to avoid exporting the P2P and NonP2P internal modules.
---
-mkDiffusionTracersP2P
-  :: Tracer IO (WithMuxBearer (ConnectionId SockAddr) MuxTrace)
-  -> Tracer IO (NTN.HandshakeTr RemoteAddress NodeToNodeVersion)
-  -> Tracer IO (WithMuxBearer (ConnectionId LocalAddress) MuxTrace)
-  -> Tracer IO (NTC.HandshakeTr LocalAddress NodeToClientVersion)
-  -> Tracer IO (DiffusionInitializationTracer SockAddr LocalAddress)
-  -> Tracer IO TraceLedgerPeers
-  -> Tracer IO (TraceLocalRootPeers SockAddr IOException)
-  -> Tracer IO TracePublicRootPeers
-  -> Tracer IO (TracePeerSelection SockAddr)
-  -> Tracer
-       IO
-       (DebugPeerSelection
-          SockAddr (P2P.NodeToNodePeerConnectionHandle 'InitiatorMode SockAddr IO Void))
-  -> Tracer
-       IO
-       (DebugPeerSelection
-          SockAddr
-          (P2P.NodeToNodePeerConnectionHandle 'InitiatorResponderMode SockAddr IO ()))
-  -> Tracer IO PeerSelectionCounters
-  -> Tracer IO (PeerSelectionActionsTrace SockAddr)
-  -> Tracer
-       IO
-       (ConnectionManagerTrace
-          SockAddr
-          (ConnectionHandlerTrace
-             NodeToNodeVersion NodeToNodeVersionData))
-  -> Tracer IO (ServerTrace SockAddr)
-  -> Tracer IO (InboundGovernorTrace SockAddr)
-  -> Tracer
-       IO
-       (ConnectionManagerTrace
-          LocalAddress
-          (ConnectionHandlerTrace
-             NodeToClientVersion NodeToClientVersionData))
-  -> Tracer IO (ServerTrace LocalAddress)
-  -> Tracer IO (InboundGovernorTrace LocalAddress)
-  -> DiffusionTracers
-mkDiffusionTracersP2P
-  a1 a2 a3 a4 a5 a6 a7 a8 a9
-  a10 a11 a12 a13 a14 a15 a16
-  a17 a18 a19 =
-    DiffusionTracers
-    $ Common.DiffusionTracers
-      a1 a2 a3 a4 a5 a6
-    $ Right
-    $ P2P.DiffusionTracersExtra
-      a7 a8 a9 a10 a11 a12
-      a13 a14 a15 a16 a17
-      a18 a19
-
--- | runDataDiffusion for either P2P or Non-P2P node
---
-runDataDiffusion
-  :: DiffusionTracers
-  -> DiffusionArguments IO
-  -> DiffusionApplications
-  -> IO ()
-runDataDiffusion
-  (DiffusionTracers
-    tr@Common.DiffusionTracers
-       { dtExtra })
-  (DiffusionArguments
-    dargs@Common.DiffusionArguments
-       { daExtra })
-  (DiffusionApplications
-    dapps@Common.DiffusionApplications
-       { dapExtra }) =
-  case (dtExtra, daExtra, dapExtra) of
-    (Left t, Left da, Left dapp)    ->
-      NonP2P.runDataDiffusion
-        (tr { dtExtra = t})
-        (dargs { daExtra = da })
-        (dapps { dapExtra = dapp })
-    (Right t, Right da, Right dapp) ->
-      void
-        $ P2P.runDataDiffusion
-            (tr { dtExtra = t})
-            (dargs { daExtra = da })
-            (dapps { dapExtra = dapp })
-    _                               ->
-      error "Non-matching arguments, every argument should be on the same side!"
