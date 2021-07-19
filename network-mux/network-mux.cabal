@@ -114,21 +114,17 @@ test-suite test
                        network-mux,
                        Win32-network,
 
-                       array,
                        binary,
                        bytestring,
                        cborg,
                        containers,
-                       hashable,
                        network,
                        process,
                        QuickCheck,
                        splitmix,
                        serialise,
-                       stm,
                        tasty,
                        tasty-quickcheck,
-                       tasty-hunit,
                        time
 
   if os(windows)
@@ -158,7 +154,6 @@ executable mux-demo
                        contra-tracer,
                        stm,
 
-                       binary,
                        bytestring,
                        cborg,
                        serialise

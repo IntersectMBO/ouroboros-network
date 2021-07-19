@@ -101,7 +101,6 @@ library
                      , strict-containers
                      , tasty
                      , tasty-golden
-                     , tasty-hunit
                      , tasty-quickcheck
                      , template-haskell
                      , text              >=1.2   && <1.3
@@ -112,7 +111,6 @@ library
 
                      , io-classes
                      , io-sim
-                     , typed-protocols
                      , ouroboros-network
                      , ouroboros-network-framework
                      , ouroboros-consensus
@@ -154,16 +152,12 @@ test-suite test-consensus
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-prelude
                      , cardano-slotting
                      , cborg
                      , containers
                      , contra-tracer
                      , directory
-                     , fgl
-                     , filepath
                      , generics-sop
-                     , graphviz
                      , mtl
                      , nothunks
                      , QuickCheck
@@ -175,7 +169,6 @@ test-suite test-consensus
                      , tasty-hunit
                      , tasty-quickcheck
                      , temporary
-                     , text
                      , time
                      , tree-diff
 
@@ -238,7 +231,6 @@ test-suite test-storage
                      , binary
                      , bytestring
                      , cardano-crypto-class
-                     , cardano-prelude
                      , cardano-slotting
                      , cborg
                      , containers
@@ -251,7 +243,6 @@ test-suite test-storage
                      , pretty-show
                      , QuickCheck
                      , quickcheck-state-machine >=0.7.0
-                     , quiet
                      , random
                      , serialise
                      , strict-containers
@@ -268,7 +259,6 @@ test-suite test-storage
                      , io-classes
                      , io-sim
                      , ouroboros-network
-                     , ouroboros-network-testing
                      , ouroboros-consensus
                      , ouroboros-consensus-test
 

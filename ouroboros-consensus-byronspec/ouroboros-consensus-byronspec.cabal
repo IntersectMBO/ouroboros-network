@@ -37,7 +37,6 @@ library
                      , bimap             >=0.3   && <0.5
                      , cardano-binary
                      , cardano-ledger-byron-test
-                     , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7

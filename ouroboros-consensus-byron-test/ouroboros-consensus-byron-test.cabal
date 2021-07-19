@@ -82,7 +82,6 @@ test-suite test
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-test
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
@@ -94,9 +93,7 @@ test-suite test
                      , mtl
                      , QuickCheck
                      , tasty
-                     , tasty-hunit
                      , tasty-quickcheck
-                     , time
 
                      , byron-spec-chain
                      , byron-spec-ledger
