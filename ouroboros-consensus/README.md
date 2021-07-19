@@ -7,7 +7,7 @@ This package contains:
 
 * `src`: the implementation of the Ouroboros consensus protocols and required
   components, e.g., the storage layer, mempool, protocol clients and servers,
-  etc. This library abstract over the ledger.
+  etc. This library abstracts over the ledger.
 
 * `docs`: documentation, in particular, `docs/report` contains the technical
   report about the consensus and storage layer.
