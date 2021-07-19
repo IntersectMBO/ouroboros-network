@@ -17,15 +17,18 @@
 #define POSIX
 #endif
 
+-- | This module is expected to be imported qualified (it will clash
+-- with the "Ouroboros.Network.Diffusion.NonP2P").
+--
 module Ouroboros.Network.Diffusion.P2P
-  ( DiffusionTracersExtra (..)
+  ( TracersExtra (..)
   , nullTracers
-  , DiffusionArgumentsExtra (..)
+  , ArgumentsExtra (..)
   , AcceptedConnectionsLimit (..)
-  , DiffusionApplicationsExtra (..)
-  , runDataDiffusion
-  , DiffusionInterfaces (..)
-  , runDataDiffusionM
+  , ApplicationsExtra (..)
+  , run
+  , Interfaces (..)
+  , runM
 
   , NodeToNodePeerConnectionHandle
   )
@@ -151,10 +154,10 @@ import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 
 -- | P2P DiffusionTracers Extras
 --
-data DiffusionTracersExtra ntnAddr ntnVersion ntnVersionData
+data TracersExtra ntnAddr ntnVersion ntnVersionData
                            ntcAddr ntcVersion ntcVersionData
                            resolverError m =
-    DiffusionTracersExtra {
+    TracersExtra {
       dtTraceLocalRootPeersTracer
         :: Tracer m (TraceLocalRootPeers ntnAddr resolverError)
 
@@ -223,12 +226,12 @@ data DiffusionTracersExtra ntnAddr ntnVersion ntnVersionData
     }
 
 nullTracers :: Applicative m
-            => DiffusionTracersExtra ntnAddr ntnVersion ntnVersionData
-                                     ntcAddr ntcVersion ntcVersionData
-                                     resolverError m
+            => TracersExtra ntnAddr ntnVersion ntnVersionData
+                            ntcAddr ntcVersion ntcVersionData
+                            resolverError m
 nullTracers = 
-    DiffusionTracersExtra {
-      dtTraceLocalRootPeersTracer                    = nullTracer
+    TracersExtra {
+        dtTraceLocalRootPeersTracer                  = nullTracer
       , dtTracePublicRootPeersTracer                 = nullTracer
       , dtTracePeerSelectionTracer                   = nullTracer
       , dtDebugPeerSelectionInitiatorTracer          = nullTracer
@@ -245,7 +248,7 @@ nullTracers =
 
 -- | P2P DiffusionArguments Extras
 --
-data DiffusionArgumentsExtra m = DiffusionArgumentsExtra {
+data ArgumentsExtra m = ArgumentsExtra {
       -- | selection targets for the peer governor
       --
       daPeerSelectionTargets :: PeerSelectionTargets
@@ -325,8 +328,8 @@ combineMiniProtocolBundles (MiniProtocolBundle initiators)
 
 -- | P2P DiffusionApplications Extras
 --
-data DiffusionApplicationsExtra ntnAddr m =
-    DiffusionApplicationsExtra {
+data ApplicationsExtra ntnAddr m =
+    ApplicationsExtra {
     -- | configuration of mini-protocol parameters; they impact size limits of
     -- mux ingress queues.
     --
@@ -354,7 +357,7 @@ data DiffusionApplicationsExtra ntnAddr m =
 -- configurations, i.e. 'InitiatorOnlyDiffusionMode', it will not run the
 -- responder side.  This type allows to reflect this.
 --
--- This is only used internally by 'runDataDiffusion'; This type allows to
+-- This is only used internally by 'run'; This type allows to
 -- construct configuration upfront, before all services like connection manager
 -- or server are initialised \/ started.
 --
@@ -500,11 +503,11 @@ type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr m a =
       (NodeToNodePeerConnectionHandle mode ntnAddr m a)
       m
 
-data DiffusionInterfaces ntnFd ntnAddr ntnVersion ntnVersionData
-                         ntcFd ntcAddr ntcVersion ntcVersionData
-                         resolver resolverError
-                         m =
-    DiffusionInterfaces {
+data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
+                ntcFd ntcAddr ntcVersion ntcVersionData
+                resolver resolverError
+                m =
+    Interfaces {
         -- | node-to-node snocket
         --
         diNtnSnocket 
@@ -570,7 +573,7 @@ data DiffusionInterfaces ntnFd ntnAddr ntnVersion ntnVersionData
           :: DNSActions resolver resolverError m
       }
 
-runDataDiffusionM
+runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError.
@@ -595,75 +598,97 @@ runDataDiffusionM
        , Ord       ntcVersion
        , Exception resolverError
        )
-    => DiffusionInterfaces ntnFd ntnAddr ntnVersion ntnVersionData
-                           ntcFd ntcAddr ntcVersion ntcVersionData
-                           resolver resolverError
-                           m
-    -- ^ interfaces
-    -> DiffusionTracers (DiffusionTracersExtra ntnAddr ntnVersion ntnVersionData
-                                               ntcAddr ntcVersion ntcVersionData
-                                               resolverError m)
-                        ntnAddr ntnVersion
+    => -- | interfaces
+       Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
+                  ntcFd ntcAddr ntcVersion ntcVersionData
+                  resolver resolverError
+                  m
+    -> -- | tracers
+       Tracers ntnAddr ntnVersion
                         ntcAddr ntcVersion
                         m
-    -- ^ tracers
-    -> DiffusionArguments (DiffusionArgumentsExtra m)
-                          ntnFd ntnAddr
+    -> -- | p2p tracers
+       TracersExtra ntnAddr ntnVersion ntnVersionData
+                             ntcAddr ntcVersion ntcVersionData
+                             resolverError m
+    -> -- | configuration
+       Arguments ntnFd ntnAddr
                           ntcFd ntcAddr
+    -> -- | p2p configuration
+       ArgumentsExtra m
 
-    -- ^ configuration
-    -> DiffusionApplications
-         (DiffusionApplicationsExtra ntnAddr m)
+    -> -- | protocol handlers
+       Applications
          ntnAddr ntnVersion ntnVersionData
          ntcAddr ntcVersion ntcVersionData
          m
-    -- ^ protocol handlers
+    -> -- | p2p protocol handlers
+       ApplicationsExtra ntnAddr m
     -> m Void
-runDataDiffusionM DiffusionInterfaces
-                  { diNtnSnocket 
-                  , diNtnHandshakeArguments
-                  , diNtnAddressType
-                  , diNtnDataFlow
-                  , diNtnToPeerAddr
-                  , diNtnDomainResolver
-                  , diNtcSnocket
-                  , diNtcHandshakeArguments
-                  , diNtcGetFileDescriptor
-                  , diRng
-                  , diInstallSigUSR1Handler
-                  , diDnsActions
-                  }
-
-                  tracers
-                  DiffusionArguments
-                  { daIPv4Address
-                  , daIPv6Address
-                  , daLocalAddress
-                  , daAcceptedConnectionsLimit
-                  , daDiffusionMode
-                  , daExtra = DiffusionArgumentsExtra
-                    { daPeerSelectionTargets
-                    , daReadLocalRootPeers
-                    , daReadPublicRootPeers
-                    , daReadUseLedgerAfter
-                    , daProtocolIdleTimeout
-                    , daTimeWaitTimeout
-                    }
-                  }
-
-                  DiffusionApplications
-                  { daApplicationInitiatorMode
-                  , daApplicationInitiatorResponderMode
-                  , daLocalResponderApplication
-                  , daLedgerPeersCtx
-                  , dapExtra = DiffusionApplicationsExtra
-                    { daMiniProtocolParameters
-                    , daRethrowPolicy
-                    , daLocalRethrowPolicy
-                    , daPeerMetrics
-                    , daBlockFetchMode
-                    }
-                  } =
+runM Interfaces
+       { diNtnSnocket 
+       , diNtnHandshakeArguments
+       , diNtnAddressType
+       , diNtnDataFlow
+       , diNtnToPeerAddr
+       , diNtnDomainResolver
+       , diNtcSnocket
+       , diNtcHandshakeArguments
+       , diNtcGetFileDescriptor
+       , diRng
+       , diInstallSigUSR1Handler
+       , diDnsActions
+       }
+     Tracers
+       { dtMuxTracer
+       , dtLocalMuxTracer
+       , dtLedgerPeersTracer
+       , dtDiffusionInitializationTracer = tracer
+       }
+     TracersExtra
+       { dtTracePeerSelectionTracer
+       , dtDebugPeerSelectionInitiatorTracer
+       , dtDebugPeerSelectionInitiatorResponderTracer
+       , dtTracePeerSelectionCounters
+       , dtPeerSelectionActionsTracer
+       , dtTraceLocalRootPeersTracer
+       , dtTracePublicRootPeersTracer
+       , dtConnectionManagerTracer
+       , dtServerTracer
+       , dtInboundGovernorTracer
+       , dtLocalConnectionManagerTracer
+       , dtLocalServerTracer
+       , dtLocalInboundGovernorTracer
+       }
+     Arguments
+       { daIPv4Address
+       , daIPv6Address
+       , daLocalAddress
+       , daAcceptedConnectionsLimit
+       , daDiffusionMode
+       }
+     ArgumentsExtra
+       { daPeerSelectionTargets
+       , daReadLocalRootPeers
+       , daReadPublicRootPeers
+       , daReadUseLedgerAfter
+       , daProtocolIdleTimeout
+       , daTimeWaitTimeout
+       }
+     Applications
+       { daApplicationInitiatorMode
+       , daApplicationInitiatorResponderMode
+       , daLocalResponderApplication
+       , daLedgerPeersCtx
+       }
+     ApplicationsExtra
+       { daMiniProtocolParameters
+       , daRethrowPolicy
+       , daLocalRethrowPolicy
+       , daPeerMetrics
+       , daBlockFetchMode
+       }
+      =
     -- TODO: this is wrong, the 'withTimeoutSerial' cannot be shared between
     -- concurrent threads!
     withTimeoutSerial $ \timeoutFn -> do
@@ -1119,30 +1144,6 @@ runDataDiffusionM DiffusionInterfaces
     (fuzzRng,        rng4) = split rng3
     (ntnInbgovRng,   ntcInbgovRng) = split rng4
 
-    DiffusionTracers {
-      dtMuxTracer
-      , dtLocalMuxTracer
-      , dtLedgerPeersTracer
-      -- the tracer
-      , dtDiffusionInitializationTracer = tracer
-      , dtExtra = DiffusionTracersExtra {
-          dtTracePeerSelectionTracer
-          , dtDebugPeerSelectionInitiatorTracer
-          , dtDebugPeerSelectionInitiatorResponderTracer
-          , dtTracePeerSelectionCounters
-          , dtPeerSelectionActionsTracer
-          , dtTraceLocalRootPeersTracer
-          , dtTracePublicRootPeersTracer
-          , dtConnectionManagerTracer
-          , dtServerTracer
-          , dtInboundGovernorTracer
-          , dtLocalConnectionManagerTracer
-          , dtLocalServerTracer
-          , dtLocalInboundGovernorTracer
-        }
-      } = tracers
-
-
     miniProtocolBundleInitiatorResponderMode
       :: MiniProtocolBundle InitiatorResponderMode
     miniProtocolBundleInitiatorResponderMode =
@@ -1248,24 +1249,27 @@ runDataDiffusionM DiffusionInterfaces
 --   information from the running system.  This is used by 'cardano-cli' or
 --   a wallet and a like local services.
 --
-runDataDiffusion
-    :: DiffusionTracers (DiffusionTracersExtra 
-                           RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-                           LocalAddress  NodeToClientVersion NodeToClientVersionData
-                           IOException IO)
-                        RemoteAddress NodeToNodeVersion
-                        LocalAddress  NodeToClientVersion
-                        IO
-    -> DiffusionArguments (DiffusionArgumentsExtra IO)
-                          Socket      RemoteAddress
-                          LocalSocket LocalAddress
-    -> DiffusionApplications
-         (DiffusionApplicationsExtra RemoteAddress IO)
-         RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-         LocalAddress  NodeToClientVersion NodeToClientVersionData
-         IO
+run :: -- | tracers
+       Tracers RemoteAddress NodeToNodeVersion
+               LocalAddress  NodeToClientVersion
+               IO
+    -> -- | p2p tracers
+       TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+                    LocalAddress  NodeToClientVersion NodeToClientVersionData
+                    IOException IO
+    -> -- | configuration
+       Arguments Socket      RemoteAddress
+                 LocalSocket LocalAddress
+    -> -- | p2p configuration
+       ArgumentsExtra IO
+    -> -- | protocol handlers
+       Applications RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
+                    LocalAddress  NodeToClientVersion NodeToClientVersionData
+                    IO
+    -> -- | p2p protocol handlers
+       ApplicationsExtra RemoteAddress IO
     -> IO Void
-runDataDiffusion tracers args apps = do
+run tracers p2pTracers args p2pArgs apps p2pApps = do
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
@@ -1311,7 +1315,7 @@ runDataDiffusion tracers args apps = do
                      Signals.sigUSR1
                      (Signals.Catch
                        (do state <- readState connectionManager
-                           traceWith (dtConnectionManagerTracer . dtExtra $ tracers)
+                           traceWith (dtConnectionManagerTracer p2pTracers)
                                      (TrState state)
                        )
                      )
@@ -1325,29 +1329,28 @@ runDataDiffusion tracers args apps = do
                                   -> IO (Map DomainAddress (Set Socket.SockAddr))
                    diNtnDomainResolver =
                      resolveDomainAddresses
-                       (dtTracePublicRootPeersTracer . dtExtra $ tracers)
+                       (dtTracePublicRootPeersTracer p2pTracers)
                        timeoutFn
                        DNS.defaultResolvConf
                        ioDNSActions
                diRng <- newStdGen
-               runDataDiffusionM
-                  DiffusionInterfaces {
-                    diNtnSnocket,
-                    diNtnHandshakeArguments,
-                    diNtnAddressType = socketAddressType,
-                    diNtnDataFlow = nodeDataFlow,
-                    diNtnToPeerAddr = curry IP.toSockAddr,
-                    diNtnDomainResolver,
+               runM Interfaces {
+                      diNtnSnocket,
+                      diNtnHandshakeArguments,
+                      diNtnAddressType = socketAddressType,
+                      diNtnDataFlow = nodeDataFlow,
+                      diNtnToPeerAddr = curry IP.toSockAddr,
+                      diNtnDomainResolver,
 
-                    diNtcSnocket,
-                    diNtcHandshakeArguments,
-                    diNtcGetFileDescriptor = localSocketFileDescriptor,
+                      diNtcSnocket,
+                      diNtcHandshakeArguments,
+                      diNtcGetFileDescriptor = localSocketFileDescriptor,
 
-                    diRng,
-                    diInstallSigUSR1Handler,
-                    diDnsActions = ioDNSActions
-                  }
-                  tracers args apps
+                      diRng,
+                      diInstallSigUSR1Handler,
+                      diDnsActions = ioDNSActions
+                    }
+                    tracers p2pTracers args p2pArgs apps p2pApps
 
 --
 -- Data flow
@@ -1384,7 +1387,7 @@ withSockets :: forall m ntnFd ntnAddr ntcAddr a.
                , Typeable ntnAddr
                , Show     ntnAddr
                )
-            => Tracer m (DiffusionInitializationTracer ntnAddr ntcAddr)
+            => Tracer m (InitializationTracer ntnAddr ntcAddr)
             -> Snocket m ntnFd ntnAddr
             -> [Either ntnFd ntnAddr]
             -> (NonEmpty ntnFd -> NonEmpty ntnAddr -> m a)
@@ -1392,7 +1395,7 @@ withSockets :: forall m ntnFd ntnAddr ntcAddr a.
 withSockets tracer sn addresses k = go [] addresses
   where
     go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
-    go []   []       = throwIO (NoSocket :: DiffusionFailure ntnAddr)
+    go []   []       = throwIO (NoSocket :: Failure ntnAddr)
     go !acc []       =
       let acc' = NonEmpty.fromList (reverse acc)
       in (k $! (fst <$> acc')) $! (snd <$> acc')
@@ -1427,7 +1430,7 @@ withLocalSocket :: forall ntnAddr ntcFd ntcAddr m a.
                    , Typeable ntnAddr
                    , Show     ntnAddr
                    )
-                => Tracer m (DiffusionInitializationTracer ntnAddr ntcAddr)
+                => Tracer m (InitializationTracer ntnAddr ntcAddr)
                 -> (ntcFd -> m FileDescriptor)
                 -> Snocket m ntcFd ntcAddr
                 -> Either ntcFd ntcAddr
@@ -1440,8 +1443,8 @@ withLocalSocket tracer getFileDescriptor sn localAddress k =
 #if defined(mingw32_HOST_OS)
          -- Windows uses named pipes so can't take advantage of existing sockets
          Left _ -> traceWith tracer (UnsupportedReadySocketCase
-                                       :: DiffusionInitializationTracer ntnAddr ntcAddr)
-                >> throwIO (UnsupportedReadySocket :: DiffusionFailure ntnAddr)
+                                       :: InitializationTracer ntnAddr ntcAddr)
+                >> throwIO (UnsupportedReadySocket :: Failure ntnAddr)
 #else
          Left sd -> do
              addr <- Snocket.getLocalAddr sn sd
