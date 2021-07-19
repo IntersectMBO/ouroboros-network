@@ -27,4 +27,4 @@ Related packages:
 * `../ouroboros-consensus-cardano`: the consensus instantiated to the ledgers
   the `cardano-node` currently supports.
 
-[consensus-contributing]: https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Contributing.md
+[consensus-contributing]: docs/Contributing.md

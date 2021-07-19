@@ -161,7 +161,7 @@ The following artifacts influence and/or describe the Consensus implementation.
         Ledger (for the Byron release)" (as of this line's latest commit)
 
   * Documents and presentations linked in this repository's
-    https://github.com/input-output-hk/ouroboros-network/README.md, especially:
+    [README.md](../../README.md), especially:
 
       * "Introduction to the design of Data Diffusion and Networking of Cardano
         Shelley"
