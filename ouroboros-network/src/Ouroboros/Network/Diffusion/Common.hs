@@ -2,12 +2,12 @@
 {-# LANGUAGE DataKinds #-}
 
 module Ouroboros.Network.Diffusion.Common
-  ( DiffusionInitializationTracer(..)
-  , DiffusionFailure(..)
-  , DiffusionTracers(..)
+  ( InitializationTracer(..)
+  , Failure(..)
+  , Tracers(..)
   , nullTracers
-  , DiffusionArguments(..)
-  , DiffusionApplications(..)
+  , Arguments(..)
+  , Applications(..)
   ) where
 
 import           Data.List.NonEmpty (NonEmpty)
@@ -46,7 +46,7 @@ import qualified Ouroboros.Network.NodeToClient as NodeToClient
 
 -- TODO: use LocalAddress where appropriate rather than 'path'.
 --
-data DiffusionInitializationTracer ntnAddr ntcAddr
+data InitializationTracer ntnAddr ntcAddr
   = RunServer !(NonEmpty ntnAddr)
   | RunLocalServer !ntcAddr
   | UsingSystemdSocket !ntcAddr
@@ -69,18 +69,17 @@ data DiffusionInitializationTracer ntnAddr ntcAddr
     deriving Show
 
 -- TODO: add a tracer for these misconfiguration
-data DiffusionFailure ntnAddr = UnsupportedLocalSocketType
-                      | UnsupportedReadySocket -- Windows only
-                      | UnexpectedIPv4Address ntnAddr
-                      | UnexpectedIPv6Address ntnAddr
-                      | NoSocket
+data Failure ntnAddr = UnsupportedReadySocket
+                     | UnexpectedIPv4Address ntnAddr
+                     | UnexpectedIPv6Address ntnAddr
+                     | NoSocket
   deriving (Eq, Show)
 
-instance (Typeable ntnAddr, Show ntnAddr) => Exception (DiffusionFailure ntnAddr)
+instance (Typeable ntnAddr, Show ntnAddr) => Exception (Failure ntnAddr)
 
 -- | Common DiffusionTracers interface between P2P and NonP2P
 --
-data DiffusionTracers p2p ntnAddr ntnVersion ntcAddr ntcVersion m = DiffusionTracers {
+data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
       -- | Mux tracer
       dtMuxTracer
         :: Tracer m (WithMuxBearer (ConnectionId ntnAddr) MuxTrace)
@@ -103,31 +102,27 @@ data DiffusionTracers p2p ntnAddr ntnVersion ntcAddr ntcVersion m = DiffusionTra
 
       -- | Diffusion initialisation tracer
     , dtDiffusionInitializationTracer
-        :: Tracer m (DiffusionInitializationTracer ntnAddr ntcAddr)
+        :: Tracer m (InitializationTracer ntnAddr ntcAddr)
 
       -- | Ledger Peers tracer
     , dtLedgerPeersTracer
         :: Tracer m TraceLedgerPeers
-
-      -- | P2P or NonP2P DiffusionTracers
-    , dtExtra :: p2p
     }
 
-nullTracers :: Applicative m => p2p -> DiffusionTracers p2p ntnAddr ntnVersion
-                                                            ntcAddr ntcVersion m
-nullTracers p2pNullTracers = DiffusionTracers {
+nullTracers :: Applicative m => Tracers ntnAddr ntnVersion
+                                        ntcAddr ntcVersion m
+nullTracers = Tracers {
   dtMuxTracer                       = nullTracer
   , dtHandshakeTracer               = nullTracer
   , dtLocalMuxTracer                = nullTracer
   , dtLocalHandshakeTracer          = nullTracer
   , dtDiffusionInitializationTracer = nullTracer
   , dtLedgerPeersTracer             = nullTracer
-  , dtExtra                         = p2pNullTracers
   }
 
 -- | Common DiffusionArguments interface between P2P and NonP2P
 --
-data DiffusionArguments p2p ntnFd ntnAddr ntcFd ntcAddr = DiffusionArguments {
+data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       -- | an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
       --
       daIPv4Address  :: Maybe (Either ntnFd ntnAddr)
@@ -147,11 +142,6 @@ data DiffusionArguments p2p ntnFd ntnAddr ntcFd ntcAddr = DiffusionArguments {
       -- | run in initiator only mode
       --
     , daDiffusionMode :: DiffusionMode
-
-      -- | p2p polymorphic type argument to allow easy switching between
-      -- P2P and NonP2P DiffusionArguments Extras
-      --
-    , daExtra :: p2p
   }
 
 -- | Common DiffusionArguments interface between P2P and NonP2P
@@ -159,11 +149,10 @@ data DiffusionArguments p2p ntnFd ntnAddr ntcFd ntcAddr = DiffusionArguments {
 -- TODO: we need initiator only mode for Daedalus, there's no reason why we
 -- should run a node-to-node server for it.
 --
-data DiffusionApplications p2p
-                           ntnAddr ntnVersion ntnVersionData
-                           ntcAddr ntcVersion ntcVersionData
-                           m =
-  DiffusionApplications {
+data Applications ntnAddr ntnVersion ntnVersionData
+                  ntcAddr ntcVersion ntcVersionData
+                  m =
+  Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
       -- TODO: we should accept one or the other, but not both:
@@ -196,9 +185,4 @@ data DiffusionApplications p2p
 
       -- | Interface used to get peers from the current ledger.
     , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
-
-      -- | p2p polymorphic type argument to allow easy switching between
-      -- P2P and NonP2P DiffusionApplications Extras
-      --
-    , dapExtra :: p2p
   }
