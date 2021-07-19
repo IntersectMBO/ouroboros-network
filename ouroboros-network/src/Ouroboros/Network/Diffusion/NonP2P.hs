@@ -6,12 +6,15 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | This module is expected to be imported qualified (it will clash
+-- with the "Ouroboros.Network.Diffusion.P2P").
+--
 module Ouroboros.Network.Diffusion.NonP2P
-  ( DiffusionTracersExtra (..)
+  ( TracersExtra (..)
   , nullTracers
-  , DiffusionApplicationsExtra (..)
-  , DiffusionArgumentsExtra (..)
-  , runDataDiffusion
+  , ApplicationsExtra (..)
+  , ArgumentsExtra (..)
+  , run
   )
   where
 
@@ -65,7 +68,7 @@ import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 
 -- | NonP2P DiffusionTracers Extras
 --
-data DiffusionTracersExtra = DiffusionTracersExtra {
+data TracersExtra = TracersExtra {
       -- | IP subscription tracer
       --
       dtIpSubscriptionTracer
@@ -93,11 +96,11 @@ data DiffusionTracersExtra = DiffusionTracersExtra {
         :: Tracer IO AcceptConnectionsPolicyTrace
     }
 
-nullTracers :: DiffusionTracersExtra
+nullTracers :: TracersExtra
 nullTracers = nonP2PNullTracers
   where
     nonP2PNullTracers =
-      DiffusionTracersExtra {
+      TracersExtra {
         dtIpSubscriptionTracer   = nullTracer
       , dtDnsSubscriptionTracer  = nullTracer
       , dtDnsResolverTracer      = nullTracer
@@ -108,7 +111,7 @@ nullTracers = nonP2PNullTracers
 
 -- | NonP2P DiffusionArguments Extras
 --
-data DiffusionArgumentsExtra = DiffusionArgumentsExtra {
+data ArgumentsExtra = ArgumentsExtra {
       -- | ip subscription addresses
       --
       daIpProducers  :: IPSubscriptionTarget
@@ -120,7 +123,7 @@ data DiffusionArgumentsExtra = DiffusionArgumentsExtra {
 
 -- | NonP2P DiffusionApplications Extras
 --
-newtype DiffusionApplicationsExtra = DiffusionApplicationsExtra {
+newtype ApplicationsExtra = ApplicationsExtra {
       -- | Error policies
       --
       daErrorPolicies :: ErrorPolicies
@@ -160,33 +163,48 @@ mkResponderApp bundle =
                    , miniProtocolRun = ResponderProtocolOnly responder
                    }
 
-runDataDiffusion
-    :: DiffusionTracers DiffusionTracersExtra
-                        RemoteAddress NodeToNodeVersion
-                        LocalAddress  NodeToClientVersion
-                        IO
-    -> DiffusionArguments DiffusionArgumentsExtra
-                          Socket      RemoteAddress
-                          LocalSocket LocalAddress
-    -> DiffusionApplications
-         DiffusionApplicationsExtra
+run :: Tracers RemoteAddress NodeToNodeVersion
+               LocalAddress  NodeToClientVersion
+               IO
+    -> TracersExtra
+    -> Arguments Socket      RemoteAddress
+                 LocalSocket LocalAddress
+    -> ArgumentsExtra
+    -> Applications
          RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress  NodeToClientVersion NodeToClientVersionData
          IO
+    -> ApplicationsExtra
     -> IO ()
-runDataDiffusion tracers
-                 DiffusionArguments { daIPv4Address
-                                    , daIPv6Address
-                                    , daLocalAddress
-                                    , daAcceptedConnectionsLimit
-                                    , daDiffusionMode
-                                    , daExtra = DiffusionArgumentsExtra {
-                                          daIpProducers
-                                        , daDnsProducers
-                                      }
-                                    }
-                 applications@DiffusionApplications
-                 { dapExtra = DiffusionApplicationsExtra { daErrorPolicies } } =
+run Tracers
+      { dtMuxTracer
+      , dtLocalMuxTracer
+      , dtHandshakeTracer
+      , dtLocalHandshakeTracer
+      , dtDiffusionInitializationTracer
+      }
+    TracersExtra
+      { dtIpSubscriptionTracer
+      , dtDnsSubscriptionTracer
+      , dtDnsResolverTracer
+      , dtErrorPolicyTracer
+      , dtLocalErrorPolicyTracer
+      , dtAcceptPolicyTracer
+      }
+    Arguments
+      { daIPv4Address
+      , daIPv6Address
+      , daLocalAddress
+      , daAcceptedConnectionsLimit
+      , daDiffusionMode
+      }
+     ArgumentsExtra
+       { daIpProducers
+       , daDnsProducers
+       }
+    applications
+    ApplicationsExtra
+      { daErrorPolicies } =
   traceException . withIOManager $ \iocp -> do
     let -- snocket for remote communication.
         snocket :: SocketSnocket
@@ -237,22 +255,6 @@ runDataDiffusion tracers
     traceException f = catch f $ \(e :: SomeException) -> do
       traceWith dtDiffusionInitializationTracer (DiffusionErrored e)
       throwIO e
-
-    DiffusionTracers {
-      dtMuxTracer
-      , dtLocalMuxTracer
-      , dtHandshakeTracer
-      , dtLocalHandshakeTracer
-      , dtDiffusionInitializationTracer
-      , dtExtra = DiffusionTracersExtra {
-          dtIpSubscriptionTracer
-          , dtDnsSubscriptionTracer
-          , dtDnsResolverTracer
-          , dtErrorPolicyTracer
-          , dtLocalErrorPolicyTracer
-          , dtAcceptPolicyTracer
-        }
-      } = tracers
 
     --
     -- We can't share portnumber with our server since we run separate
@@ -343,7 +345,7 @@ runDataDiffusion tracers
             -- Windows uses named pipes so can't take advantage of existing sockets
             Left _ -> do
               traceWith dtDiffusionInitializationTracer UnsupportedReadySocketCase
-              throwIO (UnsupportedReadySocket :: DiffusionFailure RemoteAddress)
+              throwIO (UnsupportedReadySocket :: Failure RemoteAddress)
 #else
             Left sd -> do
               addr <- Snocket.getLocalAddr sn sd
