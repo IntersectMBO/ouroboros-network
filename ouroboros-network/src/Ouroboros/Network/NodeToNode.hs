@@ -75,6 +75,7 @@ module Ouroboros.Network.NodeToNode (
   , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
+  , Socket
 
   -- ** Error Policies and Peer state
   , ErrorPolicies (..)
@@ -115,6 +116,7 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Network.Mux (WithMuxBearer (..))
 import           Network.Mux.Types (MuxRuntimeError (..))
+import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
 import           Network.TypedProtocol.Codec.CBOR
