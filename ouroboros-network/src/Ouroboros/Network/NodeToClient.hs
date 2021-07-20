@@ -45,7 +45,7 @@ module Ouroboros.Network.NodeToClient (
   , withIOManager
   , LocalSnocket
   , localSnocket
-  , LocalSocket
+  , LocalSocket (..)
   , LocalAddress (..)
 
     -- * Versions
