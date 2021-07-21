@@ -172,7 +172,7 @@ instance HasTxs ByronBlock where
   extractTxs blk = case byronBlockRaw blk of
     -- EBBs don't contain transactions
     CC.ABOBBoundary _ebb    -> []
-    CC.ABOBBlock regularBlk -> ValidatedByronTx . fromMempoolPayload <$>
+    CC.ABOBBlock regularBlk -> fromMempoolPayload <$>
         maybeToList proposal <> votes <> dlgs <> txs
       where
         body = CC.blockBody regularBlk

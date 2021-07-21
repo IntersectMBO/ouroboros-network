@@ -151,4 +151,4 @@ type GenTxId blk = TxId (GenTx blk)
 -- (and cannot, because we cannot give an instance for the dual ledger).
 class HasTxs blk where
   -- | Return the transactions part of the given block in no particular order.
-  extractTxs :: blk -> [Validated (GenTx blk)]
+  extractTxs :: blk -> [GenTx blk]

@@ -474,7 +474,7 @@ instance SingleEraBlock BlockA where
             (boundEpoch eraStart)
 
 instance HasTxs BlockA where
-  extractTxs = fmap ValidatedGenTxA . blkA_body
+  extractTxs = blkA_body
 
 {-------------------------------------------------------------------------------
   Condense

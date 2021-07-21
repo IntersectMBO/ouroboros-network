@@ -460,7 +460,7 @@ instance (Typeable p, Typeable c) => NoThunks (Validated (GenTx (SimpleBlock p c
   showTypeOf _ = show $ typeRep (Proxy @(Validated (GenTx (SimpleBlock p c))))
 
 instance HasTxs (SimpleBlock c ext) where
-  extractTxs = map (ValidatedSimpleGenTx . mkSimpleGenTx) . simpleTxs . simpleBody
+  extractTxs = map mkSimpleGenTx . simpleTxs . simpleBody
 
 instance Mock.HasMockTxs (GenTx (SimpleBlock p c)) where
   getMockTxs = Mock.getMockTxs . simpleGenTx

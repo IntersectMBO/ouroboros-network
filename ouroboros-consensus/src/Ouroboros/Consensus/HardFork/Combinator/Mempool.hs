@@ -279,8 +279,8 @@ instance All HasTxs xs => HasTxs (HardForkBlock xs) where
            HasTxs blk
         => Index xs blk
         -> I blk
-        -> K [Validated (GenTx (HardForkBlock xs))] blk
-      aux index = K . map (injectNS' (Proxy @WrapValidatedGenTx) index) . extractTxs . unI
+        -> K [GenTx (HardForkBlock xs)] blk
+      aux index = K . map (injectNS' (Proxy @GenTx) index) . extractTxs . unI
 
 {-------------------------------------------------------------------------------
   Auxiliary

@@ -162,7 +162,7 @@ instance ShelleyBasedEra era => HasTxId (GenTx (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => HasTxs (ShelleyBlock era) where
   extractTxs =
-        map mkShelleyValidatedTx
+        map mkShelleyTx
       . txSeqToList
       . SL.bbody
       . shelleyBlockRaw
