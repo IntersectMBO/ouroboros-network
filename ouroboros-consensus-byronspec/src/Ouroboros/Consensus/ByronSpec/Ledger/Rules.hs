@@ -80,7 +80,7 @@ applyChainTick cfg slot st =
       Right st' -> st'
   where
     go :: Spec.State Spec.CHAIN
-       -> Except [[Spec.PredicateFailure Spec.CHAIN]] (Spec.State Spec.CHAIN)
+       -> Except [Spec.PredicateFailure Spec.CHAIN] (Spec.State Spec.CHAIN)
     go =  -- Apply EPOCH rule (deals with update proposals)
           liftEPOCH cfg slot
 
@@ -147,20 +147,20 @@ applySTS :: forall sts. (Spec.STS sts, Spec.BaseM sts ~ Identity)
          -> Spec.Environment sts
          -> Spec.Signal sts
          -> Spec.State sts
-         -> Except [[Spec.PredicateFailure sts]] (Spec.State sts)
+         -> Except [Spec.PredicateFailure sts] (Spec.State sts)
 applySTS _ env signal state = except $
     Spec.applySTS @sts $ Spec.TRC (env, state, signal)
 
 type LiftedRule sts = Spec.Signal sts
                    -> Spec.State Spec.CHAIN
-                   -> Except [[Spec.PredicateFailure Spec.CHAIN]]
+                   -> Except [Spec.PredicateFailure Spec.CHAIN]
                              (Spec.State Spec.CHAIN)
 
 -- | Lift sub-STS rule to top-level CHAIN
 liftRule :: forall sts. (Spec.STS sts, Spec.BaseM sts ~ Identity)
          => RuleContext sts -> LiftedRule sts
 liftRule RuleContext{..} signal st =
-    withExcept (map (map liftFailure)) $
+    withExcept (map liftFailure) $
       modRuleState (applySTS (Proxy @sts) (getRuleEnv st) signal) st
 
 {-------------------------------------------------------------------------------

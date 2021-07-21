@@ -632,10 +632,10 @@ the rules below, it is good practice to update the code's style to match them.
    ..
    <EOF>
    ```
-   *Why:* see [this StackOverflow answer](posix-line), moreover, GitHub will
+   *Why:* see [this StackOverflow answer][posix-line], moreover, GitHub will
    highlight a missing newline at the end of the file.
 
-   [https://stackoverflow.com/questions/729692/why-should-text-files-end-with-a-newline]: posix-line
+   [posix-line]: https://stackoverflow.com/questions/729692/why-should-text-files-end-with-a-newline#answer-729795
 
 8. __Sections__: we group related definitions in sections that start with a
    section title. The same grouping can be replicated in the export list.
@@ -677,7 +677,7 @@ the rules below, it is good practice to update the code's style to match them.
 9. __Comment style__: in general we tend to use `--` instead of `{- .. -}`. We
    sometimes make exceptions for big non-Haddock comments.
 
-10. __Haddock formatting__: we use [Haddock formatting](haddock-formatting) in
+10. __Haddock formatting__: we use [Haddock formatting][haddock-formatting] in
     docstrings. We also do this in comments for consistency.
 
     ```haskell
@@ -747,7 +747,7 @@ the rules below, it is good practice to update the code's style to match them.
         }
     ```
 
-    [https://www.haskell.org/haddock/doc/html/ch03s08.html]: haddock-formatting
+    [haddock-formatting]: https://www.haskell.org/haddock/doc/html/ch03s08.html
 
 11. __Alignment__: we align things when it helps with readability.
 
