@@ -91,7 +91,7 @@ import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket
 
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
-import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), toBearerInfo)
+import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), AbsBearerInfo, toBearerInfo)
 import           Test.Ouroboros.Network.ConnectionManager (verifyAbstractTransition)
 
 tests :: TestTree
@@ -752,11 +752,11 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
 
-prop_unidirectional_Sim :: ClientAndServerData Int -> Property
-prop_unidirectional_Sim clientAndServerData =
+prop_unidirectional_Sim :: AbsBearerInfo -> ClientAndServerData Int -> Property
+prop_unidirectional_Sim absBi clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
-                (singletonScript noAttenuation)
+                (Script (toBearerInfo absBi :| [noAttenuation]))
                 (Snocket.TestAddress 10) $ \snock ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
@@ -1550,8 +1550,8 @@ data EffectiveDataFlow
     deriving (Eq, Show)
 
 -- | Property wrapping `multinodeExperiment`.
-prop_multinode_Sim :: Int -> ArbDataFlow -> MultiNodeScript Int TestAddr -> Property
-prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
+prop_multinode_Sim :: Int -> ArbDataFlow -> AbsBearerInfo -> MultiNodeScript Int TestAddr -> Property
+prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
   let evs :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
       evs = fmap wnEvent
           . Octopus.filter ((MainServer ==) . wnName)
@@ -1564,7 +1564,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
           sim = do
             mb <- timeout 7200
                     ( withSnocket debugTracer
-                                  (singletonScript noAttenuation)
+                                  (Script (toBearerInfo absBi :| [noAttenuation]))
                                   (Snocket.TestAddress 10)
                     $ \snocket ->
                        multinodeExperiment (Tracer traceM)
