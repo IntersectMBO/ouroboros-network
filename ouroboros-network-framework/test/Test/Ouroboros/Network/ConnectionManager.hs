@@ -1798,13 +1798,14 @@ verifyAbstractTransition Transition { fromState, toState } =
 
       -- @Termiante@
       (TerminatingSt, TerminatedSt) -> True
+
+      -- explicit prohibition of reflexive terminate transition
+      (TerminatedSt, TerminatedSt) -> False
       -- implicit terminate transition
-      --
-      -- The seceond pattern implicitly allows to (UnknowConnectionSt,
-      -- UnknownConnectionSt); this can be logged by
-      -- `unregisterOutboundConnectionImpl` if the connection errored before it
-      -- was called.
       (_, TerminatedSt) -> True
+
+      -- explicit prohibition of reflexive unknown transition
+      (UnknownConnectionSt, UnknownConnectionSt) -> False
       (_, UnknownConnectionSt) -> True
 
       -- We accept connection in 'TerminatingSt'

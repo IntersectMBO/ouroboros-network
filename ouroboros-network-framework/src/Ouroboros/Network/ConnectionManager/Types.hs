@@ -821,6 +821,10 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionManagerCounters  !ConnectionManagerCounters
   | TrState                      !(Map peerAddr AbstractState)
   -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
+  | TrUnexpectedlyMissingConnectionState !(ConnectionId peerAddr)
+  -- ^ This is triggered by a failed lookup on the 'ConnectionManagerState'
+  -- using the ConnectionId's peerAddr, during connection handler cleanup
+  -- function.
   deriving Show
 
 
