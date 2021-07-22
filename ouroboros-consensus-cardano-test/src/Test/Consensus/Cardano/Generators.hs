@@ -36,7 +36,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
+import           Ouroboros.Consensus.Util.Counting (Exactly (..), NonEmpty (..),
                      nonEmptyFromList, nonEmptyToList)
 import           Ouroboros.Consensus.Util.SOP (nsFromIndex)
 
@@ -47,8 +47,11 @@ import           Ouroboros.Consensus.Byron.Ledger
 
 import           Ouroboros.Consensus.Shelley.Ledger
 
+import           Cardano.Ledger.Alonzo.Genesis
+
 import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
+import           Ouroboros.Consensus.Cardano.CanHardFork
+import           Ouroboros.Consensus.Cardano.Node ()
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
@@ -502,18 +505,6 @@ instance Arbitrary History.EraEnd where
       , return History.EraUnbounded
       ]
 
-instance Arbitrary History.SafeZone where
-  arbitrary = oneof
-      [ History.StandardSafeZone <$> arbitrary
-      , return History.UnsafeIndefiniteSafeZone
-      ]
-
-instance Arbitrary History.EraParams where
-  arbitrary = History.EraParams
-      <$> (EpochSize <$> arbitrary)
-      <*> arbitrary
-      <*> arbitrary
-
 instance Arbitrary History.EraSummary where
   arbitrary = History.EraSummary
       <$> arbitrary
@@ -637,3 +628,66 @@ instance c ~ MockCryptoCompatByron
           [ SomeResult (QueryHardFork GetInterpreter) <$> arbitrary
           , SomeResult (QueryHardFork GetCurrentEra)  <$> arbitrary
           ]
+
+{------------------------------------------------------------------------------
+  Ledger Config
+------------------------------------------------------------------------------}
+
+-- | See 'encodeNodeToClientNP' and 'decodeNodeToClientNP'.
+instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
+      => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c)) (HardForkLedgerConfig (CardanoEras c))) where
+  arbitrary = WithVersion
+      -- Use a version that enables all eras. We assume that all eras are
+      -- enabled in the maximum supported version.
+      (snd $ fromMaybe err $ Map.lookupMax $ supportedNodeToClientVersions (Proxy @(CardanoBlock c)))
+      <$> arbitrary
+    where
+      err = error "Expected at least 1 supported note-to-client version, but `supportedNodeToClientVersions` has none"
+
+instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
+      => Arbitrary (HardForkLedgerConfig (CardanoEras c)) where
+  arbitrary = HardForkLedgerConfig <$> arbitrary <*> arbitrary
+
+instance SListI xs => Arbitrary (History.Shape xs) where
+  arbitrary = History.Shape . Exactly <$> hsequenceK (hpure (K arbitrary))
+
+instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
+      => Arbitrary (PerEraLedgerConfig (CardanoEras c)) where
+  arbitrary = do
+    byronPLC   <- WrapPartialLedgerConfig <$> arbitrary
+    shelleyPLC <- WrapPartialLedgerConfig <$> arbitrary
+    allegraPLC <- WrapPartialLedgerConfig <$> arbitrary
+    maryPLC    <- WrapPartialLedgerConfig <$> arbitrary
+    alonzoPLC  <- WrapPartialLedgerConfig <$> arbitrary
+    return $ PerEraLedgerConfig $
+      byronPLC
+      :* shelleyPLC
+      :* allegraPLC
+      :* maryPLC
+      :* alonzoPLC
+      :* Nil
+
+instance Arbitrary ByronPartialLedgerConfig where
+  arbitrary = ByronPartialLedgerConfig <$> arbitrary <*> arbitrary
+
+instance Arbitrary (ShelleyLedgerConfig era)
+      => Arbitrary (ShelleyPartialLedgerConfig era) where
+  arbitrary = ShelleyPartialLedgerConfig <$> arbitrary <*> arbitrary
+
+instance Arbitrary AlonzoGenesis where
+  arbitrary = AlonzoGenesis
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+instance Arbitrary TriggerHardFork where
+  arbitrary = oneof [
+      TriggerHardForkAtVersion <$> arbitrary
+    , TriggerHardForkAtEpoch <$> arbitrary
+    , pure TriggerHardForkNever
+    ]

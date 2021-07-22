@@ -117,6 +117,10 @@ instance (SimpleCrypto c, Typeable ext) => Arbitrary (SomeResult (SimpleBlock c 
 instance Arbitrary (LedgerState (SimpleBlock c ext)) where
   arbitrary = SimpleLedgerState <$> arbitrary
 
+instance ( Arbitrary (MockLedgerConfig c ext)
+         ) => Arbitrary (SimpleLedgerConfig c ext) where
+  arbitrary = SimpleLedgerConfig <$> arbitrary <*> arbitrary
+
 instance HashAlgorithm (SimpleHash c) => Arbitrary (AnnTip (SimpleBlock c ext)) where
   arbitrary = do
       annTipSlotNo  <- SlotNo  <$> arbitrary

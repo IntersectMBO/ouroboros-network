@@ -35,7 +35,9 @@ library
 
   build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11
+                     , base64-bytestring
                      , cardano-binary
+                     , cardano-crypto
                      , cardano-crypto-class
                      , cardano-crypto-test
                      , cardano-crypto-wrapper
@@ -46,6 +48,7 @@ library
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
                      , serialise         >=0.2   && <0.3
+                     , text
 
                      , byron-spec-ledger
 

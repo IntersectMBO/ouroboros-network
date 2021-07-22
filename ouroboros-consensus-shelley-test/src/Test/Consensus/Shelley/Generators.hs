@@ -14,6 +14,10 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Shelley.Generators (SomeResult (..)) where
 
+import           Cardano.Slotting.EpochInfo
+
+import           Cardano.Ledger.Era
+
 import           Ouroboros.Network.Block (mkSerialised)
 
 import           Ouroboros.Consensus.Block
@@ -40,6 +44,7 @@ import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
 import           Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL
+import           Test.Cardano.Ledger.Shelley.Generator.EraGen
 import           Test.Cardano.Ledger.Shelley.Generator.ShelleyEraGen ()
 import           Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators
                      (genCoherentBlock)
@@ -152,6 +157,47 @@ instance Arbitrary ShelleyNodeToClientVersion where
 instance ShelleyBasedEra era
       => Arbitrary (SomeSecond (NestedCtxt f) (ShelleyBlock era)) where
   arbitrary = return (SomeSecond indexIsTrivial)
+
+{-------------------------------------------------------------------------------
+  Generators for shelley ledger config
+-------------------------------------------------------------------------------}
+
+-- | Generate a 'ShelleyLedgerConfig' with a fixed 'EpochInfo' (see
+-- 'arbitraryGlobalsWithFixedEpochInfo').
+instance ( Mock (Crypto era)
+         , EraGen era
+         , Arbitrary (TranslationContext era)
+         ) => Arbitrary (ShelleyLedgerConfig era) where
+  arbitrary = ShelleyLedgerConfig
+    <$> arbitrary
+    <*> arbitraryGlobalsWithFixedEpochInfo
+    <*> arbitrary
+
+instance ( Mock (Crypto era)
+         , EraGen era
+         ) => Arbitrary (CompactGenesis era) where
+  arbitrary = compactGenesis <$> arbitrary
+
+-- | Generate 'Globals' with a fixed 'EpochInfo'. A fixed 'EpochInfo' is
+-- comprehensive in the case of generating a 'ShelleyLedgerConfig' (see the
+-- documentation for 'shelleyLedgerGlobals').
+arbitraryGlobalsWithFixedEpochInfo :: Gen SL.Globals
+arbitraryGlobalsWithFixedEpochInfo = SL.Globals
+    <$> arbitraryFixedEpochInfo
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+arbitraryFixedEpochInfo :: Monad m => Gen (EpochInfo m)
+arbitraryFixedEpochInfo = fixedEpochInfo <$> arbitrary <*> arbitrary
 
 {-------------------------------------------------------------------------------
   Generators for cardano-ledger-specs
