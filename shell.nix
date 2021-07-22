@@ -44,6 +44,7 @@ let
     # These programs will be available inside the nix-shell.
     buildInputs = [
       cabalWrapped
+      entr
       niv
       pkgconfig
       nixpkgs-fmt
