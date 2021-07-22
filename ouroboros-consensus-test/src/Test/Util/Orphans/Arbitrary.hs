@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock,
                      Telescope (..), proxySingle)
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..))
+import           Ouroboros.Consensus.HardFork.History.EraParams
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
@@ -259,6 +260,22 @@ instance (All (Arbitrary `Compose` f) xs, IsNonEmpty xs)
           , (lengthSList pf', S <$> arbitrary)
           ]
   shrink = hctraverse' (Proxy @(Arbitrary `Compose` f)) shrink
+
+{-------------------------------------------------------------------------------
+  Configuration
+-------------------------------------------------------------------------------}
+
+instance Arbitrary EraParams where
+  arbitrary = EraParams <$> arbitrary <*> arbitrary <*> arbitrary
+
+instance Arbitrary EpochSize where
+  arbitrary = EpochSize <$> arbitrary
+
+instance Arbitrary SafeZone where
+  arbitrary = oneof
+      [ StandardSafeZone <$> arbitrary
+      , return UnsafeIndefiniteSafeZone
+      ]
 
 {-------------------------------------------------------------------------------
   Telescope & HardForkState

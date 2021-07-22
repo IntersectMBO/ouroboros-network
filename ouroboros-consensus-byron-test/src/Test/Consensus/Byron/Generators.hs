@@ -13,15 +13,21 @@ module Test.Consensus.Byron.Generators (
   ) where
 
 import           Control.Monad (replicateM)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8 as BSC8
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
+import           Data.String (IsString (fromString))
+import qualified Data.Text as T
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
                      ABlockOrBoundaryHdr (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as API
-import           Cardano.Chain.Common (KeyHash)
+import           Cardano.Chain.Common (Address, BlockCount (..), CompactAddress,
+                     KeyHash, Lovelace)
 import qualified Cardano.Chain.Delegation as CC.Del
 import qualified Cardano.Chain.Delegation.Validation.Activation as CC.Act
 import qualified Cardano.Chain.Delegation.Validation.Interface as CC.DI
@@ -33,8 +39,11 @@ import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.Update.Validation.Registration as CC.Reg
-import           Cardano.Crypto (ProtocolMagicId (..))
+import           Cardano.Crypto (ProtocolMagicId (..),
+                     RequiresNetworkMagic (..))
 import           Cardano.Crypto.Hashing (Hash)
+import           Cardano.Crypto.Signing
+import qualified Cardano.Crypto.Wallet as Wallet
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -76,6 +85,82 @@ epochSlots = EpochSlots 100
 
 protocolMagicId :: ProtocolMagicId
 protocolMagicId = ProtocolMagicId 100
+
+instance Arbitrary CC.Genesis.Config where
+  arbitrary = CC.Genesis.Config
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.Genesis.GenesisData where
+  arbitrary = CC.Genesis.GenesisData
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+instance Arbitrary CC.Genesis.GenesisKeyHashes where
+  arbitrary = CC.Genesis.GenesisKeyHashes <$> arbitrary
+
+instance Arbitrary CC.Genesis.GenesisDelegation where
+  arbitrary = (CC.Genesis.mkGenesisDelegation <$> arbitrary)
+    `suchThatMap` (either (const Nothing) Just)
+
+instance Arbitrary (CC.Del.ACertificate ()) where
+  arbitrary = CC.Del.signCertificate
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+instance Arbitrary SafeSigner where
+  arbitrary = do
+    seed <- BS.pack <$> sequence (replicate 32 arbitrary)
+    passPhrase <- BS.pack <$> sequence (replicate passphraseLength arbitrary)
+    let xprv = Wallet.generate seed passPhrase
+    return $ SafeSigner (SigningKey xprv) (PassPhrase (fromString (BSC8.unpack passPhrase)))
+
+instance Arbitrary VerificationKey where
+  arbitrary = either (error . show) id . parseFullVerificationKey <$>
+    (T.pack . BSC8.unpack . B64.encode <$> arbitraryKey)
+    where
+      -- The key must be 64 bytes
+      arbitraryKey = BS.pack <$> sequence (replicate 64 arbitrary)
+
+instance Arbitrary CC.Genesis.GenesisNonAvvmBalances where
+  arbitrary = CC.Genesis.GenesisNonAvvmBalances <$> arbitrary
+
+instance Arbitrary Address where
+  arbitrary = hedgehog CC.genAddress
+
+instance Arbitrary Lovelace where
+  arbitrary = hedgehog CC.genLovelace
+
+instance Arbitrary CC.Genesis.GenesisAvvmBalances where
+  arbitrary = CC.Genesis.GenesisAvvmBalances <$> arbitrary
+
+instance Arbitrary CompactRedeemVerificationKey where
+  arbitrary = hedgehog CC.genCompactRedeemVerificationKey
+
+instance Arbitrary BlockCount where
+  arbitrary = hedgehog CC.genBlockCount
+
+instance Arbitrary RequiresNetworkMagic where
+  arbitrary = hedgehog CC.genRequiresNetworkMagic
+
+instance Arbitrary ProtocolMagicId where
+  arbitrary = hedgehog CC.genProtocolMagicId
+
+instance Arbitrary CC.UTxO.UTxOConfiguration where
+  arbitrary = CC.UTxO.UTxOConfiguration <$> arbitrary
+
+instance Arbitrary CompactAddress where
+  arbitrary = hedgehog CC.genCompactAddress
 
 -- | A 'ByronBlock' that is never an EBB.
 newtype RegularBlock = RegularBlock { unRegularBlock :: ByronBlock }
