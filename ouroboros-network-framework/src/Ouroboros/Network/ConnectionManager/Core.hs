@@ -566,168 +566,161 @@ withConnectionManager ConnectionManagerArguments {
         . connectionManagerStateToCounters
       <$> traverse readTVar st
 
-    -- Start connection thread and run connection handler on it.
+
+    -- Fork connection thread.
     --
     -- TODO: We don't have 'MonadFix' instance for 'IOSim', so we cannot
     -- directly pass 'connVar' (which requires @Async ()@ returned by this
     -- function.  If we had 'MonadFix' at hand We could then also elegantly
     -- eliminate 'PromiseWriter'.
-    runConnectionHandler :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
-                         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
-                         -> socket
-                         -> peerAddr
-                         -> PromiseWriter m (Either handleError (handle, version))
-                         -> m (ConnectionId peerAddr, Async m ())
-    runConnectionHandler stateVar handler socket peerAddr writer = do
-      localAddress <- getLocalAddr cmSnocket socket
-      let connId = ConnectionId { remoteAddress = peerAddr
-                                , localAddress
-                                }
+    forkConnectionHandler
+      :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+      -> socket
+      -> ConnectionId peerAddr
+      -> PromiseWriter m (Either handleError (handle, version))
+      -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
+      -> m (Async m ())
+    forkConnectionHandler stateVar
+                          socket
+                          connId@ConnectionId { remoteAddress = peerAddr }
+                          writer
+                          handler =
+        asyncWithUnmask $ \unmask ->
+          runWithUnmask
+            (handler socket writer
+                     (TrConnectionHandler connId `contramap` tracer)
+                     connId
+                     (\bearerTimeout ->
+                       toBearer
+                         cmSnocket
+                         bearerTimeout
+                         (WithMuxBearer connId `contramap` muxTracer)))
+            unmask
+          `finally` cleanup
+      where
+        cleanup :: m ()
+        cleanup =
+          -- We must ensure that we update 'connVar',
+          -- `requestOutboundConnection` might be blocked on it awaiting for:
+          -- - handshake negotiation; or
+          -- - `Terminate: TerminatingState → TerminatedState` transition.
+          -- That's why we use 'uninterruptibleMask'. Note that this cleanup
+          -- function after all is interruptible, because we unmask async
+          -- exceptions around 'threadDelay', but even if an async exception
+          -- hits there we will update `connVar`.
+          uninterruptibleMask $ \unmask -> do
+            traceWith tracer (TrConnectionCleanup connId)
+            mConnVar <- modifyTMVar stateVar $ \state -> do
+              wConnVar <- uninterruptibleMask_ $ atomically $ do
+                case Map.lookup peerAddr state of
+                  Nothing      -> return Nowhere
+                  Just connVar -> do
+                      connState <- readTVar connVar
+                      case connState of
+                        ReservedOutboundState -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        UnnegotiatedState {} -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        OutboundUniState {} -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        OutboundDupState {} -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        OutboundIdleState {} -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        InboundIdleState {} -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        InboundState {} -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        DuplexState {} -> do
+                          writeTVar connVar (TerminatedState Nothing)
+                          return $ There connState
+                        TerminatingState {} -> do
+                          return $ Here connVar
+                        TerminatedState {} ->
+                          return $ There connState
+              case wConnVar of
+                Nowhere -> do
+                  close cmSnocket socket
+                  return ( state
+                         , Left Unknown
+                         )
+                There connState -> do
+                  close cmSnocket socket
+                  return ( Map.delete peerAddr state
+                         , Left (Known connState)
+                         )
+                Here connVar -> do
+                  close cmSnocket socket
+                  return ( state
+                         , Right connVar
+                         )
 
-      let cleanup :: m ()
-          cleanup =
-            -- We must ensure that we update 'connVar',
-            -- `requestOutboundConnection` might be blocked on it awaiting for:
-            -- - handshake negotiation; or
-            -- - `Terminate: TerminatingState → TerminatedState` transition.
-            -- That's why we use 'uninterruptibleMask'. Note that this cleanup
-            -- function after all is interruptible, because we unmask async
-            -- exceptions around 'threadDelay', but even if an async exception
-            -- hits there we will update `connVar`.
-            uninterruptibleMask $ \unmask -> do
-              traceWith tracer (TrConnectionCleanup connId)
-              mConnVar <- modifyTMVar stateVar $ \state -> do
-                wConnVar <- uninterruptibleMask_ $ atomically $ do
-                  case Map.lookup peerAddr state of
-                    Nothing      -> return Nowhere
-                    Just connVar -> do
-                        connState <- readTVar connVar
-                        case connState of
-                          ReservedOutboundState -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          UnnegotiatedState {} -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          OutboundUniState {} -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          OutboundDupState {} -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          OutboundIdleState {} -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          InboundIdleState {} -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          InboundState {} -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          DuplexState {} -> do
-                            writeTVar connVar (TerminatedState Nothing)
-                            return $ There connState
-                          TerminatingState {} -> do
-                            return $ Here connVar
-                          TerminatedState {} ->
-                            return $ There connState
-                case wConnVar of
-                  Nowhere -> do
-                    close cmSnocket socket
-                    return ( state
-                           , Left Unknown
-                           )
-                  There connState -> do
-                    close cmSnocket socket
-                    return ( Map.delete peerAddr state
-                           , Left (Known connState)
-                           )
-                  Here connVar -> do
-                    close cmSnocket socket
-                    return ( state
-                           , Right connVar
-                           )
+            case mConnVar of
+              Left !connState -> do
+                traceCounters stateVar
+                traceWith trTracer (TransitionTrace peerAddr
+                                      Transition
+                                         { fromState = connState
+                                         , toState   = Unknown
+                                         })
+              Right connVar ->
+                do traceWith tracer (TrConnectionTimeWait connId)
+                   when (cmTimeWaitTimeout > 0) $
+                     unmask (threadDelay cmTimeWaitTimeout)
+                `finally` do
+                  -- We must ensure that we update 'connVar',
+                  -- `requestOutboundConnection` might be blocked on it awaiting for:
+                  -- - handshake negotiation; or
+                  -- - `Terminate: TerminatingState → TerminatedState` transition.
+                  traceWith tracer (TrConnectionTimeWaitDone connId)
+                  trs <- atomically $ do
+                    mConnState <- readTMVar stateVar
+                              >>= traverse readTVar . Map.lookup peerAddr
+                    -- We can always write to `connVar`, since a new
+                    -- connection will use a new 'TVar', but we have to be
+                    -- careful when deleting it from 'ConnectionManagerState'.
+                    let connState'  = TerminatedState Nothing
+                    writeTVar connVar connState'
+                    updated <-
+                      modifyTMVarPure
+                        stateVar
+                        ( swap
+                        . Map.updateLookupWithKey
+                            (\_ v ->
+                              -- only delete if it wasn't replaced
+                              if eqTVar (Proxy :: Proxy m) connVar v
+                                then Nothing
+                                else Just v
+                            )
+                            peerAddr
+                        )
+                    let connState   = maybe Unknown Known mConnState
+                        kConnState' = Known connState'
 
-              case mConnVar of
-                Left !connState -> do
+                    case updated of
+                      Nothing ->
+                        return [ Transition { fromState = connState
+                                            , toState   = kConnState'
+                                            }
+                               , Transition { fromState = kConnState'
+                                            , toState   = Unknown
+                                            }
+                               ]
+                      Just _ ->
+                        return [ Transition { fromState = connState
+                                            , toState   = kConnState'
+                                            }
+                               ]
+
+                  traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
                   traceCounters stateVar
-                  traceWith trTracer (TransitionTrace peerAddr
-                                        Transition
-                                           { fromState = connState
-                                           , toState   = Unknown
-                                           })
-                Right connVar ->
-                  do traceWith tracer (TrConnectionTimeWait connId)
-                     when (cmTimeWaitTimeout > 0) $
-                       unmask (threadDelay cmTimeWaitTimeout)
-                  `finally` do
-                    -- We must ensure that we update 'connVar',
-                    -- `requestOutboundConnection` might be blocked on it awaiting for:
-                    -- - handshake negotiation; or
-                    -- - `Terminate: TerminatingState → TerminatedState` transition.
-                    traceWith tracer (TrConnectionTimeWaitDone connId)
-                    trs <- atomically $ do
-                      mConnState <- readTMVar stateVar
-                                >>= traverse readTVar . Map.lookup peerAddr
-                      -- We can always write to `connVar`, since a new
-                      -- connection will use a new 'TVar', but we have to be
-                      -- careful when deleting it from 'ConnectionManagerState'.
-                      let connState'  = TerminatedState Nothing
-                      writeTVar connVar connState'
-                      updated <-
-                        modifyTMVarPure
-                          stateVar
-                          ( swap
-                          . Map.updateLookupWithKey
-                              (\_ v ->
-                                -- only delete if it wasn't replaced
-                                if eqTVar (Proxy :: Proxy m) connVar v
-                                  then Nothing
-                                  else Just v
-                              )
-                              peerAddr
-                          )
-                      let connState   = maybe Unknown Known mConnState
-                          kConnState' = Known connState'
-
-                      case updated of
-                        Nothing ->
-                          return [ Transition { fromState = connState
-                                              , toState   = kConnState'
-                                              }
-                                 , Transition { fromState = kConnState'
-                                              , toState   = Unknown
-                                              }
-                                 ]
-                        Just _ ->
-                          return [ Transition { fromState = connState
-                                              , toState   = kConnState'
-                                              }
-                                 ]
-
-                    traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
-                    traceCounters stateVar
-
-      -- start connection thread
-      connThread <- asyncWithUnmask $ \unmask ->
-        runWithUnmask
-          (handler
-            socket
-            writer
-            (TrConnectionHandler connId `contramap` tracer)
-            connId
-            (\bearerTimeout ->
-              toBearer
-                cmSnocket
-                bearerTimeout
-                (WithMuxBearer connId `contramap` muxTracer)))
-          unmask
-        `finally` cleanup
-
-      return ( connId
-             , connThread
-             )
-
 
     includeInboundConnectionImpl
         :: HasCallStack
@@ -747,9 +740,11 @@ withConnectionManager ConnectionManagerArguments {
         (connVar, connId, connThread, reader)
           <- modifyTMVar stateVar $ \state -> do
               (reader, writer) <- newEmptyPromiseIO
-              (connId, connThread)
-                <- runConnectionHandler stateVar handler
-                                        socket peerAddr writer
+              localAddress <- getLocalAddr cmSnocket socket
+              let connId = ConnectionId { localAddress, remoteAddress = peerAddr }
+              connThread <-
+                forkConnectionHandler
+                  stateVar socket connId writer handler
 
               -- Either
               -- @
@@ -848,7 +843,7 @@ withConnectionManager ConnectionManagerArguments {
 
                 DuplexState {} ->
                   throwSTM (withCallStack (ImpossibleState peerAddr))
-                                    
+
                 TerminatingState {} -> do
                   let connState' = InboundIdleState
                                      connId connThread handle
@@ -1147,120 +1142,150 @@ withConnectionManager ConnectionManagerArguments {
             throwIO e
 
           -- connection manager does not have a connection with @peerAddr@.
-          Right Nowhere ->
-            bracketOnError
-              (openToConnect cmSnocket peerAddr)
-              (\socket -> do
-                  close cmSnocket socket
-                  tr <- atomically $ do
-                    connState <- readTVar connVar
-                    let connState' = TerminatedState Nothing
-                    writeTVar connVar connState'
-                    modifyTMVarPure_ stateVar $
-                      (Map.update (\connVar' ->
-                                  if eqTVar (Proxy :: Proxy m) connVar' connVar
-                                      then Nothing
-                                      else Just connVar')
-                                  peerAddr)
-                    return (mkTransition connState connState')
-                  traceCounters stateVar
-                  traceWith trTracer (TransitionTrace peerAddr tr)
+          Right Nowhere -> do
+            (reader, writer) <- newEmptyPromiseIO
 
-              )
-              $ \socket -> do
-                (reader, writer) <- newEmptyPromiseIO
-                traceWith tracer (TrConnectionNotFound provenance peerAddr)
-                addr <-
-                  case cmAddressType peerAddr of
-                    Nothing -> pure Nothing
-                    Just IPv4Address ->
-                         traverse_ (bind cmSnocket socket)
-                                   cmIPv4Address
-                      $> cmIPv4Address
-                    Just IPv6Address ->
-                         traverse_ (bind cmSnocket socket)
-                                   cmIPv6Address
-                      $> cmIPv6Address
+            (connId, connThread) <-
+              -- This section of code passes the control over socket from
+              -- `bracketOnError` which is responsible for:
+              --
+              --    * creating socket
+              --    * connecting to remote host
+              --    * obtaining local address of the connection
+              --
+              -- to the connection handler and its resource cleanup.
+              -- Both the 'bracketOnError''s resource finaliser and the
+              -- connection handler cleanup function are responsible for:
+              --
+              -- * closing the socket
+              -- * freeing the slot in connection manager state map
+              --
+              mask $ \unmask -> do
 
                 --
                 -- connect
                 --
 
-                traceWith tracer (TrConnect addr peerAddr)
-                connect cmSnocket socket peerAddr
-                  `catch` \e -> do
-                    traceWith tracer (TrConnectError addr peerAddr e)
-                    -- the handler attached by `bracketOnError` will
-                    -- reset the state
-                    throwIO e
+                (socket, connId) <-
+                  unmask $ bracketOnError
+                    (openToConnect cmSnocket peerAddr)
+                    (\socket -> do
+                        close cmSnocket socket
+                        tr <- atomically $ do
+                          connState <- readTVar connVar
+                          let connState' = TerminatedState Nothing
+                          writeTVar connVar connState'
+                          modifyTMVarPure_ stateVar $
+                            (Map.update (\connVar' ->
+                                        if eqTVar (Proxy :: Proxy m) connVar' connVar
+                                            then Nothing
+                                            else Just connVar')
+                                        peerAddr)
+                          return (mkTransition connState connState')
+                        traceCounters stateVar
+                        traceWith trTracer (TransitionTrace peerAddr tr)
 
-                (connId, connThread)
-                  <- runConnectionHandler stateVar handler
-                                          socket peerAddr writer
-                tr <- atomically $ do
-                  connState <- readTVar connVar
-                  let connState' = UnnegotiatedState provenance connId connThread
-                  writeTVar connVar connState'
-                  return (mkTransition connState connState')
+                    )
+                    $ \socket -> do
+                      traceWith tracer (TrConnectionNotFound provenance peerAddr)
+                      addr <-
+                        case cmAddressType peerAddr of
+                          Nothing -> pure Nothing
+                          Just IPv4Address ->
+                               traverse_ (bind cmSnocket socket)
+                                         cmIPv4Address
+                            $> cmIPv4Address
+                          Just IPv6Address ->
+                               traverse_ (bind cmSnocket socket)
+                                         cmIPv6Address
+                            $> cmIPv6Address
+
+                      traceWith tracer (TrConnect addr peerAddr)
+                      connect cmSnocket socket peerAddr
+                        `catch` \e -> do
+                          traceWith tracer (TrConnectError addr peerAddr e)
+                          -- the handler attached by `bracketOnError` will
+                          -- reset the state
+                          throwIO e
+                      localAddress <- getLocalAddr cmSnocket socket
+                      let connId = ConnectionId { localAddress
+                                                , remoteAddress = peerAddr
+                                                }
+                      return (socket, connId)
+
+                --
+                -- fork connection handler
+                --
+
+                connThread <-
+                  forkConnectionHandler
+                    stateVar socket connId writer handler
+                return (connId, connThread)
+
+            tr <- atomically $ do
+              connState <- readTVar connVar
+              let connState' = UnnegotiatedState provenance connId connThread
+              writeTVar connVar connState'
+              return (mkTransition connState connState')
+            traceCounters stateVar
+            traceWith trTracer (TransitionTrace peerAddr tr)
+
+            res <- atomically (readPromise reader)
+            case res of
+              Left handleError -> do
+                modifyTMVar stateVar $ \state -> do
+                  -- 'handleError' might be either a handshake negotiation
+                  -- a protocol failure (an IO exception, a timeout or
+                  -- codec failure).  In the first case we should not reset
+                  -- the connection as this is not a protocol error.
+                  atomically $ writeTVar connVar $
+                    case classifyHandleError handleError of
+                      HandshakeFailure ->
+                        TerminatingState connId connThread
+                                        (Just handleError)
+                      HandshakeProtocolViolation ->
+                        TerminatedState (Just handleError)
+
+                  return ( Map.update
+                            (\connVar' ->
+                              if eqTVar (Proxy :: Proxy m) connVar' connVar
+                                then Nothing
+                                else Just connVar')
+                            peerAddr
+                            state
+                         , Disconnected connId (Just handleError)
+                         )
+
+              -- @
+              --  Connected : ReservedOutboundState
+              --            → UnnegotiatedState Outbound
+              -- @
+              Right (handle, version) -> do
+                let dataFlow = connectionDataFlow version
+                -- We can safely overwrite the state: after successful
+                -- `connect` it's not possible to have a race condition
+                -- with any other inbound thread.  We are also guaranteed
+                -- to have exclusive access as an outbound thread.
+                transition <- atomically $ do
+                  connState <- readTVar  connVar
+                  case dataFlow of
+                    Unidirectional -> do
+                      let connState' = OutboundUniState connId connThread handle
+                      writeTVar connVar connState'
+                      return (mkTransition connState connState')
+                    Duplex -> do
+                      let connState' = OutboundDupState connId connThread handle Ticking
+                      writeTVar connVar connState'
+                      case inboundGovernorControlChannel of
+                        InResponderMode controlChannel ->
+                          newOutboundConnection controlChannel connId dataFlow handle
+                        NotInResponderMode -> return ()
+                      return (mkTransition connState connState')
                 traceCounters stateVar
-                traceWith trTracer (TransitionTrace peerAddr tr)
-
-                res <- atomically (readPromise reader)
-                case res of
-                  Left handleError -> do
-                    modifyTMVar stateVar $ \state -> do
-                      -- 'handleError' might be either a handshake negotiation
-                      -- a protocol failure (an IO exception, a timeout or
-                      -- codec failure).  In the first case we should not reset
-                      -- the connection as this is not a protocol error.
-                      atomically $ writeTVar connVar $
-                        case classifyHandleError handleError of
-                          HandshakeFailure ->
-                            TerminatingState connId connThread
-                                            (Just handleError)
-                          HandshakeProtocolViolation ->
-                            TerminatedState (Just handleError)
-
-                      return ( Map.update
-                                (\connVar' ->
-                                  if eqTVar (Proxy :: Proxy m) connVar' connVar
-                                    then Nothing
-                                    else Just connVar')
-                                peerAddr
-                                state
-                             , Disconnected connId (Just handleError)
-                             )
-
-                  -- @
-                  --  Connected : ReservedOutboundState
-                  --            → UnnegotiatedState Outbound
-                  -- @
-                  Right (handle, version) -> do
-                    let dataFlow = connectionDataFlow version
-                    -- We can safely overwrite the state: after successful
-                    -- `connect` it's not possible to have a race condition
-                    -- with any other inbound thread.  We are also guaranteed
-                    -- to have exclusive access as an outbound thread.
-                    transition <- atomically $ do
-                      connState <- readTVar  connVar
-                      case dataFlow of
-                        Unidirectional -> do
-                          let connState' = OutboundUniState connId connThread handle
-                          writeTVar connVar connState'
-                          return (mkTransition connState connState')
-                        Duplex -> do
-                          let connState' = OutboundDupState connId connThread handle Ticking
-                          writeTVar connVar connState'
-                          case inboundGovernorControlChannel of
-                            InResponderMode controlChannel ->
-                              newOutboundConnection controlChannel connId dataFlow handle
-                            NotInResponderMode -> return ()
-                          return (mkTransition connState connState')
-                    traceCounters stateVar
-                    traceWith
-                      trTracer
-                      (TransitionTrace peerAddr transition)
-                    return (Connected connId dataFlow handle)
+                traceWith
+                  trTracer
+                  (TransitionTrace peerAddr transition)
+                return (Connected connId dataFlow handle)
 
           Right (There connId) -> do
             -- We can only enter the 'There' case if there is an inbound
