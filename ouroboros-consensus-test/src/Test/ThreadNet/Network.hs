@@ -592,7 +592,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
     forkCrucialTxs clock s0 registry unblockForge lcfg getLdgr mempool txs0 =
       void $ forkLinkedThread registry "crucialTxs" $ do
         let wouldBeValid slot st tx =
-                isRight $ Exc.runExcept $ applyTx lcfg slot tx st
+                isRight $ Exc.runExcept $ applyTx lcfg DoNotIntervene slot tx st
 
             checkSt slot snap =
                 any (wouldBeValid slot (snapshotLedgerState snap)) txs0

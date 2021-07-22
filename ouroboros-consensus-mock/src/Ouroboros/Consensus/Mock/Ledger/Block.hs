@@ -428,7 +428,7 @@ type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
 instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where
-  applyTx _cfg slot tx st = do
+  applyTx _cfg _wti slot tx st = do
       st' <- updateSimpleUTxO slot tx st
       return (st', ValidatedSimpleGenTx tx)
   reapplyTx _cfg slot vtx st =
@@ -460,7 +460,7 @@ instance (Typeable p, Typeable c) => NoThunks (Validated (GenTx (SimpleBlock p c
   showTypeOf _ = show $ typeRep (Proxy @(Validated (GenTx (SimpleBlock p c))))
 
 instance HasTxs (SimpleBlock c ext) where
-  extractTxs = map (ValidatedSimpleGenTx . mkSimpleGenTx) . simpleTxs . simpleBody
+  extractTxs = map mkSimpleGenTx . simpleTxs . simpleBody
 
 instance Mock.HasMockTxs (GenTx (SimpleBlock p c)) where
   getMockTxs = Mock.getMockTxs . simpleGenTx

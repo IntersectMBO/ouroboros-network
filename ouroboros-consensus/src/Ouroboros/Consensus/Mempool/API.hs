@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Mempool.API (
   , computeMempoolCapacity
     -- * Tracing support
   , TraceEventMempool (..)
+  , addLocalTxs
   , addTxs
     -- * Re-exports
   , TxSizeInBytes
@@ -64,11 +65,11 @@ import           Ouroboros.Consensus.Util.IOLike
 -- same result whether they process transactions one by one or all in one go, so
 -- this equality holds:
 --
--- > void (tryAddTxs txs) === forM_ txs (tryAddTxs . (:[]))
--- > void (trAddTxs [x,y]) === tryAddTxs x >> void (tryAddTxs y)
+-- > void (tryAddTxs wti txs) === forM_ txs (tryAddTxs wti . (:[]))
+-- > void (trAddTxs wti [x,y]) === tryAddTxs wti x >> void (tryAddTxs wti y)
 --
--- This shows that 'tryAddTxs' is an homomorphism from '++' and '>>', which
--- informally makes these operations "distributive".
+-- This shows that @'tryAddTxs' wti@ is an homomorphism from '++' and '>>',
+-- which informally makes these operations "distributive".
 data Mempool m blk idx = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
@@ -111,7 +112,7 @@ data Mempool m blk idx = Mempool {
       -- > let prj = \case
       -- >       MempoolTxAdded vtx        -> txForgetValidated vtx
       -- >       MempoolTxRejected tx _err -> tx
-      -- > (processed, toProcess) <- tryAddTxs txs
+      -- > (processed, toProcess) <- tryAddTxs wti txs
       -- > map prj processed ++ toProcess == txs
       --
       -- Note that previously valid transaction that are now invalid with
@@ -137,7 +138,8 @@ data Mempool m blk idx = Mempool {
       -- an index of transaction hashes that have been included on the
       -- blockchain.
       --
-      tryAddTxs      :: [GenTx blk]
+      tryAddTxs      :: WhetherToIntervene
+                     -> [GenTx blk]
                      -> m ( [MempoolAddTxResult blk]
                           , [GenTx blk]
                           )
@@ -229,14 +231,33 @@ isMempoolTxRejected _                   = False
 -- This function does not sync the Mempool contents with the ledger state in
 -- case the latter changes, it relies on the background thread to do that.
 --
--- See the necessary invariants on the Haddock for 'API.tryAddTxs'.
+-- See the necessary invariants on the Haddock for 'tryAddTxs'.
 addTxs
   :: forall m blk idx. MonadSTM m
   => Mempool m blk idx
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
-addTxs mempool = \txs -> do
-    (processed, toAdd) <- tryAddTxs mempool txs
+addTxs mempool = addTxsHelper mempool DoNotIntervene
+
+-- | Variation on 'addTxs' that is more forgiving when possible
+--
+-- See 'Intervene'.
+addLocalTxs
+  :: forall m blk idx. MonadSTM m
+  => Mempool m blk idx
+  -> [GenTx blk]
+  -> m [MempoolAddTxResult blk]
+addLocalTxs mempool = addTxsHelper mempool Intervene
+
+-- | See 'addTxs'
+addTxsHelper
+  :: forall m blk idx. MonadSTM m
+  => Mempool m blk idx
+  -> WhetherToIntervene
+  -> [GenTx blk]
+  -> m [MempoolAddTxResult blk]
+addTxsHelper mempool wti = \txs -> do
+    (processed, toAdd) <- tryAddTxs mempool wti txs
     case toAdd of
       [] -> return processed
       _  -> go [processed] toAdd
@@ -259,7 +280,7 @@ addTxs mempool = \txs -> do
       -- It is possible that between the check above and the call below, other
       -- transactions are added, stealing our spot, but that's fine, we'll
       -- just recurse again without progress.
-      (added, toAdd) <- tryAddTxs mempool txs
+      (added, toAdd) <- tryAddTxs mempool wti txs
       go (added:acc) toAdd
 
 {-------------------------------------------------------------------------------

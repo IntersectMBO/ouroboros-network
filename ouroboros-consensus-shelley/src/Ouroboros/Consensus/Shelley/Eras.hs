@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE OverloadedStrings       #-}
+{-# LANGUAGE PatternSynonyms         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
@@ -22,14 +24,19 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardShelley
     -- * Shelley-based era
   , ShelleyBasedEra (..)
-  , WrapTxInBlock (..)
+  , WrapTx (..)
     -- * Type synonyms for convenience
   , EraCrypto
     -- * Re-exports
   , StandardCrypto
+    -- * Exceptions
+  , UnexpectedAlonzoLedgerErrors
   ) where
 
+import           Control.Exception (Exception, throw)
+import           Control.Monad.Except
 import           Data.Default.Class (Default)
+import qualified Data.Set as Set
 import           Data.Text (Text)
 import           GHC.Records
 import           NoThunks.Class (NoThunks)
@@ -40,8 +47,12 @@ import           Cardano.Binary (FromCBOR, ToCBOR)
 import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Alonzo (AlonzoEra)
-import qualified Cardano.Ledger.Alonzo.PParams as Alonzo
+import           Cardano.Ledger.Alonzo.PParams
+import qualified Cardano.Ledger.Alonzo.Rules.Utxo as Alonzo
+import qualified Cardano.Ledger.Alonzo.Rules.Utxos as Alonzo
+import qualified Cardano.Ledger.Alonzo.Rules.Utxow as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import           Cardano.Ledger.BaseTypes
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)
@@ -54,6 +65,11 @@ import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
 import qualified Shelley.Spec.Ledger.API as SL
+import qualified Shelley.Spec.Ledger.STS.Ledger as SL
+import qualified Shelley.Spec.Ledger.STS.Utxow as SL
+
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+                     (WhetherToIntervene (..))
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -124,36 +140,134 @@ class ( SL.ShelleyBasedEra era
       , SL.AdditionalGenesisConfig era ~ Core.TranslationContext era
       , ToCBORGroup (TxSeq era)
 
-      , Eq (Core.TxInBlock era)
-      , NoThunks (Core.TxInBlock era)
-      , Show (Core.TxInBlock era)
-
       , NoThunks (Core.TranslationContext era)
 
       , ToCBOR (Core.Witnesses era)
 
       ) => ShelleyBasedEra era where
+
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
   -- etc.
   shelleyBasedEraName :: proxy era -> Text
 
+  applyShelleyBasedTx ::
+       SL.Globals
+    -> SL.LedgerEnv    era
+    -> SL.MempoolState era
+    -> WhetherToIntervene
+    -> Core.Tx           era
+    -> Except
+         (SL.ApplyTxError era)
+         ( SL.MempoolState era
+         , SL.Validated (Core.Tx era)
+         )
+
+-- | The default implementation of 'applyShelleyBasedTx', a thin wrapper around
+-- 'SL.applyTx'
+defaultApplyShelleyBasedTx ::
+     ShelleyBasedEra era
+  => SL.Globals
+  -> SL.LedgerEnv    era
+  -> SL.MempoolState era
+  -> WhetherToIntervene
+  -> Core.Tx         era
+  -> Except
+       (SL.ApplyTxError era)
+       ( SL.MempoolState era
+       , SL.Validated (Core.Tx era)
+       )
+defaultApplyShelleyBasedTx globals ledgerEnv mempoolState _wti tx =
+    SL.applyTx
+      globals
+      ledgerEnv
+      mempoolState
+      tx
+
 instance SL.PraosCrypto c => ShelleyBasedEra (ShelleyEra c) where
   shelleyBasedEraName _ = "Shelley"
+
+  applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
 instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
   shelleyBasedEraName _ = "Allegra"
 
+  applyShelleyBasedTx = defaultApplyShelleyBasedTx
+
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
+
+  applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
 instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
   shelleyBasedEraName _ = "Alonzo"
 
+  applyShelleyBasedTx globals ledgerEnv mempoolState wti tx = do
+      (mempoolState', vtx) <-
+          (`catchError` handler)
+        $ defaultApplyShelleyBasedTx
+            globals
+            ledgerEnv
+            mempoolState
+            wti
+            tx
+
+      pure (mempoolState', vtx)
+    where
+      nubOrd = Set.toList . Set.fromList
+
+      handler e = case (wti, e) of
+        (DoNotIntervene, SL.ApplyTxError errs)
+          | flag:flags <- nubOrd [b | IncorrectClaimedFlag b <- errs] ->
+            if not (null flags)
+            then throw $ UnexpectedAlonzoLedgerErrors (flag:flags)
+            else
+            -- rectify the flag and include the transaction
+            --
+            -- This either lets the ledger punish the script author for sending
+            -- a bad script or else prevents our peer's buggy script validator
+            -- from preventing inclusion of a valid script.
+            --
+            -- TODO 'applyTx' et al needs to include a return value indicating
+            -- whether we took this branch; it's a reason to disconnect from
+            -- the peer who sent us the incorrect flag (ie Issue #3276)
+            defaultApplyShelleyBasedTx
+              globals
+              ledgerEnv
+              mempoolState
+              wti
+              tx{Alonzo.isValidating = Alonzo.IsValidating (not flag)}
+        _ -> throwError e
+               -- reject the transaction, protecting the local wallet
+
+-- not exported
+--
+-- The ledger failure we see when the transaction's claimed 'IsValidating'
+-- flag was incorrect
+pattern IncorrectClaimedFlag ::
+     Bool
+  -> SL.PredicateFailure (Core.EraRule "LEDGER" (AlonzoEra c))
+pattern IncorrectClaimedFlag claimedFlag <-
+    SL.UtxowFailure
+      (Alonzo.WrappedShelleyEraFailure
+        (SL.UtxoFailure
+          (Alonzo.UtxosFailure
+            (Alonzo.ValidationTagMismatch
+              (Alonzo.IsValidating claimedFlag
+      )))))
+
+-- | The ledger responded with Alonzo errors we were not expecting
+data UnexpectedAlonzoLedgerErrors =
+    -- | We received more than one 'Alonzo.ValidationTagMismatch'
+    --
+    -- The exception lists the 'Alonzo.IsValidating' flags we saw.
+    UnexpectedAlonzoLedgerErrors [Bool]
+  deriving (Show, Exception)
+
 {-------------------------------------------------------------------------------
-  TxInBlock wrapper
+  Tx family wrapper
 -------------------------------------------------------------------------------}
 
--- | Wrapper for partially applying 'Core.TxInBlock'
+-- | Wrapper for partially applying the 'Tx' type family
 --
 -- For generality, Consensus uses that type family as eg the index of
 -- 'Core.TranslateEra'. We thus need to partially apply it.
@@ -163,19 +277,19 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
 -- to use for previous eras. Also, we use a @Wrap@ prefix in Consensus. Hence
 -- this minor mediating definition. TODO I'm not even fully persuading myself
 -- with this justification.
-newtype WrapTxInBlock era = WrapTxInBlock {unwrapTxInBlock :: Core.TxInBlock era}
+newtype WrapTx era = WrapTx {unwrapTx :: Core.Tx era}
 
-instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) WrapTxInBlock where
-  type TranslationError (AllegraEra c) WrapTxInBlock = Core.TranslationError (AllegraEra c) SL.Tx
-  translateEra ctxt = fmap WrapTxInBlock . Core.translateEra ctxt . unwrapTxInBlock
+instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) WrapTx where
+  type TranslationError (AllegraEra c) WrapTx = Core.TranslationError (AllegraEra c) SL.Tx
+  translateEra ctxt = fmap WrapTx . Core.translateEra ctxt . unwrapTx
 
-instance ShelleyBasedEra (MaryEra c) => Core.TranslateEra (MaryEra c) WrapTxInBlock where
-  type TranslationError (MaryEra c) WrapTxInBlock = Core.TranslationError (MaryEra c) SL.Tx
-  translateEra ctxt = fmap WrapTxInBlock . Core.translateEra ctxt . unwrapTxInBlock
+instance ShelleyBasedEra (MaryEra c) => Core.TranslateEra (MaryEra c) WrapTx where
+  type TranslationError (MaryEra c) WrapTx = Core.TranslationError (MaryEra c) SL.Tx
+  translateEra ctxt = fmap WrapTx . Core.translateEra ctxt . unwrapTx
 
-instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) WrapTxInBlock where
-  type TranslationError (AlonzoEra c) WrapTxInBlock = Core.TranslationError (AlonzoEra c) Alonzo.TxInBlock
+instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) WrapTx where
+  type TranslationError (AlonzoEra c) WrapTx = Core.TranslationError (AlonzoEra c) Alonzo.Tx
   translateEra ctxt =
-        fmap (\(Alonzo.TxInBlock tx) -> WrapTxInBlock tx)
+        fmap (WrapTx . Alonzo.unTx)
       . Core.translateEra @(AlonzoEra c) ctxt
-      . Alonzo.TxInBlock . unwrapTxInBlock
+      . Alonzo.Tx . unwrapTx

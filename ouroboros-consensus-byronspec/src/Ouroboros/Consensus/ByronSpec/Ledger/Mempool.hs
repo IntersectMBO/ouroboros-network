@@ -41,7 +41,7 @@ newtype instance Validated (GenTx ByronSpecBlock) = ValidatedByronSpecGenTx {
 type instance ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
 
 instance LedgerSupportsMempool ByronSpecBlock where
-  applyTx cfg _slot tx (TickedByronSpecLedgerState tip st) =
+  applyTx cfg _wti _slot tx (TickedByronSpecLedgerState tip st) =
         fmap (\st' ->
                ( TickedByronSpecLedgerState tip st'
                , ValidatedByronSpecGenTx tx
@@ -52,7 +52,7 @@ instance LedgerSupportsMempool ByronSpecBlock where
   -- Byron spec doesn't have multiple validation modes
   reapplyTx cfg slot vtx st =
         fmap fst
-      $ applyTx cfg slot (forgetValidatedByronSpecGenTx vtx) st
+      $ applyTx cfg DoNotIntervene slot (forgetValidatedByronSpecGenTx vtx) st
 
   -- Dummy values, as these are not used in practice.
   maxTxCapacity = const maxBound

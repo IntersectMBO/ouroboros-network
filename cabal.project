@@ -164,7 +164,6 @@ constraints:
   -- constraint from dependent-sum-template (which is the library we actually use).
   , dependent-sum > 0.6.2.0
 
-
 -- ---------------------------------------------------------
 -- The "cabal" wrapper script provided by nix-shell will cut off / restore the remainder of this file
 -- in order to force usage of nix provided dependencies for `source-repository-package`s.
@@ -196,8 +195,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 0f409343c3655c4bacd7fab385d392ec5d5cca98
-  --sha256: 0js76inb7avg8c39c9k2zsr77sycg2vadylgvsswdsba808p6hr9
+  tag: eb58eebc16ee898980c83bc325ab37a2c77b2414
+  --sha256: 1v5algrsa3g6lphl1nfih54xkc2xa5q1yfa3kgclcp6sxj1yjnnl
   subdir:
     binary
     binary/test
@@ -209,8 +208,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 6b0fca7a73c317f3af7c14dd4dc38178cc78a6c8
-  --sha256: 0570g723ac8wf0zha37nsh4n0809rqqfx4j9i80hqkq18cysrglr
+  tag: 136967cd3700f34c57cd70be7aceca8a5efca485
+  --sha256: 020sm2wsmc9qhkpmjz0qi8wl6w95lq5g0m1gvlivb0kc78w3lmhd
   subdir:
     alonzo/impl
     alonzo/test

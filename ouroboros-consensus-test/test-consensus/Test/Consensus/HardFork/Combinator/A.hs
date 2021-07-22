@@ -216,7 +216,7 @@ instance ApplyBlock (LedgerState BlockA) BlockA where
   applyLedgerBlock cfg blk =
         fmap setTip
       . repeatedlyM
-          (fmap fst .: applyTx cfg (blockSlot blk))
+          (fmap fst .: applyTx cfg DoNotIntervene (blockSlot blk))
           (blkA_body blk)
     where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
@@ -313,12 +313,12 @@ newtype instance Validated (GenTx BlockA) = ValidatedGenTxA { forgetValidatedGen
 type instance ApplyTxErr BlockA = Void
 
 instance LedgerSupportsMempool BlockA where
-  applyTx _ sno tx@(TxA _ payload) (TickedLedgerStateA st) =
+  applyTx _ _wti sno tx@(TxA _ payload) (TickedLedgerStateA st) =
       case payload of
         InitiateAtoB -> do
           return (TickedLedgerStateA $ st { lgrA_transition = Just sno }, ValidatedGenTxA tx)
 
-  reapplyTx cfg slot = fmap fst .: (applyTx cfg slot . forgetValidatedGenTxA)
+  reapplyTx cfg slot = fmap fst .: (applyTx cfg DoNotIntervene slot . forgetValidatedGenTxA)
 
   maxTxCapacity _ = maxBound
   txInBlockSize _ = 0
@@ -474,7 +474,7 @@ instance SingleEraBlock BlockA where
             (boundEpoch eraStart)
 
 instance HasTxs BlockA where
-  extractTxs = fmap ValidatedGenTxA . blkA_body
+  extractTxs = blkA_body
 
 {-------------------------------------------------------------------------------
   Condense

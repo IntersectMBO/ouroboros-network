@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto,
                      TPraosState (..))

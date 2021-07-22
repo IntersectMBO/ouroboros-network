@@ -257,7 +257,7 @@ data instance Validated (GenTx BlockB)
 type instance ApplyTxErr BlockB = Void
 
 instance LedgerSupportsMempool BlockB where
-  applyTx   = \_ _ tx -> case tx of {}
+  applyTx   = \_ _ _wti tx -> case tx of {}
   reapplyTx = \_ _ vtx -> case vtx of {}
 
   maxTxCapacity _ = maxBound

@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import qualified Shelley.Spec.Ledger.API as SL
 
-import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
+import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Protocol

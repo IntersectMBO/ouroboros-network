@@ -9,6 +9,7 @@ module Ouroboros.Consensus.Ledger.SupportsMempool (
   , LedgerSupportsMempool (..)
   , TxId
   , Validated
+  , WhetherToIntervene (..)
   ) where
 
 import           Control.Monad.Except
@@ -32,6 +33,28 @@ data family GenTx blk :: Type
 -- error type as when updating it with a block
 type family ApplyTxErr blk :: Type
 
+-- | A flag indicating whether the mempool should reject a valid-but-problematic
+-- transaction, in order to to protect its author from penalties etc
+--
+-- The primary example is that, as of the Alonzo ledger, a valid transaction can
+-- carry an invalid script. If a remote peer sends us such a transaction (over a
+-- Node-to-Node protocol), we include it in a block so that the ledger will
+-- penalize them them for the invalid script: they wasted our resources by
+-- forcing us to run the script to determine it's invalid. But if our local
+-- wallet -- which we trust by assumption -- sends us such a transaction (over a
+-- Node-to-Client protocol), we would be a good neighbor by rejecting that
+-- transaction: they must have made some sort of mistake, and we don't want the
+-- ledger to penalize them.
+data WhetherToIntervene
+  = DoNotIntervene
+    -- ^ We do not trust remote peers, so if a problematic-yet-valid transaction
+    -- arrives over NTN, we accept it; it will end up in a block and the ledger
+    -- will penalize them for it.
+  | Intervene
+    -- ^ We trust local clients, so if a problematic-yet-valid transaction
+    -- arrives over NTC, we reject it in order to avoid the ledger penalizing
+    -- them for it.
+
 class ( UpdateLedger blk
       , NoThunks (GenTx blk)
       , NoThunks (Validated (GenTx blk))
@@ -47,6 +70,7 @@ class ( UpdateLedger blk
 
   -- | Apply an unvalidated transaction
   applyTx :: LedgerConfig blk
+          -> WhetherToIntervene
           -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
           -> TickedLedgerState blk
@@ -127,4 +151,4 @@ type GenTxId blk = TxId (GenTx blk)
 -- (and cannot, because we cannot give an instance for the dual ledger).
 class HasTxs blk where
   -- | Return the transactions part of the given block in no particular order.
-  extractTxs :: blk -> [Validated (GenTx blk)]
+  extractTxs :: blk -> [GenTx blk]

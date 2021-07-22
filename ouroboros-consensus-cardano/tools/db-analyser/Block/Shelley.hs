@@ -45,7 +45,7 @@ instance ( ShelleyBasedEra era
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body -> sum $ fmap countOutputs (CL.fromTxSeq @era body)
     where
-      countOutputs :: CL.TxInBlock era -> Int
+      countOutputs :: Core.Tx era -> Int
       countOutputs = length . getField @"outputs" . getField @"body"
 
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of

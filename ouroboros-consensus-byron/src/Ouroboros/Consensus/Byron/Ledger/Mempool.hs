@@ -130,7 +130,7 @@ instance LedgerSupportsMempool ByronBlock where
     where
       tx' = toMempoolPayload tx
 
-  applyTx cfg slot tx st =
+  applyTx cfg _wti slot tx st =
           (\st' -> (st', ValidatedByronTx tx))
       <$> applyByronGenTx validationMode cfg slot tx st
     where
@@ -172,7 +172,7 @@ instance HasTxs ByronBlock where
   extractTxs blk = case byronBlockRaw blk of
     -- EBBs don't contain transactions
     CC.ABOBBoundary _ebb    -> []
-    CC.ABOBBlock regularBlk -> ValidatedByronTx . fromMempoolPayload <$>
+    CC.ABOBBlock regularBlk -> fromMempoolPayload <$>
         maybeToList proposal <> votes <> dlgs <> txs
       where
         body = CC.blockBody regularBlk

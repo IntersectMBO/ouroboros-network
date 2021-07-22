@@ -212,7 +212,7 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
     capacity <- atomically (getCapacity mempool)
     curSize <- msNumBytes . snapshotMempoolSize <$>
       atomically (getSnapshot mempool)
-    res@(processed, unprocessed) <- tryAddTxs mempool (map fst txsToAdd)
+    res@(processed, unprocessed) <- tryAddTxs mempool DoNotIntervene (map fst txsToAdd)
     return $
       counterexample ("Initial size: " <> show curSize)    $
       classify (null processed)   "no transactions added"  $
@@ -826,7 +826,7 @@ withTestMempool setup@TestSetup {..} prop =
                            , snapshotSlotNo
                            } =
         case runExcept $ repeatedlyM
-               (fmap fst .: applyTx testLedgerConfig snapshotSlotNo)
+               (fmap fst .: applyTx testLedgerConfig DoNotIntervene snapshotSlotNo)
                txs
                (TickedSimpleLedgerState ledgerState) of
           Right _ -> property True

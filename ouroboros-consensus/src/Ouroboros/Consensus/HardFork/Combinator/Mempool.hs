@@ -102,6 +102,7 @@ instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
       $ applyHelper
           ModeReapply
           cfg
+          DoNotIntervene
           slot
           (WrapValidatedGenTx vtx)
           tls
@@ -143,6 +144,7 @@ data ApplyResult xs blk = ApplyResult {
 applyHelper :: forall xs txIn. CanHardFork xs
   => ApplyHelperMode txIn
   -> LedgerConfig (HardForkBlock xs)
+  -> WhetherToIntervene
   -> SlotNo
   -> txIn (HardForkBlock xs)
   -> TickedLedgerState (HardForkBlock xs)
@@ -153,6 +155,7 @@ applyHelper :: forall xs txIn. CanHardFork xs
       )
 applyHelper mode
             HardForkLedgerConfig{..}
+            wti
             slot
             tx
             (TickedHardForkLedgerState transition hardForkState) =
@@ -235,7 +238,7 @@ applyHelper mode
         $ do
             let lcfg = unwrapLedgerConfig cfg
             (st', vtx) <- case mode of
-              ModeApply   -> applyTx lcfg slot tx' st
+              ModeApply   -> applyTx lcfg wti slot tx' st
               ModeReapply -> do
                   let vtx' = unwrapValidatedGenTx tx'
                   st' <- reapplyTx lcfg slot vtx' st
@@ -276,8 +279,8 @@ instance All HasTxs xs => HasTxs (HardForkBlock xs) where
            HasTxs blk
         => Index xs blk
         -> I blk
-        -> K [Validated (GenTx (HardForkBlock xs))] blk
-      aux index = K . map (injectNS' (Proxy @WrapValidatedGenTx) index) . extractTxs . unI
+        -> K [GenTx (HardForkBlock xs)] blk
+      aux index = K . map (injectNS' (Proxy @GenTx) index) . extractTxs . unI
 
 {-------------------------------------------------------------------------------
   Auxiliary
