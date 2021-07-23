@@ -125,6 +125,17 @@ test-suite test
                      , ouroboros-consensus-cardano
                      , ouroboros-consensus-cardano-test
 
+
+
+
+                     , typed-protocols-examples
+                     , io-classes
+
+
+
+
+
+
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat

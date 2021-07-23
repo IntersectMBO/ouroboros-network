@@ -1,4 +1,62 @@
+
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
+
+
+
 module Main (main) where
+
+import Prelude
+
+import Data.Function
+    ( (&) )
+import Data.Proxy
+    ( Proxy (..) )
+
+import Control.Monad.Class.MonadST
+    ( MonadST )
+import Network.TypedProtocol.Codec
+    ( Codec (..), PeerHasAgency (..), runDecoder )
+import Ouroboros.Consensus.Byron.Ledger.Config
+    ( CodecConfig (..) )
+import Ouroboros.Consensus.Cardano
+    ( CardanoBlock )
+import Ouroboros.Consensus.Cardano.Block
+    ( CodecConfig (..), HardForkBlock (..) )
+import Ouroboros.Consensus.Network.NodeToClient
+    ( ClientCodecs, Codecs' (..), clientCodecs )
+import Ouroboros.Consensus.Node.NetworkProtocolVersion
+    ( SupportedNetworkProtocolVersion (..) )
+import Ouroboros.Consensus.Shelley.Ledger.Config
+    ( CodecConfig (..) )
+import Ouroboros.Consensus.Shelley.Protocol
+    ( StandardCrypto )
+import Ouroboros.Network.Block
+    ( Tip (..) )
+import Ouroboros.Network.NodeToClient
+    ( NodeToClientVersion (..) )
+import Ouroboros.Network.Protocol.ChainSync.Type
+    ( Message (..), ServerHasAgency (..), TokNextKind (..) )
+import Test.Consensus.Cardano.Generators
+    ()
+
+-- cardano-ledger-byron
+import Cardano.Chain.Slotting
+    ( EpochSlots (..) )
+
+-- containers
+import Data.Map.Strict
+    ( (!) )
+
+-- QuickCheck
+import Test.Tasty.QuickCheck
+import Test.QuickCheck.Monadic
+    ( assert, monadicIO, monitor, run )
+
+
+
+
 
 import           Cardano.Crypto.Libsodium (sodiumInit)
 
@@ -26,4 +84,48 @@ tests =
   , Test.ThreadNet.Cardano.tests
   , Test.ThreadNet.MaryAlonzo.tests
   , Test.ThreadNet.ShelleyAllegra.tests
+  , testProperty "adhoc" spec
   ]
+
+spec :: Property
+spec = do
+        forAll ((,) <$> genBlock <*> genTip) $ \(blk, tip) ->
+            let
+                codec = codecs (EpochSlots 432000) NodeToClientV_9 & cChainSyncCodec
+                msg = MsgRollForward blk tip
+                agency = ServerAgency (TokNext TokCanAwait)
+             in
+                monadicIO $ do
+                    decoder <- run $ decode codec agency
+                    run (runDecoder [encode codec agency msg] decoder) >>= \case
+                        Right{} -> assert True
+                        Left e  -> monitor (counterexample (show e)) >> assert False
+
+type Block = CardanoBlock StandardCrypto
+
+codecs
+    :: (MonadST m)
+    => EpochSlots
+    -> NodeToClientVersion
+    -> ClientCodecs Block m
+codecs epochSlots nodeToClientV =
+    clientCodecs cfg (supportedVersions ! nodeToClientV) nodeToClientV
+  where
+    supportedVersions = supportedNodeToClientVersions (Proxy @Block)
+    cfg = CardanoCodecConfig byron shelley allegra mary alonzo
+      where
+        byron   = ByronCodecConfig epochSlots
+        shelley = ShelleyCodecConfig
+        allegra = ShelleyCodecConfig
+        mary    = ShelleyCodecConfig
+        alonzo  = ShelleyCodecConfig
+
+genBlock :: Gen Block
+genBlock =
+    BlockAlonzo <$> arbitrary
+
+genTip :: Gen (Tip Block)
+genTip = frequency
+    [ (1, pure TipGenesis)
+    , (10, Tip <$> arbitrary <*> arbitrary <*> arbitrary)
+    ]
