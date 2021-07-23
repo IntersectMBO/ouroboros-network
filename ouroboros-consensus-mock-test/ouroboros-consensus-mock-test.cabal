@@ -62,9 +62,7 @@ test-suite test
                        Test.ThreadNet.Praos
 
   build-depends:       base
-                     , binary
                      , bytestring
-                     , cardano-crypto-class
                      , cardano-slotting
                      , cborg
                      , containers

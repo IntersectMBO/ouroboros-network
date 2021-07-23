@@ -33,27 +33,18 @@ library
                        Test.ThreadNet.TxGen.Mary
 
   build-depends:       base
-                     , bytestring
-                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
-                     , cardano-prelude
                      , cardano-slotting
-                     , cborg
                      , containers
-                     , hedgehog-quickcheck
                      , mtl
                      , QuickCheck
                      , sop-core
                      , strict-containers
-                     , tasty
-                     , tasty-quickcheck
-                     , time
 
                      , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-byron
-                     , cardano-ledger-byron-test
                      , cardano-ledger-core
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
@@ -93,27 +84,20 @@ test-suite test
 
   build-depends:       base
                      , bytestring
-                     , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-wrapper
                      , cardano-slotting
                      , cborg
                      , containers
                      , filepath
-                     , hedgehog-quickcheck
-                     , mtl
                      , QuickCheck
                      , sop-core
                      , tasty
                      , tasty-quickcheck
-                     , time
 
                      , cardano-ledger-core
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
-                     , cardano-ledger-byron-test
                      , shelley-spec-ledger
-                     , shelley-spec-ledger-test
 
                      , ouroboros-network
                      , ouroboros-consensus

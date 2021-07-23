@@ -25,7 +25,6 @@ library
                        ouroboros-consensus,
                        ouroboros-network,
                        ouroboros-network-framework,
-                       typed-protocols,
                        network-mux
 
   ghc-options:         -Wall

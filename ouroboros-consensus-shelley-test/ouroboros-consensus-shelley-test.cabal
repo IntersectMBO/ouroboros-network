@@ -30,21 +30,14 @@ library
 
   build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11
-                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-ledger-core
-                     , cardano-prelude
                      , cardano-slotting
                      , containers        >=0.5   && <0.7
-                     , data-default-class
                      , generic-random
-                     , hedgehog-quickcheck
-                     , iproute
                      , quiet             >=0.2   && <0.3
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
-                     , time
-                     , serialise         >=0.2   && <0.3
                      , strict-containers
                      , transformers
 
@@ -84,22 +77,18 @@ test-suite test
 
   build-depends:       base
                      , bytestring
-                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-slotting
                      , cborg
                      , containers
                      , filepath
                      , QuickCheck
-                     , time
                      , tasty
-                     , tasty-hunit
                      , tasty-quickcheck
 
                        -- cardano-ledger-specs
                      , cardano-ledger-core
                      , shelley-spec-ledger
-                     , shelley-spec-ledger-test
 
                      , ouroboros-network
                      , ouroboros-consensus

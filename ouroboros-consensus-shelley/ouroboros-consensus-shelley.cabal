@@ -51,9 +51,7 @@ library
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
-                     , cardano-crypto-praos
                      , cardano-ledger-core
-                     , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
@@ -69,7 +67,6 @@ library
                      , cardano-ledger-alonzo
                      , cardano-ledger-shelley-ma
                      , shelley-spec-ledger
-                     , shelley-spec-non-integral
                      , small-steps
 
                      , ouroboros-network
