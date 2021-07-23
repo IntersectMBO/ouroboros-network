@@ -1,4 +1,4 @@
-index-state: 2021-02-15T00:00:00Z
+index-state: 2021-04-30T00:00:00Z
 
 packages: ./typed-protocols
           ./typed-protocols-examples
@@ -177,8 +177,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: bb4ed71ba8e587f672d06edf9d2e376f4b055555
-  --sha256: 00h10l5mmiza9819p9v5q5749nb9pzgi20vpzpy1d34zmh6gf1cj
+  tag: fd773f7a58412131512b9f694ab95653ac430852
+  --sha256: 02jddik1yw0222wd6q0vv10f7y8rdgrlqaiy83ph002f9kjx7mh6
   subdir:
     cardano-prelude
     cardano-prelude-test
@@ -186,8 +186,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 0f409343c3655c4bacd7fab385d392ec5d5cca98
-  --sha256: 0js76inb7avg8c39c9k2zsr77sycg2vadylgvsswdsba808p6hr9
+  tag: b6a215c42a28dc8b71b42946fe30256a333d34af
+  --sha256: 1l9nqsg6kfkfadlbvyl4afdf8v408zf0fn6dkihqf56g2mnk4i04
   subdir:
     binary
     binary/test
@@ -222,13 +222,20 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: c89e13e66c5bef628a1f7ea3a3732951be8be8ba
-  --sha256: 0hdck39i4yv656phxjy5ppqgzrq7x3q4b5rf8vj7hrzcs0aggl8r
+  tag: 523f349f3d68db07c98150734793ed7003d1f562
+  --sha256: 0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps
   subdir:
     plutus-ledger-api
     plutus-tx
     plutus-core
     prettyprinter-configurable
+    word-array
+
+source-repository-package
+  type: git
+  location: https://github.com/Quid2/flat.git
+  tag: 95e5d7488451e43062ca84d5376b3adcc465f1cd
+  --sha256: 06l31x3y93rjpryvlxnpsyq2zyxvb0z6lik6yq2fvh36i5zwvwa3
 
 source-repository-package
   type: git
@@ -239,5 +246,5 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-crypto
-  tag: f73079303f663e028288f9f4a9e08bcca39a923e
-  --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
+  tag: ce8f1934e4b6252084710975bd9bbc0a4648ece4
+  --sha256: 1v2laq04piyj511b2m77hxjh9l1yd6k9kc7g6bjala4w3zdwa4ni
