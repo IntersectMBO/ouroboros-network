@@ -1,4 +1,5 @@
 {-# LANGUAGE ExplicitNamespaces  #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -22,6 +23,9 @@ module Control.Monad.IOSim (
   -- * Simulation trace
   type SimTrace,
   Trace (Cons, Nil, Trace, SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock),
+  ppTrace,
+  ppTrace_,
+  ppEvents,
   SimResult(..),
   SimEvent(..),
   SimEventType(..),
@@ -57,7 +61,7 @@ import           Data.List (intercalate)
 import           Data.Bifoldable
 import           Data.Typeable (Typeable)
 
-import           Data.List.Trace
+import           Data.List.Trace (Trace (..))
 
 import           Control.Exception (throw)
 
@@ -243,6 +247,19 @@ traceEvents (SimTrace time tid tlbl event t) = (time, tid, tlbl, event)
                                              : traceEvents t
 traceEvents _                                = []
 
+ppEvents :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+         -> String
+ppEvents events =
+    intercalate "\n"
+      [ ppSimEvent width
+                   SimEvent {seTime, seThreadId, seThreadLabel, seType }
+      | (seTime, seThreadId, seThreadLabel, seType) <- events
+      ]
+  where
+    width = maximum
+              [ maybe 0 length threadLabel
+              | (_, _, threadLabel, _) <- events
+              ]
 
 
 -- | See 'runSimTraceST' below.

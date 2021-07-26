@@ -2,6 +2,7 @@
 
 module Data.List.Trace
   ( Trace (..)
+  , ppTrace
   , toList
   , fromList
   , head
@@ -56,6 +57,12 @@ toList = bifoldr (\_ bs -> bs) (:) []
 
 fromList :: a -> [b] -> Trace a b
 fromList a = foldr Cons (Nil a)
+
+-- | Pretty print an 'Trace'.
+--
+ppTrace :: (a -> String) -> (b -> String) -> Trace a b -> String
+ppTrace sa  sb (Cons b bs) = sb b ++ "\n" ++ ppTrace sa sb bs
+ppTrace sa _sb (Nil a)     = sa a
 
 instance Bifunctor Trace where
     bimap f g (Cons b bs) = Cons (g b) (bimap f g bs)

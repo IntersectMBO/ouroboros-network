@@ -44,6 +44,9 @@ module Control.Monad.IOSim.Internal (
   SimResult (..),
   SimEventType (..),
   TraceEvent,
+  ppTrace,
+  ppTrace_,
+  ppSimEvent,
   liftST,
   execReadTVar
 
@@ -51,18 +54,22 @@ module Control.Monad.IOSim.Internal (
 
 import           Prelude hiding (read)
 
+import           Data.Bifoldable
+import           Data.Bifunctor
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Typeable (Typeable)
+import           Text.Printf
 import           Quiet (Quiet (..))
 import           GHC.Generics (Generic)
 
@@ -600,6 +607,21 @@ data SimEvent = SimEvent {
     seThreadLabel :: !(Maybe ThreadLabel),
     seType        :: !SimEventType
   }
+  deriving Generic
+  deriving Show via Quiet SimEvent
+
+ppSimEvent :: Int -- ^ width of thread label
+           -> SimEvent
+           -> String
+ppSimEvent d SimEvent {seTime, seThreadId, seThreadLabel, seType} =
+    printf "%-24s - %-13s %-*s - %s"
+           (show seTime)
+           (show seThreadId)
+           d
+           threadLabel
+           (show seType)
+  where
+    threadLabel = fromMaybe "" seThreadLabel
 
 data SimResult a
     = MainReturn    !Time a             ![Labelled ThreadId]
@@ -609,6 +631,22 @@ data SimResult a
 
 
 type SimTrace a = Trace.Trace (SimResult a) SimEvent
+
+-- | Pretty print simulation trace.
+--
+ppTrace :: Show a => SimTrace a -> String
+ppTrace tr = Trace.ppTrace
+               show
+               (ppSimEvent (bimaximum (bimap (const 0) (maybe 0 length . seThreadLabel) tr)))
+               tr
+
+-- | Like 'ppTrace' but does not show the result value.
+--
+ppTrace_ :: SimTrace a -> String
+ppTrace_ tr = Trace.ppTrace
+                (const "")
+                (ppSimEvent (bimaximum (bimap (const 0) (maybe 0 length . seThreadLabel) tr)))
+                tr
 
 pattern Trace :: Time -> ThreadId -> Maybe ThreadLabel -> SimEventType -> SimTrace a
               -> SimTrace a
