@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -20,7 +21,11 @@ module Control.Monad.IOSim (
   unshareClock,
   -- * Simulation trace
   Trace,
+  ppTrace,
+  ppTrace',
+  ppEvents,
   Octopus (Trace, TraceMainReturn, TraceMainException, TraceDeadlock),
+  ppOctopus,
   Value(..),
   EventCtx(..),
   TraceEvent(..),
@@ -63,7 +68,7 @@ import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 
 import           Control.Monad.IOSim.Internal
-import           Data.List.Octopus
+import           Data.List.Octopus (Octopus (..), ppOctopus)
 
 
 selectTraceEvents
@@ -240,6 +245,19 @@ traceEvents (Trace time tid tlbl event t) = (time, tid, tlbl, event)
                                           : traceEvents t
 traceEvents _                             = []
 
+ppEvents :: [(Time, ThreadId, Maybe ThreadLabel, TraceEvent)]
+         -> String
+ppEvents events =
+    intercalate "\n"
+      [ ppEventCtx width
+                   EventCtx {ecTime, ecThreadId, ecThreadLabel, ecTraceEvent }
+      | (ecTime, ecThreadId, ecThreadLabel, ecTraceEvent) <- events
+      ]
+  where
+    width = maximum
+              [ maybe 0 length threadLabel
+              | (_, _, threadLabel, _) <- events
+              ]
 
 
 -- | See 'runSimTraceST' below.

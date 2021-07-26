@@ -2,6 +2,7 @@
 
 module Data.List.Octopus
   ( Octopus (..)
+  , ppOctopus
   , toList
   , fromList
   , head
@@ -56,6 +57,12 @@ toList = bifoldr (\_ bs -> bs) (:) []
 
 fromList :: a -> [b] -> Octopus a b
 fromList a = foldr Cons (Nil a)
+
+-- | Pretty print an 'Octopus'.
+--
+ppOctopus :: (a -> String) -> (b -> String) ->  Octopus a b -> String
+ppOctopus sa  sb (Cons b bs) = sb b ++ "\n" ++ ppOctopus sa sb bs
+ppOctopus sa _sb (Nil a)     = sa a
 
 instance Bifunctor Octopus where
     bimap f g (Cons b bs) = Cons (g b) (bimap f g bs)
