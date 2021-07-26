@@ -38,7 +38,11 @@ module Control.Monad.IOSim.Internal (
   ThreadId,
   ThreadLabel,
   Labelled (..),
+  -- * Simulation trace
   Trace,
+  ppTrace,
+  ppTrace',
+  ppEventCtx,
   Octopus (Trace, TraceMainReturn, TraceMainException, TraceDeadlock),
   EventCtx (..),
   Value (..),
@@ -49,19 +53,23 @@ module Control.Monad.IOSim.Internal (
 
 import           Prelude hiding (read)
 
+import           Data.Bifoldable
+import           Data.Bifunctor
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
 import           Data.Function (on)
 import qualified Data.List as List
-import           Data.List.Octopus (Octopus (..))
+import           Data.List.Octopus (Octopus (..), ppOctopus)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Typeable (Typeable)
+import           Text.Printf
 import           Quiet (Quiet (..))
 import           GHC.Generics (Generic)
 
@@ -594,11 +602,26 @@ labelledThreads threadMap =
 -- 'selectTraceEventsDynamic' and 'printTraceEventsSay'.
 --
 data EventCtx = EventCtx {
-    ecTime        :: !Time,
-    ecThreadId    :: !ThreadId,
-    ecThreadLabel :: !(Maybe ThreadLabel),
-    ecTraceEvent  :: !TraceEvent
+    ecTime        :: Time,
+    ecThreadId    :: ThreadId,
+    ecThreadLabel :: (Maybe ThreadLabel),
+    ecTraceEvent  :: TraceEvent
   }
+  deriving Generic
+  deriving Show via Quiet EventCtx
+
+ppEventCtx :: Int -- ^ width of thread label
+           -> EventCtx
+           -> String
+ppEventCtx d EventCtx {ecTime, ecThreadId, ecThreadLabel, ecTraceEvent} =
+    printf "%-24s - %-13s %-*s - %s"
+           (show ecTime)
+           (show ecThreadId)
+           d
+           threadLabel
+           (show ecTraceEvent)
+  where
+    threadLabel = fromMaybe "" ecThreadLabel
 
 data Value a
     = MainReturn    !Time a             ![Labelled ThreadId]
@@ -608,6 +631,20 @@ data Value a
 
 
 type Trace a = Octopus (Value a) EventCtx
+
+-- | Pretty print simulation trace.
+--
+ppTrace :: Show a => Trace a -> String
+ppTrace tr = ppOctopus show
+                       (ppEventCtx (bimaximum (bimap (const 0) (maybe 0 length . ecThreadLabel) tr)))
+                       tr
+
+-- | Like 'ppTrace' but does not show the result value.
+--
+ppTrace' :: Trace a -> String
+ppTrace' tr = ppOctopus (const "")
+                        (ppEventCtx (bimaximum (bimap (const 0) (maybe 0 length . ecThreadLabel) tr)))
+                        tr
 
 pattern Trace :: Time -> ThreadId -> Maybe ThreadLabel -> TraceEvent -> Trace a
               -> Trace a
