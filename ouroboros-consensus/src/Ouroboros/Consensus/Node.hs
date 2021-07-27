@@ -35,7 +35,6 @@ module Ouroboros.Consensus.Node (
   , IPSubscriptionTarget (..)
   , LastShutDownWasClean (..)
   , LowLevelRunNodeArgs (..)
-  , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
   , NodeKernel (..)
   , NodeKernelArgs (..)
@@ -502,7 +501,6 @@ mkNodeKernelArgs
       , blockForging
       , initChainDB             = nodeInitChainDB
       , blockFetchSize          = estimateBlockSize
-      , maxTxCapacityOverride   = NoMaxTxCapacityOverride
       , mempoolCapacityOverride = NoMempoolCapacityBytesOverride
       , miniProtocolParameters  = defaultMiniProtocolParameters
       , blockFetchConfiguration = defaultBlockFetchConfiguration
@@ -625,7 +623,6 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
     -- Consensus Team, with input from Node Team)
   , srnTraceChainDB                :: Tracer m (ChainDB.TraceEvent blk)
     -- ^ ChainDB Tracer
-  , srnMaxTxCapacityOverride       :: MaxTxCapacityOverride blk
   }
 
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
@@ -702,12 +699,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
          NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
     llrnCustomiseNodeKernelArgs =
-        overrideMaxTxCapacityOverride
-      . (overBlockFetchConfiguration modifyBlockFetchConfiguration)
+        overBlockFetchConfiguration modifyBlockFetchConfiguration
       where
-        overrideMaxTxCapacityOverride args = args {
-              maxTxCapacityOverride = srnMaxTxCapacityOverride
-            }
         modifyBlockFetchConfiguration =
             maybe id
               (\mc bfc -> bfc { bfcMaxConcurrencyDeadline = mc })

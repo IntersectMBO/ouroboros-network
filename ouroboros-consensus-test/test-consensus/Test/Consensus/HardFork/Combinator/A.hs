@@ -284,7 +284,7 @@ blockForgingA = BlockForging {
    , canBeLeader      = ()
    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
    , checkCanForge    = \_ _ _ _ _ -> return ()
-   , forgeBlock       = \cfg bno slot st _maxTxCapacityOverride txs proof -> return $
+   , forgeBlock       = \cfg bno slot st txs proof -> return $
        forgeBlockA cfg bno slot st (fmap txForgetValidated txs) proof
    }
 
@@ -320,7 +320,7 @@ instance LedgerSupportsMempool BlockA where
 
   reapplyTx cfg slot = fmap fst .: (applyTx cfg DoNotIntervene slot . forgetValidatedGenTxA)
 
-  maxTxCapacity _ = maxBound
+  txsMaxBytes   _ = maxBound
   txInBlockSize _ = 0
 
   txForgetValidated = forgetValidatedGenTxA

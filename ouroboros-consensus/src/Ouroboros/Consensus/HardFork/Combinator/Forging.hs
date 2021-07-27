@@ -291,7 +291,6 @@ hardForkForgeBlock ::
   -> BlockNo
   -> SlotNo
   -> TickedLedgerState (HardForkBlock xs)
-  -> MaxTxCapacityOverride (HardForkBlock xs)
   -> [Validated (GenTx (HardForkBlock xs))]
   -> HardForkIsLeader xs
   -> m (HardForkBlock xs)
@@ -300,16 +299,14 @@ hardForkForgeBlock blockForging
                    bno
                    sno
                    (TickedHardForkLedgerState transition ledgerState)
-                   maxTxCapacityOverrides
                    txs
                    isLeader =
         fmap (HardForkBlock . OneEraBlock)
       $ hsequence
-      $ hizipWith4
+      $ hizipWith3
           forgeBlockOne
           cfgs
           (OptNP.toNP blockForging)
-          (hardForkMaxTxCapacityOverrideToNP maxTxCapacityOverrides)
       $ injectValidatedTxs (map (getOneEraValidatedGenTx . getHardForkValidatedGenTx) txs)
       -- We know both NSs must be from the same era, because they were all
       -- produced from the same 'BlockForging'. Unfortunately, we can't enforce
@@ -357,7 +354,6 @@ hardForkForgeBlock blockForging
          Index xs blk
       -> TopLevelConfig blk
       -> (Maybe :.: BlockForging m) blk
-      -> MaxTxCapacityOverride blk
       -> Product
            (Product
               WrapIsLeader
@@ -368,7 +364,6 @@ hardForkForgeBlock blockForging
     forgeBlockOne index
                   cfg'
                   (Comp mBlockForging')
-                  mxTxCap
                   (Pair
                     (Pair (WrapIsLeader isLeader') (Comp ledgerState'))
                     (Comp txs')) =
@@ -380,6 +375,5 @@ hardForkForgeBlock blockForging
           bno
           sno
           ledgerState'
-          mxTxCap
           (map unwrapValidatedGenTx txs')
           isLeader'

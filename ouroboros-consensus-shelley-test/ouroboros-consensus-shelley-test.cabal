@@ -71,6 +71,7 @@ test-suite test
   hs-source-dirs:      test
   main-is:             Main.hs
   other-modules:
+                       Test.Consensus.Shelley.Coherence
                        Test.Consensus.Shelley.Golden
                        Test.Consensus.Shelley.Serialisation
                        Test.ThreadNet.Shelley
@@ -87,6 +88,8 @@ test-suite test
                      , tasty-quickcheck
 
                        -- cardano-ledger-specs
+                     , cardano-ledger-alonzo
+                     , cardano-ledger-alonzo-test
                      , cardano-ledger-core
                      , shelley-spec-ledger
 

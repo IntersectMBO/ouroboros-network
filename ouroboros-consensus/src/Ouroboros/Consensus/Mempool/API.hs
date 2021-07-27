@@ -324,7 +324,7 @@ newtype MempoolCapacityBytes = MempoolCapacityBytes {
   deriving (Eq, Show, NoThunks)
 
 -- | An override for the default 'MempoolCapacityBytes' which is 2x the
--- maximum transaction capacity (see 'MaxTxCapacityOverride')
+-- maximum transaction capacity
 data MempoolCapacityBytesOverride
   = NoMempoolCapacityBytesOverride
     -- ^ Use 2x the maximum transaction capacity of a block. This will change
@@ -345,7 +345,7 @@ computeMempoolCapacity st = \case
     NoMempoolCapacityBytesOverride        -> noOverride
     MempoolCapacityBytesOverride override -> override
   where
-    noOverride = MempoolCapacityBytes (maxTxCapacity st * 2)
+    noOverride = MempoolCapacityBytes (txsMaxBytes st * 2)
 
 {-------------------------------------------------------------------------------
   Snapshot of the mempool

@@ -410,18 +410,19 @@ protocolInfoCardano ::
      forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
   -> ProtocolParamsShelleyBased (ShelleyEra c)
-  -> ProtocolParamsShelley
-  -> ProtocolParamsAllegra
-  -> ProtocolParamsMary
-  -> ProtocolParamsAlonzo
+  -> ProtocolParamsShelley c
+  -> ProtocolParamsAllegra c
+  -> ProtocolParamsMary    c
+  -> ProtocolParamsAlonzo  c
   -> ProtocolTransitionParamsShelleyBased (ShelleyEra c)
   -> ProtocolTransitionParamsShelleyBased (AllegraEra c)
   -> ProtocolTransitionParamsShelleyBased (MaryEra c)
   -> ProtocolTransitionParamsShelleyBased (AlonzoEra c)
   -> ProtocolInfo m (CardanoBlock c)
 protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
-                        byronGenesis           = genesisByron
-                      , byronLeaderCredentials = mCredsByron
+                        byronGenesis                = genesisByron
+                      , byronLeaderCredentials      = mCredsByron
+                      , byronMaxTxCapacityOverrides = maxTxCapacityOverridesByron
                       }
                     ProtocolParamsShelleyBased {
                         shelleyBasedGenesis           = genesisShelley
@@ -429,16 +430,20 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       , shelleyBasedLeaderCredentials = credssShelleyBased
                       }
                     ProtocolParamsShelley {
-                        shelleyProtVer = protVerShelley
+                        shelleyProtVer                = protVerShelley
+                      , shelleyMaxTxCapacityOverrides = maxTxCapacityOverridesShelley
                       }
                     ProtocolParamsAllegra {
-                        allegraProtVer = protVerAllegra
+                        allegraProtVer                = protVerAllegra
+                      , allegraMaxTxCapacityOverrides = maxTxCapacityOverridesAllegra
                       }
                     ProtocolParamsMary {
-                        maryProtVer = protVerMary
+                        maryProtVer                = protVerMary
+                      , maryMaxTxCapacityOverrides = maxTxCapacityOverridesMary
                       }
                     ProtocolParamsAlonzo {
-                        alonzoProtVer = protVerAlonzo
+                        alonzoProtVer                = protVerAlonzo
+                      , alonzoMaxTxCapacityOverrides = maxTxCapacityOverridesAlonzo
                       }
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
@@ -726,20 +731,33 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     mBlockForgingByron :: Maybe (OptNP 'False (BlockForging m) (CardanoEras c))
     mBlockForgingByron = do
         creds <- mCredsByron
-        return $ byronBlockForging creds `OptNP.at` IZ
+        return $ byronBlockForging maxTxCapacityOverridesByron creds `OptNP.at` IZ
 
     blockForgingShelleyBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
     blockForgingShelleyBased = do
         shelleyBased <-
           traverse
-            (shelleySharedBlockForging (Proxy @(ShelleyBasedEras c)) tpraosParams)
+            (\creds -> shelleySharedBlockForging
+               (Proxy @(ShelleyBasedEras c))
+               tpraosParams
+               creds
+               maxTxCapacityOverridess
+            )
             credssShelleyBased
+
         return $ reassoc <$> shelleyBased
       where
         reassoc ::
              NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)
           -> OptNP 'False (BlockForging m) (CardanoEras c)
         reassoc = OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+
+        maxTxCapacityOverridess =
+          Comp maxTxCapacityOverridesShelley :*
+          Comp maxTxCapacityOverridesAllegra :*
+          Comp maxTxCapacityOverridesMary    :*
+          Comp maxTxCapacityOverridesAlonzo  :*
+          Nil
 
 protocolClientInfoCardano
   :: forall c.

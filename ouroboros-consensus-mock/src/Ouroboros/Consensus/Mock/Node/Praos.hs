@@ -106,7 +106,7 @@ praosBlockForging cid initHotKey = do
                                  second forgeStateUpdateInfoFromUpdateInfo
                                . evolveKey sno
       , checkCanForge    = \_ _ _ _ _ -> return ()
-      , forgeBlock       = \cfg bno sno tickedLedgerSt maxTxCapacityOverride txs isLeader -> do
+      , forgeBlock       = \cfg bno sno tickedLedgerSt txs isLeader -> do
                                hotKey <- readMVar varHotKey
                                return $
                                  forgeSimple
@@ -114,7 +114,6 @@ praosBlockForging cid initHotKey = do
                                    cfg
                                    bno sno
                                    tickedLedgerSt
-                                   maxTxCapacityOverride
                                    (map txForgetValidated txs)
                                    isLeader
       }

@@ -107,9 +107,9 @@ instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
           (WrapValidatedGenTx vtx)
           tls
 
-  maxTxCapacity =
+  txsMaxBytes =
         hcollapse
-      . hcmap proxySingle (K . maxTxCapacity . unComp)
+      . hcmap proxySingle (K . txsMaxBytes . unComp)
       . State.tip
       . tickedHardForkLedgerStatePerEra
 

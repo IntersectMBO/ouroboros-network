@@ -195,21 +195,24 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: eb58eebc16ee898980c83bc325ab37a2c77b2414
-  --sha256: 1v5algrsa3g6lphl1nfih54xkc2xa5q1yfa3kgclcp6sxj1yjnnl
+  tag: 8c732560b201b5da8e3bdf175c6eda73a32d64bc
+  --sha256: 0nwy03wyd2ks4qxg47py7lm18karjz6vs7p8knmn3zy72i3n9rfi
   subdir:
+    base-deriving-via
     binary
     binary/test
     cardano-crypto-class
     cardano-crypto-praos
+    measures
+    orphans-deriving-via
     slotting
     strict-containers
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 136967cd3700f34c57cd70be7aceca8a5efca485
-  --sha256: 020sm2wsmc9qhkpmjz0qi8wl6w95lq5g0m1gvlivb0kc78w3lmhd
+  tag: 51561fcb13170e3849873eef82e634c1041ee1d6
+  --sha256: 1699hbz1i92hbjjzv9ym43qzji5xiz7gqbd0y8m2ylc353c0sxzn
   subdir:
     alonzo/impl
     alonzo/test

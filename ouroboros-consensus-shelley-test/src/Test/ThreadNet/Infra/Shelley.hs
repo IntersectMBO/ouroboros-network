@@ -62,6 +62,7 @@ import           Cardano.Crypto.VRF (SignKeyVRF, VRFAlgorithm, VerKeyVRF,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
@@ -417,7 +418,8 @@ mkProtocolShelley genesis initialNonce protVer coreNode =
         , shelleyBasedLeaderCredentials = [mkLeaderCredentials coreNode]
         }
       ProtocolParamsShelley {
-          shelleyProtVer = protVer
+          shelleyProtVer                = protVer
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
 {-------------------------------------------------------------------------------
   Necessary transactions for updating the 'DecentralizationParam'

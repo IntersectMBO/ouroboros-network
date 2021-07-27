@@ -48,6 +48,7 @@ library
                        Ouroboros.Consensus.Shelley.ShelleyHFC
 
   build-depends:       base              >=4.9   && <4.15
+                     , base-deriving-via
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
@@ -56,8 +57,10 @@ library
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
                      , data-default-class
+                     , measures
                      , mtl               >=2.2   && <2.3
                      , nothunks
+                     , orphans-deriving-via
                      , serialise         >=0.2   && <0.3
                      , strict-containers
                      , text              >=1.2   && <1.3

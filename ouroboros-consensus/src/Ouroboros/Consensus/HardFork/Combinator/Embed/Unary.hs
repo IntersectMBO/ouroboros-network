@@ -193,10 +193,6 @@ instance Isomorphic BlockConfig where
   project = defaultProjectNP
   inject  = defaultInjectNP
 
-instance Isomorphic MaxTxCapacityOverride where
-  project = hd . hardForkMaxTxCapacityOverrideToNP
-  inject = MaxTxCapacityOverride . singletonNP
-
 instance Isomorphic CodecConfig where
   project = defaultProjectNP
   inject  = defaultInjectNP
@@ -444,14 +440,13 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    (inject' (Proxy @(WrapIsLeader blk)) isLeader)
                                    (inject' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
 
-      , forgeBlock       = \cfg bno sno tickedLgrSt maxTxCapacityOverride txs isLeader ->
+      , forgeBlock       = \cfg bno sno tickedLgrSt txs isLeader ->
                                project' (Proxy @(I blk)) <$>
                                  forgeBlock
                                    (inject cfg)
                                    bno
                                    sno
                                    (unComp (inject (Comp tickedLgrSt)))
-                                   (inject maxTxCapacityOverride)
                                    (inject' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (inject' (Proxy @(WrapIsLeader blk)) isLeader)
       }
@@ -488,14 +483,13 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    (project' (Proxy @(WrapIsLeader blk)) isLeader)
                                    (project' (Proxy @(WrapForgeStateInfo blk)) forgeStateInfo)
 
-      , forgeBlock       = \cfg bno sno tickedLgrSt maxTxCapacityOverride txs isLeader ->
+      , forgeBlock       = \cfg bno sno tickedLgrSt txs isLeader ->
                                inject' (Proxy @(I blk)) <$>
                                  forgeBlock
                                    (project cfg)
                                    bno
                                    sno
                                    (unComp (project (Comp tickedLgrSt)))
-                                   (project maxTxCapacityOverride)
                                    (project' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (project' (Proxy @(WrapIsLeader blk)) isLeader)
       }

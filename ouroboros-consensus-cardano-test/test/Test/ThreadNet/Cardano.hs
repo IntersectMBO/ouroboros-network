@@ -24,6 +24,7 @@ import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
@@ -492,6 +493,7 @@ mkProtocolCardanoAndHardForkTxs
           , byronProtocolVersion        = propPV
           , byronSoftwareVersion        = softVerByron
           , byronLeaderCredentials      = Just leaderCredentialsByron
+          , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsShelleyBased {
             shelleyBasedGenesis           = genesisShelley
@@ -499,16 +501,20 @@ mkProtocolCardanoAndHardForkTxs
           , shelleyBasedLeaderCredentials = [leaderCredentialsShelley]
           }
         ProtocolParamsShelley {
-            shelleyProtVer = SL.ProtVer shelleyMajorVersion 0
+            shelleyProtVer                = SL.ProtVer shelleyMajorVersion 0
+          , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsAllegra {
-            allegraProtVer = SL.ProtVer allegraMajorVersion 0
+            allegraProtVer                = SL.ProtVer allegraMajorVersion 0
+          , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsMary {
-            maryProtVer    = SL.ProtVer maryMajorVersion    0
+            maryProtVer                   = SL.ProtVer maryMajorVersion    0
+          , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsAlonzo {
-            alonzoProtVer  = SL.ProtVer alonzoMajorVersion  0
+            alonzoProtVer                 = SL.ProtVer alonzoMajorVersion  0
+          , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         protocolParamsByronShelley
         ProtocolTransitionParamsShelleyBased {

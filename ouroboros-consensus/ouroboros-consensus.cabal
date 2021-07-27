@@ -280,6 +280,7 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.15
+                     , base-deriving-via
                      , base16-bytestring
                      , bimap             >=0.3   && <0.5
                      , binary            >=0.8   && <0.11
@@ -297,6 +298,7 @@ library
                      , filelock
                      , filepath          >=1.4   && <1.5
                      , hashable
+                     , measures
                      , mtl               >=2.2   && <2.3
                      , nothunks          >=0.1.2 && <0.2
                      , psqueues          >=0.2.3 && <0.3

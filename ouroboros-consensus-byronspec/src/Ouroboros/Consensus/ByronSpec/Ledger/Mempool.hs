@@ -55,7 +55,7 @@ instance LedgerSupportsMempool ByronSpecBlock where
       $ applyTx cfg DoNotIntervene slot (forgetValidatedByronSpecGenTx vtx) st
 
   -- Dummy values, as these are not used in practice.
-  maxTxCapacity = const maxBound
+  txsMaxBytes   = const maxBound
   txInBlockSize = const 0
 
   txForgetValidated = forgetValidatedByronSpecGenTx

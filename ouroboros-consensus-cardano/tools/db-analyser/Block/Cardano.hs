@@ -24,6 +24,7 @@ import qualified Cardano.Chain.Update as Byron.Update
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..))
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
 import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
@@ -105,6 +106,7 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , byronProtocolVersion        = Byron.Update.ProtocolVersion 1 2 0
         , byronSoftwareVersion        = Byron.Update.SoftwareVersion (Byron.Update.ApplicationName "db-analyser") 2
         , byronLeaderCredentials      = Nothing
+        , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsShelleyBased {
           shelleyBasedGenesis           = genesisShelley
@@ -112,16 +114,20 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
-          shelleyProtVer = ProtVer 2 0
+          shelleyProtVer                = ProtVer 2 0
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAllegra {
-          allegraProtVer = ProtVer 3 0
+          allegraProtVer                = ProtVer 3 0
+        , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsMary {
-          maryProtVer    = ProtVer 4 0
+          maryProtVer                   = ProtVer 4 0
+        , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAlonzo {
-          alonzoProtVer  = ProtVer 5 0
+          alonzoProtVer                 = ProtVer 5 0
+        , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = ()
