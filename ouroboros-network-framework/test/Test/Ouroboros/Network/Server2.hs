@@ -482,7 +482,7 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
           cmTracer    = WithName name
-                        `contramap` nullTracer,
+                        `contramap` (Tracer (say . show)),
           cmTrTracer  = (WithName name . fmap abstractState)
                         `contramap` trTracer,
           -- MuxTracer
@@ -1552,13 +1552,7 @@ data EffectiveDataFlow
 -- | Property wrapping `multinodeExperiment`.
 prop_multinode_Sim :: Int -> ArbDataFlow -> AbsBearerInfo -> MultiNodeScript Int TestAddr -> Property
 prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
-  let evs :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
-      evs = fmap wnEvent
-          . Octopus.filter ((MainServer ==) . wnName)
-          . octoSelectTraceEventsDynamic
-              @()
-              @(WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-          $ runSimTrace sim
+  let tr = runSimTrace sim
         where
           sim :: IOSim s ()
           sim = do
@@ -1567,7 +1561,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
                                   (Script (toBearerInfo absBi :| [noAttenuation]))
                                   (Snocket.TestAddress 10)
                     $ \snocket ->
-                       multinodeExperiment (Tracer traceM)
+                       multinodeExperiment (Tracer traceM <> Tracer (say . show))
                                            snocket
                                            Snocket.TestFamily
                                            (Snocket.TestAddress 0)
@@ -1578,8 +1572,16 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
             case mb of
               Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
               Just a  -> return a
+      evs :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
+      evs = fmap wnEvent
+          . Octopus.filter ((MainServer ==) . wnName)
+          . octoSelectTraceEventsDynamic
+              @()
+              @(WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+          $ tr
 
-  in counterexample (ppScript script)
+  in counterexample (show evs)
+   . counterexample (intercalate "\n" . map (show . ecTraceEvent) . Octopus.toList $ tr)
    . mkProperty
    . bifoldMap
       ( \ case
