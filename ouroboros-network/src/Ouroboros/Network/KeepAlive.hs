@@ -18,9 +18,12 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
+import           Data.Functor (($>))
 import           Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M
 import           System.Random (StdGen, random)
+
+import           Data.Monoid.Synchronisation
 
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.DeltaQ
@@ -59,18 +62,20 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
     payloadSize = 2
 
     decisionSTM :: Lazy.TVar m Bool
-                -> STM  m ControlMessage
-    decisionSTM delayVar = do
-       controlMessage <- controlMessageSTM
-       case controlMessage of
-            Terminate -> return Terminate
-
-            -- Continue
-            _  -> do
-              done <- Lazy.readTVar delayVar
-              if done
-                 then return Continue
-                 else retry
+                -> STM  m Bool
+    decisionSTM delayVar = runFirstToFinish $ do
+           ( FirstToFinish $
+               Lazy.readTVar delayVar >>= check >> continueSTM )
+        <> ( FirstToFinish $
+               continueSTM >>= \b -> check (not b) $> b )
+      where
+        continueSTM :: STM m Bool
+        continueSTM = do
+          cntrl <- controlMessageSTM
+          case cntrl of
+               Continue  -> return True
+               Quiesce   -> retry
+               Terminate -> return False
 
     go :: StdGen -> Maybe Time -> m (KeepAliveClient m ())
     go rng startTime_m = do
@@ -98,15 +103,13 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
                                     Nothing -> 0 -- The first time we send a packet directly.
 
       delayVar <- registerDelay keepAliveInterval'
-      decision <- atomically (decisionSTM delayVar)
+      continue <- atomically (decisionSTM delayVar)
       now <- getMonotonicTime
-      case decision of
-        -- 'decisionSTM' above cannot return 'Quiesce'
-        Quiesce   -> error "keepAlive: impossible happened"
-        Continue  ->
-            let (cookie, rng') = random rng in
-            pure (SendMsgKeepAlive (Cookie cookie) $ go rng' $ Just now)
-        Terminate -> pure (SendMsgDone (pure ()))
+      if continue
+        then let (cookie, rng') = random rng in
+          pure (SendMsgKeepAlive (Cookie cookie) $ go rng' $ Just now)
+        else
+          pure (SendMsgDone (pure ()))
 
 
 keepAliveServer
