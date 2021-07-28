@@ -3,8 +3,6 @@ module Main (main) where
 import           Test.Tasty
 
 import qualified Test.Data.Monoid.Synchronisation as Synchronisation
-import qualified Test.Network.TypedProtocol.PingPong.Codec as PingPong
-import qualified Test.Network.TypedProtocol.ReqResp.Codec as ReqResp
 import qualified Test.Ouroboros.Network.ConnectionManager as ConnectionManager
 import qualified Test.Ouroboros.Network.Driver as Driver
 import qualified Test.Ouroboros.Network.Server2 as Server2
@@ -20,8 +18,6 @@ tests :: TestTree
 tests =
   testGroup "ouroboros-network-framework"
   [ ConnectionManager.tests
-  , PingPong.tests
-  , ReqResp.tests
   , Driver.tests
   , Server2.tests
   , Socket.tests

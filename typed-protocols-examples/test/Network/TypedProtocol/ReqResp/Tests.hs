@@ -21,6 +21,7 @@ import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Codec
 import Network.TypedProtocol.ReqResp.Examples
 
+import Control.Monad.ST (runST)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
@@ -51,10 +52,16 @@ tests = testGroup "Network.TypedProtocol.ReqResp"
   , testProperty "connectPipelined"    prop_connectPipelined
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
-  , testProperty "codec"               prop_codec_ReqResp
-  , testProperty "codec 2-splits"      prop_codec_splits2_ReqResp
-  , testProperty "codec 3-splits"      (withMaxSuccess 33
-                                       prop_codec_splits3_ReqResp)
+  , testGroup "Codec"
+    [ testProperty "codec"             prop_codec_ReqResp
+    , testProperty "codec 2-splits"    prop_codec_splits2_ReqResp
+    , testProperty "codec 3-splits"    (withMaxSuccess 33 prop_codec_splits3_ReqResp)
+    , testGroup "CBOR"
+      [ testProperty "codec"           prop_codec_cbor_ReqResp
+      , testProperty "codec 2-splits"  prop_codec_cbor_splits2_ReqResp
+      , testProperty "codec 3-splits"  $ withMaxSuccess 30 prop_codec_cbor_splits3_ReqResp
+      ]
+    ]
   ]
 
 
@@ -221,3 +228,27 @@ prop_codec_splits3_ReqResp =
       splits3
       runIdentity
       codecReqResp
+
+prop_codec_cbor_ReqResp
+  :: AnyMessageAndAgency (ReqResp String String)
+  -> Bool
+prop_codec_cbor_ReqResp msg =
+  runST $ prop_codecM codecReqResp msg
+
+prop_codec_cbor_splits2_ReqResp
+  :: AnyMessageAndAgency (ReqResp String String)
+  -> Bool
+prop_codec_cbor_splits2_ReqResp msg =
+  runST $ prop_codec_splitsM
+      splits2
+      codecReqResp
+      msg
+
+prop_codec_cbor_splits3_ReqResp
+  :: AnyMessageAndAgency (ReqResp String String)
+  -> Bool
+prop_codec_cbor_splits3_ReqResp msg =
+  runST $ prop_codec_splitsM
+      splits3
+      codecReqResp
+      msg
