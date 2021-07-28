@@ -192,9 +192,9 @@ switchFork c (ChainProducerState c' cflrst cfid) =
 -- the producer's state assuming that the follower follows its instruction.
 --
 followerInstruction :: HasHeader block
-                  => FollowerId
-                  -> ChainProducerState block
-                  -> Maybe (ChainUpdate block block, ChainProducerState block)
+                    => FollowerId
+                    -> ChainProducerState block
+                    -> Maybe (ChainUpdate block block, ChainProducerState block)
 followerInstruction fid cps@(ChainProducerState c cflrst cfid) =
     let FollowerState {followerPoint, followerNext} = lookupFollower cps fid in
     case followerNext of

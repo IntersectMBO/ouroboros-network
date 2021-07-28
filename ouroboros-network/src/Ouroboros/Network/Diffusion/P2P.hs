@@ -605,23 +605,22 @@ runM
                   m
     -> -- | tracers
        Tracers ntnAddr ntnVersion
-                        ntcAddr ntcVersion
-                        m
+               ntcAddr ntcVersion
+               m
     -> -- | p2p tracers
        TracersExtra ntnAddr ntnVersion ntnVersionData
-                             ntcAddr ntcVersion ntcVersionData
-                             resolverError m
+                    ntcAddr ntcVersion ntcVersionData
+                    resolverError m
     -> -- | configuration
        Arguments ntnFd ntnAddr
-                          ntcFd ntcAddr
+                 ntcFd ntcAddr
     -> -- | p2p configuration
        ArgumentsExtra m
 
     -> -- | protocol handlers
-       Applications
-         ntnAddr ntnVersion ntnVersionData
-         ntcAddr ntcVersion ntcVersionData
-         m
+       Applications ntnAddr ntnVersion ntnVersionData
+                    ntcAddr ntcVersion ntcVersionData
+                    m
     -> -- | p2p protocol handlers
        ApplicationsExtra ntnAddr m
     -> m Void
