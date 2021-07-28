@@ -56,6 +56,17 @@ import Test.QuickCheck.Monadic
 
 
 
+import Data.List (isInfixOf)
+import qualified Shelley.Spec.Ledger.API as SL
+import Ouroboros.Consensus.Cardano.Block (AlonzoEra)
+import Cardano.Binary (fromCBOR, toCBOR)
+import qualified Codec.CBOR.Read  as CBOR
+import qualified Codec.CBOR.Write as CBOR
+import Cardano.Binary (Annotator)
+
+
+
+
 
 
 import           Cardano.Crypto.Libsodium (sodiumInit)
@@ -85,6 +96,7 @@ tests =
   , Test.ThreadNet.MaryAlonzo.tests
   , Test.ThreadNet.ShelleyAllegra.tests
   , testProperty "adhoc" spec
+  , testProperty "propRoundTripBlock" propRoundTripBlock
   ]
 
 spec :: Property
@@ -129,3 +141,22 @@ genTip = frequency
     [ (1, pure TipGenesis)
     , (10, Tip <$> arbitrary <*> arbitrary <*> arbitrary)
     ]
+
+-----
+
+propRoundTripBlock :: SL.Block (AlonzoEra StandardCrypto) -> Property
+propRoundTripBlock blk =
+      case CBOR.deserialiseFromBytes decoder bs of
+        Right{} -> property True
+        Left e@(CBOR.DeserialiseFailure _ _) ->
+            counterexample (show e)
+          $ label (show $ (isInfixOf "PlutusScript" (show blk), isInfixOf "TimelockScript" (show blk)))
+          $ property False
+  where
+    bs = CBOR.toLazyByteString encoding
+
+    encoding = toCBOR blk
+
+    decoder = do
+      _ <- fromCBOR @(Annotator (SL.Block (AlonzoEra StandardCrypto)))
+      return ()
