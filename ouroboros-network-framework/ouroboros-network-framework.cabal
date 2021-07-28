@@ -20,8 +20,7 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
 library
-  exposed-modules:     Ouroboros.Network.Codec
-                       Ouroboros.Network.CodecCBORTerm
+  exposed-modules:     Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
@@ -81,10 +80,8 @@ library
                      , network         >=3.1.2   && < 3.2
                      , network-mux     >=0.1   && < 0.2
                      , typed-protocols >=0.1   && < 0.2
+                     , typed-protocols-cborg >=0.1   && < 0.2
                      , Win32-network   >=0.1   && < 0.2
-
-                       -- Remove once codec is defined locally
-                     , typed-protocols-examples
 
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <3.0
@@ -136,6 +133,7 @@ test-suite test
                      , network-mux
                      , ouroboros-network-framework
                      , typed-protocols
+                     , typed-protocols-cborg
                      , typed-protocols-examples
 
   if os(windows)

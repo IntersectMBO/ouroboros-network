@@ -1,0 +1,39 @@
+name:                typed-protocols-cborg
+version:             0.1.0.0
+synopsis:            CBOR codecs for typed-protocols
+-- description:
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+copyright:           2019-2021 Input Output (Hong Kong) Ltd.
+author:              Alexander Vieth, Duncan Coutts, Marcin Szamotulski
+maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io
+category:            Control
+build-type:          Simple
+
+-- These should probably be added at some point.
+extra-source-files:  ChangeLog.md, README.md
+
+cabal-version:       >=1.10
+
+library
+  exposed-modules:   Network.TypedProtocol.Codec.CBOR
+
+  build-depends:     base            >=4.12  && <4.15,
+                     bytestring      >=0.10  && <0.11,
+                     cborg           >=0.2.1 && <0.3,
+
+                     io-classes,
+                     typed-protocols
+
+  hs-source-dirs:    src
+  default-language:  Haskell2010
+  ghc-options:       -Wall
+                     -Wno-unticked-promoted-constructors
+                     -Wcompat
+                     -Wincomplete-uni-patterns
+                     -Wincomplete-record-updates
+                     -Wpartial-fields
+                     -Widentities
+                     -Wredundant-constraints
