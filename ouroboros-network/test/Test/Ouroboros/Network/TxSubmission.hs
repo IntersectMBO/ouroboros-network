@@ -40,8 +40,9 @@ import qualified Data.Set as Set
 import           Data.Word (Word16)
 import           GHC.Generics (Generic)
 
+import           Network.TypedProtocol.Codec
+
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Util.ShowProxy

@@ -30,13 +30,13 @@ import           Control.Monad.Class.MonadThrow ( MonadCatch
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Simple ( runPeer
                                                  , runConnectedPeers
