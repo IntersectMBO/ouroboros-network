@@ -10,7 +10,7 @@ import qualified Codec.CBOR.Read      as CBOR
 import qualified Codec.CBOR.Term      as CBOR
 import qualified Codec.CBOR.FlatTerm as CBOR
 
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec
 
 import           Test.QuickCheck
 
@@ -47,7 +47,7 @@ prop_codec_cborM codec (AnyMessageAndAgency stok msg)
 --
 prop_codec_valid_cbor_encoding
   :: forall ps.
-     Codec ps DeserialiseFailure IO ByteString
+     Codec ps CBOR.DeserialiseFailure IO ByteString
   -> AnyMessageAndAgency ps
   -> Property
 prop_codec_valid_cbor_encoding Codec {encode} (AnyMessageAndAgency stok msg) =
@@ -57,7 +57,7 @@ prop_codec_valid_cbor_encoding Codec {encode} (AnyMessageAndAgency stok msg) =
   where
     deserialise :: [CBOR.TermToken]
                 -> ByteString
-                -> Either DeserialiseFailure [CBOR.TermToken]
+                -> Either CBOR.DeserialiseFailure [CBOR.TermToken]
     deserialise !as bs =
       case CBOR.deserialiseFromBytes CBOR.decodeTermToken bs of
         Left e -> Left e

@@ -18,7 +18,8 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec.CBOR
+
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Codec

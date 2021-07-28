@@ -95,10 +95,10 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
 import           Network.TypedProtocol (Peer)
+import           Network.TypedProtocol.Codec
 import           Network.Mux (WithMuxBearer (..))
 import           Network.Mux.Types (MuxRuntimeError (..))
 
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))

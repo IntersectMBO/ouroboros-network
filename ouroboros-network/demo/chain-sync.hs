@@ -37,6 +37,8 @@ import           System.Random
 
 import qualified Codec.Serialise as CBOR
 
+import           Network.TypedProtocol.Codec
+
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -49,7 +51,6 @@ import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Testing.ConcreteBlock
 
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Unversioned

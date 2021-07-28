@@ -27,8 +27,8 @@ import qualified Codec.CBOR.Decoding as CBOR ( Decoder, decodeListLen
                                              , decodeWord, decodeWord16 )
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Limits
 import           Ouroboros.Network.Protocol.KeepAlive.Type
