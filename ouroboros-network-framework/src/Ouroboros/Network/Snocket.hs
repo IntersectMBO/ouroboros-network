@@ -26,7 +26,7 @@ module Ouroboros.Network.Snocket
   , localAddressFromPath
   , TestAddress (..)
 
-  , FileDescriptor
+  , FileDescriptor (..)
   , socketFileDescriptor
   , localSocketFileDescriptor
   ) where
