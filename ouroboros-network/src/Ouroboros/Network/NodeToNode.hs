@@ -119,7 +119,8 @@ import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec.CBOR
+
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))

@@ -32,10 +32,10 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy
 

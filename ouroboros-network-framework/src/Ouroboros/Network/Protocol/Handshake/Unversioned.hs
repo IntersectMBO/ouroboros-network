@@ -19,9 +19,9 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.ByteString.Lazy (ByteString)
 
-import           Ouroboros.Network.Codec
-import           Ouroboros.Network.CodecCBORTerm
+import           Network.TypedProtocol.Codec
 
+import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version

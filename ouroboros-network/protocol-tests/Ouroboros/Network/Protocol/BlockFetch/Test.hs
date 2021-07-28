@@ -21,9 +21,9 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Proofs
+import           Network.TypedProtocol.Codec
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
 import           Ouroboros.Network.Block (Serialised (..),
