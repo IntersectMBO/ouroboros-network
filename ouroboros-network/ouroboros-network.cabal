@@ -404,7 +404,8 @@ executable demo-chain-sync
 
                        network-mux,
                        ouroboros-network-framework,
-                       ouroboros-network
+                       ouroboros-network,
+                       typed-protocols
 
   default-language:    Haskell2010
   ghc-options:         -Wall
