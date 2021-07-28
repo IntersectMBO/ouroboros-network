@@ -9,6 +9,8 @@ module Network.TypedProtocol.PingPong.Tests
   ( tests
   , splits2
   , splits3
+  , splits2BS
+  , splits3BS
   ) where
 
 
@@ -22,8 +24,10 @@ import Network.TypedProtocol.PingPong.Client
 import Network.TypedProtocol.PingPong.Server
 import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Codec
+import qualified Network.TypedProtocol.PingPong.Codec.CBOR as CBOR
 
 import Data.Functor.Identity (Identity (..))
+import Control.Monad.ST (runST)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
@@ -31,6 +35,7 @@ import Control.Monad.IOSim (runSimOrThrow)
 import Control.Tracer (Tracer, nullTracer)
 
 import Data.List (inits, tails)
+import qualified Data.ByteString.Lazy as LBS
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -54,9 +59,16 @@ tests = testGroup "Network.TypedProtocol.PingPong"
   , testProperty "connect_pipelined 5" prop_connect_pipelined5
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
-  , testProperty "codec"               prop_codec_PingPong
-  , testProperty "codec 2-splits"      prop_codec_splits2_PingPong
-  , testProperty "codec 3-splits"      prop_codec_splits3_PingPong
+  , testGroup "Codec"
+    [ testProperty "codec"             prop_codec_PingPong
+    , testProperty "codec 2-splits"    prop_codec_splits2_PingPong
+    , testProperty "codec 3-splits"    prop_codec_splits3_PingPong
+    , testGroup "CBOR"
+      [ testProperty "codec"           prop_codec_cbor_PingPong
+      , testProperty "codec 2-splits"  prop_codec_cbor_splits2_PingPong
+      , testProperty "codec 3-splits"  $ withMaxSuccess 30 prop_codec_cbor_splits3_PingPong
+      ]
+    ]
   ]
 
 
@@ -329,13 +341,60 @@ prop_codec_splits3_PingPong =
       runIdentity
       codecPingPong
 
+--
+-- CBOR codec properties
+--
+
+prop_codec_cbor_PingPong
+  :: AnyMessageAndAgency PingPong
+  -> Bool
+prop_codec_cbor_PingPong msg =
+  runST $ prop_codecM CBOR.codecPingPong msg
+
+prop_codec_cbor_splits2_PingPong
+  :: AnyMessageAndAgency PingPong
+  -> Bool
+prop_codec_cbor_splits2_PingPong msg =
+  runST $ prop_codec_splitsM
+      splits2BS
+      CBOR.codecPingPong
+      msg
+
+prop_codec_cbor_splits3_PingPong
+  :: AnyMessageAndAgency PingPong
+  -> Bool
+prop_codec_cbor_splits3_PingPong msg =
+  runST $ prop_codec_splitsM
+      splits3BS
+      CBOR.codecPingPong
+      msg
+
+--
+-- Utils
+--
+
 -- | Generate all 2-splits of a string.
+--
 splits2 :: String -> [[String]]
 splits2 str = zipWith (\a b -> [a,b]) (inits str) (tails str)
 
 -- | Generate all 3-splits of a string.
+--
 splits3 :: String -> [[String]]
 splits3 str =
     [ [a,b,c]
     | (a,str') <- zip (inits str)  (tails str)
     , (b,c)    <- zip (inits str') (tails str') ]
+
+-- | Generate all 2-splits of a 'LBS.ByteString'.
+--
+splits2BS :: LBS.ByteString -> [[LBS.ByteString]]
+splits2BS bs = zipWith (\a b -> [a,b]) (LBS.inits bs) (LBS.tails bs)
+
+-- | Generate all 3-splits of a 'LBS.ByteString'.
+--
+splits3BS :: LBS.ByteString -> [[LBS.ByteString]]
+splits3BS bs =
+    [ [a,b,c]
+    | (a,bs') <- zip (LBS.inits bs)  (LBS.tails bs)
+    , (b,c)   <- zip (LBS.inits bs') (LBS.tails bs') ]

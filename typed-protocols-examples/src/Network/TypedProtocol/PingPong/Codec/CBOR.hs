@@ -15,10 +15,9 @@ import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeWord)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Codec.CBOR
 import           Network.TypedProtocol.PingPong.Type
-
-import           Ouroboros.Network.Codec
-
 
 codecPingPong
   :: forall m.
