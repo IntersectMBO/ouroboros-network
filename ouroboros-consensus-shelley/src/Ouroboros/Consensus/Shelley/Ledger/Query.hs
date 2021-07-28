@@ -39,8 +39,8 @@ import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
-import           Ouroboros.Network.Block (Serialised (..), decodePoint,
-                     encodePoint, mkSerialised)
+import           Ouroboros.Network.Block (Serialised (..),
+                     decodePoint, encodePoint, mkSerialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -84,6 +84,7 @@ instance SL.PraosCrypto c => Serialise (NonMyopicMemberRewards c) where
 
 data instance BlockQuery (ShelleyBlock era) :: Type -> Type where
   GetLedgerTip :: BlockQuery (ShelleyBlock era) (Point (ShelleyBlock era))
+  GetLedgerBlockNo :: BlockQuery (ShelleyBlock era) BlockNo
   GetEpochNo :: BlockQuery (ShelleyBlock era) EpochNo
   -- | Calculate the Non-Myopic Pool Member Rewards for a set of
   -- credentials. See 'SL.getNonMyopicMemberRewards'
@@ -246,6 +247,8 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
           SL.getPools st
         GetStakePoolParams poolids ->
           SL.getPoolParameters st poolids
+        GetLedgerBlockNo ->
+          shelleyLedgerBlockNo lst
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -349,6 +352,10 @@ instance SameDepIndex (BlockQuery (ShelleyBlock era)) where
     = Nothing
   sameDepIndex (GetStakePoolParams _) _
     = Nothing
+  sameDepIndex GetLedgerBlockNo GetLedgerBlockNo
+    = Just Refl
+  sameDepIndex GetLedgerBlockNo _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock era) result)
 deriving instance Show (BlockQuery (ShelleyBlock era) result)
@@ -373,6 +380,7 @@ instance ShelleyBasedEra era => ShowQuery (BlockQuery (ShelleyBlock era)) where
       GetUTxOByTxIn {}                           -> show
       GetStakePools                              -> show
       GetStakePoolParams {}                      -> show
+      GetLedgerBlockNo                           -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
@@ -395,6 +403,7 @@ querySupportedVersion = \case
     GetUTxOByTxIn {}                           -> (>= v4)
     GetStakePools                              -> (>= v4)
     GetStakePoolParams {}                      -> (>= v4)
+    GetLedgerBlockNo                           -> (>= v4) -- TODO check this
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -475,6 +484,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 16
     GetStakePoolParams poolids ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 17 <> toCBOR poolids
+    GetLedgerBlockNo ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 18
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -527,6 +538,7 @@ encodeShelleyResult query = case query of
     GetUTxOByTxIn {}                           -> toCBOR
     GetStakePools                              -> toCBOR
     GetStakePoolParams {}                      -> toCBOR
+    GetLedgerBlockNo                           -> toCBOR
 
 decodeShelleyResult ::
      ShelleyBasedEra era
@@ -551,3 +563,4 @@ decodeShelleyResult query = case query of
     GetUTxOByTxIn {}                           -> fromCBOR
     GetStakePools                              -> fromCBOR
     GetStakePoolParams {}                      -> fromCBOR
+    GetLedgerBlockNo                           -> fromCBOR

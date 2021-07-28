@@ -65,12 +65,18 @@ data Query blk result where
   -- Supported by 'QueryVersion' >= 'QueryVersion1'.
   GetSystemStart :: Query blk SystemStart
 
+  -- | Get the 'GetChainTip' time.
+  --
+  -- Supported by 'QueryVersion' >= 'QueryVersion1'.
+  GetChainTip :: Query blk ()
+
 instance (ShowProxy (BlockQuery blk)) => ShowProxy (Query blk) where
   showProxy (Proxy :: Proxy (Query blk)) = "Query (" ++ showProxy (Proxy @(BlockQuery blk)) ++ ")"
 
 instance (ShowQuery (BlockQuery blk)) => ShowQuery (Query blk) where
   showResult (BlockQuery blockQuery) = showResult blockQuery
   showResult GetSystemStart          = show
+  showResult GetChainTip             = show
 
 instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond (BlockQuery blockQueryA) == SomeSecond (BlockQuery blockQueryB)
@@ -80,9 +86,14 @@ instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond GetSystemStart == SomeSecond GetSystemStart = True
   SomeSecond GetSystemStart == _                         = False
 
+  SomeSecond GetChainTip == SomeSecond GetChainTip = True
+  SomeSecond GetChainTip == _                         = False
+
+
 instance Show (SomeSecond BlockQuery blk) => Show (SomeSecond Query blk) where
   show (SomeSecond (BlockQuery blockQueryA)) = "Query " ++ show (SomeSecond blockQueryA)
   show (SomeSecond GetSystemStart) = "Query GetSystemStart"
+  show (SomeSecond GetChainTip) = "Query GetChainTip"
 
 
 -- | Exception thrown in the encoders
@@ -127,6 +138,9 @@ queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
         GetSystemStart ->
             encodeListLen 1
          <> encodeWord8 1
+        GetChainTip ->
+            encodeListLen 1
+         <> encodeWord8 2
   where
     encodeBlockQuery blockQuery =
       encodeNodeToClient
@@ -167,10 +181,14 @@ instance SerialiseResult blk (BlockQuery blk) => SerialiseResult blk (Query blk)
     = encodeResult codecConfig blockVersion blockQuery result
   encodeResult _ _ GetSystemStart result
     = toCBOR result
+  encodeResult _ _ GetChainTip result
+    = toCBOR result
 
   decodeResult codecConfig blockVersion (BlockQuery query)
     = decodeResult codecConfig blockVersion query
   decodeResult _ _ GetSystemStart
+    = fromCBOR
+  decodeResult _ _ GetChainTip
     = fromCBOR
 
 instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
@@ -181,6 +199,10 @@ instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
   sameDepIndex GetSystemStart GetSystemStart
     = Just Refl
   sameDepIndex GetSystemStart _
+    = Nothing
+  sameDepIndex GetChainTip GetChainTip
+    = Just Refl
+  sameDepIndex GetChainTip _
     = Nothing
 
 deriving instance Show (BlockQuery blk result) => Show (Query blk result)
@@ -195,6 +217,7 @@ answerQuery ::
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
   GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
+  GetChainTip -> ()
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type

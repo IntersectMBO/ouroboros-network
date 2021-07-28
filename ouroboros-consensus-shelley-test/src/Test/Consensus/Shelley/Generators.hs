@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto,
                      TPraosState (..))
+import           Ouroboros.Network.Block (Tip(..))
 
 import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)
@@ -89,6 +90,7 @@ instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock era)) whe
     , SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
     , pure $ SomeSecond GetGenesisConfig
     , pure $ SomeSecond DebugNewEpochState
+    , pure $ SomeSecond GetLedgerBlockNo
     ]
 
 instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
@@ -106,6 +108,7 @@ instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
     , SomeResult <$> (GetFilteredDelegationsAndRewardAccounts <$> arbitrary) <*> arbitrary
     , SomeResult GetGenesisConfig . compactGenesis <$> arbitrary
     , SomeResult DebugNewEpochState <$> arbitrary
+    , SomeResult GetLedgerBlockNo <$> arbitrary
     ]
 
 instance PraosCrypto c => Arbitrary (NonMyopicMemberRewards c) where
@@ -113,6 +116,9 @@ instance PraosCrypto c => Arbitrary (NonMyopicMemberRewards c) where
 
 instance CanMock era => Arbitrary (Point (ShelleyBlock era)) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
+
+instance CanMock era => Arbitrary (Tip (ShelleyBlock era)) where
+  arbitrary = Tip <$> arbitrary <*> undefined <*> arbitrary -- TODO jky
 
 instance PraosCrypto c => Arbitrary (TPraosState c) where
   arbitrary = do

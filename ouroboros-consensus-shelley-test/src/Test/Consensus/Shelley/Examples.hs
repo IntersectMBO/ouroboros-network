@@ -97,6 +97,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
         , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
         , ("GetNonMyopicMemberRewards", SomeSecond $ GetNonMyopicMemberRewards sleRewardsCredentials)
         , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
+        , ("GetLedgerBlockNo",          SomeSecond GetLedgerBlockNo)
       ]
     results = labelled [
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
@@ -107,6 +108,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
         , ("NonMyopicMemberRewards", SomeResult (GetNonMyopicMemberRewards Set.empty)
                                      (NonMyopicMemberRewards $ sreNonMyopicRewards))
         , ("GenesisConfig",          SomeResult GetGenesisConfig (compactGenesis sreShelleyGenesis))
+        -- , ("LedgerTipInfo",          SomeResult GetLedgerBlockNo (blockPoint blk)) -- TODO jky how to implement?
         ]
     annTip = AnnTip {
         annTipSlotNo  = SlotNo 14

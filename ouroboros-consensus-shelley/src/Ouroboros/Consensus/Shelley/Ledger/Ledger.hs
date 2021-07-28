@@ -24,7 +24,9 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , ShelleyTransition (..)
   , Ticked (..)
   , shelleyLedgerTipPoint
+  , shelleyLedgerBlockNo
   , shelleyTipToPoint
+  , shelleyTipToBlockNo
     -- * Ledger config
   , ShelleyLedgerConfig (..)
   , mkShelleyLedgerConfig
@@ -173,6 +175,10 @@ shelleyTipToPoint Origin          = GenesisPoint
 shelleyTipToPoint (NotOrigin tip) = BlockPoint (shelleyTipSlotNo tip)
                                                (shelleyTipHash   tip)
 
+shelleyTipToBlockNo :: WithOrigin (ShelleyTip era) -> BlockNo
+shelleyTipToBlockNo Origin          = 0
+shelleyTipToBlockNo (NotOrigin tip) = shelleyTipBlockNo tip
+
 data instance LedgerState (ShelleyBlock era) = ShelleyLedgerState {
       shelleyLedgerTip        :: !(WithOrigin (ShelleyTip era))
     , shelleyLedgerState      :: !(SL.NewEpochState era)
@@ -210,6 +216,9 @@ newtype ShelleyTransition = ShelleyTransitionInfo {
 
 shelleyLedgerTipPoint :: LedgerState (ShelleyBlock era) -> Point (ShelleyBlock era)
 shelleyLedgerTipPoint = shelleyTipToPoint . shelleyLedgerTip
+
+shelleyLedgerBlockNo :: LedgerState (ShelleyBlock era) -> BlockNo
+shelleyLedgerBlockNo = shelleyTipToBlockNo . shelleyLedgerTip
 
 instance ShelleyBasedEra era => UpdateLedger (ShelleyBlock era)
 
