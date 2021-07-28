@@ -30,9 +30,9 @@ import           Cardano.Slotting.Slot (SlotNo (..))
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Network.TypedProtocol.Pipelined (Nat (Succ, Zero), natToInt, unsafeIntToNat)
 import           Network.TypedProtocol.Proofs
+import           Network.TypedProtocol.Codec
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 

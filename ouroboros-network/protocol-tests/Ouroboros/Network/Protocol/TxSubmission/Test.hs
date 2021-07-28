@@ -33,13 +33,13 @@ import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Tracer (Tracer(..), nullTracer)
 
-import           Codec.Serialise (Serialise)
+import           Codec.Serialise (Serialise, DeserialiseFailure)
 import qualified Codec.Serialise as Serialise (encode, decode)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple
                    (runConnectedPeersPipelined)

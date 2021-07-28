@@ -20,10 +20,10 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 

@@ -18,8 +18,8 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime
 
 import           Network.TypedProtocol.Pipelined (Nat (Succ, Zero), natToInt, unsafeIntToNat)
+import           Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.TipSample.Type
 import           Ouroboros.Network.Protocol.Limits
