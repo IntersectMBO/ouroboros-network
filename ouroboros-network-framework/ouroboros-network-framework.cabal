@@ -118,11 +118,7 @@ test-suite test
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   hs-source-dirs:      test
-  other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
-                       Network.TypedProtocol.ReqResp.Codec.CBOR
-                       Test.Data.Monoid.Synchronisation
-                       Test.Network.TypedProtocol.PingPong.Codec
-                       Test.Network.TypedProtocol.ReqResp.Codec
+  other-modules:       Test.Data.Monoid.Synchronisation
                        Test.Ouroboros.Network.ConnectionManager
                        Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
@@ -181,7 +177,6 @@ test-suite test
 
 executable demo-ping-pong
   hs-source-dirs:      demo test
-  other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
   main-is:             ping-pong.hs
   build-depends:       base,
                        async,
@@ -218,10 +213,6 @@ executable demo-ping-pong
 
 executable demo-connection-manager
   hs-source-dirs:      demo test
-  -- TODO: move Network.TypedProtocols.ReqResp.Codec.CBOR and
-  --            Network.TypedProtocols.PingPong.Codec.CBOR
-  --       to typed-protocols-examples package
-  other-modules:       Network.TypedProtocol.ReqResp.Codec.CBOR
   main-is:             connection-manager.hs
   build-depends:       base,
                        bytestring,
