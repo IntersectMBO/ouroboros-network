@@ -10,6 +10,7 @@ module Ouroboros.Network.Protocol.ChainSync.Examples (
     chainSyncClientExample
   , Client (..)
   , pureClient
+  , controlledClient
   , Tip(..)
   , chainSyncServerExample
   ) where
@@ -24,6 +25,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
                      FollowerId)
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
+import           Ouroboros.Network.Mux (ControlMessageSTM, ControlMessage (..))
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
@@ -42,6 +44,28 @@ pureClient = Client
   , rollforward  = \_ -> pure (Right pureClient)
   , points       = \_ -> pure pureClient
   }
+
+controlledClient :: MonadSTM m
+                 => ControlMessageSTM m
+                 -> Client header point tip m ()
+controlledClient controlMessageSTM = go
+  where
+    go = Client
+      { rollbackward = \_ _ -> do
+          ctrl <- atomically controlMessageSTM
+          case ctrl of
+            Continue  -> pure (Right go)
+            Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+            Terminate -> pure (Left ())
+      , rollforward = \_ -> do
+          ctrl <- atomically controlMessageSTM
+          case ctrl of
+            Continue  -> pure (Right go)
+            Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+            Terminate -> pure (Left ())
+      , points = \_ -> pure go
+      }
+
 
 -- | An instance of the client side of the chain sync protocol that
 -- consumes into a 'Chain' stored in a 'StrictTVar'.
