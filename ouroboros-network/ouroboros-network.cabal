@@ -284,6 +284,9 @@ test-suite test
                        Test.AnchoredFragment
                        Test.Chain
                        Test.LedgerPeers
+                       Test.Ouroboros.Network.Diffusion.Node
+                       Test.Ouroboros.Network.Diffusion.Node.NodeKernel
+                       Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
                        Test.Ouroboros.Network.Diffusion.Policies
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
@@ -338,6 +341,7 @@ test-suite test
 
                        io-classes,
                        io-sim,
+                       monoidal-synchronisation,
                        network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,

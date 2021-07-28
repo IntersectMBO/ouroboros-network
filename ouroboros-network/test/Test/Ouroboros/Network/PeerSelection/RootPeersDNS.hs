@@ -7,9 +7,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
- module Test.Ouroboros.Network.PeerSelection.RootPeersDNS (
-  tests
-  ) where
+ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+   ( tests
+   , mockDNSActions
+   ) where
 
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
