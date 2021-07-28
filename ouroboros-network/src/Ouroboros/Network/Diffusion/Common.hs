@@ -112,7 +112,7 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
 nullTracers :: Applicative m => Tracers ntnAddr ntnVersion
                                         ntcAddr ntcVersion m
 nullTracers = Tracers {
-  dtMuxTracer                       = nullTracer
+    dtMuxTracer                     = nullTracer
   , dtHandshakeTracer               = nullTracer
   , dtLocalMuxTracer                = nullTracer
   , dtLocalHandshakeTracer          = nullTracer
@@ -184,5 +184,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
                       ByteString m Void ())
 
       -- | Interface used to get peers from the current ledger.
+      --
+      -- TODO: it should be in 'InterfaceExtra'
     , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
   }
