@@ -25,7 +25,8 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Text.Printf
 
-import           Ouroboros.Network.Codec
+import           Network.TypedProtocol.Codec.CBOR
+
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.Limits

@@ -36,13 +36,13 @@ module Ouroboros.Network.Driver.Simple (
   ) where
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Driver
 
 import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Channel
-import Ouroboros.Network.Codec
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadAsync

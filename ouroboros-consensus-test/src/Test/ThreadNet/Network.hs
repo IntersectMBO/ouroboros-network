@@ -55,13 +55,14 @@ import           Data.Void (Void)
 import           GHC.Stack
 import           System.Random (mkStdGen)
 
+import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
+                     mapFailureCodec)
+import qualified Network.TypedProtocol.Codec as Codec
+
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
                      TraceLabelPeer (..))
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec (AnyMessage (..), CodecFailure,
-                     mapFailureCodec)
-import qualified Ouroboros.Network.Codec as Codec
 import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS

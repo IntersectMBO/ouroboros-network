@@ -71,6 +71,7 @@ test-suite test
   other-modules:     Network.TypedProtocol.PingPong.Tests
                    , Network.TypedProtocol.ReqResp.Tests
   build-depends:     base
+                   , bytestring
                    , contra-tracer
                    , typed-protocols
                    , typed-protocols-cborg

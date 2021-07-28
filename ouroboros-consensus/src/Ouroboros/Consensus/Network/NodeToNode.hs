@@ -34,6 +34,7 @@ module Ouroboros.Consensus.Network.NodeToNode (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Read (DeserialiseFailure)
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
@@ -42,6 +43,8 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
+import           Network.TypedProtocol.Codec
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      decodeTip, encodePoint, encodeTip)
@@ -49,7 +52,6 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.KeepAlive
