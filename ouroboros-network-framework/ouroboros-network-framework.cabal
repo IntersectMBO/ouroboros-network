@@ -101,11 +101,7 @@ test-suite test
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   hs-source-dirs:      test
-  other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
-                       Network.TypedProtocol.ReqResp.Codec.CBOR
-                       Test.Network.TypedProtocol.PingPong.Codec
-                       Test.Network.TypedProtocol.ReqResp.Codec
-                       Test.Ouroboros.Network.Driver
+  other-modules:       Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
@@ -154,7 +150,6 @@ test-suite test
 
 executable demo-ping-pong
   hs-source-dirs:      demo test
-  other-modules:       Network.TypedProtocol.PingPong.Codec.CBOR
   main-is:             ping-pong.hs
   build-depends:       base,
                        async,

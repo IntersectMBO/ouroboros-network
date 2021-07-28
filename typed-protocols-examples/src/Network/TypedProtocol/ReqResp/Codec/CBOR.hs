@@ -17,9 +17,9 @@ import           Codec.Serialise.Class (Serialise)
 import qualified Codec.Serialise.Class as CBOR
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Type
-
-import           Ouroboros.Network.Codec
 
 codecReqResp
   :: forall req resp m.
