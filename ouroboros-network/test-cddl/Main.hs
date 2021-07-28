@@ -42,6 +42,7 @@ import           System.IO.Temp (withTempFile)
 import           System.Process.ByteString.Lazy
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec
 
 import           Ouroboros.Network.Block (Point, Tip, encodeTip,
                    decodeTip, wrapCBORinCBOR, unwrapCBORinCBOR)
@@ -49,7 +50,6 @@ import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Testing.ConcreteBlock (BlockHeader (..), Block)
 
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
                    NodeToNodeVersionData (..), nodeToNodeHandshakeCodec)
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..),

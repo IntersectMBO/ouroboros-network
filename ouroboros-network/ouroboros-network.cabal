@@ -179,7 +179,9 @@ library
                        network-mux       >=0.1 && <1.0,
                        ouroboros-network-framework
                                          >=0.1 && <1.0,
-                       typed-protocols   >=0.1 && < 1.0
+                       typed-protocols   >=0.1 && < 1.0,
+                       typed-protocols-cborg
+                                         >=0.1 && < 1.0
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -314,7 +316,8 @@ test-suite test
                        ouroboros-network-framework,
                        ouroboros-network-testing,
                        ouroboros-protocol-tests,
-                       typed-protocols
+                       typed-protocols,
+                       typed-protocols-examples
 
   if os(windows)
     build-depends:     Win32-network                 <0.2.0.0,
@@ -377,6 +380,7 @@ executable demo-chain-sync
 
                        contra-tracer,
 
+                       typed-protocols,
                        network-mux,
                        ouroboros-network-framework,
                        ouroboros-network

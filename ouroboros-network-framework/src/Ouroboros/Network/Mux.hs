@@ -40,6 +40,7 @@ import           Data.Void (Void)
 import qualified Data.ByteString.Lazy as LBS
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Pipelined
 
 import qualified Network.Mux.Compat as Mux
@@ -50,7 +51,6 @@ import           Network.Mux
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 

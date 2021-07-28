@@ -35,18 +35,20 @@ module Ouroboros.Consensus.Network.NodeToClient (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 
+import           Network.TypedProtocol.Codec
+
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
                      encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient hiding
