@@ -43,10 +43,10 @@ import Control.Tracer (Tracer (..), traceWith)
 
 import Network.Mux.Timeout
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Pipelined
 import Network.TypedProtocol.Driver
 
-import Ouroboros.Network.Codec
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Simple (TraceSendRecv(..), DecoderFailure (..))
 import Ouroboros.Network.Util.ShowProxy

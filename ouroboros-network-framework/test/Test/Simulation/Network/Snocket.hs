@@ -51,7 +51,6 @@ import           Data.Word (Word16)
 import           Text.Printf
 
 import           Ouroboros.Network.Driver.Simple
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Snocket
@@ -62,6 +61,7 @@ import           Simulation.Network.Snocket
 import           Network.Mux
 import           Network.Mux.Types (SDUSize (..))
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Type
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
