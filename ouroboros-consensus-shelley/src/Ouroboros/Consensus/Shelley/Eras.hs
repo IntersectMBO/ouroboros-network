@@ -235,13 +235,13 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
               ledgerEnv
               mempoolState
               wti
-              tx{Alonzo.isValidating = Alonzo.IsValidating (not flag)}
+              tx{Alonzo.isValid = Alonzo.IsValid (not flag)}
         _ -> throwError e
                -- reject the transaction, protecting the local wallet
 
 -- not exported
 --
--- The ledger failure we see when the transaction's claimed 'IsValidating'
+-- The ledger failure we see when the transaction's claimed 'IsValid'
 -- flag was incorrect
 pattern IncorrectClaimedFlag ::
      Bool
@@ -252,14 +252,14 @@ pattern IncorrectClaimedFlag claimedFlag <-
         (SL.UtxoFailure
           (Alonzo.UtxosFailure
             (Alonzo.ValidationTagMismatch
-              (Alonzo.IsValidating claimedFlag
+              (Alonzo.IsValid claimedFlag
       )))))
 
 -- | The ledger responded with Alonzo errors we were not expecting
 data UnexpectedAlonzoLedgerErrors =
     -- | We received more than one 'Alonzo.ValidationTagMismatch'
     --
-    -- The exception lists the 'Alonzo.IsValidating' flags we saw.
+    -- The exception lists the 'Alonzo.IsValid' flags we saw.
     UnexpectedAlonzoLedgerErrors [Bool]
   deriving (Show, Exception)
 
