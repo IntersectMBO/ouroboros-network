@@ -80,8 +80,6 @@ import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChan
 
 import           Ouroboros.Network.Testing.Utils (Delay (..),
                    genDelayWithPrecision)
--- import qualified Debug.Trace as Debug
-
 
 tests :: TestTree
 tests =
@@ -109,7 +107,6 @@ tests =
     , testProperty "timeoutExpired"                 unit_timeoutExpired
     ]
   ]
-
 
 -- | Addresss type.  '0' indicates local address, the 'Arbitrary' generator only
 -- returns (strictly) positive addresses.

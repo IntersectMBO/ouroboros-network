@@ -644,7 +644,6 @@ withConnectionManager ConnectionManagerArguments {
                           writeTVar connVar connState'
                           return $ There (Just transition)
                         TerminatingState {} -> do
-                          writeTVar connVar connState'
                           return $ Here (connVar, transition)
                         TerminatedState {} ->
                           return $ There Nothing
@@ -661,11 +660,10 @@ withConnectionManager ConnectionManagerArguments {
                   return ( Map.delete peerAddr state
                          , Left (Known (TerminatedState Nothing))
                          )
-                Here (connVar, transition) -> do
-                  traceWith trTracer transition
+                Here connVarAndTransition -> do
                   close cmSnocket socket
                   return ( state
-                         , Right connVar
+                         , Right connVarAndTransition
                          )
 
             case mConnVar of
@@ -680,7 +678,7 @@ withConnectionManager ConnectionManagerArguments {
                                          , toState   = Unknown
                                          })
               Left _ -> error "Impossible happened"
-              Right connVar ->
+              Right (connVar, transition) ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    when (cmTimeWaitTimeout > 0) $
                      unmask (threadDelay cmTimeWaitTimeout)
@@ -690,7 +688,10 @@ withConnectionManager ConnectionManagerArguments {
                   -- - handshake negotiation; or
                   -- - `Terminate: TerminatingState → TerminatedState` transition.
                   traceWith tracer (TrConnectionTimeWaitDone connId)
+                  traceWith trTracer transition
+                  -- ^ TerminatingState -> TerminatedState transition
                   trs <- atomically $ do
+                    writeTVar connVar (TerminatedState Nothing)
                     --  We have to be careful when deleting it from
                     --  'ConnectionManagerState'.
                     updated <-
@@ -722,8 +723,7 @@ withConnectionManager ConnectionManagerArguments {
                       -- so we do not trace anything as it was already traced upon
                       -- deletion.
                       Just _       ->
-                        return [
-                               ]
+                        return []
 
                   traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
                   traceCounters stateVar
@@ -798,7 +798,7 @@ withConnectionManager ConnectionManagerArguments {
 
           Right (handle, version) -> do
             let dataFlow = connectionDataFlow version
-            transition <- atomically $ do
+            mbTransition <- atomically $ do
               connState <- readTVar connVar
               case connState of
                 -- Inbound connections cannot be found in this state at this
@@ -818,7 +818,7 @@ withConnectionManager ConnectionManagerArguments {
                                      connId connThread handle
                                      (connectionDataFlow version)
                   writeTVar connVar connState'
-                  return (mkTransition connState connState')
+                  return (Just $ mkTransition connState connState')
 
                 -- It is impossible to find a connection in 'OutboundUniState'
                 -- or 'OutboundDupState', since 'includeInboundConnection'
@@ -835,7 +835,7 @@ withConnectionManager ConnectionManagerArguments {
                                      connId connThread handle
                                      dataFlow'
                   writeTVar connVar connState'
-                  return (mkTransition connState connState')
+                  return (Just $ mkTransition connState connState')
 
                 InboundIdleState {} ->
                   throwSTM (withCallStack (ImpossibleState peerAddr))
@@ -850,19 +850,9 @@ withConnectionManager ConnectionManagerArguments {
                 DuplexState {} ->
                   throwSTM (withCallStack (ImpossibleState peerAddr))
 
-                TerminatingState {} -> do
-                  let connState' = InboundIdleState
-                                     connId connThread handle
-                                     (connectionDataFlow version)
-                  writeTVar connVar connState'
-                  return (mkTransition connState connState')
+                TerminatingState {} -> return Nothing
 
-                TerminatedState {} -> do
-                  let connState' = InboundIdleState
-                                     connId connThread handle
-                                     (connectionDataFlow version)
-                  writeTVar connVar connState'
-                  return (mkTransition connState connState')
+                TerminatedState {} -> return Nothing
             traceCounters stateVar
             -- Note that we don't set a timeout thread here which would perform
             -- @
@@ -875,8 +865,14 @@ withConnectionManager ConnectionManagerArguments {
             -- idle, it will call 'unregisterInboundConnection' which will
             -- perform the aforementioned @Commit@ transition.
 
-            traceWith trTracer (TransitionTrace peerAddr transition)
-            return (Connected connId dataFlow handle)
+            traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
+
+            -- If mbTransition is Nothing, it means that the connVar was read either in
+            -- Terminating or TerminatedState. Either case we should return Disconnected
+            -- instead of Connected.
+            return (maybe (Disconnected connId Nothing)
+                          (const $ Connected connId dataFlow handle)
+                          mbTransition)
 
 
     unregisterInboundConnectionImpl
@@ -1110,16 +1106,10 @@ withConnectionManager ConnectionManagerArguments {
                   retry
 
                 TerminatedState _handleError -> do
-                  -- the connection terminated; we can reset 'connVar' and
-                  -- start afresh.
-                  let connState' = ReservedOutboundState
-                  writeTVar connVar connState'
-                  return ( Just (Left (TransitionTrace
-                                        peerAddr
-                                        (mkTransition connState connState')))
-                         , connVar
-                         , Right Nowhere
-                         )
+                  -- the connection terminated; we can not reset 'connVar' and
+                  -- start afresh. We should wait for the removal of the connection from
+                  -- the state.
+                  retry
 
             Nothing -> do
               let connState' = ReservedOutboundState
@@ -1453,7 +1443,7 @@ withConnectionManager ConnectionManagerArguments {
                 -- @
                 --   DemotedToCold^{Unidirectional}_{Local}
                 --     : OutboundState Unidirectional
-                --     → TerminatingState
+                --     → OutboundIdleState Unidirectional
                 -- @
                 let connState' = OutboundIdleState connId connThread handle
                                                    Unidirectional
