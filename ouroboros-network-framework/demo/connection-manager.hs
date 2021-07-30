@@ -66,8 +66,7 @@ import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec ( cborTermVersionDataCodec
-                                                            , timeLimitsHandshake )
+import           Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
@@ -244,7 +243,7 @@ withBidirectionalConnectionManager snocket socket
               -- TraceSendRecv
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
-              haVersionDataCodec = cborTermVersionDataCodec unversionedProtocolDataCodec,
+              haVersionDataCodec = unversionedProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
               haTimeLimits = timeLimitsHandshake
             }
