@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE KindSignatures    #-}
@@ -30,7 +31,7 @@ import           Ouroboros.Network.Block (Serialised (..),
                      castPoint, genesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+import           Ouroboros.Network.Testing.ConcreteBlock (Block', Block)
 
 import           Ouroboros.Network.Protocol.BlockFetch.Client
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -351,7 +352,11 @@ genBlockFetch genBlock genChainRange = oneof
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
     ]
 
-instance Arbitrary (AnyMessageAndAgency (BlockFetch Block (Point Block))) where
+instance ( Arbitrary (Block' body)
+         , Arbitrary (ChainRange (Point (Block' body)))
+         )
+      => Arbitrary (AnyMessageAndAgency
+                     (BlockFetch (Block' body) (Point (Block' body)))) where
   arbitrary = genBlockFetch arbitrary arbitrary
 
 instance (Eq block, Eq point) =>
