@@ -33,6 +33,7 @@ module Test.ChainGenerators
   )
   where
 
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.List as L
 import           Data.Maybe (catMaybes, listToMaybe)
 
@@ -47,6 +48,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -146,8 +148,8 @@ instance Arbitrary BlockBody where
     arbitrary =
       BlockBody <$>
         -- Sometimes pick a common block so some are equal
-        frequency [ (1, pure "EMPTY")
-                  , (4, vectorOf 4 (choose ('A', 'Z'))) ]
+        frequency [ (1, pure $ BSC.pack "EMPTY")
+                  , (4, BSC.pack <$> vectorOf 4 (choose ('A', 'Z'))) ]
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
 

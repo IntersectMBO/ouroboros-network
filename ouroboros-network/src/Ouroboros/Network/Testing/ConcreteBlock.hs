@@ -44,17 +44,17 @@ module Ouroboros.Network.Testing.ConcreteBlock (
   , fixupAnchoredFragmentFrom
   ) where
 
+import           Data.ByteString (ByteString)
 import           Data.Function (fix)
 import           Data.Hashable
 import           Data.String (IsString)
-import qualified Data.Text as Text
 import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..), addUTCTime, secondsToNominalDiffTime)
 import           NoThunks.Class (NoThunks)
 
-import           Codec.CBOR.Decoding (decodeInt, decodeListLenOf, decodeString,
+import           Codec.CBOR.Decoding (decodeInt, decodeListLenOf, decodeBytes,
                      decodeWord64)
-import           Codec.CBOR.Encoding (encodeInt, encodeListLen, encodeString,
+import           Codec.CBOR.Encoding (encodeInt, encodeListLen, encodeBytes,
                      encodeWord64)
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
@@ -85,11 +85,14 @@ data Block = Block {
 
 instance ShowProxy Block where
 
-newtype BlockBody = BlockBody String
+newtype BlockBody = BlockBody ByteString
   deriving (Show, Eq, Ord, IsString, Generic)
 
-hashBody :: BlockBody -> BodyHash
-hashBody (BlockBody b) = BodyHash (hash b)
+instance Hashable BlockBody where
+    hash (BlockBody body) = hash body
+
+hashBody :: Hashable body => body -> BodyHash
+hashBody body = BodyHash (hash body)
 
 -- | A block header. It retains simplified versions of all the essential
 -- elements.
@@ -347,9 +350,9 @@ instance Serialise BlockHeader where
 
 instance Serialise BlockBody where
 
-  encode (BlockBody b) = encodeString (Text.pack b)
+  encode (BlockBody b) = encodeBytes b
 
-  decode = BlockBody . Text.unpack <$> decodeString
+  decode = BlockBody <$> decodeBytes
 
 {-------------------------------------------------------------------------------
   Simple static time conversions, since no HardFork

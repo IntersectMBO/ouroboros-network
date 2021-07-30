@@ -170,7 +170,6 @@ tests CDDLSpecs { cddlChainSync
       ]
     ]
 
-
 -- | A 'CDDL' specifcation for a protocol 'ps'.
 --
 newtype CDDLSpec ps = CDDLSpec BL.ByteString
