@@ -25,7 +25,6 @@ import           Data.IP (IPv4, toIPv4w, fromHostAddress, toSockAddr)
 import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.ByteString.Char8 (pack)
 import           Data.Set (Set)
-import           Data.Time (DiffTime)
 import           Network.Mux.Timeout (TimeoutFn)
 import qualified Network.DNS.Resolver as DNSResolver
 import           Network.DNS (DNSError(NameError, TimeoutExpired))
@@ -33,7 +32,9 @@ import           Network.Socket (SockAddr (..))
 
 import           Control.Exception (throw)
 import           Control.Monad.IOSim
-import qualified Control.Monad.Class.MonadTimer as MonadTimer
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer(Tracer), contramap)
 import           Control.Monad.Class.MonadSTM.Strict (newTVarIO, readTVar,
                                                       MonadSTM (atomically),
@@ -153,10 +154,13 @@ simpleMockRoots = MockRoots localRootPeers dnsMap (mkStdGen 60)
 -- | Mock DNSActions data structure for testing purposes.
 -- Adds DNS Lookup function for IOSim with different timeout and lookup
 -- delays for every attempt.
-mockDNSActions :: forall exception s.
-                  Map Domain [IPv4]
-               -> StrictTVar (IOSim s) StdGen
-               -> DNSActions () exception (IOSim s)
+mockDNSActions :: forall exception m.
+                  ( MonadSTM   m
+                  , MonadDelay m
+                  )
+               => Map Domain [IPv4]
+               -> StrictTVar m StdGen
+               -> DNSActions () exception m
 mockDNSActions dnsMap stdGenVar =
     DNSActions {
       dnsResolverResource,
@@ -179,12 +183,12 @@ mockDNSActions dnsMap stdGenVar =
    dnsNewResolverResource   _ = constantResource ()
 #endif
 
-   dnsLookupAWithTTL :: TimeoutFn (IOSim s)
+   dnsLookupAWithTTL :: TimeoutFn m
                      -> resolvConf
                      -> resolver
                      -> Domain
-                     -> IOSim s (Either DNSError [(IPv4, TTL)])
-   dnsLookupAWithTTL timeout _ _ domain = do
+                     -> m (Either DNSError [(IPv4, TTL)])
+   dnsLookupAWithTTL timeoutFn _ _ domain = do
      gen <- atomically $ readTVar stdGenVar
 
          -- Small probability of timeout
@@ -195,8 +199,8 @@ mockDNSActions dnsMap stdGenVar =
      atomically $ writeTVar stdGenVar g'
 
      dnsLookup <-
-        timeout dtTimeout $ do
-          MonadTimer.threadDelay dtDelay
+        timeoutFn dtTimeout $ do
+          threadDelay dtDelay
           case Map.lookup domain dnsMap of
             Nothing -> return (Left NameError)
             Just x  -> return (Right (map (\a -> (a, 0)) x))
@@ -207,15 +211,22 @@ mockDNSActions dnsMap stdGenVar =
 
 -- | 'localRootPeersProvider' running with a given MockRoots env
 --
-mockLocalRootPeersProvider :: forall s. MockRoots -> IOSim s Void
-mockLocalRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) = do
+mockLocalRootPeersProvider :: forall m.
+                              ( MonadAsync m
+                              , MonadDelay m
+                              , MonadTimer m
+                              )
+                           => Tracer m (TraceLocalRootPeers SockAddr Failure)
+                           -> MockRoots
+                           -> m Void
+mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMap stdGen) = do
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
       genVar <- newTVarIO stdGen
 
-      localRootPeersProvider tracerTraceLocalRoots
+      localRootPeersProvider tracer
                              (curry toSockAddr)
-                             MonadTimer.timeout
+                             timeout
                              DNSResolver.defaultResolvConf
                              resultVar
                              (readTVar localRootPeersVar)
@@ -223,16 +234,22 @@ mockLocalRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) = do
 
 -- | 'publicRootPeersProvider' running with a given MockRoots env
 --
-mockPublicRootPeersProvider :: forall s. MockRoots
+mockPublicRootPeersProvider :: forall m.
+                               ( MonadAsync m
+                               , MonadThrow m
+                               , MonadTimer m
+                               )
+                            => Tracer m TracePublicRootPeers
+                            -> MockRoots
                             -> Int
-                            -> IOSim s (Set SockAddr, DiffTime)
-mockPublicRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) n = do
+                            -> m (Set SockAddr, DiffTime)
+mockPublicRootPeersProvider tracer (MockRoots localRootPeers dnsMap stdGen) n = do
       localRootPeersVar <- newTVarIO (concatMap (Map.keys . snd) localRootPeers)
       genVar <- newTVarIO stdGen
 
-      publicRootPeersProvider tracerTracePublicRoots
+      publicRootPeersProvider tracer
                               (curry toSockAddr)
-                              MonadTimer.timeout
+                              timeout
                               DNSResolver.defaultResolvConf
                               (readTVar localRootPeersVar)
                               (mockDNSActions @Failure dnsMap genVar)
@@ -240,13 +257,18 @@ mockPublicRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) n = do
 
 -- | 'resolveDomainAddresses' running with a given MockRoots env
 --
-mockResolveDomainAddresses :: forall s. MockRoots
-                           -> IOSim s (Map DomainAddress (Set SockAddr))
-mockResolveDomainAddresses (MockRoots localRootPeers dnsMap stdGen) = do
+mockResolveDomainAddresses :: ( MonadAsync m
+                              , MonadThrow m
+                              , MonadTimer m
+                              )
+                           => Tracer m TracePublicRootPeers
+                           -> MockRoots
+                           -> m (Map DomainAddress (Set SockAddr))
+mockResolveDomainAddresses tracer(MockRoots localRootPeers dnsMap stdGen) = do
       genVar <- newTVarIO stdGen
 
-      resolveDomainAddresses tracerTracePublicRoots
-                             MonadTimer.timeout
+      resolveDomainAddresses tracer
+                             timeout
                              DNSResolver.defaultResolvConf
                              (mockDNSActions @Failure dnsMap genVar)
                              [ domain
@@ -326,7 +348,7 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _) =
               $ selectLocalRootPeersEvents
               $ selectRootPeerDNSTraceEvents
               $ runSimTrace
-              $ mockLocalRootPeersProvider mockRoots
+              $ mockLocalRootPeersProvider tracerTraceLocalRoots mockRoots
 
         -- For all LocalRootGroup results, the number of groups should be
         -- preserved, i.e. no new groups are added nor deleted along the
@@ -353,7 +375,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) =
               $ selectLocalRootPeersEvents
               $ selectRootPeerDNSTraceEvents
               $ runSimTrace
-              $ mockLocalRootPeersProvider mockRoots
+              $ mockLocalRootPeersProvider tracerTraceLocalRoots mockRoots
 
         finalResultMap = Map.fromList $ map snd tr
 
@@ -370,7 +392,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _) =
               $ selectLocalRootPeersEvents
               $ selectRootPeerDNSTraceEvents
               $ runSimTrace
-              $ mockLocalRootPeersProvider mockRoots
+              $ mockLocalRootPeersProvider tracerTraceLocalRoots mockRoots
         r = foldl' (\(b, (t, x)) (t', y) ->
                     case (x, y) of
                       -- Last DNS lookup result   , Current result groups value
@@ -433,13 +455,13 @@ prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) n =
                         $ selectPublicRootPeersEvents
                         $ selectRootPeerDNSTraceEvents
                         $ runSimTrace
-                        $ mockPublicRootPeersProvider mr n
+                        $ mockPublicRootPeersProvider tracerTracePublicRoots mr n
 
           failures = selectPublicRootFailureEvents
                       $ selectPublicRootPeersEvents
                       $ selectRootPeerDNSTraceEvents
                       $ runSimTrace
-                      $ mockPublicRootPeersProvider mr n
+                      $ mockPublicRootPeersProvider tracerTracePublicRoots mr n
 
           successesMap = Map.fromList $ map snd successes
 
@@ -479,13 +501,13 @@ prop_resolveDomainAddresses_resolvesDomainsCorrectly
                         $ selectPublicRootPeersEvents
                         $ selectRootPeerDNSTraceEvents
                         $ runSimTrace
-                        $ mockResolveDomainAddresses mr
+                        $ mockResolveDomainAddresses tracerTracePublicRoots mr
 
           failures = selectPublicRootFailureEvents
                       $ selectPublicRootPeersEvents
                       $ selectRootPeerDNSTraceEvents
                       $ runSimTrace
-                      $ mockResolveDomainAddresses mr
+                      $ mockResolveDomainAddresses tracerTracePublicRoots mr
 
           successesMap = Map.fromList $ map snd successes
 
