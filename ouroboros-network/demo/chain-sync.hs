@@ -11,6 +11,7 @@
 
 module Main where
 
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void)
 import           Data.List
@@ -676,7 +677,7 @@ genBlockHeader g prevHeader body =
 
 genBlockBody :: RandomGen g => g -> BlockBody
 genBlockBody g =
-    BlockBody . take len . drop offset $ bodyData
+    BlockBody . BSC.take len . BSC.drop offset . BSC.pack $ bodyData
   where
     (offset, g') = randomR (0, bodyDataCycle-1)    g
     (len   , _ ) = randomR (1, bodyDataCycle*10-1) g'
