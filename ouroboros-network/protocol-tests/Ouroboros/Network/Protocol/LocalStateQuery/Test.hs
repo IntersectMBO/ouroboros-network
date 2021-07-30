@@ -38,7 +38,7 @@ import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.MockChain.Chain (Point)
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+import           Ouroboros.Network.Testing.ConcreteBlock (Block', Block, BlockBody)
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec
@@ -240,7 +240,9 @@ instance Arbitrary AcquireFailure where
 instance Arbitrary (Query (Maybe (Point Block))) where
   arbitrary = pure QueryPoint
 
-instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)) where
+instance Arbitrary body
+      => Arbitrary (AnyMessageAndAgency
+                     (LocalStateQuery (Block' body) (Point (Block' body)) Query)) where
   arbitrary = oneof
     [ getAnyMessageAndAgencyV7 <$> arbitrary
 
@@ -253,13 +255,13 @@ instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Que
 
 -- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
 --
-newtype AnyMessageAndAgencyV7 = AnyMessageAndAgencyV7 {
+newtype AnyMessageAndAgencyV7 body = AnyMessageAndAgencyV7 {
     getAnyMessageAndAgencyV7
-      :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+      :: AnyMessageAndAgency (LocalStateQuery (Block' body) (Point (Block' body)) Query)
   }
   deriving Show
 
-instance Arbitrary AnyMessageAndAgencyV7 where
+instance Arbitrary body => Arbitrary (AnyMessageAndAgencyV7 body) where
   arbitrary = AnyMessageAndAgencyV7 <$> oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
         (MsgAcquire . Just <$> arbitrary)
@@ -325,7 +327,7 @@ instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
 
 codec :: MonadST m
       => Bool
-      -> Codec (LocalStateQuery Block (Point Block) Query)
+      -> Codec (LocalStateQuery (Block' body) (Point (Block' body)) Query)
                 DeserialiseFailure
                 m ByteString
 codec canAcquireTip =
@@ -387,7 +389,7 @@ prop_codec_valid_cbor
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codec True)
 
 prop_codec_V7_compatible
-  :: AnyMessageAndAgencyV7
+  :: AnyMessageAndAgencyV7 BlockBody
   -> Bool
 prop_codec_V7_compatible (AnyMessageAndAgencyV7 msg) =
     runST (prop_codecs_compatM (codec False) (codec True) msg)
