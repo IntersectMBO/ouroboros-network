@@ -587,7 +587,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         (Socket.addrAddress responderAddr)
         unversionedHandshakeCodec
         noTimeLimitsHandshake
-        (cborTermVersionDataCodec unversionedProtocolDataCodec)
+        unversionedProtocolDataCodec
         acceptableVersion
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
@@ -612,7 +612,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
                 iocp
                 unversionedHandshakeCodec
                 noTimeLimitsHandshake
-                (cborTermVersionDataCodec unversionedProtocolDataCodec)
+                unversionedProtocolDataCodec
                 nullNetworkConnectTracers
                 acceptableVersion
                 (unversionedProtocol initiatorApp))
@@ -733,7 +733,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         responderAddr
         unversionedHandshakeCodec
         noTimeLimitsHandshake
-        (cborTermVersionDataCodec unversionedProtocolDataCodec)
+        unversionedProtocolDataCodec
         acceptableVersion
         (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
         nullErrorPolicies
@@ -754,7 +754,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           responderAddr
           unversionedHandshakeCodec
           noTimeLimitsHandshake
-          (cborTermVersionDataCodec unversionedProtocolDataCodec)
+          unversionedProtocolDataCodec
           acceptableVersion
           (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
           nullErrorPolicies
@@ -780,7 +780,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
                   iocp
                   unversionedHandshakeCodec
                   noTimeLimitsHandshake
-                  (cborTermVersionDataCodec unversionedProtocolDataCodec)
+                  unversionedProtocolDataCodec
                   nullNetworkConnectTracers
                   acceptableVersion
                   (unversionedProtocol (appX rrcfg)))
@@ -853,7 +853,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
                 iocp
                 unversionedHandshakeCodec
                 noTimeLimitsHandshake
-                (cborTermVersionDataCodec unversionedProtocolDataCodec)
+                unversionedProtocolDataCodec
                 nullNetworkConnectTracers
                 acceptableVersion
                 (unversionedProtocol appReq))
@@ -876,7 +876,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             (Socket.addrAddress addr)
             unversionedHandshakeCodec
             noTimeLimitsHandshake
-            (cborTermVersionDataCodec unversionedProtocolDataCodec)
+            unversionedProtocolDataCodec
             acceptableVersion
             (unversionedProtocol (SomeResponderApplication appRsp))
             nullErrorPolicies
