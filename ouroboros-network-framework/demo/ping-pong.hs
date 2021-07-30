@@ -111,7 +111,7 @@ clientPingPong pipelined =
       (Snocket.localSnocket iomgr)
       unversionedHandshakeCodec
       noTimeLimitsHandshake
-      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      unversionedProtocolDataCodec
       nullNetworkConnectTracers
       acceptableVersion
       (unversionedProtocol app)
@@ -153,7 +153,7 @@ serverPingPong =
       defaultLocalSocketAddr
       unversionedHandshakeCodec
       noTimeLimitsHandshake
-      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      unversionedProtocolDataCodec
       acceptableVersion
       (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
@@ -209,7 +209,7 @@ clientPingPong2 =
       (Snocket.localSnocket iomgr)
       unversionedHandshakeCodec
       noTimeLimitsHandshake
-      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      unversionedProtocolDataCodec
       nullNetworkConnectTracers
       acceptableVersion
       (unversionedProtocol app)
@@ -264,7 +264,7 @@ serverPingPong2 =
       defaultLocalSocketAddr
       unversionedHandshakeCodec
       noTimeLimitsHandshake
-      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      unversionedProtocolDataCodec
       acceptableVersion
       (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
