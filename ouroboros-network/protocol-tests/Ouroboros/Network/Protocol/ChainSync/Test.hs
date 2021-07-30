@@ -51,8 +51,8 @@ import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as Chain
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
-import           Ouroboros.Network.Testing.ConcreteBlock (Block (..),
-                     BlockHeader (..))
+import           Ouroboros.Network.Testing.ConcreteBlock (Block,
+                   BlockHeader (..))
 import           Test.ChainGenerators ()
 import           Test.ChainProducerState (ChainProducerStateForkTest (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
