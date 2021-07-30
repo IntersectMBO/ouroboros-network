@@ -77,8 +77,7 @@ import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec ( cborTermVersionDataCodec
-                                                            , noTimeLimitsHandshake)
+import           Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
@@ -335,7 +334,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr next
             -- TraceSendRecv
             haHandshakeTracer = (name,) `contramap` nullTracer,
             haHandshakeCodec = unversionedHandshakeCodec,
-            haVersionDataCodec = cborTermVersionDataCodec unversionedProtocolDataCodec,
+            haVersionDataCodec = unversionedProtocolDataCodec,
             haAcceptVersion = acceptableVersion,
             haTimeLimits = noTimeLimitsHandshake
           }
@@ -509,7 +508,7 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
-              haVersionDataCodec = cborTermVersionDataCodec unversionedProtocolDataCodec,
+              haVersionDataCodec = unversionedProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
               haTimeLimits = noTimeLimitsHandshake
             }
