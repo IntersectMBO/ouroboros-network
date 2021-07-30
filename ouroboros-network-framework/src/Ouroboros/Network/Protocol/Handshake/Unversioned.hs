@@ -43,8 +43,10 @@ instance Acceptable UnversionedProtocolData where
                     UnversionedProtocolData = Accept UnversionedProtocolData
 
 
-unversionedProtocolDataCodec :: UnversionedProtocol -> CodecCBORTerm Text UnversionedProtocolData
-unversionedProtocolDataCodec _ = CodecCBORTerm {encodeTerm, decodeTerm}
+unversionedProtocolDataCodec :: VersionDataCodec CBOR.Term UnversionedProtocol
+                                                           UnversionedProtocolData
+unversionedProtocolDataCodec = cborTermVersionDataCodec
+                                 (const CodecCBORTerm {encodeTerm, decodeTerm})
     where
       encodeTerm :: UnversionedProtocolData -> CBOR.Term
       encodeTerm UnversionedProtocolData = CBOR.TNull

@@ -247,7 +247,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         responderAddr
         unversionedHandshakeCodec
         noTimeLimitsHandshake
-        (cborTermVersionDataCodec unversionedProtocolDataCodec)
+        unversionedProtocolDataCodec
         acceptableVersion
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
@@ -256,7 +256,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
             snocket
             unversionedHandshakeCodec
             noTimeLimitsHandshake
-            (cborTermVersionDataCodec unversionedProtocolDataCodec)
+            unversionedProtocolDataCodec
             (NetworkConnectTracers activeMuxTracer nullTracer)
             acceptableVersion
             (unversionedProtocol initiatorApp)
@@ -493,7 +493,7 @@ prop_socket_client_connect_error _ xs =
         (socketSnocket iomgr)
         unversionedHandshakeCodec
         noTimeLimitsHandshake
-        (cborTermVersionDataCodec unversionedProtocolDataCodec)
+        unversionedProtocolDataCodec
         nullNetworkConnectTracers
         acceptableVersion
         (unversionedProtocol app)
