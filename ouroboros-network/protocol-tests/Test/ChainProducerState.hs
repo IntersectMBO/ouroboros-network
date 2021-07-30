@@ -22,7 +22,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..),
                      Point (..), headPoint, pointOnChain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState
-import           Ouroboros.Network.Testing.ConcreteBlock (Block (..))
+import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 
 import           Test.ChainGenerators (TestBlockChain (..),
                      TestBlockChainAndUpdates (..), TestChainFork (..),

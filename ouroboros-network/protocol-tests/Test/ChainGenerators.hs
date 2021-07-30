@@ -33,6 +33,8 @@ module Test.ChainGenerators
   )
   where
 
+import qualified Data.ByteString.Char8 as BSC
+import           Data.Hashable
 import qualified Data.List as L
 import           Data.Maybe (catMaybes, listToMaybe)
 
@@ -47,6 +49,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -125,14 +128,14 @@ instance Arbitrary (Point BlockHeader) where
     h = blockPointHash blk
     s = blockPointSlot blk
 
-instance Arbitrary (Point Block) where
-  arbitrary = (castPoint :: Point BlockHeader -> Point Block) <$> arbitrary
+instance Arbitrary (Point (Block' body)) where
+  arbitrary = (castPoint :: Point BlockHeader -> Point (Block' body)) <$> arbitrary
 
-  shrink = map (castPoint :: Point BlockHeader -> Point Block)
+  shrink = map (castPoint :: Point BlockHeader -> Point (Block' body))
          . shrink
-         .     (castPoint :: Point Block -> Point BlockHeader)
+         .     (castPoint :: Point (Block' body) -> Point BlockHeader)
 
-instance Arbitrary (ChainRange (Point Block)) where
+instance Arbitrary (ChainRange (Point (Block' body))) where
   arbitrary = do
     low  <- arbitrary
     high <- arbitrary `suchThat` (\high -> pointSlot low <= pointSlot high)
@@ -146,12 +149,14 @@ instance Arbitrary BlockBody where
     arbitrary =
       BlockBody <$>
         -- Sometimes pick a common block so some are equal
-        frequency [ (1, pure "EMPTY")
-                  , (4, vectorOf 4 (choose ('A', 'Z'))) ]
+        frequency [ (1, pure $ BSC.pack "EMPTY")
+                  , (4, BSC.pack <$> vectorOf 4 (choose ('A', 'Z'))) ]
     -- probably no need for shrink, the content is arbitrary and opaque
     -- if we add one, it might be to shrink to an empty block
 
-instance Arbitrary Block where
+instance ( Hashable body
+         , Arbitrary body
+         ) => Arbitrary (Block' body) where
     arbitrary = do
       body    <- arbitrary
       slotGap <- genSlotGap
@@ -188,7 +193,7 @@ genArbitraryChainAnchor :: Gen (Anchor Block)
 genArbitraryChainAnchor = Anchor <$> arbitrary <*> arbitrary <*> arbitrary
 
 instance Arbitrary BlockHeader where
-    arbitrary = blockHeader <$> arbitrary
+    arbitrary = blockHeader <$> (arbitrary :: Gen Block)
 
 -- We provide CoArbitrary instances, for (Block -> _) functions
 -- We use default implementations using generics.
