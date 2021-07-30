@@ -48,7 +48,7 @@ import           Ouroboros.Network.Block (Point, Tip, encodeTip,
                    decodeTip, wrapCBORinCBOR, unwrapCBORinCBOR)
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Testing.ConcreteBlock (BlockHeader (..), Block)
+import           Ouroboros.Network.Testing.ConcreteBlock (BlockHeader (..), Block')
 
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
                    NodeToNodeVersionData (..), nodeToNodeHandshakeCodec)
@@ -170,6 +170,7 @@ tests CDDLSpecs { cddlChainSync
       ]
     ]
 
+type Block = Block' String
 
 -- | A 'CDDL' specifcation for a protocol 'ps'.
 --
