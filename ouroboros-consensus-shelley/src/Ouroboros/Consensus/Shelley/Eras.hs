@@ -252,8 +252,9 @@ pattern IncorrectClaimedFlag claimedFlag <-
         (SL.UtxoFailure
           (Alonzo.UtxosFailure
             (Alonzo.ValidationTagMismatch
-              (Alonzo.IsValid claimedFlag
-      )))))
+              (Alonzo.IsValid claimedFlag)
+              _validationErrs
+      ))))
 
 -- | The ledger responded with Alonzo errors we were not expecting
 data UnexpectedAlonzoLedgerErrors =
