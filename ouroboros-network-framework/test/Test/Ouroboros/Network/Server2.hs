@@ -31,7 +31,7 @@ import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.IOSim hiding (ppTrace)
+import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
@@ -1777,7 +1777,7 @@ makeBundle f = Bundle (WithHot         $ f TokHot)
 --
 simulatedPropertyWithTimeout :: DiffTime -> (forall s. IOSim s Property) -> Property
 simulatedPropertyWithTimeout t test =
-  counterexample ("\nTrace:\n" ++ ppTrace tr) $
+  counterexample ("\nTrace:\n" ++ ppTrace_ tr) $
   case traceResult False tr of
     Left failure ->
       counterexample ("Failure:\n" ++ displayException failure) False
@@ -1785,20 +1785,14 @@ simulatedPropertyWithTimeout t test =
   where
     tr = runSimTrace $ timeout t test
 
-ppTrace :: Trace a -> String
-ppTrace tr = concat
-    [     "====== Trace ======\n"
-    , intercalate "\n" $ map fmt events
+ppTrace_ :: Trace a -> String
+ppTrace_ tr = concat
+    [ "====== Trace ======\n"
+    , ppTrace' tr
     , "\n\n====== Say Events ======\n"
     , intercalate "\n" $ selectTraceEventsSay' tr
     , "\n"
     ]
-  where
-    events = traceEvents tr
-    w      = maximum [ length name | (_, _, Just name, _) <- events ]
-
-    fmt (t, tid, lbl, e) = printf "%-24s - %-13s %-*s - %s" (show t) (show tid) w (fromMaybe "" lbl) (show e)
-
 
 within_ :: Int -> Int -> String
 within_ _ 0 = "0"
