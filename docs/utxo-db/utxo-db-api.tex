@@ -25,13 +25,20 @@
 \title{Storing the Cardano ledger state on disk: \\
        API design concepts
   }
-\date{Version 0.1, July 2021}
+\date{Version 0.2, August 2021}
 \author{Douglas Wilson     \\ {\small \texttt{douglas@well-typed.com}} \\
    \and Duncan Coutts      \\ {\small \texttt{duncan@well-typed.com}} \\
                               {\small \texttt{duncan.coutts@iohk.io}}
    }
 
 \maketitle
+
+\section*{Acknowledgements}
+
+Thanks to the consensus team for many useful discussions and feedback. Thanks
+particularly to Edsko de Vries for critiques of early versions of these ideas.
+Thanks to Tim Sheard for the inspiration to use the ideas and notation of a
+calculus of changes.
 
 \section{Purpose}
 
@@ -132,11 +139,12 @@ syncing) we may be able to initiate the I/O reads for later blocks while
 processing the current blocks.
 
 
-\section{A calculus of differences}
-\label{calculus-differences}
+\section{Notation and properties of differences}
+\label{notation-differences}
 
-In this section we briefly review of the calculus of differences and the
-notation that we will use.
+In this section we briefly review the notation and properties of differences
+that we will use in later sections. We roughly follow the presentation by
+\cite{change-calculus}.
 
 We start with a set $A$ of values of our data structure of interest. This set
 will typically be a finite mapping, or some small collection of finite mappings.
@@ -195,8 +203,28 @@ transformation functions.
 
 \section{Abstract models of hybrid on-disk/in-memory data structures}
 
-This makes use of the idea and notation of the calculus of differences from
-the previous section.
+There are a few reasons to consider these models.
+\begin{description}
+\item[Lucid desciptions]
+There is the usual reason for abstraction that, omiting unnecessary details can
+make the ideas easier and shorter to describe.
+
+\item[Imagining implementation strategies]
+Another reason is that although these are abstract models, they can be seen
+to correspond to certain implementation approaches. For example we will refer
+to certain terms as represting on-disk or in-memory data structures. Obviously
+mathematically there is no such distinction but it is very useful to see the
+correspondence to an implementation strategy. It lets us start to think about
+implementation constraints and whether a design seems plausible.
+
+\item[Seeing equivalences]
+By describing the models in mathematical terms we may be able to show
+mathematical equivalences between models. This is especially useful when we
+have a model that corresponds to an preferred implementation approach and we
+can show that it is mathematically equivalent to some reference model.
+\end{description}
+This section makes use of the idea and notation of the calculus of differences
+from the previous section.
 
 \subsection{Simple sequential databases}
 
@@ -229,14 +257,15 @@ $\mathit{db}_{n+1} = \mathit{tx}_n(\mathit{db}_n)$.
 \end{align*}
 \end{center}
 This model serves as an important semantic reference point for the more
-complicated models below. For example when working with databases involving
-concurrency it is often useful to show that some concurrent combination of
-transactions is equivalent to a simple serial combination of transactions.
-Similarly we will want to show that our more complicated models are
-semantically equivalent to this simple one.
+complicated models below. we will want to show that some of our more
+complicated models are semantically equivalent to this simple one.
 
+If we think of this model in terms of what kind of implementation strategy it
+most clearly represents, then it would probably be a simple in-memory design.
+That is a design where the whole database is a simple program value that is
+transformed with pure functions.
 
-\subsection{Change-based sequential databases}
+\subsection{Change-based databases}
 
 In this model we want to introduce two concepts
 \begin{enumerate}
@@ -244,11 +273,11 @@ In this model we want to introduce two concepts
 \item identifying the subset of values that each transaction needs.
 \end{enumerate}
 It is otherwise just a simple sequence of changes. The use of these two concepts
-makes this a simple but reasonable model of a hybrid on-disk / in-memory
-database. That is a database where the data is stored on disk but all
-transaction processing is performed on in-memory data structures. Using a subset
-of values corresponds to reading the data in from disk, while obtaining and
-applying differences corresponds to writing changes back to disk.
+makes this a simple but reasonable model of an on-disk database with in-memory
+transaction processing. That is, a database where the data is stored on disk
+but all transaction processing is performed on in-memory data structures. Using
+a subset of values corresponds to reading the data in from disk, while obtaining
+and applying differences corresponds to writing changes back to disk.
 
 Whereas in the previous model we had a series of transaction functions
 $\mathit{tx}_0, \mathit{tx}_1, \ldots$, in this model we will have difference
@@ -317,17 +346,20 @@ And hence, just as in the simple model, it is the case that
 
 \subsection{Change-based pipelined databases}
 
-Here is where things start to get tricky. As discussed in
+Here is where things start to get interesting and tricky. As discussed in
 \cref{enabling-pipelining} we wish to pipeline reads from disk to provide the
 opportunity to use parallel I/O. Providing this opportunity is not something
 that we can hide, and it will have to be explicit in how we manage the logical
-state of the database.
+state of the database. So the purpose of this model is to provide a reasonable
+correspond to an implementation that could use pipelined reads. We will also
+want to show that it is nevertheless mathematically equivalent to the simple
+model.
 
 The goal with the pipelining of I/O reads is to initiate the I/O operations
-early so the results are already available in-memory by the time they are
-needed later. This allows the I/O to be overlapped with computation, but it also
-allows a substantial number of I/O operations to be in progress at once, which
-is what provides the opportunity to use parallel I/O.
+early so the results are already available in memory by the time they are
+needed later. This allows the I/O to be overlapped with computation, and it
+also allows a substantial number of I/O operations to be in progress at once,
+which is what provides the opportunity to use parallel I/O.
 
 The difficulty however is that initiating the reads early means that the state
 of the database in which we initiated the reads is not necessarily the same
@@ -344,15 +376,14 @@ we would get the wrong result.
 \begin{tikzpicture}[state/.style={circle, draw=black}]
 \begin{scope}[thick]
   \node[state]   (db0)                      {$\mathit{db}_0$};
-  \node[state]   (db1) [right=2.0cm of db0] {$\mathit{db}_1$};
-  \node[state]   (db2) [right=2.0cm of db1] {$\mathit{db}_2$};
+  \node[state]   (db1) [right=1.8cm of db0] {$\mathit{db}_1$};
+  \node[state]   (db2) [right=1.8cm of db1] {$\mathit{db}_2$};
 
-  \node[state]   (rs1) [above=1.0cm of db1] {$\mathit{rs}_1$};
+  \node[state]   (rs1) [above=1.0cm of db0] {$\mathit{rs}_1$};
 
-  \path[->] (db0) edge [bend right] node[left=0.2cm] {$\mathit{ks}_1$} (rs1);
+  \path[->] (db0) edge [bend left] node[left] {$\mathit{ks}_1$} (rs1);
 
-  \path[->] (rs1) edge [bend left] node[left] {}
-                                   node[right=0.2cm] {using read from wrong state?} (db2);
+  \path[->] (rs1) edge [bend left=20] node[right=0.2cm] {using read from wrong state?} (db2);
 
   \path[->] (db0) edge [bend right] node[above] {} (db1);
   \path[->] (db1) edge [bend right] node[above] {$\delta\mathit{tx}_1$} (db2);
@@ -371,15 +402,14 @@ it semantically equivalent to the sequential version.
 \begin{tikzpicture}[state/.style={circle, draw=black}]
 \begin{scope}[thick]
   \node[state]   (db0)                      {$\mathit{db}_0$};
-  \node[state]   (db1) [right=2.0cm of db0] {$\mathit{db}_1$};
-  \node[state]   (db2) [right=2.0cm of db1] {$\mathit{db}_2$};
+  \node[state]   (db1) [right=1.8cm of db0] {$\mathit{db}_1$};
+  \node[state]   (db2) [right=1.8cm of db1] {$\mathit{db}_2$};
 
-  \node[state]   (rs1) [above=1.0cm of db1] {$\mathit{rs}_1$};
+  \node[state]   (rs1) [above=1.0cm of db0] {$\mathit{rs}_1$};
 
-  \path[->] (db0) edge [bend right] node[left=0.2cm] {$\mathit{ks}_1$} (rs1);
+  \path[->] (db0) edge [bend left] node[left] {$\mathit{ks}_1$} (rs1);
 
-  \path[->] (rs1) edge [bend left] node[left] {}
-                                   node[right=0.2cm] {adjust $\mathit{rs}_1$ as-if performed against $\mathit{db}_1$} (db2);
+  \path[->] (rs1) edge [bend left=20] node[right=0.2cm] {adjust $\mathit{rs}_1$ as-if performed against $\mathit{db}_1$} (db2);
 
   \path[->] (db0) edge [bend right] node[above] {} (db1);
   \path[->] (db1) edge [bend right] node[above] {$\delta\mathit{tx}_1$} (db2);
@@ -411,29 +441,34 @@ pipelined reads with a fixed depth of one.
 \begin{tikzpicture}[state/.style={circle, draw=black}]
 \begin{scope}[thick]
   \node[state]   (db0)                      {$\mathit{db}_0$};
-  \node[state]   (db1) [right=4.0cm of db0] {$\mathit{db}_1$};
-  \node[state]   (db2) [right=2.0cm of db1] {$\mathit{db}_2$};
-  \node[state]   (db3) [right=2.0cm of db2] {$\mathit{db}_3$};
-  \node                [right=0.5cm of db3] {$\ldots$};
+  \node[state]   (db1) [right=1.8cm of db0] {$\mathit{db}_1$};
+  \node[state]   (db2) [right=1.8cm of db1] {$\mathit{db}_2$};
+  \node[state]   (db3) [right=1.8cm of db2] {$\mathit{db}_3$};
+  \node[state]   (db4) [right=1.8cm of db3] {$\mathit{db}_4$};
+  \node                [right=0.5cm of db4] {$\ldots$};
 
-  \node[state]   (rs1) [above=1.0cm of db1] {$\mathit{rs}_1$};
-  \node[state]   (rs2) [above=1.0cm of db2] {$\mathit{rs}_2$};
-  \node[state]   (rs3) [above=1.0cm of db3] {$\mathit{rs}_3$};
-  \node[state]   (rs0) [left=2.0cm  of rs1] {$\mathit{rs}_0$};
-  \node                [right=0.5cm of rs3] {$\ldots$};
+  \node[state]   (rs0) [above=0.7cm of db0] {$\mathit{rs}_0$};
+  \node[state]   (rs1) [above=2.0cm of db0] {$\mathit{rs}_1$};
+  \node[state]   (rs2) [above=2.0cm of db1] {$\mathit{rs}_2$};
+  \node[state]   (rs3) [above=2.0cm of db2] {$\mathit{rs}_3$};
+  \node[state]   (rs4) [above=2.0cm of db3] {$\mathit{rs}_4$};
+  \node                [right=0.5cm of rs4] {$\ldots$};
 
-  \path[->] (db0) edge [bend right] node[left=0.2cm] {$\mathit{ks}_0$} (rs0);
-  \path[->] (db0) edge [bend right] node[left=0.2cm] {$\mathit{ks}_1$} (rs1);
-  \path[->] (db1) edge [bend right] node[left=0.2cm] {$\mathit{ks}_2$} (rs2);
-  \path[->] (db2) edge [bend right] node[left=0.2cm] {$\mathit{ks}_3$} (rs3);
+  \path[->] (db0) edge [bend left=45]  node[left]  {$\mathit{ks}_0$} (rs0);
+  \path[->] (db0) edge [bend right=45] node[right] {$\mathit{ks}_1$} (rs1);
+  \path[->] (db1) edge [bend left]     node[left]  {$\mathit{ks}_2$} (rs2);
+  \path[->] (db2) edge [bend left]     node[left]  {$\mathit{ks}_3$} (rs3);
+  \path[->] (db3) edge [bend left]     node[left]  {$\mathit{ks}_4$} (rs4);
 
-  \path[->] (rs0) edge [bend left] node[left] {$\delta\mathit{tx}_0$} (db1);
-  \path[->] (rs1) edge [bend left] node[left] {$\delta\mathit{tx}_1$} (db2);
-  \path[->] (rs2) edge [bend left] node[left] {$\delta\mathit{tx}_2$} (db3);
+  \path[->] (rs0) edge [bend right=10] node[below] {$\delta\mathit{tx}_0$} (db1);
+  \path[->] (rs1) edge [bend left=15]  node[below] {$\delta\mathit{tx}_1$} (db2);
+  \path[->] (rs2) edge [bend left=15]  node[below] {$\delta\mathit{tx}_2$} (db3);
+  \path[->] (rs3) edge [bend left=15]  node[below] {$\delta\mathit{tx}_3$} (db4);
 
   \path[->] (db0) edge [bend right] node[above] {$\_ \triangleleft \_$} (db1);
   \path[->] (db1) edge [bend right] node[above] {$\_ \triangleleft \_$} (db2);
   \path[->] (db2) edge [bend right] node[above] {$\_ \triangleleft \_$} (db3);
+  \path[->] (db3) edge [bend right] node[above] {$\_ \triangleleft \_$} (db4);
 \end{scope}
 \end{tikzpicture}
 \begin{equation*}
@@ -501,14 +536,16 @@ then we can omit the inner domain restriction.
   \restrict{\left(\mathit{db} \triangleleft \delta\mathit{db}\right)}{\mathit{ks}}
 \end{equation}
 
-\subsection{Hybrid sequential databases}
+\subsection{Hybrid on-disk / in-memory databases}
 
 In this model we go back to a sequential style for simplicity, but we represent
-the data as a hybrid of an on-disk part and an in-memory part. The part on disk
-$\mathit{db}^{\mathrm{disk}}_i$ will be the ordinary representation, while the
-part in memory $\delta\mathit{db}^{\mathrm{mem}}_i$ will be differences. We
-define the  overall logical value of the database to be the underlying on-disk
-part with the in-memory changes applied on top.
+the data as a combination of two parts. One will stand for data on disk and the
+other will stand for data in memory. The part on disk will be ordinary database
+values $\mathit{db}^{\mathrm{disk}}_i \in \mathit{DB}$, while the part in
+memory will be database differences
+$\delta\mathit{db}^{\mathrm{mem}}_i \in \Delta\mathit{DB}$. We
+define the  overall logical value of the database to be the on-disk part with
+the in-memory changes applied on top.
 \[
 \mathit{db}_i = \mathit{db}^{\mathrm{disk}}_i \triangleleft \delta\mathit{db}^{\mathrm{mem}}_i
 \]
@@ -526,14 +563,16 @@ With the hybrid representation that is
       \triangleleft \delta\mathit{tx}_i(\restrict{\mathit{db}_i}{\mathit{ks}_i})
 \]
 As we know from \cref{eq:apply-compose}, applying two sets of changes is
-equivalent to applying the composition of the changes.
+equivalent to applying the composition of the changes, and we choose to make
+use of this.
 \[
 \mathit{db}_{i+1} = \mathit{db}^{\mathrm{disk}}_i
       \triangleleft \left( \delta\mathit{db}^{\mathrm{mem}}_i
                   \diamond \delta\mathit{tx}_i(\restrict{\mathit{db}_i}{\mathit{ks}_i})
                     \right)
 \]
-This now fits the same hybrid representation. We can define
+This now fits the same hybrid representation. We can define the new in-memory
+value to be
 \[
 \delta\mathit{db}^{\mathrm{mem}}_{i+1} = \delta\mathit{db}^{\mathrm{mem}}_i
                   \diamond \delta\mathit{tx}_i(\restrict{\mathit{db}_i}{\mathit{ks}_i})
@@ -547,8 +586,10 @@ Notice that we have applied the transaction exclusively to the in-memory part,
 without changing the on-disk part. Obviously we cannot do this indefinitely or
 the part kept in memory will grow without bound.
 
-In this approach we must from time to time flush changes to disk. Let us see
-how that might work. Suppose we start from a state
+In this approach we must changes to disk from time to time flush. Let us see
+how that might work. Of course flushing is not supposed to change the logical
+value of the database, just to shuffle data from the in-memory part to the
+on-disk part. Suppose we start from a state
 \[
 \mathit{db} = \mathit{db}^{\mathrm{disk}}
       \triangleleft \delta\mathit{db}^{\mathrm{mem}}
@@ -562,16 +603,43 @@ The idea is that the first part will be flushed to disk and the second part
 will remain in memory. We have a lot of choice here. We can split this in any
 way we like. We could choose to flush everything to disk for example, by picking
 $\delta\mathit{db}^{\mathrm{mem}}_b = \mathbf{0}$, but we can also choose to
-flush just a subset of changes. Doing so is another straightforward application
-of \cref{eq:apply-compose}, but in the opposite direction.
-\[
-\mathit{db} = \mathit{db}^{\mathrm{disk}}
-      \triangleleft \left( \delta\mathit{db}^{\mathrm{mem}}_a \diamond \delta\mathit{db}^{\mathrm{mem}}_b \right)
-\]
-\[
-\mathit{db} = \left(\mathit{db}^{\mathrm{disk}}
+flush just a subset of changes.
+
+Doing the flush is another straightforward application of
+\cref{eq:apply-compose}, but in the opposite direction.
+\begin{align*}
+       & \mathit{db} = \mathit{db}^{\mathrm{disk}}
+         \triangleleft \left( \delta\mathit{db}^{\mathrm{mem}}_a \diamond \delta\mathit{db}^{\mathrm{mem}}_b \right)
+\\
+\equiv & \\
+       & \mathit{db} = \left(\mathit{db}^{\mathrm{disk}}
       \triangleleft \delta\mathit{db}^{\mathrm{mem}}_a \right) \triangleleft \delta\mathit{db}^{\mathrm{mem}}_b
-\]
+\end{align*}
+We can interpret the application of changes
+$\mathit{db}^{\mathrm{disk}} \triangleleft \delta\mathit{db}^{\mathrm{mem}}_a$
+as performing the writes to the on-disk database.
+
+\subsection{Multiple logical database states}
+
+In the models so far, while we have of course defined many logical values of
+a database, we have implicitly assumed that these are the evolving states of
+a singe database over time. We now wish to model a situation in which we want
+to maintain and have efficient access to many logical values of a database at
+once.
+
+This corresponds roughly to the situation we have in the consensus design where
+it is necessary to have efficient access to ledger states corresponding to the
+last K blocks (which is 2160). We need these ledger states to be able to
+evaluate the validity of candidate chains that intersect with our own at any
+point within the last K blocks. In the current wholly in-memory consensus
+design we can maintain K ledger states at very little additional memory cost
+compared to a single ledger state. This takes advantage of persistent data
+structures. This works because the K ledger states are very closely related:
+being the ledger states obtained from applying a series of blocks.
+
+The idea we want to model here is having a single on-disk state at once, but
+a whole series of in-memory differences, giving us a series of logical database
+values.
 
 
 \section{Partial tracking mapping}
