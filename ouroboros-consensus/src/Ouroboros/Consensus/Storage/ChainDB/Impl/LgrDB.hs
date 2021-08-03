@@ -94,6 +94,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
+import qualified Debug.Pretty.Simple as Debug
+
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
       varDB          :: !(StrictTVar m (LedgerDB' blk))
@@ -224,6 +226,7 @@ initFromDisk
 initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
              replayTracer
              immutableDB = wrapFailure (Proxy @blk) $ do
+    Debug.pTraceM "Initializing ledger DB from disk"
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
@@ -234,6 +237,8 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
+    Debug.pTraceM "Ledger DB initialized from disk"
+    Debug.pTraceM $ "Replayed " ++ show replayed ++ " blocks"
     return (db, replayed)
   where
     ccfg = configCodec lgrTopLevelConfig

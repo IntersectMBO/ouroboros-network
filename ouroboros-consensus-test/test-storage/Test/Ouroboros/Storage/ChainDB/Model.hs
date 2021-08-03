@@ -121,6 +121,10 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
+import qualified Debug.Pretty.Simple as Debug
+import qualified         Ouroboros.Network.MockChain.Chain as MockChain
+
+
 type IteratorId = Int
 
 -- | Model of the chain DB
@@ -342,13 +346,23 @@ getLedgerDB ::
   -> Model blk
   -> LedgerDB (ExtLedgerState blk)
 getLedgerDB cfg m@Model{..} =
+   -- Debug.pTrace "********************************************************************************" $
+   -- Debug.pTrace ("Max actual rollback = " ++ show (SecurityParam (maxActualRollback k m) ))$
+   -- Debug.pTraceShow "Immutable DB length: " $
+   -- Debug.pTraceShow (MockChain.length immutableDbChain) $
+   -- Debug.pTraceShow (ledgerDbWithAnchor initLedger) $
+   -- Debug.pTraceShow (ledgerDbPushMany' ledgerDbCfg blks (ledgerDbWithAnchor initLedger)) $
+   -- Debug.pTraceShowId $
       ledgerDbPrune (SecurityParam (maxActualRollback k m))
     $ ledgerDbPushMany' ledgerDbCfg blks
     $ ledgerDbWithAnchor initLedger
   where
     blks = Chain.toOldestFirst $ currentChain m
 
-    k = configSecurityParam cfg
+    k = Debug.pTrace msg r
+      where
+        r   = configSecurityParam cfg
+        msg = "k = " ++ show r
 
     ledgerDbCfg = LedgerDbCfg {
           ledgerDbCfgSecParam = k

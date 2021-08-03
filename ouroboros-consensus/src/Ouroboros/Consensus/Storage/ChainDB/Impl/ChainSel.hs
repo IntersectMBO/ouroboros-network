@@ -79,6 +79,8 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
+import qualified Debug.Pretty.Simple as Debug
+
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.
 --
@@ -117,7 +119,9 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
 
     case NE.nonEmpty (filter (preferAnchoredCandidate bcfg curChain) chains) of
       -- If there are no candidates, no chain selection is needed
-      Nothing      -> return curChainAndLedger
+      Nothing      -> do
+        Debug.pTraceM "No chain selection was done."
+        return curChainAndLedger
       Just chains' -> maybe curChainAndLedger toChainAndLedger <$>
         chainSelection' curChainAndLedger chains'
   where

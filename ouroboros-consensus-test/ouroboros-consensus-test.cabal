@@ -264,6 +264,7 @@ test-suite test-storage
                      , transformers
                      , tree-diff
                      , vector
+                     , pretty-simple
 
                      , io-classes
                      , io-sim

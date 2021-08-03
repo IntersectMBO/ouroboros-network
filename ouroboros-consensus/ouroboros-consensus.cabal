@@ -314,6 +314,8 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
+                     , pretty-simple
+
                      , io-classes        >=0.2   && <0.3
                      , typed-protocols
                      , network-mux

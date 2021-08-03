@@ -67,6 +67,8 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
+import qualified Debug.Pretty.Simple as Debug
+
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
 -------------------------------------------------------------------------------}
@@ -207,6 +209,7 @@ initLedgerDB replayTracer
                    -> [DiskSnapshot]
                    -> m (InitLog blk, LedgerDB' blk, Word64)
     tryNewestFirst acc [] = do
+        Debug.pTraceM "Trying newest first without snapshots"
         -- We're out of snapshots. Start at genesis
         traceWith replayTracer $ ReplayFromGenesis ()
         initDb <- ledgerDbWithAnchor <$> getGenesisLedger
@@ -215,6 +218,7 @@ initLedgerDB replayTracer
           Left _  -> error "invariant violation: invalid current chain"
           Right (l, replayed) -> return (acc InitFromGenesis, l, replayed)
     tryNewestFirst acc (s:ss) = do
+        Debug.pTraceM $ "Trying newest first with " ++ show (length (s:ss)) ++ "snapshots"
         -- If we fail to use this snapshot, delete it and try an older one
         ml <- runExceptT $ initFromSnapshot
                              replayTracer

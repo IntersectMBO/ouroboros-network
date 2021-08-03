@@ -19,7 +19,53 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Storage.ChainDB.StateMachine (tests) where
+module Test.Ouroboros.Storage.ChainDB.StateMachine
+  ( tests
+  -- * Exports required when debugging test failures
+  , runChainDBCommands
+  , MaxClockSkew (MaxClockSkew)
+  , ChunkInfo.SmallChunkInfo (ChunkInfo.SmallChunkInfo)
+  , ImmutableDB.ChunkInfo (ImmutableDB.UniformChunkSize)
+  , ImmutableDB.Internal.ChunkSize (ImmutableDB.Internal.ChunkSize, ImmutableDB.Internal.chunkCanContainEBB, ImmutableDB.Internal.numRegularBlocks)
+  , QSM.Commands (QSM.Commands, QSM.unCommands)
+  , QSM.Command (QSM.Command)
+  , At (At, unAt)
+  , Cmd (..) -- TODO: export explicitly
+  , Resp (Resp, getResp)
+  , Storage.TestBlock.TestBlock  ( Storage.TestBlock.TestBlock
+                                 , Storage.TestBlock.testHeader
+                                 , Storage.TestBlock.testBody
+                                 )
+  , Storage.TestBlock.TestHeader ( Storage.TestBlock.TestHeader
+                                 , Storage.TestBlock.thHash
+                                 , Storage.TestBlock.thPrevHash
+                                 , Storage.TestBlock.thBodyHash
+                                 , Storage.TestBlock.thSlotNo
+                                 , Storage.TestBlock.thBlockNo
+                                 , Storage.TestBlock.thChainLength
+                                 , Storage.TestBlock.thIsEBB
+                                 )
+  , Storage.TestBlock.TestBody  ( Storage.TestBlock.TestBody
+                                , Storage.TestBlock.tbForkNo
+                                , Storage.TestBlock.tbIsValid
+                                )
+  , Storage.TestBlock.TestHeaderHash (Storage.TestBlock.TestHeaderHash)
+  , Block.ChainHash (Block.GenesisHash, Block.BlockHash)
+  , Storage.TestBlock.TestBodyHash (Storage.TestBlock.TestBodyHash)
+  , Cardano.Slot.SlotNo (Cardano.Slot.SlotNo)
+  , Cardano.Block.BlockNo (Cardano.Block.BlockNo)
+  , Storage.TestBlock.ChainLength (Storage.TestBlock.ChainLength)
+  , Cardano.Slot.EpochNo (Cardano.Slot.EpochNo)
+  , Storage.TestBlock.EBB (Storage.TestBlock.EBB, Storage.TestBlock.RegularBlock)
+  , Network.Point.Block ( Network.Point.Block
+                        , Network.Point.blockPointSlot
+                        , Network.Point.blockPointHash
+                        )
+--  , Block.Point (Block.Point)
+  , Success (Point, Unit, LedgerDB)
+  , Storage.TestBlock.testInitExtLedger
+  )
+where
 
 import           Prelude hiding (elem)
 
@@ -57,14 +103,19 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import qualified Cardano.Slotting.Slot as Cardano.Slot
+import qualified Cardano.Slotting.Block as Cardano.Block
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
+import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
                      FollowerNext, FollowerState)
 import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import qualified Ouroboros.Network.Point as Network.Point
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -93,6 +144,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal as ImmutableDB.Internal
+
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
@@ -105,8 +158,10 @@ import           Test.Ouroboros.Storage.ChainDB.Model (FollowerId, IteratorId,
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
+import qualified Test.Ouroboros.Storage.TestBlock as Storage.TestBlock
 
 import           Test.Util.ChunkInfo
+import qualified Test.Util.ChunkInfo as ChunkInfo
 import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -117,6 +172,11 @@ import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 import           Test.Util.WithEq
+
+import qualified Data.Text.Lazy as T
+import qualified Text.Pretty.Simple as Pretty
+
+
 
 {-------------------------------------------------------------------------------
   Abstract model
@@ -1053,10 +1113,16 @@ postcondition :: TestConstraints blk
               -> At Resp blk m Concrete
               -> Logic
 postcondition model cmd resp =
-    (toMock (eventAfter ev) resp .== eventMockResp ev)
+    (PShow (toMock (eventAfter ev) resp) .== PShow (eventMockResp ev))
     .// "real response didn't match model response"
   where
     ev = lockstep model cmd resp
+
+data PShow a = PShow { unPShow :: !a }
+  deriving (Eq)
+
+instance Show a => Show (PShow a) where
+  show = T.unpack . Pretty.pShowNoColor . unPShow
 
 semantics :: forall blk. TestConstraints blk
           => ChainDBEnv IO blk
@@ -1406,6 +1472,98 @@ smUnused maxClockSkew chunkInfo =
       (mkTestCfg chunkInfo)
       testInitExtLedger
       maxClockSkew
+
+runChainDBCommands
+  :: MaxClockSkew
+  -> SmallChunkInfo
+  -> QSM.Commands (At Cmd Blk IO) (At Resp Blk IO) -> IO ()
+runChainDBCommands maxClockSkew (SmallChunkInfo chunkInfo) cmds
+  = quickCheck
+  $ QC.monadicIO
+  $ fmap snd
+  $ QC.run
+  $ test cmds
+  where
+    testCfg = mkTestCfg chunkInfo
+
+    test :: QSM.Commands (At Cmd Blk IO) (At Resp Blk IO)
+         -> IO
+            ( QSM.History (At Cmd Blk IO) (At Resp Blk IO)
+            , Property
+            )
+    test cmds = do
+      threadRegistry     <- unsafeNewRegistry
+      iteratorRegistry   <- unsafeNewRegistry
+      (tracer, getTrace) <- recordingTracerIORef
+      varCurSlot         <- uncheckedNewTVarM 0
+      varNextId          <- uncheckedNewTVarM 0
+      fsVars@(_, varVolatileDbFs, _) <- (,,)
+        <$> uncheckedNewTVarM Mock.empty
+        <*> uncheckedNewTVarM Mock.empty
+        <*> uncheckedNewTVarM Mock.empty
+      let args = mkArgs testCfg maxClockSkew chunkInfo testInitExtLedger tracer
+            threadRegistry varCurSlot fsVars
+
+      (hist, model, res, trace) <- bracket
+        (open args >>= newMVar)
+        -- Note: we might be closing a different ChainDB than the one we
+        -- opened, as we can reopen it the ChainDB, swapping the ChainDB in
+        -- the MVar.
+        (\varDB -> readMVar varDB >>= close)
+
+        $ \varDB -> do
+          let env = ChainDBEnv
+                { varDB
+                , registry = iteratorRegistry
+                , varCurSlot
+                , varNextId
+                , varVolatileDbFs
+                , args
+                }
+              sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger maxClockSkew
+          (hist, model, res) <- QSM.runCommands' sm' cmds
+          trace <- getTrace
+          return (hist, model, res, trace)
+
+      closeRegistry threadRegistry
+
+      -- 'closeDB' should have closed all open 'Follower's and 'Iterator's,
+      -- freeing up all resources, so there should be no more clean-up
+      -- actions left.
+      --
+      -- Note that this is only true because we're not simulating exceptions
+      -- (yet), in which case there /will be/ clean-up actions left. This is
+      -- exactly the reason for introducing the 'ResourceRegistry' in the
+      -- first place: to clean up resources in case exceptions get thrown.
+      remainingCleanups <- countResources iteratorRegistry
+      closeRegistry iteratorRegistry
+
+      -- Read the final MockFS of each database
+      let (immutableDbFsVar, volatileDbFsVar, lgrDbFsVar) = fsVars
+      fses <- atomically $ (,,)
+        <$> readTVar immutableDbFsVar
+        <*> readTVar volatileDbFsVar
+        <*> readTVar lgrDbFsVar
+
+      let modelChain = Model.currentChain $ dbModel model
+          (immutableDbFs, volatileDbFs, lgrDbFs) = fses
+          prop =
+            counterexample ("Model chain: " <> condense modelChain)      $
+            counterexample ("TraceEvents: " <> unlines (map show trace)) $
+            tabulate "Chain length" [show (Chain.length modelChain)]     $
+            tabulate "TraceEvents" (map traceEventName trace)            $
+--            (res === Ok) .&&.
+            counterexample (T.unpack $ Pretty.pShow res) (res == Ok) .&&.
+            prop_trace trace .&&.
+            counterexample "ImmutableDB is leaking file handles"
+                           (Mock.numOpenHandles immutableDbFs === 0) .&&.
+            counterexample "VolatileDB is leaking file handles"
+                           (Mock.numOpenHandles volatileDbFs === 0) .&&.
+            counterexample "LedgerDB is leaking file handles"
+                           (Mock.numOpenHandles lgrDbFs === 0) .&&.
+            counterexample "There were registered clean-up actions"
+                           (remainingCleanups === 0)
+      return (hist, prop)
 
 prop_sequential :: MaxClockSkew -> SmallChunkInfo -> Property
 prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
