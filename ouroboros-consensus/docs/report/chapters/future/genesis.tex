@@ -1563,7 +1563,7 @@ we have available matches the paper; \emph{or} some blocks got delayed ``more
 than $\Delta$'', and we end up forging on the ``wrong'' chain. It can not,
 however, be the task of chain selection to detect such violations of $\Delta$
 (much less try to fix them); indeed, we have no guarantee of establishing
-consensus when $\Delta$ is respected even if we do \emph{not} do suboptional
+consensus when $\Delta$ is respected even if we do \emph{not} do suboptimal
 chain selection. Thus, we will assume that when we forge a block, it is always
 sound to forge that block on top of the best chain we have seen (on the
 assumption that we do not introduce unnecessary delays).
@@ -1654,6 +1654,61 @@ a block on top of a suboptimal chain, the distance from that suboptimal chain to
 the intersecion with the optimal one might now exceed $k$. However, the
 ``network respects $\Delta$'' principle saves us from having to treat this as a
 special case.
+
+\subsection{When the suboptimal chain is longer than $k$}
+
+We are always under the assumption that ``network respects $\Delta$'' which, as
+stated above, precisely means that we can forge on top of whatever chain we have
+because that is the best chain that has arrived to the next slot leader (us) in
+time.
+
+The remark that ``all the blocks that should have been received must have been
+received'' leaks in one way: we are truncating the suboptimal chain to $k$
+blocks from the intersection point, so we could have received more blocks than
+$k$ that we are purposefully ignoring. We are not forging on top of the best
+chain we could have because that would exceed the rollback property that we want
+to keep when selecting a suboptimal chain.
+
+Suppose that we have two chains $C_0$ and $C_1$. Judging by the headers, $C_0$
+is preferrable over $C_1$, but we are not getting the block bodies in $C_0$ in
+time, so we choose to download $C_1$ meanwhile. Potentially, $C_1$ could be
+longer than $k$ blocks but we truncate it to $k$ blocks.
+
+If then we are elected leaders and we have to forge a block, the thing that
+would follow the theory as closest as possible would be to forge on the tip of
+$C_1$, as it is the best chain we got in time and we (could have) received the
+blocks all the way to the tip. However, as we decided to truncate the candidate
+to $k$ blocks long, we are deciding to not receive the remaining suffix of $C_1$
+and we will forge on top of a prefix of $C_1$.
+
+It is not acceptable to try to quickly adopt the rest of $C_1$ when we are going
+to lead soon because the required budget of time is not fixed. What if we say
+``3 seconds before we are going to be leaders, we accept the currently selected
+suboptimal chain as the best one and request and adopt as many blocks as
+possible'' but then in those 3 seconds we actually receive the blocks from the
+optimal chain that was pending? Or if 3 seconds is not enough because the
+suboptimal chain is very long? We therefore have to do the best we can with what
+we have at the time of forging.
+
+We will forge our block on top of a prefix of $C_1$ and our block will, if $C_1$
+is longer than $k$, be rightfully ignored by other peers (namely the ones that
+provided us the $C_1$ candidate). Our work on forging the block will be
+discarded.
+
+However, the act of creating this block made the distance between the
+intersection with the pending optimal chain and our current chain grow to $k +
+1$ long, so the ChainSync protocol will disconnect from the peer(s) that were
+announcing the candidate $C_0$ and we would then be able to progress adopting
+more blocks from $C_1$. Eventhough the work we made on forging will be
+discarded, it is a fair tradeoff because it allows us to unblock from the
+suboptimal ``dilemma''.
+
+Besides, this situation would be extremely rare as because $C_0$ and $C_1$ fork
+more than $k$, they cannot be both honest and if they are it would mean that
+other honest nodes that continued $C_1$ were in a similar situation, otherwise
+they would have forged on top of $C_0$ instead (as it is longer/denser/better):
+either they don't see $C_0$ or they are not getting the blocks from it. \todo{Is
+  this true?}
 
 \subsection{When the node is behind}
 
