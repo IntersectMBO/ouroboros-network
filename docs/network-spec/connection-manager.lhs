@@ -423,9 +423,10 @@ data Connected peerAddr handle handleError
 -- * \(PromotedToWarm^{Duplex}_{Local}\) transition
 -- * \(Awake^{Duplex}_{Local}\) transition
 requestOutboundConnection
-  :: HasInitiator muxMode ~ True
-  => ConnectionManager muxMode socket peerAddr handle handleError m
-  -> peerAddr -> m (Connected peerAddr handle handleError)
+  ::  HasInitiator muxMode ~ True
+  =>  ConnectionManager muxMode socket peerAddr handle handleError m
+  ->  peerAddr
+  ->  m (Connected peerAddr handle handleError)
 
 -- Include an inbound connection into 'ConnectionManager'.
 
@@ -433,9 +434,11 @@ requestOutboundConnection
 --
 -- * \(Accepted\) \/ \(Overwritten\) to \(Negotiated^{*}_{Inbound}\) transitions
 includeInboundConnection
-  :: HasResponder muxMode ~ True
-  => ConnectionManager muxMode socket peerAddr handle handleError m
-  -> socket -> peerAddr -> m (Connected peerAddr handle handleError)
+  ::  HasResponder muxMode ~ True
+  =>  ConnectionManager muxMode socket peerAddr handle handleError m
+  ->  socket
+  ->  peerAddr
+  ->  m (Connected peerAddr handle handleError)
 \end{code}
 
 The first one asks the \connmngr{} to either connect to an outbound peer or, if
@@ -462,9 +465,10 @@ data InState
 --
 -- * \(DemotedToCold^{*}_{Local}\) transitions
 unregisterOutboundConnection
-  :: HasInitiator muxMode ~ True
-  => ConnectionManager muxMode socket peerAddr handle handleError m
-  -> peerAddr -> m (OperationResult ())
+  ::  HasInitiator muxMode ~ True
+  =>  ConnectionManager muxMode socket peerAddr handle handleError m
+  ->  peerAddr
+  ->  m (OperationResult ())
 
 -- || Notify the 'ConnectionManager' that a remote end promoted us to a
 -- /warm peer/.
@@ -474,9 +478,10 @@ unregisterOutboundConnection
 -- * \(PromotedToWarm^{Duplex}_{Remote}\) transition,
 -- * \(Awake^{*}_{Remote}\) transition.
 promotedToWarmRemote
-  :: HasInitiator muxMode ~ True
-  -> ConnectionManager muxMode socket peerAddr handle handleError m
-  -> peerAddr -> m (OperationResult InState)
+  ::  HasInitiator muxMode ~ True
+  ->  ConnectionManager muxMode socket peerAddr handle handleError m
+  ->  peerAddr
+  ->  m (OperationResult InState)
 
 -- || Notify the 'ConnectionManager' that a remote end demoted us to a /cold
 -- peer/.
@@ -485,9 +490,10 @@ promotedToWarmRemote
 --
 -- * \(DemotedToCold^{*}_{Remote}\) transition.
 demotedToColdRemote
-  :: HasResponder muxMode ~ True
-  -> ConnectionManager muxMode socket peerAddr handle handleError m
-  -> peerAddr -> m (OperationResult InState)
+  ::  HasResponder muxMode ~ True
+  ->  ConnectionManager muxMode socket peerAddr handle handleError m
+  ->  peerAddr
+  ->  m (OperationResult InState)
 
 -- || Unregister outbound connection. Returns if the operation was successul.
 --
@@ -496,15 +502,16 @@ demotedToColdRemote
 -- * \(Commit*{*}\) transition
 -- * \(TimeoutExpired\) transition
 unregisterInboundConnection
-  :: HasResponder muxMode ~ True
-  -> ConnectionManager muxMode socket peerAddr handle handleError m
-  -> peerAddr -> m (OperationResult DemotedToColdRemoteTr)
+  ::  HasResponder muxMode ~ True
+  ->  ConnectionManager muxMode socket peerAddr handle handleError m
+  ->  peerAddr
+  ->  m (OperationResult DemotedToColdRemoteTr)
 
 -- || Number of connections tracked by the server.
 numberOfConnections
-  :: HasResponder muxMode ~ True
-  -> ConnectionManager muxMode socket peerAddr handle handleError m
-  -> STM m Int
+  ::  HasResponder muxMode ~ True
+  ->  ConnectionManager muxMode socket peerAddr handle handleError m
+  ->  STM m Int
 \end{code}
 
 \subsection{Connection states}\label{sec:connection-state}
@@ -532,6 +539,8 @@ on two factors: negotiated version and \texttt{InitiatorOnly} flag which is
 announced through handshake. Each connection can be in one of the following
 states:
 
+%format timeout = "^\tau"
+
 \begin{code}
 data ConnectionState
   -- Connection manger is about to connect to a peer.
@@ -541,13 +550,13 @@ data ConnectionState
   | UnnegotiatedState Provenance
 
   -- Outbound connection, inbound idle timeout is ticking.
-  | OutboundState^{-"^\tau"-} DataFlow
+  | OutboundState^timeout DataFlow
 
   -- Outbound connection, inbound idle timeout expired.
   | OutboundState DataFlow
 
   -- Inbound connection, but not yet used.
-  | InboundIdleState^{-"^\tau"-} DataFlow
+  | InboundIdleState^timeout DataFlow
 
   -- Active inbound connection.
   | InboundState DataFlow
@@ -1562,9 +1571,10 @@ run: the \inbgov{} will notify the \connmngr{} using:
 --
 -- * \(DemotedToCold^{*}_{Remote}\) transition.
 demotedToColdRemote
-    :: HasResponder muxMode ~ True
-    => ConnectionManager muxMode socket peerAddr handle handleError m
-    -> peerAddr -> m (OperationResult InState)
+    ::  HasResponder muxMode ~ True
+    =>  ConnectionManager muxMode socket peerAddr handle handleError m
+    ->  peerAddr
+    ->  m (OperationResult InState)
 \end{code}
 
 When all responder mini-protocols are idle for \textit{protocol idle timeout},
