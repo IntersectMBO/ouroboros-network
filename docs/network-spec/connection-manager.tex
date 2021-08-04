@@ -203,8 +203,8 @@ management.
 
 \section{Components}
 
-Figure \ref{tik:components} illustrates the 3 main components of the decentralization
-process, from the perspective of a local node. In the \texttt{Outbound} side, the
+Figure \ref{tik:components} illustrates the three main components within the network
+layer that are part of the P2P design. On the \texttt{Outbound} side, the
 \ptopgov{}, as said previously, takes care of all connection initiation (outbound
 connections) and decides which mini-protocols to run (\established{}, \warm{} or \hot{}).
 In the \texttt{Inbound} side, the \texttt{Server} is just a simple loop, responsible for accepting incoming
@@ -216,12 +216,13 @@ some cases, e.g. if the remote end opened a connection, and did not sent any mes
 The arrows in Figure \ref{tik:components} represent dependencies between components:
 server accepts a connection which is then given to \Connmngr{}. \Connmngr{} exposes methods to update its state,
 whenever the \texttt{Inbound Protocol Governor} notices that the connection was used
-(could be used due to \warm{}\\hot{} transitions).
+(could be used due to \warm{}/\hot{} transitions).
 
 \begin{figure}[h]
   \footnotesize
   \def\xa{-2.0}
   \def\xb{2.0}
+  \begin{center}
   \begin{tikzpicture}
     \node at (-3.25, 0)  {\textit{Outbound side}};
     \node at ( 3.25, 0)  {\textit{Inbound side}};
@@ -271,11 +272,12 @@ whenever the \texttt{Inbound Protocol Governor} notices that the connection was 
     \draw[->] (server.west)            -- (connection_manager.5);
     \draw[->] (connection_manager.355) -- (inbound_governor.west);
   \end{tikzpicture}
-  \caption{3 main components}
+  \caption{The three main components}
   \label{tik:components}
+  \end{center}
 \end{figure}
 
-One simple illustration of how these 3 components interact together:
+One simple illustration of how these three components interact together:
 
 \begin{itemize}
     \item Server accepts a connection;
@@ -298,11 +300,11 @@ You can find more information about the possible different connection states in 
 \begin{figure}
     \centering
     \includegraphics[width=\linewidth]{figure/ConnectionManagerInteractions.pdf}
-    \caption{High-level architecture of how the 3 components interact}
+    \caption{High-level architecture of how the three components interact}
     \label{fig:high-level-arch}
 \end{figure}
 
-Figure \ref{fig:high-level-arch} shows the high-level architecture of how the 3 components mentioned interact
+Figure \ref{fig:high-level-arch} shows the high-level architecture of how the three components mentioned interact
 with each other. A single \Connmngr{} is shared between the \emph{Server} and \ptopgov{},
 where, in case of an \emph{Outbound Duplex} connection is negotiated, the \emph{Server} is
 notified via a control channel. Although in this document we will use Server and IPG
