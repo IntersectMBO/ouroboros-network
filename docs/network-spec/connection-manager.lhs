@@ -186,14 +186,14 @@ layer that are part of the P2P design. On the \texttt{Outbound} side, the
 p2p governor, as said previously, takes care of all connection initiation (outbound
 connections) and decides which mini-protocols to run (established, warm or hot).
 In the \texttt{Inbound} side, the \texttt{Server} is just a simple loop, responsible for accepting incoming
-connections; and the \texttt{Inbound Protocol Governor} role is to detect if its local peer was
+connections; and the role of the inbound governor is to detect if its local peer was
 added as a warm/hot peer in some other remote node, starting/restarting the required
-mini-protocols. Another role of the \texttt{Inbound Protocol Governor} is to setup timers in
+mini-protocols. Another role of the inbound governor is to setup timers in
 some cases, e.g. if the remote end opened a connection, and did not sent any message, the
-\texttt{Inbound Protocol Governor} will timeout after some time and close the connection.
+inbound governor will timeout after some time and close the connection.
 The arrows in Figure \ref{tik:components} represent dependencies between components:
 server accepts a connection which is then given to the connection manager. The connection manager exposes methods to update its state,
-whenever the \texttt{Inbound Protocol Governor} notices that the connection was used
+whenever the inbound governor notices that the connection was used
 (could be used due to warm/hot transitions).
 
 \begin{figure}[h]
@@ -230,7 +230,7 @@ whenever the \texttt{Inbound Protocol Governor} notices that the connection was 
 
     \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (inbound_governor) at (\xb, -4)
       {
-        \hfill{\textbf{Inbound Protocol Governor}}\hfill
+        \hfill{\textbf{Inbound Governor}}\hfill
         \vspace{0.2em}
         \setlength{\leftmargini}{15pt}
         \begin{itemize}
@@ -761,7 +761,7 @@ This transition is performed once handshake negotiated an unidirectional or
 duplex connection on an inbound connection.
 
 For \NegotiatedUniIn{}, \NegotiatedDupIn{}, \NegotiatedDupOut{}
-transitions, the \textit{inbound protocol governor} will restart all responder
+transitions, the inbound governor will restart all responder
 mini-protocols (for all established, warm and hot groups of mini-protocols) and
 keep monitoring them.
 
@@ -937,7 +937,7 @@ valuable than inbound ones. If we keep the number of established peers to
 be smaller than the server hard limit, with a right policy we should never need
 to reset a connection in \DuplexState{}.
 
-The \textit{inbound protocol governor} is in position to make an educated
+The inbound governor is in position to make an educated
 decision about which connection to reset. Initially, we aim for a decision driven by
 randomness, but other choices are possible\footnote{We can take into account
 whether we are hot to the remote end, or for how long we have been hot to
@@ -1578,8 +1578,8 @@ Both \CommitUni{} and \CommitDup{} will free resources (terminate the
 connection thread, close the socket).
 
 
-\section{Inbound Protocol Governor}
-\textit{Inbound protocol governor} keeps track of responder side of the protocol for
+\section{Inbound Governor}
+inbound governor keeps track of responder side of the protocol for
 both inbound and outbound duplex connections.  Unidirectional outbound
 connections are not tracked by the inbound governor.  The server and connection manager
 are responsible to notify it about new connections once they are negotiated.
