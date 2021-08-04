@@ -65,10 +65,6 @@
 \tikzstyle{unregisterOutboundArr}   = [ color = Turquoise ]
 \tikzstyle{unregisterInboundArr}    = [ color = DarkOrchid2 ]
 
-\def\TCP{\textsf{TCP}}
-\def\ipvfour{\textsf{ipv4}}
-\def\ipvsix{\textsf{ipv6}}
-
 % Connection manager's states
 \def\InitialState{\textbullet}
 \def\FinalState{\textbullet}
@@ -136,30 +132,7 @@
 \def\RemoteToCold{\textsf{RemoteToCold}}
 \def\CommitRemote{\textsf{CommitRemote}}
 
-% Peer states
-\def\cold{\textit{cold}}
-\def\warm{\textit{warm}}
-\def\hot{\textit{hot}}
-\def\established{\textit{established}}
-
-% Protocol names
-\def\keepAlive{\textsf{keep-alive}}
-\def\tipSample{\textsf{tip-sample}}
-
-% Component names
-\def\ptopgov{\textit{p2p governor}}
-\def\mux{\textit{mux}}
-\def\inbgov{\textit{inbound protocol governor}}
-\def\Inbgov{\textit{Inbound protocol governor}}
-\def\connmngr{\textit{connection manager}}
-\def\Connmngr{\textit{Connection manager}}
-\def\True{\texttt{True}}
-\def\False{\texttt{False}}
-
 % Utils
-
-% TODO notes for the implementation
-\newcommand{\todoimpl}[1]{\todo[backgroundcolor=red,linecolor=red]{#1}}
 \newenvironment{detail}
   {
     \begin{center}
@@ -185,9 +158,9 @@ transition the network layer to a decentralised design and deployment. The
 document also describes a design intended to achieve the desired network
 properties.
 
-One key component of the design is the \ptopgov{}, which is responsible for:
+One key component of the design is the p2p governor, which is responsible for:
 \begin{itemize}
-\item managing the selection of \cold{}/\warm{}/\hot{} peers;
+\item managing the selection of cold/warm/hot peers;
 \item the transitions of peers between these groups;
 \item continuously making progress towards the target number of peers in each group; and
 \item adjusting the group targets over time to achieve a degree of `churn'.
@@ -203,25 +176,25 @@ necessary when connecting through firewalls. It means we have bearers where
 they can be used in either or both directions, and which directions are in use
 can change over the lifetime of the bearer. The resource and state tracking is
 therefore somewhat more complicated than in a simple client-only or server-only
-scheme. The \Connmngr{} is intended to do this state tracking amd resource
+scheme. The connection manager is intended to do this state tracking amd resource
 management.
 
 \section{Components}
 
 Figure \ref{tik:components} illustrates the three main components within the network
 layer that are part of the P2P design. On the \texttt{Outbound} side, the
-\ptopgov{}, as said previously, takes care of all connection initiation (outbound
-connections) and decides which mini-protocols to run (\established{}, \warm{} or \hot{}).
+p2p governor, as said previously, takes care of all connection initiation (outbound
+connections) and decides which mini-protocols to run (established, warm or hot).
 In the \texttt{Inbound} side, the \texttt{Server} is just a simple loop, responsible for accepting incoming
 connections; and the \texttt{Inbound Protocol Governor} role is to detect if its local peer was
-added as a \warm{}/\hot{} peer in some other remote node, starting/restarting the required
+added as a warm/hot peer in some other remote node, starting/restarting the required
 mini-protocols. Another role of the \texttt{Inbound Protocol Governor} is to setup timers in
 some cases, e.g. if the remote end opened a connection, and did not sent any message, the
 \texttt{Inbound Protocol Governor} will timeout after some time and close the connection.
 The arrows in Figure \ref{tik:components} represent dependencies between components:
-server accepts a connection which is then given to \Connmngr{}. \Connmngr{} exposes methods to update its state,
+server accepts a connection which is then given to the connection manager. The connection manager exposes methods to update its state,
 whenever the \texttt{Inbound Protocol Governor} notices that the connection was used
-(could be used due to \warm{}/\hot{} transitions).
+(could be used due to warm/hot transitions).
 
 \begin{figure}[h]
   \footnotesize
@@ -291,12 +264,12 @@ One simple illustration of how these three components interact together:
     \item Assuming the handshake was successful, the connection is put in
       \InboundIdleStateDup{};
     \item The remote end transitions the local node to warm (using the connection) within expected timeout;
-    \item IPG (Inbound Protocol Governor) notifies the \Connmngr{} about this state
+    \item IPG (Inbound Protocol Governor) notifies the connection manager about this state
       change, via \texttt{promotedToWarmRemote}. Now the connection is
       in \InboundStateDup{};
-    \item \Connmngr{} is asked for an outbound connection to that peer (by the \ptopgov{}), it notices
+    \item The connection manager is asked for an outbound connection to that peer (by the p2p governor), it notices
       that it already has a connection with that peer in \InboundStateDup{}, so it gives
-      that connection to \ptopgov{} and updates its state to \DuplexState{}.
+      that connection to the p2p governor and updates its state to \DuplexState{}.
 \end{itemize}
 
 You can find more information about the possible different connection states in section
@@ -310,7 +283,7 @@ You can find more information about the possible different connection states in 
 \end{figure}
 
 Figure \ref{fig:high-level-arch} shows the high-level architecture of how the three components mentioned interact
-with each other. A single \Connmngr{} is shared between the \emph{Server} and \ptopgov{},
+with each other. A single connection manager is shared between the \emph{Server} and the p2p governor,
 where, in case of an \emph{Outbound Duplex} connection is negotiated, the \emph{Server} is
 notified via a control channel. Although in this document we will use Server and IPG
 interchangeably, it is worth to keep them separate concepts for possible future
@@ -320,14 +293,14 @@ developments.
 
 \subsection{Overview}
 
-\Connmngr{} is a lower-level component responsible for managing connections and its
+The connection manager is a lower-level component responsible for managing connections and its
 resources. Its responsibilities consist of:
 
 \begin{itemize}
     \item Tracking each connection, in order to keep an eye on the bounded resources;
     \item Starting new connections, negotiating if the connection should be
       \emph{full-duplex} or \emph{half-duplex}, through the \emph{Connection Handler};
-    \item Be aware of \warm{}/\hot{} transitions, in order to try and reuse already established
+    \item Be aware of warm/hot transitions, in order to try and reuse already established
       connections;
     \item Negotiating which direction, which mini-protocol is going to run
       (Client $\rightarrow$ Server, Server$\rightarrow$Client, or both);
@@ -335,9 +308,9 @@ resources. Its responsibilities consist of:
       connections).
 \end{itemize}
 
-The \Connmngr{} creates and records accepted connections and keeps track of their state
+The connection manager creates and records accepted connections and keeps track of their state
 as negotiations, for the connection and start/stop mini-protocols, are made. There's an
-\emph{internal state machine} that helps the \Connmngr{} keep track of the state of each
+\emph{internal state machine} that helps the connection manager keep track of the state of each
 connection, and help it make decisions when it comes to resource management and
 connection reusing.
 
@@ -347,7 +320,7 @@ outcome of the handshake negotiation is:
 \begin{itemize}
     \item the negotiated version of the protocol
     \item negotiated parameters, which includes the mode in which the connection will be
-      run (\texttt{InitiatorOnlyMode}, \texttt{ResponderOnlyMode},\\
+      run (\texttt{InitiatorOnlyMode}, \texttt{ResponderOnlyMode},
       \texttt{InitiatorAndResponderMode} - the first two are \emph{half-duplex}, the last
       one is \emph{full-duplex} mode)
     \item Handshake might error
@@ -360,23 +333,23 @@ outcome of the handshake negotiation is:
     \label{fig:protocol-diagram}
 \end{figure}
 
-The \emph{Connection Handler} notifies the \Connmngr{} about the result of a negotiation, which
+The \emph{Connection Handler} notifies the connection manager about the result of a negotiation, which
 triggers a state transition. If we can run the connection in full-duplex mode,
 then it is possible to run the bundles of mini-protocols in both directions, and otherwise only in one direction.
 So, Figure \ref{fig:protocol-diagram} shows $6$ mini protocols running, $3$ in each direction.
 If we negotiated only a unidirectional connection, then we'd only be running $3$
 (with the direction being based on which peer established the connection).
 
-From the point of view of the \connmngr{}, it only
+From the point of view of the connection manager, it only
 matters whether an \emph{unidirectional} or \emph{duplex} connection was negotiated.
 Unidirectional connections, are the ones which run either the initiator or responder
 side of mini-protocols, exclusively, while duplex connections can run either or
 both initiator and responder protocols. Note that in the outbound direction (initiator side),
-it is the \ptopgov{} responsibility to decide which set of mini-protocols:
-\established{}, \warm{} or \hot{}, are running. On the inbound side (responder
+it is the p2p governor responsibility to decide which set of mini-protocols:
+established, warm{} or hot, are running. On the inbound side (responder
 mini-protocols), we have no choice but to run all of them.
 
-The \connmngr{} should only be run in two \texttt{MuxMode}s:
+The connection manager should only be run in two \texttt{MuxMode}s:
 
 \begin{itemize}
   \item \texttt{ResponderMode} or
@@ -393,19 +366,18 @@ connection with external nodes (\textit{node-to-node protocol}), while
 connections (server side of \textit{node-to-client protocol}).
 
 
-\Connmngr{} can use at most one \ipvfour{} and at most one \ipvsix{}
-address. It will bind to the correct address depending on the remote address
-type (\ipvfour{}/\ipvsix{}).
+The connection manager can use at most one ipv4 and at most one ipv6 address. It will bind
+to the correct address depending on the remote address type (ipv4/ipv6).
 
 In this specification we will often need to speak about two nodes communicating
-via a \TCP{} connection.  We will often call them local and remote ends of the
+via a TCP connection.  We will often call them local and remote ends of the
 connection or local \slash{} remote nodes; we will usually take the
 perspective of the local node.
 
 
 \subsection{Types} % Not sure about this naming
 
-\Connmngr{} exposes two methods to register a connection:
+The connection manager exposes two methods to register a connection:
 
 \begin{code}
 data Connected peerAddr handle handleError
@@ -441,7 +413,7 @@ includeInboundConnection
   ->  m (Connected peerAddr handle handleError)
 \end{code}
 
-The first one asks the \connmngr{} to either connect to an outbound peer or, if
+The first one asks the connection manager to either connect to an outbound peer or, if
 possible, reuse a duplex connection. The other one allows to register an
 inbound connection, which was \texttt{accepted}. Both methods are blocking
 operations and return either an error (handshake negotiation error or
@@ -579,7 +551,7 @@ implementation tracks more detail, e.g. connection id (the quadruple of ip
 addresses and ports), multiplexer handle, thread id etc., which we do not need
 to take care in this specification. The rule of thumb is that all states that
 have some kind of timeout should be annotated with a $\tau$. In these cases we
-are waiting for any message that would indicate a \warm{} or \hot{} transition.
+are waiting for any message that would indicate a warm or hot transition.
 If that does not happen within a timeout we will close the connection.
 
 In this specification we represent \OutboundStateUniTau{} which is not used,
@@ -692,7 +664,7 @@ complex as it includes interaction between \texttt{Inbound} and
 to outbound only and vice versa). However, the state machine for an inbound
 only connection is the same whether it is \texttt{Duplex} or
 \texttt{Unidirectional}, see Figure~\ref{fig:statediagram-inbound-only}.
-A \connmngr{} running in \texttt{ResponderMode} will use this state
+A connection manager running in \texttt{ResponderMode} will use this state
 machine.
 
 For \textit{node-to-client} server it will be even simpler, as there
@@ -745,9 +717,9 @@ simplifies the implementation.
 
 
 \subsubsection{\Reserve{}}
-When \connmngr{} is asked for an outbound connection, it reserves a slot
+When the connection manager is asked for an outbound connection, it reserves a slot
 in its state for that connection.  If any other thread asks for the same
-outbound connection, the \connmngr{} will raise an exception in that thread.
+outbound connection, the connection manager will raise an exception in that thread.
 Reservation is done to guarantee exclusiveness for state transitions to
 a single outbound thread.
 
@@ -757,13 +729,13 @@ This transition is executed once an outbound connection successfully performed t
 
 \subsubsection{\Accepted{} and \Overwritten{}}
 Transition driven by the \texttt{accept} system call. Once it returns, the
-\connmngr{} might either not know about such connection or, there might be one
+connection manager might either not know about such connection or, there might be one
 in \ReservedOutboundState{}. The \Accepted{} transition represents the former
 situation, while the latter is captured by the \Overwritten{} transition.
 
 Let us note that if \Overwritten{} transition happened, then on the outbound
 side, the scheduled \texttt{connect} call will fail. In this case the
-\ptopgov{} will recover, putting the peer in a queue of failed peers, and
+p2p governor will recover, putting the peer in a queue of failed peers, and
 will either try to connect to another peer, or reconnect to that peer after some
 time, in which case it would re-use the accepted connection (assuming that
 a duplex connection was negotiated).
@@ -772,11 +744,11 @@ a duplex connection was negotiated).
 Once an outbound connection has been negotiated one of \NegotiatedUniOut{} or
 \NegotiatedDupOut{} transition is performed, depending on the result of handshake
 negotiation. Duplex connections are negotiated only for node-to-node protocol
-versions higher than \texttt{NodeToNodeV\_7}\todoimpl{the exact version number
+versions higher than \texttt{NodeToNodeV\_7}\todo{the exact version number
 might change} and neither side declared that it is an \emph{initiator} only.
 
-If duplex outbound connection was negotiated, the \connmngr{} needs to ask the
-\inbgov{} to start and monitor responder mini-protocols on the outbound
+If duplex outbound connection was negotiated, the connection manager needs to ask the
+inbound governor to start and monitor responder mini-protocols on the outbound
 connection.
 
 \begin{detail}
@@ -790,8 +762,8 @@ duplex connection on an inbound connection.
 
 For \NegotiatedUniIn{}, \NegotiatedDupIn{}, \NegotiatedDupOut{}
 transitions, the \textit{inbound protocol governor} will restart all responder
-mini-protocols (for all \established{}, \warm{} and \hot{} groups of
-mini-protocols) and keep monitoring them.
+mini-protocols (for all established, warm and hot groups of mini-protocols) and
+keep monitoring them.
 
 \begin{detail}
 This transition is done by the \texttt{includeInboundConnection}.
@@ -811,9 +783,9 @@ All the awake transitions start either at \InboundIdleStateUni{} or
 
 \begin{detail}
   \AwakeDupLoc{} transition is done by \texttt{requestOutboundConnection} on
-  the request of \ptopgov{}, while \AwakeDupRem{} and \AwakeUniRem{} are
+  the request of the p2p governor, while \AwakeDupRem{} and \AwakeUniRem{} are
   triggered by incoming traffic on any of responder mini-protocols (asynchronously if
-  detected any \warm{}/\hot{} transition).
+  detected any warm/hot transition).
 \end{detail}
 
 
@@ -827,8 +799,7 @@ via \CommitDup{} - which gave the name to this transition.
 These transitions are triggered by inactivity of responder mini-protocols. They
 both protect against a client that connects but never sends any data through
 the bearer; also, as part of a termination sequence, it is protecting us from
-shutting down a connection which is transitioning between \warm{} and \hot{}
-states.
+shutting down a connection which is transitioning between warm and hot states.
 
 Both commit transitions:
 \begin{itemize}
@@ -859,11 +830,11 @@ the local \AwakeDupLoc{} transition.
 \begin{detail}
   Whenever an outbound connection is requested, we notify the server about
   a new connection.  We do that also when the connection manager hands over an
-  existing connection.  If \inbgov{} is already tracking that connection,
+  existing connection.  If the inbound governor is already tracking that connection,
   we need to make sure that
   \begin{itemize}
-    \item \inbgov{} preserves its internal state of that connection;
-    \item \inbgov{} does not starts mini-protocols, as they are already running
+    \item the inbound governor preserves its internal state of that connection;
+    \item the inbound governor does not starts mini-protocols, as they are already running
       (we restart responders as soon as the stop, using the on-demand
       strategy).
   \end{itemize}
@@ -871,8 +842,8 @@ the local \AwakeDupLoc{} transition.
 
 
 \subsubsection{\DemotedToColdUniLoc{}}
-This transition is driven by the \ptopgov{} when it decides to demote the peer
-to \cold{} state, its domain is \OutboundStateUni{}. This transition should
+This transition is driven by the p2p governor when it decides to demote the peer
+to the cold state, its domain is \OutboundStateUni{}. This transition should
 trigger connection termination.
 
 \begin{detail}
@@ -881,7 +852,7 @@ This transition is done by \texttt{unregisterOutboundConnection}.
 
 
 \subsubsection{\DemotedToColdDupLoc{}}
-It is driven, as the previous transition, by the local \ptopgov{}, but this time it is
+It is driven, as the previous transition, by the local p2p governor, but this time it is
 triggered on a connection in either \OutboundStateDup{} or \DuplexState{}.
 
 \begin{detail}
@@ -890,9 +861,9 @@ This transition is done by \texttt{unregisterOutboundConnection}.
 
 
 \subsubsection{\PromotedToWarmDupLoc{}}
-This transition is driven by the local \ptopgov{} when it promotes a \cold{} peer
-to \warm{} state. \connmngr{} will provide a handle to an existing connection, so that
-\ptopgov{} can drive its state.
+This transition is driven by the local p2p governor when it promotes a cold peer
+to warm state. The connection manager will provide a handle to an existing connection, so that
+the p2p governor can drive its state.
 
 \begin{detail}
 This transition is done by \texttt{requestOutboundConnection}.
@@ -901,7 +872,7 @@ This transition is done by \texttt{requestOutboundConnection}.
 
 \subsubsection{\DemotedToColdUniRem{}, \DemotedToColdDupRem{}}
 Both transitions are edge-triggered, the connection manager is notified by the
-\inbgov{} once it notices that all responders stopped. Detection of idleness
+inbound governor once it notices that all responders stopped. Detection of idleness
 during \textit{protocol idle timeout} is done in a separate step which is
 triggered immediately, see section~\ref{sec:tr_commit} for details.
 
@@ -921,9 +892,9 @@ state can terminate or it needs to await for that timeout to expire.
 \end{detail}
 
 \subsubsection{\PromotedToWarmDupRem{}}
-This asynchronous transition is triggered by the remote peer.  The \inbgov{}
+This asynchronous transition is triggered by the remote peer.  The inbound governor
 can notice it by observing multiplexer ingress side of running mini-protocols.
-It then should notify the \connmngr{}.
+It then should notify the connection manager.
 
 \begin{detail}
   This transition is done by \texttt{promotedToWarmRemote}.
@@ -957,19 +928,19 @@ could end up exceeding server hard limit.
 
 To solve this problem, when a connection is transitioned from
 \DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{}) the
-\connmngr{} will check if the server hard limit was exceeded. If that
-happened, the \connmngr{} will reset an arbitrary connection (with some preference).
+connection manager will check if the server hard limit was exceeded. If that
+happened, the connection manager will reset an arbitrary connection (with some preference).
 
 We prefer to reset an inbound connection rather than close an outbound
 connection because from a systemic point of view, outbound connections are more
-valuable than inbound ones. If we keep the number of \established{} peers to
+valuable than inbound ones. If we keep the number of established peers to
 be smaller than the server hard limit, with a right policy we should never need
 to reset a connection in \DuplexState{}.
 
 The \textit{inbound protocol governor} is in position to make an educated
 decision about which connection to reset. Initially, we aim for a decision driven by
 randomness, but other choices are possible\footnote{We can take into account
-whether we are \hot{} to the remote end, or for how long we have been \hot{} to
+whether we are hot to the remote end, or for how long we have been hot to
 to the remote node.} and the implementation should allow to easily extend the
 initial choice.
 
@@ -981,7 +952,7 @@ If a mini-protocol errors, on either side, connection will be reset, and put in
 After a connection was closed we keep it in \TerminatingState{} for some time
 (\textit{wait time timeout}). This allows for the kernel to release all the
 resources. After this fixed timeout the connection is removed from the
-\connmngr{} state, which we explicitly denote, in this specification, as
+connection manager state, which we explicitly denote, in this specification, as
 \TerminatedState{}.
 
 \paragraph{Closing a TCP connection}
@@ -999,7 +970,7 @@ time, which we want to avoid. We thus decided to always use
 the connection. The consequences of this are:
 
 \begin{itemize}
-  \item Four-way handshake used by \TCP{} termination will not be used. The
+  \item Four-way handshake used by TCP termination will not be used. The
     four-way handshake allows to close each side of the connection separately.
     With reset, the OS is instructed to forget the state of the connection
     immediately.
@@ -1022,7 +993,7 @@ We also provide application level \texttt{TIME\_WAIT} state:
 from late packets from a previous connection. However the connection manager
 does allow to accept new connections during \TerminatingState{} - it is
 the responsibility of the client to not re-connect too early. For example,
-\ptopgov{} enforces 60s idle period before it can reconnect to the same peer, after
+the p2p governor enforces 60s idle period before it can reconnect to the same peer, after
 either a protocol error or connection failure.
 
 From an operational point of view it's important that connections are not held in
@@ -1041,11 +1012,11 @@ negotiated, \texttt{requestOutboundConnection} must error. If \texttt{Duplex}
 connection was negotiated it can use the egress side of this connection leading
 to \DuplexState{}.
 
-\paragraph{\textnormal{initial state (\InitialState{})}:} the \connmngr{} does not have
+\paragraph{\textnormal{initial state (\InitialState{})}:} the connection manager does not have
   a connection with that peer. The connection is put in \ReservedOutboundState{}
-  before \connmngr{} connects to that peer;
+  before the connection manager connects to that peer;
 
-\paragraph{\UnnegotiatedStateIn{}:} if the \connmngr{} accepted
+\paragraph{\UnnegotiatedStateIn{}:} if the connection manager accepted
   a connection from that peer, handshake is ongoing;
   \texttt{requestOutboundConnection} will await until the connection state
   changes to \InboundStateAny{}.
@@ -1053,16 +1024,16 @@ to \DuplexState{}.
 \paragraph{\InboundStateUni{}:} if \texttt{requestOutboundConnection} finds
 a connection in this state it will error.
 
-\paragraph{\InboundStateDup{}:} if \connmngr{} accepted connection from
+\paragraph{\InboundStateDup{}:} if the connection manager accepted connection from
   that peer and handshake negotiated a \texttt{Duplex} data flow;
   \texttt{requestOutboundConnection} transitions to \DuplexState{}.
 
 \paragraph{\TerminatingState{}:} block until \TerminatedState{} and start from
 the initial state.
 
-\paragraph{\textnormal{Otherwise}:} if \connmngr{} is asked to connect to
+\paragraph{\textnormal{Otherwise}:} if the connection manager is asked to connect to
 peer and there exists a connection which is in any other state, e.g.
-\UnnegotiatedStateOut{}, \OutboundStateAny{}, \DuplexState{}, \connmngr{} signals the caller with an error, see
+\UnnegotiatedStateOut{}, \OutboundStateAny{}, \DuplexState{}, the connection manager signals the caller with an error, see
 section~\ref{sub:includeOutboundConnect}.
 
 Figure~\ref{fig:outbound_flow} shows outbound connection state evolution.  This
@@ -1160,10 +1131,10 @@ needs to make.
 \subsubsection{\OutboundStateDup{} and \DuplexState{}}
 Once an outbound connection negotiates \texttt{Duplex} data flow it transfers
 to \OutboundStateDup{}.  At this point we need to start responder protocols.
-This means that the \connmngr{} needs a way to inform server (which
+This means that the connection manager needs a way to inform server (which
 accepts and monitors inbound connections), to start the protocols and monitor
 that connection.  This connection will transition to \DuplexState{} only once
-we notice incoming traffic on any of \established{} protocols.
+we notice incoming traffic on any of established protocols.
 
 \begin{detail}
   The implementation is using a \texttt{TBQueue}. Server is using this channel
@@ -1172,7 +1143,7 @@ we notice incoming traffic on any of \established{} protocols.
 
 \subsubsection{Termination}\label{sec:outbound_termination}
 
-When \ptopgov{} demotes a peer to \cold{} state, an outbound
+When the p2p governor demotes a peer to cold state, an outbound
 connection needs to transition from either:
 
 \begin{itemize}
@@ -1182,14 +1153,14 @@ connection needs to transition from either:
   \item \DuplexState{} to \InboundStateDup{}
 \end{itemize}
 
-To support that the \connmngr{} exposes a method:
+To support that the connection manager exposes a method:
 
 \begin{code}
 unregisterOutboundConnection :: peerAddr -> m ()
 \end{code}
 This method performs \DemotedToColdUniLoc{} or
 \DemotedToColdDupLoc{} transition. In the former case it will shut down the
-multiplexer and close the \TCP{} connection, in the latter case, beside
+multiplexer and close the TCP connection, in the latter case, beside
 changing the connection state, it will also trigger \Prune{} transitions if
 the number of inbound connections becomes above the limit.
 
@@ -1204,7 +1175,7 @@ the number of inbound connections becomes above the limit.
         \begin{itemize}
           \item \ReservedOutboundState{},
           \item \Connected{},
-          \item start connection thread (handshake, \mux{})
+          \item start connection thread (handshake and mux)
           \item \NegotiatedUniOut{} or \NegotiatedDupOut{}
         \end{itemize}
       \end{minipage}
@@ -1245,9 +1216,9 @@ the number of inbound connections becomes above the limit.
   \end{tabular}
 \end{center}
 The choice between \texttt{no-op} and error is solved by the following rule: if
-the calling component (e.g. \ptopgov{}), is able to keep its state in
-a consistent state with \connmngr{} then use \texttt{no-op}, otherwise
-error.  Since both \inbgov{} and \ptopgov{} are using \mux{} to track the state
+the calling component (e.g. the p2p governor), is able to keep its state in
+a consistent state with the connection manager then use \texttt{no-op}, otherwise
+error.  Since both the inbound governor and the p2p governor are using the mux to track the state
 of the connection its actually impossible that the state would be inconsistent.
 
 \subsection{\textit{Inbound} connection}
@@ -1266,7 +1237,7 @@ Initial states for inbound connection are either:
     \texttt{ConnectionExists} exception.
 
     To make sure that this case is uncommon, we need to guarantee that the
-    \connmngr{} does not block between putting the connection in the
+    connection manager does not block between putting the connection in the
     \ReservedOutboundState{} and calling the \texttt{connect} system call.
 \end{itemize}
 
@@ -1301,7 +1272,7 @@ Initial states for inbound connection are either:
     \InitialState{}          &
       \begin{minipage}[t]{8cm}
         \begin{itemize}
-          \item start connection thread (handshake, \mux{})
+          \item start connection thread (handshake and mux)
           \item transition to \UnnegotiatedStateIn{}.
           \item await for handshake result
           \item transition to \InboundIdleStateAny{}.
@@ -1318,7 +1289,7 @@ Initial states for inbound connection are either:
     \TerminatedState{}       & the same as \InitialState{} \\[8pt]
   \end{tabular}
 \end{center}
-States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
+States indicated with a \textsuperscript{$\dagger$} are forbidden by TCP.
 
 \paragraph{\texttt{promotedToWarmRemote}}
 \begin{center}
@@ -1377,7 +1348,7 @@ preserved, though unexpected.
     \OutboundStateUni{}      & $\dagger$ & & - \\[8pt]
     \OutboundStateDupTau{}   & \OutboundStateDup{} & & - \\[8pt]
     \OutboundStateDup{}      & $\dagger$ & & - \\[8pt]
-    \InboundIdleStateAny{}   & \TerminatingState{} & & \True \\[8pt]
+    \InboundIdleStateAny{}   & \TerminatingState{} & & |True| \\[8pt]
     \InboundStateAny{}       & \TerminatingState{}\textsuperscript{$\dagger$} &
       \begin{minipage}[t]{5cm}
         \begin{itemize}
@@ -1385,8 +1356,8 @@ preserved, though unexpected.
           \item \CommitAny{}
         \end{itemize}
       \end{minipage}
-        & \True \\[8pt]
-    \DuplexState{}           & \OutboundStateDup{} & \DemotedToColdDupRem{}  & \False \\[8pt]
+        & |True| \\[8pt]
+    \DuplexState{}           & \OutboundStateDup{} & \DemotedToColdDupRem{}  & |False| \\[8pt]
     \TerminatingState{}      & - & & - \\[8pt]
     \TerminatedState{}       & - & & - \\[8pt]
   \end{tabular}
@@ -1541,9 +1512,9 @@ after the \AwakeDupLoc{} transition the server will call
 
 \section{Server}
 
-The server consists of two components: an accept loop and an \inbgov{}.  The
+The server consists of two components: an accept loop and an inbound governor.  The
 accept loop is using \texttt{includeInboundConnnection} on incoming
-connections, while the \inbgov{} tracks the state of responder side of all
+connections, while the inbound governor tracks the state of responder side of all
 mini-protocols, and is responsible for starting and restarting
 mini-protocols, as well as detecting if they are used, in order to support:
 
@@ -1553,7 +1524,7 @@ mini-protocols, as well as detecting if they are used, in order to support:
   \item \CommitUni{} and \CommitDup{} transitions.
 \end{itemize}
 
-The \inbgov{} will always start/restart all the mini-protocols using
+The inbound governor will always start/restart all the mini-protocols using
 \texttt{StartOnDemand} strategy.  When the multiplexer detects
 any traffic on its ingress queues, corresponding to responder protocols,
 it will do the \PromotedToWarmDupRem{} transition using
@@ -1561,7 +1532,7 @@ it will do the \PromotedToWarmDupRem{} transition using
 
 Once all responder mini-protocols become idle, i.e. they all stopped or were
 re-started but are not yet running, a \DemotedToColdAnyRem{} transition is
-run: the \inbgov{} will notify the \connmngr{} using:
+run: the inbound governor will notify the connection manager using:
 
 \begin{code}
 -- || Notify the 'ConnectionManager' that a remote end demoted us to a /cold
@@ -1578,7 +1549,7 @@ demotedToColdRemote
 \end{code}
 
 When all responder mini-protocols are idle for \textit{protocol idle timeout},
-the \inbgov{} will execute \CommitUni{}, \CommitDup{} if the inital state is
+the inbound governor will execute \CommitUni{}, \CommitDup{} if the inital state is
 \InboundIdleStateDup{} or \texttt{no-op} if the initial state is
 \OutboundStateDup{}.
 
@@ -1610,10 +1581,10 @@ connection thread, close the socket).
 \section{Inbound Protocol Governor}
 \textit{Inbound protocol governor} keeps track of responder side of the protocol for
 both inbound and outbound duplex connections.  Unidirectional outbound
-connections are not tracked by \inbgov{}.  The server and connection manager
+connections are not tracked by the inbound governor.  The server and connection manager
 are responsible to notify it about new connections once they are negotiated.
 Figure~\ref{fig:inbgov-state-machine} presents the state machine that drives
-changes to connection states tracked by \inbgov{}.  As in the connection
+changes to connection states tracked by the inbound governor.  As in the connection
 manager case there is an implicit transition from every state to the
 terminating state, which represents mux failures, or mini-protocol changes.
 
@@ -1638,7 +1609,7 @@ terminating state, which represents mux failures, or mini-protocol changes.
 
 There is a map \(\Phi\) from the sub-graph of connection manager state machine
 which represents negotiated inbound or duplex outbound connections to the
-\inbgov{} state machine. \(\Phi\) is specified by the following table:
+inbound governor state machine. \(\Phi\) is specified by the following table:
 \begin{align*}
   & \Phi(\text{\InboundIdleStateAny}) & =\; & \text{\RemoteIdle}\\
   & \Phi(\text{\OutboundStateDupTau}) & =\; & \text{\RemoteIdle}\\
