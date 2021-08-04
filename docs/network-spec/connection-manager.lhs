@@ -1,3 +1,8 @@
+%include polycode.fmt
+
+%format ^  = " "
+%format ^^ = "\;"
+
 % TODO:
 % Discussion of interaction between inbound protocol governor and connection
 % manager when a new outbound connection is requested.
@@ -402,15 +407,15 @@ perspective of the local node.
 
 \Connmngr{} exposes two methods to register a connection:
 
-\begin{lstlisting}
+\begin{code}
 data Connected peerAddr handle handleError
-  -- | We are connected and mux is running.
+  -- || We are connected and mux is running.
   = Connected    !(ConnectionId peerAddr) !handle
 
-  -- | There was an error during handshake negotiation.
+  -- || There was an error during handshake negotiation.
   | Disconnected !(ConnectionId peerAddr) !(Maybe handleError)
 
--- | Include outbound connection into 'ConnectionManager'.
+-- || Include outbound connection into 'ConnectionManager'.
 
 --   This executes:
 --
@@ -418,20 +423,20 @@ data Connected peerAddr handle handleError
 -- * \(PromotedToWarm^{Duplex}_{Local}\) transition
 -- * \(Awake^{Duplex}_{Local}\) transition
 requestOutboundConnection
-  *'$\coloncolon$'* HasInitiator muxMode ~ True
-  *'$\Rightarrow$'* ConnectionManager muxMode socket peerAddr handle handleError m
-  *'$\rightarrow$'* peerAddr *'$\rightarrow$'* m (Connected peerAddr handle handleError)
+  :: HasInitiator muxMode ~ True
+  => ConnectionManager muxMode socket peerAddr handle handleError m
+  -> peerAddr -> m (Connected peerAddr handle handleError)
 
--- | Include an inbound connection into 'ConnectionManager'.
+-- Include an inbound connection into 'ConnectionManager'.
 
 --   This executes:
 --
 -- * \(Accepted\) \/ \(Overwritten\) to \(Negotiated^{*}_{Inbound}\) transitions
 includeInboundConnection
-  *'$\coloncolon$'* HasResponder muxMode ~ True
-  *'$\Rightarrow$'* ConnectionManager muxMode socket peerAddr handle handleError m
-  *'$\rightarrow$'* socket *'$\rightarrow$'* peerAddr *'$\rightarrow$'* m (Connected peerAddr handle handleError)
-\end{lstlisting}
+  :: HasResponder muxMode ~ True
+  => ConnectionManager muxMode socket peerAddr handle handleError m
+  -> socket -> peerAddr -> m (Connected peerAddr handle handleError)
+\end{code}
 
 The first one asks the \connmngr{} to either connect to an outbound peer or, if
 possible, reuse a duplex connection. The other one allows to register an
@@ -441,27 +446,27 @@ a multiplexer error) or a handle to a \textit{negotiated} connection.
 
 Other methods which are discussed in this specification:
 
-\begin{lstlisting}
--- | Custom either type for result of various methods.
+\begin{code}
+-- || Custom either type for result of various methods.
 data OperationResult a
     = UnsupportedState !InState
     | OperationSuccess a
 
--- | Enumeration of states, used for reporting; constructors elided from this
+-- || Enumeration of states, used for reporting; constructors elided from this
 -- specification.
 data InState
 
--- | Unregister an outbound connection.
+-- || Unregister an outbound connection.
 --
 --   This executes:
 --
 -- * \(DemotedToCold^{*}_{Local}\) transitions
 unregisterOutboundConnection
-  *'$\coloncolon$'* HasInitiator muxMode ~ True
-  *'$\Rightarrow$'* ConnectionManager muxMode socket peerAddr handle handleError m
-  *'$\rightarrow$'* peerAddr *'$\rightarrow$'* m (OperationResult ())
+  :: HasInitiator muxMode ~ True
+  => ConnectionManager muxMode socket peerAddr handle handleError m
+  -> peerAddr -> m (OperationResult ())
 
--- | Notify the 'ConnectionManager' that a remote end promoted us to a
+-- || Notify the 'ConnectionManager' that a remote end promoted us to a
 -- /warm peer/.
 --
 -- This executes:
@@ -469,54 +474,54 @@ unregisterOutboundConnection
 -- * \(PromotedToWarm^{Duplex}_{Remote}\) transition,
 -- * \(Awake^{*}_{Remote}\) transition.
 promotedToWarmRemote
-  *'$\coloncolon$'* HasInitiator muxMode ~ True
-  *'$\Rightarrow$'* ConnectionManager muxMode socket peerAddr handle handleError m
-  *'$\rightarrow$'* peerAddr *'$\rightarrow$'* m (OperationResult InState)
+  :: HasInitiator muxMode ~ True
+  -> ConnectionManager muxMode socket peerAddr handle handleError m
+  -> peerAddr -> m (OperationResult InState)
 
--- | Notify the 'ConnectionManager' that a remote end demoted us to a /cold
+-- || Notify the 'ConnectionManager' that a remote end demoted us to a /cold
 -- peer/.
 --
 -- This executes:
 --
 -- * \(DemotedToCold^{*}_{Remote}\) transition.
 demotedToColdRemote
-  *'$\coloncolon$'* HasResponder muxMode ~ True
-  *'$\Rightarrow$'* ConnectionManager muxMode socket peerAddr handle handleError m
-  *'$\rightarrow$'* peerAddr -> m (OperationResult InState)
+  :: HasResponder muxMode ~ True
+  -> ConnectionManager muxMode socket peerAddr handle handleError m
+  -> peerAddr -> m (OperationResult InState)
 
--- | Unregister outbound connection. Returns if the operation was successul.
+-- || Unregister outbound connection. Returns if the operation was successul.
 --
 -- This executes:
 --
 -- * \(Commit*{*}\) transition
 -- * \(TimeoutExpired\) transition
 unregisterInboundConnection
-  *'$\coloncolon$'* HasResponder muxMode ~ True
-  *'$\Rightarrow$'* ConnectionManager muxMode socket peerAddr handle handleError m
-  *'$\rightarrow$'* peerAddr *'$\rightarrow$'* m (OperationResult DemotedToColdRemoteTr)
+  :: HasResponder muxMode ~ True
+  -> ConnectionManager muxMode socket peerAddr handle handleError m
+  -> peerAddr -> m (OperationResult DemotedToColdRemoteTr)
 
--- | Number of connections tracked by the server.
+-- || Number of connections tracked by the server.
 numberOfConnections
-  *'$\coloncolon$'* HasResponder muxMode ~ True
-  *'$\Rightarrow$'* ConnectionManager muxMode socket peerAddr handle handleError m
-  *'$\rightarrow$'* STM m Int
-\end{lstlisting}
+  :: HasResponder muxMode ~ True
+  -> ConnectionManager muxMode socket peerAddr handle handleError m
+  -> STM m Int
+\end{code}
 
 \subsection{Connection states}\label{sec:connection-state}
 
 Each connection is either initiated by \texttt{Inbound} or \texttt{Outbound} side.
 
-\begin{lstlisting}
+\begin{code}
 data Provenance
   = Inbound
   | Outbound
-\end{lstlisting}
+\end{code}
 Each connection negotiates \texttt{dataFlow}:
-\begin{lstlisting}
+\begin{code}
 data DataFlow
   = Unidirectional
   | Duplex
-\end{lstlisting}
+\end{code}
 
 In \texttt{Unidirectional} data flow, the connection is only used in one direction:
 the outbound side runs initiator side of mini-protocols, the inbound side runs
@@ -527,7 +532,7 @@ on two factors: negotiated version and \texttt{InitiatorOnly} flag which is
 announced through handshake. Each connection can be in one of the following
 states:
 
-\begin{lstlisting}
+\begin{code}
 data ConnectionState
   -- Connection manger is about to connect to a peer.
   = ReservedOutboundState
@@ -536,13 +541,13 @@ data ConnectionState
   | UnnegotiatedState Provenance
 
   -- Outbound connection, inbound idle timeout is ticking.
-  | OutboundState*'$^\tau$'* DataFlow
+  | OutboundState^{-"^\tau"-} DataFlow
 
   -- Outbound connection, inbound idle timeout expired.
   | OutboundState DataFlow
 
   -- Inbound connection, but not yet used.
-  | InboundIdleState*'$^\tau$'* DataFlow
+  | InboundIdleState^{-"^\tau"-} DataFlow
 
   -- Active inbound connection.
   | InboundState DataFlow
@@ -552,13 +557,13 @@ data ConnectionState
   | DuplexState
 
   -- Connection has terminated; socket is closed, thread running the
-  -- connection is killed.  For some delay (`TIME_WAIT`) the connection is kept
+  -- connection is killed.  For some delay (`TIME\_WAIT`) the connection is kept
   -- in this state until the kernel releases all the resources.
   | TerminatingState
 
   -- Connection is forgotten.
   | TerminatedState
-\end{lstlisting}
+\end{code}
 
 The above type is a simplified version of what is implemented. The real
 implementation tracks more detail, e.g. connection id (the quadruple of ip
@@ -658,7 +663,7 @@ start initiator-protocols, and the implementation is supposed to do that
 promptly. This however, cannot be assumed about the inbound side.
 
 \begin{table}[h]
-  \begin{tabular}[h]{l|l}
+  \begin{tabular}[h]{l||l}
     \textit{local connection state} & \textit{remote connection state} \\ [0.3em]
     \hline \\
     \UnnegotiatedStateOut{}         & \UnnegotiatedStateIn{}           \\ [0.2em]
@@ -1071,8 +1076,8 @@ needs to make.
     \draw (connected) -- node[left] {\textbf{\textbf{handshake}}} (handshake_decision_outbound);
 
     \node[inbound_outbound_state] (outbound_dupdf)             at (-8, -11)  {\OutboundStateDup{}};
-    \draw[->] (handshake_decision_outbound.west) -| node[left, near end] {\texttt{Unidirectional}} (outbound_unidf);
-    \draw[->] (handshake_decision_outbound) |- node[right, near start] {\textbf{\texttt{Duplex}}} (outbound_dupdf);
+    \draw[->] (handshake_decision_outbound.west) -|| node[left, near end] {\texttt{Unidirectional}} (outbound_unidf);
+    \draw[->] (handshake_decision_outbound) ||- node[right, near start] {\textbf{\texttt{Duplex}}} (outbound_dupdf);
 
     % Connection found flow
 
@@ -1082,61 +1087,61 @@ needs to make.
     \node[inbound_outbound_state,anchor=west] (reserved_outbound) at (1, -8)  {\ReservedOutboundState};
     \node[circle,fill=black] (x0) at (0, -8) {};
     \node[error,anchor=west]                  (termination_c)     at (4, -9) {\textbf{error \texttt{ConnectionExists}}};
-    \draw (x0) |- (reserved_outbound);
-    \draw[] (reserved_outbound) |- (termination_c);
+    \draw (x0) ||- (reserved_outbound);
+    \draw[] (reserved_outbound) ||- (termination_c);
 
     \node[inbound_outbound_state,anchor=west] (unnegotiated_inbound) at (1, -10) {\UnnegotiatedStateIn};
     \node[circle,fill=black] (x1) at (0, -10) {};
-    \draw (x1) |- (unnegotiated_inbound);
+    \draw (x1) ||- (unnegotiated_inbound);
     \draw[->] (unnegotiated_inbound) to[out=90,in=0] node[above right] {\textbf{await for handshake}} (found.east);
 
     \node[inbound_state,anchor=west] (inbound_unidf) at (1, -11) {\InboundStateUni};
     \node[circle,fill=black] (x2) at (0, -11) {};
     \node[error,anchor=west] (termination_unidf) at (4, -12) {\textbf{error \texttt{ForbiddenConnection}}};
-    \draw (x2) |- (inbound_unidf);
-    \draw[] (inbound_unidf) |- (termination_unidf);
+    \draw (x2) ||- (inbound_unidf);
+    \draw[] (inbound_unidf) ||- (termination_unidf);
 
     \node[inbound_state,anchor=west] (inboundidle_unidf)       at (1, -13) {\InboundIdleStateUni};
     \node[circle,fill=black] (x3) at (0, -13) {};
     \node[error,anchor=west] (termination_inboundidle) at (4, -14) {\textbf{error \texttt{ForbiddenConnection}}};
-    \draw (x3) |- (inboundidle_unidf);
-    \draw (inboundidle_unidf.225) |- (termination_inboundidle);
+    \draw (x3) ||- (inboundidle_unidf);
+    \draw (inboundidle_unidf.225) ||- (termination_inboundidle);
 
     \node[inbound_outbound_state,anchor=west] (inboundidle_dupdf)         at (1, -15) {\InboundIdleStateDup};
     \node[circle,fill=black] (x4) at (0, -15) {};
     \node[inbound_outbound_state,anchor=west] (outbound_dupdf_2) at (4, -16) {\OutboundStateDup};
-    \draw (x4) |- (inboundidle_dupdf);
-    \draw (inboundidle_dupdf.225) |- (outbound_dupdf_2);
+    \draw (x4) ||- (inboundidle_dupdf);
+    \draw (inboundidle_dupdf.225) ||- (outbound_dupdf_2);
 
     \node[inbound_outbound_state,anchor=west] (inbound_dupdf) at (1, -17) {\InboundStateDup};
     \node[circle,fill=black] (x5) at (0, -17) {};
     \node[inbound_outbound_state,anchor=west] (duplex)        at (4, -18) {\DuplexState};
-    \draw (x5) |- (inbound_dupdf);
-    \draw (inbound_dupdf) |- (duplex);
+    \draw (x5) ||- (inbound_dupdf);
+    \draw (inbound_dupdf) ||- (duplex);
 
     \node[impossible_outbound_state,anchor=west] (outbound_uni) at (1, -19) {\OutboundStateUni};
     \node[circle,fill=black] (x6) at (0, -19) {};
     \node[error,anchor=west] (termination_outuni) at (4, -20) {\textbf{error \texttt{ConnectionExists}}};
-    \draw (x6) |- (outbound_uni);
-    \draw (outbound_uni) |- (termination_outuni.west);
+    \draw (x6) ||- (outbound_uni);
+    \draw (outbound_uni) ||- (termination_outuni.west);
 
     \node[impossible_outbound_state,anchor=west] (duplex_imp)   at (1, -21) {\DuplexState};
     \node[circle,fill=black] (x7) at (0, -21) {};
     \node[error,anchor=west] (termination_dupuni) at (4, -22) {\textbf{error \texttt{ConnectionExists}}};
-    \draw (x7) |- (duplex_imp);
-    \draw (duplex_imp) |- (termination_dupuni.west);
+    \draw (x7) ||- (duplex_imp);
+    \draw (duplex_imp) ||- (termination_dupuni.west);
 
     \node[inbound_outbound_state,anchor=west] (terminating) at (1, -23) {\TerminatingState};
     \node[circle,fill=black] (x8) at (0, -23) {};
-    \draw (x8) |- (terminating);
+    \draw (x8) ||- (terminating);
     \draw[->] (terminating.0) to [out=30,in=340] node[above right,pos=0.8,looseness=2] {\textbf{await wait time timeout}} (init.east);
 
     \node[inbound_outbound_state,anchor=west] (terminated)  at (1, -24) {\TerminatedState};
     \node[circle,fill=black] (x9) at (0, -24) {};
-    \draw (x9) |- (terminated);
+    \draw (x9) ||- (terminated);
     \draw[->] (terminated) to [out=90,in=315] (not_found);
 
-    \draw (found.south) |- (x9);
+    \draw (found.south) ||- (x9);
 
   \end{tikzpicture}}
   \caption{\textit{Outbound} connection flow graph}
@@ -1170,9 +1175,9 @@ connection needs to transition from either:
 
 To support that the \connmngr{} exposes a method:
 
-\begin{lstlisting}
-unregisterOutboundConnection *'$\coloncolon$'* peerAddr *'$\rightarrow$'* m ()
-\end{lstlisting}
+\begin{code}
+unregisterOutboundConnection :: peerAddr -> m ()
+\end{code}
 This method performs \DemotedToColdUniLoc{} or
 \DemotedToColdDupLoc{} transition. In the former case it will shut down the
 multiplexer and close the \TCP{} connection, in the latter case, beside
@@ -1268,8 +1273,8 @@ Initial states for inbound connection are either:
     \draw (unnegotiated_inbound) -- (handshake_decision_inbound);
     \node[inbound_state]          (inbound_unidf) at (-3, -8) {\InboundStateUni{}};
     \node[inbound_outbound_state] (inbound_dupdf) at (3,  -8) {\InboundStateDup{}};
-    \draw[->] (handshake_decision_inbound.west) -| node[left, near end]{\textbf{\texttt{Unidirectional}}} (inbound_unidf);
-    \draw[->] (handshake_decision_inbound.east) -| node[right,near end]{\textbf{\texttt{Duplex}}}         (inbound_dupdf);
+    \draw[->] (handshake_decision_inbound.west) -|| node[left, near end]{\textbf{\texttt{Unidirectional}}} (inbound_unidf);
+    \draw[->] (handshake_decision_inbound.east) -|| node[right,near end]{\textbf{\texttt{Duplex}}}         (inbound_dupdf);
 
     \node[inbound_outbound_state] (duplex) at (3, -11) {\DuplexState{}};
     \draw[->] (inbound_dupdf) -- node[right]{\textbf{\texttt{requestOutboundConnection}}} (duplex);
@@ -1549,8 +1554,8 @@ Once all responder mini-protocols become idle, i.e. they all stopped or were
 re-started but are not yet running, a \DemotedToColdAnyRem{} transition is
 run: the \inbgov{} will notify the \connmngr{} using:
 
-\begin{lstlisting}
--- | Notify the 'ConnectionManager' that a remote end demoted us to a /cold
+\begin{code}
+-- || Notify the 'ConnectionManager' that a remote end demoted us to a /cold
 -- peer/.
 --
 -- This executes:
@@ -1560,34 +1565,34 @@ demotedToColdRemote
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
     -> peerAddr -> m (OperationResult InState)
-\end{lstlisting}
+\end{code}
 
 When all responder mini-protocols are idle for \textit{protocol idle timeout},
 the \inbgov{} will execute \CommitUni{}, \CommitDup{} if the inital state is
 \InboundIdleStateDup{} or \texttt{no-op} if the initial state is
 \OutboundStateDup{}.
 
-\begin{lstlisting}
--- | Return value of 'unregisterInboundConnection' to inform the caller about
+\begin{code}
+-- || Return value of 'unregisterInboundConnection' to inform the caller about
 -- the transition.
 --
 data DemotedToColdRemoteTr =
-    -- | @Commit^{dataFlow}@ transition from @'InboundIdleState' dataFlow@.
+    -- || @Commit^{dataFlow}@ transition from @'InboundIdleState' dataFlow@.
     --
     CommitTr
 
-    -- | @DemotedToCold^{Remote}@ transition from @'InboundState' dataFlow@
+    -- || @DemotedToCold^{Remote}@ transition from @'InboundState' dataFlow@
     --
   | DemotedToColdRemoteTr
 
-    -- | Either @DemotedToCold^{Remote}@ transition from @'DuplexState'@, or
+    -- || Either @DemotedToCold^{Remote}@ transition from @'DuplexState'@, or
     -- a level triggered @Awake^{Duplex}_{Local}@ transition.  In both cases
     -- the server must keep the responder side of all protocols ready.
   | KeepTr
   deriving Show
 
-unregisterInboundConnection *'$\coloncolon$'* peerAddr *'$\Rightarrow$'* m (OperationResult DemotedToColdRemoteTr)
-\end{lstlisting}
+unregisterInboundConnection :: peerAddr -> m (OperationResult DemotedToColdRemoteTr)
+\end{code}
 Both \CommitUni{} and \CommitDup{} will free resources (terminate the
 connection thread, close the socket).
 

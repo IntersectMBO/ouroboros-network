@@ -9,6 +9,8 @@ ifndef DOCNAME
 	DOCNAME = network-spec
 endif
 
+CHAPTERS=architecture.tex connection-manager.tex intro.tex miniprotocols.tex mux.tex rest.tex
+
 # You want latexmk to *always* run, because make does not have all the info.
 # Also, include non-file targets in .PHONY so they are run regardless of any
 # file of the given name existing.
@@ -33,8 +35,14 @@ all: $(DOCNAME).pdf
 # -interaction=nonstopmode keeps the pdflatex backend from stopping at a
 # missing file reference and interactively asking you for an alternative.
 
-$(DOCNAME).pdf: $(DOCNAME).tex
+$(DOCNAME).pdf: $(DOCNAME).tex $(CHAPTERS) lhs2tex.sty
 	latexmk -bibtex -pdf $(DOCNAME).tex
+
+%.tex: %.lhs
+	lhs2TeX -o $@ $<
+
+lhs2tex.sty: lhs2tex.lhs
+	lhs2TeX -o $@ $<
 
 clean:
 	latexmk -CA
