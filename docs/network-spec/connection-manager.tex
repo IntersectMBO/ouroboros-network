@@ -175,20 +175,31 @@
 
 \section{Introduction}
 
-As described in the \href{https://hydra.iohk.io/build/5866649/download/1/network-design.pdf}{Network Design} document, the goal is to transition to a more
-decentralized network. To make that happen, a plan was designed to come up with a P2P
-network that is capable to achieve desired network properties. One key component of
-such design is the \ptopgov{}, which is responsible for managing the \cold{}/\warm{}/\hot{}
-peer selection and managing the churn of these groups, and adjusting the targets in order for
-the network to reach the desired properties. However, having \warm{} and \hot{} peers implies
-establishing a bearer connection; \hot{} peers need to run several mini-protocols, and each
-mini-protocol runs 2 instances (client and server). Which means that with a large enough
-warm/hot peer target, there's going to be a lot of resource waste when it comes to file
-descriptor usage. There's also the problem of firewalls, where it matters who tries to
-start a communication with whom (if it's the client or the server).
+As described in the design document \citep{network-design}, the goal is to
+transition the network layer to a decentralised design and deployment. The
+document also describes a design intended to achieve the desired network
+properties.
 
-Knowing this, it would be good to make the most of each connection and, in order to do so the
-\Connmngr{} was designed.
+One key component of the design is the \ptopgov{}, which is responsible for:
+\begin{itemize}
+\item managing the selection of \cold{}/\warm{}/\hot{} peers;
+\item the transitions of peers between these groups;
+\item continuously making progress towards the target number of peers in each group; and
+\item adjusting the group targets over time to achieve a degree of `churn'.
+\end{itemize}
+Taken together, and with appropriate policies, the network of nodes should be
+able to self-organise and achieve the desired properties. We have simulation
+results that give us a good degree of confidence that this is indeed the case,
+at large scale.
+
+Another important requirement of the high level design is that we be able to
+use bearer connections in both directions. This is both more efficient but also
+necessary when connecting through firewalls. It means we have bearers where
+they can be used in either or both directions, and which directions are in use
+can change over the lifetime of the bearer. The resource and state tracking is
+therefore somewhat more complicated than in a simple client-only or server-only
+scheme. The \Connmngr{} is intended to do this state tracking amd resource
+management.
 
 \section{Components}
 
