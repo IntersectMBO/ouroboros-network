@@ -5,6 +5,7 @@
 {-# LANGUAGE DisambiguateRecordFields   #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -40,6 +41,9 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , encodeShelleyHeaderState
   , encodeShelleyLedgerState
   ) where
+
+import           GHC.Prim
+import           GHC.Types (Int(I#))
 
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
@@ -81,6 +85,7 @@ import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
+import           Ouroboros.Consensus.Shelley.Ledger.Stub
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
 import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
@@ -289,15 +294,27 @@ instance ShelleyBasedEra era
   --    - 'updateChainDepState': executes the @PRTCL@ transition
   -- + 'applyLedgerBlock': executes the @BBODY@ transition
   --
-  applyLedgerBlock =
-      applyHelper $
+  applyLedgerBlock x y z =
+      seq (stubComputation (stubComputationArg
+                             + I# (reallyUnsafePtrEquality# x x)
+                             + I# (reallyUnsafePtrEquality# y y)
+                             + I# (reallyUnsafePtrEquality# z z))) $
+      applyHelper
         -- Apply the BBODY transition using the ticked state
-        withExcept BBodyError ..: SL.applyBlock
+        (withExcept BBodyError ..: SL.applyBlock)
+        x y z
 
-  reapplyLedgerBlock = runIdentity ...:
-      applyHelper $
-        -- Reapply the BBODY transition using the ticked state
-        Identity ..: SL.reapplyBlock
+  reapplyLedgerBlock x y z =
+    ((seq (stubComputation (stubComputationArg
+                             + I# (reallyUnsafePtrEquality# x x)
+                             + I# (reallyUnsafePtrEquality# y y)
+                             + I# (reallyUnsafePtrEquality# z z)))
+      .
+      runIdentity) ...:
+      applyHelper)
+         -- Reapply the BBODY transition using the ticked state
+         (Identity ..: SL.reapplyBlock)
+         x y z
 
 applyHelper ::
      (ShelleyBasedEra era, Monad m)
