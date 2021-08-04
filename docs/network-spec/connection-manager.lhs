@@ -12,7 +12,7 @@
 % First describe each transition in general terms, without referring to the
 % implementation, and in a subsequent section introduce implementation details.
 
-\chapter{Connection Manager State Machine Specification}
+\chapter{Connection management}
 \label{chapter:connection-manager}
 
 \tikzstyle{decision} =
