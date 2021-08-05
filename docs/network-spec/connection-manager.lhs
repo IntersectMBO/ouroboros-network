@@ -151,12 +151,168 @@
   \vspace{1em}
   }
 
-\section{Introduction}
+\section{The connection management challenge}
 
-As described in the design document \citep{network-design}, the goal is to
-transition the network layer to a decentralised design and deployment. The
-document also describes a design intended to achieve the desired network
-properties.
+As described in the network design document \citep{network-design}, a key goal
+for the network layer is to have a decentralised design and deployment. The
+document also describes (in Section 5.7) a high level design intended to
+achieve the desired properties.
+
+Much of the high level design is concerned with the selection of upstream peers.
+This is reflected in the implementation as a component we call the
+\emph{p2p governor}. This component has a lot of responsibilities and is
+moderately complex.
+
+The peer-to-peer design does not just consist of selecting and managing
+upstream peers however. It must also manage downstream peers, though very
+little selection logic is necessary. An important part of the high level design
+is that TCP bearer connections between nodes be able to be used to run
+mini-protocols in both directions. \cref{fig:protocol-diagram} illustrates an
+example where two nodes are running all three usual mini-protocols and running
+them in both directions over a single TCP bearer.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=12cm]{figure/node-to-node-ipc.png}
+    \caption{Duplex connection running several mini-protocols}
+    \label{fig:protocol-diagram}
+\end{figure}
+
+Using a TCP connection in both directions rather than two independent TCP
+connections is good for efficient use of network resources, but more
+importantly it is crucial to support certain important scenarios where one node
+is behind a firewall that blocks incoming TCP connections. For example it is
+good practice to have a block-producing node be behind a firewall, while
+deploying relay nodes outside the firewall. If the node behind the firewall can
+establish an outbound TCP connection to its relays but still have those relays
+select the block-producing node as an upstream peer then it means we do not
+need to punch any holes in the firewall. If we were to only support running
+mini-protocols in one direction then this scenario would require a hole in the
+firewall to allow the relays to establish incoming connections to the
+block-producing node. That would be both less secure and also require more
+configuration and probably dynamic configuration at that.
+
+Consider however what is required to make this scenario work. We must start
+with an outbound connection being established from the block-producing node to
+a relay. The block-producing node wants the relay as an upstream peer -- to
+receive blocks from the rest of the network -- so the normal mini-protocols
+need to be run with the block-producing node in the client role and rely in the
+server role. So initially at least the relay had to act as a server to accept
+the connection and to run the server side of the mini-protocols. Next however
+we want the relay to be able to select the block-producing node as an upstream
+peer, and we want it to do so by reusing the existing connection since we know
+the firewall makes it impossible to establish a new outbound connection to the
+block-producing node. Thus we must be able to have the relay start the client
+side of the usual mini-protocols and the block-producer must be running the
+server side of them. So notice that this means we have started with just running
+the mini-protocols in one direction and transitioned to running them in both
+directions, what we call full \emph{duplex}.
+
+Furthermore, such transitions are not a one-off event. It is entirely possible
+for a node to select another peer as an upstream peer and later change its mind.
+This means we could transition from duplex back to unidirectional -- and that
+unidirectional direction need not even be the same as the initial direction!
+This leads to the observation that in the general case we need to support any
+number of transitions between unidirectional and duplex use of a connection,
+We can also observe that once a bearer has been established the relationship
+between the two ends is mostly symmetric: the original direction hardly matters.
+
+A consequence of all this is that we cannot use a classic client/server design.
+That is, we cannot just run a server component that manages all the connections
+and threads for the server (inbound) side of things, and a separate component
+that manages the connections and threads for the client (outbound) side of
+things. The connections have to be a shared resource between the inbound and
+outbound sides so that we can use connections in either or both directions
+over the lifetime of a connection.
+
+Although actual TCP connections must be a shared resource we do not wish to
+intermingle the code for handling the inbound and outbound directions. As noted
+above the selection of upstream (outbound) peers is quite complicated and we
+would not want to add to that complexity by mixing it with a lot of other
+concerns. To minimise complexity it would be preferable if the code that manages
+the outbound side would be completely unaware of the inbound side and vice
+versa. Yet we still want the inbound and outbound sides to opportunistically
+share TCP connections where possible.
+
+These ideas lead to the design illustrated in \cref{tik:components}. In this
+design there is an outbound and inbound side -- which are completely unaware of
+each other -- mediated by a shared \emph{connection manager} component.
+\begin{figure}[h]
+  \def\xa{-2.0}
+  \def\xb{2.0}
+  \begin{center}
+  \begin{tikzpicture}
+    \node at (-3.25, 0)  {\textbf{Outbound side}};
+    \node at ( 3.25, 0)  {\textbf{Inbound side}};
+    \footnotesize
+
+    \node[rounded corners, rectangle, draw, minimum height=3cm,anchor=east, text width=4cm] (p2p_governor) at (\xa, -2.7)
+     {
+       \hfill\textbf{Peer-to-Peer Governor}\hfill
+       \vspace{0.3em}
+       \setlength{\leftmargini}{15pt}
+       \begin{itemize}
+        \item Initiates outbound use of connections.
+        \item Runs and monitors the mini-protocols in the client role/direction.
+      \end{itemize}
+      \vspace{5pt}
+      };
+
+    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (server) at (\xb, -1.50)
+      {
+        \hfill{\textbf{Server}}\hfill
+        \vspace{0}
+        \setlength{\leftmargini}{15pt}
+        \begin{itemize}
+          \item Accepts connections.
+          \item Performs rate limiting of new connections.
+        \end{itemize}
+        \vspace{5pt}
+      };
+
+    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (inbound_governor) at (\xb, -4.1)
+      {
+        \hfill{\textbf{Inbound Governor}}\hfill
+        \vspace{0}
+        \setlength{\leftmargini}{15pt}
+        \begin{itemize}
+          \item Runs and monitors mini-protocols in the server role/direction.
+        \end{itemize}
+        \vspace{5pt}
+      };
+
+    \node[rounded corners, rectangle, draw, minimum height=1cm, text width=2cm] (connection_manager) at (0, -2.7)
+      {
+        \hfil\textbf{Connection}\hfil\\
+        \hfil\textbf{Manager}\hfil
+      };
+
+    \draw[->] (p2p_governor)           -- (connection_manager);
+    \draw[->] (server.west)            -- (connection_manager.5);
+    \draw[->] (connection_manager.355) -- (inbound_governor.west);
+    \draw[->] (server)                 -- (inbound_governor);
+  \end{tikzpicture}
+  \caption{The four main components}
+  \label{tik:components}
+  \end{center}
+\end{figure}
+
+The connection manager is there to manage the underlying TCP connection
+resources. It has to provide an interface to the outbound side to enable the
+use of connections in an outbound direction. Correspondingly it must provide an
+interface to the inbound side to enable the use of connections in an inbound
+direction. Internally it must deal with connections being used in a
+unidirectional or duplex way, and transitions between directions. Of course it
+can be the case that connections are no longer required in either direction,
+and such connections should be closed in an orderly manner. This must be a
+responsibility of the connection manager since it is the only component that
+can see both inbound and outbound sides to be able to see that a connection is
+no longer needed in either direction and hence not needed at all.
+
+In the next couple sections we will review what the inbound and outbound sides
+need to be able to do, and what service the connection manager needs to provide.
+
+\section{TODO: old text}
 
 One key component of the design is the p2p governor, which is responsible for:
 \begin{itemize}
@@ -196,64 +352,6 @@ server accepts a connection which is then given to the connection manager. The c
 whenever the inbound governor notices that the connection was used
 (could be used due to warm/hot transitions).
 
-\begin{figure}[h]
-  \footnotesize
-  \def\xa{-2.0}
-  \def\xb{2.0}
-  \begin{center}
-  \begin{tikzpicture}
-    \node at (-3.25, 0)  {\textit{Outbound side}};
-    \node at ( 3.25, 0)  {\textit{Inbound side}};
-
-    \node[rounded corners, rectangle, draw, minimum height=3cm,anchor=east, text width=4cm] (p2p_governor) at (\xa, -3)
-     {
-       \hfil\textbf{Peer-to-Peer Governor}\hfil\\
-       \setlength{\leftmargini}{15pt}
-       \begin{itemize}
-        \item manages connection initiation (dual of connection acception)
-        \item runs and monitors initiator protocols on unidirectional or duplex connections
-      \end{itemize}
-      \vspace{5pt}
-      };
-
-    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (server) at (\xb, -1.80)
-      {
-        \hfill{\textbf{Server}}\hfill
-        \vspace{0.2em}
-        \setlength{\leftmargini}{15pt}
-        \begin{itemize}
-          \item accepts connections
-          \item performs some amount of dynamic rate limiting
-        \end{itemize}
-        \vspace{5pt}
-      };
-
-    \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (inbound_governor) at (\xb, -4)
-      {
-        \hfill{\textbf{Inbound Governor}}\hfill
-        \vspace{0.2em}
-        \setlength{\leftmargini}{15pt}
-        \begin{itemize}
-          \item start/restart responder mini-protocols on inbound and
-            outbound duplex connections
-        \end{itemize}
-        \vspace{5pt}
-      };
-
-    \node[rounded corners, rectangle, draw, minimum height=1cm, text width=2cm] (connection_manager) at (0, -3)
-      {
-        \hfil\textbf{Connection}\hfil\\
-        \hfil\textbf{Manager}\hfil
-      };
-
-    \draw[<-] (p2p_governor)           -- (connection_manager);
-    \draw[->] (server.west)            -- (connection_manager.5);
-    \draw[->] (connection_manager.355) -- (inbound_governor.west);
-  \end{tikzpicture}
-  \caption{The three main components}
-  \label{tik:components}
-  \end{center}
-\end{figure}
 
 One simple illustration of how these three components interact together:
 
@@ -325,13 +423,6 @@ outcome of the handshake negotiation is:
       one is \emph{full-duplex} mode)
     \item Handshake might error
 \end{itemize}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\linewidth]{figure/node-to-node-ipc.png}
-    \caption{Duplex connection running severall mini-protocols}
-    \label{fig:protocol-diagram}
-\end{figure}
 
 The \emph{Connection Handler} notifies the connection manager about the result of a negotiation, which
 triggers a state transition. If we can run the connection in full-duplex mode,
