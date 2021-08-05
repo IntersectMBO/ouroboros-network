@@ -237,7 +237,7 @@ share TCP connections where possible.
 These ideas lead to the design illustrated in \cref{tik:components}. In this
 design there is an outbound and inbound side -- which are completely unaware of
 each other -- mediated by a shared \emph{connection manager} component.
-\begin{figure}[h]
+\begin{figure}
   \def\xa{-2.0}
   \def\xb{2.0}
   \begin{center}
@@ -261,7 +261,7 @@ each other -- mediated by a shared \emph{connection manager} component.
     \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (server) at (\xb, -1.50)
       {
         \hfill{\textbf{Server}}\hfill
-        \vspace{0}
+        \vspace{0pt}
         \setlength{\leftmargini}{15pt}
         \begin{itemize}
           \item Accepts connections.
@@ -273,7 +273,7 @@ each other -- mediated by a shared \emph{connection manager} component.
     \node[rounded corners, rectangle, draw, anchor=west, text width=4cm] (inbound_governor) at (\xb, -4.1)
       {
         \hfill{\textbf{Inbound Governor}}\hfill
-        \vspace{0}
+        \vspace{0pt}
         \setlength{\leftmargini}{15pt}
         \begin{itemize}
           \item Runs and monitors mini-protocols in the server role/direction.
