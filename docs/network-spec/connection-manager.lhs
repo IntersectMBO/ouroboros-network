@@ -192,30 +192,38 @@ firewall to allow the relays to establish incoming connections to the
 block-producing node. That would be both less secure and also require more
 configuration and probably dynamic configuration at that.
 
-Consider however what is required to make this scenario work. We must start
-with an outbound connection being established from the block-producing node to
-a relay. The block-producing node wants the relay as an upstream peer -- to
-receive blocks from the rest of the network -- so the normal mini-protocols
-need to be run with the block-producing node in the client role and rely in the
-server role. So initially at least the relay had to act as a server to accept
-the connection and to run the server side of the mini-protocols. Next however
-we want the relay to be able to select the block-producing node as an upstream
-peer, and we want it to do so by reusing the existing connection since we know
-the firewall makes it impossible to establish a new outbound connection to the
-block-producing node. Thus we must be able to have the relay start the client
-side of the usual mini-protocols and the block-producer must be running the
-server side of them. So notice that this means we have started with just running
-the mini-protocols in one direction and transitioned to running them in both
-directions, what we call full \emph{duplex}.
-
-Furthermore, such transitions are not a one-off event. It is entirely possible
-for a node to select another peer as an upstream peer and later change its mind.
-This means we could transition from duplex back to unidirectional -- and that
-unidirectional direction need not even be the same as the initial direction!
-This leads to the observation that in the general case we need to support any
-number of transitions between unidirectional and duplex use of a connection,
-We can also observe that once a bearer has been established the relationship
-between the two ends is mostly symmetric: the original direction hardly matters.
+Consider however what is required to make this scenario work.
+\begin{enumerate}
+\item We must start with an outbound connection being established from the
+      block-producing node to a relay.
+\item The block-producing node wants the relay as an upstream peer -- to
+      receive blocks from the rest of the network -- so the normal
+      mini-protocols need to be run with the block-producing node in the client
+      role and relay in the server role. So initially at least the relay had to
+      act as a server to accept the connection and to run the server side of
+      the mini-protocols.
+\item Next however we want the relay to be able to select the block-producing
+      node as an upstream peer, and we want it to do so by reusing the existing
+      connection since we know the firewall makes it impossible to establish a
+      new outbound connection to the block-producing node. Thus we must be able
+      to have the relay start the client side of the usual mini-protocols and
+      the block-producer must be running the server side of them.
+\item So notice that this means we have started with just running the
+      mini-protocols in one direction and transitioned to running them in both
+      directions, what we call full \emph{duplex}.
+\item Furthermore, such transitions are not a one-off event. It is entirely
+      possible for a node to select another peer as an upstream peer and later
+      change its mind. This means we could transition from duplex back to
+      unidirectional -- and that unidirectional direction need not even be the
+      same as the initial direction!
+\end{enumerate}
+This leads to a couple observations:
+\begin{enumerate}
+\item that in the general case we need to support any number of transitions
+      between unidirectional and duplex} use of a connection; and
+\item that once a bearer has been established the relationship between the two
+      ends is mostly symmetric: the original direction hardly matters.
+\end{enumerate}
 
 A consequence of all this is that we cannot use a classic client/server design.
 That is, we cannot just run a server component that manages all the connections
