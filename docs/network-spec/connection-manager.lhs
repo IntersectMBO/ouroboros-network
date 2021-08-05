@@ -289,10 +289,10 @@ each other -- mediated by a shared \emph{connection manager} component.
 
     \draw[->] (p2p_governor)           -- (connection_manager);
     \draw[->] (server.west)            -- (connection_manager.5);
-    \draw[->] (connection_manager.355) -- (inbound_governor.west);
+    \draw[<->] (connection_manager.355) -- (inbound_governor.west);
     \draw[->] (server)                 -- (inbound_governor);
   \end{tikzpicture}
-  \caption{The four main components}
+  \caption{The four main components and their dependencies}
   \label{tik:components}
   \end{center}
 \end{figure}
