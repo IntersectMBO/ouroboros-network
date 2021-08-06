@@ -30,6 +30,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Data.Coerce
+import           Data.Functor ((<&>))
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -119,53 +120,58 @@ instance ( IsLedger (LedgerState  blk)
       => IsLedger (ExtLedgerState blk) where
   type LedgerErr (ExtLedgerState blk) = ExtValidationError blk
 
-  applyChainTick cfg slot (ExtLedgerState ledger header) =
-      TickedExtLedgerState {..}
+  type AuxLedgerEvent (ExtLedgerState blk) = AuxLedgerEvent (LedgerState blk)
+
+  applyChainTickLedgerResult cfg slot (ExtLedgerState ledger header) =
+      castLedgerResult ledgerResult <&> \tickedLedgerState ->
+      let tickedLedgerView :: Ticked (LedgerView (BlockProtocol blk))
+          tickedLedgerView = protocolLedgerView lcfg tickedLedgerState
+
+          tickedHeaderState :: Ticked (HeaderState blk)
+          tickedHeaderState =
+              tickHeaderState
+                (configConsensus $ getExtLedgerCfg cfg)
+                tickedLedgerView
+                slot
+                header
+      in TickedExtLedgerState {..}
     where
       lcfg :: LedgerConfig blk
       lcfg = configLedger $ getExtLedgerCfg cfg
 
-      tickedLedgerState :: Ticked (LedgerState blk)
-      tickedLedgerState = applyChainTick lcfg slot ledger
-
-      tickedLedgerView :: Ticked (LedgerView (BlockProtocol blk))
-      tickedLedgerView = protocolLedgerView lcfg tickedLedgerState
-
-      tickedHeaderState :: Ticked (HeaderState blk)
-      tickedHeaderState =
-          tickHeaderState
-            (configConsensus $ getExtLedgerCfg cfg)
-            tickedLedgerView
-            slot
-            header
+      ledgerResult = applyChainTickLedgerResult lcfg slot ledger
 
 instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
-  applyLedgerBlock cfg blk TickedExtLedgerState{..} = ExtLedgerState
-      <$> (withExcept ExtValidationErrorLedger $
-             applyLedgerBlock
-               (configLedger $ getExtLedgerCfg cfg)
-               blk
-               tickedLedgerState)
-      <*> (withExcept ExtValidationErrorHeader $
-             validateHeader
-               (getExtLedgerCfg cfg)
-               tickedLedgerView
-               (getHeader blk)
-               tickedHeaderState)
+  applyBlockLedgerResult cfg blk TickedExtLedgerState{..} = do
+    ledgerResult <-
+        withExcept ExtValidationErrorLedger
+      $ applyBlockLedgerResult
+          (configLedger $ getExtLedgerCfg cfg)
+          blk
+          tickedLedgerState
+    hdr <-
+        withExcept ExtValidationErrorHeader
+      $ validateHeader @blk
+          (getExtLedgerCfg cfg)
+          tickedLedgerView
+          (getHeader blk)
+          tickedHeaderState
+    pure $ (\l -> ExtLedgerState l hdr) <$> castLedgerResult ledgerResult
 
-  reapplyLedgerBlock cfg blk TickedExtLedgerState{..} = ExtLedgerState {
-        ledgerState =
-             reapplyLedgerBlock
-               (configLedger $ getExtLedgerCfg cfg)
-               blk
-               tickedLedgerState
-      , headerState =
-             revalidateHeader
-               (getExtLedgerCfg cfg)
-               tickedLedgerView
-               (getHeader blk)
-               tickedHeaderState
-      }
+  reapplyBlockLedgerResult cfg blk TickedExtLedgerState{..} =
+      (\l -> ExtLedgerState l hdr) <$> castLedgerResult ledgerResult
+    where
+      ledgerResult =
+        reapplyBlockLedgerResult
+          (configLedger $ getExtLedgerCfg cfg)
+          blk
+          tickedLedgerState
+      hdr      =
+        revalidateHeader
+          (getExtLedgerCfg cfg)
+          tickedLedgerView
+          (getHeader blk)
+          tickedHeaderState
 
 {-------------------------------------------------------------------------------
   Serialisation

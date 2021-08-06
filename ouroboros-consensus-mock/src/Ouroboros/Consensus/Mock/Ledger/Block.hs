@@ -96,7 +96,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
-                     (.:))
+                     (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -350,16 +350,18 @@ instance MockProtocolSpecific c ext
       => IsLedger (LedgerState (SimpleBlock c ext)) where
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ _ = TickedSimpleLedgerState
+  type AuxLedgerEvent (LedgerState (SimpleBlock c ext)) = VoidLedgerEvent (SimpleBlock c ext)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedSimpleLedgerState
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
-  applyLedgerBlock _ = updateSimpleLedgerState
+  applyBlockLedgerResult _ = fmap pureLedgerResult .: updateSimpleLedgerState
 
-  reapplyLedgerBlock cfg =
-      (mustSucceed . runExcept) .: applyLedgerBlock cfg
+  reapplyBlockLedgerResult =
+      (mustSucceed . runExcept) ..: applyBlockLedgerResult
     where
-      mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
+      mustSucceed (Left  err) = error ("reapplyBlockLedgerResult: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
 
 newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {

@@ -29,6 +29,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util ((..:))
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
@@ -102,24 +103,28 @@ data instance Ticked (LedgerState ByronSpecBlock) = TickedByronSpecLedgerState {
 instance IsLedger (LedgerState ByronSpecBlock) where
   type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
 
-  applyChainTick cfg slot (ByronSpecLedgerState tip state) =
-      TickedByronSpecLedgerState {
-          untickedByronSpecLedgerTip = tip
-        , tickedByronSpecLedgerState = Rules.applyChainTick
-                                         cfg
-                                         (toByronSpecSlotNo slot)
-                                         state
-        }
+  type AuxLedgerEvent (LedgerState ByronSpecBlock) =
+    VoidLedgerEvent (LedgerState ByronSpecBlock)
+
+  applyChainTickLedgerResult cfg slot (ByronSpecLedgerState tip state) =
+        pureLedgerResult
+      $ TickedByronSpecLedgerState {
+            untickedByronSpecLedgerTip = tip
+          , tickedByronSpecLedgerState = Rules.applyChainTick
+                                           cfg
+                                           (toByronSpecSlotNo slot)
+                                           state
+          }
 
 {-------------------------------------------------------------------------------
   Applying blocks
 -------------------------------------------------------------------------------}
 
 instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
-  applyLedgerBlock cfg block (TickedByronSpecLedgerState _tip state) =
-    withExcept ByronSpecLedgerError $
-      ByronSpecLedgerState (Just (blockSlot block)) <$>
-        -- Note that the CHAIN rule also applies the chain tick. So even
+  applyBlockLedgerResult cfg block (TickedByronSpecLedgerState _tip state) =
+        withExcept ByronSpecLedgerError
+      $ fmap (pureLedgerResult . ByronSpecLedgerState (Just (blockSlot block)))
+      $ -- Note that the CHAIN rule also applies the chain tick. So even
         -- though the ledger we received has already been ticked with
         -- 'applyChainTick', we do it again as part of CHAIN. This is safe, as
         -- it is idempotent. If we wanted to avoid the repeated tick, we would
@@ -129,13 +134,13 @@ instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
           (byronSpecBlock block)
           state
 
-  reapplyLedgerBlock cfg block =
+  reapplyBlockLedgerResult =
       -- The spec doesn't have a "reapply" mode
-      dontExpectError . applyLedgerBlock cfg block
+      dontExpectError ..: applyBlockLedgerResult
     where
       dontExpectError :: Except a b -> b
       dontExpectError mb = case runExcept mb of
-        Left  _ -> error "reapplyLedgerBlock: unexpected error"
+        Left  _ -> error "reapplyBlockLedgerResult: unexpected error"
         Right b -> b
 
 {-------------------------------------------------------------------------------

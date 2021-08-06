@@ -62,6 +62,7 @@ import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Foldable (find)
+import           Data.Functor ((<&>))
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
@@ -474,30 +475,41 @@ instance IsLedger l => GetTip (Ticked (LedgerDB l)) where
 instance IsLedger l => IsLedger (LedgerDB l) where
   type LedgerErr (LedgerDB l) = LedgerErr l
 
-  applyChainTick cfg slot db = TickedLedgerDB {
-        tickedLedgerDbTicked =
-          applyChainTick (ledgerDbCfg cfg) slot (ledgerDbCurrent db)
-      , tickedLedgerDbOrig   = db
-      }
+  type AuxLedgerEvent (LedgerDB l) = AuxLedgerEvent l
+
+  applyChainTickLedgerResult cfg slot db =
+      castLedgerResult ledgerResult <&> \l -> TickedLedgerDB {
+          tickedLedgerDbTicked = l
+        , tickedLedgerDbOrig   = db
+        }
+    where
+      ledgerResult = applyChainTickLedgerResult
+                       (ledgerDbCfg cfg)
+                       slot
+                       (ledgerDbCurrent db)
 
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
-  applyLedgerBlock cfg blk TickedLedgerDB{..} =
-      push <$> applyLedgerBlock
-                 (ledgerDbCfg cfg)
-                 blk
-                 tickedLedgerDbTicked
-   where
-     push :: l -> LedgerDB l
-     push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
+  applyBlockLedgerResult cfg blk TickedLedgerDB{..} = do
+      ledgerResult <- applyBlockLedgerResult
+                        (ledgerDbCfg cfg)
+                        blk
+                        tickedLedgerDbTicked
 
-  reapplyLedgerBlock cfg blk TickedLedgerDB{..} =
-      push $ reapplyLedgerBlock
-               (ledgerDbCfg cfg)
-               blk
-               tickedLedgerDbTicked
-   where
-     push :: l -> LedgerDB l
-     push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
+      return $ push <$> castLedgerResult ledgerResult
+    where
+      push :: l -> LedgerDB l
+      push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
+
+  reapplyBlockLedgerResult cfg blk TickedLedgerDB{..} =
+      push <$> castLedgerResult ledgerResult
+    where
+      push :: l -> LedgerDB l
+      push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
+
+      ledgerResult = reapplyBlockLedgerResult
+                       (ledgerDbCfg cfg)
+                       blk
+                       tickedLedgerDbTicked
 
 {-------------------------------------------------------------------------------
   Support for testing

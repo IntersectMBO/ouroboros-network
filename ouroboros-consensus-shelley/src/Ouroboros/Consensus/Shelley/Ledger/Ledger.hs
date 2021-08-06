@@ -3,7 +3,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DisambiguateRecordFields   #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE MultiWayIf                 #-}
@@ -32,6 +34,8 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , shelleyEraParamsNeverHardForks
   , shelleyLedgerGenesis
     -- * Auxiliary
+  , ShelleyLedgerEvent (..)
+  , ShelleyReapplyException (..)
   , getPParams
     -- * Serialisation
   , decodeShelleyAnnTip
@@ -46,7 +50,9 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (decode, encode)
+import qualified Control.Exception as Exception
 import           Control.Monad.Except
+import           Data.Functor ((<&>))
 import           Data.Functor.Identity
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -68,14 +74,16 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util ((...:), (..:))
+import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Core
+import qualified Control.State.Transition.Extended as STS
 import qualified Shelley.Spec.Ledger.API as SL
+
 import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
@@ -251,11 +259,14 @@ untickedShelleyLedgerTipPoint = shelleyTipToPoint . untickedShelleyLedgerTip
 instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
   type LedgerErr (LedgerState (ShelleyBlock era)) = ShelleyLedgerError era
 
-  applyChainTick cfg slotNo ShelleyLedgerState{
+  type AuxLedgerEvent (LedgerState (ShelleyBlock era)) = ShelleyLedgerEvent era
+
+  applyChainTickLedgerResult cfg slotNo ShelleyLedgerState{
                                 shelleyLedgerTip
                               , shelleyLedgerState
                               , shelleyLedgerTransition
                               } =
+      swizzle appTick <&> \l' ->
       TickedShelleyLedgerState {
           untickedShelleyLedgerTip =
             shelleyLedgerTip
@@ -265,11 +276,7 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
               ShelleyTransitionInfo { shelleyAfterVoting = 0 }
             else
               shelleyLedgerTransition
-        , tickedShelleyLedgerState =
-            SL.applyTick
-              globals
-              shelleyLedgerState
-              slotNo
+        , tickedShelleyLedgerState = l'
         }
     where
       globals = shelleyLedgerGlobals cfg
@@ -277,42 +284,114 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
       ei :: EpochInfo Identity
       ei = SL.epochInfo globals
 
+      swizzle (l, events) =
+          LedgerResult {
+              lrEvents = map ShelleyLedgerEventTICK events
+            , lrResult = l
+            }
+
+      appTick =
+        SL.applyTickOpts
+          STS.ApplySTSOpts {
+              asoAssertions = STS.globalAssertionPolicy
+            , asoValidation = STS.ValidateAll
+            , asoEvents     = STS.EPReturn
+            }
+          globals
+          shelleyLedgerState
+          slotNo
+
+-- | All events emitted by the Shelley ledger API
+data ShelleyLedgerEvent era =
+    -- | An event emitted when (re)applying a block
+    ShelleyLedgerEventBBODY (STS.Event (Core.EraRule "BBODY" era))
+    -- | An event emitted during the chain tick
+  | ShelleyLedgerEventTICK  (STS.Event (Core.EraRule "TICK"  era))
+
 instance ShelleyBasedEra era
       => ApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
   -- Note: in the Shelley ledger, the @CHAIN@ rule is used to apply a whole
   -- block. In consensus, we split up the application of a block to the ledger
   -- into separate steps that are performed together by 'applyExtLedgerState':
   --
-  -- + 'applyChainTick': executes the @TICK@ transition
+  -- + 'applyChainTickLedgerResult': executes the @TICK@ transition
   -- + 'validateHeader':
   --    - 'validateEnvelope': executes the @chainChecks@
   --    - 'updateChainDepState': executes the @PRTCL@ transition
-  -- + 'applyLedgerBlock': executes the @BBODY@ transition
+  -- + 'applyBlockLedgerResult': executes the @BBODY@ transition
   --
-  applyLedgerBlock =
-      applyHelper $
-        -- Apply the BBODY transition using the ticked state
-        withExcept BBodyError ..: SL.applyBlock
+  applyBlockLedgerResult =
+      applyHelper (swizzle ..: appBlk)
+    where
+      swizzle m =
+        withExcept BBodyError m <&> \(l, events) ->
+          LedgerResult {
+              lrEvents = map ShelleyLedgerEventBBODY events
+            , lrResult = l
+            }
 
-  reapplyLedgerBlock = runIdentity ...:
-      applyHelper $
-        -- Reapply the BBODY transition using the ticked state
-        Identity ..: SL.reapplyBlock
+      -- Apply the BBODY transition using the ticked state
+      appBlk =
+        SL.applyBlockOpts
+          STS.ApplySTSOpts {
+              asoAssertions = STS.globalAssertionPolicy
+            , asoValidation = STS.ValidateAll
+            , asoEvents     = STS.EPReturn
+            }
+
+  reapplyBlockLedgerResult =
+      runIdentity ..: applyHelper (swizzle ..: reappBlk)
+    where
+      swizzle m = case runExcept m of
+        Left err          ->
+          Exception.throw $! ShelleyReapplyException @era err
+        Right (l, events) ->
+          pure LedgerResult {
+              lrEvents = map ShelleyLedgerEventBBODY events
+            , lrResult = l
+            }
+
+      -- Reapply the BBODY transition using the ticked state
+      reappBlk =
+        SL.applyBlockOpts
+          STS.ApplySTSOpts {
+                  asoAssertions = STS.AssertionsOff
+                , asoValidation = STS.ValidateNone
+                , asoEvents     = STS.EPReturn
+                }
+
+data ShelleyReapplyException =
+  forall era. Show (SL.BlockTransitionError era)
+  => ShelleyReapplyException (SL.BlockTransitionError era)
+
+instance Show ShelleyReapplyException where
+  show (ShelleyReapplyException err) = "(ShelleyReapplyException " <> show err <> ")"
+
+instance Exception.Exception ShelleyReapplyException where
 
 applyHelper ::
      (ShelleyBasedEra era, Monad m)
-  => (SL.Globals -> SL.NewEpochState era -> SL.Block era -> m (SL.NewEpochState era))
+  => (   SL.Globals
+      -> SL.NewEpochState era
+      -> SL.Block era
+      -> m (LedgerResult
+              (LedgerState (ShelleyBlock era))
+              (SL.NewEpochState era)
+           )
+     )
   -> LedgerConfig (ShelleyBlock era)
   -> ShelleyBlock era
   -> Ticked (LedgerState (ShelleyBlock era))
-  -> m (LedgerState (ShelleyBlock era))
+  -> m (LedgerResult
+          (LedgerState (ShelleyBlock era))
+          (LedgerState (ShelleyBlock era)))
 applyHelper f cfg blk TickedShelleyLedgerState{
                           tickedShelleyLedgerTransition
                         , tickedShelleyLedgerState
                         } = do
-    newNewEpochState <- f globals tickedShelleyLedgerState (shelleyBlockRaw blk)
+    ledgerResult <- f globals tickedShelleyLedgerState (shelleyBlockRaw blk)
 
-    return ShelleyLedgerState {
+    return $ ledgerResult <&> \newNewEpochState -> ShelleyLedgerState {
         shelleyLedgerTip = NotOrigin ShelleyTip {
             shelleyTipBlockNo = blockNo   blk
           , shelleyTipSlotNo  = blockSlot blk

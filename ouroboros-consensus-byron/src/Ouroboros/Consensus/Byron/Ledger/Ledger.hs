@@ -78,7 +78,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Util (ShowProxy (..))
+import           Ouroboros.Consensus.Util (ShowProxy (..), (..:))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -172,7 +172,10 @@ data instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
 instance IsLedger (LedgerState ByronBlock) where
   type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
 
-  applyChainTick cfg slotNo ByronLedgerState{..} =
+  type AuxLedgerEvent (LedgerState ByronBlock) =
+    VoidLedgerEvent (LedgerState ByronBlock)
+
+  applyChainTickLedgerResult cfg slotNo ByronLedgerState{..} = pureLedgerResult $
       TickedByronLedgerState {
           tickedByronLedgerState =
             CC.applyChainTick cfg (toByronSlotNo slotNo) byronLedgerState
@@ -185,13 +188,13 @@ instance IsLedger (LedgerState ByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
-  applyLedgerBlock = applyByronBlock validationMode
+  applyBlockLedgerResult = fmap pureLedgerResult ..: applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.BlockValidation
 
-  reapplyLedgerBlock cfg blk st =
-      validationErrorImpossible $
-        applyByronBlock validationMode cfg blk st
+  reapplyBlockLedgerResult =
+          (pureLedgerResult . validationErrorImpossible)
+      ..: applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
 
