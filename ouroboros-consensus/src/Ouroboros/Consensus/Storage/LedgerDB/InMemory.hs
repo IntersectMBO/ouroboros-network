@@ -480,18 +480,22 @@ instance IsLedger l => IsLedger (LedgerDB l) where
       , tickedLedgerDbOrig   = db
       }
 
+type instance AuxLedgerEvent (LedgerDB l) = AuxLedgerEvent l
+
 instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
-  applyLedgerBlock cfg blk TickedLedgerDB{..} =
-      push <$> applyLedgerBlock
-                 (ledgerDbCfg cfg)
-                 blk
-                 tickedLedgerDbTicked
+  applyBlockLedgerM cfg blk TickedLedgerDB{..} =
+      coerceLedgerT $
+      push <$> applyBlockLedgerM
+               (ledgerDbCfg cfg)
+               blk
+               tickedLedgerDbTicked
    where
      push :: l -> LedgerDB l
      push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
 
-  reapplyLedgerBlock cfg blk TickedLedgerDB{..} =
-      push $ reapplyLedgerBlock
+  reapplyBlockLedgerM cfg blk TickedLedgerDB{..} =
+      coerceLedgerT $
+      push <$> reapplyBlockLedgerM
                (ledgerDbCfg cfg)
                blk
                tickedLedgerDbTicked

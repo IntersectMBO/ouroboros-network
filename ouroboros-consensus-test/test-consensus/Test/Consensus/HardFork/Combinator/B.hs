@@ -187,8 +187,8 @@ instance IsLedger (LedgerState BlockB) where
   applyChainTick _ _ = TickedLedgerStateB
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
-  applyLedgerBlock   = \_ b _ -> return $ LgrB (blockPoint b)
-  reapplyLedgerBlock = \_ b _ -> LgrB (blockPoint b)
+  applyBlockLedgerM   = \_ b _ -> return $ LgrB (blockPoint b)
+  reapplyBlockLedgerM = \_ b _ -> return $ LgrB (blockPoint b)
 
 instance UpdateLedger BlockB
 

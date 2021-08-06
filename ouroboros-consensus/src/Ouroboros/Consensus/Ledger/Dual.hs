@@ -85,7 +85,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util (ShowProxy (..))
+import           Ouroboros.Consensus.Util (ShowProxy (..), (.:))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.Serialisation
@@ -365,39 +365,44 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
       , tickedDualLedgerStateBridge  = dualLedgerStateBridge
       }
 
+type instance AuxLedgerEvent (LedgerState (DualBlock m a)) = AuxLedgerEvent (LedgerState m)
+
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
 
-  applyLedgerBlock cfg
-                   block@DualBlock{..}
-                   TickedDualLedgerState{..} = do
-      (main', aux') <-
-        agreeOnError DualLedgerError (
-            applyLedgerBlock
-              (dualLedgerConfigMain cfg)
-              dualBlockMain
-              tickedDualLedgerStateMain
-          , applyMaybeBlock
+  applyBlockLedgerM cfg
+                    block@DualBlock{..}
+                    TickedDualLedgerState{..} = do
+      let mbAux' =
+            applyMaybeBlock
               (dualLedgerConfigAux cfg)
               dualBlockAux
               tickedDualLedgerStateAux
               tickedDualLedgerStateAuxOrig
-          )
-      return DualLedgerState {
+          refineMainError e =
+            isAlsoAnError DualLedgerError e mbAux'
+      main' <- coerceLedgerT $ hoistLedgerT (withExcept refineMainError) $
+        applyBlockLedgerM
+          (dualLedgerConfigMain cfg)
+          dualBlockMain
+          tickedDualLedgerStateMain
+      return $ DualLedgerState {
           dualLedgerStateMain   = main'
-        , dualLedgerStateAux    = aux'
+        , dualLedgerStateAux    = isAlsoNotAnError id mbAux'
         , dualLedgerStateBridge = updateBridgeWithBlock
                                     block
                                     tickedDualLedgerStateBridge
         }
 
-  reapplyLedgerBlock cfg
-                     block@DualBlock{..}
-                     TickedDualLedgerState{..} =
-    DualLedgerState {
-          dualLedgerStateMain   = reapplyLedgerBlock
-                                    (dualLedgerConfigMain cfg)
-                                    dualBlockMain
-                                    tickedDualLedgerStateMain
+  reapplyBlockLedgerM cfg
+                      block@DualBlock{..}
+                      TickedDualLedgerState{..} = do
+    main <- coerceLedgerT $
+      reapplyBlockLedgerM
+        (dualLedgerConfigMain cfg)
+        dualBlockMain
+        tickedDualLedgerStateMain
+    return $ DualLedgerState {
+          dualLedgerStateMain   = main
         , dualLedgerStateAux    = reapplyMaybeBlock
                                     (dualLedgerConfigAux cfg)
                                     dualBlockAux
@@ -776,15 +781,31 @@ agreeOnError :: (Show e, Show e', HasCallStack)
              -> (Except e a, Except e' b)
              -> Except err (a, b)
 agreeOnError f (ma, mb) =
-    case (runExcept ma, runExcept mb) of
-      (Left e, Left e') ->
-        throwError $ f e e'
-      (Left e, Right _) ->
+    case runExcept ma of
+      Left e ->
+        isAlsoAnError (throwError .: f) e mb
+      Right a ->
+        isAlsoNotAnError (return . (,) a) mb
+
+-- | One branch of 'agreeOnError'
+isAlsoAnError :: (Show e, HasCallStack)
+              => (e -> e' -> r) -> e -> Except e' b -> r
+isAlsoAnError f e mb =
+    case runExcept mb of
+      Left e' ->
+        f e e'
+      Right _ ->
         error $ "agreeOnError: unexpected error " ++ show e
-      (Right _, Left e') ->
+
+-- | One branch of 'agreeOnError'
+isAlsoNotAnError :: (Show e', HasCallStack)
+                 => (b -> r) -> Except e' b -> r
+isAlsoNotAnError f mb =
+    case runExcept mb of
+      Left e' ->
         error $ "agreeOnError: unexpected error " ++ show e'
-      (Right a, Right b) ->
-        return (a, b)
+      Right b ->
+        f b
 
 {-------------------------------------------------------------------------------
   Serialisation

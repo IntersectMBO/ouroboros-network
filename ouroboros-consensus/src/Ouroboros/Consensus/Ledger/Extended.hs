@@ -139,33 +139,36 @@ instance ( IsLedger (LedgerState  blk)
             slot
             header
 
-instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
-  applyLedgerBlock cfg blk TickedExtLedgerState{..} = ExtLedgerState
-      <$> (withExcept ExtValidationErrorLedger $
-             applyLedgerBlock
-               (configLedger $ getExtLedgerCfg cfg)
-               blk
-               tickedLedgerState)
-      <*> (withExcept ExtValidationErrorHeader $
-             validateHeader
-               (getExtLedgerCfg cfg)
-               tickedLedgerView
-               (getHeader blk)
-               tickedHeaderState)
+type instance AuxLedgerEvent (ExtLedgerState blk) = AuxLedgerEvent (LedgerState blk)
 
-  reapplyLedgerBlock cfg blk TickedExtLedgerState{..} = ExtLedgerState {
-        ledgerState =
-             reapplyLedgerBlock
-               (configLedger $ getExtLedgerCfg cfg)
-               blk
-               tickedLedgerState
-      , headerState =
-             revalidateHeader
-               (getExtLedgerCfg cfg)
-               tickedLedgerView
-               (getHeader blk)
-               tickedHeaderState
-      }
+instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
+  applyBlockLedgerM cfg blk TickedExtLedgerState{..} = do
+    l <- coerceLedgerT $ hoistLedgerT (withExcept ExtValidationErrorLedger) $
+      applyBlockLedgerM
+        (configLedger $ getExtLedgerCfg cfg)
+        blk
+        tickedLedgerState
+    hdr <- liftLedgerT $ withExcept ExtValidationErrorHeader $
+      validateHeader @blk
+        (getExtLedgerCfg cfg)
+        tickedLedgerView
+        (getHeader blk)
+        tickedHeaderState
+    pure $ ExtLedgerState l hdr
+
+  reapplyBlockLedgerM cfg blk TickedExtLedgerState{..} = do
+    l <- coerceLedgerT $
+           reapplyBlockLedgerM
+           (configLedger $ getExtLedgerCfg cfg)
+           blk
+           tickedLedgerState
+    let hdr =
+          revalidateHeader
+            (getExtLedgerCfg cfg)
+            tickedLedgerView
+            (getHeader blk)
+            tickedHeaderState
+    pure $ ExtLedgerState l hdr
 
 {-------------------------------------------------------------------------------
   Serialisation

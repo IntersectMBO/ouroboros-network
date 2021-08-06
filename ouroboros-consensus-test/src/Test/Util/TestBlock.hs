@@ -330,15 +330,16 @@ instance IsLedger (LedgerState TestBlock) where
   applyChainTick _ _ = TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
+  applyBlockLedgerM _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
+    = liftLedgerT $ throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
     | not tbValid
-    = throwError $ InvalidBlock
+    = liftLedgerT $ throwError $ InvalidBlock
     | otherwise
-    = return     $ TestLedger (Chain.blockPoint tb)
+    = return      $ TestLedger (Chain.blockPoint tb)
 
-  reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
+  reapplyBlockLedgerM _ tb _ =
+      return      $ TestLedger (Chain.blockPoint tb)
 
 newtype instance LedgerState TestBlock =
     TestLedger {

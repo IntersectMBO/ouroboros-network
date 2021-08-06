@@ -354,13 +354,13 @@ instance MockProtocolSpecific c ext
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
-  applyLedgerBlock _ = updateSimpleLedgerState
+  applyBlockLedgerM _ = liftLedgerT .: updateSimpleLedgerState
 
-  reapplyLedgerBlock cfg =
-      (mustSucceed . runExcept) .: applyLedgerBlock cfg
+  reapplyBlockLedgerM cfg =
+      hoistLedgerT (mustSucceed . runExcept) .: applyBlockLedgerM cfg
     where
       mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
-      mustSucceed (Right st)  = st
+      mustSucceed (Right st)  = pure st
 
 newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)

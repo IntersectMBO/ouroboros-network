@@ -116,8 +116,8 @@ instance IsLedger (LedgerState ByronSpecBlock) where
 -------------------------------------------------------------------------------}
 
 instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
-  applyLedgerBlock cfg block (TickedByronSpecLedgerState _tip state) =
-    withExcept ByronSpecLedgerError $
+  applyBlockLedgerM cfg block (TickedByronSpecLedgerState _tip state) =
+    liftLedgerT $ withExcept ByronSpecLedgerError $
       ByronSpecLedgerState (Just (blockSlot block)) <$>
         -- Note that the CHAIN rule also applies the chain tick. So even
         -- though the ledger we received has already been ticked with
@@ -129,9 +129,9 @@ instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
           (byronSpecBlock block)
           state
 
-  reapplyLedgerBlock cfg block =
+  reapplyBlockLedgerM cfg block =
       -- The spec doesn't have a "reapply" mode
-      dontExpectError . applyLedgerBlock cfg block
+      hoistLedgerT (pure . dontExpectError) . applyBlockLedgerM cfg block
     where
       dontExpectError :: Except a b -> b
       dontExpectError mb = case runExcept mb of
