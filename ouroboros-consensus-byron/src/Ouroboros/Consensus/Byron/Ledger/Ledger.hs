@@ -78,7 +78,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Util (ShowProxy (..))
+import           Ouroboros.Consensus.Util (ShowProxy (..), (..:))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -185,12 +185,12 @@ instance IsLedger (LedgerState ByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
-  applyLedgerBlock = applyByronBlock validationMode
+  applyBlockLedgerM = liftLedgerT ..: applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.BlockValidation
 
-  reapplyLedgerBlock cfg blk st =
-      validationErrorImpossible $
+  reapplyBlockLedgerM cfg blk st =
+      hoistLedgerT (pure . validationErrorImpossible) . liftLedgerT $
         applyByronBlock validationMode cfg blk st
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation

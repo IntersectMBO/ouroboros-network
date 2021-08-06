@@ -16,6 +16,7 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapHeaderHash (..)
   , WrapLedgerConfig (..)
   , WrapLedgerErr (..)
+  , WrapLedgerEvent (..)
   , WrapLedgerUpdate (..)
   , WrapLedgerWarning (..)
   , WrapTipInfo (..)
@@ -51,18 +52,19 @@ import           Ouroboros.Consensus.Protocol.Abstract
   Block based
 -------------------------------------------------------------------------------}
 
-newtype WrapApplyTxErr            blk = WrapApplyTxErr            { unwrapApplyTxErr            :: ApplyTxErr               blk }
-newtype WrapCannotForge           blk = WrapCannotForge           { unwrapCannotForge           :: CannotForge              blk }
-newtype WrapEnvelopeErr           blk = WrapEnvelopeErr           { unwrapEnvelopeErr           :: OtherHeaderEnvelopeError blk }
-newtype WrapForgeStateInfo        blk = WrapForgeStateInfo        { unwrapForgeStateInfo        :: ForgeStateInfo           blk }
-newtype WrapForgeStateUpdateError blk = WrapForgeStateUpdateError { unwrapForgeStateUpdateError :: ForgeStateUpdateError    blk }
-newtype WrapGenTxId               blk = WrapGenTxId               { unwrapGenTxId               :: GenTxId                  blk }
-newtype WrapHeaderHash            blk = WrapHeaderHash            { unwrapHeaderHash            :: HeaderHash               blk }
-newtype WrapLedgerConfig          blk = WrapLedgerConfig          { unwrapLedgerConfig          :: LedgerConfig             blk }
-newtype WrapLedgerErr             blk = WrapLedgerErr             { unwrapLedgerErr             :: LedgerError              blk }
-newtype WrapLedgerUpdate          blk = WrapLedgerUpdate          { unwrapLedgerUpdate          :: LedgerUpdate             blk }
-newtype WrapLedgerWarning         blk = WrapLedgerWarning         { unwrapLedgerWarning         :: LedgerWarning            blk }
-newtype WrapTipInfo               blk = WrapTipInfo               { unwrapTipInfo               :: TipInfo                  blk }
+newtype WrapApplyTxErr            blk = WrapApplyTxErr            { unwrapApplyTxErr            :: ApplyTxErr                  blk  }
+newtype WrapCannotForge           blk = WrapCannotForge           { unwrapCannotForge           :: CannotForge                 blk  }
+newtype WrapEnvelopeErr           blk = WrapEnvelopeErr           { unwrapEnvelopeErr           :: OtherHeaderEnvelopeError    blk  }
+newtype WrapForgeStateInfo        blk = WrapForgeStateInfo        { unwrapForgeStateInfo        :: ForgeStateInfo              blk  }
+newtype WrapForgeStateUpdateError blk = WrapForgeStateUpdateError { unwrapForgeStateUpdateError :: ForgeStateUpdateError       blk  }
+newtype WrapGenTxId               blk = WrapGenTxId               { unwrapGenTxId               :: GenTxId                     blk  }
+newtype WrapHeaderHash            blk = WrapHeaderHash            { unwrapHeaderHash            :: HeaderHash                  blk  }
+newtype WrapLedgerConfig          blk = WrapLedgerConfig          { unwrapLedgerConfig          :: LedgerConfig                blk  }
+newtype WrapLedgerEvent           blk = WrapLedgerEvent           { unwrapLedgerEvent           :: AuxLedgerEvent (LedgerState blk) }
+newtype WrapLedgerErr             blk = WrapLedgerErr             { unwrapLedgerErr             :: LedgerError                 blk  }
+newtype WrapLedgerUpdate          blk = WrapLedgerUpdate          { unwrapLedgerUpdate          :: LedgerUpdate                blk  }
+newtype WrapLedgerWarning         blk = WrapLedgerWarning         { unwrapLedgerWarning         :: LedgerWarning               blk  }
+newtype WrapTipInfo               blk = WrapTipInfo               { unwrapTipInfo               :: TipInfo                     blk  }
 
 -- | A data family wrapper for @'Validated' . 'GenTx'@
 --

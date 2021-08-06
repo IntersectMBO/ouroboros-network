@@ -550,16 +550,20 @@ instance IsLedger (LedgerState TestBlock) where
   applyChainTick _ _ = TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
+  applyBlockLedgerM _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= lastAppliedHash
-    = throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
+    = liftLedgerT $ throwError $ InvalidHash lastAppliedHash (blockPrevHash tb)
     | not $ tbIsValid testBody
-    = throwError $ InvalidBlock
+    = liftLedgerT $ throwError $ InvalidBlock
     | otherwise
-    = return     $ TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
+    =   liftLedgerT
+      $ return
+      $ TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
 
-  reapplyLedgerBlock _ tb _ =
-    TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
+  reapplyBlockLedgerM _ tb _ =
+        liftLedgerT
+      $ return
+      $ TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
 
 data instance LedgerState TestBlock =
     TestLedger {

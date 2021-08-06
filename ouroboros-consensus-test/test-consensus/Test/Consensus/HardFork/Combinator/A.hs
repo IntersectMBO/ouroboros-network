@@ -213,8 +213,9 @@ instance IsLedger (LedgerState BlockA) where
   applyChainTick _ _ = TickedLedgerStateA
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
-  applyLedgerBlock cfg blk =
-        fmap setTip
+  applyBlockLedgerM cfg blk =
+        liftLedgerT
+      . fmap setTip
       . repeatedlyM
           (fmap fst .: applyTx cfg DoNotIntervene (blockSlot blk))
           (blkA_body blk)
@@ -222,10 +223,13 @@ instance ApplyBlock (LedgerState BlockA) BlockA where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
       setTip (TickedLedgerStateA st) = st { lgrA_tip = blockPoint blk }
 
-  reapplyLedgerBlock cfg blk st =
-      case runExcept $ applyLedgerBlock cfg blk st of
-        Left  _   -> error "reapplyLedgerBlock: impossible"
-        Right st' -> st'
+  reapplyBlockLedgerM cfg blk st =
+      hoistLedgerT (pure . dontExpectError) $ applyBlockLedgerM cfg blk st
+    where
+      dontExpectError :: Except a b -> b
+      dontExpectError mb = case runExcept mb of
+        Left  _ -> error "reapplyLedgerBlock: unexpected error"
+        Right b -> b
 
 instance UpdateLedger BlockA
 
