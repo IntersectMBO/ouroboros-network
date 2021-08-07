@@ -11,7 +11,6 @@ module Network.Mux.Bearer.AttenuatedChannel
   , Attenuation (..)
   , newConnectedAttenuatedChannelPair
   , attenuationChannelAsMuxBearer
-  , CloseError (..)
   -- * Trace
   , AttenuatedChannelTrace (..)
   -- * Utils
@@ -34,7 +33,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (($>))
 import           Data.Int (Int64)
 import           Data.Maybe (isJust)
-import           Data.Typeable (Typeable)
 
 import           Network.Mux.Codec
 import           Network.Mux.Time
@@ -139,16 +137,6 @@ data AttenuatedChannel m = AttenuatedChannel {
   }
 
 
--- | Error thrown when expected 'MsgClose' does not arrive within `120s`.
---
--- This excpetion should not be handled by a simulation, it is a proof of a half
--- closed connection, which should never happen when using connection manager.
---
-data CloseError = CloseTimeoutError
-  deriving (Show, Typeable)
-
-instance Exception CloseError
-
 
 data SuccessOrFailure = Success | Failure
 
@@ -226,11 +214,16 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
       when (not sent) $
         throwIO (resourceVanishedIOError "AttenuatedChannel.write" "")
 
+    -- closing is a 3-way handshake.
+    --
     acClose :: m ()
     acClose = do
+      -- send 'MsgClose' and close the underlying channel
       sent <- writeQueueChannel qc MsgClose
       traceWith tr (AttChannClosing sent)
 
+      -- await for a reply, unless the read channel is already closed.
+      --
       -- TODO: switch to timeout once it's fixed.
       d <- registerDelay 120
       res <-
@@ -243,12 +236,10 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
               case msg of
                 Nothing       -> return ()
                 Just MsgClose -> return ()
+                -- some other message; let the appliction read it first.
                 Just _        -> retry)
 
       traceWith tr (AttChannClosed (isJust res))
-      case res of
-        Just _  -> return ()
-        Nothing -> throwIO CloseTimeoutError
 
 
 -- | Create a pair of connected 'AttenuatedChannel's.
