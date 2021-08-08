@@ -286,7 +286,11 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
 
                   let isHot = mpdMiniProtocolTemp == Hot
                       state' = ( if isHot
-                                 then updateRemoteState tConnId RemoteWarm
+                                 then mapRemoteState tConnId
+                                        $ \remoteState ->
+                                          case remoteState of
+                                            RemoteHot -> RemoteWarm
+                                            _         -> remoteState
                                  else id
                                )
                              . updateMiniProtocol tConnId num completionAction
