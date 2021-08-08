@@ -16,7 +16,11 @@ module Test.Simulation.Network.Snocket
   ( tests
   , BearerInfoScript(..)
   , NonFailingBearerInfoScript(..)
-  , AbsBearerInfo
+  , AbsDelay (..)
+  , AbsSpeed (..)
+  , AbsSDUSize (..)
+  , AbsAttenuation (..)
+  , AbsBearerInfo (..)
   , toBearerInfo
   ) where
 
