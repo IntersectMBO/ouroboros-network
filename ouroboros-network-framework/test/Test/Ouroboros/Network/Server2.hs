@@ -959,7 +959,7 @@ prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int 
 prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
     withSnocket sayTracer
-                script'
+                (toBearerInfo <$> script)
                 $ \snock ->
       bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                    <*> Snocket.open snock Snocket.TestFamily)
@@ -976,8 +976,6 @@ prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
                                         socket0 socket1
                                         addr0 addr1
                                         data0 data1
-  where
-    script' = toBearerInfo <$> script
 
 prop_bidirectional_IO
     :: ClientAndServerData Int
