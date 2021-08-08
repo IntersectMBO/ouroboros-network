@@ -802,8 +802,11 @@ connectionManagerErrorFromException x = do
 data ConnectionManagerTrace peerAddr handlerTrace
   = TrIncludeConnection          !Provenance !peerAddr
   | TrUnregisterConnection       !Provenance !peerAddr
-  | TrConnect                    !(Maybe peerAddr) !peerAddr
-  | TrConnectError               !(Maybe peerAddr) !peerAddr !SomeException
+  | TrConnect                    !(Maybe peerAddr) -- ^ local address
+                                 !peerAddr         -- ^ remote address
+  | TrConnectError               !(Maybe peerAddr) -- ^ local address
+                                 !peerAddr         -- ^ remote address
+                                 !SomeException
   | TrTerminatingConnection      !Provenance !(ConnectionId peerAddr)
   | TrTerminatedConnection       !Provenance !peerAddr
   | TrConnectionHandler          !(ConnectionId peerAddr) !handlerTrace
