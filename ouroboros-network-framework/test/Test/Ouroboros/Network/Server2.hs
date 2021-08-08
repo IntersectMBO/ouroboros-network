@@ -803,7 +803,7 @@ prop_unidirectional_Sim :: AbsBearerInfo -> ClientAndServerData Int -> Property
 prop_unidirectional_Sim absBi clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
-                (Script (toBearerInfo absBi :| [noAttenuation]))
+                (toBearerInfo <$> script)
                 (Snocket.TestAddress 10) $ \snock ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
@@ -976,8 +976,6 @@ prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
                                         socket0 socket1
                                         addr0 addr1
                                         data0 data1
-  where
-    script' = toBearerInfo <$> script
 
 prop_bidirectional_IO
     :: ClientAndServerData Int
