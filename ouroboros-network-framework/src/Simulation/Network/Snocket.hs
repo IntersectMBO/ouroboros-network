@@ -22,6 +22,7 @@ module Simulation.Network.Snocket
     withSnocket
   , ResourceException (..)
   , SnocketTrace (..)
+  , TimeoutDetail (..)
   , SockType (..)
   , OpenType (..)
 
@@ -37,6 +38,7 @@ module Simulation.Network.Snocket
 
 import           Prelude hiding (read)
 
+import           Control.Monad (when)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -48,15 +50,16 @@ import           GHC.IO.Exception
 
 import           Data.Bifoldable (bitraverse_)
 import           Data.Foldable (traverse_)
+import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
 import           Text.Printf (printf)
 
 import           Data.Wedge
+import           Data.Monoid.Synchronisation (FirstToFinish (..))
 
 import           Network.Mux.Bearer.AttenuatedChannel
 import           Network.Mux.Types (MuxBearer, SDUSize (..))
@@ -111,6 +114,10 @@ data OpenState
 
     -- | This corresponds to established state of a tcp connection.
   | Established
+
+    -- | Half closed connection.
+  | HalfClosed
+  deriving (Eq, Show)
 
 
 dualConnection :: Connection m -> Connection m
@@ -266,15 +273,16 @@ noAttenuation = BearerInfo { biConnectionDelay      = 0
 --
 newNetworkState
     :: forall m peerAddr.
-       ( MonadSTM m
+       ( MonadSTM         m
+       , MonadLabelledSTM m
        , Enum     peerAddr
        )
     => Script BearerInfo
     -> peerAddr
     -- ^ the largest ephemeral address
     -> m (NetworkState m (TestAddress peerAddr))
-newNetworkState bearerInfoScript peerAddr = atomically $
-  NetworkState
+newNetworkState bearerInfoScript peerAddr = atomically $ do
+  s <- NetworkState
     -- nsListeningFDs
     <$> newTVar Map.empty
     -- nsConnections
@@ -287,11 +295,15 @@ newNetworkState bearerInfoScript peerAddr = atomically $
              return (TestAddress a)
     -- nsBearerInfo
     <*> initScriptSTM bearerInfoScript
+  labelTVar (nsListeningFDs s)   "nsListeningFDs"
+  labelTVar (nsConnections s)    "nsConnections"
+  return s
 
 
 data ResourceException addr
-  = NotReleasedListeningSockets [addr]              (Maybe SomeException)
-  | NotReleasedConnections      [NormalisedId addr] (Maybe SomeException)
+  = NotReleasedListeningSockets [addr] (Maybe SomeException)
+  | NotReleasedConnections      (Map (NormalisedId addr) OpenState)
+                                (Maybe SomeException)
   deriving (Show, Typeable)
 
 instance (Typeable addr, Show addr)
@@ -304,12 +316,13 @@ instance (Typeable addr, Show addr)
 --
 withSnocket
     :: forall m peerAddr a.
-       ( MonadSTM   m
-       , MonadCatch m
-       , MonadMask  m
-       , MonadTime  m
-       , MonadTimer m
-       , MonadThrow (STM m)
+       ( MonadSTM         m
+       , MonadLabelledSTM m
+       , MonadCatch       m
+       , MonadMask        m
+       , MonadTime        m
+       , MonadTimer       m
+       , MonadThrow  (STM m)
        , Enum     peerAddr
        , Ord      peerAddr
        , Typeable peerAddr
@@ -345,7 +358,9 @@ withSnocket tr script (TestAddress peerAddr) k = do
          -> return $ Just (NotReleasedListeningSockets (Map.keys lstFDMap) err)
 
          |  not (Map.null connMap)
-         -> return $ Just (NotReleasedConnections      (Map.keys connMap) err)
+         -> return $ Just (NotReleasedConnections      ( fmap connState
+                                                       $ connMap
+                                                       ) err)
 
          |  otherwise
          -> return   Nothing
@@ -411,7 +426,7 @@ data FD_ m addr
         -- ^ local and remote addresses
         !(Connection m)
         -- ^ connection
-    
+
     -- | 'FD_' of a closed file descriptor; we keep 'ConnectionId' just for
     -- tracing purposes.
     --
@@ -465,19 +480,28 @@ mkSockType FDConnecting {}    = ConnectionSock
 mkSockType FDConnected {}     = ConnectionSock
 mkSockType FDClosed {}        = UnknownType
 
+data TimeoutDetail
+    = WaitingToConnect
+    | WaitingToBeAccepted
+  deriving Show
+
 data SnocketTrace m addr
-    = STConnect      (FD_ m addr) addr
+    = STConnecting   (FD_ m addr) addr
     | STConnected    (FD_ m addr) OpenType
     | STBearerInfo   BearerInfo
     | STConnectError (FD_ m addr) addr IOError
+    | STConnectTimeout TimeoutDetail
     | STBindError    (FD_ m addr) addr IOError
-    | STClosing      SockType Bool
-    | STClosed       SockType
+    | STClosing      SockType (Wedge (ConnectionId addr) [addr])
+    | STClosed       SockType (Maybe (Maybe OpenState))
     | STClosingQueue Bool
     | STClosedQueue  Bool
     | STClosedWhenReading
+    | STAcceptFailure SockType SomeException
+    | STAccepted      addr
     | STBearer       (FD_ m addr)
     | STAttenuatedChannelTrace (ConnectionId addr) AttenuatedChannelTrace
+    | STDebug        String
   deriving Show
 
 -- | Either simultaneous open or normal open.  Unlike in TCP, only one side will
@@ -491,16 +515,22 @@ data OpenType =
     | NormalOpen
   deriving Show
 
+
+connectTimeout :: DiffTime
+connectTimeout = 120
+
+
 -- | Simulated 'Snocket' running in 'NetworkState'.  A single 'NetworkState'
 -- should be shared with all nodes in the same network.
 --
 mkSnocket :: forall m addr.
-             ( MonadSTM   m
-             , MonadThrow (STM m)
-             , MonadMask  m
-             , MonadTime  m
-             , MonadTimer m
-             , Ord  addr
+             ( MonadSTM         m
+             , MonadLabelledSTM m
+             , MonadThrow  (STM m)
+             , MonadMask        m
+             , MonadTime        m
+             , MonadTimer       m
+             , Ord addr
              , Show addr
              )
           => NetworkState m (TestAddress addr)
@@ -619,9 +649,12 @@ mkSnocket state tr = Snocket { getLocalAddr
     connect :: FD m (TestAddress addr) -> TestAddress addr -> m ()
     connect fd@FD { fdVar = fdVarLocal } remoteAddress = do
         fd_ <- atomically (readTVar fdVarLocal)
-        traceWith' fd (STConnect fd_ remoteAddress)
+        traceWith' fd (STConnecting fd_ remoteAddress)
         case fd_ of
-          FDUninitialised mbLocalAddr -> do
+          -- Mask asynchronous exceptions.  Only unmask when we really block
+          -- with using a `threadDelay` or waiting for the connection to be
+          -- accepted.
+          FDUninitialised mbLocalAddr -> mask $ \unmask -> do
             (efd, connId, bearerInfo) <- atomically $ do
               bearerInfo <- stepScriptSTM (nsBearerInfo state)
               localAddress <-
@@ -644,6 +677,8 @@ mkSnocket state tr = Snocket { getLocalAddr
                          , connId
                          , bearerInfo
                          )
+                Just Connection { connState = HalfClosed } ->
+                  throwSTM (connectedIOError fd_)
                 Nothing -> do
                   conn <- mkConnection tr bearerInfo connId
                   writeTVar fdVarLocal (FDConnecting connId conn)
@@ -661,7 +696,18 @@ mkSnocket state tr = Snocket { getLocalAddr
                                    (Just remoteAddress)
                                    (STBearerInfo bearerInfo))
             -- connection delay
-            threadDelay (biConnectionDelay bearerInfo)
+            unmask (threadDelay (biConnectionDelay bearerInfo `min` connectTimeout))
+              `catch` \(_ :: SomeException) ->
+                atomically $ modifyTVar (nsConnections state)
+                                        (Map.delete (normaliseId connId))
+            traceWith tr (WithAddr (Just (localAddress connId))
+                                   (Just remoteAddress)
+                                   (STDebug "delay:done"))
+            when (biConnectionDelay bearerInfo >= connectTimeout) $ do
+              traceWith' fd (STConnectTimeout WaitingToConnect)
+              atomically $ modifyTVar (nsConnections state)
+                                      (Map.delete (normaliseId connId))
+              throwIO (connectIOError connId "connect timeout: when connecting")
 
             efd' <- atomically $ do
               lstMap <- readTVar (nsListeningFDs state)
@@ -670,13 +716,13 @@ mkSnocket state tr = Snocket { getLocalAddr
               case (efd, lstFd) of
                 -- error cases
                 (_, Nothing) ->
-                  return (Left (connectIOError connId))
+                  return (Left (connectIOError connId "no suh listening socket"))
                 (_, Just FDUninitialised {}) ->
-                  return (Left (connectIOError connId))
+                  return (Left (connectIOError connId "unitialised listening socket"))
                 (_, Just FDConnecting {}) ->
                   return (Left (invalidError fd_))
                 (_, Just FDConnected {}) ->
-                  return (Left (connectIOError connId))
+                  return (Left (connectIOError connId "not a listening socket"))
                 (_, Just FDClosed {}) ->
                   return (Left notConnectedIOError)
 
@@ -685,21 +731,15 @@ mkSnocket state tr = Snocket { getLocalAddr
                   writeTVar fdVarLocal fd_'
                   return (Right (fd_', SimOpen))
 
-                (Right ( fd_'
-                       , Connection { connChannelLocal, connChannelRemote })
-                       , Just (FDListening _ queue)
-                       ) -> do
+                (Right (fd_', Connection { connChannelLocal, connChannelRemote })
+                  , Just (FDListening _ queue)) -> do
                   writeTVar fdVarLocal fd_'
                   mConn <- Map.lookup (normaliseId connId) <$> readTVar (nsConnections state)
                   case mConn of
                     Just Connection { connState = Established } ->
                       -- successful simultaneous open
-                      return ()
+                      return (Right (fd_', NormalOpen))
                     Just Connection { connState = HalfOpened } -> do
-                      -- successful open
-                      modifyTVar (nsConnections state)
-                                 (Map.adjust (\s -> s { connState = Established })
-                                             (normaliseId connId))
                       writeTBQueue queue
                                    ChannelWithInfo
                                      { cwiAddress       = localAddress connId
@@ -707,15 +747,51 @@ mkSnocket state tr = Snocket { getLocalAddr
                                      , cwiChannelLocal  = connChannelRemote
                                      , cwiChannelRemote = connChannelLocal
                                      }
+                      return (Right (fd_', NormalOpen))
+                    Just Connection { connState = HalfClosed } -> do
+                      return (Left (connectIOError connId "connect error (half-closed)"))
                     Nothing ->
-                      throwSTM (connectIOError connId)
-
-                  return (Right (fd_', NormalOpen))
+                      return (Left (connectIOError connId "connect error"))
 
             case efd' of
-              Left e          -> traceWith' fd (STConnectError fd_ remoteAddress e)
-                              >> throwIO e
-              Right (fd_', o) -> traceWith' fd (STConnected fd_' o)
+              Left e          -> do
+                traceWith' fd (STConnectError fd_ remoteAddress e)
+                atomically $ modifyTVar (nsConnections state)
+                                        (Map.delete (normaliseId connId))
+                throwIO e
+              Right (fd_', o) -> do
+                traceWith' fd (STDebug "connect: succesful open")
+                -- successful open
+
+                -- wait for a connection to be accepted
+                timeoutVar <-
+                  registerDelay (connectTimeout - biConnectionDelay bearerInfo)
+                r <- unmask $ atomically $ runFirstToFinish $
+                  (FirstToFinish $ do
+                    LazySTM.readTVar timeoutVar >>= check
+                    return Nothing
+                  )
+                  <>
+                  (FirstToFinish $ do
+                    mbConn <- Map.lookup (normaliseId connId)
+                          <$> readTVar (nsConnections state)
+                    case mbConn of
+                      -- it could happen that the 'accept' removes the
+                      -- connection from the state; we treat this as an io
+                      -- exception.
+                      Nothing -> throwSTM $ connectIOError connId
+                                          $ "unknown connection: "
+                                         ++ show (normaliseId connId)
+                      Just Connection { connState } ->
+                        Just <$> check (connState == Established))
+
+                case r of
+                  Nothing -> do
+                    traceWith' fd (STConnectTimeout WaitingToBeAccepted)
+                    atomically $ modifyTVar (nsConnections state)
+                                            (Map.delete (normaliseId connId))
+                    throwIO (connectIOError connId "connect timeout: when waiting for being accepted")
+                  Just _  -> traceWith' fd (STConnected fd_' o)
 
           FDConnecting {} ->
             throwIO (invalidError fd_)
@@ -738,12 +814,12 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
-        connectIOError :: ConnectionId (TestAddress addr) -> IOError
-        connectIOError connId = IOError
+        connectIOError :: ConnectionId (TestAddress addr) -> String -> IOError
+        connectIOError connId desc = IOError
           { ioe_handle      = Nothing
           , ioe_type        = OtherError
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.connect"
-          , ioe_description = printf "connect failure (%s)" (show connId)
+          , ioe_description = printf "connect failure (%s): (%s)" (show connId) desc
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -776,6 +852,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           case fd_ of
             FDUninitialised Nothing -> do
               writeTVar fdVar (FDUninitialised (Just addr))
+              labelTVar fdVar ("fd-" ++ show addr)
               return Nothing
             _ ->
               return (Just (fd_, invalidError fd_))
@@ -804,9 +881,10 @@ mkSnocket state tr = Snocket { getLocalAddr
 
           FDUninitialised (Just addr) -> do
             queue <- newTBQueue bound
+            labelTBQueue queue ("aq-" ++ show addr)
             writeTVar fdVar (FDListening addr queue)
             modifyTVar (nsListeningFDs state) (Map.insert addr fd)
-            
+
           FDConnected {} ->
             throwSTM $ invalidError fd_
           FDConnecting {} ->
@@ -836,49 +914,78 @@ mkSnocket state tr = Snocket { getLocalAddr
                              (TestAddress addr)
     accept FD { fdVar } = accept_
       where
-        accept_ = Accept $ atomically $ do
-          fd <- readTVar fdVar
-          case fd of
-            FDUninitialised {} ->
-              -- 'berkeleyAccept' used by 'socketSnocket' will return
-              -- 'IOException's with 'AcceptFailure', we match this behaviour
-              -- here.
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
-            FDConnecting {} ->
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
-            FDConnected {} ->
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
-            FDListening localAddress queue -> do
-              ChannelWithInfo
-                { cwiAddress       = remoteAddress
-                , cwiSDUSize       = sduSize
-                , cwiChannelLocal  = channelLocal
-                , cwiChannelRemote = channelRemote
-                } <- readTBQueue queue
-              fdRemote <- FD <$> newTVar (FDConnected
-                                            ConnectionId
-                                              { localAddress
-                                              , remoteAddress
-                                              }
-                                            Connection
-                                              { connChannelLocal  = channelLocal
-                                              , connChannelRemote = channelRemote
-                                              , connSDUSize       = sduSize
-                                              , connState         = Established
-                                              })
-              return ( Accepted fdRemote remoteAddress
-                     , accept_
-                     )
-            FDClosed {} ->
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
+        accept_ = Accept $ \unmask -> do
+            bracketOnError
+              (unmask $ atomically $ do
+                fd <- readTVar fdVar
+                case fd of
+                  FDUninitialised mbAddr ->
+                    -- 'berkeleyAccept' used by 'socketSnocket' will return
+                    -- 'IOException's with 'AcceptFailure', we match this behaviour
+                    -- here.
+                    return $ Left ( toException $ invalidError fd
+                                  , mbAddr
+                                  , mkSockType fd
+                                  )
+                  FDConnecting connId _ ->
+                    return $ Left ( toException $ invalidError fd
+                                  , Just (localAddress connId)
+                                  , mkSockType fd
+                                  )
+                  FDConnected connId _ ->
+                    return $ Left ( toException $ invalidError fd
+                                  , Just (localAddress connId)
+                                  , mkSockType fd
+                                  )
+                  FDListening localAddress queue -> do
+                    cwi <- readTBQueue queue
+                    return $ Right ( cwi
+                                   , localAddress
+                                   )
+
+                  FDClosed {} ->
+                    return $ Left ( toException $ invalidError fd
+                                  , Nothing
+                                  , mkSockType fd
+                                  )
+              )
+              ( \ result ->
+                  case result of
+                    Left {} -> return ()
+                    Right (chann, _) ->
+                      uninterruptibleMask_ $ acClose (cwiChannelLocal chann)
+              )
+              $ \ result ->
+                case result of
+                  Left (err, mbLocalAddr, fdType) -> do
+                    traceWith tr (WithAddr (mbLocalAddr) Nothing
+                                           (STAcceptFailure fdType err))
+                    return (AcceptFailure err, accept_)
+
+                  Right (chann, localAddress) -> do
+                    let ChannelWithInfo
+                          { cwiAddress       = remoteAddress
+                          , cwiSDUSize       = sduSize
+                          , cwiChannelLocal  = channelLocal
+                          , cwiChannelRemote = channelRemote
+                          } = chann
+                        connId = ConnectionId { localAddress, remoteAddress }
+                    fdRemote <- atomically $ do
+                      modifyTVar (nsConnections state)
+                                 (Map.adjust (\s -> s { connState = Established })
+                                             (normaliseId connId))
+                      FD <$> newTVar (FDConnected
+                                        connId
+                                        Connection
+                                          { connChannelLocal  = channelLocal
+                                          , connChannelRemote = channelRemote
+                                          , connSDUSize       = sduSize
+                                          , connState         = Established
+                                          })
+                    traceWith tr (WithAddr (Just localAddress) Nothing
+                                           (STAccepted remoteAddress))
+                    return (Accepted fdRemote remoteAddress, accept_)
+
 
         invalidError :: FD_ m (TestAddress addr) -> IOError
         invalidError fd = IOError
@@ -895,48 +1002,82 @@ mkSnocket state tr = Snocket { getLocalAddr
           -> m ()
     close FD { fdVar } =
       uninterruptibleMask_ $ do
-        (wConnId, fdType, mq) <- atomically $ do
+        wChannel <- atomically $ do
           fd_ <- readTVar fdVar
-          let wConnId = case fd_ of
-                     FDUninitialised {}    -> Nowhere
-                     FDConnecting connId _ -> Here connId
-                     FDConnected connId _  -> Here connId
-                     FDListening addr _    -> There addr
-                     FDClosed    wConnId_  -> wConnId_
-              mq = case fd_ of
-                     FDConnecting _ conn -> Just (connChannelLocal conn)
-                     FDConnected  _ conn -> Just (connChannelLocal conn)
-                     _                   -> Nothing
+          case fd_ of
+            FDUninitialised Nothing
+              -> writeTVar fdVar (FDClosed Nowhere)
+              $> Nowhere
+            FDUninitialised (Just addr)
+              -> writeTVar fdVar (FDClosed (There addr))
+              $> Nowhere
+            FDConnecting connId conn
+              -> writeTVar fdVar (FDClosed (Here connId))
+              $> Here (connId, mkSockType fd_, connChannelLocal conn)
+            FDConnected connId conn
+              -> writeTVar fdVar (FDClosed (Here connId))
+              $> Here (connId, mkSockType fd_, connChannelLocal conn)
+            FDListening localAddress queue -> do
+              writeTVar fdVar (FDClosed (There localAddress))
+              (\as -> There ( localAddress
+                            , mkSockType fd_
+                            , map (\a -> ( cwiAddress a, cwiChannelLocal a)) as
+                            )) <$> drainTBQueue queue
+            FDClosed {} ->
+              pure Nowhere
 
-          writeTVar fdVar (FDClosed wConnId)
-          -- TODO: We should move this removal after closing the attenuated channel!
-          bitraverse_
-            -- close a connected socket
-            (\connId -> modifyTVar (nsConnections state)
-                                   (Map.delete (normaliseId connId)))
-            -- close a listening socket; For Berkeley sockets, accepted
-            -- connections are not disturbed when one closes the listening
-            -- socket.
-            (\addr   -> modifyTVar (nsListeningFDs state)
-                                   (Map.delete addr))
-            wConnId
-          return (wConnId, mkSockType fd_, mq)
+        -- trace 'STClosing'
+        bitraverse_
+          (\(connId, fdType, _) ->
+              traceWith tr (WithAddr (Just (localAddress connId))
+                                     (Just (remoteAddress connId))
+                                     (STClosing fdType (Here connId))))
+          (\(addr, fdType, as) ->
+              traceWith tr (WithAddr (Just addr)
+                                     Nothing
+                                     (STClosing fdType (There (map fst as)))))
+          wChannel
 
-        let mbLocalAddr = case wConnId of
-              Here connId -> Just (localAddress connId)
-              There addr  -> Just addr
-              Nowhere     -> Nothing
-            mbRemoteAddr = case wConnId of
-              Here connId -> Just (remoteAddress connId)
-              _           -> Nothing
+        -- close channels
+        bitraverse_
+          (\(_, _, chann)  -> acClose chann)
+          (\(_, _, channs) -> traverse_ (acClose . snd) channs)
+          wChannel
 
-        traceWith tr (WithAddr mbLocalAddr mbRemoteAddr
-                               (STClosing fdType (isJust mq)))
-        case mq of
-          Nothing -> return ()
-          Just q  -> acClose q
-        traceWith tr (WithAddr mbLocalAddr mbRemoteAddr
-                               (STClosed fdType))
+        -- update NetworkState
+        atomically $ bitraverse_
+          (\(connId, _, _) ->
+             modifyTVar (nsConnections state)
+                        (Map.update
+                          (\conn@Connection { connState } ->
+                            case connState of
+                              HalfClosed ->
+                                Nothing
+                              _ ->
+                                Just conn { connState = HalfClosed })
+                          (normaliseId connId)))
+          (\(addr,   _, _) ->
+             modifyTVar (nsListeningFDs state)
+                        (Map.delete addr))
+          wChannel
+
+        -- trace 'STClosed'
+        bitraverse_
+          (\(connId, fdType, _) -> do
+            openState <- fmap connState . Map.lookup (normaliseId connId)
+                     <$> atomically (readTVar (nsConnections state))
+            traceWith tr (WithAddr (Just (localAddress connId))
+                                   (Just (remoteAddress connId))
+                                   (STClosed fdType (Just openState)))
+
+          )
+          (\(addr, fdType, _) ->
+            traceWith tr (WithAddr (Just addr)
+                                   Nothing
+                                   (STClosed fdType Nothing))
+
+          )
+          wChannel
 
 
     toBearer :: DiffTime
@@ -971,8 +1112,19 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
+--
+-- Utils
+--
 
 hush :: Either a b -> Maybe b
 hush Left {}   = Nothing
 hush (Right a) = Just a
 {-# INLINE hush #-}
+
+drainTBQueue :: MonadSTMTx stm => TBQueue_ stm a -> stm [a]
+drainTBQueue q = do
+  ma <- tryReadTBQueue q
+  case ma of
+    Nothing -> return []
+    Just a  -> (a :) <$> drainTBQueue q
+

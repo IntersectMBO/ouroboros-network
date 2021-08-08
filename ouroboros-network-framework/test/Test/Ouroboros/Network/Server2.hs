@@ -352,7 +352,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr
             haAcceptVersion = acceptableVersion,
             haTimeLimits = handshakeTimeLimits
           }
-        (unversionedProtocol clientApplication)
+        (dataFlowProtocol Unidirectional clientApplication)
         (mainThreadId, debugMuxErrorRethrowPolicy
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
@@ -534,7 +534,7 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
               haAcceptVersion = acceptableVersion,
               haTimeLimits = handshakeTimeLimits
             }
-          (unversionedProtocol serverApplication)
+          (dataFlowProtocol Duplex serverApplication)
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy

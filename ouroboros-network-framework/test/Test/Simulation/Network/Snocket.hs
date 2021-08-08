@@ -172,14 +172,15 @@ untilSuccess go =
 
 clientServerSimulation
     :: forall m payload.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
-       , MonadSay   m
-       , MonadST    m
-       , MonadThrow (STM m)
-       , MonadTime  m
-       , MonadTimer m
+       ( MonadAsync       m
+       , MonadFork        m
+       , MonadMask        m
+       , MonadSay         m
+       , MonadST          m
+       , MonadThrow  (STM m)
+       , MonadTime        m
+       , MonadTimer       m
+       , MonadLabelledSTM m
 
        , Serialise payload
        , Eq payload
@@ -227,12 +228,12 @@ clientServerSimulation script payloads =
         acceptLoop :: StrictTVar m (Set (Async m ()))
                    -> Accept m (TestFD m) TestAddr
                    -> m ()
-        acceptLoop threadsVar accept0 = do
-          (accepted, accept1) <- runAccept accept0
+        acceptLoop threadsVar accept0 = mask $ \unmask -> do
+          (accepted, accept1) <- runAccept accept0 unmask
           case accepted of
             Accepted fd' remoteAddr -> do
               bearer <- toBearer snocket 10 nullTracer fd'
-              thread <- async $ handleConnection bearer remoteAddr
+              thread <- async $ unmask (handleConnection bearer remoteAddr)
                                 `finally`
                                close snocket fd'
               atomically $

@@ -107,6 +107,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
 run :: forall muxMode socket peerAddr versionNumber m a b.
        ( MonadAsync    m
        , MonadCatch    m
+       , MonadMask     m
        , MonadThrow   (STM m)
        , MonadTime     m
        , MonadTimer    m
@@ -135,8 +136,8 @@ run ServerArguments {
                                     serverInboundIdleTimeout
                                     serverConnectionManager
                                     serverObservableStateVar
-                  : [ acceptLoop . accept serverSnocket
-                    $ socket
+                  : [ acceptLoop (accept serverSnocket socket)
+                      `finally` close serverSnocket socket
                     | socket <- sockets
                     ]
 
@@ -157,37 +158,52 @@ run ServerArguments {
 
     acceptLoop :: Accept m socket peerAddr
                -> m Void
-    acceptLoop acceptOne = do
-      runConnectionRateLimits
-        (TrAcceptPolicyTrace `contramap` tracer)
-        (numberOfConnections serverConnectionManager)
-        serverConnectionLimits
-      result <- runAccept acceptOne
-      case result of
-        (AcceptFailure err, acceptNext) -> do
-          traceWith tracer (TrAcceptError err)
-          acceptLoop acceptNext
-        (Accepted socket peerAddr, acceptNext) -> do
-          traceWith tracer (TrAcceptConnection peerAddr)
-          -- using withAsync ensures that the thread that includes inbound
-          -- connection (which is a blocking operation), is killed when the
-          -- server terminates.
-          withAsync
-            (do
-              a <-
-                includeInboundConnection
-                  serverConnectionManager
-                  socket peerAddr
-              case a of
-                Connected connId dataFlow handle ->
-                  atomically $
-                    ControlChannel.writeMessage
-                      serverControlChannel
-                      (ControlChannel.NewConnection Inbound connId dataFlow handle)
-                Disconnected {} ->
-                  pure ()
-            )
-            $ \_ -> acceptLoop acceptNext
+    acceptLoop acceptOne0 = mask $ \unmask ->
+        go unmask acceptOne0
+        `catch` \ e -> traceWith tracer (TrServerError e)
+                    >> throwIO e
+      where
+        -- we must guarantee that 'includeInboundConnection' is called,
+        -- otherwise we will have a resource leak.
+        --
+        -- The 'mask' makes sure that exceptions are not delivered once
+        -- a socket was accepted.
+        go :: (forall x. m x -> m x)
+           -> Accept m socket peerAddr
+           -> m Void
+        go unmask acceptOne = do
+          unmask $ runConnectionRateLimits
+            (TrAcceptPolicyTrace `contramap` tracer)
+            (numberOfConnections serverConnectionManager)
+            serverConnectionLimits
+          result <- runAccept acceptOne unmask
+          case result of
+            (AcceptFailure err, acceptNext) -> do
+              traceWith tracer (TrAcceptError err)
+              go unmask acceptNext
+
+            (Accepted socket peerAddr, acceptNext) ->
+              (do traceWith tracer (TrAcceptConnection peerAddr)
+                  async $
+                    do a <-
+                         unmask
+                           (includeInboundConnection
+                             serverConnectionManager
+                             socket peerAddr)
+                       case a of
+                         Connected connId dataFlow handle ->
+                           atomically $
+                             ControlChannel.writeMessage
+                               serverControlChannel
+                               (ControlChannel.NewConnection Inbound connId dataFlow handle)
+                         Disconnected {} ->
+                           pure ()
+                    `onException`
+                      close serverSnocket socket
+              `onException`
+                 close serverSnocket socket
+              )
+              >> go unmask acceptNext
 
 --
 -- Trace
