@@ -15,7 +15,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
--- just to use 'debugTracer'
+-- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Test.Ouroboros.Network.Server2
@@ -321,9 +321,9 @@ withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
           cmTracer    = WithName name
-                        `contramap` (Tracer (say . show)),
+                        `contramap` debugTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
-                        `contramap` trTracer,
+                        `contramap` (trTracer <> debugTracer),
          -- MuxTracer
           cmMuxTracer = muxTracer,
           cmIPv4Address = localAddr,
@@ -503,9 +503,9 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
           cmTracer    = WithName name
-                        `contramap` (Tracer (say . show)),
+                        `contramap` debugTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
-                        `contramap` trTracer,
+                        `contramap` (trTracer <> debugTracer),
           -- MuxTracer
           cmMuxTracer    = muxTracer,
           cmIPv4Address  = localAddress,
@@ -549,8 +549,8 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
                 ServerArguments {
                     serverSockets = socket :| [],
                     serverSnocket = snocket,
-                    serverTracer = WithName name `contramap` nullTracer, -- ServerTrace
-                    serverInboundGovernorTracer = WithName name `contramap` nullTracer, -- InboundGovernorTrace
+                    serverTracer = WithName name `contramap` debugTracer, -- ServerTrace
+                    serverInboundGovernorTracer = WithName name `contramap` debugTracer, -- InboundGovernorTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = tProtocolIdleTimeout timeouts,
@@ -957,8 +957,8 @@ bidirectionalExperiment
 prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int -> ClientAndServerData Int -> Property
 prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
-    withSnocket debugTracer
-                script'
+    withSnocket sayTracer
+                (toBearerInfo <$> script)
                 (Snocket.TestAddress 10) $ \snock ->
       bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                    <*> Snocket.open snock Snocket.TestFamily)
@@ -1652,11 +1652,11 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
           sim :: IOSim s ()
           sim = do
             mb <- timeout 7200
-                    ( withSnocket debugTracer
+                    ( withSnocket sayTracer
                                   (Script (toBearerInfo absBi :| [noAttenuation]))
                                   (Snocket.TestAddress 10)
                     $ \snocket ->
-                       multinodeExperiment (Tracer traceM <> Tracer (say . show))
+                       multinodeExperiment (Tracer traceM <> debugTracer)
                                            snocket
                                            Snocket.TestFamily
                                            (Snocket.TestAddress 0)
@@ -1676,8 +1676,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
           $ trace
 
   in counterexample (ppScript script)
-   . counterexample (show evs)
-   . counterexample (intercalate "\n" . map (show . ecTraceEvent) . Octopus.toList $ trace)
+   . counterexample (ppTrace trace)
    . mkProperty
    . bifoldMap
       ( \ case
@@ -1870,9 +1869,20 @@ data WithName name event = WithName {
 
 type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
 
-debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
-debugTracer = Tracer $
+sayTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
+sayTracer = Tracer $
   \msg -> (,msg) <$> getCurrentTime >>= say . show
+
+
+-- | Redefine this tracer to get valuable tracing information from various
+-- components:
+--
+-- * connection-manager
+-- * inboung governo
+-- * server
+--
+debugTracer :: (Show a, MonadSay m) => Tracer m a
+debugTracer = nullTracer -- <> Tracer (say . show)
 
 
 withLock :: ( MonadSTM   m
