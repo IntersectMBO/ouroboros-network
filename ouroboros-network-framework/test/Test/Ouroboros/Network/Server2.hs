@@ -415,19 +415,21 @@ debugMuxErrorRethrowPolicy =
     mkRethrowPolicy $
       \_ MuxError { errorType } ->
         case errorType of
-          MuxIOException _ -> ShutdownPeer
-          MuxBearerClosed  -> ShutdownPeer
-          _                -> ShutdownNode
+          MuxIOException _   -> ShutdownPeer
+          MuxBearerClosed    -> ShutdownPeer
+          MuxSDUReadTimeout  -> ShutdownPeer
+          MuxSDUWriteTimeout -> ShutdownPeer
+          _                  -> ShutdownNode
 
 debugMuxRuntimeErrorRethrowPolicy :: RethrowPolicy
 debugMuxRuntimeErrorRethrowPolicy =
     mkRethrowPolicy $
-      \_ (_ :: MuxRuntimeError) -> ShutdownNode
+      \_ (_ :: MuxRuntimeError) -> ShutdownPeer
 
 debugIOErrorRethrowPolicy :: RethrowPolicy
 debugIOErrorRethrowPolicy =
     mkRethrowPolicy $
-      \_ (_ :: IOError) -> ShutdownNode
+      \_ (_ :: IOError) -> ShutdownPeer
 
 
 assertRethrowPolicy :: RethrowPolicy
