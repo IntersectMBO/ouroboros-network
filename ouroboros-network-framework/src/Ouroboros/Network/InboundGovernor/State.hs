@@ -22,6 +22,7 @@ module Ouroboros.Network.InboundGovernor.State
   , updateMiniProtocol
   , RemoteState (.., RemoteEstablished)
   , updateRemoteState
+  , mapRemoteState
   , MiniProtocolData (..)
   ) where
 
@@ -280,6 +281,21 @@ updateRemoteState connId csRemoteState state =
       igsConnections =
         Map.adjust
           (\connState -> connState { csRemoteState })
+          connId
+          (igsConnections state)
+    }
+
+mapRemoteState :: Ord peerAddr
+               => ConnectionId peerAddr
+               -> (RemoteState m -> RemoteState m)
+               -> InboundGovernorState muxMode peerAddr m a b
+               -> InboundGovernorState muxMode peerAddr m a b
+mapRemoteState connId fn state =
+    state {
+      igsConnections =
+        Map.adjust
+          (\connState@ConnectionState { csRemoteState } ->
+            connState { csRemoteState = fn csRemoteState })
           connId
           (igsConnections state)
     }
