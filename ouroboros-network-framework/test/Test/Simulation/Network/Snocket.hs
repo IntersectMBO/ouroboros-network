@@ -20,6 +20,7 @@ module Test.Simulation.Network.Snocket
   , AbsSpeed (..)
   , AbsSDUSize (..)
   , AbsAttenuation (..)
+  , absNoAttenuation
   , AbsBearerInfo (..)
   , toBearerInfo
   ) where
@@ -468,6 +469,16 @@ data AbsBearerInfo = AbsBearerInfo
     , abiSDUSize              :: !AbsSDUSize
     }
   deriving (Eq, Show)
+
+absNoAttenuation :: AbsBearerInfo
+absNoAttenuation = AbsBearerInfo
+    { abiConnectionDelay      = NormalDelay
+    , abiInboundAttenuation   = NoAttenuation NormalSpeed
+    , abiOutboundAttenuation  = NoAttenuation NormalSpeed
+    , abiInboundWriteFailure  = Nothing
+    , abiOutboundWriteFailure = Nothing
+    , abiSDUSize              = NormalSDU
+    }
 
 canFail :: AbsBearerInfo -> Bool
 canFail abi = getAny $
