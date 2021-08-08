@@ -149,7 +149,7 @@ berkeleyAccept ioManager sock =
 #else
           (Win32.Async.accept sock)
 #endif
-          (Socket.close . fst)
+          (uninterruptibleMask_ . Socket.close . fst)
           $ \(sock', addr') -> do
             associateWithIOManager ioManager (Right sock')
 
