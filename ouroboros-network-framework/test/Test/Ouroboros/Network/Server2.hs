@@ -107,6 +107,7 @@ tests =
   , testProperty "bidirectional_IO"   prop_bidirectional_IO
   , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
   , testProperty "multinode_Sim"      prop_multinode_Sim
+  , testProperty "unit_1"             unit_1
   , testGroup "generators"
     [ testProperty "MultiNodeScript"  prop_generator_MultiNodeScript
     ]
@@ -1718,6 +1719,33 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
                 ) as of
         Nothing -> IdleConn
         Just {} -> ActiveConn
+
+
+-- | Connection terminated while negotiating it.
+--
+unit_1 :: Property
+unit_1 = prop_multinode_Sim
+        0 (ArbDataFlow Unidirectional)
+        AbsBearerInfo
+          { abiConnectionDelay = SmallDelay
+          , abiInboundAttenuation = NoAttenuation FastSpeed
+          , abiOutboundAttenuation = NoAttenuation FastSpeed
+          , abiInboundWriteFailure = Nothing
+          , abiOutboundWriteFailure = Just 3
+          , abiSDUSize = LargeSDU
+          }
+        (MultiNodeScript
+          [ StartServer 0           (TestAddr {unTestAddr = TestAddress 24}) 0
+          , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 24})
+          , StartServer 0           (TestAddr {unTestAddr = TestAddress 40}) 0
+          , OutboundMiniprotocols 0 (TestAddr {unTestAddr = TestAddress 24})
+                                    (Bundle { withHot         = WithHot [0]
+                                            , withWarm        = WithWarm []
+                                            , withEstablished = WithEstablished []
+                                            })
+          , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 40})
+          ])
+
 
 splitConns :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
            -> Octopus (Value ()) [AbstractTransition]
