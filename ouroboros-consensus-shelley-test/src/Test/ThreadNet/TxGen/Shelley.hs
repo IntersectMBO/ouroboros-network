@@ -33,7 +33,7 @@ import           Test.ThreadNet.TxGen (TxGen (..))
 import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
 import           Test.Shelley.Spec.Ledger.Generator.EraGen
-                     (EraGen (genEraTwoPhaseScripts))
+                     (EraGen (genEraTwoPhase2Arg, genEraTwoPhase3Arg))
 import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
@@ -176,4 +176,5 @@ mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace scriptSpace constants
     scriptSpace :: Gen.ScriptSpace (MockShelley h)
     scriptSpace =
       Gen.Presets.scriptSpace @(MockShelley h)
-           (genEraTwoPhaseScripts @(MockShelley h))
+           (genEraTwoPhase3Arg @(MockShelley h))
+           (genEraTwoPhase2Arg @(MockShelley h))
