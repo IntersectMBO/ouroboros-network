@@ -19,7 +19,7 @@ let
   #
   # > tools = {
   # >   ...
-  # >   haskell-language-server = "1.1.0";
+  # >   haskell-language-server = "1.3.0.0";
   # >   stylish-haskell = "0.12.3.0";
   #
   # Note that the tools attribute comes from haskell-nix when defining the
@@ -38,8 +38,7 @@ let
   shell = ouroborosNetworkHaskellPackages.shellFor {
     name = "cabal-dev-shell";
 
-    packages = ps: lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps)
-      ++ [ ps.cardano-crypto-class ];
+    packages = ps: lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps);
 
     # These programs will be available inside the nix-shell.
     buildInputs = [
@@ -59,6 +58,7 @@ let
       hasktags = "0.71.2";
       # https://hackage.haskell.org/package/graphmod
       graphmod = "1.4.4";
+      # haskell-language-server = "1.3.0.0";
       # todo: add back the build tools which are actually necessary
       # hlint = "...";
     };

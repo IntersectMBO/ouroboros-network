@@ -107,7 +107,6 @@ let
         packages.ouroboros-network.components.tests.cddl.preCheck = "export HOME=`pwd`";
       })
     ];
-    configureArgs = lib.optionalString stdenv.hostPlatform.isWindows "--disable-tests";
   };
 in
 pkgSet
