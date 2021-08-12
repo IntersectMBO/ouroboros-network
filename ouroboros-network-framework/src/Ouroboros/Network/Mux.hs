@@ -56,6 +56,7 @@ import           Control.Tracer (Tracer)
 
 import           Data.Void (Void)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Monoid.Synchronisation
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
@@ -114,14 +115,14 @@ timeoutWithControlMessage :: MonadSTM m
                           -> STM m a
                           -> m (Maybe a)
 timeoutWithControlMessage controlMessageSTM stm =
-    atomically $
-      do
-        cntrlMsg <- controlMessageSTM
-        case cntrlMsg of
-          Terminate -> return Nothing
-          Continue  -> retry
-          Quiesce   -> retry
-      `orElse` (Just <$> stm)
+    atomically $ runFirstToFinish $
+         ( FirstToFinish $ do
+             cntrlMsg <- controlMessageSTM
+             case cntrlMsg of
+               Terminate -> return Nothing
+               Continue  -> retry
+               Quiesce   -> retry )
+      <> ( FirstToFinish $ Just <$> stm )
 
 
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
