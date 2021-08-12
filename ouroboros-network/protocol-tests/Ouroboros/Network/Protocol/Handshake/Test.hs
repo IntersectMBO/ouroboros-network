@@ -998,8 +998,9 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
     let attenuation = noAttenuation { biConnectionDelay = 1 } in
     withSnocket nullTracer
                 (singletonScript attenuation)
-                (TestAddress (0 :: Int)) $ \sn -> do
-      let addr  = Snocket.TestAddress 1
+              $ \sn -> do
+      let addr, addr' :: TestAddress Int
+          addr  = Snocket.TestAddress 1
           addr' = Snocket.TestAddress 2
       -- listening snockets
       bracket (Snocket.open  sn Snocket.TestFamily)
