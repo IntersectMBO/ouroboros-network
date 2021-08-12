@@ -53,8 +53,7 @@ import           Network.DNS (Domain)
 import           Network.Mux.Bearer.AttenuatedChannel (CloseError)
 
 import           Ouroboros.Network.BlockFetch.Decision (FetchMode (..))
-import           Ouroboros.Network.ConnectionManager.Types (AddressType (..),
-                   DataFlow (..))
+import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
@@ -178,7 +177,7 @@ run blockGeneratorArgs limits ni na =
                   case ntnDiffusionMode of
                     InitiatorOnlyDiffusionMode         -> Unidirectional
                     InitiatorAndResponderDiffusionMode -> Duplex
-              , Diff.P2P.diNtnToPeerAddr         = \a b -> TestAddress (a, b)
+              , Diff.P2P.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
               , Diff.P2P.diNtnDomainResolver     = iNtnDomainResolver ni
               , Diff.P2P.diNtcSnocket            = iNtcSnocket ni
               , Diff.P2P.diNtcHandshakeArguments =
