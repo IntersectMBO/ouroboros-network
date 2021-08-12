@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE MultiWayIf          #-}
@@ -33,6 +34,9 @@ module Simulation.Network.Snocket
   , Script (..)
   , singletonScript
   , SDUSize
+
+  , GlobalAddressScheme (..)
+  , AddressType (..)
   ) where
 
 import           Prelude hiding (read)
@@ -63,6 +67,7 @@ import           Network.Mux.Types (MuxBearer, SDUSize (..))
 import           Network.Mux.Trace (MuxTrace)
 
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.ConnectionManager.Types (AddressType (..))
 import           Ouroboros.Network.Snocket
 
 
@@ -194,7 +199,7 @@ data NetworkState m addr = NetworkState {
 
       -- | Get an unused ephemeral address.
       --
-      nsNextEphemeralAddr :: STM m addr,
+      nsNextEphemeralAddr :: AddressType -> STM m addr,
 
       nsBearerInfo        :: LazySTM.TVar m (Script BearerInfo)
 
@@ -266,25 +271,27 @@ noAttenuation = BearerInfo { biConnectionDelay      = 0
 --
 newNetworkState
     :: forall m peerAddr.
-       ( MonadSTM m
-       , Enum     peerAddr
+       ( MonadSTM         m
+       , GlobalAddressScheme peerAddr
        )
     => Script BearerInfo
-    -> peerAddr
     -- ^ the largest ephemeral address
     -> m (NetworkState m (TestAddress peerAddr))
-newNetworkState bearerInfoScript peerAddr = atomically $
+newNetworkState bearerInfoScript = atomically $ do
+  (v :: StrictTVar m Natural) <- newTVar 0
+  let nextEphemeralAddr :: AddressType -> STM m (TestAddress peerAddr)
+      nextEphemeralAddr addrType = do
+        -- TODO: we should use `(\s -> (succ s, s)` but p2p-master does not
+        -- include PR #3172.
+         a <- stateTVar v (\s -> let s' = succ s in (s', s'))
+         return (ephemeralAddress addrType a)
   NetworkState
     -- nsListeningFDs
     <$> newTVar Map.empty
     -- nsConnections
     <*> newTVar Map.empty
     -- nsNextEphemeralAddr
-    <*> do (v :: StrictTVar m peerAddr) <- newTVar peerAddr
-           return $ do
-             a <- readTVar v
-             writeTVar v (pred a)
-             return (TestAddress a)
+    <*> pure nextEphemeralAddr
     -- nsBearerInfo
     <*> initScriptSTM bearerInfoScript
 
@@ -296,6 +303,27 @@ data ResourceException addr
 
 instance (Typeable addr, Show addr)
       => Exception (ResourceException addr)
+
+
+-- | A type class for global IP address scheme.  Every node in the simulation
+-- has an ephemeral address.  Every node in the simulation has an implicity ipv4
+-- and ipv6 address (if one is not bound by explicitly).
+--
+class GlobalAddressScheme addr where
+    getAddressType   :: TestAddress addr -> AddressType
+    ephemeralAddress :: AddressType -> Natural -> TestAddress addr
+
+
+
+-- | All negative addresses are ephemeral.  Even address are IPv4, while odd
+-- ones are IPv6.
+--
+instance GlobalAddressScheme Int where
+    getAddressType (TestAddress n) = if n `mod` 2 == 0
+                         then IPv4Address
+                         else IPv6Address
+    ephemeralAddress IPv4Address n = TestAddress $ (-2) * fromIntegral n
+    ephemeralAddress IPv6Address n = TestAddress $ (-1) * fromIntegral n + 1
 
 
 -- | A bracket which runs a network simulation.  When the simulation
@@ -310,7 +338,7 @@ withSnocket
        , MonadTime        m
        , MonadTimer       m
        , MonadThrow  (STM m)
-       , Enum     peerAddr
+       , GlobalAddressScheme peerAddr
        , Ord      peerAddr
        , Typeable peerAddr
        , Show     peerAddr
@@ -318,13 +346,11 @@ withSnocket
     => Tracer m (WithAddr (TestAddress peerAddr)
                           (SnocketTrace m (TestAddress peerAddr)))
     -> Script BearerInfo
-    -> TestAddress peerAddr
-    -- ^ the largest ephemeral address
     -> (Snocket m (FD m (TestAddress peerAddr)) (TestAddress peerAddr)
         -> m a)
     -> m a
-withSnocket tr script (TestAddress peerAddr) k = do
-    st <- newNetworkState script peerAddr
+withSnocket tr script k = do
+    st <- newNetworkState script
     a <- k (mkSnocket st tr)
          `catch`
          \e -> do re <- checkResources st (Just e)
@@ -500,6 +526,7 @@ mkSnocket :: forall m addr.
              , MonadMask          m
              , MonadTime          m
              , MonadTimer         m
+             , GlobalAddressScheme addr
              , Ord  addr
              , Show addr
              )
@@ -628,7 +655,7 @@ mkSnocket state tr = Snocket { getLocalAddr
               localAddress <-
                 case mbLocalAddr of
                   Just addr -> return addr
-                  Nothing   -> nsNextEphemeralAddr state
+                  Nothing   -> nsNextEphemeralAddr state (getAddressType remoteAddress)
               let connId = ConnectionId { localAddress, remoteAddress }
 
               conMap <- readTVar (nsConnections state)

@@ -185,7 +185,7 @@ clientServerSimulation
     -> [payload]
     -> m (Maybe Bool)
 clientServerSimulation script payloads =
-    withSnocket nullTracer script (TestAddress 0) $ \snocket ->
+    withSnocket nullTracer script $ \snocket ->
       withAsync (server snocket) $ \_serverAsync -> do
         res <- untilSuccess (client snocket)
         return (Just res)
