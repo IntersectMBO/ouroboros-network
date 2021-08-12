@@ -7,6 +7,7 @@
 module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   ( -- * Common types
     NtNAddr
+  , NtNAddr_ (..)
   , NtNVersion
   , NtNVersionData (..)
   , NtCAddr
@@ -37,6 +38,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           Numeric.Natural (Natural)
 
 import           System.Random (StdGen, randomR)
 
@@ -58,8 +60,34 @@ import           Ouroboros.Network.Snocket (TestAddress (..))
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
+import           Simulation.Network.Snocket (AddressType (..),
+                   GlobalAddressScheme (..))
 
-type NtNAddr        = TestAddress (IP.IP, PortNumber)
+
+-- | Node-to-node address type.
+--
+data NtNAddr_
+  = EphemeralIPv4Addr Natural
+  | EphemeralIPv6Addr Natural
+  | IPAddr IP.IP PortNumber
+  deriving (Eq, Ord)
+
+instance Show NtNAddr_ where
+    show (EphemeralIPv4Addr n) = "ephemeral:" ++ show n
+    show (EphemeralIPv6Addr n) = "ephemeral6:" ++ show n
+    show (IPAddr ip port)      = show ip ++ ":" ++ show port
+
+instance GlobalAddressScheme NtNAddr_ where
+    getAddressType (TestAddress addr) =
+      case addr of
+        EphemeralIPv4Addr _   -> IPv4Address
+        EphemeralIPv6Addr _   -> IPv6Address
+        IPAddr (IP.IPv4 {}) _ -> IPv4Address
+        IPAddr (IP.IPv6 {}) _ -> IPv6Address
+    ephemeralAddress IPv4Address = TestAddress . EphemeralIPv4Addr
+    ephemeralAddress IPv6Address = TestAddress . EphemeralIPv6Addr
+
+type NtNAddr        = TestAddress NtNAddr_
 type NtNVersion     = UnversionedProtocol
 data NtNVersionData = NtNVersionData { ntnDiffusionMode :: DiffusionMode }
 type NtCAddr        = TestAddress Int
