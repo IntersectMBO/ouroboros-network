@@ -385,8 +385,7 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_9, CardanoNodeToClientVersion7)
       ]
 
-  -- Do not yet enable Alonzo by default
-  latestReleasedNodeVersion _prx = (Just NodeToNodeV_6, Just NodeToClientV_8)
+  latestReleasedNodeVersion _prx = (Just NodeToNodeV_7, Just NodeToClientV_9)
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
