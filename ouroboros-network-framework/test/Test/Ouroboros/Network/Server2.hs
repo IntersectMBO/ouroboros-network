@@ -756,7 +756,7 @@ prop_unidirectional_Sim clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
                 (singletonScript noAttenuation)
-                (Snocket.TestAddress 10) $ \snock ->
+            $ \ snock ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
         Snocket.bind   snock fd serverAddr
@@ -909,7 +909,7 @@ prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
     withSnocket debugTracer
                 script'
-                (Snocket.TestAddress 10) $ \snock ->
+            $ \ snock ->
       bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                    <*> Snocket.open snock Snocket.TestFamily)
               (\ (socket0, socket1) -> Snocket.close snock socket0 >>
@@ -1567,7 +1567,6 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
             mb <- timeout 7200
                     ( withSnocket debugTracer
                                   (singletonScript noAttenuation)
-                                  (Snocket.TestAddress 10)
                     $ \snocket ->
                        multinodeExperiment (Tracer traceM)
                                            snocket
