@@ -61,7 +61,6 @@ import           Numeric.Natural
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), hashToBytes,
                      hashWithSerialiser, sizeHash)
-import           Cardano.Crypto.Hash.MD5 (MD5)
 import           Cardano.Crypto.Hash.SHA256 (SHA256)
 import           Cardano.Crypto.KES.Class
 import           Cardano.Crypto.KES.Mock
@@ -619,7 +618,7 @@ instance PraosCrypto PraosStandardCrypto where
 instance PraosCrypto PraosMockCrypto where
   type PraosKES  PraosMockCrypto = MockKES 10000
   type PraosVRF  PraosMockCrypto = MockVRF
-  type PraosHash PraosMockCrypto = MD5
+  type PraosHash PraosMockCrypto = SHA256
 
 {-------------------------------------------------------------------------------
   Condense

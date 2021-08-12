@@ -86,7 +86,7 @@ instance Condense Tx where
 
 type Ix     = Word
 type Amount = Word
-type TxId   = Hash MD5 Tx
+type TxId   = Hash SHA256 Tx
 type TxIn   = (TxId, Ix)
 type TxOut  = (Addr, Amount)
 type Utxo   = Map TxIn TxOut

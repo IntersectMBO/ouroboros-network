@@ -77,7 +77,7 @@ import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (ToCBOR (..))
-import           Cardano.Crypto.Hash (Hash, HashAlgorithm, MD5, ShortHash)
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
 import           Ouroboros.Consensus.Block
@@ -529,7 +529,7 @@ data SimpleStandardCrypto
 data SimpleMockCrypto
 
 instance SimpleCrypto SimpleStandardCrypto where
-  type SimpleHash SimpleStandardCrypto = MD5
+  type SimpleHash SimpleStandardCrypto = SHA256
 
 instance SimpleCrypto SimpleMockCrypto where
   type SimpleHash SimpleMockCrypto = ShortHash
