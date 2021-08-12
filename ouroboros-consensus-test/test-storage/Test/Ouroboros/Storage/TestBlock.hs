@@ -547,7 +547,7 @@ instance GetTip (Ticked (LedgerState TestBlock)) where
 instance IsLedger (LedgerState TestBlock) where
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
-  applyChainTick _ _ = TickedTestLedger
+  applyChainTickLedgerM _ _ = return . TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerM _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})

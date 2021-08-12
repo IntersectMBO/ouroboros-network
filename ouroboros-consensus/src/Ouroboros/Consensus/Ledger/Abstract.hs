@@ -84,8 +84,8 @@ class ( IsLedger l
 
   -- | Apply a block to the ledger state.
   --
-  -- This is passed the ledger state ticked with the slot of the given block,
-  -- so 'applyChainTick' has already been called.
+  -- This is passed the ledger state ticked with the slot of the given block, so
+  -- 'applyChainTickLedgerM' has already been called.
   applyBlockLedgerM ::
        HasCallStack
     => LedgerCfg l
@@ -141,8 +141,10 @@ tickThenApplyLedgerM ::
   -> l
   -> LedgerT l (Except (LedgerErr l)) l
 tickThenApplyLedgerM cfg blk =
-      applyBlockLedgerM cfg blk
-    . applyChainTick cfg (blockSlot blk)
+        applyBlockLedgerM cfg blk
+    <=< (  hoistLedgerT (pure . runIdentity)
+         . applyChainTickLedgerM cfg (blockSlot blk)
+        )
 
 tickThenReapplyLedgerM ::
      ApplyBlock l blk
@@ -151,8 +153,8 @@ tickThenReapplyLedgerM ::
   -> l
   -> LedgerT l Identity l
 tickThenReapplyLedgerM cfg blk =
-      reapplyBlockLedgerM cfg blk
-    . applyChainTick cfg (blockSlot blk)
+        reapplyBlockLedgerM cfg blk
+    <=< applyChainTickLedgerM cfg (blockSlot blk)
 
 tickThenApply ::
      ApplyBlock l blk

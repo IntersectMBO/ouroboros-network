@@ -350,13 +350,16 @@ data instance Ticked (LedgerState (DualBlock m a)) = TickedDualLedgerState {
 instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
   type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
 
-  applyChainTick DualLedgerConfig{..}
+  applyChainTickLedgerM DualLedgerConfig{..}
                  slot
-                 DualLedgerState{..} = TickedDualLedgerState {
-        tickedDualLedgerStateMain    = applyChainTick
-                                         dualLedgerConfigMain
-                                         slot
-                                         dualLedgerStateMain
+                 DualLedgerState{..} = do
+    main <- coerceLedgerT $
+              applyChainTickLedgerM
+                dualLedgerConfigMain
+                slot
+                dualLedgerStateMain
+    return TickedDualLedgerState {
+        tickedDualLedgerStateMain    = main
       , tickedDualLedgerStateAux     = applyChainTick
                                          dualLedgerConfigAux
                                          slot

@@ -13,6 +13,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- * Definition of a ledger independent of a choice of block
   , IsLedger (..)
   , LedgerCfg
+  , applyChainTick
     -- * Link block to its ledger
   , LedgerConfig
   , LedgerError
@@ -20,11 +21,14 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TickedLedgerState
   ) where
 
+import           Control.Monad.Identity (Identity, runIdentity)
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Ledger.Monad
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util ((..:))
 
 {-------------------------------------------------------------------------------
   Tip
@@ -63,7 +67,8 @@ class ( -- Requirements on the ledger state itself
       , NoThunks (LedgerErr l)
         -- Get the tip
         --
-        -- See comment for 'applyChainTick' about the tip of the ticked ledger.
+        -- See comment for 'applyChainTickLedgerM' about the tip of the ticked
+        -- ledger.
       , GetTip l
       , GetTip (Ticked l)
       ) => IsLedger l where
@@ -94,13 +99,21 @@ class ( -- Requirements on the ledger state itself
   -- PRECONDITION: The slot number must be strictly greater than the slot at
   -- the tip of the ledger (except for EBBs, obviously..).
   --
-  -- NOTE: 'applyChainTick' should /not/ change the tip of the underlying ledger
-  -- state, which should still refer to the most recent applied /block/. In
-  -- other words, we should have
+  -- NOTE: 'applyChainTickLedgerM' should /not/ change the tip of the underlying
+  -- ledger state, which should still refer to the most recent applied /block/.
+  -- In other words, we should have
   --
   -- >    ledgerTipPoint (applyChainTick cfg slot st)
   -- > == ledgerTipPoint st
-  applyChainTick :: LedgerCfg l -> SlotNo -> l -> Ticked l
+  applyChainTickLedgerM ::
+       LedgerCfg l
+    -> SlotNo
+    -> l
+    -> LedgerT l Identity (Ticked l)
+
+-- | 'evalLedgerT' after 'applyChainTickLedgerM'
+applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l -> Ticked l
+applyChainTick = (runIdentity . evalLedgerT) ..: applyChainTickLedgerM
 
 {-------------------------------------------------------------------------------
   Link block to its ledger

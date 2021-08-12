@@ -474,7 +474,7 @@ instance IsLedger l => GetTip (Ticked (LedgerDB l)) where
 instance IsLedger l => IsLedger (LedgerDB l) where
   type LedgerErr (LedgerDB l) = LedgerErr l
 
-  applyChainTick cfg slot db = TickedLedgerDB {
+  applyChainTickLedgerM cfg slot db = return $ TickedLedgerDB {
         tickedLedgerDbTicked =
           applyChainTick (ledgerDbCfg cfg) slot (ledgerDbCurrent db)
       , tickedLedgerDbOrig   = db

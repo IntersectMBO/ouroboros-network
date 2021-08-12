@@ -210,7 +210,7 @@ instance GetTip (Ticked (LedgerState BlockA)) where
 
 instance IsLedger (LedgerState BlockA) where
   type LedgerErr (LedgerState BlockA) = Void
-  applyChainTick _ _ = TickedLedgerStateA
+  applyChainTickLedgerM _ _ = return . TickedLedgerStateA
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyBlockLedgerM cfg blk =

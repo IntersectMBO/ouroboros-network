@@ -102,7 +102,7 @@ data instance Ticked (LedgerState ByronSpecBlock) = TickedByronSpecLedgerState {
 instance IsLedger (LedgerState ByronSpecBlock) where
   type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
 
-  applyChainTick cfg slot (ByronSpecLedgerState tip state) =
+  applyChainTickLedgerM cfg slot (ByronSpecLedgerState tip state) = return $
       TickedByronSpecLedgerState {
           untickedByronSpecLedgerTip = tip
         , tickedByronSpecLedgerState = Rules.applyChainTick

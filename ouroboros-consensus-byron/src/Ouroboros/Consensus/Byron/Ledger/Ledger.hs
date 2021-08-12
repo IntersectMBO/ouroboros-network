@@ -172,7 +172,7 @@ data instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
 instance IsLedger (LedgerState ByronBlock) where
   type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
 
-  applyChainTick cfg slotNo ByronLedgerState{..} =
+  applyChainTickLedgerM cfg slotNo ByronLedgerState{..} = return $
       TickedByronLedgerState {
           tickedByronLedgerState =
             CC.applyChainTick cfg (toByronSlotNo slotNo) byronLedgerState
