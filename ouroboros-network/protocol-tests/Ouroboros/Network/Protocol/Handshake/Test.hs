@@ -634,9 +634,10 @@ prop_channel_simultaneous_open_SimNet
     let attenuation = noAttenuation { biConnectionDelay = 1 } in
     withSnocket nullTracer
                 (singletonScript attenuation)
-                (TestAddress (0 :: Int)) $ \sn -> do
-      let addr  = Snocket.TestAddress 1
-          addr' = Snocket.TestAddress 2
+              $ \sn -> do
+      let addr, addr' :: TestAddress Int
+          addr  = TestAddress 1
+          addr' = TestAddress 3
       -- listening snockets
       bracket (Snocket.open  sn Snocket.TestFamily)
               (Snocket.close sn) $ \fdLst ->
