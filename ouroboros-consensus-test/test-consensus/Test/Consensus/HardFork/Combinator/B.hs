@@ -184,7 +184,7 @@ instance GetTip (Ticked (LedgerState BlockB)) where
 
 instance IsLedger (LedgerState BlockB) where
   type LedgerErr (LedgerState BlockB) = Void
-  applyChainTick _ _ = TickedLedgerStateB
+  applyChainTickLedgerM _ _ = return . TickedLedgerStateB
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyBlockLedgerM   = \_ b _ -> return $ LgrB (blockPoint b)

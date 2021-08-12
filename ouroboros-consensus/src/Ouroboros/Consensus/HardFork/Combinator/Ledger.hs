@@ -31,6 +31,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger (
 
 import           Control.Monad.Except
 import           Control.Monad.Identity (Identity)
+import           Data.Functor ((<&>))
 import           Data.Functor.Product
 import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
@@ -117,7 +118,9 @@ deriving anyclass instance
 instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
 
-  applyChainTick cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
+  applyChainTickLedgerM cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
+      hsequence'
+        (hcizipWith proxySingle (tickOne ei slot) cfgs extended) <&> \l' ->
       TickedHardForkLedgerState {
           tickedHardForkLedgerStateTransition =
             -- We are bundling a 'TransitionInfo' with a /ticked/ ledger state,
@@ -141,8 +144,7 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
             --   to change that, or we're forecasting, which is simply not
             --   applicable here.
             State.mostRecentTransitionInfo cfg extended
-        , tickedHardForkLedgerStatePerEra =
-            hczipWith proxySingle (tickOne ei slot) cfgs extended
+        , tickedHardForkLedgerStatePerEra = l'
         }
     where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
@@ -151,14 +153,20 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
       extended :: HardForkState LedgerState xs
       extended = State.extendToSlot cfg slot st
 
-tickOne :: forall blk. SingleEraBlock blk
+tickOne :: SingleEraBlock blk
         => EpochInfo (Except PastHorizonException)
         -> SlotNo
+        -> Index xs                 blk
         -> WrapPartialLedgerConfig  blk
         -> LedgerState              blk
-        -> (Ticked :.: LedgerState) blk
-tickOne ei slot pcfg st = Comp $
-    applyChainTick (completeLedgerConfig' ei pcfg) slot st
+        -> (    LedgerT
+                  (LedgerState (HardForkBlock xs))
+                  Identity
+            :.: (Ticked :.: LedgerState)
+           )                        blk
+tickOne ei slot index pcfg st = Comp $ fmap Comp $
+      withLedgerT (injectLedgerEvent index)
+    $ applyChainTickLedgerM (completeLedgerConfig' ei pcfg) slot st
 
 {-------------------------------------------------------------------------------
   HasLedgerEvents

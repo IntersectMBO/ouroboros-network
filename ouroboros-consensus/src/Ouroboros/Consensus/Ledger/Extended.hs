@@ -30,6 +30,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Data.Coerce
+import           Data.Functor ((<&>))
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -119,25 +120,23 @@ instance ( IsLedger (LedgerState  blk)
       => IsLedger (ExtLedgerState blk) where
   type LedgerErr (ExtLedgerState blk) = ExtValidationError blk
 
-  applyChainTick cfg slot (ExtLedgerState ledger header) =
-      TickedExtLedgerState {..}
+  applyChainTickLedgerM cfg slot (ExtLedgerState ledger header) =
+      coerceLedgerT
+        (applyChainTickLedgerM lcfg slot ledger) <&> \tickedLedgerState ->
+        let tickedLedgerView :: Ticked (LedgerView (BlockProtocol blk))
+            tickedLedgerView = protocolLedgerView lcfg tickedLedgerState
+
+            tickedHeaderState :: Ticked (HeaderState blk)
+            tickedHeaderState =
+                tickHeaderState
+                  (configConsensus $ getExtLedgerCfg cfg)
+                  tickedLedgerView
+                  slot
+                  header
+        in TickedExtLedgerState {..}
     where
       lcfg :: LedgerConfig blk
       lcfg = configLedger $ getExtLedgerCfg cfg
-
-      tickedLedgerState :: Ticked (LedgerState blk)
-      tickedLedgerState = applyChainTick lcfg slot ledger
-
-      tickedLedgerView :: Ticked (LedgerView (BlockProtocol blk))
-      tickedLedgerView = protocolLedgerView lcfg tickedLedgerState
-
-      tickedHeaderState :: Ticked (HeaderState blk)
-      tickedHeaderState =
-          tickHeaderState
-            (configConsensus $ getExtLedgerCfg cfg)
-            tickedLedgerView
-            slot
-            header
 
 type instance AuxLedgerEvent (ExtLedgerState blk) = AuxLedgerEvent (LedgerState blk)
 

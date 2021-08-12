@@ -350,7 +350,7 @@ instance MockProtocolSpecific c ext
       => IsLedger (LedgerState (SimpleBlock c ext)) where
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ _ = TickedSimpleLedgerState
+  applyChainTickLedgerM _ _ = return . TickedSimpleLedgerState
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where

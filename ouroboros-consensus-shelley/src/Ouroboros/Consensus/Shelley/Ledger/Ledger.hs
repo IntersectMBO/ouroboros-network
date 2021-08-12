@@ -34,6 +34,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , shelleyEraParamsNeverHardForks
   , shelleyLedgerGenesis
     -- * Auxiliary
+  , ShelleyLedgerEvent (..)
   , ShelleyReapplyException (..)
   , getPParams
     -- * Serialisation
@@ -51,6 +52,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (decode, encode)
 import qualified Control.Exception as Exception
 import           Control.Monad.Except
+import           Data.Functor ((<&>))
 import           Data.Functor.Identity
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -257,11 +259,12 @@ untickedShelleyLedgerTipPoint = shelleyTipToPoint . untickedShelleyLedgerTip
 instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
   type LedgerErr (LedgerState (ShelleyBlock era)) = ShelleyLedgerError era
 
-  applyChainTick cfg slotNo ShelleyLedgerState{
+  applyChainTickLedgerM cfg slotNo ShelleyLedgerState{
                                 shelleyLedgerTip
                               , shelleyLedgerState
                               , shelleyLedgerTransition
                               } =
+      swizzle appTick <&> \l' ->
       TickedShelleyLedgerState {
           untickedShelleyLedgerTip =
             shelleyLedgerTip
@@ -271,11 +274,7 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
               ShelleyTransitionInfo { shelleyAfterVoting = 0 }
             else
               shelleyLedgerTransition
-        , tickedShelleyLedgerState =
-            SL.applyTick
-              globals
-              shelleyLedgerState
-              slotNo
+        , tickedShelleyLedgerState = l'
         }
     where
       globals = shelleyLedgerGlobals cfg
@@ -283,8 +282,33 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
       ei :: EpochInfo Identity
       ei = SL.epochInfo globals
 
+      swizzle (l, events) =
+          ledgerT . pure
+        $ LedgerResult {
+              lrEvents = map ShelleyLedgerEventTICK events
+            , lrResult = l
+            }
+
+      appTick =
+        SL.applyTickOpts
+          STS.ApplySTSOpts {
+              asoAssertions = STS.globalAssertionPolicy
+            , asoValidation = STS.ValidateAll
+            , asoEvents     = STS.EPReturn
+            }
+          globals
+          shelleyLedgerState
+          slotNo
+
 type instance AuxLedgerEvent (LedgerState (ShelleyBlock era)) =
-  STS.Event (Core.EraRule "BBODY" era)
+  ShelleyLedgerEvent era
+
+-- | All events emitted by the Shelley ledger API
+data ShelleyLedgerEvent era =
+    -- | An event emitted when (re)applying a block
+    ShelleyLedgerEventBBODY (STS.Event (Core.EraRule "BBODY" era))
+    -- | An event emitted during the chain tick
+  | ShelleyLedgerEventTICK  (STS.Event (Core.EraRule "TICK"  era))
 
 instance ShelleyBasedEra era
       => ApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
@@ -292,7 +316,7 @@ instance ShelleyBasedEra era
   -- block. In consensus, we split up the application of a block to the ledger
   -- into separate steps that are performed together by 'applyExtLedgerState':
   --
-  -- + 'applyChainTick': executes the @TICK@ transition
+  -- + 'applyChainTickLedgerM': executes the @TICK@ transition
   -- + 'validateHeader':
   --    - 'validateEnvelope': executes the @chainChecks@
   --    - 'updateChainDepState': executes the @PRTCL@ transition
@@ -304,7 +328,7 @@ instance ShelleyBasedEra era
       swizzle =
           ledgerT
         . fmap (\(l, events) -> LedgerResult {
-                     lrEvents = events
+                     lrEvents = map ShelleyLedgerEventBBODY events
                    , lrResult = l
                    })
         . withExcept BBodyError
@@ -326,7 +350,7 @@ instance ShelleyBasedEra era
           Exception.throw $! ShelleyReapplyException @era err
         Right (l, events) ->
           ledgerT $ Identity $ LedgerResult {
-              lrEvents = events
+              lrEvents = map ShelleyLedgerEventBBODY events
             , lrResult = l
             }
 
