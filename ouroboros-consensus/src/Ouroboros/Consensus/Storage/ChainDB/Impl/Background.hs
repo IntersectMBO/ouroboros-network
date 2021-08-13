@@ -318,6 +318,11 @@ updateLedgerSnapshots CDB{..} = do
 --
 -- This is thread-safe as the VolatileDB locks itself while performing a GC.
 --
+-- When calling this function it is __critical__ that the blocks that will be
+-- garbage collected, which are determined by the @slotNo@ parameter, have
+-- already been copied to the immutable DB (if they are part of the current
+-- selection).
+--
 -- TODO will a long GC be a bottleneck? It will block any other calls to
 -- @putBlock@ and @getBlock@.
 garbageCollect :: forall m blk. IOLike m => ChainDbEnv m blk -> SlotNo -> m ()

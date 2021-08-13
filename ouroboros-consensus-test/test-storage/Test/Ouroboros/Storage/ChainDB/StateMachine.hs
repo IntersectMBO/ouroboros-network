@@ -21,8 +21,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Ouroboros.Storage.ChainDB.StateMachine (tests) where
 
-import           Prelude hiding (elem)
-
 import           Codec.Serialise (Serialise)
 import           Control.Monad (replicateM, void)
 import           Control.Tracer
@@ -101,7 +99,8 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.Ouroboros.Storage.ChainDB.Model (FollowerId, IteratorId,
-                     ModelSupportsBlock)
+                     ModelSupportsBlock,
+                     ShouldGarbageCollect (DoNotGarbageCollect, GarbageCollect))
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
@@ -155,8 +154,25 @@ data Cmd blk it flr
   | FollowerClose         flr
   | Close
   | Reopen
+
     -- Internal
-  | RunBgTasks
+  | PersistBlks
+    -- ^ Copy the blocks older than @k@ from the Volatile DB to the Immutable
+    -- DB.
+  | PersistBlksThenGC
+    -- ^ Copy the blocks older than @k@ from the Volatile DB to the Immutable
+    -- DB __and then__ perform garbage colllection.
+    --
+    -- The garbage collection procedure of the Chain DB (our system under test)
+    -- removes the blocks from the volatile DB __without__ caring about whether
+    -- the removed blocks were persisted. Therefore, this part of the Chain DB
+    -- logic assumes that copy to the immutable DB took place __before__
+    -- garbage collection. The model uses this assumption as well. As a result,
+    -- we cannot perform garbage collection in isolation, since this will break
+    -- the model's 'invariant'.
+  | UpdateLedgerSnapshots
+    -- ^ Write a new 'LedgerDB' snapshot to disk and remove the oldest ones.
+
     -- Corruption
   | WipeVolatileDB
   deriving (Generic, Show, Functor, Foldable, Traversable)
@@ -348,7 +364,9 @@ run env@ChainDBEnv { varDB, .. } cmd =
       FollowerClose flr        -> Unit                <$> followerClose (unWithEq flr)
       Close                    -> Unit                <$> close st
       Reopen                   -> Unit                <$> reopen env
-      RunBgTasks               -> ignore              <$> runBgTasks internal
+      PersistBlks              -> ignore              <$> persistBlks DoNotGarbageCollect internal
+      PersistBlksThenGC        -> ignore              <$> persistBlks GarbageCollect internal
+      UpdateLedgerSnapshots    -> ignore              <$> intUpdateLedgerSnapshots internal
       WipeVolatileDB           -> Point               <$> wipeVolatileDB st
   where
     mbGCedAllComponents = MbGCedAllComponents . MaybeGCedBlock True
@@ -369,19 +387,19 @@ run env@ChainDBEnv { varDB, .. } cmd =
       atomically $ writeTVar varVolatileDbFs Mock.empty
       reopen env
       ChainDB { getTipPoint } <- chainDB <$> readMVar varDB
-      atomically $ getTipPoint
+      atomically getTipPoint
 
     giveWithEq :: a -> m (WithEq a)
     giveWithEq a =
       fmap (`WithEq` a) $ atomically $ stateTVar varNextId $ \i -> (i, succ i)
 
-runBgTasks :: IOLike m => ChainDB.Internal m blk -> m ()
-runBgTasks ChainDB.Internal{..} = do
+persistBlks :: IOLike m => ShouldGarbageCollect -> ChainDB.Internal m blk -> m ()
+persistBlks collectGarbage ChainDB.Internal{..} = do
     mSlotNo <- intCopyToImmutableDB
-    case mSlotNo of
-      Origin           -> pure ()
-      NotOrigin slotNo -> intGarbageCollect slotNo
-    intUpdateLedgerSnapshots
+    case (collectGarbage, mSlotNo) of
+      (DoNotGarbageCollect, _               ) -> pure ()
+      (GarbageCollect     , Origin          ) -> pure ()
+      (GarbageCollect     , NotOrigin slotNo) -> intGarbageCollect slotNo
 
 -- | Result type for 'getBlock'. Note that the real implementation of
 -- 'getBlock' is non-deterministic: if the requested block is older than @k@
@@ -389,8 +407,9 @@ runBgTasks ChainDB.Internal{..} = do
 --
 -- The first source of non-determinism is whether or not the background thread
 -- that performs garbage collection has been run yet. We disable this thread in
--- the state machine tests and instead generate the 'CopyToImmutableDBAndGC'
--- command that triggers the garbage collection explicitly. So this source of
+-- the state machine tests and instead generate the 'PersistBlksThenGC'
+-- command that triggers the garbage collection explicitly, after persisting
+-- the blocks older than @k@ from the current chain's tip. So this source of
 -- non-determinism is not a problem in the tests.
 --
 -- However, there is a second source of non-determinism: if a garbage
@@ -404,13 +423,13 @@ runBgTasks ChainDB.Internal{..} = do
 -- collected.
 --
 -- Equality of two 'MaybeGCedBlock' is determined as follows:
--- * If both are produced by a model implementation: the @Maybe blk@s must be
---   equal, as the these results are deterministic.
--- * If at least one of them is produced by a real implementation: if either
---   is 'Nothing', which means the block might have been garbage-collected,
---   they are equal (even if the other is 'Just', which means it was not yet
---   garbage-collected).
--- * If both are 'Just's, then the blocks must be equal.
+-- * If both are produced by a model implementation, then the @Maybe blk@s must
+--   be equal, as the these results are deterministic.
+-- * If at least one of them is produced by a real implementation, then:
+--   * If either is 'Nothing', which means the block might have been
+--     garbage-collected, then they are equal (even if the other is 'Just',
+--     which means it was not yet garbage-collected).
+--   * If both are 'Just's, then the blocks must be equal.
 --
 -- In practice, this equality is used when comparing the result of the real
 -- implementation with the result of the model implementation.
@@ -419,10 +438,20 @@ data MaybeGCedBlock blk = MaybeGCedBlock
     -- ^ 'True':  result of calling 'getBlock' on the real implementation
     -- ^ 'False': result of calling 'getBlock' on the model implementation
   , mbBlock :: Maybe blk
+    -- ^ A value of 'Nothing' in this field indicates that the block might have
+    -- been garbage collected.
   } deriving (Show)
 
 instance Eq blk => Eq (MaybeGCedBlock blk) where
   MaybeGCedBlock real1 mbBlock1 == MaybeGCedBlock real2 mbBlock2 =
+    -- Two @MaybeGCedBlock@s are equal iff either:
+    --
+    -- - they are both produced by the model and contain the same result, or
+    -- - at least one of them was garbage collected, or
+    -- - none of them were garbage collected and they contain the same block.
+    --
+    -- See the comments on 'MaybeGCedBlock' for a justification on why we
+    -- implemented this form of lenient equality.
       case (real1, real2) of
         (False, False) -> mbBlock1 == mbBlock2
         (True,  _)     -> eqIfJust
@@ -561,7 +590,16 @@ runPure cfg = \case
     FollowerInstruction flr  -> err MbChainUpdate       $ updateE (Model.followerInstruction flr allComponents)
     FollowerForward flr pts  -> err MbPoint             $ updateE (Model.followerForward flr pts)
     FollowerClose flr        -> ok  Unit                $ update_ (Model.followerClose flr)
-    RunBgTasks               -> ok  Unit                $ update_ (Model.garbageCollect k . Model.copyToImmutableDB k)
+    PersistBlks              -> ok  Unit                $ update_ (Model.copyToImmutableDB k DoNotGarbageCollect)
+    PersistBlksThenGC        -> ok  Unit                $ update_ (Model.copyToImmutableDB k GarbageCollect)
+    -- TODO: The model does not capture the notion of ledger snapshots,
+    -- therefore we ignore this command here. This introduces an assymetry in
+    -- the way the 'UpdateLedgerSnapshots' command is handled in the model and
+    -- in the system under test. It would be better if we modelled the
+    -- snapshots so that this aspect of the system would be explicitly
+    -- specified. See https://github.com/input-output-hk/ouroboros-network/issues/3375
+    --
+    UpdateLedgerSnapshots    -> ok  Unit                $ ((), )
     Close                    -> openOrClosed            $ update_  Model.closeDB
     Reopen                   -> openOrClosed            $ update_  Model.reopen
     WipeVolatileDB           -> ok  Point               $ update  (Model.wipeVolatileDB cfg)
@@ -802,7 +840,9 @@ generator genBlock m@Model {..} = At <$> frequency
        else 0, return Reopen)
 
       -- Internal
-    , (if empty then 1 else 10, return RunBgTasks)
+    , (if empty then 1 else 10, return PersistBlks)
+    , (if empty then 1 else 10, return PersistBlksThenGC)
+    , (if empty then 1 else 10, return UpdateLedgerSnapshots)
     , (if empty then 1 else 10, return WipeVolatileDB)
     ]
     -- TODO adjust the frequencies after labelling
@@ -934,7 +974,9 @@ chooseSlot (SlotNo start) (SlotNo end) = SlotNo <$> choose (start, end)
 shrinker :: Model   blk m Symbolic
          ->  At Cmd blk m Symbolic
          -> [At Cmd blk m Symbolic]
-shrinker _ = const [] -- TODO
+shrinker _ = const [] -- TODO: implement the shrinker. Command
+                      -- 'PersistBlksThenGC' should be shrunk to
+                      -- ['PersistBlks']
 
 {-------------------------------------------------------------------------------
   The final state machine
@@ -1408,15 +1450,21 @@ smUnused maxClockSkew chunkInfo =
       maxClockSkew
 
 prop_sequential :: MaxClockSkew -> SmallChunkInfo -> Property
-prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
+prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) = withMaxSuccess 100000 $
     forAllCommands (smUnused maxClockSkew chunkInfo) Nothing $ \cmds ->
       QC.monadicIO $ do
+        let
+          -- Current test case command names.
+          ctcCmdNames :: [String]
+          ctcCmdNames = fmap (show . cmdName . QSM.getCommand) $ QSM.unCommands cmds
+
         (hist, prop) <- QC.run $ test cmds
         prettyCommands (smUnused maxClockSkew chunkInfo) hist
           $ tabulate
               "Tags"
-              (map show $
-                tag (execCmds (QSM.initModel (smUnused maxClockSkew chunkInfo)) cmds))
+              (map show $ tag (execCmds (QSM.initModel (smUnused maxClockSkew chunkInfo)) cmds))
+          $ tabulate "Command sequence length" [show $ length ctcCmdNames]
+          $ tabulate "Commands"                ctcCmdNames
           $ prop
   where
     testCfg = mkTestCfg chunkInfo
