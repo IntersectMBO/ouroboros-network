@@ -323,3 +323,134 @@ This new sketch updates much-but-not-all of the origial sketch above.
           Praos paper; TODO Confirm with researchers), so we downgrade to the
           more conservative state if we do observe it, since we must have
           somehow fallen "too far" behind again without otherwise noticing.
+
+-----
+
+Updated on 2021 August 12, after a couple more conversations. In particular,
+even with my recent idea of letting nodes annotate immutable headers, Edsko
+observed that wouldn't let us detect eg that should transition CaughtUp ->
+Syncing soon enough, eg before the adversary can send >k blocks. So in some
+sense that's redundant wrt the wall-clock trigger. So what follows is the
+current plan, and our work is to 1) brainstorm ways in which the wall-clock
+trigger is insufficient and 2) fill in the details of eg the timeout for sending
+claimed headers during Syncing.
+
+The only differences between Syncing and CaughtUp are as follows.
+
+- If Syncing, I won't alter my ChainDB selection (even when I mint) unless my
+  number of server peers exceeds a threshold.
+
+    - The Network Layer chooses this threshold in such a way that justifies us
+      assuming that we have at least one healthy connection to at least one peer
+      serving a contemporary honest chain.
+
+- If Syncing, I'll wait for you to send me more headers if you claim to have
+  them, as long as you can send them at a sufficient rate (enforcement TBD).
+  Specifically, my ChainDB will not select >k blocks of a chain unless it has
+  the best density among all of my current peers' claimed headers.
+
+    - Note in particular that it's only possible to select >k blocks at time T1
+      from a chain that is later determined to not be the densest if the peers
+      offering the more dense chain had claimed at time T1 to have no more
+      headers to send. Honest peers would only do so if the difference-making
+      blocks did not exist at time T1. In which case the Praos Common Prefix
+      Theorem reveals a contradiction: no adversarial chain should ever be >k
+      blocks ahead of the best available honest chain. So this scenario only
+      arises if eg I wasn't connected to any honest peers at time T1.
+
+- If CaughtUp, I don't wait for claimed headers, since I don't want the
+  adversary to be able to slow me down by falsely claiming to have more. The
+  Praos Common Prefix Theorem says I don't need to wait and even shouldn't wait;
+  ∆ is what it is. Relatedly, BlockFetch's best effort to continually maximize
+  my selection's blockno is sufficient; any imperfect BlockFetch decisions
+  merely inflate ∆.
+
+    - BlockFetch cannot simply request all blocks from all peers, because that
+      opens up a variety of DoS attacks. In particular, BlockFetch should only
+      download necessary blocks and only download each block once. That again
+      limits DoS attacks to adding some delay whose per adversarial connection
+      severity is bounded by a timeout.
+
+- Maybe the minimum valency for Syncing is higher than the minimum valency for
+  CaughtUp (see below).
+
+- During Syncing, we allow ChainSync clients to share work.
+
+    - We'll validate a header only once even if we receive it from multiple
+      peers.
+
+    - We'll enrich the ChainSync protocol so that servers can offer jump points
+      they're committed to: we can tell a peer to jump ahead if some faster peer
+      already sent the header for one of the offered jump points.
+
+    - Notably, if all our peers are on the same chain, we'll be processing
+      headers primarily only from the fastest peer.
+
+- We don't allow ChainSync clients to share work during CaughtUp to avoid
+  tempting node operators to reduce their node's resource allotment.
+
+    - If the did that, they'd fall prey to a DoS attack where the adversary
+      waits a while and then suddenly increases the load from the average-case
+      to worst-case, thereby crashing the node that now has fewer resources.
+      This crash harms the security of the whole network.
+
+We transition from Syncing to CaughtUp once both of the following hold.
+
+- No peer's latest header is binary-preferable to our current selection.
+
+- No peer claims to have more headers to send.
+
+    - Because we wait for claimed headers during Syncing, the adversary can
+      delay the transition to CaughtUp by claiming to have more headers but not
+      sending them. A design that allows this minor DoS attack is acceptable as
+      long as the adversary can't do it indefinitely, since we should be
+      spending most of our time in CaughtUp. EG A timeout that requires a steady
+      increase in the blockno of the best header they've sent would suffice as
+      long as that timeout on average expires faster than a 50% adversary can
+      mint another block (ie requiring approximately <40 seconds per header on
+      average). We'll likely assume the honest peers can do much better than
+      that, so we'll likely have an even more aggressive (ie still sufficient)
+      timeout.
+
+We transition from CaughtUp to Syncing once any of the following hold.
+
+- We observe something we consider impossible while CaughtUp.
+
+    - One example is: receiving headers that show a chain that is >k ahead of
+      its intersection with our current selection.
+
+    - These are failsafe measures. We regard them as contributions to the
+      Network Layer's heuristics for the connection quality.
+
+- Our number of server peers falls too low.
+
+    - We are assuming the Network Layer will disconnect from a peer if the
+      connection quality degrades too far (eg the KeepAlive falters). In
+      particular, we assume the Network Layer recognizes that in a sufficiently
+      prompt way. EG If my node loses all network connectivity, I expect my
+      valency to fall below the threshold well before I'm likely to mint too
+      many blocks.
+
+    - Ideally the Network Layer would detect an unhealthy connection (and
+      decrement our valency) before an adversary could trick me into selecting
+      >k blocks. How long that would actually take unfortunately depends on many
+      factors. If I was recently connected to an CaughtUp honest node, then it
+      should take quite a while for the adversary to even mint such a long
+      chain. But if, for example, I'm running on a computer that just woke up
+      from a several day sleep, I need to revert to Syncing ASAP.
+
+    - The threshold must be greater than one, since a common setup for
+      block-producer involves running two local nodes, one proxying for the
+      other. At least the proxy node of that pair needs to transition back to
+      Syncing if that it loses connection to all other nodes, even if the pair
+      remain connected to each other.
+
+    - That same block-producing pair example suggests we need to allow an
+      override for the valency thresholds: the internal node in that pair will
+      only ever have exactly one connection, and that connection is to be
+      trusted. In fact, that internal peer never needs to be in the Syncing
+      state.
+
+Note that the only way for an adversarial peer to cause me to transition from
+CaughtUp to Syncing is to sufficiently lower my valency by degrading the quality
+of my network connections.
