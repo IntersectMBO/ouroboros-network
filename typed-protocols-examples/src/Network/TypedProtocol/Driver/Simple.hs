@@ -11,6 +11,9 @@
 -- of @'TraceSendRecv'@.
 {-# LANGUAGE UndecidableInstances #-}
 
+-- 'runConnectedPeers' would be too polymorphic without a redundant constraint.
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 -- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
 --
 module Network.TypedProtocol.Driver.Simple
@@ -25,6 +28,7 @@ module Network.TypedProtocol.Driver.Simple
     -- | This may be useful if you want to write your own driver.
   , driverSimple
   , runDecoderWithChannel
+  , Role (..)
   ) where
 
 import           Data.Singletons
@@ -76,13 +80,12 @@ instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
   show (TraceRecvMsg msg) = "Recv " ++ show msg
 
 
--- TODO: implement 'tryRecvMessage'
 driverSimple :: forall ps (pr :: PeerRole) failure bytes m.
                 (MonadThrow m, Exception failure)
              => Tracer m (TraceSendRecv ps)
              -> Codec ps failure m bytes
              -> Channel m bytes
-             -> Driver ps pr (Maybe bytes) m
+             -> Driver ps pr bytes failure (Maybe bytes)  m
 driverSimple tracer Codec{encode, decode} channel@Channel{send} =
     Driver { sendMessage, recvMessage, tryRecvMessage, startDState = Nothing }
   where
@@ -102,11 +105,15 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
                 => (ReflRelativeAgency (StateAgency st)
                                         TheyHaveAgency
                                        (Relative pr (StateAgency st)))
-                -> Maybe bytes
+                -> Either (DecodeStep bytes failure m (SomeMessage st))
+                          (Maybe bytes)
                 -> m (SomeMessage st, Maybe bytes)
-    recvMessage _ trailing = do
-      decoder <- decode
-      result  <- runDecoderWithChannel channel trailing decoder
+    recvMessage _ dstate = do
+      result  <- case dstate of
+        Left decoder ->
+          runDecoderWithChannel channel Nothing decoder
+        Right trailing ->
+          runDecoderWithChannel channel trailing =<< decode
       case result of
         Right x@(SomeMessage msg, _trailing') -> do
           traceWith tracer (TraceRecvMsg (AnyMessage msg))
@@ -115,25 +122,43 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
           throwIO failure
 
     tryRecvMessage :: forall (st :: ps).
-                      (ReflRelativeAgency (StateAgency st)
+                      SingI st
+                   => (ReflRelativeAgency (StateAgency st)
                                            TheyHaveAgency
                                           (Relative pr (StateAgency st)))
-                   -> Maybe bytes
-                   -> m (Maybe (SomeMessage st, Maybe bytes))
-    -- TODO
-    tryRecvMessage _ _ = return Nothing
+                   -> Either (DecodeStep bytes failure m (SomeMessage st))
+                             (Maybe bytes)
+                   -> m (Either (DecodeStep bytes failure m (SomeMessage st))
+                                (SomeMessage st, Maybe bytes))
+    tryRecvMessage _ dstate = do
+      result <-
+        case dstate of
+          Left decoder ->
+            tryRunDecoderWithChannel channel Nothing decoder
+          Right trailing ->
+            tryRunDecoderWithChannel channel trailing =<< decode
+      case result of
+        Right x@(Right (SomeMessage msg, _trailing')) -> do
+          traceWith tracer (TraceRecvMsg (AnyMessage msg))
+          return x
+        Right x@Left {} ->
+          return x
+        Left failure ->
+          throwIO failure
+
+
 
 -- | Run a peer with the given channel via the given codec.
 --
 -- This runs the peer to completion (if the protocol allows for termination).
 --
 runPeer
-  :: forall ps (st :: ps) pr pl q failure bytes m a .
+  :: forall ps (st :: ps) pr pl failure bytes m a .
      (MonadThrow m, Exception failure)
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
-  -> Peer ps pr pl q st m a
+  -> Peer ps pr pl Empty st m a
   -> m a
 runPeer tracer codec channel peer =
     fst <$> runPeerWithDriver driver peer (startDState driver)
@@ -162,6 +187,27 @@ runDecoderWithChannel Channel{recv} = go
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
 
+-- | Like 'runDecoderWithChannel' but it is only using 'tryRecv', and returns
+-- either when we decoding finished, errored or 'tryRecv' returned 'Nothing'.
+--
+tryRunDecoderWithChannel :: Monad m
+                         => Channel m bytes
+                         -> Maybe bytes
+                         -> DecodeStep bytes failure m a
+                         -> m (Either failure
+                                (Either (DecodeStep bytes failure m a)
+                                        (a, Maybe bytes)))
+tryRunDecoderWithChannel Channel{tryRecv} = go
+  where
+    go _ (DecodeDone x trailing) = return (Right (Right (x, trailing)))
+    go _ (DecodeFail failure)    = return (Left failure)
+    go Nothing d@(DecodePartial k) = do
+      r <- tryRecv
+      case r of
+        Nothing -> return (Right (Left d))
+        Just m  -> k m >>= go Nothing
+    go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
+
 data Role = Client | Server
   deriving Show
 
@@ -172,13 +218,14 @@ data Role = Client | Server
 -- The first argument is expected to create two channels that are connected,
 -- for example 'createConnectedChannels'.
 --
-runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
-                      Exception failure)
+runConnectedPeers :: forall ps pr pr' pl pl' st failure bytes m a b.
+                     (MonadSTM m, MonadAsync m, MonadCatch m,
+                      Exception failure, pr' ~ FlipAgency pr)
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (Role, TraceSendRecv ps)
                   -> Codec ps failure m bytes
-                  -> Peer ps             pr  pl q st m a
-                  -> Peer ps (FlipAgency pr) pl q st m b
+                  -> Peer ps pr  pl  Empty st m a
+                  -> Peer ps pr' pl' Empty st m b
                   -> m (a, b)
 runConnectedPeers createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->

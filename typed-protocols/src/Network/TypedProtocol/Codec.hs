@@ -47,7 +47,16 @@ import           Data.Monoid (All (..))
 import           Data.Singletons
 
 import           Network.TypedProtocol.Core (PeerRole (..), Protocol (..))
-import           Network.TypedProtocol.Driver (SomeMessage (..))
+
+
+-- | When decoding a 'Message' we only know the expected \"from\" state. We
+-- cannot know the \"to\" state as this depends on the message we decode. To
+-- resolve this we use the 'SomeMessage' wrapper which uses an existential
+-- type to hide the \"to"\ state.
+--
+data SomeMessage (st :: ps) where
+     SomeMessage :: Message ps st st' -> SomeMessage st
+
 
 -- | A codec for a 'Protocol' handles the encoding and decoding of typed
 -- protocol messages. This is typically used when sending protocol messages

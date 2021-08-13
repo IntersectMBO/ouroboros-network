@@ -1,10 +1,12 @@
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeInType          #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeInType               #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- | Actions for running 'Peer's with a 'Driver'
 --
@@ -16,10 +18,12 @@ module Network.TypedProtocol.Driver
   , SomeMessage (..)
     -- * Running a peer
   , runPeerWithDriver
+  , DecodeStep (..)
   ) where
 
 import           Data.Singletons
 
+import           Network.TypedProtocol.Codec (DecodeStep (..), SomeMessage (..))
 import           Network.TypedProtocol.Core
 
 
@@ -53,8 +57,10 @@ import           Network.TypedProtocol.Core
 -- Driver interface
 --
 
-data Driver ps (pr :: PeerRole) dstate m =
+data Driver ps (pr :: PeerRole) bytes failure dstate m =
         Driver {
+          -- | Send a message.
+          --
           sendMessage    :: forall (st :: ps) (st' :: ps).
                             SingI st
                          => (ReflRelativeAgency (StateAgency st)
@@ -63,32 +69,38 @@ data Driver ps (pr :: PeerRole) dstate m =
                          -> Message ps st st'
                          -> m ()
 
-        , recvMessage    :: forall (st :: ps).
+        , -- | Receive a message, a blocking action which reads from the network
+          -- and runs the incremental decoder until a full message is decoded.
+          -- As an input it might receive a 'DecodeStep' previously started with
+          -- 'tryRecvMessage'.
+          --
+          recvMessage    :: forall (st :: ps).
                             SingI st
                          => (ReflRelativeAgency (StateAgency st)
                                                  TheyHaveAgency
                                                 (Relative pr (StateAgency st)))
-                         -> dstate
+                         -> Either (DecodeStep bytes failure m (SomeMessage st))
+                                    dstate
                          -> m (SomeMessage st, dstate)
 
-        , tryRecvMessage :: forall (st :: ps).
+        , -- | 'tryRecvMessage' is used to interpret @'Collect' _ (Just k') k@.
+          -- If it returns we will continue with @k@, otherwise we keep the
+          -- decoder state @DecodeStep@ and continue pipelining using @k'@.
+          --
+          -- 'tryRecvMessage' ought to be non-blocking.
+          --
+          tryRecvMessage :: forall (st :: ps).
                             SingI st
                          => (ReflRelativeAgency (StateAgency st)
                                                  TheyHaveAgency
                                                 (Relative pr (StateAgency st)))
-                         -> dstate
-                         -> m (Maybe (SomeMessage st, dstate))
+                         -> Either    (DecodeStep bytes failure m (SomeMessage st))
+                                       dstate
+                         -> m (Either (DecodeStep bytes failure m (SomeMessage st))
+                                      (SomeMessage st, dstate))
 
         , startDState    :: dstate
         }
-
--- | When decoding a 'Message' we only know the expected \"from\" state. We
--- cannot know the \"to\" state as this depends on the message we decode. To
--- resolve this we use the 'SomeMessage' wrapper which uses an existential
--- type to hide the \"to"\ state.
---
-data SomeMessage (st :: ps) where
-     SomeMessage :: Message ps st st' -> SomeMessage st
 
 
 --
@@ -100,42 +112,74 @@ data SomeMessage (st :: ps) where
 -- This runs the peer to completion (if the protocol allows for termination).
 --
 runPeerWithDriver
-  :: forall ps (st :: ps) pr pl q dstate m a.
+  :: forall ps (st :: ps) pr pl bytes failure dstate m a.
      Monad m
-  => Driver ps pr dstate m
-  -> Peer ps pr pl q st m a
+  => Driver ps pr bytes failure dstate m
+  -> Peer ps pr pl Empty st m a
   -> dstate
   -> m (a, dstate)
 runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage} =
-    flip go
+    flip goEmpty
   where
-    go :: forall st' q'.
+    goEmpty
+       :: forall st'.
           dstate
-       -> Peer ps pr pl q' st' m a
+       -> Peer ps pr pl 'Empty st' m a
        -> m (a, dstate)
-    go dstate (Effect k) = k >>= go dstate
-    go dstate (Done _ x) = return (x, dstate)
+    goEmpty dstate (Effect k) = k >>= goEmpty dstate
 
-    go dstate (Yield refl msg k) = do
+    goEmpty dstate (Done _ x) = return (x, dstate)
+
+    goEmpty dstate (Yield refl msg k) = do
       sendMessage refl msg
-      go dstate k
+      goEmpty dstate k
 
-    go dstate (Await refl k) = do
-      (SomeMessage msg, dstate') <- recvMessage refl dstate
-      go dstate' (k msg)
+    goEmpty dstate (Await refl k) = do
+      (SomeMessage msg, dstate') <- recvMessage refl (Right dstate)
+      goEmpty dstate' (k msg)
 
-    go dstate (YieldPipelined refl msg k) = do
+    goEmpty dstate (YieldPipelined refl msg k) = do
       sendMessage refl msg
-      go dstate k
+      go (SingCons SingEmpty) (Right dstate) k
 
-    go dstate (Collect refl Nothing k) = do
+
+    go :: forall st1 st2 st3 q'.
+         SingQueue (Tr st1 st2 <| q')
+      -> Either (DecodeStep bytes failure m (SomeMessage st1))
+                 dstate
+      -> Peer ps pr pl (Tr st1 st2 <| q') st3 m a
+      -> m (a, dstate)
+    go q dstate (Effect k) = k >>= go q dstate
+
+    go q dstate (YieldPipelined
+                  refl
+                  (msg :: Message ps st3 st')
+                  (k   :: Peer ps pr pl ((Tr st1 st2 <| q') |> Tr st' st'') st'' m a))
+                = do
+      sendMessage refl msg
+      go (q |> (SingTr :: SingTrans (Tr st' st'')))
+         dstate k
+
+    go (SingCons q) dstate (Collect refl Nothing k) = do
       (SomeMessage msg, dstate') <- recvMessage refl dstate
-      go dstate' (k msg)
+      go (SingCons q) (Right dstate') (k msg)
 
-    go dstate (Collect refl (Just k') k) = do
-      mc <- tryRecvMessage refl dstate
-      case mc of
-        Nothing                         -> go dstate  k'
-        Just (SomeMessage msg, dstate') -> go dstate' (k msg)
+    go q@(SingCons q') dstate (Collect refl (Just k') k) = do
+      r <- tryRecvMessage refl dstate
+      case r of
+        Left dstate' ->
+          go q (Left dstate') k'
+        Right (SomeMessage msg, dstate') ->
+          go (SingCons q') (Right dstate') (k msg)
 
-    go dstate (CollectDone k) = go dstate k
+
+    go (SingCons SingEmpty)     (Right dstate) (CollectDone k) =
+      goEmpty dstate k
+
+    go (SingCons q@SingCons {}) (Right dstate) (CollectDone k) =
+      go q (Right dstate) k
+
+    go  SingCons {}              Left {}        CollectDone {} =
+      -- 'CollectDone' can only be executed once `Collect` was effective, which
+      -- means we cannot receive a partial decoder here.
+      error "runPeerWithDriver: unexpected parital decoder"
