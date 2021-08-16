@@ -151,6 +151,23 @@
   \vspace{1em}
   }
 
+\newenvironment{designalternative}
+  {
+    \begin{center}
+    \begin{minipage}{0.9\textwidth}
+      \begin{shaded}
+      \small
+      \textbf{An alternative design choice:}
+      \vspace{0.3em}
+      \newline
+  }
+  {
+  \end{shaded}
+  \end{minipage}
+  \end{center}
+  \vspace{1em}
+  }
+
 \section{The connection management challenge}
 
 As described in the network design document \citep{network-design}, a key goal
@@ -160,21 +177,23 @@ achieve the desired properties.
 
 Much of the high level design is concerned with the selection of upstream peers.
 This is reflected in the implementation as a component we call the
-\emph{p2p governor}. This component has a lot of responsibilities and is
+\emph{P2P governor}. This component has a lot of responsibilities and is
 moderately complex.
 
 The peer-to-peer design does not just consist of selecting and managing
 upstream peers however. It must also manage downstream peers, though very
 little selection logic is necessary. An important part of the high level design
-is that TCP bearer connections between nodes be able to be used to run
-mini-protocols in both directions. \cref{fig:protocol-diagram} illustrates an
-example where two nodes are running all three usual mini-protocols and running
-them in both directions over a single TCP bearer.
+is that TCP bearer connections between nodes be able to be used to run multiple
+mini-protocols in both directions. This feat is achieved using multiplexing,
+as described in \cref{multiplexing-section}. \cref{fig:protocol-diagram}
+illustrates an example where two nodes are running all three usual
+mini-protocols and running them in both directions over a single TCP bearer.
 
 \begin{figure}[h]
     \centering
     \includegraphics[width=12cm]{figure/node-to-node-ipc.png}
-    \caption{Duplex connection running several mini-protocols}
+    \caption{A TCP connection using multiplexing to run several mini-protocols
+             in each direction}
     \label{fig:protocol-diagram}
 \end{figure}
 
@@ -240,7 +259,9 @@ would not want to add to that complexity by mixing it with a lot of other
 concerns. To minimise complexity it would be preferable if the code that manages
 the outbound side would be completely unaware of the inbound side and vice
 versa. Yet we still want the inbound and outbound sides to opportunistically
-share TCP connections where possible.
+share TCP connections where possible. This appears to be eminently achievable
+given that we are using multiplexing to run mini-protocols in either direction
+and concurrency for mini-protocol handlers to achieve a degree of modularity.
 
 These ideas lead to the design illustrated in \cref{tik:components}. In this
 design there is an outbound and inbound side -- which are completely unaware of
@@ -320,34 +341,171 @@ no longer needed in either direction and hence not needed at all.
 In the next couple sections we will review what the inbound and outbound sides
 need to be able to do, and what service the connection manager needs to provide.
 
-\section{TODO: old text}
+\section{Outbound side: the P2P governor}
 
-One key component of the design is the p2p governor, which is responsible for:
+A key component of the design for decentralisation is the P2P governor. It
+is responsible for:
 \begin{itemize}
-\item managing the selection of cold/warm/hot peers;
-\item the transitions of peers between these groups;
-\item continuously making progress towards the target number of peers in each group; and
-\item adjusting the group targets over time to achieve a degree of `churn'.
+\item managing the selection of upstream peers;
+\item managing the transitions of upstream peers between cold/warm/hot states;
+\item continuously making progress towards the target number of peers in each
+      state; and
+\item adjusting these targets over time to achieve a degree of `churn'.
 \end{itemize}
-Taken together, and with appropriate policies, the network of nodes should be
+Taken together, and with appropriate policies, a network of nodes should be
 able to self-organise and achieve the desired properties. We have simulation
 results that give us a good degree of confidence that this is indeed the case,
-at large scale.
+at a large scale.
 
-Another important requirement of the high level design is that we be able to
-use bearer connections in both directions. This is both more efficient but also
-necessary when connecting through firewalls. It means we have bearers where
-they can be used in either or both directions, and which directions are in use
-can change over the lifetime of the bearer. The resource and state tracking is
-therefore somewhat more complicated than in a simple client-only or server-only
-scheme. The connection manager is intended to do this state tracking amd resource
-management.
+Fortunately, while the P2P governor's decision making procedures are relatively
+complex, its use of connections is quite simple. The governor needs only two
+interactions.
+\begin{description}
+\item[Acquire a connection.] The governor decides when to promote a peer from
+  cold to warm. To perform the promotion it needs to acquire access to a
+  connection -- either fresh or pre-existing. To complete the promotion it will
+  start the client side of particular mini-protocols on the connection.
+
+\item[Release a connection.] The governor also decides when to demote a peer to
+  cold. As part of the demotion the client side mini-protocols are terminated.
+  The connection is then no longer needed by the governor and is released.
+\end{description}
+
+\begin{designalternative}
+The code currently uses the names |requestOutboundConnection| and
+|unregisterOutboundConnection|. The names `request' and 'unregister' are not a
+pair of names that fit well together. The dual of `unregister' would be
+'register'. A more consistent pair of names might be `acquire' and `release',
+and hence API names |acquireOutboundConnection| and |releaseOutboundConnection|.
+\end{designalternative}
+
+It is worth noting again that the P2P governor does not require exclusive
+access to the TCP bearer. It has no special TCP-specific needs in the setup or
+shutdown. It needs access to the multiplexer to be able to run a set of
+mini-protocols in one direction. So in a sense it needs exclusive access to
+`half' a multiplexer for a connection, but it does not need coordinate with or
+even to be aware of any use of the other `half' of the multiplexer. It is this
+separation of concerns that enables a modular design and implementation.
+
+
+\section{Inbound side: the server}
+
+The inbound side has a less complex task than the P2P governor, but its
+interactions with the connection manager are slightly more complicated.
+
+The inbound side is split into two components: the server and inbound governor.
+
+The server is responsible for accepting new TCP connections on the listening
+socket. It is responsible for not exceeding resource limits by accepting too
+many new connections. It is also responsible for a little bit of DoS protection:
+limiting the rate of accepting new connections.
+
+The server component is much simpler than in most network server applications
+because it does not need to manage the connection resources once created. The
+server hands new connections over to the connection manager as soon as they are
+accepted. The server's responsibilities end there. The server needs only two
+interactions with the the connection manager.
+\begin{description}
+\item[Query number of connections] The server component needs to query the
+  connection manager to find the current number of connections. It uses this
+  information to decide if any new connections can be accepted or if we are
+  at the resource limits. Below the hard limits, the current number can be used
+  as part of rate limiting decisions.
+
+\item[Hand over a new connection] Once the server component has successfully
+  accepted a new connection, it needs to hand over responsibility for it to
+  the connection manager.
+\end{description}
+
+
+\section{Inbound side: the inbound governor}
+
+The inbound governor is responsible for starting, restarting and monitoring the
+server side of the mini-protocols.
+
+One of the high level design choices is that when a server side mini-protocol
+terminates cleanly (usually because the client chose to terminate it) then the
+server side of the mini-protocol should be restarted in its initial state in
+case the client wishes to use the protocol again later. It is the inbound
+governor that is responsible for doing this.
+
+The mux component provides a mechanism to start mini-protocol handlers on a
+connection for a specific mini-protocol number in a particular direction. These
+handlers can then be monitored to see when they terminate. The inbound governor
+relies on this mechanism to monitor when the protocol handler terminates
+cleanly. When it does terminate cleanly the governor restarts the mini-protocol
+handler.
+
+All the mini-protocols have the property that agency starts with the client
+\footnote{Originally transaction submission protocol had agency start with the
+server side. A later protocol update reversed the initial agency so that they
+are now all consistent.}. This allows all of the server side protocols to be
+started in the mux `on-demand' mode. In the on-demand mode the protocol handler
+thread is not started until the first message arrives from the client.
+
+The inbound governor gets informed of new connections that it should monitor
+either via by the server or by the connection manager. The server informs the
+governor about fresh inbound connections. The connection manager informs the
+governor about connections that it started due to a request for an outbound
+connection -- at least for those connections that are to be available to use in
+duplex mode.
+
+\begin{designalternative}
+As illustrated in \cref{tik:components}, both the connection manager and server
+components communicate with the inbound governor directly. They do this to
+inform the inbound governor about new connections so that it can start to run
+and monitor the server side protocols. The server notifies about new connections
+established inbound, while the connection manager notifies about new connections
+established outbound (at least the duplex ones).
+A slight simplification would be to have only one of these routes of
+notification. The more obvious choice would be for the connection manager to
+inform the inbound governor about all new connections. Then the server would
+only interact with the connection manager and not with the inbound governor.
+
+\begin{center}
+\begin{tikzpicture}
+  \footnotesize
+  \def\xa{-2.0}
+  \def\xb{2.0}
+
+  \node[rounded corners, rectangle, draw, anchor=east, text width=3.5cm] (p2p_governor) at (\xa, -2.5)
+   {
+     \hfill\textbf{Peer-to-Peer Governor}\hfill
+     \vspace{5pt}
+    };
+
+  \node[rounded corners, rectangle, draw, anchor=west, text width=3cm] (server) at (\xb, -1.50)
+    {
+      \hfill{\textbf{Server}}\hfill
+      \vspace{5pt}
+    };
+
+  \node[rounded corners, rectangle, draw, anchor=west, text width=3cm] (inbound_governor) at (\xb, -3.5)
+    {
+      \hfill{\textbf{Inbound Governor}}\hfill
+      \vspace{5pt}
+    };
+
+  \node[rounded corners, rectangle, draw, minimum height=1cm, text width=2cm] (connection_manager) at (0, -2.5)
+    {
+      \hfil\textbf{Connection}\hfil\\
+      \hfil\textbf{Manager}\hfil
+    };
+
+  \draw[->] (p2p_governor)           -- (connection_manager);
+  \draw[->] (server.west)            -- (connection_manager.5);
+  \draw[<->] (connection_manager.355) -- (inbound_governor.west);
+\end{tikzpicture}
+\end{center}
+\end{designalternative}
+
+The inbound governor 
 
 \section{Components}
 
 Figure \ref{tik:components} illustrates the three main components within the network
 layer that are part of the P2P design. On the \texttt{Outbound} side, the
-p2p governor, as said previously, takes care of all connection initiation (outbound
+P2P governor, as said previously, takes care of all connection initiation (outbound
 connections) and decides which mini-protocols to run (established, warm or hot).
 In the \texttt{Inbound} side, the \texttt{Server} is just a simple loop, responsible for accepting incoming
 connections; and the role of the inbound governor is to detect if its local peer was
