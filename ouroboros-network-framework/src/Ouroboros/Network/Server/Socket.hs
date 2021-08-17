@@ -288,12 +288,12 @@ run errroPolicyTrace acceptPolicyTrace socket acceptedConnectionLimit acceptExce
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
   let acceptLoopDo = acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
-      -- The accept loop is killed when the main loop stops.
-      mainDo = Async.withAsync acceptLoopDo $ \_ ->
-        mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
+      -- The accept loop is killed when the main loop stops and the main
+      -- loop is killed if the accept loop stops.
+      mainDo = mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
       killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
         forM_ (Set.toList children) Async.cancel
   -- After both the main and accept loop have been killed, any remaining
   -- spawned threads are cancelled.
-  mainDo `finally` killChildren
+  (snd <$> Async.concurrently acceptLoopDo mainDo) `finally` killChildren
