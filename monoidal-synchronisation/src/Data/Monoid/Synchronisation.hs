@@ -81,7 +81,7 @@ newtype LastToFinish m a = LastToFinish { runLastToFinish :: m a }
                    , MonadPlus
                    , Traversable
                    )
-  deriving Foldable via (Alt m)
+  deriving Foldable via (Ap m)
 
 instance MonadPlus m => Semigroup (LastToFinish m a) where
     LastToFinish left <> LastToFinish right = LastToFinish $ do
