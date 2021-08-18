@@ -211,8 +211,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: 12a0ef69d64a55e737fbf4e846bd8ed9fb30a956
-  --sha256: 0mx1g18ypdd5m8ijc2cl9m1xmymlqfbwl1r362f92vxrmziacifv
+  tag: d5b184a820853c7ba202efd615b8fadca1acb52c
+  --sha256: 04k5p6qwmfdza65gl5319r1ahdfwjnyqgzpfxdx0x2g5jcbimar4
   subdir:
     alonzo/impl
     alonzo/test
@@ -234,8 +234,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: 2c8161ad142f56b14611cc0f66b0a2803016fe37
-  --sha256: 19sj9f4pxfjcqkdxq46kx7qiv0qw4lf670jy8jyzvkmwyjl5agwm
+  tag: 8c83c4abe211b4bbcaca3cdf1b2c0e38d0eb683f
+  --sha256: 1643s1g3jlm9pgalpc3vpij1zqb1n8yv8irq6qc43gs9bvl0wc3l
   subdir:
     plutus-ledger-api
     plutus-tx
@@ -259,6 +259,6 @@ source-repository-package
 -- eventually.
 source-repository-package
   type: git
-  location: https://github.com/Quid2/flat.git
-  tag: 95e5d7488451e43062ca84d5376b3adcc465f1cd
-  --sha256: 06l31x3y93rjpryvlxnpsyq2zyxvb0z6lik6yq2fvh36i5zwvwa3
+  location: https://github.com/michaelpj/flat.git
+  tag: ee59880f47ab835dbd73bea0847dab7869fc20d8
+  --sha256: 1lrzknw765pz2j97nvv9ip3l1mcpf2zr4n56hwlz0rk7wq7ls4cm
