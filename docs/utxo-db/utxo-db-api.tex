@@ -8,6 +8,8 @@
 \usepackage{longtable,booktabs}
 \usepackage{dcolumn}
 \usepackage{pgf}
+\usetikzlibrary{shapes.geometric}
+\usetikzlibrary{matrix}
 \usepackage{natbib}
 \usepackage{hyperref}
 \usepackage[capitalise,noabbrev,nameinlink]{cleveref}
@@ -177,6 +179,12 @@ changes
     (a \triangleleft \delta{b}) \triangleleft \delta{c}
   = a \triangleleft (\delta{b} \diamond \delta{c})
 \end{equation}
+We will use the following $\Diamond\hspace{-3pt}\sum$ notation for a n-way monoidial sum, meaning simply
+repeated use of the associative $\diamond$ operator.
+\[
+\Diamond\hspace{-4pt}\sum_{i=0}^n{\delta{a_i}}
+= \delta{a_0} \diamond \delta{a_1} \diamond \delta{a_2} \diamond \ldots \delta{a_n}
+\]
 We can encode these definitions in Haskell using a type class with an associated
 type
 \begin{verbatim}
@@ -301,6 +309,16 @@ on the subset as the whole state
 \label{eq:restrict}
   \delta\mathit{tx}_i(\restrict{\mathit{db}}{\mathit{ks}_i}) = \delta\mathit{tx}_i(\mathit{db})
 \end{equation}
+A lemma that will prove useful later is that domain restriction commutes with
+applying changes
+\begin{equation}
+\label{eq:restriction}
+  \restrict{\mathit{db}}{\mathit{ks}} \triangleleft \delta\mathit{db}
+=
+  \restrict{\left(\mathit{db} \triangleleft \delta\mathit{db}\right)}{\mathit{ks}}
+\end{equation}
+This lemma either needs to be proved universally or we will need to make it a
+required property of the differences.
 
 We can now construct the series of database states
 $\mathit{db}_0, \mathit{db}_1, \ldots$
@@ -503,7 +521,7 @@ start from $i=1$ rather than $i=0$.
        & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \delta\mathit{db}_i
          \quad \mathbf{where} \quad \delta\mathit{db}_i = \delta\mathit{tx}_i\left(\restrict{\left(\restrict{\mathit{db}_{i-1}}{\mathit{ks}_i} \triangleleft \delta\mathit{db}_{i-1}\right)}{\mathit{ks}_i}\right)
       \\
-\equiv & \quad \text{\{by double-restriction lemma \cref{eq:double-restriction} \}}
+\equiv & \quad \text{\{by the domain restriction lemma \cref{eq:restriction}, and idempotency of restriction \}}
       \\
        & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \delta\mathit{db}_i
          \quad \mathbf{where} \quad \delta\mathit{db}_i = \delta\mathit{tx}_i\left(\restrict{\left(\mathit{db}_{i-1} \triangleleft \delta\mathit{db}_{i-1}\right)}{\mathit{ks}_i}\right)
@@ -527,14 +545,6 @@ start from $i=1$ rather than $i=0$.
       \\
        & \mathit{db}_{i+1} = \mathit{tx}_i(\mathit{db}_i)
 \end{align*}
-This relies on a lemma which says that if we restrict the domain at the outside,
-then we can omit the inner domain restriction.
-\begin{equation}
-\label{eq:double-restriction}
-  \restrict{\left(\restrict{\mathit{db}}{\mathit{ks}} \triangleleft \delta\mathit{db}\right)}{\mathit{ks}}
-=
-  \restrict{\left(\mathit{db} \triangleleft \delta\mathit{db}\right)}{\mathit{ks}}
-\end{equation}
 
 \subsection{Hybrid on-disk / in-memory databases}
 
@@ -549,6 +559,31 @@ the in-memory changes applied on top.
 \[
 \mathit{db}_i = \mathit{db}^{\mathrm{disk}}_i \triangleleft \delta\mathit{db}^{\mathrm{mem}}_i
 \]
+\begin{center}
+\begin{tikzpicture}[state/.style={circle, draw=black}]
+\begin{scope}[thick]
+
+  % disk icon
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt, minimum width=40pt]
+        at (0,-25pt) {};
+  \draw (0, -30pt) node {$\mathit{db}^{\mathrm{disk}}_i$};
+
+  % in memory
+  \draw (-20pt,1) rectangle (20pt,1cm+40pt);
+  \draw (0,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_i$};
+
+  % dividing line
+  \draw (-5,3) -- (5,3);
+  \draw (-3,3.5) node {logical value:};
+  \draw (-3,2.5) node {representation:};
+
+  % logical value
+  \draw (-20pt,3.5cm) rectangle (20pt,3.5cm+40pt);
+  \draw (0,3.5cm+20pt) node {$\mathit{db}_i$};
+  \draw (2.5,3.5cm+20pt) node {$ = \mathit{db}^{\mathrm{disk}}_i \triangleleft \delta\mathit{db}^{\mathrm{mem}}$};
+\end{scope}
+\end{tikzpicture}
+\end{center}
 We now need to see how performing transactions works in this representation. We
 will of course use the change-based style of transactions. Given the changes
 made by a transaction $\delta\mathit{tx}_i(\restrict{\mathit{db}_i}{\mathit{ks}_i})$
@@ -582,6 +617,38 @@ to get
 \mathit{db}_{i+1} = \mathit{db}^{\mathrm{disk}}_i
       \triangleleft \delta\mathit{db}^{\mathrm{mem}}_{i+1}
 \]
+Or pictorally
+\begin{center}
+\begin{tikzpicture}[state/.style={circle, draw=black}]
+\begin{scope}[thick]
+
+  % disk icon
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt, minimum width=40pt]
+        at (0,-25pt) {};
+  \draw (0, -30pt) node {$\mathit{db}^{\mathrm{disk}}_i$};
+
+  % in memory
+  \draw (-20pt,1) rectangle (20pt,1cm+40pt);
+  \draw (0,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_i$};
+
+  \draw (2cm-20pt,1) rectangle (2cm+20pt,1cm+40pt);
+  \draw (2cm,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_{i+1}$};
+  \draw (5,1cm+20pt) node {$ = \delta\mathit{db}^{\mathrm{mem}}_i
+                  \diamond \delta\mathit{tx}_i(\restrict{\mathit{db}_i}{\mathit{ks}_i})$};
+
+  % dividing line
+  \draw (-5,3) -- (5,3);
+  \draw (-3,3.5) node {logical value:};
+  \draw (-3,2.5) node {representation:};
+
+  % logical value
+  \draw (-20pt,3.5cm) rectangle (20pt,3.5cm+40pt);
+  \draw (0,3.5cm+20pt) node {$\mathit{db}_i$};
+  \draw (2cm-20pt,3.5cm) rectangle (2cm+20pt,3.5cm+40pt);
+  \draw (2,3.5cm+20pt) node {$\mathit{db}_{i+1}$};
+\end{scope}
+\end{tikzpicture}
+\end{center}
 Notice that we have applied the transaction exclusively to the in-memory part,
 without changing the on-disk part. Obviously we cannot do this indefinitely or
 the part kept in memory will grow without bound.
@@ -618,29 +685,136 @@ Doing the flush is another straightforward application of
 We can interpret the application of changes
 $\mathit{db}^{\mathrm{disk}} \triangleleft \delta\mathit{db}^{\mathrm{mem}}_a$
 as performing the writes to the on-disk database.
+Here is the same in pictorial style:
+\begin{center}
+\begin{tikzpicture}[state/.style={circle, draw=black}]
+\begin{scope}[thick]
+
+  % disk icon
+  \begin{scope}[]
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt, minimum width=40pt]
+        at (0,-25pt) {};
+  \draw (0, -30pt) node {$\mathit{db}^{\mathrm{disk}}$};
+  \end{scope}
+
+  \begin{scope}[xshift=4cm]
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt, minimum width=40pt]
+        at (0,-25pt) {};
+  \draw (0, -30pt) node[fill=white] {$\mathit{db}^{\mathrm{disk}} \triangleleft \delta\mathit{db}^{\mathrm{mem}}_a$};
+  \end{scope}
+
+  % in memory
+  \draw (-45pt,1) rectangle (45pt,1cm+40pt);
+  \draw (0,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_a \diamond \delta\mathit{db}^{\mathrm{mem}}_b$};
+
+  \draw (4cm-20pt,1) rectangle (4cm+20pt,1cm+40pt);
+  \draw (4cm,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_b$};
+
+  % dividing line
+  \draw (-5,3) -- (6,3);
+  \draw (-3,3.5) node {logical value:};
+  \draw (-3,2.5) node {representation:};
+
+  % logical value
+  \draw (2cm-20pt,3.5cm) rectangle (2cm+20pt,3.5cm+40pt);
+  \draw (2cm,3.5cm+20pt) node {$\mathit{db}$};
+\end{scope}
+\end{tikzpicture}
+\end{center}
 
 \subsection{Multiple logical database states}
 
 In the models so far, while we have of course defined many logical values of
 a database, we have implicitly assumed that these are the evolving states of
-a singe database over time. We now wish to model a situation in which we want
+a single database over time. We now wish to model a situation in which we want
 to maintain and have efficient access to many logical values of a database at
 once.
 
 This corresponds roughly to the situation we have in the consensus design where
 it is necessary to have efficient access to ledger states corresponding to the
-last K blocks (which is 2160). We need these ledger states to be able to
-evaluate the validity of candidate chains that intersect with our own at any
-point within the last K blocks. In the current wholly in-memory consensus
-design we can maintain K ledger states at very little additional memory cost
-compared to a single ledger state. This takes advantage of persistent data
-structures. This works because the K ledger states are very closely related:
-being the ledger states obtained from applying a series of blocks.
+last K blocks\footnote{On the Cardano mainnet K is 2160, so quite a few}. We
+need these ledger states to be able to evaluate the validity of candidate
+chains that intersect with our own at any point within the last K blocks. In
+the current wholly in-memory consensus design we can maintain K ledger states
+at very little additional memory cost compared to a single ledger state. This
+takes advantage of persistent data structures. This works because the K ledger
+states are very closely related: being the ledger states obtained from applying
+a series of blocks.
 
 The idea we want to model here is having a single on-disk state at once, but
 a whole series of in-memory differences, giving us a series of logical database
 values.
 
+\begin{center}
+\begin{tikzpicture}[state/.style={circle, draw=black}]
+\begin{scope}[thick]
+
+  % disk icon
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt, minimum width=40pt]
+        at (0,-25pt) {};
+  \draw (0, -30pt) node {$\mathit{db}^{\mathrm{disk}}_i$};
+
+  % in memory
+  \draw[step=40pt,xshift=-20pt,yshift=1cm] (0,0) grid (160pt,40pt);
+  \draw (0,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_{i+0}$};
+  \draw (40pt,1cm+20pt)  node {$\delta\mathit{db}^{\mathrm{mem}}_{i+1}$};
+  \draw (80pt,1cm+20pt)  node {$\ldots$};
+  \draw (120pt,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_{i+k}$};
+
+  % dividing line
+  \draw (-5,3) -- (5,3);
+  \draw (-3,3.5) node {logical value:};
+  \draw (-3,2.5) node {representation:};
+
+  % logical value
+  \draw[step=40pt,xshift=-20pt,yshift=3.5cm] (0,0) grid (160pt,40pt);
+  \draw (0,3.5cm+20pt) node {$\mathit{db}_{i+0}$};
+  \draw (40pt,3.5cm+20pt) node {$\mathit{db}_{i+1}$};
+  \draw (80pt,3.5cm+20pt) node {$\ldots$};
+  \draw (120pt,3.5cm+20pt) node {$\mathit{db}_{i+k}$};
+
+  \node [above delimiter=\rmoustache,
+         xshift=50pt,yshift=2.9cm, minimum width=140pt] {};
+  \node [above delimiter=\lmoustache,
+         xshift=130pt,yshift=2.9cm, minimum width=20pt] {};
+
+  \draw (7,3.5cm+20pt) node
+        {$= \mathit{db}^{\mathrm{disk}}_i \triangleleft ~
+            \displaystyle\Diamond\hspace{-4pt}\sum_{j=0}^k{\delta\mathit{db}^{\mathrm{mem}}_{i+j}}$};
+
+\end{scope}
+\end{tikzpicture}
+\end{center}
+As depicted in the diagram above, the representation consists of a single disk
+state and a series of in-memory differences. Each difference is the individual
+difference from performing a transaction. That is, we keep each difference and
+do not compose them together prematurely. Then each logical database value is
+the value of the on-disk state with the monoidial composition of the appropriate
+changes applied on top. That is, for the k\textsuperscript{th} database value
+beyond the on disk state we have
+\[
+\mathit{db}_{i+k}
+= \mathit{db}^{\mathrm{disk}}_i \triangleleft ~
+            \displaystyle\Diamond\hspace{-4pt}\sum_{j=0}^k{\delta\mathit{db}^{\mathrm{mem}}_{i+j}}
+\]
+Although we are interested in the compositions of differences we must keep the
+individual differences. The reason is that when we do flush changes to disk we
+need to discard the oldest in-memory differences which entails computing new
+monoidial compositions of the remaining differences.
+
+One interesting implementation idea to manage both a sequence of K differences
+and also the efficient monoidial composition of them is to use a \emph{finger
+tree} data structure \citep{fingertree}. A finger tree is parametrised over a
+monoidal measure. The choice in this case would be both the length and the
+differences. The length is the usual measure to support splitting at indexes.
+We would rely on splitting to obtain the sub-sequence of differences for
+evaluating a chain fork that starts from a recent point on the chain. The other
+part of the measure -- the differences -- would mean that the measure of any
+sequence or sub-sequence would be the overall monoidal composition of all the
+differences in that (sub-)sequence. The finger tree data structure takes care
+of efficiently caching the intermediate monoid measure values. Finger trees are
+already used extensively within the consensus implementation -- including with
+measures other than simply length.
 
 \section{Partial tracking mapping}
 
