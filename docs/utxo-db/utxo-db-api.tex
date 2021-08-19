@@ -547,6 +547,7 @@ start from $i=1$ rather than $i=0$.
 \end{align*}
 
 \subsection{Hybrid on-disk / in-memory databases}
+\label{sec:hybrid-on-disk-in-memory-db}
 
 In this model we go back to a sequential style for simplicity, but we represent
 the data as a combination of two parts. One will stand for data on disk and the
@@ -815,6 +816,34 @@ differences in that (sub-)sequence. The finger tree data structure takes care
 of efficiently caching the intermediate monoid measure values. Finger trees are
 already used extensively within the consensus implementation -- including with
 measures other than simply length.
+
+There's a few operations we need to be able to perform in this setting
+\begin{enumerate}
+\item Perform a transaction. We need to be able to append to the end of the
+      sequence of logical database values. This corresponds to adding a block
+      to the end of the chain, or adding more transactions to a mempool.
+\item Replace any suffix of the sequence of logical database values. This is
+      actually a strict generalisation of 1. above. This corresponds to
+      switching to a fork, which is a generalisation of appending a single
+      block. The replacement sub-sequence can start anywhere in the sequence and
+      the replacement can have any length sequence of differences arising from
+      blocks.
+\item Flush changes to disk. We need to be able to take some of the oldest
+      changes and apply them to the disk store.
+\end{enumerate}
+These operations are straightforward generalisations of the operations we have
+already seen in \cref{sec:hybrid-on-disk-in-memory-db}. The first two are about
+constructing new logical database values by making new in-memory differences.
+In this representation it is simply appending or replacing a suffix of a
+sequence of changes. The flushing to disk is a straightforward instance of the
+flush operation from \cref{sec:hybrid-on-disk-in-memory-db} where we choose the
+a point in the sequence that splits the differences we wish to flush from the
+remaining sequence of differences. The value that we apply to the on-disk state
+is the monoidal composition of the sequence of differences we wish to flush.
+
+In section ?? we will look at a design for the consensus ledger state
+management and chain selection based on the abstract model here, relying only
+on the operations we have identified here.
 
 \section{Partial tracking mapping}
 
