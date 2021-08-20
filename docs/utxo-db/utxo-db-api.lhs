@@ -1,5 +1,7 @@
 \documentclass[11pt,a4paper]{article}
 
+%include polycode.fmt
+
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{todonotes}
 \usepackage{microtype}
@@ -20,7 +22,7 @@
 }
 
 \DeclareMathOperator{\dom}{dom}
-\newcommand\restrict[2]{\left.#1\right|_{#2}}
+\newcommand\restrict[2]{\left.#1\right||_{#2}}
 
 \begin{document}
 
@@ -28,9 +30,9 @@
        API design concepts
   }
 \date{Version 0.2, August 2021}
-\author{Douglas Wilson     \\ {\small \texttt{douglas@well-typed.com}} \\
-   \and Duncan Coutts      \\ {\small \texttt{duncan@well-typed.com}} \\
-                              {\small \texttt{duncan.coutts@iohk.io}}
+\author{Douglas Wilson     \\ {\small \texttt{douglas@@well-typed.com}} \\
+   \and Duncan Coutts      \\ {\small \texttt{duncan@@well-typed.com}} \\
+                              {\small \texttt{duncan.coutts@@iohk.io}}
    }
 
 \maketitle
@@ -187,7 +189,7 @@ repeated use of the associative $\diamond$ operator.
 \]
 We can encode these definitions in Haskell using a type class with an associated
 type
-\begin{verbatim}
+\begin{code}
 class Monoid (Diff a) => Changes a where
   data Diff a
 
@@ -196,7 +198,7 @@ class Monoid (Diff a) => Changes a where
   -- Laws:
   --  x `applyDiff` mempty   =  x
   -- (x `applyDiff` d) `applyDiff` d'  =  x `applyDiff` (d <> d')
-\end{verbatim}
+\end{code}
 
 We will also talk about functions that transform values, and corresponding
 functions that compute differences. That is if we have a function $f : A \to A$
@@ -490,7 +492,7 @@ pipelined reads with a fixed depth of one.
 \end{scope}
 \end{tikzpicture}
 \begin{equation*}
-\begin{array}{c@{\quad}l@{\quad}l}
+\begin{array}{c@@{\quad}l@@{\quad}l}
     \mathit{db}_1 = \mathit{db}_0 \triangleleft \delta\mathit{db}_0
   & \mathbf{where} \quad \delta\mathit{db}_0 = \delta\mathit{tx}_0(\mathit{rs}_0)
   & \mathbf{and}   \quad \mathit{rs}_0 = \restrict{\mathit{db}_0}{\mathit{ks}_0}
