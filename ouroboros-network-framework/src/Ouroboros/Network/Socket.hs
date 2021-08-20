@@ -83,6 +83,10 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Proxy (Proxy (..))
 import           Data.Void
 import           Data.Word (Word16)
+#if !defined(mingw32_HOST_OS)
+import           GHC.IO.Exception (IOErrorType (..))
+#endif
+import           System.IO.Error
 
 import qualified Network.Socket as Socket
 
@@ -579,6 +583,32 @@ runServerThread NetworkServerTracers { nstMuxTracer
     acceptException :: addr -> IOException -> IO ()
     acceptException a e = do
       traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
+
+      -- Try the determine if the connection was aborted by the remote end
+      -- before we could process the accept, or if it was a resource exaustion
+      -- problem.
+      -- NB. This piece of code is fragile and depends on specific
+      -- strings/mappings in the network and base libraries.
+#if defined(mingw32_HOST_OS)
+      -- On Windows the network packet classifies all errors as OtherError.
+      -- This means that we're forced to match on the error string. The text
+      -- string comes from the network package's winSockErr.c, and if it ever
+      -- changes we must update our text string too.
+      case ioeGetErrorString e of
+           "Software caused connection abort (WSAECONNABORTED)" -> return ()
+           _ -> throwIO e
+#else
+      -- ECONNABORTED is mapped to OtherError so we're forced to match on it.
+      -- On, FreeBSD, Linux and OSX accept can also return the following
+      -- errors which are translated to OtherError EFAULT, ENOTSOCK,
+      -- EOPNOTSUPP, EWOULDBLOCK.
+      -- This limitation arises from the haskell base library.
+      -- Those errors are triggered by bugs in our code, network package or
+      -- the RTS. If that happens we've at least logged the relevant error.
+      case ioeGetErrorType e of
+           OtherError -> return ()
+           _          -> throwIO e
+#endif
 
     acceptConnectionTx sockAddr t connAddr st = do
       d <- beforeConnectTx t connAddr st
