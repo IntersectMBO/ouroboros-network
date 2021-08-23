@@ -114,6 +114,7 @@ import           Ouroboros.Network.Server.Socket ( AcceptedConnectionsLimit (..)
 import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Server.ConnectionTable
 
+import Text.Printf
 
 -- | Tracer used by 'connectToNode' (and derivatives, like
 -- 'Ouroboros.Network.NodeToNode.connectTo' or
@@ -582,6 +583,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
 
     acceptException :: addr -> IOException -> IO ()
     acceptException a e = do
+      printf "acceptException %s\n" (show e)
       traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
 
       -- Try the determine if the connection was aborted by the remote end

@@ -199,14 +199,17 @@ acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionsLimit b
     acceptedConnectionsLimit
 
   -- mask is to assure that every socket is closed.
+  traceWith acceptPolicyTrace ServerTraceReadyToAccept
   outcome <- try (restore (acceptConnection socket))
   case outcome :: Either IOException (addr, channel, IO (), Socket addr channel) of
     Left ex -> do
       -- Classify the exception, if it is fatal to the node or not.
       -- If it is fatal to the node the exception will propagate.
       restore (acceptException ex)
+      traceWith acceptPolicyTrace (ServerTraceAcceptFailed $ show ex)
       pure Nothing
     Right (addr, channel, close, nextSocket) -> do
+      traceWith acceptPolicyTrace ServerTraceAcceptedConnection
       -- Decide whether to accept or reject, using the current state, and
       -- update it according to the decision.
       t <- getMonotonicTime

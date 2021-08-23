@@ -144,6 +144,9 @@ runConnectionRateLimits tracer
 data AcceptConnectionsPolicyTrace
       = ServerTraceAcceptConnectionRateLimiting DiffTime Int
       | ServerTraceAcceptConnectionHardLimit Word32
+      | ServerTraceReadyToAccept
+      | ServerTraceAcceptedConnection 
+      | ServerTraceAcceptFailed String
   deriving (Eq, Ord, Typeable)
 
 instance Show AcceptConnectionsPolicyTrace where
@@ -155,3 +158,6 @@ instance Show AcceptConnectionsPolicyTrace where
       printf
         "hard rate limit reached, waiting until the number of connections drops below %s"
         (show limit)
+    show ServerTraceReadyToAccept = "ready to accept connection"
+    show ServerTraceAcceptedConnection = "accepted a connection"
+    show (ServerTraceAcceptFailed e) = "accept failed with " ++ e
