@@ -113,6 +113,30 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
+{-------------------------------------------------------------------------------
+  The arguments to the Consensus Layer node functionality
+-------------------------------------------------------------------------------}
+
+-- How to add a new argument
+--
+-- 1) As a Consensus Layer maintainer, use your judgement to determine whether
+-- the new argument belongs in 'RunNodeArgs' or 'LowLevelArgs'. Give it the type
+-- that seems most " natural ", future-proof, and useful for the whole range of
+-- invocations: our tests, our own benchmarks, deployment on @mainnet@, etc. The
+-- major litmus test is: it only belongs in 'RunNodeArgs' if /every/ invocation
+-- of our node code must specify it.
+--
+-- 2) If you add it to 'LowLevelArgs', you'll have type errors in
+-- 'stdLowLevelRunNodeArgsIO'. To fix them, you'll need to either hard-code a
+-- default value or else extend 'StdRunNodeArgs' with a new sufficient field.
+--
+-- 3) When extending either 'RunNodeArgs' or 'StdRunNodeArgs', the
+-- @cardano-node@ will have to be updated, so consider the Node Team's
+-- preferences when choosing the new field's type. As an oversimplification,
+-- Consensus /owns/ 'RunNodeArgs' while Node /owns/ 'StdRunNodeArgs', but it's
+-- always worth spending some effort to try to find a type that satisfies both
+-- teams.
+
 -- | Arguments expected from any invocation of 'runWith', whether by deployed
 -- code, tests, etc.
 data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
@@ -200,6 +224,10 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
       -- | Maximum clock skew
     , llrnMaxClockSkew :: ClockSkew
     }
+
+{-------------------------------------------------------------------------------
+  Entrypoints to the Consensus Layer node functionality
+-------------------------------------------------------------------------------}
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
 run :: forall blk.
