@@ -10,50 +10,57 @@ mkdir -p tmp
 
 rm -rf tmp/dep-repo-result
 
-branches () {
-  git rev-parse --abbrev-ref HEAD
-  git branch -r | grep 'origin/.*\<release\>' || true
-  git tag | grep '\<v[0-9]\+\>' || true
-}
+# Convert source-repository-package stanzas to lines 'location: $url tag: $hash'
+cat cabal.project \
+    | grep -v -E -e '^ *--' \
+    | grep -E -w -e '^source-repository-package' -e '^ *location:' -e '^ *tag:' \
+    | tr '\n\r' ' ' \
+    | sed 's/source-repository-package/\n/g' \
+    > tmp/repositories.txt
 
-commits () {
-  for x in $(cat $1); do
-    git checkout $x
-    git log --pretty=format:"%H"
-  done
-}
+basedir="$(pwd)"
 
-cat cabal.project | \
-  grep '\(^source-repository-package\|^ *location:\|^ *tag:\)' | sed 's|^source-repository-package|-|g' | \
-  yq eval -P -j \
-  > tmp/repositories.json
+# Check each repository
+cat tmp/repositories.txt | while read -r line; do
+  # re-read the line into an array of words
+  read -r -a words <<< "$line"
 
-for row in $(cat tmp/repositories.json | jq -r '.[] | @base64'); do
-  json="$(echo "${row}" | base64 --decode | jq -r ${1})"
-  location="$(echo "$json" | jq -r .location)"
-  tag="$(echo "$json" | jq -r .tag)"
+  # skip whitespace-only lines
+  [ "${#words[@]}" -eq 0 ] && continue
+
+  # parse the line as "location: $url tag: $hash"
+  [ "${#words[@]}" -eq 4 ] && [ "${words[0]}" = "location:" ] && [ "${words[2]}" = "tag:" ] \
+      || { echo "Could not parse as '^ *location: +\$url +tag: +\$hash *$': $line"
+	   false
+         }
+  url="${words[1]}"
+  hash="${words[3]}"
 
   rm -f tmp/tmp-dep-repo-result
   rm -rf tmp/dep-repo
-  echo "$location"
+  echo "Checking $url"
 
-  git clone "$location" tmp/dep-repo
-  base="$(pwd)"
+  # clone, but don't download any files (ie no trees, so no blobs either)
+  git clone --filter=tree:0 --no-checkout "$url" tmp/dep-repo
   ( cd tmp/dep-repo
 
-    branches > branches.txt
-
-    commits branches.txt | grep "$tag" || (
-      printf "Commit $tag from $location is not on the main branch or any release branches\n" >> "$base/tmp/dep-repo-result"
-      printf "Branches searched:"
-      cat branches.txt | sed 's|^|  |g'
-    )
+    { git branch -r --contains "$hash"
+      git tag --contains "$hash"
+    } \
+        | grep -q -E -w \
+               -e '^ *origin/master' \
+               -e '^ *origin/[^ ]*release' \
+               -e '*v[0-9]+' \
+        || { echo "Commit $hash from $url is not on the main branch or any release branches" \
+                 | tee -a "$basedir/tmp/dep-repo-result"
+             false
+           }
   )
 
   rm -rf tmp/dep-repo
 done
 
-if [ -f tmp/dep-repo-result ]; then
+if [ -s tmp/dep-repo-result ]; then
   printf "${RED}Commits not on the main branch or any release branches detected in dependencies${NC}\n"
   printf "${YELLOW}"
   cat tmp/dep-repo-result
