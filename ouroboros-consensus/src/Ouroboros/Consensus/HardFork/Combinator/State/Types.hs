@@ -1,21 +1,25 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.State.Types (
     -- * Main types
     Current (..)
   , HardForkState (..)
   , Past (..)
+  , sequenceHardForkState
     -- * Supporting types
   , TransitionInfo (..)
   , Translate (..)
   , TranslateForecast (..)
   ) where
 
-import           Prelude hiding (sequence)
+import           Prelude
 
 import           Control.Monad.Except
-import           Data.SOP.Strict (K)
+import           Data.SOP.Strict
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
@@ -26,6 +30,7 @@ import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope)
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 
 {-------------------------------------------------------------------------------
   Types
@@ -51,6 +56,18 @@ data Past = Past {
     , pastEnd   :: !Bound
     }
   deriving (Eq, Show, Generic, NoThunks)
+
+-- | Thin wrapper around 'Telescope.sequence'
+sequenceHardForkState :: forall m f xs. (All Top xs, Functor m)
+                      => HardForkState (m :.: f) xs -> m (HardForkState f xs)
+sequenceHardForkState (HardForkState tel) =
+      fmap HardForkState
+    $ Telescope.sequence
+    $ hmap sequenceCurrent tel
+  where
+    sequenceCurrent :: Current (m :.: f) a -> (m :.: Current f) a
+    sequenceCurrent (Current start state) =
+      Comp $ Current start <$> unComp state
 
 {-------------------------------------------------------------------------------
   Supporting types
