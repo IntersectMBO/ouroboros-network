@@ -55,6 +55,7 @@ Figure~\ref{fig:storage-layer-background-processes} shows:
   %% Nodes
   %%
   \node (abr) [process                ] {Add block};
+  \node (bf)  [process, above = of abr] {Block fetch};
   \node (csr) [process, below = of abr] {Copy and snapshot};
   \node (gcr) [process, below = of csr] {GC schedule};
 
@@ -62,19 +63,19 @@ Figure~\ref{fig:storage-layer-background-processes} shows:
   \node (ldb) [db, below = of vdb] {Ledger DB};
   \node (idb) [db, below = of ldb] {Immutable DB};
 
-  \node (bta) [queue, above = of vdb] {Blocks to add};
-
   \node (gcq) [queue, above left = of gcr] {GC queue};
+
+  \node (bta) [queue, above = of gcq] {Blocks to add};
 
   %%
   %% Relationships between nodes
   %%
+  \path[write] (bf) edge (bta);
 
   %%% Add block runner
   \path[read] (bta) edge (abr);
   \path[rw] (vdb.west) edge (abr.east);
   \path[rw] (ldb) edge (abr);
-  \path[rw] (idb) edge (abr);
 
   %%% Copy an snapshot runner
   \path[read] (ldb) edge (csr);
@@ -86,8 +87,8 @@ Figure~\ref{fig:storage-layer-background-processes} shows:
   \path[rw] (gcr) edge (vdb);
 
   %%% Queue connection
-  \path[write] (gcr) edge (gcq);
-  \path[read] (gcq) edge (csr);
+  \path[write] (csr) edge (gcq);
+  \path[read] (gcq) edge (gcr);
 
   \end{tikzpicture}
   \caption{Storage layer background processes}
