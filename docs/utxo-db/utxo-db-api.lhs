@@ -27,9 +27,10 @@
 \begin{document}
 
 \title{Storing the Cardano ledger state on disk: \\
-       API design concepts
+       API design concepts \\
+       {\large \sc An IOHK technical report}
   }
-\date{Version 0.2, August 2021}
+\date{Version 0.3, August 2021}
 \author{Douglas Wilson     \\ {\small \texttt{douglas@@well-typed.com}} \\
    \and Duncan Coutts      \\ {\small \texttt{duncan@@well-typed.com}} \\
                               {\small \texttt{duncan.coutts@@iohk.io}}
@@ -37,23 +38,39 @@
 
 \maketitle
 
-\section*{Acknowledgements}
+\section{Purpose}
+
+This document is intended to explore and communicate -- to a technical audience
+-- design concepts for how to store the bulk of the Cardano ledger state on
+disk, within the context of the existing designs of the Cardano consensus and
+ledger layers. We will try to illustrate the ideas with prose, algebra,
+diagrams and simple prototypes in Haskell.
+
+The reader is assumed to be familiar with the initial report on this topic,
+covering analysis and design options \citep{utxo-db}.
+
+\section{Acknowledgements}
 
 Thanks to the consensus team for many useful discussions and feedback. Thanks
 particularly to Edsko de Vries for critiques of early versions of these ideas.
 Thanks to Tim Sheard for the inspiration to use the ideas and notation of a
 calculus of changes.
 
-\section{Purpose}
-
-This document is intended to explore and communicate -- to a technical audience
--- design concepts for how to store the bulk of the ledger state on disk, within
-the existing designs of the Cardano consensus and ledger layers.
-
-The reader is assumed to be familiar with the initial report on this topic,
-covering analysis and design options \citep{utxo-db}.
-
 \tableofcontents
+
+\section{Literate Haskell prototyping}
+
+We will try to illustrate some of the ideas in the form of a Haskell prototype.
+To keep ourselves honest, the source for this document is also executable
+Haskell code. It can be loaded within \texttt{ghci} for type checking,
+experimentation and testing.
+
+We start with a typical module preamble.
+\begin{code}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+module UTxOAPI where
+\end{code}
 
 \section{Ledger state handling in the current consensus and ledger layers}
 
@@ -72,22 +89,15 @@ certainly not just a single logical ledger state in use at once, there are many
 related ones.
 
 \section{General approach}
-
-% As for what counts as a large mapping, we will draw the dividing line between
-% `large' and `small' between those that are proportional to the number of stake
-% addresses and those that are proportional to the number of stake pools. That is
-% mappings that have an entry are per-pool will be keept in-memory, but mappings
-% with an entry per-stake address should be kept on disk. For example the stake
-% distribution snapshot used to validate the leadership schedule for block headers
-% will be kept in memory.
+\label{general-approach}
 
 We wish to deviate as little as possible from the general design of the current
 ledger and consensus layers, particularly their style using pure functions and
 persistent data structures.
 
-The ledger state will be maintained using a hybrid of in-memory and on-disk
-storage. The large mappings will be kept primarily on disk, and all other state
-kept in memory.
+The ledger state will be maintained using a partitioned approach with both
+in-memory and on-disk storage. The large mappings will be kept primarily on
+disk, and all other state kept in memory.
 
 We will manipulate the state using pure functions over pure in-memory data
 structures. This relies on two main tricks: reading the data into memory in
@@ -123,7 +133,7 @@ and bigger structures that contain mappings. The overall ledger state is
 such a structure: all of its large data components that we wish to store
 on disk are mappings.
 
-\subsection{Enabling pipelining}
+\subsection{Enabling I/O pipelining}
 \label{enabling-pipelining}
 
 As discussed in the initial report \citep[sections 6.1 and 8.8]{utxo-db} it is
@@ -142,6 +152,79 @@ pipelining. For example when we are validating many blocks at once (e.g. when
 syncing) we may be able to initiate the I/O reads for later blocks while
 processing the current blocks.
 
+\subsection{Partitioned in-memory/on-disk representation}
+\label{partitioned-representation}
+
+In trying to keep the bulk of the ledger state on disk, we will rely on an
+approach where \emph{only} large mappings will be kept (mostly) on disk, and
+all other state will be kept in memory. In our application domain, of storage
+for the Cardano ledger state, we believe this will be sufficient to ensure the
+memory needed remains within the memory available. The requirements for scale
+and resource use are given in the previous document \citep[Section 3]{utxo-db}.
+
+The choice to keep some but not all data on disk is a trade-off. Obviously
+keeping some parts of the data in-memory requires more memory. The advantage is
+primarily in reduced implementation complexity: rather than solve the general
+problem of keeping complex compound data on disk, we can reduce it to the
+well-understood problem of on-disk key-value stores.
+
+The observation that we have made about the Cardano ledger state is that while
+its structure is relatively complex, with many nested parts, most of it is
+relatively small. Only a few parts of the ledger state are really large, and
+those parts are all finite mappings.  Furthermore all the large finite mappings
+in the ledger state have relatively simple key and value types that can be
+represented as short byte strings. This allows them to be represented as
+on-disk key-value stores. Previous analysis \citep[Section 5]{utxo-db}
+indicates that the performance requirements of the different mappings are all
+compatible, so we believe we can use a single key-value store implementation
+for all the on-disk mappings.
+
+As for what counts as a large mapping, we draw the dividing line between
+`large' and `small' between those that are proportional to the number of stake
+addresses (or bigger) and those that are proportional to the number of stake
+pools (or smaller). That is mappings with sizes proportional to the number of stake pools -- or something smaller than the number of stake pools -- will be
+kept in memory. On the other hand mappings with sizes proportional to the
+number of stake address -- or bigger than the number of stake addresses --
+should be kept on disk. The table below lists a selection of important
+mappings, what their size is proportional to, and whether they will be stored
+in memory or (primarily) on disk.
+\begin{center}
+\begin{tabular}{lll}
+Mapping: & Size proportional to: & Location: \\
+\hline \hline \\
+The UTxO                              & number of UTxO entries    & on disk \\
+Delegation choices                    & number of stake addresses & on disk \\
+Reward account balances               & number of stake addresses & on disk \\
+Stake address pointers                & number of stake addresses & on disk \\
+Stake distribution (by stake address) & number of stake addresses & on disk \\
+\hline \\
+Stake distribution (by pool)          & number of stake pools & in memory \\
+Stake pool parameters                 & number of stake pools & in memory \\
+Protocol parameters                   & constant              & in memory
+\end{tabular}
+\end{center}
+Note in particular that the consensus layer needs rapid and random access to
+the stake distribution (by block producer, i.e stake pool) to be able to
+validate block headers. Therefore performance concerns dictates that we need at
+least one mapping proportional to the number of stake pools to be kept in
+memory.
+
+For mappings based on the same key it may or may not make sense to combine them
+into a single on-disk store. Combining them may save space but depending on the
+access pattern and on-disk store implementation we may obtain better
+performance by keeping them separate.
+
+Finally, note that for the parts of the ledger state that are kept in memory,
+there does still need to be a mechanism to save and restore the state when the
+node shuts down and restarts. The intention is to use the same approach as the
+consensus layer uses now: writing snapshots to disk from time to time and
+replaying from the most recent snapshot upon start up. Only minor changes to
+this scheme are necessary to account for the on-disk mappings. To achieve a
+consistent snapshot of the overall state it will be necessary to take snapshots
+of the on-disk mappings and of the in-memory data for the exact same state
+(i.e. corresponding to the ledger state of the same chain). If the snapshots
+of the on-disk and in-memory parts were not synchronised it would not be
+possible to replay the subsequent changes upon start-up.
 
 \section{Notation and properties of differences}
 \label{notation-differences}
@@ -187,19 +270,6 @@ repeated use of the associative $\diamond$ operator.
 \Diamond\hspace{-4pt}\sum_{i=0}^n{\delta{a_i}}
 = \delta{a_0} \diamond \delta{a_1} \diamond \delta{a_2} \diamond \ldots \delta{a_n}
 \]
-We can encode these definitions in Haskell using a type class with an associated
-type
-\begin{code}
-class Monoid (Diff a) => Changes a where
-  data Diff a
-
-  applyDiff :: a -> Diff a -> a
-
-  -- Laws:
-  --  x `applyDiff` mempty   =  x
-  -- (x `applyDiff` d) `applyDiff` d'  =  x `applyDiff` (d <> d')
-\end{code}
-
 We will also talk about functions that transform values, and corresponding
 functions that compute differences. That is if we have a function $f : A \to A$
 then a corresponding difference function would be $\delta{f} : A \to \Delta{A}$.
@@ -211,11 +281,32 @@ the same result as the original function
 We will sometimes be able to derive difference functions from the original
 transformation functions.
 
-\section{Abstract models of hybrid on-disk/in-memory data structures}
+\subsection{Haskell encoding}
+We can encode these definitions in Haskell using a type class with an associated
+data family
+\begin{code}
+class Monoid (Diff a) => Changes a where
+  data Diff a
+
+  applyDiff :: a -> Diff a -> a
+\end{code}
+The |Diff a| corresponds to the $\Delta{A}$ and |applyDiff| to the
+$\triangleleft$ operator. The |Monoid (Diff a)| superclass constraint captures
+the point that differences form a monoid.
+
+\section{Abstract models of hybrid on-disk/in-memory databases}
+\label{abstract-models}
+
+In this section we will look at abstract mathematical models of databases. This
+is not specific to the Cardano ledger state, or indeed any specific database.
+Our use of the term `database' in this section is quite abstract: we mean only
+some collection of data. We will discuss how different models correspond to
+different implementation strategies, including in-memory, on-disk or hybrid
+data storage.
 
 There are a few reasons to consider these models.
 \begin{description}
-\item[Lucid desciptions]
+\item[Lucid descriptions]
 There is the usual reason for abstraction that, omiting unnecessary details can
 make the ideas easier and shorter to describe.
 
@@ -765,7 +856,7 @@ values.
   \draw (120pt,1cm+20pt) node {$\delta\mathit{db}^{\mathrm{mem}}_{i+k}$};
 
   % dividing line
-  \draw (-5,3) -- (5,3);
+  \draw (-5,3) -- (7,3);
   \draw (-3,3.5) node {logical value:};
   \draw (-3,2.5) node {representation:};
 
@@ -847,15 +938,145 @@ In section ?? we will look at a design for the consensus ledger state
 management and chain selection based on the abstract model here, relying only
 on the operations we have identified here.
 
-\section{Partial tracking mapping}
+\section{Partitioned and hybrid in-memory/on-disk storage}
 
-In the previous section we assumed that we could find difference functions
+As discussed in \cref{partitioned-representation}, only the large mappings will
+be kept on disk, with all other state kept in memory. So we have both
+partitioned and hybrid in-memory/on-disk storage. The distinction we are drawing
+is:
+\begin{description}
+\item[partitioned] in the sense of keeping some parts of the state in memory,
+      with other parts (primarily) on disk; and
+\item[hybrid] in the sense of \cref{sec:hybrid-on-disk-in-memory-db} where
+      recent changes are kept in memory, while the bulk of the data is kept on
+      disk.
+\end{description}
+In this section we will focus on the partitioning, while keeping in mind that
+the data kept primarily on disk will also have recent changes kept in memory.
+
+The approach we will take is the following. The ledger state is a relatively
+complicated compound type consisting of many nested records and tuples.
+Consider this compound type as a tree where type containment corresponds to
+child-node relationships and atomic types correspond to leaf nodes. For example
+a pair of integers would correspond to a root node, for the pair itself, and
+two child nodes, for the two integers. Given this way of thinking of the type
+we then say that we will keep the root of the type in memory. Specific leaf
+nodes corresponding to the large mappings will be on disk. All other leaf nodes
+and interior nodes will also be in memory. So overall we have a type that is
+in memory except for certain designated finite mappings.
+
+\begin{center}
+\begin{tikzpicture}
+\begin{scope}[thick]
+
+  % initial disk store
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt, minimum width=40pt] (disk1)
+        at (0,0) {};
+  \node[right] at (disk1.south east) {k/v stores};
+
+  % dividing line
+  \draw (-3,1.5) -- (11,1.5);
+  \draw (-2.0,2.0) node {in memory:};
+  \draw (-2.0,1.0) node {on disk:};
+
+  \begin{scope}[yshift=5cm]
+  \node[rectangle, draw, minimum width=40pt, minimum height=40pt, fill=gray]
+       (inmem1) at (0,0) {};
+  \node[above] at (inmem1.north) {in-mem only state};
+  \node[circle, draw, minimum width=5pt, fill=white] at (-8pt,-4pt) {};
+  \node[circle, draw, minimum width=5pt, fill=white] at ( 5pt, 7pt) {};
+  \node[circle, draw, minimum width=5pt, fill=white] at ( 5pt,-7pt) {};
+  \end{scope}
+
+  \begin{scope}[yshift=3cm, xshift=2cm]
+  \node[rectangle, draw, dashed, minimum width=40pt, minimum height=40pt]
+       (readset) at (0,0) {};
+  \node[below] at (readset.south) {read sets};
+  \node[circle, draw, minimum width=5pt, fill=gray] at (-8pt,-4pt) {};
+  \node[circle, draw, minimum width=5pt, fill=gray] at ( 5pt, 7pt) {};
+  \node[circle, draw, minimum width=5pt, fill=gray] at ( 5pt,-7pt) {};
+  \end{scope}
+
+  \path[->] (disk1) edge[bend left] (readset);
+
+  \begin{scope}[yshift=4cm, xshift=4cm]
+  \node[rectangle, draw, minimum width=40pt, minimum height=40pt, fill=gray]
+       (state1) at (0,0) {};
+  \node[circle, draw, minimum width=5pt] at (-8pt,-4pt) {};
+  \node[circle, draw, minimum width=5pt] at ( 5pt, 7pt) {};
+  \node[circle, draw, minimum width=5pt] at ( 5pt,-7pt) {};
+  \end{scope}
+
+  \path[->] (inmem1) edge[bend left] (state1);
+  \path[->] (readset) edge[bend left] (state1);
+
+  \begin{scope}[yshift=4cm, xshift=6cm]
+  \node[rectangle, draw, minimum width=40pt, minimum height=40pt, fill=gray]
+       (state2) at (0,0) {};
+  \node[circle, draw, minimum width=5pt] at (-8pt,-4pt) {};
+  \node[circle, draw, minimum width=5pt] at ( 5pt, 7pt) {};
+  \node[circle, draw, minimum width=5pt] at ( 5pt,-7pt) {};
+  \end{scope}
+
+  \path[->] (state1) edge[bend left] node[below=1.3cm] {in memory transaction} (state2);
+
+  \begin{scope}[yshift=5cm, xshift=8cm]
+  \node[rectangle, draw, minimum width=40pt, minimum height=40pt, fill=gray]
+       (inmem2) at (0,0) {};
+  \node[above] at (inmem2.north) {new in-mem state};
+  \node[circle, draw, minimum width=5pt, fill=white] at (-8pt,-4pt) {};
+  \node[circle, draw, minimum width=5pt, fill=white] at ( 5pt, 7pt) {};
+  \node[circle, draw, minimum width=5pt, fill=white] at ( 5pt,-7pt) {};
+  \end{scope}
+
+  \begin{scope}[yshift=3cm, xshift=8cm]
+  \node[rectangle, draw, dashed, minimum width=40pt, minimum height=40pt]
+       (deltaset) at (0,0) {};
+  \node[below] at (deltaset.south) {delta sets};
+  \node[circle, draw, minimum width=5pt, fill=gray] at (-8pt,-4pt) {};
+  \node[circle, draw, minimum width=5pt, fill=gray] at ( 5pt, 7pt) {};
+  \node[circle, draw, minimum width=5pt, fill=gray] at ( 5pt,-7pt) {};
+  \end{scope}
+
+  \path[->] (state2) edge[bend left] (inmem2);
+  \path[->] (state2) edge[bend left] (deltaset);
+
+  % final disk store
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt, minimum width=40pt] (disk2)
+        at (10,0) {};
+
+  \path[->] (deltaset) edge[bend left] (disk2);
+
+\end{scope}
+\end{tikzpicture}
+\end{center}
+
+\begin{code}
+class HasOnDiskMappings (state :: (* -> * -> *) -> *) where
+
+  data OnDiskMappings state :: (* -> * -> *) -> *
+
+  projectOnDiskMappings  :: state map -> OnDiskMappings state map
+  injectOnDiskMappings   :: OnDiskMappings state map -> state any -> state map
+\end{code}
+
+
+\section{Partial tracking mappings}
+
+In \cref{abstract-models} we assumed that we could find difference functions
 $\delta\mathit{tx}$ corresponding to the ordinary transaction functions
 $\mathit{tx}$. The correspondence we required was given in \cref{eq:diff-fun},
 reproduced here as an aide-m\'emoire:
 \begin{equation*}
 db \triangleleft \delta\mathit{tx}(\mathit{db}) = \mathit{tx}(\mathit{db})
 \end{equation*}
+We would of course like to avoid manually writing such variants and proving the
+correspondence.
+
+For the special case of functions on finite mappings, that use a limited number
+of operations, we can derive such difference functions automatically. This also
+generalises to combinations of finite mappings. As discussed in
+\cref{partitioned-representation} 
 
 
 \addcontentsline{toc}{section}{References}
