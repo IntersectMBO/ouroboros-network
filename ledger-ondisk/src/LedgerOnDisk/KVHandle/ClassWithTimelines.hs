@@ -259,6 +259,7 @@ class
   type DBKVConstraint state :: Type -> Type -> Constraint
 
   -- | The abstract type representing prepared - but not submitted - queries
+  -- TODO rename to ReadHandle
   data ReadSet state dbhandle
 
   -- | The abstract type naming branches of history.
