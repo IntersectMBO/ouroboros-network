@@ -141,7 +141,8 @@ data instance Ticked (HardForkChainDepState xs) =
              HardForkState (Ticked :.: WrapChainDepState) xs
 
         -- | 'EpochInfo' constructed from the ticked 'LedgerView'
-      , tickedHardForkChainDepStateEpochInfo :: EpochInfo Identity
+      , tickedHardForkChainDepStateEpochInfo ::
+             EpochInfo (Except PastHorizonException)
       }
 
 tick :: CanHardFork xs
@@ -281,7 +282,7 @@ update HardForkConsensusConfig{..}
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
 
 updateEra :: forall xs blk. SingleEraBlock blk
-          => EpochInfo Identity
+          => EpochInfo (Except PastHorizonException)
           -> SlotNo
           -> Index xs blk
           -> WrapPartialConsensusConfig blk
@@ -322,7 +323,7 @@ reupdate HardForkConsensusConfig{..}
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
 
 reupdateEra :: SingleEraBlock blk
-            => EpochInfo Identity
+            => EpochInfo (Except PastHorizonException)
             -> SlotNo
             -> WrapPartialConsensusConfig blk
             -> Product WrapValidateView (Ticked :.: WrapChainDepState) blk
@@ -344,7 +345,7 @@ chainDepStateInfo :: forall blk. SingleEraBlock blk
 chainDepStateInfo _ = singleEraInfo (Proxy @blk)
 
 translateConsensus :: forall xs. CanHardFork xs
-                   => EpochInfo Identity
+                   => EpochInfo (Except PastHorizonException)
                    -> ConsensusConfig (HardForkProtocol xs)
                    -> InPairs (Translate WrapChainDepState) xs
 translateConsensus ei HardForkConsensusConfig{..} =

@@ -1,0 +1,31 @@
+;
+; NodeToClient Handshake
+;
+
+handshakeMessage
+    = msgProposeVersions
+    / msgAcceptVersion
+    / msgRefuse
+
+msgProposeVersions = [0, versionTable]
+msgAcceptVersion   = [1, versionNumber, nodeToClientVersionData]
+msgRefuse          = [2, refuseReason]
+
+versionTable = { * versionNumber => nodeToClientVersionData }
+
+; from version 2 we set 15th bit to 1
+versionNumber = 1 / 32770 / 32771 / 32772 / 32773 / 32774 / 32775 / 32776
+
+nodeToClientVersionData = networkMagic
+
+networkMagic = uint
+
+refuseReason
+    = refuseReasonVersionMismatch
+    / refuseReasonHandshakeDecodeError
+    / refuseReasonRefused
+
+refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
+refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
+refuseReasonRefused              = [2, versionNumber, tstr]
+

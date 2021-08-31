@@ -136,13 +136,17 @@ shelleyEraParamsNeverHardForks genesis = HardFork.EraParams {
 
 mkShelleyLedgerConfig
   :: SL.ShelleyGenesis era
-  -> EpochInfo Identity
+  -> EpochInfo (Except HardFork.PastHorizonException)
   -> MaxMajorProtVer
   -> ShelleyLedgerConfig era
 mkShelleyLedgerConfig genesis epochInfo (MaxMajorProtVer maxMajorPV) =
     ShelleyLedgerConfig {
         shelleyLedgerCompactGenesis = compactGenesis genesis
-      , shelleyLedgerGlobals        = SL.mkShelleyGlobals genesis epochInfo maxMajorPV
+      , shelleyLedgerGlobals        =
+          SL.mkShelleyGlobals
+            genesis
+            (HardFork.toPureEpochInfo epochInfo)
+            maxMajorPV
       }
 
 type instance LedgerCfg (LedgerState (ShelleyBlock era)) = ShelleyLedgerConfig era

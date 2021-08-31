@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Mempool.API (
   , addTxs
   , isMempoolTxAdded
   , isMempoolTxRejected
+  , mempoolTxAddedToMaybe
     -- * Re-exports
   , TxSizeInBytes
   ) where
@@ -75,13 +76,12 @@ data Mempool m blk idx = Mempool {
       --
       -- 1. A list containing the following transactions:
       --
-      --    * Those transactions provided which were found to be valid, along
-      --      with 'MempoolTxAdded' for their accompanying
-      --      'MempoolAddTxResult' values. These transactions are now in the
+      --    * Those transactions provided which were found to be valid, as a
+      --      'MempoolTxAdded' value. These transactions are now in the Mempool.
+      --    * Those transactions provided which were found to be invalid, along
+      --      with their accompanying validation errors, as a
+      --      'MempoolTxRejected' value. These transactions are not in the
       --      Mempool.
-      --    * Those transactions provided which were found to be invalid,
-      --      along with their accompanying validation errors. These
-      --      transactions are not in the Mempool.
       --
       -- 2. A list containing the transactions that have not yet been added
       --    yet, as the capacity of the Mempool has been reached. I.e., there
@@ -91,8 +91,11 @@ data Mempool m blk idx = Mempool {
       --    transaction.
       --
       -- POSTCONDITION:
+      -- > let prj = \case
+      -- >       MempoolTxAdded vtx        -> txForgetValidated vtx
+      -- >       MempoolTxRejected tx _err -> tx
       -- > (processed, toProcess) <- tryAddTxs txs
-      -- > map fst processed ++ toProcess == txs
+      -- > map prj processed ++ toProcess == txs
       --
       -- Note that previously valid transaction that are now invalid with
       -- respect to the current ledger state are dropped from the mempool, but
@@ -118,7 +121,7 @@ data Mempool m blk idx = Mempool {
       -- blockchain.
       --
       tryAddTxs      :: [GenTx blk]
-                     -> m ( [(GenTx blk, MempoolAddTxResult blk)]
+                     -> m ( [MempoolAddTxResult blk]
                           , [GenTx blk]
                           )
 
@@ -178,22 +181,26 @@ data Mempool m blk idx = Mempool {
 
 -- | The result of attempting to add a transaction to the mempool.
 data MempoolAddTxResult blk
-  = MempoolTxAdded
+  = MempoolTxAdded !(Validated (GenTx blk))
     -- ^ The transaction was added to the mempool.
-  | MempoolTxRejected !(ApplyTxErr blk)
+  | MempoolTxRejected !(GenTx blk) !(ApplyTxErr blk)
     -- ^ The transaction was rejected and could not be added to the mempool
     -- for the specified reason.
 
-deriving instance Eq (ApplyTxErr blk) => Eq (MempoolAddTxResult blk)
-deriving instance Show (ApplyTxErr blk) => Show (MempoolAddTxResult blk)
+deriving instance (Eq (GenTx blk), Eq (Validated (GenTx blk)), Eq (ApplyTxErr blk)) => Eq (MempoolAddTxResult blk)
+deriving instance (Show (GenTx blk), Show (Validated (GenTx blk)), Show (ApplyTxErr blk)) => Show (MempoolAddTxResult blk)
+
+mempoolTxAddedToMaybe :: MempoolAddTxResult blk -> Maybe (Validated (GenTx blk))
+mempoolTxAddedToMaybe (MempoolTxAdded vtx) = Just vtx
+mempoolTxAddedToMaybe _                    = Nothing
 
 isMempoolTxAdded :: MempoolAddTxResult blk -> Bool
-isMempoolTxAdded MempoolTxAdded = True
-isMempoolTxAdded _              = False
+isMempoolTxAdded MempoolTxAdded{} = True
+isMempoolTxAdded _                = False
 
 isMempoolTxRejected :: MempoolAddTxResult blk -> Bool
-isMempoolTxRejected (MempoolTxRejected _) = True
-isMempoolTxRejected _                     = False
+isMempoolTxRejected MempoolTxRejected{} = True
+isMempoolTxRejected _                   = False
 
 -- | Wrapper around 'implTryAddTxs' that blocks until all transaction have
 -- either been added to the Mempool or rejected.
@@ -208,7 +215,7 @@ addTxs
   :: forall m blk idx. MonadSTM m
   => Mempool m blk idx
   -> [GenTx blk]
-  -> m [(GenTx blk, MempoolAddTxResult blk)]
+  -> m [MempoolAddTxResult blk]
 addTxs mempool = \txs -> do
     (processed, toAdd) <- tryAddTxs mempool txs
     case toAdd of
@@ -216,11 +223,11 @@ addTxs mempool = \txs -> do
       _  -> go [processed] toAdd
   where
     go
-      :: [[(GenTx blk, MempoolAddTxResult blk)]]
+      :: [[MempoolAddTxResult blk]]
          -- ^ The outer list is in reverse order, but all the inner lists will
          -- be in the right order.
       -> [GenTx blk]
-      -> m [(GenTx blk, MempoolAddTxResult blk)]
+      -> m [MempoolAddTxResult blk]
     go acc []         = return (concat (reverse acc))
     go acc txs@(tx:_) = do
       let firstTxSize = getTxSize mempool tx
@@ -285,21 +292,21 @@ newtype MempoolCapacityBytes = MempoolCapacityBytes {
 data MempoolSnapshot blk idx = MempoolSnapshot {
     -- | Get all transactions (oldest to newest) in the mempool snapshot along
     -- with their ticket number.
-    snapshotTxs         :: [(GenTx blk, idx)]
+    snapshotTxs         :: [(Validated (GenTx blk), idx)]
 
     -- | Get all transactions (oldest to newest) in the mempool snapshot,
     -- along with their ticket number, which are associated with a ticket
     -- number greater than the one provided.
-  , snapshotTxsAfter    :: idx -> [(GenTx blk, idx)]
+  , snapshotTxsAfter    :: idx -> [(Validated (GenTx blk), idx)]
 
     -- | Get as many transactions (oldest to newest) from the mempool
     -- snapshot, along with their ticket number, such that their combined size
     -- is <= the given limit (in bytes).
-  , snapshotTxsForSize  :: Word32 -> [(GenTx blk, idx)]
+  , snapshotTxsForSize  :: Word32 -> [(Validated (GenTx blk), idx)]
 
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
-  , snapshotLookupTx    :: idx -> Maybe (GenTx blk)
+  , snapshotLookupTx    :: idx -> Maybe (Validated (GenTx blk))
 
     -- | Determine whether a specific transaction exists within the mempool
     -- snapshot.
@@ -333,7 +340,7 @@ instance Monoid MempoolSize where
 -- | Events traced by the Mempool.
 data TraceEventMempool blk
   = TraceMempoolAddedTx
-      !(GenTx blk)
+      !(Validated (GenTx blk))
       -- ^ New, valid transaction that was added to the Mempool.
       !MempoolSize
       -- ^ The size of the Mempool before adding the transaction.
@@ -348,7 +355,7 @@ data TraceEventMempool blk
       !MempoolSize
       -- ^ The current size of the Mempool.
   | TraceMempoolRemoveTxs
-      ![GenTx blk]
+      ![Validated (GenTx blk)]
       -- ^ Previously valid transactions that are no longer valid because of
       -- changes in the ledger state. These transactions have been removed
       -- from the Mempool.
@@ -357,7 +364,7 @@ data TraceEventMempool blk
   | TraceMempoolManuallyRemovedTxs
       ![GenTxId blk]
       -- ^ Transactions that have been manually removed from the Mempool.
-      ![GenTx blk]
+      ![Validated (GenTx blk)]
       -- ^ Previously valid transactions that are no longer valid because they
       -- dependend on transactions that were manually removed from the
       -- Mempool. These transactions have also been removed from the Mempool.
@@ -368,11 +375,13 @@ data TraceEventMempool blk
       -- ^ The current size of the Mempool.
 
 deriving instance ( Eq (GenTx blk)
+                  , Eq (Validated (GenTx blk))
                   , Eq (GenTxId blk)
                   , Eq (ApplyTxErr blk)
                   ) => Eq (TraceEventMempool blk)
 
 deriving instance ( Show (GenTx blk)
+                  , Show (Validated (GenTx blk))
                   , Show (GenTxId blk)
                   , Show (ApplyTxErr blk)
                   ) => Show (TraceEventMempool blk)

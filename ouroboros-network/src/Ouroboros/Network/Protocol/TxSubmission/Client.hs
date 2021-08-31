@@ -5,10 +5,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
 
--- usage of `MsgKThxBye` is safe in this module.
-{-# OPTIONS_GHC -Wno-warnings-deprecations #-}
-
-
 -- | A view of the transaction submission protocol from the point of view of
 -- the client.
 --
@@ -67,9 +63,7 @@ data ClientStIdle txid tx m a = ClientStIdle {
                              -> m (ClientStTxIds blocking txid tx m a),
 
     recvMsgRequestTxs        :: [txid]
-                             -> m (ClientStTxs txid tx m a),
-
-    recvMsgKThxBye           :: m a
+                             -> m (ClientStTxs txid tx m a)
   }
 
 data ClientStTxIds blocking txid tx m a where
@@ -99,7 +93,7 @@ txSubmissionClientPeer (TxSubmissionClient client) =
   where
     go :: ClientStIdle txid tx m a
        -> Peer (TxSubmission txid tx) AsClient StIdle m a
-    go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye} =
+    go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs} =
       Await (ServerAgency TokIdle) $ \msg -> case msg of
         MsgRequestTxIds blocking ackNo reqNo -> Effect $ do
           reply <- recvMsgRequestTxIds blocking ackNo reqNo
@@ -119,7 +113,3 @@ txSubmissionClientPeer (TxSubmissionClient client) =
           return $ Yield (ClientAgency TokTxs)
                          (MsgReplyTxs txs)
                          (go k)
-
-        MsgKThxBye -> Effect $ do
-          a <- recvMsgKThxBye
-          return (Done TokDone a)

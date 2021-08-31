@@ -8,6 +8,7 @@
 
 module Ouroboros.Network.Protocol.KeepAlive.Codec
   ( codecKeepAlive
+  , codecKeepAlive_v2
   , codecKeepAliveId
   , byteLimitsKeepAlive
   , timeLimitsKeepAlive
@@ -17,10 +18,13 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime (DiffTime)
 
 import           Data.ByteString.Lazy (ByteString)
+import           Text.Printf
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeWord, encodeWord16)
+import qualified Codec.CBOR.Encoding as CBOR ( Encoding, encodeListLen
+                                             , encodeWord, encodeWord16 )
 import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeWord, decodeWord16)
+import qualified Codec.CBOR.Decoding as CBOR ( Decoder, decodeListLen
+                                             , decodeWord, decodeWord16 )
 
 import           Network.TypedProtocol.Core
 
@@ -62,6 +66,49 @@ codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg
            fail ("codecKeepAlive.StClient: unexpected key:" ++ show key)
          (ServerAgency TokServer, _) ->
            fail ("codecKeepAlive.StServer: unexpected key: " ++ show key)
+
+
+codecKeepAlive_v2
+  :: forall m.
+     MonadST m
+  => Codec KeepAlive CBOR.DeserialiseFailure m ByteString
+codecKeepAlive_v2 = mkCodecCborLazyBS encodeMsg decodeMsg
+   where
+     encodeMsg :: forall (pr :: PeerRole) st st'.
+                  PeerHasAgency pr st
+               -> Message KeepAlive st st'
+               -> CBOR.Encoding
+     encodeMsg (ClientAgency TokClient) (MsgKeepAlive (Cookie c)) =
+          CBOR.encodeListLen 2
+       <> CBOR.encodeWord 0
+       <> CBOR.encodeWord16 c
+     encodeMsg (ServerAgency TokServer) (MsgKeepAliveResponse (Cookie c)) =
+          CBOR.encodeListLen 2
+       <> CBOR.encodeWord 1
+       <> CBOR.encodeWord16 c
+     encodeMsg (ClientAgency TokClient) MsgDone =
+          CBOR.encodeListLen 1
+       <> CBOR.encodeWord 2
+
+     decodeMsg :: forall (pr :: PeerRole) s (st :: KeepAlive).
+                  PeerHasAgency pr st
+               -> CBOR.Decoder s (SomeMessage st)
+     decodeMsg stok = do
+       len <- CBOR.decodeListLen
+       key <- CBOR.decodeWord
+       case (stok, len, key) of
+         (ClientAgency TokClient, 2, 0) -> do
+             cookie <- CBOR.decodeWord16
+             return (SomeMessage $ MsgKeepAlive $ Cookie cookie)
+         (ServerAgency TokServer, 2, 1) -> do
+             cookie <- CBOR.decodeWord16
+             return (SomeMessage $ MsgKeepAliveResponse $ Cookie cookie)
+         (ClientAgency TokClient, 1, 2) -> pure (SomeMessage MsgDone)
+
+         (ClientAgency TokClient, _, _) ->
+           fail (printf "codecKeepAlive (%s) unexpected key (%d, %d)" (show stok) key len)
+         (ServerAgency TokServer, _, _ ) ->
+           fail (printf "codecKeepAlive (%s) unexpected key (%d, %d)" (show stok) key len)
 
 
 byteLimitsKeepAlive :: (bytes -> Word) -> ProtocolSizeLimits KeepAlive bytes

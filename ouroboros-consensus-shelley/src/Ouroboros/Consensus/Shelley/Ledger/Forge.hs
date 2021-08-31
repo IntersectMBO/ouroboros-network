@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.Assert
 
+import qualified Cardano.Ledger.Era as SL (hashTxSeq, toTxSeq)
 import qualified Shelley.Spec.Ledger.BlockChain as SL
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
@@ -43,11 +44,11 @@ forgeShelleyBlock ::
   => HotKey (EraCrypto era) m
   -> TPraosCanBeLeader (EraCrypto era)
   -> TopLevelConfig (ShelleyBlock era)
-  -> BlockNo                               -- ^ Current block number
-  -> SlotNo                                -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock era)  -- ^ Current ledger
-  -> [GenTx (ShelleyBlock era)]            -- ^ Txs to add in the block
-  -> TPraosIsLeader (EraCrypto era)        -- ^ Leader proof
+  -> BlockNo                                -- ^ Current block number
+  -> SlotNo                                 -- ^ Current slot number
+  -> TickedLedgerState (ShelleyBlock era)   -- ^ Current ledger
+  -> [Validated (GenTx (ShelleyBlock era))] -- ^ Txs to add in the block
+  -> TPraosIsLeader (EraCrypto era)         -- ^ Leader proof
   -> m (ShelleyBlock era)
 forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader = do
     tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody
@@ -60,7 +61,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg
 
-    body = SL.TxSeq $ Seq.fromList $ (\(ShelleyTx _ tx) -> tx) <$> txs
+    body = SL.toTxSeq @era $ Seq.fromList $ (\(ShelleyValidatedTx _ tx) -> tx) <$> txs
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =
       SL.BHeader tpraosToSign tpraosSignature
@@ -86,7 +87,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader
       = return ()
 
     estimatedBodySize, actualBodySize :: Int
-    estimatedBodySize = fromIntegral $ foldl' (+) 0 (map txInBlockSize txs)
+    estimatedBodySize = fromIntegral $ foldl' (+) 0 $ map (txInBlockSize . txForgetValidated) txs
     actualBodySize    = SL.bBodySize body
 
     mkBhBody toSign = SL.BHBody {
@@ -98,7 +99,7 @@ forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader
         , bheaderEta     = tpraosToSignEta
         , bheaderL       = tpraosToSignLeader
         , bsize          = fromIntegral actualBodySize
-        , bhash          = SL.bbHash body
+        , bhash          = SL.hashTxSeq @era body
         , bheaderOCert   = tpraosToSignOCert
         , bprotver       = shelleyProtocolVersion $ configBlock cfg
         }

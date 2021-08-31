@@ -32,6 +32,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (TraceEvent (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -49,7 +51,7 @@ data ChainDbArgs f m blk = ChainDbArgs {
     , cdbImmutableDbValidation  :: ImmutableDB.ValidationPolicy
     , cdbVolatileDbValidation   :: VolatileDB.BlockValidationPolicy
     , cdbMaxBlocksPerFile       :: VolatileDB.BlocksPerFile
-    , cdbDiskPolicy             :: HKD f LgrDB.DiskPolicy
+    , cdbDiskPolicy             :: LgrDB.DiskPolicy
 
       -- Integration
     , cdbTopLevelConfig         :: HKD f (TopLevelConfig blk)
@@ -130,13 +132,17 @@ defaultSpecificArgs = ChainDbSpecificArgs {
 -- See 'ImmutableDB.defaultArgs', 'VolatileDB.defaultArgs', 'LgrDB.defaultArgs',
 -- and 'defaultSpecificArgs' for a list of which fields are not given a default
 -- and must therefore be set explicitly.
-defaultArgs :: forall m blk.
+defaultArgs ::
+     forall m blk.
      Monad m
-  => (RelativeMountPoint -> SomeHasFS m) -> ChainDbArgs Defaults m blk
-defaultArgs mkFS = toChainDbArgs (ImmutableDB.defaultArgs immFS)
-                                 (VolatileDB.defaultArgs  volFS)
-                                 (LgrDB.defaultArgs       lgrFS)
-                                 defaultSpecificArgs
+  => (RelativeMountPoint -> SomeHasFS m)
+  -> DiskPolicy
+  -> ChainDbArgs Defaults m blk
+defaultArgs mkFS diskPolicy =
+  toChainDbArgs (ImmutableDB.defaultArgs immFS)
+                (VolatileDB.defaultArgs  volFS)
+                (LgrDB.defaultArgs       lgrFS diskPolicy)
+                defaultSpecificArgs
   where
     immFS, volFS, lgrFS :: SomeHasFS m
 

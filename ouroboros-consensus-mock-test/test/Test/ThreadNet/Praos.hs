@@ -3,6 +3,8 @@
 
 module Test.ThreadNet.Praos (tests) where
 
+import           Control.Monad (replicateM)
+import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
 
@@ -30,21 +32,43 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.SimpleBlock
 
+import           Ouroboros.Consensus.Node.ProtocolInfo
+                     (NumCoreNodes (NumCoreNodes), enumCoreNodes)
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Slots (NumSlots (unNumSlots))
 
 data TestSetup = TestSetup
-  { setupEpochSize    :: EpochSize
-  , setupInitialNonce :: Natural
+  { setupEpochSize     :: EpochSize
+  , setupInitialNonce  :: Natural
     -- ^ the initial Shelley 'praosInitialEta'
     --
     -- This test varies it too ensure it explores different leader schedules.
-  , setupK            :: SecurityParam
-  , setupNodeJoinPlan :: NodeJoinPlan
-  , setupSlotLength   :: SlotLength
-  , setupTestConfig   :: TestConfig
+  , setupK             :: SecurityParam
+  , setupNodeJoinPlan  :: NodeJoinPlan
+  , setupSlotLength    :: SlotLength
+  , setupTestConfig    :: TestConfig
+  , setupEvolvingStake :: PraosEvolvingStake
   }
   deriving (Show)
+
+genEvolvingStake :: EpochSize -> TestConfig -> Gen PraosEvolvingStake
+genEvolvingStake epochSize TestConfig {numSlots, numCoreNodes} = do
+    chosenEpochs <- sublistOf [0..EpochNo $ max 1 maxEpochs - 1]
+    let l = fromIntegral maxEpochs
+    stakeDists <- replicateM l genStakeDist
+    return . PraosEvolvingStake . Map.fromList $ zip chosenEpochs stakeDists
+  where
+    maxEpochs = unNumSlots numSlots `div` unEpochSize epochSize
+    relativeStake ts nid stk = (nid, fromIntegral stk / ts)
+    genStakeDist = do
+      stakes <- vector (fromIntegral x) `suchThat` any (> 0) :: Gen [Amount]
+      let totalStake = fromIntegral $ sum stakes
+      return
+        . StakeDist
+        . Map.fromList
+        $ zipWith (relativeStake totalStake) (enumCoreNodes numCoreNodes) stakes
+    NumCoreNodes x = numCoreNodes
 
 instance Arbitrary TestSetup where
   arbitrary = do
@@ -59,6 +83,7 @@ instance Arbitrary TestSetup where
       let TestConfig{numCoreNodes, numSlots} = testConfig
 
       nodeJoinPlan   <- genNodeJoinPlan numCoreNodes numSlots
+      evolvingStake  <- genEvolvingStake epochSize testConfig
 
       pure $ TestSetup
         epochSize
@@ -67,6 +92,7 @@ instance Arbitrary TestSetup where
         nodeJoinPlan
         slotLength
         testConfig
+        evolvingStake
 
   -- TODO shrink
 
@@ -78,12 +104,13 @@ tests = testGroup "Praos"
 
 prop_simple_praos_convergence :: TestSetup -> Property
 prop_simple_praos_convergence TestSetup
-  { setupEpochSize    = epochSize
-  , setupK            = k
+  { setupEpochSize     = epochSize
+  , setupK             = k
   , setupInitialNonce
-  , setupNodeJoinPlan = nodeJoinPlan
-  , setupSlotLength   = slotLength
-  , setupTestConfig   = testConfig
+  , setupNodeJoinPlan  = nodeJoinPlan
+  , setupSlotLength    = slotLength
+  , setupTestConfig    = testConfig
+  , setupEvolvingStake = evolvingStake
   } =
     counterexample (tracesToDot testOutputNodes) $
     prop_general PropGeneralArgs
@@ -128,5 +155,6 @@ prop_simple_praos_convergence TestSetup
                                         k
                                         slotLength)
                                       setupInitialNonce
+                                      evolvingStake
             , mkRekeyM = Nothing
             }

@@ -151,7 +151,7 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
       extended = State.extendToSlot cfg slot st
 
 tickOne :: forall blk. SingleEraBlock blk
-        => EpochInfo Identity
+        => EpochInfo (Except PastHorizonException)
         -> SlotNo
         -> WrapPartialLedgerConfig  blk
         -> LedgerState              blk
@@ -261,7 +261,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
         Right matched ->
           hcollapse $ hcizipWith proxySingle aux cfgs matched
     where
-      ei :: EpochInfo Identity
+      ei :: EpochInfo (Except PastHorizonException)
       ei = State.epochInfoPrecomputedTransitionInfo
              (hardForkLedgerConfigShape $ configLedger tlc)
              transition

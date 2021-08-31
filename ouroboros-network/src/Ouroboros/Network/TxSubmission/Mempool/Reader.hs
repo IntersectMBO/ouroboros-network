@@ -1,9 +1,12 @@
 module Ouroboros.Network.TxSubmission.Mempool.Reader
   ( TxSubmissionMempoolReader (..)
   , MempoolSnapshot (..)
+
+  , mapMempoolSnapshot
+  , mapTxSubmissionMempoolReader
   ) where
 
-import           Control.Monad.Class.MonadSTM (STM)
+import           Control.Monad.Class.MonadSTM (MonadSTM, STM)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client (TxSizeInBytes)
 
@@ -25,6 +28,16 @@ data TxSubmissionMempoolReader txid tx idx m =
        mempoolZeroIdx      :: idx
     }
 
+mapTxSubmissionMempoolReader ::
+     MonadSTM m
+  => (tx -> tx')
+  -> TxSubmissionMempoolReader txid tx  idx m
+  -> TxSubmissionMempoolReader txid tx' idx m
+mapTxSubmissionMempoolReader f rdr =
+    rdr {
+       mempoolGetSnapshot = mapMempoolSnapshot f <$> mempoolGetSnapshot rdr
+    }
+
 -- | A pure snapshot of the contents of the mempool. It allows fetching
 -- information about transactions in the mempool, and fetching individual
 -- transactions.
@@ -44,4 +57,13 @@ data MempoolSnapshot txid tx idx =
        mempoolTxIdsAfter :: idx -> [(txid, idx, TxSizeInBytes)],
        mempoolLookupTx   :: idx -> Maybe tx,
        mempoolHasTx      :: txid -> Bool
+     }
+
+mapMempoolSnapshot ::
+     (tx -> tx')
+  -> MempoolSnapshot txid tx  idx
+  -> MempoolSnapshot txid tx' idx
+mapMempoolSnapshot f snap =
+     snap {
+       mempoolLookupTx = fmap f . mempoolLookupTx snap
      }

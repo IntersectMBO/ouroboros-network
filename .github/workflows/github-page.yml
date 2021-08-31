@@ -1,7 +1,6 @@
 name: "Haddock documentation"
 
 on:
-  push:
   schedule:
     - cron:  '0 0 * * *'
 

@@ -396,7 +396,7 @@ runQuery qry (Summary summary) = go summary
             Nothing ->
               Left $ PastHorizon callStack (Some e) (toList summary)
 
-runQueryThrow :: (HasCallStack, MonadThrow m )=> Qry a -> Summary xs -> m a
+runQueryThrow :: (HasCallStack, MonadThrow m) => Qry a -> Summary xs -> m a
 runQueryThrow q = either throwIO return . runQuery q
 
 runQueryPure :: HasCallStack => Qry a -> Summary xs -> a

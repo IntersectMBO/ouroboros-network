@@ -134,9 +134,13 @@ txOuts = Map.unions . map each . getMockTxs
         aux :: Ix -> TxOut -> (TxIn, TxOut)
         aux ix out = ((hashWithSerialiser toCBOR tx, ix), out)
 
+-- | @confirmed@ stands for all the transaction hashes present in the given
+-- collection.
 confirmed :: HasMockTxs a => a -> Set TxId
 confirmed = Set.fromList . map (hashWithSerialiser toCBOR) . getMockTxs
 
+-- |Update the Utxo with the transactions from the given @a@, by removing the
+-- inputs and adding the outputs.
 updateUtxo :: HasMockTxs a => a -> Utxo -> Except UtxoError Utxo
 updateUtxo = repeatedlyM each . getMockTxs
   where

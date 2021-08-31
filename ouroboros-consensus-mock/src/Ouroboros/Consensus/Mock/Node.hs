@@ -21,6 +21,7 @@ import           Data.Void (Void)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
@@ -29,7 +30,6 @@ import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util ((.....:))
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
@@ -85,7 +85,16 @@ simpleBlockForging canBeLeader forgeExt = BlockForging {
     , canBeLeader      = canBeLeader
     , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
     , checkCanForge    = \_ _ _ _ _ -> return ()
-    , forgeBlock       = return .....: forgeSimple forgeExt
+    , forgeBlock       = \cfg bno slot lst txs proof ->
+        return
+          $ forgeSimple
+              forgeExt
+              cfg
+              bno
+              slot
+              lst
+              (map txForgetValidated txs)
+              proof
     }
   where
     _ = keepRedundantConstraint (Proxy @(ForgeStateUpdateError (SimpleBlock c ext) ~ Void))

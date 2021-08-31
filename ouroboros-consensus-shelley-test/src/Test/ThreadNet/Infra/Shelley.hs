@@ -72,8 +72,9 @@ import           Test.Util.Time (dawnOfTime)
 import qualified Cardano.Ledger.Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
 import qualified Cardano.Ledger.Era
-import           Cardano.Ledger.SafeHash (EraIndependentTxBody,
-                     HashAnnotated (..), SafeHash, hashAnnotated)
+import           Cardano.Ledger.Hashes (EraIndependentTxBody)
+import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
+                     hashAnnotated)
 import qualified Cardano.Ledger.Shelley.Constraints as SL
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Shelley.Spec.Ledger.API as SL
@@ -435,9 +436,9 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
     SL.Tx
-      { _body       = body
-      , _witnessSet = witnessSet
-      , _metadata   = SL.SNothing
+      { body            = body
+      , wits            = witnessSet
+      , auxiliaryData   = SL.SNothing
       }
   where
     -- The funds touched by this transaction assume it's the first transaction
@@ -562,9 +563,9 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
     SL.Tx
-      { _body       = body
-      , _witnessSet = witnessSet
-      , _metadata   = SL.SNothing
+      { body          = body
+      , wits          = witnessSet
+      , auxiliaryData = SL.SNothing
       }
   where
     -- The funds touched by this transaction assume it's the first transaction

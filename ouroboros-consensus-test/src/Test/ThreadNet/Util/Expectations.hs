@@ -13,7 +13,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
-                     (LeaderSchedule (..))
 
 import           Test.ThreadNet.Util.NodeJoinPlan
 

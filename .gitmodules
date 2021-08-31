@@ -1,0 +1,9 @@
+[submodule "ledger-ondisk/haskey-btree"]
+	path = ledger-ondisk/haskey-btree
+	url = gh:haskell-haskey/haskey-btree.git
+[submodule "ledger-ondisk/haskey"]
+	path = ledger-ondisk/haskey
+	url = gh:haskell-haskey/haskey
+[submodule "ledger-ondisk/haskey-mtl"]
+	path = ledger-ondisk/haskey-mtl
+	url = gh:haskell-haskey/haskey-mtl

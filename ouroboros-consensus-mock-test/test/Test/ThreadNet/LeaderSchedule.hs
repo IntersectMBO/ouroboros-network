@@ -19,10 +19,10 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.PraosRule
+import           Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.TxGen.Mock ()
@@ -130,6 +130,7 @@ prop_simple_leader_schedule_convergence TestSetup
                   }
                   (HardFork.defaultEraParams k slotLength)
                   schedule
+                  emptyPraosEvolvingStake
             , mkRekeyM = Nothing
             }
 

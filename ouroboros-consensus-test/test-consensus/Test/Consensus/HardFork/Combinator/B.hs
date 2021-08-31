@@ -74,7 +74,6 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util ((.....:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -237,7 +236,8 @@ blockForgingB = BlockForging {
    , canBeLeader      = ()
    , updateForgeState = \_ _ _ -> return $ ForgeStateUpdated ()
    , checkCanForge    = \_ _ _ _ _ -> return ()
-   , forgeBlock       = return .....: forgeBlockB
+   , forgeBlock       = \cfg bno slot st txs proof -> return $
+       forgeBlockB cfg bno slot st (fmap txForgetValidated txs) proof
    }
 
 -- | A basic 'History.SafeZone'
@@ -251,14 +251,19 @@ safeZoneB (SecurityParam k) = History.StandardSafeZone k
 data instance GenTx BlockB
   deriving (Show, Eq, Generic, NoThunks, Serialise)
 
+data instance Validated (GenTx BlockB)
+  deriving (Show, Eq, Generic, NoThunks)
+
 type instance ApplyTxErr BlockB = Void
 
 instance LedgerSupportsMempool BlockB where
   applyTx   = \_ _ tx -> case tx of {}
-  reapplyTx = applyTx
+  reapplyTx = \_ _ vtx -> case vtx of {}
 
   maxTxCapacity _ = maxBound
   txInBlockSize _ = 0
+
+  txForgetValidated = \case {}
 
 data instance TxId (GenTx BlockB)
   deriving stock    (Show, Eq, Ord, Generic)

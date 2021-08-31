@@ -10,7 +10,6 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
 
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup (Min(..))
-import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job(..))
@@ -22,6 +21,7 @@ import           Control.Exception (Exception(..), SomeException, assert)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -267,10 +267,10 @@ aboveTarget PeerSelectionPolicy {
     -- We also need to avoid picking public root peers if that would put us
     -- below the target for root peers.
     --
-  , let numRootPeersCanForget = Map.size localRootPeers
+  , let numRootPeersCanForget = LocalRootPeers.size localRootPeers
                               + Set.size publicRootPeers
                               - targetNumberOfRootPeers
-        protectedRootPeers    = Map.keysSet localRootPeers
+        protectedRootPeers    = LocalRootPeers.keysSet localRootPeers
                              <> Set.drop numRootPeersCanForget publicRootPeers
         availableToForget     = KnownPeers.toSet knownPeers
                                   Set.\\ EstablishedPeers.toSet establishedPeers

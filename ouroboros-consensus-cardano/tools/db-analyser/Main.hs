@@ -23,6 +23,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (SnapshotInterval (..), defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
@@ -165,10 +167,12 @@ analyse CmdLine {..} args =
       ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
+          k          = configSecurityParam cfg
+          diskPolicy = defaultDiskPolicy k DefaultSnapshotInterval
           args' =
             Node.mkChainDbArgs
               registry InFuture.dontCheck cfg initLedger chunkInfo $
-            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir)
+            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy

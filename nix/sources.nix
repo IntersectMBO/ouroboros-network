@@ -26,27 +26,15 @@ let
   fetch_git = spec:
     builtins.fetchGit { url = spec.repo; inherit (spec) rev ref; };
 
-  fetch_builtin-tarball = spec:
-    builtins.trace
-      ''
-        WARNING:
-          The niv type "builtin-tarball" will soon be deprecated. You should
-          instead use `builtin = true`.
+  fetch_local = spec: spec.path;
 
-          $ niv modify <package> -a type=tarball -a builtin=true
-      ''
-      builtins_fetchTarball { inherit (spec) url sha256; };
+  fetch_builtin-tarball = name: throw
+    ''[${name}] The niv type "builtin-tarball" is deprecated. You should instead use `builtin = true`.
+        $ niv modify ${name} -a type=tarball -a builtin=true'';
 
-  fetch_builtin-url = spec:
-    builtins.trace
-      ''
-        WARNING:
-          The niv type "builtin-url" will soon be deprecated. You should
-          instead use `builtin = true`.
-
-          $ niv modify <package> -a type=file -a builtin=true
-      ''
-      (builtins_fetchurl { inherit (spec) url sha256; });
+  fetch_builtin-url = name: throw
+    ''[${name}] The niv type "builtin-url" will soon be deprecated. You should instead use `builtin = true`.
+        $ niv modify ${name} -a type=file -a builtin=true'';
 
   #
   # Various helpers
@@ -79,10 +67,20 @@ let
     else if spec.type == "file" then fetch_file pkgs spec
     else if spec.type == "tarball" then fetch_tarball pkgs name spec
     else if spec.type == "git" then fetch_git spec
+    else if spec.type == "local" then fetch_local spec
     else if spec.type == "builtin-tarball" then fetch_builtin-tarball name
     else if spec.type == "builtin-url" then fetch_builtin-url name
     else
       abort "ERROR: niv spec ${name} has unknown type ${builtins.toJSON spec.type}";
+
+  # If the environment variable NIV_OVERRIDE_${name} is set, then use
+  # the path directly as opposed to the fetched source.
+  replace = name: drv:
+    let
+      saneName = stringAsChars (c: if isNull (builtins.match "[a-zA-Z0-9]" c) then "_" else c) name;
+      ersatz = builtins.getEnv "NIV_OVERRIDE_${saneName}";
+    in
+      if ersatz == "" then drv else ersatz;
 
   # Ports of functions for older nix versions
 
@@ -130,13 +128,13 @@ let
         then abort
           "The values in sources.json should not have an 'outPath' attribute"
         else
-          spec // { outPath = fetch config.pkgs name spec; }
+          spec // { outPath = replace name (fetch config.pkgs name spec); }
     ) config.sources;
 
   # The "config" used by the fetchers
   mkConfig =
-    { sourcesFile ? ./sources.json
-    , sources ? builtins.fromJSON (builtins.readFile sourcesFile)
+    { sourcesFile ? if builtins.pathExists ./sources.json then ./sources.json else null
+    , sources ? if isNull sourcesFile then {} else builtins.fromJSON (builtins.readFile sourcesFile)
     , pkgs ? mkPkgs sources
     }: rec {
       # The sources, i.e. the attribute set of spec name to spec
@@ -145,5 +143,6 @@ let
       # The "pkgs" (evaluated nixpkgs) to use for e.g. non-builtin fetchers
       inherit pkgs;
     };
+
 in
 mkSources (mkConfig {}) // { __functor = _: settings: mkSources (mkConfig settings); }

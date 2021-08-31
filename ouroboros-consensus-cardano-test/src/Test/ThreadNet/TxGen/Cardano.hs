@@ -35,6 +35,7 @@ import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
+import qualified Cardano.Ledger.Hashes as SL
 import qualified Cardano.Ledger.SafeHash as SL
 import           Cardano.Ledger.Val ((<->))
 import qualified Shelley.Spec.Ledger.API as SL
@@ -210,12 +211,12 @@ migrateUTxO migrationInfo curSlot lcfg lst
     if Map.null picked then Nothing else
     (Just . GenTxShelley. mkShelleyTx) $
     SL.Tx
-      { SL._body       = body
-      , SL._metadata   = SL.SNothing
-      , SL._witnessSet = SL.WitnessSet
-                           (Set.fromList [delegWit, poolWit])
-                           mempty
-                           (Set.singleton byronWit)
+      { SL.body          = body
+      , SL.auxiliaryData = SL.SNothing
+      , SL.wits          = SL.WitnessSet
+                             (Set.fromList [delegWit, poolWit])
+                             mempty
+                             (Set.singleton byronWit)
       }
 
     | otherwise           = Nothing

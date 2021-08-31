@@ -279,8 +279,8 @@ instance TxGen DualByronBlock where
                              curSlotNo
                              tx
                              st of
-            Right st' -> go (tx:acc) (n - 1) st'
-            Left _    -> error "testGenTxs: unexpected invalid tx"
+            Right (st', _vtx) -> go (tx:acc) (n - 1) st'
+            Left _            -> error "testGenTxs: unexpected invalid tx"
 
 -- | Generate transaction
 --

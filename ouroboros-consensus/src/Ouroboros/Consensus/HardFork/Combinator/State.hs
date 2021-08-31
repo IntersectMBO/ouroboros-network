@@ -32,7 +32,6 @@ module Ouroboros.Consensus.HardFork.Combinator.State (
 import           Prelude hiding (sequence)
 
 import           Control.Monad (guard)
-import           Data.Functor.Identity
 import           Data.Functor.Product
 import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
@@ -152,7 +151,7 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 epochInfoLedger :: All SingleEraBlock xs
                 => HardForkLedgerConfig xs
                 -> HardForkState LedgerState xs
-                -> EpochInfo Identity
+                -> EpochInfo (Except PastHorizonException)
 epochInfoLedger cfg st =
     History.snapshotEpochInfo $
       reconstructSummaryLedger cfg st
@@ -162,7 +161,7 @@ epochInfoPrecomputedTransitionInfo ::
      History.Shape xs
   -> TransitionInfo
   -> HardForkState f xs
-  -> EpochInfo Identity
+  -> EpochInfo (Except PastHorizonException)
 epochInfoPrecomputedTransitionInfo shape transition st =
     History.snapshotEpochInfo $
       reconstructSummary shape transition st

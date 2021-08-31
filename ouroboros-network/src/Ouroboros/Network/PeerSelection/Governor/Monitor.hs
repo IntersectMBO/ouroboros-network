@@ -3,8 +3,9 @@
 
 -- | This module contains governor decisions for monitoring tasks:
 --
--- * monitoring target peer changes
--- * monitoring results governor's job results
+-- * monitoring local root peer config changes
+-- * monitoring changes to the peer target numbers
+-- * monitoring the completion of asynchronous governor job
 -- * monitoring connections
 --
 module Ouroboros.Network.PeerSelection.Governor.Monitor
@@ -27,6 +28,7 @@ import           Control.Exception (assert)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemoteActivePeer)
@@ -36,7 +38,7 @@ import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemote
 -- 'PeerSelectionState', since we return it in a 'Decision' action it will be
 -- picked by the governor's 'peerSelectionGovernorLoop'.
 --
-targetPeers :: MonadSTM m
+targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
@@ -47,19 +49,21 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
             } =
     Guarded Nothing $ do
       targets' <- readPeerSelectionTargets
-      check (targets' /= targets)
+      check (targets' /= targets && sanePeerSelectionTargets targets')
+      -- We simply ignore target updates that are not "sane".
 
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
-      -- practice so it's ok to resolve it arbitrarily using Map.take.
-      let localRootPeers' = Map.take (targetNumberOfKnownPeers targets')
-                                     localRootPeers
+      -- practice so it's ok to resolve it arbitrarily using clampToLimit.
+      let localRootPeers' = LocalRootPeers.clampToLimit
+                              (targetNumberOfKnownPeers targets')
+                              localRootPeers
+      --TODO: trace when the clamping kicks in, and warn operators
 
       return $ \_now -> Decision {
         decisionTrace = TraceTargetsChanged targets targets',
         decisionJobs  = [],
-        decisionState = assert (sanePeerSelectionTargets targets')
-                        st {
+        decisionState = st {
                           targets        = targets',
                           localRootPeers = localRootPeers'
                         }
@@ -200,8 +204,8 @@ connections PeerSelectionActions{
     asyncDemotion _        _                          = Nothing
 
 
---------------------------------
--- Local root peers below target
+-----------------------------------------------
+-- Monitoring changes to the local root peers
 --
 
 
@@ -226,11 +230,18 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
       -- We have to enforce the invariant that the number of root peers is
       -- not more than the target number of known peers. It's unlikely in
       -- practice so it's ok to resolve it arbitrarily using Map.take.
-      localRootPeers' <- Map.take targetNumberOfKnownPeers <$> readLocalRootPeers
+      localRootPeersRaw <- readLocalRootPeers
+      let localRootPeers' = LocalRootPeers.clampToLimit
+                              targetNumberOfKnownPeers
+                          . LocalRootPeers.fromGroups
+                          $ localRootPeersRaw
       check (localRootPeers' /= localRootPeers)
+      --TODO: trace when the clamping kicks in, and warn operators
 
-      let added       = localRootPeers' Map.\\ localRootPeers
-          removed     = localRootPeers  Map.\\ localRootPeers'
+      let added       = LocalRootPeers.toMap localRootPeers' Map.\\
+                        LocalRootPeers.toMap localRootPeers
+          removed     = LocalRootPeers.toMap localRootPeers  Map.\\
+                        LocalRootPeers.toMap localRootPeers'
           addedSet    = Map.keysSet added
           removedSet  = Map.keysSet removed
           knownPeers' = KnownPeers.insert addedSet
@@ -241,7 +252,8 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
 
           -- We have to adjust the publicRootPeers to maintain the invariant
           -- that the local and public sets are non-overlapping.
-          publicRootPeers' = publicRootPeers Set.\\ Map.keysSet localRootPeers'
+          publicRootPeers' = publicRootPeers Set.\\
+                             LocalRootPeers.keysSet localRootPeers'
 
           -- If we are removing local roots and we have active connections to
           -- them then things are a little more complicated. We would typically
@@ -263,7 +275,7 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
                     publicRootPeers'
                    (KnownPeers.toSet knownPeers'))
         . assert (Set.isSubsetOf
-                   (Map.keysSet localRootPeers')
+                   (LocalRootPeers.keysSet localRootPeers')
                    (KnownPeers.toSet knownPeers'))
 
         $ Decision {

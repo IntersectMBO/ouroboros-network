@@ -18,12 +18,12 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-import           Ouroboros.Consensus.Util ((.....:))
 
 type MockPBftBlock = SimplePBftBlock SimpleMockCrypto PBftMockCrypto
 
@@ -95,5 +95,14 @@ pbftBlockForging canBeLeader = BlockForging {
                                canBeLeader
                                slot
                                tickedPBftState
-    , forgeBlock       = return .....: forgeSimple forgePBftExt
+    , forgeBlock       = \cfg slot bno lst txs proof ->
+        return
+          $ forgeSimple
+              forgePBftExt
+              cfg
+              slot
+              bno
+              lst
+              (map txForgetValidated txs)
+              proof
     }

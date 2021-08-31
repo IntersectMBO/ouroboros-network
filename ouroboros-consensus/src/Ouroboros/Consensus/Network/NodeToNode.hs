@@ -76,6 +76,8 @@ import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.TxSubmission.Inbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                     (mapTxSubmissionMempoolReader)
 import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
@@ -104,7 +106,8 @@ import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
 -- | Protocol handlers for node-to-node (remote) communication
 data Handlers m peer blk = Handlers {
       hChainSyncClient
-        :: NodeToNodeVersion
+        :: peer
+        -> NodeToNodeVersion
         -> ControlMessageSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
@@ -171,12 +174,12 @@ mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
-        hChainSyncClient =
+        hChainSyncClient = \peer ->
           chainSyncClient
             (pipelineDecisionLowHighMark
               (chainSyncPipeliningLowMark  miniProtocolParameters)
               (chainSyncPipeliningHighMark miniProtocolParameters))
-            (Node.chainSyncClientTracer tracers)
+            (contramap (TraceLabelPeer peer) (Node.chainSyncClientTracer tracers))
             getTopLevelConfig
             (defaultChainDbView getChainDB)
       , hChainSyncServer = \_version ->
@@ -194,14 +197,14 @@ mkHandlers
           txSubmissionOutbound
             (contramap (TraceLabelPeer peer) (Node.txOutboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
-            (getMempoolReader getMempool)
+            (mapTxSubmissionMempoolReader txForgetValidated $ getMempoolReader getMempool)
             version
             controlMessageSTM
       , hTxSubmissionServer = \version peer ->
           txSubmissionInbound
             (contramap (TraceLabelPeer peer) (Node.txInboundTracer tracers))
             (txSubmissionMaxUnacked miniProtocolParameters)
-            (getMempoolReader getMempool)
+            (mapTxSubmissionMempoolReader txForgetValidated $ getMempoolReader getMempool)
             (getMempoolWriter getMempool)
             version
       , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers) keepAliveRng
@@ -228,9 +231,10 @@ defaultCodecs :: forall m blk. (IOLike m, SerialiseNodeToNodeConstraints blk,
                                 ShowProxy (GenTxId blk), ShowProxy (GenTx blk))
               => CodecConfig       blk
               -> BlockNodeToNodeVersion blk
+              -> NodeToNodeVersion
               -> Codecs blk DeserialiseFailure m
                    ByteString ByteString ByteString ByteString ByteString ByteString ByteString
-defaultCodecs ccfg version = Codecs {
+defaultCodecs ccfg version nodeToNodeVersion = Codecs {
       cChainSyncCodec =
         codecChainSync
           enc
@@ -278,7 +282,9 @@ defaultCodecs ccfg version = Codecs {
           dec
 
     , cKeepAliveCodec =
-        codecKeepAlive
+        if nodeToNodeVersion <= NodeToNodeV_6
+          then codecKeepAlive
+          else codecKeepAlive_v2
     }
   where
     p :: Proxy blk
@@ -443,11 +449,11 @@ mkApps
      )
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
-  -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA
+  -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA)
   -> m ChainSyncTimeout
   -> Handlers m remotePeer blk
   -> Apps m remotePeer bCS bBF bTX bTX2 bKA ()
-mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
+mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
@@ -466,7 +472,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
         bracketChainSyncClient
-            (Node.chainSyncClientTracer (getTracers kernel))
+            (contramap (TraceLabelPeer them) (Node.chainSyncClientTracer (getTracers kernel)))
             (defaultChainDbView (getChainDB kernel))
             (getNodeCandidates kernel)
             them $ \varCandidate -> do
@@ -474,12 +480,12 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
               (_, trailing) <-
                 runPipelinedPeerWithLimits
                   (contramap (TraceLabelPeer them) tChainSyncTracer)
-                  cChainSyncCodec
+                  (cChainSyncCodec (mkCodecs version))
                   (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient version controlMessageSTM varCandidate
+                  $ hChainSyncClient them version controlMessageSTM varCandidate
               return ((), trailing)
 
     aChainSyncServer
@@ -496,7 +502,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
         $ \flr ->
           runPeerWithLimits
             (contramap (TraceLabelPeer them) tChainSyncSerialisedTracer)
-            cChainSyncCodecSerialised
+            (cChainSyncCodecSerialised (mkCodecs version))
             (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
             (timeLimitsChainSync chainSyncTimeout)
             channel
@@ -514,7 +520,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
         runPipelinedPeerWithLimits
           (contramap (TraceLabelPeer them) tBlockFetchTracer)
-          cBlockFetchCodec
+          (cBlockFetchCodec (mkCodecs version))
           (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
           timeLimitsBlockFetch
           channel
@@ -530,7 +536,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       withRegistry $ \registry ->
         runPeerWithLimits
           (contramap (TraceLabelPeer them) tBlockFetchSerialisedTracer)
-          cBlockFetchCodecSerialised
+          (cBlockFetchCodecSerialised (mkCodecs version))
           (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
           timeLimitsBlockFetch
           channel
@@ -547,7 +553,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       labelThisThread "TxSubmissionClient"
       runPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
-        cTxSubmissionCodec
+        (cTxSubmissionCodec (mkCodecs version))
         (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission
         channel
@@ -562,7 +568,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       labelThisThread "TxSubmissionServer"
       runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
-        cTxSubmissionCodec
+        (cTxSubmissionCodec (mkCodecs version))
         (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission
         channel
@@ -578,7 +584,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       labelThisThread "TxSubmissionClient"
       runPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmission2Tracer)
-        cTxSubmission2Codec
+        (cTxSubmission2Codec (mkCodecs version))
         (byteLimitsTxSubmission2 (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission2
         channel
@@ -593,7 +599,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       labelThisThread "TxSubmissionServer"
       runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmission2Tracer)
-        cTxSubmission2Codec
+        (cTxSubmission2Codec (mkCodecs version))
         (byteLimitsTxSubmission2 (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsTxSubmission2
         channel
@@ -615,7 +621,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
                      _             -> \dqCtx -> do
                        runPeerWithLimits
                          nullTracer
-                         cKeepAliveCodec
+                         (cKeepAliveCodec (mkCodecs version))
                          (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
                          timeLimitsKeepAlive
                          channel
@@ -630,11 +636,11 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
       -> remotePeer
       -> Channel m bKA
       -> m ((), Maybe bKA)
-    aKeepAliveServer _version _them channel = do
+    aKeepAliveServer version _them channel = do
       labelThisThread "KeepAliveServer"
       runPeerWithLimits
         nullTracer
-        cKeepAliveCodec
+        (cKeepAliveCodec (mkCodecs version))
         (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
         timeLimitsKeepAlive
         channel

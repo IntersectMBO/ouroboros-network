@@ -3,9 +3,6 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- usage of `MsgKThxBye` is safe in this module.
-{-# OPTIONS_GHC -Wno-warnings-deprecations #-}
-
 -- | A view of the transaction submission protocol from the point of view of
 -- the server.
 --
@@ -91,12 +88,6 @@ data ServerStIdle (n :: N) txid tx m a where
     -> (Collect txid tx -> m (ServerStIdle    n  txid tx m a))
     ->                        ServerStIdle (S n) txid tx m a
 
-  -- | Terminate the protocol by sending 'MsgKThxBye'.
-  --
-  SendMsgKThxBye
-    :: a                                   -- ^ Result if done
-    -> ServerStIdle Z txid tx m a
-
 
 -- | Transform a 'TxSubmissionServerPipelined' into a 'PeerPipelined'.
 --
@@ -144,12 +135,6 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
            case msg of
              MsgReplyTxs txs -> ReceiverDone (CollectTxs txids txs))
         (SenderEffect (go <$> k))
-
-    go (SendMsgKThxBye kDone) =
-      SenderYield
-        (ServerAgency TokIdle)
-        MsgKThxBye
-        (SenderDone TokDone kDone)
 
     go (CollectPipelined mNone collect) =
       SenderCollect

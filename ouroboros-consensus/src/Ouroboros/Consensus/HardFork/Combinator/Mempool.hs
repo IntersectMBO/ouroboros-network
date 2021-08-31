@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -19,16 +21,17 @@ module Ouroboros.Consensus.HardFork.Combinator.Mempool (
     GenTx (..)
   , HardForkApplyTxErr (..)
   , TxId (..)
+  , Validated (..)
   , hardForkApplyTxErrFromEither
   , hardForkApplyTxErrToEither
   ) where
 
 import           Control.Monad.Except
 import           Data.Functor.Product
+import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
@@ -45,6 +48,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Product2 (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
@@ -76,15 +81,30 @@ deriving stock instance CanHardFork xs => Eq (HardForkApplyTxErr xs)
 newtype instance GenTx (HardForkBlock xs) = HardForkGenTx {
       getHardForkGenTx :: OneEraGenTx xs
     }
-  deriving (Eq, Show, NoThunks)
+  deriving (Eq, Generic, Show)
+  deriving anyclass (NoThunks)
+
+newtype instance Validated (GenTx (HardForkBlock xs)) = HardForkValidatedGenTx {
+      getHardForkValidatedGenTx :: OneEraValidatedGenTx xs
+    }
+  deriving (Eq, Generic, Show)
+  deriving anyclass (NoThunks)
 
 instance Typeable xs => ShowProxy (GenTx (HardForkBlock xs)) where
 
 type instance ApplyTxErr (HardForkBlock xs) = HardForkApplyTxErr xs
 
 instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
-  applyTx   = applyHelper applyTx
-  reapplyTx = applyHelper reapplyTx
+  applyTx   = applyHelper ModeApply
+
+  reapplyTx = \cfg slot vtx tls ->
+        fmap (\(tls', _vtx) -> tls')
+      $ applyHelper
+          ModeReapply
+          cfg
+          slot
+          (WrapValidatedGenTx vtx)
+          tls
 
   maxTxCapacity =
         hcollapse
@@ -98,26 +118,45 @@ instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
       . getOneEraGenTx
       . getHardForkGenTx
 
-applyHelper
-  :: forall xs. CanHardFork xs
-  => (    forall blk. (SingleEraBlock blk, HasCallStack)
-       => LedgerConfig blk
-       -> SlotNo
-       -> GenTx blk
-       -> TickedLedgerState blk
-       -> Except (ApplyTxErr blk) (TickedLedgerState blk)
-     )
+  txForgetValidated =
+        HardForkGenTx
+      . OneEraGenTx
+      . hcmap proxySingle (txForgetValidated . unwrapValidatedGenTx)
+      . getOneEraValidatedGenTx
+      . getHardForkValidatedGenTx
+
+-- | A private type used only to clarify the parameterization of 'applyHelper'
+data ApplyHelperMode :: (Type -> Type) -> Type where
+  ModeApply   :: ApplyHelperMode GenTx
+  ModeReapply :: ApplyHelperMode WrapValidatedGenTx
+
+-- | A private type used only to clarify the definition of 'applyHelper'
+data ApplyResult xs blk = ApplyResult {
+    arState       :: Ticked (LedgerState blk)
+  , arValidatedTx :: Validated (GenTx (HardForkBlock xs))
+  }
+
+-- | The shared logic between 'applyTx' and 'reapplyTx' for 'HardForkBlock'
+--
+-- The @txIn@ variable is 'GenTx' or 'WrapValidatedGenTx', respectively. See
+-- 'ApplyHelperMode'.
+applyHelper :: forall xs txIn. CanHardFork xs
+  => ApplyHelperMode txIn
   -> LedgerConfig (HardForkBlock xs)
   -> SlotNo
-  -> GenTx (HardForkBlock xs)
+  -> txIn (HardForkBlock xs)
   -> TickedLedgerState (HardForkBlock xs)
-  -> Except (HardForkApplyTxErr xs) (TickedLedgerState (HardForkBlock xs))
-applyHelper apply
+  -> Except
+      (HardForkApplyTxErr xs)
+      ( TickedLedgerState (HardForkBlock xs)
+      , Validated (GenTx (HardForkBlock xs))
+      )
+applyHelper mode
             HardForkLedgerConfig{..}
             slot
-            (HardForkGenTx (OneEraGenTx hardForkTx))
+            tx
             (TickedHardForkLedgerState transition hardForkState) =
-    case matchTx injectTxs hardForkTx hardForkState of
+    case matchPolyTx injs (modeGetTx tx) hardForkState of
       Left mismatch ->
         throwError $ HardForkApplyTxErrWrongEra . MismatchEraInfo $
           Match.bihcmap proxySingle singleEraInfo ledgerInfo mismatch
@@ -138,8 +177,19 @@ applyHelper apply
         -- o 'TransitionImpossible'. Two subcases: we are in the final era (in
         --    which we will remain to be) or we are forecasting, which is not
         --    applicable here.
-        fmap (TickedHardForkLedgerState transition) $ hsequence' $
-          hcizipWith proxySingle applyCurrent cfgs matched
+        do
+          result <-
+              hsequence'
+            $ hcizipWith proxySingle modeApplyCurrent cfgs matched
+          let _ = result :: State.HardForkState (ApplyResult xs) xs
+
+              st' :: State.HardForkState (Ticked :.: LedgerState) xs
+              st' = (Comp . arState) `hmap` result
+
+              vtx :: Validated (GenTx (HardForkBlock xs))
+              vtx = hcollapse $ (K . arValidatedTx) `hmap` result
+
+          return (TickedHardForkLedgerState transition st', vtx)
   where
     pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
     cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
@@ -148,23 +198,59 @@ applyHelper apply
               transition
               hardForkState
 
-    injectTxs :: InPairs InjectTx xs
-    injectTxs = InPairs.requiringBoth cfgs hardForkInjectTxs
+    injs :: InPairs (InjectPolyTx txIn) xs
+    injs =
+        InPairs.hmap
+          modeGetInjection
+          (InPairs.requiringBoth cfgs hardForkInjectTxs)
 
-    applyCurrent
-      :: forall blk. SingleEraBlock blk
-      => Index xs                                                      blk
-      -> WrapLedgerConfig                                              blk
-      -> Product GenTx (Ticked :.: LedgerState)                        blk
-      -> (Except (HardForkApplyTxErr xs) :.: (Ticked :.: LedgerState)) blk
-    applyCurrent index cfg (Pair tx (Comp st)) = Comp $ fmap Comp $
-      withExcept (injectApplyTxErr index) $
-        apply (unwrapLedgerConfig cfg) slot tx st
+    modeGetTx :: txIn (HardForkBlock xs) -> NS txIn xs
+    modeGetTx = case mode of
+        ModeApply   ->
+              getOneEraGenTx
+            . getHardForkGenTx
+        ModeReapply ->
+              getOneEraValidatedGenTx
+            . getHardForkValidatedGenTx
+            . unwrapValidatedGenTx
+
+    modeGetInjection :: forall blk1 blk2.
+         Product2 InjectTx InjectValidatedTx blk1 blk2
+      -> InjectPolyTx txIn                   blk1 blk2
+    modeGetInjection (Pair2 injTx injValidatedTx) = case mode of
+        ModeApply   -> injTx
+        ModeReapply -> injValidatedTx
+
+    modeApplyCurrent :: forall blk.
+         SingleEraBlock                        blk
+      => Index xs                              blk
+      -> WrapLedgerConfig                      blk
+      -> Product txIn (Ticked :.: LedgerState) blk
+      -> (     Except (HardForkApplyTxErr xs)
+           :.: ApplyResult xs
+         ) blk
+    modeApplyCurrent index cfg (Pair tx' (Comp st)) =
+          Comp
+        $ withExcept (injectApplyTxErr index)
+        $ do
+            let lcfg = unwrapLedgerConfig cfg
+            (st', vtx) <- case mode of
+              ModeApply   -> applyTx lcfg slot tx' st
+              ModeReapply -> do
+                  let vtx' = unwrapValidatedGenTx tx'
+                  st' <- reapplyTx lcfg slot vtx' st
+                  -- provide the given transaction, which was already validated
+                  pure (st', vtx')
+            pure ApplyResult {
+                arValidatedTx = injectValidatedGenTx index vtx
+              , arState       = st'
+              }
 
 newtype instance TxId (GenTx (HardForkBlock xs)) = HardForkGenTxId {
       getHardForkGenTxId :: OneEraGenTxId xs
     }
-  deriving (Show, Eq, Ord, NoThunks)
+  deriving (Eq, Generic, Ord, Show)
+  deriving anyclass (NoThunks)
 
 instance Typeable xs => ShowProxy (TxId (GenTx (HardForkBlock xs))) where
 
@@ -190,8 +276,8 @@ instance All HasTxs xs => HasTxs (HardForkBlock xs) where
            HasTxs blk
         => Index xs blk
         -> I blk
-        -> K [GenTx (HardForkBlock xs)] blk
-      aux index = K . map (injectNS' (Proxy @GenTx) index) . extractTxs . unI
+        -> K [Validated (GenTx (HardForkBlock xs))] blk
+      aux index = K . map (injectNS' (Proxy @WrapValidatedGenTx) index) . extractTxs . unI
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -207,3 +293,10 @@ injectApplyTxErr index =
     . OneEraApplyTxErr
     . injectNS index
     . WrapApplyTxErr
+
+injectValidatedGenTx :: Index xs blk -> Validated (GenTx blk) -> Validated (GenTx (HardForkBlock xs))
+injectValidatedGenTx index =
+      HardForkValidatedGenTx
+    . OneEraValidatedGenTx
+    . injectNS index
+    . WrapValidatedGenTx

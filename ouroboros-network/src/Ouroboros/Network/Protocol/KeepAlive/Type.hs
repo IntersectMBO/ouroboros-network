@@ -10,7 +10,7 @@
 -- The keep alive protocol is used for
 --
 -- * sending keep alive messages
--- * making round trip measurements
+-- * making round trip measuremnets
 --
 -- Each side will run its own version of the keep alive protocol.  It should be
 -- configured so that any intermediate state (such as in customer premise

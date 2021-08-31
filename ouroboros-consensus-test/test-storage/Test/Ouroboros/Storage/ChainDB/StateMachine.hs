@@ -95,7 +95,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (defaultDiskPolicy)
+                     (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -1580,7 +1580,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbImmutableDbValidation  = ValidateAllChunks
     , cdbVolatileDbValidation   = VolatileDB.ValidateAll
     , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-    , cdbDiskPolicy             = defaultDiskPolicy (configSecurityParam cfg)
+    , cdbDiskPolicy             = defaultDiskPolicy (configSecurityParam cfg) DefaultSnapshotInterval
 
       -- Integration
     , cdbTopLevelConfig         = cfg

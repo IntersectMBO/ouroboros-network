@@ -152,7 +152,7 @@ instance Bridge ByronBlock ByronSpecBlock where
       }
 
   updateBridgeWithTx genTx bridge = bridge {
-        toImplIds = toImplIds bridge <> dualGenTxBridge genTx
+        toImplIds = toImplIds bridge <> vDualGenTxBridge genTx
       }
 
 {-------------------------------------------------------------------------------
@@ -210,10 +210,10 @@ forgeDualByronBlock
   -> BlockNo                            -- ^ Current block number
   -> SlotNo                             -- ^ Current slot number
   -> TickedLedgerState DualByronBlock   -- ^ Ledger
-  -> [GenTx DualByronBlock]             -- ^ Txs to add in the block
+  -> [Validated (GenTx DualByronBlock)] -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
-forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger txs isLeader =
+forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
     -- instead we /forge/ it. This is important, because we want to test that
     -- codepath. This does mean that we do not get any kind of "bridge" between
@@ -224,7 +224,7 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger txs isLeader =
     DualBlock {
         dualBlockMain   = main
       , dualBlockAux    = Just aux
-      , dualBlockBridge = mconcat $ map dualGenTxBridge txs
+      , dualBlockBridge = mconcat $ map vDualGenTxBridge vtxs
       }
   where
     main :: ByronBlock
@@ -233,7 +233,7 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger txs isLeader =
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)
-             (map dualGenTxMain txs)
+             (map vDualGenTxMain vtxs)
              isLeader
 
     aux :: ByronSpecBlock
@@ -241,7 +241,7 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger txs isLeader =
             curBlockNo
             curSlotNo
             (tickedDualLedgerStateAux tickedLedger)
-            (map dualGenTxAux txs)
+            (map vDualGenTxAux vtxs)
             (bridgeToSpecKey
                (tickedDualLedgerStateBridge tickedLedger)
                (hashVerKey . deriveVerKeyDSIGN . pbftIsLeaderSignKey $ isLeader))

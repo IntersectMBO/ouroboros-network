@@ -11,8 +11,10 @@
 
 -- | Interface to the ledger layer
 module Ouroboros.Consensus.Ledger.Abstract (
+    -- * Type-level validation marker
+    Validated
     -- * Apply block
-    ApplyBlock (..)
+  , ApplyBlock (..)
   , UpdateLedger
     -- ** Derived
   , foldLedger
@@ -28,6 +30,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
   ) where
 
 import           Control.Monad.Except
+import           Data.Kind (Type)
 import           Data.Proxy
 import           GHC.Stack (HasCallStack)
 
@@ -35,6 +38,32 @@ import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
+
+-- | " Validated " transaction or block
+--
+-- The ledger defines how to validate transactions and blocks. It's possible the
+-- type before and after validation may be distinct (eg Alonzo transactions),
+-- which originally motivated this family.
+--
+-- We also gain the related benefit that certain interface functions, such as
+-- 'reapplyLedgerBlock' can have a more precise type now. TODO
+--
+-- Similarly, the Node-to-Client mini protocols can explicitly indicate that the
+-- client trusts the blocks from the local server, by having the server send
+-- 'Validated' blocks to the client. TODO
+--
+-- Note that validation has different implications for a transaction than for a
+-- block. In particular, a validated transaction can be " reapplied " to
+-- different ledger states, whereas a validated block must only be " reapplied "
+-- to the exact same ledger state (eg as part of rebuilding from an on-disk
+-- ledger snapshot).
+--
+-- Since the ledger defines validation, see the ledger details for concrete
+-- examples of what determines the validity (wrt to a 'LedgerState') of a
+-- transaction and/or block. Example properties include: a transaction's claimed
+-- inputs exist and are still unspent, a block carries a sufficient
+-- cryptographic signature, etc.
+data family Validated x :: Type
 
 {-------------------------------------------------------------------------------
   Apply block to ledger state

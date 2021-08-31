@@ -1,12 +1,18 @@
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE FlexibleContexts    #-}
 module Test.Ouroboros.Network.Testing.Utils where
 
+import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Codec.CBOR.Read      as CBOR
 import qualified Codec.CBOR.Term      as CBOR
+import qualified Codec.CBOR.FlatTerm as CBOR
 
 import           Ouroboros.Network.Codec
+
+import           Test.QuickCheck
 
 -- | Generate all 2-splits of a string.
 splits2 :: LBS.ByteString -> [[LBS.ByteString]]
@@ -33,3 +39,29 @@ prop_codec_cborM codec (AnyMessageAndAgency stok msg)
     = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ encode codec stok msg of
         Left _err               -> return False
         Right (leftover, _term) -> return $ LBS.null leftover
+
+
+-- | This property checks that the encoder is producing a valid CBOR.  It
+-- encodes to 'ByteString' using 'encode' and decodes a 'FlatTerm' from the
+-- bytestring which is the fed into 'CBOR.validFlatTerm'.
+--
+prop_codec_valid_cbor_encoding
+  :: forall ps.
+     Codec ps DeserialiseFailure IO ByteString
+  -> AnyMessageAndAgency ps
+  -> Property
+prop_codec_valid_cbor_encoding Codec {encode} (AnyMessageAndAgency stok msg) =
+    case deserialise [] (encode stok msg) of
+      Left  e     -> counterexample (show e) False
+      Right terms -> property (CBOR.validFlatTerm terms)
+  where
+    deserialise :: [CBOR.TermToken]
+                -> ByteString
+                -> Either DeserialiseFailure [CBOR.TermToken]
+    deserialise !as bs =
+      case CBOR.deserialiseFromBytes CBOR.decodeTermToken bs of
+        Left e -> Left e
+        Right (bs', a) | LBS.null bs'
+                       -> Right (reverse (a : as))
+                       | otherwise
+                       -> deserialise (a : as) bs'

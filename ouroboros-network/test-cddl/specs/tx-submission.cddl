@@ -1,0 +1,29 @@
+;
+; TxSubmission mini-protocol
+;
+
+
+; reference implementation of the codec in :
+; ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Codec.hs
+
+txSubmissionMessage
+    = msgRequestTxIds
+    / msgReplyTxIds
+    / msgRequestTxs
+    / msgReplyTxs
+    / tsMsgDone
+
+msgRequestTxIds = [0, tsBlocking, txCount, txCount]
+msgReplyTxIds   = [1, [ *txIdAndSize] ]
+msgRequestTxs   = [2, tsIdList ]
+msgReplyTxs     = [3, tsIdList ]
+tsMsgDone       = [4]
+
+tsBlocking      = false / true
+txCount         = word16
+; The codec only accepts infinite-length list encoding for tsIdList !
+tsIdList        = [ *txId ]
+txIdAndSize     = [txId, txSizeInBytes]
+txId            = int
+txSizeInBytes   = word32
+

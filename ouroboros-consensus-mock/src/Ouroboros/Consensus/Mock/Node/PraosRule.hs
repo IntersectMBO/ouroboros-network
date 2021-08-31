@@ -16,10 +16,10 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node
+import           Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-import           Ouroboros.Consensus.Protocol.LeaderSchedule
 
 type MockPraosRuleBlock = SimplePraosRuleBlock SimpleMockCrypto
 
@@ -29,22 +29,25 @@ protocolInfoPraosRule :: Monad m
                       -> PraosParams
                       -> HardFork.EraParams
                       -> LeaderSchedule
+                      -> PraosEvolvingStake
                       -> ProtocolInfo m MockPraosRuleBlock
 protocolInfoPraosRule numCoreNodes
                       nid
                       params
                       eraParams
-                      schedule =
+                      schedule
+                      evolvingStake =
     ProtocolInfo {
       pInfoConfig = TopLevelConfig {
           topLevelConfigProtocol = WLSConfig {
               wlsConfigSchedule = schedule
             , wlsConfigP        = PraosConfig
-                { praosParams       = params
-                , praosSignKeyVRF   = NeverUsedSignKeyVRF
-                , praosInitialEta   = 0
-                , praosInitialStake = genesisStakeDist addrDist
-                , praosVerKeys      = verKeys
+                { praosParams        = params
+                , praosSignKeyVRF    = NeverUsedSignKeyVRF
+                , praosInitialEta    = 0
+                , praosInitialStake  = genesisStakeDist addrDist
+                , praosEvolvingStake = evolvingStake
+                , praosVerKeys       = verKeys
                 }
             , wlsConfigNodeId   = nid
             }

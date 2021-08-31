@@ -126,7 +126,7 @@ exampleBlock =
       (BlockNo 1)
       (SlotNo 1)
       (applyChainTick ledgerConfig (SlotNo 1) ledgerStateAfterEBB)
-      [exampleGenTx]
+      [ValidatedByronTx exampleGenTx]
       (fakeMkIsLeader leaderCredentials)
   where
     -- | Normally, we'd have to use 'checkIsLeader' to produce this proof.

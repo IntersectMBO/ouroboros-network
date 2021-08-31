@@ -17,7 +17,7 @@ import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.Bifunctor (first)
 import           Data.Either (isRight)
-import           Data.List (find, foldl', isSuffixOf, nub, partition, sort)
+import           Data.List (foldl', isSuffixOf, nub, partition, sort)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
@@ -48,7 +48,7 @@ import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
-                     safeMaximumOn, whenJust)
+                     safeMaximumOn, (.:))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -97,7 +97,7 @@ prop_Mempool_addTxs_getTxs setup =
       _ <- addTxs mempool (allTxs setup)
       MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
       return $ counterexample (ppTxs (txs setup)) $
-        validTxs setup `isSuffixOf` map fst snapshotTxs
+        validTxs setup `isSuffixOf` map (txForgetValidated . fst) snapshotTxs
 
 -- | Same as 'prop_Mempool_addTxs_getTxs', but add the transactions one-by-one
 -- instead of all at once.
@@ -107,7 +107,7 @@ prop_Mempool_addTxs_one_vs_multiple setup =
       forM_ (allTxs setup) $ \tx -> addTxs mempool [tx]
       MempoolSnapshot { snapshotTxs } <- atomically $ getSnapshot mempool
       return $ counterexample (ppTxs (txs setup)) $
-        validTxs setup `isSuffixOf` map fst snapshotTxs
+        validTxs setup `isSuffixOf` map (txForgetValidated . fst) snapshotTxs
 
 -- | Test that the result of adding transaction to a 'Mempool' matches our
 -- expectation: invalid transactions have errors associated with them and
@@ -117,8 +117,11 @@ prop_Mempool_addTxs_result setup =
     withTestMempool (testSetup setup) $ \TestMempool { mempool } -> do
       result <- addTxs mempool (allTxs setup)
       return $ counterexample (ppTxs (txs setup)) $
-        [(tx, isMempoolTxAdded res) | (tx, res) <- result] ===
-        [(testTx, valid)            | (testTx, valid) <- txs setup]
+        [ case res of
+            MempoolTxAdded vtx        -> (txForgetValidated vtx, True)
+            MempoolTxRejected tx _err -> (tx, False)
+        | res <- result
+        ] === txs setup
 
 -- | Test that invalid transactions are never added to the 'Mempool'.
 prop_Mempool_InvalidTxsNeverAdded :: TestSetupWithTxs -> Property
@@ -136,7 +139,7 @@ prop_Mempool_InvalidTxsNeverAdded setup =
         -- Note that we can't check that no invalid transactions are in the
         -- mempool because the same transaction could be added twice: the
         -- first time as a valid one and the second time as an invalid one.
-        [ find (== txInMempool) (validTxs setup) === Just txInMempool
+        [ (txForgetValidated txInMempool `elem` validTxs setup) === True
         | txInMempool <- txsInMempoolAfter
         , txInMempool `notElem` txsInMempoolBefore
         ]
@@ -151,7 +154,7 @@ prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup txToRemove) =
       return $ counterexample
         ("Transactions in the mempool after removing (" <>
          show txToRemove <> "): " <> show txsInMempoolAfter)
-        (txToRemove `notElem` txsInMempoolAfter)
+        (txToRemove `notElem` map txForgetValidated txsInMempoolAfter)
 
 -- | Test that 'getCapacity' returns the 'MempoolCapacityBytes' value that the
 -- mempool was initialized with.
@@ -192,12 +195,14 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
     -- | Convert 'MempoolAddTxResult' into a 'Bool':
     -- isMempoolTxAdded -> True, isMempoolTxRejected -> False.
     blindErrors
-      :: ([(GenTx TestBlock, MempoolAddTxResult blk)], [GenTx TestBlock])
+      :: ([MempoolAddTxResult TestBlock], [GenTx TestBlock])
       -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
     blindErrors (processed, toAdd) = (processed', toAdd)
       where
-        processed' = [ (tx, isMempoolTxAdded txAddRes)
-                     | (tx, txAddRes) <- processed ]
+        processed' = [ case txAddRes of
+                         MempoolTxAdded vtx        -> (txForgetValidated vtx, True)
+                         MempoolTxRejected tx _err -> (tx, False)
+                     | txAddRes <- processed ]
 
     expectedResult
       :: MempoolCapacityBytes
@@ -235,8 +240,8 @@ prop_Mempool_TraceValidTxs setup =
         let addedTxs = mapMaybe isAddedTxsEvent evs
         in validTxs setup === addedTxs
   where
-    isAddedTxsEvent :: TraceEventMempool blk -> Maybe (GenTx blk)
-    isAddedTxsEvent (TraceMempoolAddedTx tx _ _) = Just tx
+    isAddedTxsEvent :: TraceEventMempool TestBlock -> Maybe (GenTx TestBlock)
+    isAddedTxsEvent (TraceMempoolAddedTx tx _ _) = Just (txForgetValidated tx)
     isAddedTxsEvent _                            = Nothing
 
 -- | Test that all invalid rejected transactions returned from 'addTxs' are
@@ -266,7 +271,7 @@ prop_Mempool_TraceRemovedTxs setup =
       -- We add all the transactions in the mempool to the ledger. Some of
       -- them will become invalid because all inputs have been spent.
       let txsInMempool = map fst snapshotTxs
-      errs <- atomically $ addTxsToLedger txsInMempool
+      errs <- atomically $ addTxsToLedger (map txForgetValidated txsInMempool)
 
       -- Sync the mempool with the ledger. Now some of the transactions in the
       -- mempool should have been removed.
@@ -274,7 +279,7 @@ prop_Mempool_TraceRemovedTxs setup =
 
       -- Predict which transactions should have been removed
       curLedger <- atomically getCurrentLedger
-      let expected = expectedToBeRemoved curLedger txsInMempool
+      let expected = expectedToBeRemoved curLedger (map txForgetValidated txsInMempool)
 
       -- Look at the trace to see which transactions actually got removed
       evs <- getTraceEvents
@@ -286,8 +291,8 @@ prop_Mempool_TraceRemovedTxs setup =
         map (const (Right ())) errs === errs .&&.
         sort expected === sort removedTxs
   where
-    isRemoveTxsEvent :: TraceEventMempool blk -> Maybe [GenTx blk]
-    isRemoveTxsEvent (TraceMempoolRemoveTxs txs _) = Just txs
+    isRemoveTxsEvent :: TraceEventMempool TestBlock -> Maybe [GenTx TestBlock]
+    isRemoveTxsEvent (TraceMempoolRemoveTxs txs _) = Just (map txForgetValidated txs)
     isRemoveTxsEvent _                             = Nothing
 
     expectedToBeRemoved :: LedgerState TestBlock -> [TestTx] -> [TestTx]
@@ -728,8 +733,10 @@ withTestMempool setup@TestSetup {..} prop =
       result  <- addTxs mempool testInitialTxs
       -- the invalid transactions are reported in the same order they were
       -- added, so the first error is not the result of a cascade
-      whenJust (find (isMempoolTxRejected . snd) result) $ \(invalidTx, _) ->
-        error $ "Invalid initial transaction: " <> condense invalidTx
+      sequence_
+        [ error $ "Invalid initial transaction: " <> condense invalidTx
+        | MempoolTxRejected invalidTx _err <- result
+        ]
 
       -- Clear the trace
       atomically $ writeTVar varEvents []
@@ -778,13 +785,13 @@ withTestMempool setup@TestSetup {..} prop =
                            , snapshotSlotNo
                            } =
         case runExcept $ repeatedlyM
-               (applyTx testLedgerConfig snapshotSlotNo)
+               (fmap fst .: applyTx testLedgerConfig snapshotSlotNo)
                txs
                (TickedSimpleLedgerState ledgerState) of
           Right _ -> property True
           Left  e -> counterexample (mkErrMsg e) $ property False
       where
-        txs = map fst snapshotTxs
+        txs = map (txForgetValidated . fst) snapshotTxs
         mkErrMsg e =
           "At the end of the test, the Mempool contents were invalid: " <>
           show e
@@ -985,7 +992,7 @@ prop_Mempool_idx_consistency (Actions actions) =
           -- mempool). Clients interacting with the mempool likely won't
           -- account for this.
           classify
-            (lastOfMempoolRemoved txsInMempool action)
+            (lastOfMempoolRemoved (map txForgetValidated txsInMempool) action)
             "The last transaction in the mempool is removed" $
           actionProp .&&.
           currentAssignment `isConsistentWith` expectedAssignment
@@ -1056,11 +1063,11 @@ executeAction testMempool action = case action of
       tracedAddedTxs <- expectTraceEvent $ \case
         TraceMempoolAddedTx tx _ _ -> Just tx
         _                          -> Nothing
-      return $ if tracedAddedTxs == txs
+      return $ if map txForgetValidated tracedAddedTxs == txs
         then property True
         else counterexample
           ("Expected TraceMempoolAddedTx events for " <> condense txs <>
-           " but got " <> condense tracedAddedTxs)
+           " but got " <> condense (map txForgetValidated tracedAddedTxs))
           False
 
     RemoveTxs txs -> do
@@ -1094,7 +1101,7 @@ currentTicketAssignment :: IOLike m
 currentTicketAssignment Mempool { syncWithLedger } = do
     MempoolSnapshot { snapshotTxs } <- syncWithLedger
     return $ Map.fromList
-      [ (ticketNo, txId tx)
+      [ (ticketNo, txId (txForgetValidated tx))
       | (tx, ticketNo) <- snapshotTxs
       ]
 

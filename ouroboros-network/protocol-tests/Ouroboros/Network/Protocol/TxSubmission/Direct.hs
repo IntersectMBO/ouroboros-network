@@ -56,9 +56,6 @@ directPipelined (TxSubmissionServerPipelined mserver)
       SendMsgReplyTxs txs client' <- recvMsgRequestTxs txids
       directSender (enqueue (CollectTxs txids txs) q) server' client'
 
-    directSender EmptyQ (SendMsgKThxBye a) ClientStIdle {recvMsgKThxBye} =
-      (\b -> (a,b)) <$> recvMsgKThxBye
-
     directSender q (CollectPipelined (Just server') _) client =
       directSender q server' client
 

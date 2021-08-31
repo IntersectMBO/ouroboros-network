@@ -68,7 +68,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
     client :: StrictSeq txid -> Map txid tx -> [tx] -> ClientStIdle txid tx m ()
     client !unackedSeq !unackedMap remainingTxs =
         assert invariant
-        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs, recvMsgKThxBye }
+        ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
       where
         -- The entries in the unackedMap are a subset of those in the
         -- unackedSeq. The sequence is all of them, whereas we remove
@@ -151,9 +151,6 @@ txSubmissionClient tracer txId txSize maxUnacked =
 
             missing -> error $ "txSubmissionClientConst.recvMsgRequestTxs: "
                             ++ "requested missing TxIds: " ++ show missing
-
-        recvMsgKThxBye :: m ()
-        recvMsgKThxBye = pure ()
 
 
 --

@@ -1,0 +1,19 @@
+;
+; TxSubmission mini-protocol v2
+;
+
+
+; reference implementation of the codec in :
+; ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission/Codec.hs
+
+txSubmission2Message
+    = msgHello
+    / msgRequestTxIds
+    / msgReplyTxIds
+    / msgRequestTxs
+    / msgReplyTxs
+    / tsMsgDone
+
+msgHello = [6]
+
+; reusing definitions of tx-submission v1

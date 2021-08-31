@@ -29,26 +29,20 @@ $> nix-env --version
 nix-env (Nix) 2.3.10
 ```
 
-##### 2. cachix
+##### 2. Cache (optional, but you want this)
 
-> note that this step is not mandatory but highly recommended, without it you
+> Note: this step is not mandatory but highly recommended, without it
 > you will have to "compile the whole world" (including few GHC versions) before
-> you will be able to build, test and run our project
-
-* Install cachix
-
-```
-nix-env -iA cachix -f https://cachix.org/api/v1/install
-```
-
-* Configure cachix
+> you will be able to build, test and run our project.
+> If configured correctly, your fresh build (that means build from completely new
+> machine) should take ~15 minutes
 
 Open your `~/.config/nix/nix.conf` and add/modify following entries
 
 ```
-substituters = https://cache.nixos.org/ https://ouroboros-network.cachix.org https://hydra.iohk.io/ https://iohk.cachix.org/
-trusted-substituters = https://cache.nixos.org/ https://ouroboros-network.cachix.org https://hydra.iohk.io/ https://iohk.cachix.org/
-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ouroboros-network.cachix.org-1:YnmfwRhnjzcIiyzuHX5tWfTD08PqFySl6ySldfgTUIY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= iohk.cachix.org-1:DpRUyj7h7V830dp/i6Nti+NEO2/nhblbov/8MW7Rqoo=
+substituters = https://cache.nixos.org/ https://hydra.iohk.io/
+trusted-substituters = https://cache.nixos.org/ https://hydra.iohk.io/
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
 ```
 
 #### Build & test it

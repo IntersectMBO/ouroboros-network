@@ -1,0 +1,24 @@
+chainSyncMessage
+    = msgRequestNext
+    / msgAwaitReply
+    / msgRollForward
+    / msgRollBackward
+    / msgFindIntersect
+    / msgIntersectFound
+    / msgIntersectNotFound
+    / chainSyncMsgDone
+
+msgRequestNext         = [0]
+msgAwaitReply          = [1]
+msgRollForward         = [2, wrappedHeader, tip]
+msgRollBackward        = [3, point, tip]
+msgFindIntersect       = [4, points]
+msgIntersectFound      = [5, point, tip]
+msgIntersectNotFound   = [6, tip]
+chainSyncMsgDone       = [7]
+
+wrappedHeader = #6.24(bytes .cbor blockHeader)
+tip = [point, uint]
+
+points = [ *point ]
+
