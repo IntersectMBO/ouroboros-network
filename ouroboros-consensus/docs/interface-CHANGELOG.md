@@ -56,6 +56,21 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2021-08-31
+
+### Added
+
+- `AuxLedgerEvent` type family and interface functions for ticking and applying
+  blocks that expose the ledger events that were recently added to the upstream
+  `cardano-ledger-specs`. These new functions merely extend the Consensus
+  interface: nothing changes for downstream uses that do not care about ledger
+  events. The `LedgerResult` type is intentionally not an instance of
+  `Applicative`/`Monad`, so as to discourage users from letting the event thunks
+  accumulate by invoking the ledger several times before processing/discarding
+  the (thunks of the) accumulated list of events. We anticipate that
+  `tickThenApplyLedgerResult` and/or `tickThenReapplyLedgerResult` are the main
+  ways to utilize the new ledger events.
+
 ## Circa 2021-07-29
 
 ### Added
