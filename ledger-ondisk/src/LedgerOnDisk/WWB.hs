@@ -64,15 +64,27 @@ import GHC.Generics
 import LedgerOnDisk.Class
 import LedgerOnDisk.Pure
 import LedgerOnDisk.Util
-import LedgerOnDisk.Util.RandomTime
+-- import LedgerOnDisk.Util.RandomTime
 import LedgerOnDisk.Util.Trace
 import Test.QuickCheck
 import Numeric.Natural
+import qualified Data.BTree.Pure as Haskey.Pure
+import qualified Data.BTree.Impure as Haskey.Impure
+import qualified Database.Haskey.Store.InMemory as Haskey.InMemory
+import qualified Database.Haskey.Alloc.Concurrent as Haskey
+import LedgerOnDisk.Haskey
+import qualified Data.BTree.Primitives as Haskey
+import Control.Monad.State.Strict
+import qualified Data.BTree.Alloc.Class as Haskey
+import Control.Exception (throwIO)
 
 wwbStateTVar :: TVar s -> Strict.State s a -> STM a
 wwbStateTVar v = stateTVar v . Strict.runState
 
-data WWBTrace = WWBTPrepare WWBPrepareTrace | WWBTSubmit WWBSubmitTrace | WWBTLoop WWBLoopTrace
+data WWBTrace
+  = WWBTPrepare WWBPrepareTrace
+  | WWBTSubmit WWBSubmitTrace
+  | WWBTLoop WWBLoopTrace
 
 newtype WWBT k v m a = WWBT {unWWBT :: ReaderT (Tracer m WWBTrace, WWBConfig k v) m a}
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadFail, MonadState s)
@@ -150,6 +162,12 @@ data WWBSubmission k v = forall a. WWBSubmission
     sResultMV :: !(MVar (Either (WWBErr k v) a))
   }
 
+data HaskeyContext k v = HaskeyContext
+  { memoryFiles :: !(Haskey.InMemory.MemoryFiles FilePath)
+  , concurrentDb :: !(Haskey.ConcurrentDb (Haskey.Impure.Tree k v))
+  , memoryStoreConfig :: !(Haskey.InMemory.MemoryStoreConfig)
+  }
+
 data WWBConfig k v = WWBConfig
   { writeBufferTV :: !(TVar (WriteBuffer k v)),
     nextQueryIdTV :: !(TVar Int),
@@ -158,7 +176,9 @@ data WWBConfig k v = WWBConfig
 
     loopAsync :: !(Async ()),
 
-    backingStoreMV :: !(MVar (HashMap k v)),
+    -- backingStoreMV :: !(MVar (HashMap k v)),
+    -- backingStoreMV :: !(MVar (Haskey.Impure.Tree k v)),
+    haskey :: !(HaskeyContext k v),
 
     randomQueryDelayRange :: !(NominalDiffTime, NominalDiffTime),
     numTickets :: !Natural
@@ -176,14 +196,15 @@ data WWBLoopTrace
   deriving stock (Show, Generic)
 
 wwbLoop ::
-  (MonadIO m, Eq k, Hashable k, Semigroup v) =>
+  (MonadIO m, Eq k, Hashable k, Semigroup v, Haskey.Key k ) =>
   Tracer IO WWBLoopTrace ->
   WWBConfig k v ->
   m ()
 wwbLoop tracer WWBConfig
   { submissionQueueRef
   , writeBufferTV
-  , backingStoreMV
+  -- , backingStoreMV
+  , haskey
   , numTickets
   , lastSubmittedQueryIdTV
   } = liftIO $ forever $ do
@@ -241,7 +262,9 @@ wwbLoop tracer WWBConfig
           else pure (mempty, len_ft)
 
       when (length to_flush > 0) $ do
-        liftIO . modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
+        -- liftIO . modifyMVar_ backingStoreMV $ pure . applyDtoHashMap to_flush
+        -- liftIO . modifyMVar_ backingStoreMV $ pure . applyDiffToPureBTree  to_flush
+        undefined
 
       trace WWBLTCommit
             { tId = rsId,
@@ -252,17 +275,32 @@ wwbLoop tracer WWBConfig
       pure a
     putMVar sResultMV res
 
-wwbConfigIO :: (Semigroup v, MonadIO m, Eq k, Hashable k) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> m (Tracer m WWBTrace, WWBConfig k v)
+wwbConfigIO :: (Semigroup v, MonadIO m, Eq k, Hashable k, Haskey.Key k, Haskey.Value v) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> m (Tracer m WWBTrace, WWBConfig k v)
 wwbConfigIO initial_map numTickets tracer0 randomQueryDelayRange = liftIO $ do
   let tracer = natTracer liftIO tracer0
-  backingStoreMV <- newMVar initial_map
+  -- backingStoreMV <- newMVar initial_map
+  -- backingStoreMV <- newMVar . Haskey.Pure.fromList Haskey.Pure.twoThreeSetup $ HashMap.toList initial_map
   writeBufferTV <- newTVarIO mempty
   nextQueryIdTV <- newTVarIO 0
   lastSubmittedQueryIdTV <- newTVarIO (-1)
   submissionQueueRef <- newTBQueueIO numTickets
   -- recursive mdo because loopAsync is a field of WWBConfig
   mdo
+    haskey <- do
+      -- Haskey.InMemory.runMemoryStoreT Haskey.InMemory.newEmptyMemoryStore defMemoryStoreConfig mv
+      memoryFiles <- Haskey.InMemory.newEmptyMemoryStore
+      let
+        memoryStoreConfig = Haskey.InMemory.defMemoryStoreConfig
+        openOrCreate = do
+          let hs = Haskey.concurrentHandles "/"
+          Haskey.openConcurrentDb hs >>= maybe (Haskey.createConcurrentDb hs Haskey.Impure.empty) pure
+
+      concurrentDb <- Haskey.InMemory.runMemoryStoreT openOrCreate memoryStoreConfig memoryFiles
+      pure HaskeyContext{..}
+
     let cfg = WWBConfig {..}
+    -- TODO we are deadlocking if loopAsync throws
+    -- operations that are communicating with the loop should check it's still running (likely by racing with the Async)
     loopAsync <- async $ wwbLoop (contramap WWBTLoop tracer0) cfg
     pure $ (tracer, cfg)
 
@@ -274,14 +312,14 @@ closeWWbConfig WWBConfig {loopAsync} = liftIO $ do
     Left e -> throwM e
     Right () -> pure ()
 
-withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k, Semigroup v) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> ((Tracer m WWBTrace, WWBConfig k v) -> m a) -> m a
+withWWBConfig :: (MonadIO m, MonadMask m, Eq k, Hashable k, Semigroup v, Haskey.Key k, Haskey.Value v) => HashMap k v -> Natural -> Tracer IO WWBTrace -> (NominalDiffTime, NominalDiffTime) -> ((Tracer m WWBTrace, WWBConfig k v) -> m a) -> m a
 withWWBConfig hm num_tickets tracer range f = bracket
   (wwbConfigIO hm num_tickets tracer range)
   (closeWWbConfig . snd)
   f
 
 runWWBT ::
-  (Eq k, Hashable k, MonadIO m, MonadMask m, Semigroup v) =>
+  (Eq k, Hashable k, MonadIO m, MonadMask m, Semigroup v, Haskey.Key k, Haskey.Value v) =>
   WWBT k v m a ->
   Tracer IO WWBTrace ->
   HashMap k v ->
@@ -300,7 +338,7 @@ data WWBPrepareTrace = WWBPPrepared
   }
 
 prepare ::
-  (MonadIO m, Eq k, Hashable k) =>
+  (MonadIO m, Eq k, Hashable k, Haskey.Key k, Haskey.Value v) =>
   Tracer m WWBPrepareTrace ->
   WWBConfig k v ->
   HashSet k ->
@@ -308,7 +346,7 @@ prepare ::
 prepare
   tracer
   WWBConfig
-    { backingStoreMV,
+    { haskey,
       nextQueryIdTV,
       randomQueryDelayRange,
       numTickets,
@@ -327,7 +365,7 @@ prepare
 
       pure qId
 
-    rsFetchAsync <- liftIO . async $ simulateQuery randomQueryDelayRange qs (readMVar backingStoreMV)
+    rsFetchAsync <- liftIO . async $ simulateQueryHaskeyImpure qs haskey
     traceWith tracer $ WWBPPrepared rsId (length qs)
     pure WWBReadSet {..}
 
@@ -340,13 +378,17 @@ submit ::
   WWBReadSet k v ->
   KVOperation k v a ->
   m (Either (WWBErr k v) a)
-submit tracer WWBConfig{submissionQueueRef} sReadSet@WWBReadSet {rsId} sOp = do
+submit tracer WWBConfig{submissionQueueRef, loopAsync} sReadSet@WWBReadSet {rsId} sOp = do
     sResultMV <- liftIO newEmptyMVar
     liftIO . atomically . writeTBQueue submissionQueueRef $ WWBSubmission {..}
     traceWith tracer $ WWBSSubmitted rsId True
-    r <- liftIO $ takeMVar sResultMV
-    traceWith tracer $ WWBSComplete rsId (isRight r)
-    pure r
+    r <- liftIO $ race (waitCatch loopAsync) (takeMVar sResultMV)
+    case r of
+      Left (Left e) -> liftIO $ throwIO e
+      Left (Right ()) -> liftIO . throwIO $ userError "async has finished"
+      Right r -> do
+        traceWith tracer $ WWBSComplete rsId (isRight r)
+        pure r
 
 data ReadSetError = ReadSetException SomeException
   deriving stock (Show)
@@ -372,15 +414,34 @@ pollReadSetIO = liftIO . atomically . pollReadSet
 threadDelay' :: MonadIO m => NominalDiffTime -> m ()
 threadDelay' = liftIO . threadDelay . round . (* 100000)
 
+simulateQueryHaskeyImpure :: forall k v. (Eq k, Hashable k, Haskey.Key k, Haskey.Value v) => HashSet k -> HaskeyContext k v -> IO (HashMap k (Maybe v))
+simulateQueryHaskeyImpure qs HaskeyContext{..} =
+  Haskey.InMemory.runMemoryStoreT (Haskey.transactReadOnly go concurrentDb) memoryStoreConfig memoryFiles
+  
+  where
+    go :: forall n. (Haskey.AllocReaderM n, MonadMask n) => Haskey.Impure.Tree k v -> n (HashMap k (Maybe v))
+    go t = flip execStateT HashMap.empty . for_ qs $ \k -> do
+      v <- lift $ Haskey.Impure.lookup k t
+      modify $ HashMap.insert k v
+
+    
+
+simulateQueryHaskeyPure :: (Eq k, Hashable k, Haskey.Key k) => (NominalDiffTime, NominalDiffTime) -> HashSet k -> IO (Haskey.Pure.Tree k v) -> IO (HashMap k (Maybe v))
+simulateQueryHaskeyPure _range qs read_data = do
+  s <- read_data
+  let !result = HashMap.mapWithKey (\k _ -> k `Haskey.Pure.lookup` s) (HashSet.toMap qs)
+  pure result
+
+
 simulateQuery :: (Eq k, Hashable k) => (NominalDiffTime, NominalDiffTime) -> HashSet k -> IO (HashMap k v) -> IO (HashMap k (Maybe v))
-simulateQuery range qs read_data = do
-  RandomNominalDiffTime total_delay <- randomRIO . coerce $ range
-  RandomNominalDiffTime pre_delay <- randomRIO (0, coerce total_delay)
-  let post_delay = total_delay - pre_delay
-  threadDelay' pre_delay
+simulateQuery _range qs read_data = do
+  -- RandomNominalDiffTime total_delay <- randomRIO . coerce $ range
+  -- RandomNominalDiffTime pre_delay <- randomRIO (0, coerce total_delay)
+  -- let post_delay = total_delay - pre_delay
+  -- threadDelay' pre_delay
   s <- read_data
   let !result = HashMap.mapWithKey (\k _ -> k `HashMap.lookup` s) (HashSet.toMap qs)
-  threadDelay' post_delay
+  -- threadDelay' post_delay
   pure result
 
 data WWBErr k v = WWBEBase BaseError | WWBEExpiredReadSet | WWBEWeird String | WWBEReadErr ReadSetError |
@@ -390,7 +451,7 @@ data WWBErr k v = WWBEBase BaseError | WWBEExpiredReadSet | WWBEWeird String | W
     }
   deriving stock (Eq, Show, Generic)
 
-instance (Eq k, Hashable k, MonadIO m) => MonadKV k v (WWBT k v m) where
+instance (Eq k, Hashable k, Haskey.Key k, Haskey.Value v, MonadIO m) => MonadKV k v (WWBT k v m) where
   -- This awkward thing is because most functions above don't use this m, they
   -- use various MonadState constraints. So they operate on WWBReadSet.
   -- Perhaps there is a better way?

@@ -52,6 +52,7 @@ import Test.Tasty.QuickCheckStateMachine
 import LedgerOnDisk.WWB
 import Control.Concurrent
 import Control.Tracer
+import Data.Int
 
 type MockKVState = KVState Identity -- in the mock case Identity could be anything
 
@@ -65,7 +66,7 @@ simpleStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOPro
       smt = smt0 { cleanup = \x -> cleanup smt0 x *> writeIORef ref initial_state }
   pure $ k smt
 
-wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT Int (Sum Int) IO))
+wwbStateMachineTest :: Cont Property (KVStateMachineTest (WWBT SimpleKey SimpleValue IO))
 wwbStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProperty $ do
   let num_tickets = 10
   let mk_cfg = wwbConfigIO initial_map (fromIntegral num_tickets) nullTracer (0.00001, 0.0001)
@@ -87,7 +88,6 @@ wwbStateMachineTest = cont $ \k -> property $ \initial_map -> idempotentIOProper
 --   let smt0 = LedgerOnDisk.QSM.Model.stateMachineTest initial_map $ \x -> runWWBTWithConfig x cfg
 --       smt = smt0 { cleanup = \x -> cleanup smt0 x *> resetWWBTIO initial_map cfg }
 --   pure $ k smt
-
 newtype MockM a = MockM { unMockM :: StateT (KVState Identity) (Either String) a }
   deriving newtype (Functor, Applicative, Monad)
 
@@ -154,12 +154,12 @@ prop_model_can_insert initial_map = property $ do
   keys <- listOf1 arbitrary <&> HashSet.fromList . fmap ((+lb) . getNonNegative)
   pure . runMockM initial_map $ do
     KVSuccessHandle h <- mockCmd . KVPrepare . coerce $ keys
-    KVSuccessResult _ <- mockCmd . KVSubmit h $ OFSet "insertAll" $ \m -> (HashMap.mapWithKey (\k _ -> DChangeTo (Sum k)) m, length m)
+    KVSuccessResult _ <- mockCmd . KVSubmit h $ OFSet "insertAll" $ \m -> (HashMap.mapWithKey (\k _ -> DChangeTo (Sum $ fromIntegral k)) m, length m)
     pure $ \final_map -> let
       correct_length = length final_map === length initial_map + length keys
       -- new_keys_apart must be true if correct_length is, should it be removed?
       new_keys_apart = keys `HashSet.intersection` HashMap.keysSet initial_map === HashSet.empty
-      correct_values = getAll . foldMap (\k -> All $ HashMap.lookup k final_map == Just (Sum k)) $ keys
+      correct_values = getAll . foldMap (\k -> All $ HashMap.lookup k final_map == Just (Sum $ fromIntegral k)) $ keys
       in correct_length .&&. new_keys_apart .&&. correct_values
 
 prop_model_cmd_generator_valid :: KVState Identity -> Property

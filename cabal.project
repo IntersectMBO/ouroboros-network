@@ -23,6 +23,9 @@ packages: ./typed-protocols
           ./ntp-client
           ./cardano-client
           ./ledger-ondisk
+          ./ledger-ondisk/haskey-btree
+          ./ledger-ondisk/haskey-mtl
+          ./ledger-ondisk/haskey
 
 constraints:
   ip < 1.5,

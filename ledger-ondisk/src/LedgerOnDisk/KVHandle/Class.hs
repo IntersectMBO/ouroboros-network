@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -11,113 +12,77 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE ConstraintKinds #-}
 module LedgerOnDisk.KVHandle.Class where
 
-import Control.Monad.IO.Class
-import Control.Monad.Reader
-import Control.Monad.Trans
-import Data.Coerce
-import Data.HashMap.Strict (HashMap)
-import Data.Hashable
-import Data.Kind
-import LedgerOnDisk.Class
-import Data.HashSet (HashSet)
-import Control.Monad.State.Strict
-import GHC.Generics hiding (Diff)
-import Control.Monad.Writer
-import Control.Monad.Catch
-import Control.Monad.Except
-import Data.Functor.Const
 import Control.Lens
--- Questions for reviewers:
--- Are these interfaces reasonable?
--- Is the DMappend constructor reasonable?
--- Any better name Ideas?
--- Any better formulations of constructFromDB?
+-- import LedgerOnDisk.Mapping.Class
+import LedgerOnDisk.Mapping.PTMap
+import Data.Set (Set)
+import Data.HashMap.Strict (HashMap)
+import Data.Kind
 
--- TODO review ACID state API
+type role Keys nominal nominal
+newtype Keys k a = Keys (Set k)
+  deriving stock (Eq, Show)
+  deriving newtype (Semigroup, Monoid)
 
-class (Monoid (KVDiff a), Eq (KVKey a), Hashable (KVKey a)) => KVable a where
-  type KVKey a :: Type
-  type KVDiff a :: Type
-  type KVFromDB a :: Type
+type role NullMap nominal nominal
+data NullMap k a = NullMap
 
-  applyDiff :: KVDiff a -> a -> a
+instance Semigroup (NullMap k a) where
+  _ <> _ = NullMap
 
-  -- This is formulated as a lens.
-  constructFromDB :: Lens' a (KVFromDB a)
-  -- isomorphism between a and (KVfromDB a, b)
+instance Monoid (NullMap k a) where
+  mempty = NullMap
 
-instance (Eq k, Hashable k) => KVable (HashMap k v) where
-  type KVKey (HashMap k v) = k
-  type KVDiff (HashMap k v) = HashMap k (Diff v)
-  type KVFromDB (HashMap k v) = (HashMap k v)
+-- | An instance 'HasOnDiskMappings state' witnesses a type of the shape `(Type -> Type -> Type) -> Type` embeds
+-- a collection of maps 'OnDiskMappings state'. We can think of 'state map' as being isomorphic to '(t, OnDiskMappings state map)'
+-- where t is some 'other' data, and the 'OnDiskMappings state' is a collection of maps
+class HasOnDiskMappings state where
+  data OnDiskMappings state :: (Type -> Type -> Type) -> Type
+  onDiskMappingsLens ::  Lens (state map1) (state map2) (OnDiskMappings state map1) (OnDiskMappings state map2)
+  nullMap :: OnDiskMappings state NullMap
 
-  applyDiff = applyDtoHashMap
-  constructFromDB = id
+-- | An instance 'HasConstrainedOnDiskMappings c state' gives a collection of methods for working with OnDiskMappings.
+-- 'c :: Type -> Type -> Constraint' is a constraint operations will assume on all k, v , for each 'map k v' in the OnDiskMappings
+--
+-- I think this is some kind of higher-order 'Zip' from 'semialign'
+class HasOnDiskMappings state => HasConstrainedOnDiskMappings c state where
+  -- | Only required method. Example:
+  -- >>> class Ord k => KeyOrd k v
+  -- >>> instance Ord k => KeyOrd k v
+  -- >>> zipMappings (Proxy @ KeyOrd) Map.union (map1 :: OnDiskMappings state Map) (map2 :: OnDiskMappings state Map)
+  zipMappings :: forall f map1 map2 map3 proxy. Applicative f
+    => proxy c
+    -> (forall k v. (c k v) => map1 k v -> map2 k v -> f (map3 k v))
+    -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> f (OnDiskMappings state map3)
 
-instance KVable a => KVable (a, b) where
-  type KVKey (a, b) = KVKey a
-  type KVDiff (a, b) = KVDiff a
-  type KVFromDB (a, b) = KVFromDB a
+  mapMappings :: forall proxy map1 map2. ()
+    => proxy c
+    -> (forall k v. c k v => map1 k v -> map2 k v)
+    -> OnDiskMappings state map1 -> OnDiskMappings state map2
+  mapMappings p f = runIdentity . traverseMappings p (pure . f)
 
-  applyDiff d (a, b) = (applyDiff d a, b)
-  constructFromDB f (a, b) = (,b) <$> constructFromDB f a
-
-class KVable kv => KVHandle kv t | t -> kv where
-  type KVMonad t :: (Type -> Type) -> Constraint
-  type KVMonad t = MonadIO
-  type KVReadSet t :: Type
-  type KVErr t :: Type
-  type KVErr t = ()
-
-  prepare :: KVMonad t m => t -> QueryScope (KVKey kv) -> m (KVReadSet t)
-  submit :: KVMonad t m => t -> KVReadSet t -> (KVFromDB kv -> (KVDiff kv, a)) -> m (Either (KVErr t) a)
-
-newtype KVMT kv m a = KVMT { unKVM :: StateT (kv, KVDiff kv) m a  }
-  deriving stock (Generic)
-  deriving newtype (Functor, Applicative, Monad, MonadReader r, MonadWriter w, MonadThrow, MonadCatch, MonadMask, MonadIO, MonadTrans, MonadError e)
-
-instance MonadState s m => MonadState s (KVMT kv m) where
-  get = KVMT $ lift get
-  put = KVMT . lift . put
-
-kvGet :: Monad m => KVMT kv m kv
-kvGet = KVMT $ gets fst
-
-kvTell :: (KVable kv, Monad m) => KVDiff kv -> KVMT kv m ()
-kvTell d1 =
-  -- TODO is forcing d0 <> d1 the right idea?
-  KVMT $ modify' $ \(kv, d0) -> case d0 <> d1 of
-    d -> (applyDiff d1 kv, d)
+  traverseMappings :: forall f map1 map2 proxy. (Applicative f)
+    => proxy c
+    -> (forall k v. (c k v) => map1 k v -> f (map2 k v))
+    -> OnDiskMappings state map1
+    -> f (OnDiskMappings state map2)
+  traverseMappings p f m = zipMappings p (\_ x -> f x) nullMap m
 
 
--- TODO property test that the result sati
-runKVMT :: (Monad m, KVable kv) => KVMT kv m a -> kv -> m (kv, KVDiff kv, a)
-runKVMT (KVMT m) kv0 = do
-  (a, (kv, diff)) <- runStateT m (kv0, mempty)
-  pure (kv, diff, a)
+class (HasConstrainedOnDiskMappings (DBKVConstraint state) state)
+  => DB state dbhandle | dbhandle -> state where
+  type DBKVConstraint state :: Type -> Type -> Constraint
 
-newtype KVableT t m a = KVableT {unKVableT :: ReaderT t m a}
-  deriving newtype (Functor, Applicative, Monad, MonadTrans)
+  type ReadSet state dbhandle
+  prepare :: dbhandle
+          -> OnDiskMappings state Keys
+          -> IO (ReadSet state dbhandle)
 
-askT :: Monad m => KVableT t m t
-askT = KVableT $ ask
-
-instance ( KVMonad t (KVableT t m)
-         , Monad m
-         , KVHandle kv t
-         , KVErr t ~ BaseError
-         , HashMap k v ~ KVFromDB kv
-         , k ~ KVKey kv
-         , HashMap k (Diff v) ~ KVDiff kv , Eq k
-         , Hashable k
-         ) => MonadKV k v (KVableT t m) where
-  type Err (KVableT t m) = KVErr t
-  newtype ReadSet (KVableT t m) = KVableTReadSet {unKVableTReadSet :: KVReadSet t}
-  prepareOperation qs = do
-    t <- askT
-    coerce <$> prepare t qs
-  submitOperation (KVableTReadSet rs) op = do
-    t <- askT
-    submit t rs $ \from_db -> op (fmap pure from_db)
+  submit :: dbhandle
+    -> ReadSet state dbhandle
+    -> (OnDiskMappings state PTMap -> (a, OnDiskMappings state DiffMap))
+    -> IO a

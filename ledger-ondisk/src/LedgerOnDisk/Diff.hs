@@ -32,20 +32,20 @@ data Diff v where
   DNoChange :: Diff v
   DRemove :: Diff v
   DChangeTo :: v -> Diff v
-  DMappend :: v -> Diff v
+  DMappend :: Semigroup v => v -> Diff v
 
 
 deriving stock instance Eq v => Eq (Diff v)
 deriving stock instance Show v => Show (Diff v)
 
-instance Semigroup v => Semigroup (Diff v) where
+instance Semigroup (Diff v) where
   x <> DNoChange = x
   DMappend x <> DMappend y = DMappend $ x <> y
   DChangeTo x <> DMappend y = DChangeTo $ x <> y
   DRemove <> DMappend y = DChangeTo y
   _ <> y = y
 
-instance Semigroup v => Monoid (Diff v) where
+instance Monoid (Diff v) where
   mempty = DNoChange
 
 mapD :: Semigroup b => (a -> b) -> Diff a -> Diff b

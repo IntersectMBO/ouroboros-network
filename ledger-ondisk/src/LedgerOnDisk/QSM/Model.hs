@@ -154,7 +154,7 @@ pattern OFn f <- (applyOperationFunction -> f)
 {-# COMPLETE OFn #-}
 
 data instance Cmd (MonadKVStateMachine m) f hs where
-  KVPrepare :: QueryScope Int -> Cmd (MonadKVStateMachine m) f '[resultSet]
+  KVPrepare :: QueryScope SimpleKey -> Cmd (MonadKVStateMachine m) f '[resultSet]
   KVSubmit :: f resultSet -> SimpleOperationFunction Int -> Cmd (MonadKVStateMachine m) f '[resultSet] -- k = v = Int, always returns Int
   -- suffixed with _ means it can be generated, it's for validating the model
   KVLookupAll_ :: f resultSet -> Cmd (MonadKVStateMachine m) f '[resultSet]
@@ -196,7 +196,7 @@ type KVMockHandle m = MockHandle (MonadKVStateMachine m)
 
 data Mock = Mock
   { modelMap :: !SimpleMap,
-    queries :: !(HashMap Int (QueryScope Int)),
+    queries :: !(HashMap Int (QueryScope SimpleKey)),
     nextQueryId :: !Int
   }
   deriving stock (Show, Eq, Generic)
@@ -218,7 +218,7 @@ emptyMock = Mock mempty mempty 0
 nonemptyMock :: SimpleMap -> Mock
 nonemptyMock x = emptyMock { modelMap = x }
 
-mockAddQuery :: QueryScope Int -> Mock -> (KVMockHandle m (ReadSet m), Mock)
+mockAddQuery :: QueryScope SimpleKey -> Mock -> (KVMockHandle m (ReadSet m), Mock)
 mockAddQuery qs m@Mock { nextQueryId, queries} =
   (  MockReadSet nextQueryId,
     m {

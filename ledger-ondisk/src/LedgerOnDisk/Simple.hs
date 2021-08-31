@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -32,9 +33,16 @@ import Debug.Trace
 import Data.TreeDiff.Class
 import GHC.Generics hiding (D)
 import qualified Data.Semigroup as Semi
-type SimpleKey = Int
+import Data.Int
+import qualified Data.BTree.Primitives as Haskey
+import Data.Proxy
 
-type SimpleValue = Sum Int
+type SimpleKey = Int64
+
+instance forall a. Haskey.Value a => Haskey.Value (Sum a) where
+  fixedSize _ = Haskey.fixedSize (Proxy :: Proxy a)
+
+type SimpleValue = Sum Int64
 
 type SimpleMap = HashMap SimpleKey SimpleValue
 
