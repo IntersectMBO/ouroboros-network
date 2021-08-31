@@ -407,8 +407,8 @@ castHeaderError (HeaderEnvelopeError e) = HeaderEnvelopeError $
 --   x The slot number of the first block is at least 'minimumPossibleSlotNo'
 --   x Hashes line up
 --
--- /If/ a particular ledger wants to verify additional fields in the header,
--- it will get the chance to do so in 'applyLedgerBlock', which is passed the
+-- /If/ a particular ledger wants to verify additional fields in the header, it
+-- will get the chance to do so in 'applyBlockLedgerResult', which is passed the
 -- entire block (not just the block body).
 validateHeader :: (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => TopLevelConfig blk

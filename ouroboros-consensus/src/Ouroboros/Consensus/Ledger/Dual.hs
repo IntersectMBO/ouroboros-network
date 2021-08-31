@@ -64,6 +64,7 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
+import           Data.Functor ((<&>))
 import           Data.Kind (Type)
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -350,29 +351,41 @@ data instance Ticked (LedgerState (DualBlock m a)) = TickedDualLedgerState {
 instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
   type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
 
-  applyChainTick DualLedgerConfig{..}
-                 slot
-                 DualLedgerState{..} = TickedDualLedgerState {
-        tickedDualLedgerStateMain    = applyChainTick
-                                         dualLedgerConfigMain
-                                         slot
-                                         dualLedgerStateMain
-      , tickedDualLedgerStateAux     = applyChainTick
-                                         dualLedgerConfigAux
-                                         slot
-                                         dualLedgerStateAux
-      , tickedDualLedgerStateAuxOrig = dualLedgerStateAux
-      , tickedDualLedgerStateBridge  = dualLedgerStateBridge
-      }
+  -- | The dual ledger events are exactly those of the main ledger; it ignores
+  -- any possible auxiliary ledger events.
+  --
+  -- NOTE: This may change. It's unclear whether we want the two ledgers to emit
+  -- the same events. And right now we only use the Dual ledger for our tests,
+  -- and do so only with the Byron and ByronSpecs ledgers, neither of which have
+  -- any events. So we make this easy choice for for now.
+  type AuxLedgerEvent (LedgerState (DualBlock m a)) = AuxLedgerEvent (LedgerState m)
+
+  applyChainTickLedgerResult DualLedgerConfig{..}
+                             slot
+                             DualLedgerState{..} =
+      castLedgerResult ledgerResult <&> \main -> TickedDualLedgerState {
+          tickedDualLedgerStateMain    = main
+        , tickedDualLedgerStateAux     = applyChainTick
+                                           dualLedgerConfigAux
+                                           slot
+                                          dualLedgerStateAux
+        , tickedDualLedgerStateAuxOrig = dualLedgerStateAux
+        , tickedDualLedgerStateBridge  = dualLedgerStateBridge
+        }
+    where
+      ledgerResult = applyChainTickLedgerResult
+                       dualLedgerConfigMain
+                       slot
+                       dualLedgerStateMain
 
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
 
-  applyLedgerBlock cfg
-                   block@DualBlock{..}
-                   TickedDualLedgerState{..} = do
-      (main', aux') <-
+  applyBlockLedgerResult cfg
+                         block@DualBlock{..}
+                         TickedDualLedgerState{..} = do
+      (ledgerResult, aux') <-
         agreeOnError DualLedgerError (
-            applyLedgerBlock
+            applyBlockLedgerResult
               (dualLedgerConfigMain cfg)
               dualBlockMain
               tickedDualLedgerStateMain
@@ -382,7 +395,7 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
               tickedDualLedgerStateAux
               tickedDualLedgerStateAuxOrig
           )
-      return DualLedgerState {
+      return $ castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
           dualLedgerStateMain   = main'
         , dualLedgerStateAux    = aux'
         , dualLedgerStateBridge = updateBridgeWithBlock
@@ -390,23 +403,25 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                                     tickedDualLedgerStateBridge
         }
 
-  reapplyLedgerBlock cfg
-                     block@DualBlock{..}
-                     TickedDualLedgerState{..} =
-    DualLedgerState {
-          dualLedgerStateMain   = reapplyLedgerBlock
-                                    (dualLedgerConfigMain cfg)
-                                    dualBlockMain
-                                    tickedDualLedgerStateMain
-        , dualLedgerStateAux    = reapplyMaybeBlock
-                                    (dualLedgerConfigAux cfg)
-                                    dualBlockAux
-                                    tickedDualLedgerStateAux
-                                    tickedDualLedgerStateAuxOrig
-        , dualLedgerStateBridge = updateBridgeWithBlock
-                                    block
-                                    tickedDualLedgerStateBridge
+  reapplyBlockLedgerResult cfg
+                           block@DualBlock{..}
+                           TickedDualLedgerState{..} =
+    castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
+        dualLedgerStateMain   = main'
+      , dualLedgerStateAux    = reapplyMaybeBlock
+                                  (dualLedgerConfigAux cfg)
+                                  dualBlockAux
+                                  tickedDualLedgerStateAux
+                                  tickedDualLedgerStateAuxOrig
+      , dualLedgerStateBridge = updateBridgeWithBlock
+                                  block
+                                  tickedDualLedgerStateBridge
       }
+    where
+      ledgerResult = reapplyBlockLedgerResult
+                       (dualLedgerConfigMain cfg)
+                       dualBlockMain
+                       tickedDualLedgerStateMain
 
 data instance LedgerState (DualBlock m a) = DualLedgerState {
       dualLedgerStateMain   :: LedgerState m

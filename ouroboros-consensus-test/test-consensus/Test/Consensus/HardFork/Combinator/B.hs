@@ -184,11 +184,15 @@ instance GetTip (Ticked (LedgerState BlockB)) where
 
 instance IsLedger (LedgerState BlockB) where
   type LedgerErr (LedgerState BlockB) = Void
-  applyChainTick _ _ = TickedLedgerStateB
+
+  type AuxLedgerEvent (LedgerState BlockB) =
+    VoidLedgerEvent (LedgerState BlockB)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateB
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
-  applyLedgerBlock   = \_ b _ -> return $ LgrB (blockPoint b)
-  reapplyLedgerBlock = \_ b _ -> LgrB (blockPoint b)
+  applyBlockLedgerResult   = \_ b _ -> return $ pureLedgerResult $ LgrB (blockPoint b)
+  reapplyBlockLedgerResult = \_ b _ ->          pureLedgerResult $ LgrB (blockPoint b)
 
 instance UpdateLedger BlockB
 

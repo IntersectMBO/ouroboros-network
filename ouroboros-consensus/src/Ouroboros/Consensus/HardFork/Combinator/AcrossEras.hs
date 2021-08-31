@@ -40,6 +40,7 @@ module Ouroboros.Consensus.HardFork.Combinator.AcrossEras (
   , OneEraHeader (..)
   , OneEraIsLeader (..)
   , OneEraLedgerError (..)
+  , OneEraLedgerEvent (..)
   , OneEraLedgerUpdate (..)
   , OneEraLedgerWarning (..)
   , OneEraSelectView (..)
@@ -121,6 +122,7 @@ newtype OneEraGenTxId               xs = OneEraGenTxId               { getOneEra
 newtype OneEraHeader                xs = OneEraHeader                { getOneEraHeader                :: NS Header                    xs }
 newtype OneEraIsLeader              xs = OneEraIsLeader              { getOneEraIsLeader              :: NS WrapIsLeader              xs }
 newtype OneEraLedgerError           xs = OneEraLedgerError           { getOneEraLedgerError           :: NS WrapLedgerErr             xs }
+newtype OneEraLedgerEvent           xs = OneEraLedgerEvent           { getOneEraLedgerEvent           :: NS WrapLedgerEvent           xs }
 newtype OneEraLedgerUpdate          xs = OneEraLedgerUpdate          { getOneEraLedgerUpdate          :: NS WrapLedgerUpdate          xs }
 newtype OneEraLedgerWarning         xs = OneEraLedgerWarning         { getOneEraLedgerWarning         :: NS WrapLedgerWarning         xs }
 newtype OneEraSelectView            xs = OneEraSelectView            { getOneEraSelectView            :: NS WrapSelectView            xs }

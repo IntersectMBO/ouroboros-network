@@ -327,18 +327,22 @@ instance GetTip (Ticked (LedgerState TestBlock)) where
 instance IsLedger (LedgerState TestBlock) where
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
-  applyChainTick _ _ = TickedTestLedger
+  type AuxLedgerEvent (LedgerState TestBlock) =
+    VoidLedgerEvent (LedgerState TestBlock)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
+  applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
     = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
-    = return     $ TestLedger (Chain.blockPoint tb)
+    = return     $ pureLedgerResult $ TestLedger (Chain.blockPoint tb)
 
-  reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
+  reapplyBlockLedgerResult _ tb _ =
+                   pureLedgerResult $ TestLedger (Chain.blockPoint tb)
 
 newtype instance LedgerState TestBlock =
     TestLedger {

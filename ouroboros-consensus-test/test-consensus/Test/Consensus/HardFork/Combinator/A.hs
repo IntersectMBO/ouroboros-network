@@ -87,7 +87,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util (repeatedlyM, (.:))
+import           Ouroboros.Consensus.Util (repeatedlyM, (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -210,11 +210,15 @@ instance GetTip (Ticked (LedgerState BlockA)) where
 
 instance IsLedger (LedgerState BlockA) where
   type LedgerErr (LedgerState BlockA) = Void
-  applyChainTick _ _ = TickedLedgerStateA
+
+  type AuxLedgerEvent (LedgerState BlockA) =
+    VoidLedgerEvent (LedgerState BlockA)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateA
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
-  applyLedgerBlock cfg blk =
-        fmap setTip
+  applyBlockLedgerResult cfg blk =
+        fmap (pureLedgerResult . setTip)
       . repeatedlyM
           (fmap fst .: applyTx cfg DoNotIntervene (blockSlot blk))
           (blkA_body blk)
@@ -222,10 +226,13 @@ instance ApplyBlock (LedgerState BlockA) BlockA where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
       setTip (TickedLedgerStateA st) = st { lgrA_tip = blockPoint blk }
 
-  reapplyLedgerBlock cfg blk st =
-      case runExcept $ applyLedgerBlock cfg blk st of
-        Left  _   -> error "reapplyLedgerBlock: impossible"
-        Right st' -> st'
+  reapplyBlockLedgerResult =
+      dontExpectError ..: applyBlockLedgerResult
+    where
+      dontExpectError :: Except a b -> b
+      dontExpectError mb = case runExcept mb of
+        Left  _ -> error "reapplyBlockLedgerResult: unexpected error"
+        Right b -> b
 
 instance UpdateLedger BlockA
 
