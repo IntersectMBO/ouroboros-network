@@ -10,25 +10,22 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-
--- |
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
-
-
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE InstanceSigs #-}
+
 module LedgerOnDisk.KVHandle.ClassWithTimelines where
 
-import Control.Lens
--- import LedgerOnDisk.Mapping.Class
 import LedgerOnDisk.Mapping.PTMap
+
+import Control.Lens
 import Data.Set (Set)
 import Data.HashMap.Strict (HashMap)
 import Data.Kind
@@ -39,6 +36,8 @@ import qualified Data.Semigroup as Semi
 import Control.Comonad
 import Data.Proxy
 import Data.Hashable
+
+type CursorId = Int
 
 type role NullMap nominal nominal
 data NullMap k a = NullMap
@@ -60,7 +59,13 @@ newtype Keys k a = Keys (Set k)
 -- where t is some 'other' data, and the 'OnDiskMappings state' is a collection of maps
 class HasOnDiskMappings state where
   data OnDiskMappings state :: (Type -> Type -> Type) -> Type
+
   onDiskMappingsLens ::  Lens (state map1) (state map2) (OnDiskMappings state map1) (OnDiskMappings state map2)
+  projectOnDiskMappings :: state map -> OnDiskMappings state map
+  projectOnDiskMappings = view onDiskMappingsLens
+  injectOnDiskMappings :: OnDiskMappings state map -> state any -> state map
+  injectOnDiskMappings a s = s & onDiskMappingsLens .~ a
+
   nullMap :: OnDiskMappings state NullMap
 
 -- | An instance 'HasConstrainedOnDiskMappings c state' gives a collection of methods for working with OnDiskMappings.
@@ -109,9 +114,9 @@ type instance SemigroupMap Map = KeysOrdValuesSemigroups
 type instance SemigroupMap HashMap = KeysHashableValuesSemigroups
 type instance SemigroupMap NullMap = UnrestrictedKeysAndValues
 type instance SemigroupMap Keys = KeysAreOrd
-type instance SemigroupMap (DiffMap) = KeysAreOrd
-type instance SemigroupMap (PTMap) = KeysAreOrd
 type instance SemigroupMap CursorRequest = UnrestrictedKeysAndValues
+type instance SemigroupMap DiffMap = KeysAreOrd
+type instance SemigroupMap PTMap = KeysAreOrd
 
 class (Ord k) => KeysAreOrd k v
 instance (Ord k) => KeysAreOrd k v
@@ -132,7 +137,6 @@ class (KeysAreHashable k v, ValuesAreSemigroups k v) => KeysHashableValuesSemigr
 instance (KeysAreHashable k v, ValuesAreSemigroups k v) => KeysHashableValuesSemigroups k v
 
 
-type CursorId = Int
 
 data CursorRequest0 k v where
   NewCursor ::
