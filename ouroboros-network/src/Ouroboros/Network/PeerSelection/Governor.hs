@@ -435,8 +435,8 @@ base our decision on include:
 
 -- |
 --
-peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
-                          Ord peeraddr)
+peerSelectionGovernor :: (MonadAsync m, MonadLabelledSTM m, MonadMask m,
+                          MonadTime m, MonadTimer m, Ord peeraddr)
                       => Tracer m (TracePeerSelection peeraddr)
                       -> Tracer m (DebugPeerSelection peeraddr peerconn)
                       -> Tracer m PeerSelectionCounters
