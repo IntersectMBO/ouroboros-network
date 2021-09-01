@@ -94,6 +94,7 @@ muxStart
     :: forall m mode a b.
        ( MonadAsync m
        , MonadFork m
+       , MonadLabelledSTM m
        , MonadThrow (STM m)
        , MonadTime  m
        , MonadTimer m
