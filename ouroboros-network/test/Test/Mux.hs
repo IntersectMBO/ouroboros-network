@@ -82,6 +82,7 @@ demo :: forall m block.
         ( MonadAsync m
         , MonadCatch m
         , MonadFork m
+        , MonadLabelledSTM m
         , MonadMask m
         , MonadSay m
         , MonadST m
