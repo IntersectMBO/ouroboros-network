@@ -34,6 +34,7 @@ module Ouroboros.Network.Server2
   ) where
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
@@ -42,6 +43,7 @@ import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
+import           Data.List (intercalate)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 
@@ -108,11 +110,13 @@ run :: forall muxMode socket peerAddr versionNumber m a b.
        ( MonadAsync    m
        , MonadCatch    m
        , MonadEvaluate m
+       , MonadLabelledSTM  m
        , MonadThrow   (STM m)
        , MonadTime     m
        , MonadTimer    m
        , HasResponder muxMode ~ True
        , Ord      peerAddr
+       , Show     peerAddr
        )
     => ServerArguments muxMode socket peerAddr versionNumber ByteString m a b
     -> m Void
@@ -129,15 +133,23 @@ run ServerArguments {
     } = do
       let sockets = NonEmpty.toList serverSockets
       localAddresses <- traverse (getLocalAddr serverSnocket) sockets
+      labelTVarIO serverObservableStateVar
+                  (  "server-observable-state-"
+                  ++ intercalate "-" (show <$> localAddresses)
+                  )
       traceWith tracer (TrServerStarted localAddresses)
-      let threads = inboundGovernor inboundGovernorTracer
-                                    serverControlChannel
-                                    serverInboundIdleTimeout
-                                    serverConnectionManager
-                                    serverObservableStateVar
-                  : [ accept serverSnocket socket >>= acceptLoop
-                    | socket <- sockets
-                    ]
+      let threads = (do labelThisThread (  "inbound-governor-"
+                                        ++ intercalate "-" (show <$> localAddresses)
+                                        )
+                        inboundGovernor inboundGovernorTracer
+                                        serverControlChannel
+                                        serverInboundIdleTimeout
+                                        serverConnectionManager
+                                        serverObservableStateVar)
+                    : [ (accept serverSnocket socket >>= acceptLoop localAddress)
+                        `finally` close serverSnocket socket
+                      | (localAddress, socket) <- localAddresses `zip` sockets
+                      ]
 
       raceAll threads
         `finally`
@@ -154,9 +166,11 @@ run ServerArguments {
     raceAll [t]      = t
     raceAll (t : ts) = either id id <$> race t (raceAll ts)
 
-    acceptLoop :: Accept m socket peerAddr
+    acceptLoop :: peerAddr
+               -> Accept m socket peerAddr
                -> m Void
-    acceptLoop acceptOne = do
+    acceptLoop localAddress acceptOne = do
+      labelThisThread ("accept-loop-" ++ show localAddress)
       runConnectionRateLimits
         (TrAcceptPolicyTrace `contramap` tracer)
         (numberOfConnections serverConnectionManager)
@@ -165,7 +179,7 @@ run ServerArguments {
       case result of
         (AcceptFailure err, acceptNext) -> do
           traceWith tracer (TrAcceptError err)
-          acceptLoop acceptNext
+          acceptLoop localAddress acceptNext
         (Accepted socket peerAddr, acceptNext) -> do
           traceWith tracer (TrAcceptConnection peerAddr)
           -- using withAsync ensures that the thread that includes inbound
@@ -186,7 +200,7 @@ run ServerArguments {
                 Disconnected {} ->
                   pure ()
             )
-            $ \_ -> acceptLoop acceptNext
+            $ \_ -> acceptLoop localAddress acceptNext
 
 --
 -- Trace
