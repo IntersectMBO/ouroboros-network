@@ -636,6 +636,7 @@ mkSnocket state tr = Snocket { getLocalAddr
     open :: AddressFamily (TestAddress addr) -> m (FD m (TestAddress addr))
     open _ = atomically $ do
       fdVar <- newTVar (FDUninitialised Nothing)
+      labelTVar fdVar "fd"
       return FD { fdVar }
 
 
