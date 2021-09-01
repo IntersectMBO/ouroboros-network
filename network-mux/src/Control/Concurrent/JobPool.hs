@@ -14,6 +14,7 @@ module Control.Concurrent.JobPool (
     cancelGroup
   ) where
 
+import           Data.Functor (($>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
@@ -34,7 +35,7 @@ data JobPool group m a = JobPool {
 data Job group m a = Job (m a) (SomeException -> m a) group String
 
 withJobPool :: forall group m a b.
-               (MonadAsync m, MonadThrow m)
+               (MonadAsync m, MonadThrow m, MonadLabelledSTM m)
             => (JobPool group m a -> m b) -> m b
 withJobPool =
     bracket create close
@@ -42,7 +43,7 @@ withJobPool =
     create :: m (JobPool group m a)
     create =
       atomically $
-        JobPool <$> newTVar Map.empty
+        JobPool <$> (newTVar Map.empty >>= \v -> labelTVar v "job-pool" $> v)
                 <*> newTQueue
 
     -- 'bracket' requires that the 'close' callback is uninterruptible.  Note
