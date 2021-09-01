@@ -125,11 +125,11 @@ dualConnection conn@Connection { connChannelLocal, connChannelRemote } =
          }
 
 
-mkConnection :: ( MonadSTM   m
-                , MonadTime  m
-                , MonadTimer m
-                , MonadThrow m
-                , MonadThrow (STM m)
+mkConnection :: ( MonadLabelledSTM   m
+                , MonadTime          m
+                , MonadTimer         m
+                , MonadThrow         m
+                , MonadThrow    (STM m)
                 )
              => Tracer m (WithAddr (TestAddress addr)
                                    (SnocketTrace m (TestAddress addr)))
@@ -271,7 +271,7 @@ noAttenuation = BearerInfo { biConnectionDelay      = 0
 --
 newNetworkState
     :: forall m peerAddr.
-       ( MonadSTM         m
+       ( MonadLabelledSTM m
        , GlobalAddressScheme peerAddr
        )
     => Script BearerInfo
