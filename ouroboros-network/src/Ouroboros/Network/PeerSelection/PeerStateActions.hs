@@ -534,6 +534,7 @@ withPeerStateActions
     :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a b x.
        ( MonadAsync         m
        , MonadCatch         m
+       , MonadLabelledSTM   m
        , MonadMask          m
        , MonadTimer         m
        , MonadThrow         (STM m)
