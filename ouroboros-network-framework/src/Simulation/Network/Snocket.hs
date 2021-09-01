@@ -125,11 +125,11 @@ dualConnection conn@Connection { connChannelLocal, connChannelRemote } =
          }
 
 
-mkConnection :: ( MonadSTM   m
-                , MonadTime  m
-                , MonadTimer m
-                , MonadThrow m
-                , MonadThrow (STM m)
+mkConnection :: ( MonadLabelledSTM   m
+                , MonadTime          m
+                , MonadTimer         m
+                , MonadThrow         m
+                , MonadThrow    (STM m)
                 )
              => Tracer m (WithAddr (TestAddress addr)
                                    (SnocketTrace m (TestAddress addr)))
@@ -271,7 +271,7 @@ noAttenuation = BearerInfo { biConnectionDelay      = 0
 --
 newNetworkState
     :: forall m peerAddr.
-       ( MonadSTM         m
+       ( MonadLabelledSTM m
        , GlobalAddressScheme peerAddr
        )
     => Script BearerInfo
@@ -285,7 +285,7 @@ newNetworkState bearerInfoScript = atomically $ do
         -- include PR #3172.
          a <- stateTVar v (\s -> let s' = succ s in (s', s'))
          return (ephemeralAddress addrType a)
-  NetworkState
+  s <- NetworkState
     -- nsListeningFDs
     <$> newTVar Map.empty
     -- nsConnections
@@ -294,6 +294,9 @@ newNetworkState bearerInfoScript = atomically $ do
     <*> pure nextEphemeralAddr
     -- nsBearerInfo
     <*> initScriptSTM bearerInfoScript
+  labelTVar (nsListeningFDs s)   "nsListeningFDs"
+  labelTVar (nsConnections s)    "nsConnections"
+  return s
 
 
 data ResourceException addr
@@ -804,6 +807,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           case fd_ of
             FDUninitialised Nothing -> do
               writeTVar fdVar (FDUninitialised (Just addr))
+              labelTVar fdVar ("fd-" ++ show addr)
               return Nothing
             _ ->
               return (Just (fd_, invalidError fd_))
@@ -832,6 +836,7 @@ mkSnocket state tr = Snocket { getLocalAddr
 
           FDUninitialised (Just addr) -> do
             queue <- newTBQueue bound
+            labelTBQueue queue ("aq-" ++ show addr)
             writeTVar fdVar (FDListening addr queue)
             modifyTVar (nsListeningFDs state) (Map.insert addr fd)
             
