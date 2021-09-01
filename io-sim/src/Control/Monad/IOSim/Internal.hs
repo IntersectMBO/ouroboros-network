@@ -428,6 +428,7 @@ instance MonadAsync (IOSim s) where
     var <- newEmptyTMVarIO
     tid <- mask $ \restore ->
              forkIO $ try (restore action) >>= atomically . putTMVar var
+    labelTMVarIO var ("async-" ++ show tid)
     return (Async tid (readTMVar var))
 
   asyncThreadId _proxy (Async tid _) = tid
