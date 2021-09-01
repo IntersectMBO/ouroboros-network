@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -49,6 +50,12 @@ import           Data.Void (Void)
 import           Data.List (intercalate)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
+#if defined(mingw32_HOST_OS)
+import           System.IO.Error
+#else
+import           GHC.IO.Exception
+import           Foreign.C.Error
+#endif
 
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.ConnectionHandler
@@ -167,6 +174,13 @@ run ServerArguments {
               Nothing -> traceWith tracer (TrServerError e)
             throwIO e
   where
+
+#if !defined(mingw32_HOST_OS)
+    iseCONNABORTED :: IOError -> Bool
+    iseCONNABORTED (IOError _ _ _ _ (Just cerrno) _) = eCONNABORTED == Errno cerrno
+    iseCONNABORTED _ = False
+#endif
+
     raceAll :: [m x] -> m x
     raceAll []       = error "raceAll: invariant violation"
     raceAll [t]      = t
@@ -185,7 +199,30 @@ run ServerArguments {
       case result of
         (AcceptFailure err, acceptNext) -> do
           traceWith tracer (TrAcceptError err)
-          acceptLoop localAddress acceptNext
+          -- Try the determine if the connection was aborted by the remote end
+          -- before we could process the accept, or if it was a resource
+          -- exaustion problem.
+          -- NB. This piece of code is fragile and depends on specific
+          -- strings/mappings in the network and base libraries.
+          case fromException err of
+             Just ioErr ->
+#if defined(mingw32_HOST_OS)
+                      -- On Windows the network packet classifies all errors
+                      -- as OtherError. This means that we're forced to match
+                      -- on the error string. The text string comes from
+                      -- the network package's winSockErr.c, and if it ever
+                      -- changes we must update our text string too.
+                      if ioeGetErrorString ioErr /=
+                          "Software caused connection abort (WSAECONNABORTED)"
+                         then throwIO ioErr
+                         else threadDelay 0.5 >>
+                             acceptLoop localAddress acceptNext
+#else
+               if iseCONNABORTED ioErr
+                  then threadDelay 0.5 >> acceptLoop localAddress acceptNext
+                  else throwIO ioErr
+#endif
+             Nothing -> throwIO err
         (Accepted socket peerAddr, acceptNext) -> do
           traceWith tracer (TrAcceptConnection peerAddr)
           -- using withAsync ensures that the thread that includes inbound
