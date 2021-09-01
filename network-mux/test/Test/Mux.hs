@@ -985,6 +985,7 @@ encodeInvalidMuxSDU sdu =
 prop_demux_sdu :: forall m.
                     ( MonadAsync m
                     , MonadFork m
+                    , MonadLabelledSTM m
                     , MonadMask m
                     , MonadSay m
                     , MonadThrow (STM m)
@@ -1293,6 +1294,7 @@ triggerApp bearer app = do
 prop_mux_start_mX :: forall m.
                        ( MonadAsync m
                        , MonadFork m
+                       , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
                        , MonadThrow (STM m)
@@ -1338,6 +1340,7 @@ prop_mux_start_mX apps runTime = do
 prop_mux_restart_m :: forall m.
                        ( MonadAsync m
                        , MonadFork m
+                       , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
                        , MonadThrow (STM m)
@@ -1487,6 +1490,7 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
 prop_mux_start_m :: forall m.
                        ( MonadAsync m
                        , MonadFork m
+                       , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
                        , MonadThrow (STM m)
@@ -1699,13 +1703,14 @@ withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
 
 close_experiment
     :: forall sock acc req resp m.
-       ( MonadAsync      m
-       , MonadFork       m
-       , MonadMask       m
-       , MonadTime       m
-       , MonadTimer      m
-       , MonadThrow (STM m)
-       , MonadST         m
+       ( MonadAsync       m
+       , MonadFork        m
+       , MonadLabelledSTM m
+       , MonadMask        m
+       , MonadTime        m
+       , MonadTimer       m
+       , MonadThrow  (STM m)
+       , MonadST          m
        , Serialise req
        , Serialise resp
        , Eq resp
