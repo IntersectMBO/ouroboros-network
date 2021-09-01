@@ -100,16 +100,24 @@ writeQueueChannel QueueChannel { qcWrite } msg =
                 >> return True
 
 
-newConnectedQueueChannelPair :: MonadSTM m
+newConnectedQueueChannelPair :: ( MonadSTM         m
+                                , MonadLabelledSTM m
+                                )
                              => STM m ( QueueChannel m
                                       , QueueChannel m )
 newConnectedQueueChannelPair = do
     read  <- newTQueue
     write <- newTQueue
+    labelTQueue read  "qc-queue-read"
+    labelTQueue write "qc-queue-write"
     q  <- QueueChannel <$> newTVar (Just read)
                        <*> newTVar (Just write)
+    labelTVar (qcRead q)  "qc-read"
+    labelTVar (qcWrite q) "qc-write"
     q' <- QueueChannel <$> newTVar (Just write)
                        <*> newTVar (Just read)
+    labelTVar (qcRead q')  "qc-read'"
+    labelTVar (qcWrite q') "qc-write'"
     return (q, q')
 
 
@@ -247,11 +255,11 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
 --
 newConnectedAttenuatedChannelPair
     :: forall m.
-       ( MonadSTM        m
-       , MonadTime       m
-       , MonadTimer      m
-       , MonadThrow      m
-       , MonadThrow (STM m)
+       ( MonadLabelledSTM m
+       , MonadTime        m
+       , MonadTimer       m
+       , MonadThrow       m
+       , MonadThrow  (STM m)
        )
     => Tracer m AttenuatedChannelTrace
     -> Tracer m AttenuatedChannelTrace
