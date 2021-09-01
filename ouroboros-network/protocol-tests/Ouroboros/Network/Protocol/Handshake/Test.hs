@@ -978,6 +978,7 @@ prop_channel_simultaneous_open_sim
     :: forall vNumber vData m.
        ( MonadAsync m
        , MonadCatch m
+       , MonadLabelledSTM m
        , MonadMask  m
        , MonadST    m
        , MonadThrow (STM m)

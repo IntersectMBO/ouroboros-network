@@ -125,11 +125,11 @@ dualConnection conn@Connection { connChannelLocal, connChannelRemote } =
          }
 
 
-mkConnection :: ( MonadSTM   m
-                , MonadTime  m
-                , MonadTimer m
-                , MonadThrow m
-                , MonadThrow (STM m)
+mkConnection :: ( MonadLabelledSTM   m
+                , MonadTime          m
+                , MonadTimer         m
+                , MonadThrow         m
+                , MonadThrow    (STM m)
                 )
              => Tracer m (WithAddr (TestAddress addr)
                                    (SnocketTrace m (TestAddress addr)))
@@ -271,7 +271,7 @@ noAttenuation = BearerInfo { biConnectionDelay      = 0
 --
 newNetworkState
     :: forall m peerAddr.
-       ( MonadSTM         m
+       ( MonadLabelledSTM m
        , GlobalAddressScheme peerAddr
        )
     => Script BearerInfo
@@ -332,12 +332,12 @@ instance GlobalAddressScheme Int where
 --
 withSnocket
     :: forall m peerAddr a.
-       ( MonadSTM   m
-       , MonadCatch m
-       , MonadMask  m
-       , MonadTime  m
-       , MonadTimer m
-       , MonadThrow (STM m)
+       ( MonadLabelledSTM m
+       , MonadCatch       m
+       , MonadMask        m
+       , MonadTime        m
+       , MonadTimer       m
+       , MonadThrow  (STM m)
        , GlobalAddressScheme peerAddr
        , Ord      peerAddr
        , Typeable peerAddr
@@ -521,11 +521,11 @@ data OpenType =
 -- should be shared with all nodes in the same network.
 --
 mkSnocket :: forall m addr.
-             ( MonadSTM   m
-             , MonadThrow (STM m)
-             , MonadMask  m
-             , MonadTime  m
-             , MonadTimer m
+             ( MonadLabelledSTM   m
+             , MonadThrow    (STM m)
+             , MonadMask          m
+             , MonadTime          m
+             , MonadTimer         m
              , GlobalAddressScheme addr
              , Ord  addr
              , Show addr
