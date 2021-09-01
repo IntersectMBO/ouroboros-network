@@ -168,14 +168,15 @@ untilSuccess go =
 
 clientServerSimulation
     :: forall m payload.
-       ( MonadAsync m
-       , MonadFork  m
-       , MonadMask  m
-       , MonadSay   m
-       , MonadST    m
-       , MonadThrow (STM m)
-       , MonadTime  m
-       , MonadTimer m
+       ( MonadAsync       m
+       , MonadFork        m
+       , MonadLabelledSTM m
+       , MonadMask        m
+       , MonadSay         m
+       , MonadST          m
+       , MonadThrow  (STM m)
+       , MonadTime        m
+       , MonadTimer       m
 
        , Serialise payload
        , Eq payload

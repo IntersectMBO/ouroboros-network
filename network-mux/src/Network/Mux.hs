@@ -203,6 +203,7 @@ runMux :: forall m mode.
           ( MonadAsync m
           , MonadCatch m
           , MonadFork m
+          , MonadLabelledSTM m
           , MonadThrow (STM m)
           , MonadTime  m
           , MonadTimer m
