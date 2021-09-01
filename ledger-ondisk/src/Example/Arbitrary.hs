@@ -21,6 +21,17 @@ import Data.Vector ((!))
 import Data.Int
 import qualified Data.Vector as Vector
 
+-- TODO switch this to quickcheck, use this snippet (courtesy of Oleg Grenrus)
+-- to generate a list of integers suming to k
+-- arbPartition :: Int -> Gen [Int]
+-- arbPartition k = case compare k 1 of
+--     LT -> pure []
+--     EQ -> pure [1]
+--     GT -> do
+--         first <- chooseInt (1, k)
+--         rest <- arbPartition $ k - first
+--         shuffle (first : rest)
+
 data GenState = GenState
   { gen :: !StdGen
   , txsPerBlockRange :: !(Int, Int)
@@ -56,7 +67,7 @@ storeTx tx = case tx of
   Tx _ outs -> modify' $ add_outs outs
   where
     add_outs outs s@GenState{gsUtxo} = s { gsUtxo = foldr add_out gsUtxo (zip [0..] outs)}
-    add_out !(i, o) m = Map.insert (TxIn txid (TxIx i)) o m
+    add_out (i, o) m = Map.insert (TxIn txid (TxIx i)) o m
     txid = txId tx
 
 randomTxIn :: (MonadState GenState m) => m (Endo [TxIn], Coin)

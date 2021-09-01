@@ -52,8 +52,8 @@ data LedgerState map =
 
 -- | The content of this doesn't actually matter. It's just a place-holder.
 --
-data PParams = PParams
-  { totalBalance :: !Coin
+newtype PParams = PParams
+  { totalBalance :: Coin
   }
   deriving stock (Eq, Show)
 
@@ -65,6 +65,8 @@ data UTxOState map =
        -- | An aggregation of the UTxO's coins by address.
        utxoagg :: map Addr Coin
      }
+
+-- LedgerState PTMap
 
 data TxIn  = TxIn !TxId !TxIx
   deriving stock (Eq, Ord, Show, Generic)
@@ -149,7 +151,7 @@ instance HasOnDiskMappings LedgerState where
   nullMap = LedgerStateMappings { sm_utxos = nullMap }
 
 instance (HasConstrainedOnDiskMappings c UTxOState) => HasConstrainedOnDiskMappings c LedgerState where
-  zipMappings p f m1@LedgerStateMappings{} m2@LedgerStateMappings{} = fmap go $ zipMappings p f (sm_utxos m1) (sm_utxos m2)
+  zipMappings p f m1@LedgerStateMappings{} m2@LedgerStateMappings{} = go <$> zipMappings p f (sm_utxos m1) (sm_utxos m2)
     where
       go sm_utxos = LedgerStateMappings{..}
 

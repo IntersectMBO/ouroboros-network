@@ -14,6 +14,7 @@ import Data.Hashable
 import qualified Data.HashMap.Strict as HashMap
 import Data.Monoid
 
+-- TODO create quickcheck suite to validate instances
 class Mapping (map :: Type -> Type -> Type) where
   type MappingConstraint map :: Type -> Constraint
   lookup :: MappingConstraint map k => k      -> map k a -> Maybe a

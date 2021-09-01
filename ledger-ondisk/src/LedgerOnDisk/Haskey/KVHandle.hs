@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,11 +15,14 @@
 
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module LedgerOnDisk.Haskey.KVHandle
   ( inMemoryBackend
   , filestoreBackend
   , HaskeyBackend
   , withKVHandle
+  , openKVHandle
+  , closeKVHandle
   , KVHandle
   , proxyConstraint
   )
@@ -30,9 +34,11 @@ import Control.Concurrent.STM
 import Control.Concurrent.Async
 import Control.Monad.State.Strict
 import Control.Monad.Catch
-import Data.Proxy
-import Data.Hashable
 import Control.Tracer
+import Control.Applicative
+import Control.Concurrent
+import qualified Data.Map.Strict as Map
+import Data.Map (Map)
 
 -- import Data.HashMap.Strict (HashMap)
 -- import qualified Data.HashMap.Strict as HashMap
@@ -41,22 +47,39 @@ import LedgerOnDisk.KVHandle.Class
 import LedgerOnDisk.Mapping.PTMap
 import LedgerOnDisk.Diff
 
+import LedgerOnDisk.Haskey.Types hiding (KVHandle)
+import qualified LedgerOnDisk.Haskey.Types (KVHandle(..))
+
 import qualified Database.Haskey.Alloc.Concurrent as Haskey
 import qualified Data.BTree.Impure as Haskey
 import qualified Database.Haskey.Store.InMemory as Haskey
 import qualified Database.Haskey.Store.File as Haskey
 import qualified Data.BTree.Alloc as Haskey
 import qualified Data.BTree.Primitives as Haskey
-import Control.Applicative
-import Control.Concurrent
-import qualified Data.Map.Strict as Map
-import Data.Map (Map)
+import Data.Proxy
 
-class (Haskey.Key k, Haskey.Value v, Hashable k) => HaskeyDBKVConstraint k v
-instance (Haskey.Key k, Haskey.Value v, Hashable k) => HaskeyDBKVConstraint k v
+class (Haskey.Key k, Haskey.Value v) => HaskeyDBKVConstraint k v
+instance (Haskey.Key k, Haskey.Value v) => HaskeyDBKVConstraint k v
 
 proxyConstraint :: Proxy HaskeyDBKVConstraint
 proxyConstraint = Proxy
+
+newtype KVHandle state = WrappedKVHandle
+  { _getKVHandle :: LedgerOnDisk.Haskey.Types.KVHandle state }
+
+{-# COMPLETE KVHandle #-}
+pattern KVHandle :: Tracer IO HaskeyTrace
+  -> TVar Int
+  -> TVar Int
+  -> Int
+  -> Haskey.ConcurrentDb (OnDiskMappings state Haskey.Tree)
+  -> HaskeyBackend
+  -> Haskey.ConcurrentHandles
+  -> Int
+  -> KVHandle state
+pattern KVHandle
+  { tracer, nextQueryIdTV , outstandingQueriesTV, numTickets, dbRoot, haskeyBackend, concurrentHandles, queryTimeoutMS
+  } = WrappedKVHandle LedgerOnDisk.Haskey.Types.KVHandle{..}
 
 type HaskeyOnDiskMappings state =
   ( HasConstrainedOnDiskMappings HaskeyDBKVConstraint state
@@ -66,41 +89,16 @@ type HaskeyOnDiskMappings state =
 runStateTVar :: TVar a -> State a b -> STM b
 runStateTVar v = stateTVar v . runState
 
-type QueryId = Int
-data HaskeyTrace
-  = HT_Prepare HaskeyTracePrepare
-  | HT_Open HaskeyTraceOpen
-  | HT_Submit HaskeyTraceSubmit
-  deriving stock (Show)
-
-data HaskeyBackend
-  = HBMemory
-    { memConfig :: !(Haskey.MemoryStoreConfig)
-    , memFiles :: !(Haskey.MemoryFiles FilePath)
-    }
-  | HBFile
-    { fileConfig :: !(Haskey.FileStoreConfig)
-    }
-
-data KVHandle (state :: (Type -> Type -> Type) -> Type) = KVHandle
-  { tracer :: !(Tracer IO HaskeyTrace)
-  , nextQueryIdTV :: !(TVar Int)
-  , outstandingQueriesTV :: !(TVar Int)
-  , numTickets :: !Int -- ^ maximum outstanding queries
-  , dbRoot :: !(Haskey.ConcurrentDb (OnDiskMappings state Haskey.Tree))
-  , haskeyBackend :: !HaskeyBackend
-  , concurrentHandles :: !Haskey.ConcurrentHandles
-  , queryTimeoutMS :: !Int
-  }
-
-
 data HaskeyReadSet (root :: (Type -> Type -> Type) -> Type) = HaskeyReadSet
   { rsFetchAsync :: !(Async (OnDiskMappings root Map))
   , rsId :: !QueryId
   }
 
-queryOneTree :: forall m k v. (Haskey.AllocReaderM m, Haskey.Key k, Haskey.Value v, Hashable k)
-  =>  Keys k v -> Haskey.Tree k v -> m (Map k v)
+queryOneTree :: forall m k v.
+  ( Haskey.AllocReaderM m
+  , Haskey.Key k
+  , Haskey.Value v
+  ) =>  Keys k v -> Haskey.Tree k v -> m (Map k v)
 queryOneTree (Keys keyset) tree = foldr go (pure Map.empty) keyset
   where
     go k m_map = do
@@ -116,7 +114,7 @@ doQuery :: forall m state root.
   => root Keys
   -> root Haskey.Tree
   -> m (root Map)
-doQuery keys tree = zipMappings proxyConstraint queryOneTree keys tree
+doQuery = zipMappings proxyConstraint queryOneTree
 
 haskeyQuery :: forall m root state.
   ( MonadIO m, MonadMask m, Haskey.ConcurrentMetaStoreM m
@@ -131,8 +129,16 @@ haskeyQuerySafeAsync ::
   ( HaskeyOnDiskMappings state
   , root ~ OnDiskMappings state
   )
-  => Tracer IO HaskeyTracePrepare -> KVHandle state -> QueryId -> root Keys -> IO (Async (root Map))
-haskeyQuerySafeAsync (traceWith -> trace) h@KVHandle{..} rsId keys = do
+  => Tracer IO HaskeyTracePrepare
+  -> HaskeyBackend
+  -> TVar Int
+  -> Int
+  -> Haskey.ConcurrentDb (root Haskey.Tree)
+  -> QueryId
+  -> root Keys
+  -> IO (Async (root Map))
+haskeyQuerySafeAsync (traceWith -> trace) haskeyBackend
+  outstandingQueriesTV queryTimeoutMS dbRoot rsId keys = do
   started_tmvar <- newEmptyTMVarIO
   let timeout_action = do
         threadDelay $ 1000 * queryTimeoutMS
@@ -143,13 +149,13 @@ haskeyQuerySafeAsync (traceWith -> trace) h@KVHandle{..} rsId keys = do
         trace $ HTP_QueryComplete rsId
         pure r
 
-  r_async <- async $
-    bracket_
+  r_async <- async $ bracket_
       -- If the put succeeds then the decrement in the finally clause is guaranteed to run
       (atomically $ putTMVar started_tmvar ())
-      (atomically $ decrementNumOutstandingQueriesSTM h) $ do
+      (atomically $ decrementNumOutstandingQueriesSTM outstandingQueriesTV) $ do
         x <- race timeout_action query_action
         case x of
+          -- TODO proper exception types
           Left () -> throwM $ userError "timeout"
           Right y -> pure y
 
@@ -163,23 +169,16 @@ haskeyQuerySafeAsync (traceWith -> trace) h@KVHandle{..} rsId keys = do
                              -- decrement has already happened
     Left e -> throwM e       -- async failed before it could write to started_tmvar, decrement hasn't happened
 
-decrementNumOutstandingQueriesSTM :: KVHandle state -> STM ()
-decrementNumOutstandingQueriesSTM KVHandle{outstandingQueriesTV} =
+decrementNumOutstandingQueriesSTM :: TVar Int -> STM ()
+decrementNumOutstandingQueriesSTM outstandingQueriesTV =
   runStateTVar outstandingQueriesTV $ modify (+ (-1))
 
-data HaskeyTracePrepare
-  = HTP_Prepare
-  | HTP_Preparing !QueryId
-  | HTP_Timedout !QueryId
-  | HTP_QueryStarted !QueryId
-  | HTP_QueryComplete !QueryId
-  deriving stock (Show)
 
 haskeyPrepare ::
   ( HaskeyOnDiskMappings state
   )
   => KVHandle state -> OnDiskMappings state Keys -> IO (HaskeyReadSet state)
-haskeyPrepare h@KVHandle{..} qs = do
+haskeyPrepare KVHandle{..} qs = do
   let
     my_tracer = contramap HT_Prepare tracer
     trace = traceWith my_tracer
@@ -188,15 +187,14 @@ haskeyPrepare h@KVHandle{..} qs = do
     initQuery = atomically $ do
         num_outstanding_queries <- readTVar outstandingQueriesTV
         guard $ num_outstanding_queries < numTickets
-        qId <- runStateTVar nextQueryIdTV $ get <* modify (+1)
-        pure qId
+        runStateTVar nextQueryIdTV $ get <* modify (+1)
 
   -- we are responsible for the decrement if and only if initQuery succeeds and
   -- haskeyQuerySafeAsync throws
   (rsId, rsFetchAsync) <- bracketOnError
     initQuery
-    (\_ -> atomically $ decrementNumOutstandingQueriesSTM h)
-    (\qId -> (qId,) <$> haskeyQuerySafeAsync my_tracer h qId qs)
+    (\_ -> atomically $ decrementNumOutstandingQueriesSTM outstandingQueriesTV)
+    (\qId -> (qId,) <$> haskeyQuerySafeAsync my_tracer haskeyBackend outstandingQueriesTV queryTimeoutMS dbRoot qId qs)
   trace $ HTP_Preparing rsId
   pure HaskeyReadSet{..}
 
@@ -221,13 +219,8 @@ doUpdate :: forall m state root.
   => root DiffMap
   -> root Haskey.Tree
   -> m (root Haskey.Tree)
-doUpdate diff tree = zipMappings proxyConstraint updateOneTree diff tree
+doUpdate = zipMappings proxyConstraint updateOneTree
 
-data HaskeyTraceSubmit
-  = HTS_Submit QueryId
-  | HTS_Running QueryId
-  | HTS_Complete QueryId
-  deriving stock (Show)
 
 haskeySubmit :: forall a state root.
   ( root ~ OnDiskMappings state
@@ -246,7 +239,7 @@ haskeySubmit KVHandle{..} HaskeyReadSet{..} op = do
   let
     query_result1 = mapMappings proxyConstraint ptMapFromMap query_result0
     (a, diff_map) = op query_result1
-  runHaskeyBackend haskeyBackend $ Haskey.transact_ (\x -> doUpdate diff_map x >>= Haskey.commit_) dbRoot
+  runHaskeyBackend haskeyBackend $ Haskey.transact_ (doUpdate diff_map >=> Haskey.commit_) dbRoot
   trace $ HTS_Complete rsId
   pure a
 
@@ -280,16 +273,11 @@ filestoreBackend :: Haskey.FileStoreConfig -> HaskeyBackend
 filestoreBackend = HBFile
 
 
-data HaskeyTraceOpen
-  = HTO_Init FilePath
-  | HTO_Created
-  | HTO_Opened
-  deriving stock (Show)
 
 openKVHandle :: (MonadMask m, MonadIO m, HaskeyOnDiskMappings state)
   => Tracer IO HaskeyTrace -> Int -> HaskeyBackend -> FilePath -> m (KVHandle state)
 openKVHandle tracer numTickets haskeyBackend fp = do
-  let trace = liftIO . (traceWith $ contramap HT_Open tracer)
+  let trace = liftIO . traceWith (contramap HT_Open tracer)
   let
     concurrentHandles = Haskey.concurrentHandles fp
     queryTimeoutMS = 100

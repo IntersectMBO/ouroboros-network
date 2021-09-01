@@ -35,10 +35,18 @@ library
                        LedgerOnDisk.Util
                        -- LedgerOnDisk.Util.RandomTime
                        LedgerOnDisk.Util.Trace
+
                        LedgerOnDisk.App.HaskeyKV
+
+
+                       LedgerOnDisk.KVHandle.OnDiskMappings
                        LedgerOnDisk.KVHandle.Class
-                       LedgerOnDisk.KVHandle.ClassWithTimelines
+                       LedgerOnDisk.KVHandle.ClassWithSnapshots
+
+                       LedgerOnDisk.Haskey.Types
                        LedgerOnDisk.Haskey.KVHandle
+                       LedgerOnDisk.Haskey.KVHandleWithSnapshots
+
                        LedgerOnDisk.Mapping.Class
                        LedgerOnDisk.Mapping.PTMap
 
