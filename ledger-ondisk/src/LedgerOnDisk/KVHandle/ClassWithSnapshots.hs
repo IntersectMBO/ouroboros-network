@@ -36,9 +36,6 @@ import Control.Comonad
 
 type CursorId = Int
 
-
-
-
 type instance SemigroupMap (CursorRequest h) = UnrestrictedKeysAndValues
 
 data CursorRequest0 h k v

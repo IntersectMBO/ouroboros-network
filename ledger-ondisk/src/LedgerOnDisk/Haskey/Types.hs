@@ -4,6 +4,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 module LedgerOnDisk.Haskey.Types where
 
 import Data.Kind
@@ -15,6 +17,8 @@ import Control.Concurrent.STM
 import LedgerOnDisk.KVHandle.OnDiskMappings
 import qualified Database.Haskey.Alloc.Concurrent as Haskey
 import qualified Data.BTree.Impure as Haskey
+import qualified Data.BTree.Primitives as Haskey
+import Data.Proxy
 
 type QueryId = Int
 
@@ -63,4 +67,13 @@ data HaskeyTraceSubmit
   | HTS_Complete QueryId
   deriving stock (Show)
 
+class (Haskey.Key k, Haskey.Value v) => HaskeyDBKVConstraint k v
+instance (Haskey.Key k, Haskey.Value v) => HaskeyDBKVConstraint k v
 
+proxyConstraint :: Proxy HaskeyDBKVConstraint
+proxyConstraint = Proxy
+
+type HaskeyOnDiskMappings state =
+  ( HasConstrainedOnDiskMappings HaskeyDBKVConstraint state
+  , Haskey.Root (OnDiskMappings state Haskey.Tree)
+  )

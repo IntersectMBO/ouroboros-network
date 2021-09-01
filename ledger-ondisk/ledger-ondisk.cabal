@@ -44,6 +44,7 @@ library
                        LedgerOnDisk.KVHandle.ClassWithSnapshots
 
                        LedgerOnDisk.Haskey.Types
+                       LedgerOnDisk.Haskey.Impl
                        LedgerOnDisk.Haskey.KVHandle
                        LedgerOnDisk.Haskey.KVHandleWithSnapshots
 
