@@ -203,6 +203,7 @@ runMux :: forall m mode.
           ( MonadAsync m
           , MonadCatch m
           , MonadFork m
+          , MonadLabelledSTM m
           , MonadThrow (STM m)
           , MonadTime  m
           , MonadTimer m
@@ -214,6 +215,7 @@ runMux :: forall m mode.
        -> m ()
 runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
     egressQueue <- atomically $ newTBQueue 100
+    labelTBQueueIO egressQueue "mux-eq"
 
     JobPool.withJobPool
       (\jobpool -> do
