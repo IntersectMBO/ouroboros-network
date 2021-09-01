@@ -54,11 +54,13 @@ newtype InboundGovernorObservableState = InboundGovernorObservableState {
 -- | Create new observable state 'StrictTVar'.
 --
 newObservableStateVar
-    :: MonadSTM m
+    :: MonadLabelledSTM m
     => StdGen
     -> m (StrictTVar m InboundGovernorObservableState)
-newObservableStateVar prng =
-    newTVarIO (InboundGovernorObservableState prng)
+newObservableStateVar prng = do
+    v <- newTVarIO (InboundGovernorObservableState prng)
+    labelTVarIO v "observable-state-var"
+    return v
 
 
 -- | Using the global 'StdGen'.
@@ -75,7 +77,7 @@ newObservableStateVarIO = do
 -- | Useful for testing, it is using 'Rnd.mkStdGen'.
 --
 newObservableStateVarFromSeed
-    :: MonadSTM m
+    :: MonadLabelledSTM m
     => Int
     -> m (StrictTVar m InboundGovernorObservableState)
 newObservableStateVarFromSeed = newObservableStateVar . Rnd.mkStdGen
