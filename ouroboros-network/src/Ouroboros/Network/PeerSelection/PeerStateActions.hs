@@ -535,6 +535,7 @@ withPeerStateActions
     :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a b x.
        ( MonadAsync         m
        , MonadCatch         m
+       , MonadLabelledSTM   m
        , MonadMask          m
        , MonadThrow         (STM m)
        , HasInitiator muxMode ~ True
