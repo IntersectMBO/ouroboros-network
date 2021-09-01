@@ -633,6 +633,7 @@ pattern TraceDeadlock time threads = Nil (Deadlock time threads)
 data TraceEvent
   = EventSay  String
   | EventLog  Dynamic
+  | EventMask MaskingState
 
   | EventThrow          SomeException
   | EventThrowTo        SomeException ThreadId -- This thread used ThrowTo
@@ -1000,10 +1001,12 @@ schedule thread@Thread{
                                                (runIOSim action')
                                                (MaskFrame k maskst ctl)
                            , threadMasking = maskst' }
-      case maskst' of
-        -- If we're now unmasked then check for any pending async exceptions
-        Unmasked -> deschedule Interruptable thread' simstate
-        _        -> schedule                 thread' simstate
+      trace <-
+        case maskst' of
+          -- If we're now unmasked then check for any pending async exceptions
+          Unmasked -> deschedule Interruptable thread' simstate
+          _        -> schedule                 thread' simstate
+      return (Trace time tid tlbl (EventMask maskst') trace)
 
     ThrowTo e tid' _ | tid' == tid -> do
       -- Throw to ourself is equivalent to a synchronous throw,
