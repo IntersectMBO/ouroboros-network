@@ -24,6 +24,7 @@ import Data.Kind
 import LedgerOnDisk.Mapping.PTMap
 import LedgerOnDisk.KVHandle.OnDiskMappings
 
+
 -- | An instance of 'DB state dbhandle' witnesses that we can perform db
 -- operations on a dbhandle pertaining to type state.
 class (HasConstrainedOnDiskMappings (DBKVConstraint state) state)

@@ -15,12 +15,12 @@ module LedgerOnDisk.KVHandle.OnDiskMappings where
 
 import Data.Kind
 import Control.Lens
-import Data.Set (Set)
 import Data.Hashable
 import LedgerOnDisk.Mapping.PTMap
 import Data.HashMap.Strict (HashMap)
 import Data.Map.Strict (Map)
 import Data.Proxy
+import Data.Set (Set)
 
 -- | An instance 'HasOnDiskMappings state' witnesses a type of the shape `(Type -> Type -> Type) -> Type` embeds
 -- a collection of maps 'OnDiskMappings state'. We can think of 'state map' as being isomorphic to '(t, OnDiskMappings state map)'
@@ -63,6 +63,8 @@ instance forall (state :: (Type -> Type -> Type) -> Type) (map :: Type -> Type -
     proxy = Proxy
     in runIdentity $ zipMappings proxy (\l r -> pure $ l <> r) x y
 
+-- | A type family to compute the constraints on the keys and values of maps to grant a semigroup instance on (map k v)
+-- i.e. morally `SemigroupMap map k v => Semigroup (Map k v)`
 type family SemigroupMap (map :: (Type -> Type -> Type)) :: (Type -> Type -> Constraint)
 
 type instance SemigroupMap Map = KeysOrdValuesSemigroups
@@ -117,3 +119,4 @@ class HasOnDiskMappings state => HasConstrainedOnDiskMappings (c :: Type -> Type
     -> OnDiskMappings state map1
     -> f (OnDiskMappings state map2)
   traverseMappings p f m = zipMappings p (\_ x -> f x) nullMap m
+

@@ -23,80 +23,37 @@
 
 module LedgerOnDisk.KVHandle.ClassWithSnapshots where
 
-import LedgerOnDisk.Mapping.PTMap
-import LedgerOnDisk.KVHandle.OnDiskMappings
-
 import Data.Kind
-import Data.Int
 
 import Data.Map.Monoidal (MonoidalMap(MonoidalMap))
 import Data.Map (Map)
-import qualified Data.Semigroup as Semi
 import Control.Comonad
 
-type CursorId = Int
+import LedgerOnDisk.Mapping.PTMap
+import LedgerOnDisk.KVHandle.OnDiskMappings
+import LedgerOnDisk.KVHandle.RangeQuery
 
-type instance SemigroupMap (CursorRequest h) = UnrestrictedKeysAndValues
 
-data CursorRequest0 h k v
-  = NewCursor
-    { snapshot :: !(Snapshot h)
-    , initialNumRows :: !Int64
-    }
-  | ReadCursor
-    { resumeFrom :: !(Cursor h k v)
-    , numRows :: !Int64
-    }
-  | DisposeCursor !(Cursor h k v)
-
-deriving stock instance (Eq (Cursor h k v), Eq (Snapshot h))
-  => Eq (CursorRequest0 h k v)
-
-deriving stock instance (Show (Cursor h k v), Show (Snapshot h))
-  => Show (CursorRequest0 h k v)
-
-newtype CursorRequest s k v = CursorRequest
-  { getCursorRequest :: Map CursorId (CursorRequest0 s k v) }
-  deriving (Semigroup, Monoid) via MonoidalMap CursorId (Semi.Last (CursorRequest0 s k v))
-
-deriving stock instance (Eq (Cursor h k v), Eq (Snapshot h)) => Eq (CursorRequest h k v)
-deriving stock instance (Show (Cursor h k v), Show (Snapshot h)) => Show (CursorRequest h k v)
-
-data CursorResponse0 h k v
-  = CursorFinished
-  | CursorRows
-    { remainingRows :: !Int64
-    , returnedRows :: !Int64
-    , nextCursor :: !(Cursor h k v)
-    , rows :: ![(k, v)]
-    }
-
-deriving stock instance (Eq (Cursor h k v), Eq k, Eq v) => Eq (CursorResponse0 h k v)
-deriving stock instance (Show (Cursor h k v), Show k, Show v) => Show (CursorResponse0 h k v)
-
-newtype CursorResponse h k v = CursorResponse
-  { getCursorResponse :: Map CursorId (CursorResponse0 h k v) }
-  deriving (Semigroup, Monoid) via MonoidalMap CursorId (Semi.Last (CursorResponse0 h k v))
-
-deriving stock instance (Eq (Cursor h k v), Eq k, Eq v) => Eq (CursorResponse h k v)
-deriving stock instance (Show (Cursor h k v), Show k, Show v) => Show (CursorResponse h k v)
-
-data DBRequest dbhandle = DBRequest
-  { cursorRequests :: !(Map CursorId (DBOnDiskMappings dbhandle (CursorRequest dbhandle)))
-  , kvRequests :: !(Map (Maybe (Snapshot dbhandle)) (DBOnDiskMappings dbhandle Keys))
-  }
+newtype DBRequest dbhandle = DBRequest
+  { getDBRequest :: Map (Maybe (Snapshot dbhandle)) (DBOnDiskMappings dbhandle Query) }
 
 deriving stock instance
-  ( Eq (DBOnDiskMappings dbhandle (CursorRequest dbhandle))
-  , Eq (DBOnDiskMappings dbhandle Keys)
+  ( Eq (DBOnDiskMappings dbhandle Query)
   , Eq (Snapshot dbhandle)
   ) => Eq (DBRequest dbhandle)
 
 deriving stock instance
-  ( Show (DBOnDiskMappings dbhandle (CursorRequest dbhandle))
-  , Show (DBOnDiskMappings dbhandle Keys)
+  ( Show (DBOnDiskMappings dbhandle Query)
   , Show (Snapshot dbhandle)
   ) => Show (DBRequest dbhandle)
+
+deriving via MonoidalMap (Maybe (Snapshot dbhandle)) (DBOnDiskMappings dbhandle Query)
+  instance (Ord (Snapshot dbhandle), Semigroup  (DBOnDiskMappings dbhandle Query))
+    => Semigroup (DBRequest dbhandle)
+
+deriving via MonoidalMap (Maybe (Snapshot dbhandle)) (DBOnDiskMappings dbhandle Query)
+  instance (Monoid (DBOnDiskMappings dbhandle Query), Ord (Snapshot dbhandle))
+    => Monoid (DBRequest dbhandle)
 
 -- | The return value for 'submit'
 data DBResponse dbhandle a = DBResponse
@@ -110,9 +67,21 @@ instance Comonad (DBResponse dbhandle) where
   duplicate x = x <$ x
 
 data DBOpArgs dbhandle = DBOpArgs
-  { cursorResults :: !(Map CursorId (DBOnDiskMappings dbhandle (CursorResponse dbhandle)))
+  { rangeQueryMetadata :: !(Map RangeQueryId (DBOnDiskMappings dbhandle RangeQueryMetadata))
   , kvResults :: !(Map (Maybe (Snapshot dbhandle)) (DBOnDiskMappings dbhandle PTMap))
   }
+
+deriving stock instance
+  ( Show (DBOnDiskMappings dbhandle RangeQueryMetadata)
+  , Show (DBOnDiskMappings dbhandle PTMap)
+  , Show (Snapshot dbhandle)
+  ) => Show (DBOpArgs dbhandle)
+
+deriving stock instance
+  ( Eq (DBOnDiskMappings dbhandle RangeQueryMetadata)
+  , Eq (DBOnDiskMappings dbhandle PTMap)
+  , Eq (Snapshot dbhandle)
+  ) => Eq (DBOpArgs dbhandle)
 
 -- | The return value for a DB operation, see 'submit'.
 -- This doesn't depend on a dbhandle, but rather state, which one should think
@@ -123,20 +92,15 @@ data DBOpResult state a = DBOpResult
   , snapshot :: !Bool -- ^ Should a snapshot be taken?
   } deriving stock (Functor)
 
--- -- | Describes how we should apply mutations in a DB operation.
--- -- These applications are relative to a "current" timeline, see 'submit'
--- data BranchTimelines
---   = NewTimeline     -- ^ Do not apply mutations to the current timeline, but fork a new timeline with the changes
---   | CurrentTimelineAndSnapshot -- ^ Apply mutations to the current timeline, and return a new timeline snapshotting the result
---   | CurrentTimeline -- ^ Apply mutations to the current timeline, do not snapshot the result
---   | DiscardChanges -- ^ Do not apply the mutations
---   deriving stock (Eq, Show, Enum, Ord)
+deriving stock instance (Eq a, Eq (OnDiskMappings state DiffMap))
+  => Eq (DBOpResult state a)
 
+deriving stock instance (Show a, Show (OnDiskMappings state DiffMap))
+  => Show (DBOpResult state a)
 
 instance Comonad (DBOpResult state) where
   extract = payload
   duplicate x = x <$ x
-
 
 type DBOnDiskMappings dbhandle = OnDiskMappings (T dbhandle)
 
@@ -145,7 +109,7 @@ type DBOnDiskMappings dbhandle = OnDiskMappings (T dbhandle)
 class
   ( HasConstrainedOnDiskMappings (DBKVConstraint dbhandle) (T dbhandle)
   , Ord (Snapshot dbhandle)
-  , Monoid (DBRequest dbhandle)
+  , HasConstrainedOnDiskMappings (SemigroupMap Query) (T dbhandle)
   ) => DB dbhandle where
 
   -- | Databases can put constraints on the keys and values they can store.
@@ -161,16 +125,10 @@ class
 
   type T dbhandle :: (Type -> Type -> Type) -> Type
 
-  data Cursor dbhandle k v
-
   -- | The abstract type representing prepared - but not submitted - queries
   data ReadHandle dbhandle
 
-  -- | The abstract type naming branches of history.
-  -- In general Timelines are mutable. Akin to a git branch rather than a git tag.
-  -- Immutable snapshots can be implemented with this either by discipline, or
-  -- distinguishing between mutable and immutable timelines in their
-  -- implemtation of `Timeline`
+  -- | The abstract type naming snapshots of history
   -- This type is expected to be small, just an Id and maybe some flags
   data Snapshot dbhandle
 

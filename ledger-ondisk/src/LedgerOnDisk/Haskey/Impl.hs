@@ -9,6 +9,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DerivingStrategies #-}
 module LedgerOnDisk.Haskey.Impl where
 
 
@@ -35,6 +36,8 @@ import LedgerOnDisk.Mapping.PTMap
 import LedgerOnDisk.Diff
 import LedgerOnDisk.KVHandle.OnDiskMappings
 import LedgerOnDisk.Haskey.Types
+import LedgerOnDisk.KVHandle.RangeQuery
+
 
 runStateTVar :: TVar a -> State a b -> STM b
 runStateTVar v = stateTVar v . runState
@@ -251,3 +254,21 @@ withKVHandle :: (MonadMask m, MonadIO m, HaskeyOnDiskMappings state)
   -> (KVHandle state -> m a)
   -> m a
 withKVHandle tracer n be f = bracket (openKVHandle tracer n be f) closeKVHandle
+
+data HaskeySnapshot (state :: (Type -> Type -> Type) -> Type) = HaskeySnapshot
+  deriving stock (Eq, Ord, Show)
+
+haskeyPrepareQuery ::
+  KVHandle state
+  -> Map (Maybe (HaskeySnapshot dbhandle)) (OnDiskMappings state Query)
+  -> IO (HaskeyReadSet state)
+haskeyPrepareQuery _ _ = throwM $ userError "unimplemented"
+
+haskeySubmitQuery ::
+  HaskeyReadSet state
+  -> ( Map RangeQueryId (OnDiskMappings state RangeQueryMetadata)
+     -> Map (Maybe (HaskeySnapshot state)) (OnDiskMappings state PTMap)
+     -> (a, Bool, OnDiskMappings state DiffMap)
+     )
+  -> IO (a, Maybe (HaskeySnapshot state))
+haskeySubmitQuery _ _ = throwM $ userError "unimplemented"
