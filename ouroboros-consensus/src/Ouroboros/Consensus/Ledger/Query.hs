@@ -22,6 +22,9 @@ module Ouroboros.Consensus.Ledger.Query (
   , queryEncodeNodeToClient
   ) where
 
+import           Cardano.Slotting.Block (BlockNo (..))
+import           Cardano.Slotting.Slot (WithOrigin (..))
+
 import           Control.Exception (Exception, throw)
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
@@ -47,6 +50,9 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy (..), SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
 
+import           Ouroboros.Consensus.HeaderValidation (AnnTip (..),
+                     HeaderState (..))
+
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
@@ -65,12 +71,19 @@ data Query blk result where
   -- Supported by 'QueryVersion' >= 'QueryVersion1'.
   GetSystemStart :: Query blk SystemStart
 
+  -- | Get the 'GetCurrentBlockNo' time.
+  --
+  -- Supported by 'QueryVersion' >= 'QueryVersionX'. -- TODO jky what version?
+  GetCurrentBlockNo :: Query blk BlockNo
+
+
 instance (ShowProxy (BlockQuery blk)) => ShowProxy (Query blk) where
   showProxy (Proxy :: Proxy (Query blk)) = "Query (" ++ showProxy (Proxy @(BlockQuery blk)) ++ ")"
 
 instance (ShowQuery (BlockQuery blk)) => ShowQuery (Query blk) where
   showResult (BlockQuery blockQuery) = showResult blockQuery
   showResult GetSystemStart          = show
+  showResult GetCurrentBlockNo       = show
 
 instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond (BlockQuery blockQueryA) == SomeSecond (BlockQuery blockQueryB)
@@ -80,9 +93,13 @@ instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond GetSystemStart == SomeSecond GetSystemStart = True
   SomeSecond GetSystemStart == _                         = False
 
+  SomeSecond GetCurrentBlockNo == SomeSecond GetCurrentBlockNo = True
+  SomeSecond GetCurrentBlockNo == _                            = False
+
 instance Show (SomeSecond BlockQuery blk) => Show (SomeSecond Query blk) where
   show (SomeSecond (BlockQuery blockQueryA)) = "Query " ++ show (SomeSecond blockQueryA)
   show (SomeSecond GetSystemStart) = "Query GetSystemStart"
+  show (SomeSecond GetCurrentBlockNo) = "Query GetCurrentBlockNo"
 
 
 -- | Exception thrown in the encoders
@@ -127,6 +144,9 @@ queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
         GetSystemStart ->
             encodeListLen 1
          <> encodeWord8 1
+        GetCurrentBlockNo ->
+            encodeListLen 1
+         <> encodeWord8 2
   where
     encodeBlockQuery blockQuery =
       encodeNodeToClient
@@ -152,6 +172,7 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
         case (size, tag) of
           (2, 0) -> decodeBlockQuery
           (1, 1) -> return (SomeSecond GetSystemStart)
+          (1, 2) -> return (SomeSecond GetCurrentBlockNo)
           _      -> fail $ "Query: invalid size and tag" <> show (size, tag)
   where
     decodeBlockQuery = do
@@ -167,10 +188,14 @@ instance SerialiseResult blk (BlockQuery blk) => SerialiseResult blk (Query blk)
     = encodeResult codecConfig blockVersion blockQuery result
   encodeResult _ _ GetSystemStart result
     = toCBOR result
+  encodeResult _ _ GetCurrentBlockNo result
+    = toCBOR result
 
   decodeResult codecConfig blockVersion (BlockQuery query)
     = decodeResult codecConfig blockVersion query
   decodeResult _ _ GetSystemStart
+    = fromCBOR
+  decodeResult _ _ GetCurrentBlockNo
     = fromCBOR
 
 instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
@@ -181,6 +206,10 @@ instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
   sameDepIndex GetSystemStart GetSystemStart
     = Just Refl
   sameDepIndex GetSystemStart _
+    = Nothing
+  sameDepIndex GetCurrentBlockNo GetCurrentBlockNo
+    = Just Refl
+  sameDepIndex GetCurrentBlockNo _
     = Nothing
 
 deriving instance Show (BlockQuery blk result) => Show (Query blk result)
@@ -195,6 +224,9 @@ answerQuery ::
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
   GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
+  GetCurrentBlockNo -> case headerStateTip (headerState st) of
+    Origin -> 0
+    At hst -> annTipBlockNo hst
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type
