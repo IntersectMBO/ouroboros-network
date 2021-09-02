@@ -239,10 +239,12 @@ connectionStateToCounters
 connectionStateToCounters state =
     case state of
       ReservedOutboundState                 -> mempty
+
       UnnegotiatedState Inbound _ _         -> prunableConn
                                             <> incomingConn
 
       UnnegotiatedState Outbound _ _        -> outgoingConn
+
       OutboundUniState _ _ _                -> uniConn
                                             <> outgoingConn
 
@@ -250,7 +252,13 @@ connectionStateToCounters state =
                                             <> duplexConn
                                             <> outgoingConn
 
-      OutboundIdleState _ _ _ _             -> mempty
+      OutboundIdleState _ _ _ Unidirectional -> uniConn
+                                             <> outgoingConn
+
+      OutboundIdleState _ _ _ Duplex         -> prunableConn
+                                             <> duplexConn
+                                             <> outgoingConn
+
       InboundIdleState _ _ _ Unidirectional -> prunableConn
                                             <> uniConn
                                             <> incomingConn
