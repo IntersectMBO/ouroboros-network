@@ -775,7 +775,7 @@ runM Interfaces
                     localConnectionManagerArguments =
                       ConnectionManagerArguments {
                           cmTracer              = dtLocalConnectionManagerTracer,
-                          cmTrTracer            = nullTracer, -- TODO
+                          cmTrTracer            = nullTracer, -- TODO: issue #3320
                           cmMuxTracer           = dtLocalMuxTracer,
                           cmIPv4Address         = Nothing,
                           cmIPv6Address         = Nothing,
@@ -812,6 +812,7 @@ runM Interfaces
                           serverSockets               = localSocket :| [],
                           serverSnocket               = diNtcSnocket,
                           serverTracer                = dtLocalServerTracer,
+                          serverTrTracer              = nullTracer, -- TODO: issue #3320
                           serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
                           serverInboundIdleTimeout    = local_PROTOCOL_IDLE_TIMEOUT,
                           serverConnectionLimits      = localConnectionLimits,
@@ -1077,6 +1078,7 @@ runM Interfaces
                                   serverSockets               = sockets,
                                   serverSnocket               = diNtnSnocket,
                                   serverTracer                = dtServerTracer,
+                                  serverTrTracer              = nullTracer, -- TODO: issue #3320
                                   serverInboundGovernorTracer = dtInboundGovernorTracer,
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,

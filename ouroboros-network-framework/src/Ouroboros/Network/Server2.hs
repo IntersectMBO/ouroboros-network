@@ -29,6 +29,9 @@ module Ouroboros.Network.Server2
   -- * Trace
   , ServerTrace (..)
   , AcceptConnectionsPolicyTrace (..)
+  , RemoteSt (..)
+  , RemoteTransition
+  , RemoteTransitionTrace
   -- * ControlChannel
   , module ControlChannel
   ) where
@@ -69,6 +72,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
       serverSockets               :: NonEmpty socket,
       serverSnocket               :: Snocket m socket peerAddr,
       serverTracer                :: Tracer m (ServerTrace peerAddr),
+      serverTrTracer              :: Tracer m (RemoteTransitionTrace peerAddr),
       serverInboundGovernorTracer :: Tracer m (InboundGovernorTrace peerAddr),
       serverConnectionLimits      :: AcceptedConnectionsLimit,
       serverConnectionManager     :: MuxConnectionManager muxMode socket peerAddr
@@ -123,6 +127,7 @@ run :: forall muxMode socket peerAddr versionNumber m a b.
 run ServerArguments {
       serverSockets,
       serverSnocket,
+      serverTrTracer,
       serverTracer = tracer,
       serverInboundGovernorTracer = inboundGovernorTracer,
       serverConnectionLimits,
@@ -141,7 +146,8 @@ run ServerArguments {
       let threads = (do labelThisThread (  "inbound-governor-"
                                         ++ intercalate "-" (show <$> localAddresses)
                                         )
-                        inboundGovernor inboundGovernorTracer
+                        inboundGovernor serverTrTracer
+                                        inboundGovernorTracer
                                         serverControlChannel
                                         serverInboundIdleTimeout
                                         serverConnectionManager

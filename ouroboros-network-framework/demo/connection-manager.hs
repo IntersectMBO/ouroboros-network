@@ -263,6 +263,7 @@ withBidirectionalConnectionManager snocket socket
                     serverSockets = socket :| [],
                     serverSnocket = snocket,
                     serverTracer = ("server",) `contramap` debugTracer, -- ServerTrace
+                    serverTrTracer = nullTracer,
                     serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
