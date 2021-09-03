@@ -326,13 +326,16 @@ library
 
 
   if os(windows)
-    if impl(ghc >= 8.10.2) && impl(ghc < 8.11)
-      -- Fix the Win32 version to be whatever is shipped with GHC.  This is important
-      -- because we have other code that uses the GHC API which requires this specific
-      -- version of the Win32 or constraint solving will fail.
+    -- Fix the Win32 version to be whatever is shipped with GHC.  This is important
+    -- because we have other code that uses the GHC API which requires this specific
+    -- version of the Win32 or constraint solving will fail.
+    if impl(ghc < 8.10.6)
       build-depends:   Win32 == 2.6.1.0
     else
-      build-depends:   Win32
+      if impl(ghc < 8.11)
+        build-depends:   Win32 == 2.6.2.1
+      else
+        build-depends:   Win32 == 2.10.0.0
   else
      build-depends:    unix
                      , unix-bytestring
