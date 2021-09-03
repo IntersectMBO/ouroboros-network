@@ -1,17 +1,19 @@
-{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 -- just to use 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -20,6 +22,7 @@ module Test.Ouroboros.Network.Server2
   ( tests
   ) where
 
+import           Control.Applicative ((<|>))
 import           Control.Exception (AssertionFailed)
 import           Control.Monad (replicateM, (>=>))
 import           Control.Monad.Class.MonadAsync
@@ -39,9 +42,11 @@ import           Data.Bifoldable
 import           Data.Bifunctor
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Dynamic (fromDynamic)
 import           Data.Functor (void, ($>), (<&>))
-import           Data.List (dropWhileEnd, find, mapAccumL, intercalate, (\\), delete)
+import           Data.List (dropWhileEnd, find, foldl', mapAccumL, intercalate, (\\), delete)
 import           Data.List.NonEmpty (NonEmpty (..))
+import           Data.List.Octopus (Octopus (..))
 import qualified Data.List.Octopus as Octopus
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, fromJust, isJust)
@@ -73,6 +78,7 @@ import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.InboundGovernor (RemoteSt (..))
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
@@ -82,9 +88,9 @@ import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2 (ServerArguments (..))
+import           Ouroboros.Network.Server2 (ServerArguments (..), RemoteTransition, RemoteTransitionTrace)
 import qualified Ouroboros.Network.Server2 as Server
-import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
+import           Ouroboros.Network.Snocket (Snocket, TestAddress (..), socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket
@@ -300,7 +306,7 @@ withInitiatorOnlyConnectionManager
           UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr nextRequests k = do
+withInitiatorOnlyConnectionManager name timeouts cmTrTracer snocket localAddr nextRequests k = do
     mainThreadId <- myThreadId
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
     withConnectionManager
@@ -309,7 +315,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer snocket localAddr next
           cmTracer    = WithName name
                         `contramap` nullTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
-                        `contramap` trTracer,
+                        `contramap` cmTrTracer,
          -- MuxTracer
           cmMuxTracer = muxTracer,
           cmIPv4Address = localAddr,
@@ -451,6 +457,7 @@ withBidirectionalConnectionManager
     => name
     -> Timeouts
     -- ^ identifier (for logging)
+    -> Tracer m (WithName name (RemoteTransitionTrace peerAddr))
     -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
     -> Snocket m socket peerAddr
     -> socket
@@ -469,7 +476,7 @@ withBidirectionalConnectionManager
        -> Async m Void
        -> m a)
     -> m a
-withBidirectionalConnectionManager name timeouts trTracer snocket socket localAddress
+withBidirectionalConnectionManager name timeouts inboundTrTracer cmTrTracer snocket socket localAddress
                                    accumulatorInit nextRequests k = do
     mainThreadId <- myThreadId
     inbgovControlChannel      <- Server.newControlChannel
@@ -483,7 +490,7 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
           cmTracer    = WithName name
                         `contramap` nullTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
-                        `contramap` trTracer,
+                        `contramap` cmTrTracer,
           -- MuxTracer
           cmMuxTracer    = muxTracer,
           cmIPv4Address  = localAddress,
@@ -527,8 +534,12 @@ withBidirectionalConnectionManager name timeouts trTracer snocket socket localAd
                 ServerArguments {
                     serverSockets = socket :| [],
                     serverSnocket = snocket,
-                    serverTracer = WithName name `contramap` nullTracer, -- ServerTrace
-                    serverInboundGovernorTracer = WithName name `contramap` nullTracer, -- InboundGovernorTrace
+                    serverTrTracer =
+                      WithName name `contramap` inboundTrTracer,
+                    serverTracer =
+                      WithName name `contramap` nullTracer, -- ServerTrace
+                    serverInboundGovernorTracer =
+                      WithName name `contramap` nullTracer, -- InboundGovernorTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = tProtocolIdleTimeout timeouts,
@@ -718,7 +729,7 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
     withInitiatorOnlyConnectionManager
       "client" timeouts nullTracer snocket Nothing nextReqs
       $ \connectionManager ->
-        withBidirectionalConnectionManager "server" timeouts nullTracer
+        withBidirectionalConnectionManager "server" timeouts nullTracer nullTracer
                                            snocket socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
@@ -820,13 +831,15 @@ bidirectionalExperiment
       lock <- newTMVarIO ()
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
-      withBidirectionalConnectionManager "node-0" timeouts nullTracer
+      withBidirectionalConnectionManager "node-0" timeouts
+                                         nullTracer nullTracer
                                          snocket socket0
                                          (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
         (\connectionManager0 _serverAddr0 _serverAsync0 ->
-          withBidirectionalConnectionManager "node-1" timeouts nullTracer
+          withBidirectionalConnectionManager "node-1" timeouts
+                                             nullTracer nullTracer
                                              snocket socket1
                                              (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
@@ -1205,6 +1218,8 @@ multinodeExperiment
        , Typeable req, Typeable resp
        )
     => Tracer m (WithName (Name peerAddr)
+                          (RemoteTransitionTrace peerAddr))
+    -> Tracer m (WithName (Name peerAddr)
                           (AbstractTransitionTrace peerAddr))
     -> Snocket m socket peerAddr
     -> Snocket.AddressFamily peerAddr
@@ -1214,8 +1229,9 @@ multinodeExperiment
     -> DataFlow
     -> MultiNodeScript req peerAddr
     -> m ()
-multinodeExperiment trTracer snocket addrFamily serverAddr accInit
-                             dataFlow0 (MultiNodeScript script) =
+multinodeExperiment inboundTrTracer cmTrTracer
+                    snocket addrFamily serverAddr accInit
+                    dataFlow0 (MultiNodeScript script) =
   withJobPool $ \jobpool -> do
   cc <- startServerConnectionHandler MainServer dataFlow0 [accInit] serverAddr jobpool
   loop (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) script jobpool
@@ -1335,7 +1351,9 @@ multinodeExperiment trTracer snocket addrFamily serverAddr accInit
               case dataFlow of
                 Duplex ->
                   Job ( withBidirectionalConnectionManager
-                          name simTimeouts trTracer snocket fd (Just localAddr) serverAcc
+                          name simTimeouts
+                          inboundTrTracer cmTrTracer
+                          snocket fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           ( \ connectionManager _ _serverAsync -> do
                             connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
@@ -1353,7 +1371,7 @@ multinodeExperiment trTracer snocket addrFamily serverAddr accInit
                       (show name)
                 Unidirectional ->
                   Job ( withInitiatorOnlyConnectionManager
-                          name simTimeouts trTracer snocket (Just localAddr)
+                          name simTimeouts cmTrTracer snocket (Just localAddr)
                           (mkNextRequests connVar)
                           ( \ connectionManager -> do
                             connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
@@ -1551,15 +1569,101 @@ data EffectiveDataFlow
     = EffectiveDataFlow DataFlow
     deriving (Eq, Show)
 
+
+-- | Pattern synonym which matches either 'RemoteHotEst' or 'RemoteWarmSt'.
+--
+pattern RemoteEstSt :: RemoteSt
+pattern RemoteEstSt <- (( \ case
+                            RemoteHotSt  -> True
+                            RemoteWarmSt -> True
+                            _            -> False
+                         ) -> True
+                        )
+
+{-# COMPLETE RemoteEstSt, RemoteIdleSt, RemoteColdSt #-}
+
+
+-- | Specification of the transition table of the inbound governor.
+--
+verifyRemoteTransition :: RemoteTransition -> Bool
+verifyRemoteTransition Transition {fromState, toState} =
+    case (fromState, toState) of
+      -- The initial state must be 'RemoteIdleSt'.
+      (Nothing,           Just RemoteIdleSt) -> True
+
+      --
+      -- Promotions
+      --
+
+      (Just RemoteIdleSt, Just RemoteEstSt)  -> True
+      (Just RemoteColdSt, Just RemoteEstSt)  -> True
+      (Just RemoteWarmSt, Just RemoteHotSt)  -> True
+
+      --
+      -- Demotions
+      --
+
+      (Just RemoteHotSt,  Just RemoteWarmSt) -> True
+      -- demotion to idle state can happen from any established state
+      (Just RemoteEstSt,  Just RemoteIdleSt) -> True
+      -- demotion to cold can only be done from idle state; We explicitly rule
+      -- out demotions to cold from warm or hot states.
+      (Just RemoteEstSt,  Just RemoteColdSt) -> False
+      (Just RemoteIdleSt, Just RemoteColdSt) -> True
+      -- normal termination (if outbound side is not using that connection)
+      (Just RemoteIdleSt, Nothing)           -> True
+      -- This transition corresponds to connection manager's:
+      -- @
+      --   Commit^{Duplex}_{Local} : OutboundIdleState Duplex
+      --                           → TerminatingState
+      -- @
+      (Just RemoteColdSt, Nothing)           -> True
+      -- any of the mini-protocols errored
+      (Just RemoteEstSt, Nothing)            -> True
+
+      --
+      -- We are conservative to name all the identity transitions.
+      --
+
+      -- This might happen if starting any of the responders errored.
+      (Nothing,           Nothing)           -> True
+      -- @RemoteWarmSt → RemoteWarmSt@ trnasition is observed if a hot or warm
+      -- protocol terminates (which triggers @RemoteEstSt -> RemoteWarmSt@)
+      (Just RemoteWarmSt, Just RemoteWarmSt) -> True
+
+      (_,                 _)                 -> False
+
+
+
 -- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates both connection manager and inbound governor state
+-- changes.  'octoSplit' breaks streaming nature, this like causes performance
+-- regression of this test.  This suggest we should:
+--
+-- TODO: split this test into two.
 prop_multinode_Sim :: Int -> ArbDataFlow -> MultiNodeScript Int TestAddr -> Property
 prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
-  let evs :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
+  let evs :: Octopus (Value ())
+                     (Either (RemoteTransitionTrace SimAddr)
+                             (AbstractTransitionTrace SimAddr))
       evs = fmap wnEvent
           . Octopus.filter ((MainServer ==) . wnName)
-          . octoSelectTraceEventsDynamic
-              @()
-              @(WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+          . octoSelectTraceEvents
+              (\ev ->
+                case ev of
+                  EventLog dyn ->
+                        fmap Left
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr) (RemoteTransitionTrace   SimAddr))
+                              dyn
+                    <|> fmap Right
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                              dyn
+                  _ ->
+                       Nothing
+              )
           $ runSimTrace sim
         where
           sim :: IOSim s ()
@@ -1569,6 +1673,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
                                   (singletonScript noAttenuation)
                     $ \snocket ->
                        multinodeExperiment (Tracer traceM)
+                                           (Tracer traceM)
                                            snocket
                                            Snocket.TestFamily
                                            (Snocket.TestAddress 0)
@@ -1581,40 +1686,66 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
               Just a  -> return a
 
   in counterexample (ppScript script)
-   . mkProperty
-   . bifoldMap
-      ( \ case
-          MainReturn {} -> mempty
-          v             -> mempty { tpProperty = counterexample (show v) False }
-      )
-      ( \ trs
-       -> TestProperty {
-            tpProperty =
-                (counterexample $!
-                  (  "\nconnection:\n"
-                  ++ intercalate "\n" (map ppTransition trs))
-                  )
-              . getAllProperty
-              . foldMap ( \ tr
-                         -> AllProperty
-                          . (counterexample $!
-                              (  "\nUnexpected transition: "
-                              ++ show tr)
-                              )
-                          . verifyAbstractTransition
-                          $ tr
-                        )
-              $ trs,
-            tpNumberOfTransitions = Sum (length trs),
-            tpNumberOfConnections = Sum 1,
-            tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
-            tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
-            tpTerminationTypes    = [classifyTermination        trs],
-            tpActivityTypes       = [classifyActivityType       trs],
-            tpTransitions         = trs
-         }
-      )
-   . splitConns
+    . counterexample (ppOctopus show show evs)
+    . (\ ( l :: Octopus (Value ()) (RemoteTransitionTrace   SimAddr)
+         , r :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
+         )
+       ->
+        ( mkProperty
+        . bifoldMap
+           ( \ case
+               MainReturn {} -> mempty
+               v             -> mempty { tpProperty = counterexample (show v) False }
+           )
+           ( \ trs
+            -> TestProperty {
+                 tpProperty =
+                     (counterexample $!
+                       (  "\nconnection:\n"
+                       ++ intercalate "\n" (map ppTransition trs))
+                       )
+                   . getAllProperty
+                   . foldMap ( \ tr
+                              -> AllProperty
+                               . (counterexample $!
+                                   (  "\nUnexpected transition: "
+                                   ++ show tr)
+                                   )
+                               . verifyAbstractTransition
+                               $ tr
+                             )
+                   $ trs,
+                 tpNumberOfTransitions = Sum (length trs),
+                 tpNumberOfConnections = Sum 1,
+                 tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
+                 tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
+                 tpTerminationTypes    = [classifyTermination        trs],
+                 tpActivityTypes       = [classifyActivityType       trs],
+                 tpTransitions         = trs
+              }
+           )
+         . splitConns
+         $ r
+         )
+         .&&.
+         ( getAllProperty
+         . bifoldMap
+            ( \ _ -> AllProperty (property True) )
+            ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
+                  AllProperty
+                . counterexample (concat [ "Unexpected transition: "
+                                         , show peerAddr
+                                         , " "
+                                         , show tr
+                                         ])
+                . verifyRemoteTransition
+                $ tr
+            )
+         $ l
+         )
+
+     )
+   . octoSplit
    $ evs
   where
 
@@ -1669,6 +1800,20 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
                 ) as of
         Nothing -> IdleConn
         Just {} -> ActiveConn
+
+
+-- Right fold of the 'Octopus' which splits its results.
+--
+octoSplit :: Octopus a (Either b c) -> (Octopus a b, Octopus a c)
+octoSplit = go [] []
+  where
+    -- this version seems the fastest one (faster than a strict version, DList
+    -- style or a coinductive definition).
+    go :: [b] -> [c] -> Octopus a (Either b c) -> (Octopus a b, Octopus a c)
+    go bs cs (Nil a) = (foldl' (flip Cons) (Nil a) bs, foldl' (flip Cons) (Nil a) cs)
+    go bs cs (Cons (Left  b) o) = go (b : bs)      cs  o
+    go bs cs (Cons (Right c) o) = go      bs  (c : cs) o
+
 
 splitConns :: Octopus (Value ()) (AbstractTransitionTrace SimAddr)
            -> Octopus (Value ()) [AbstractTransition]
@@ -1740,13 +1885,13 @@ data WithName name event = WithName {
     wnName  :: name,
     wnEvent :: event
   }
-  deriving Show
+  deriving (Show, Functor)
 
 type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
 
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
-debugTracer = Tracer $
-  \msg -> (,msg) <$> getCurrentTime >>= say . show
+debugTracer = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
+           -- <> Tracer Debug.traceShowM
 
 
 withLock :: ( MonadSTM   m
