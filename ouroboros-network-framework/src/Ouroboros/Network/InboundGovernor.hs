@@ -28,12 +28,14 @@ module Ouroboros.Network.InboundGovernor
   -- * Trace
   , InboundGovernorTrace (..)
   , RemoteSt (..)
+  , RemoteTransition
+  , RemoteTransitionTrace
   , AcceptConnectionsPolicyTrace (..)
   ) where
 
 import           Control.Exception (SomeAsyncException (..), assert)
 import           Control.Applicative (Alternative (..), (<|>))
-import           Control.Monad (foldM)
+import           Control.Monad (foldM, when)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
@@ -92,14 +94,15 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
                    , Ord peerAddr
                    , HasResponder muxMode ~ True
                    )
-                => Tracer m (InboundGovernorTrace peerAddr)
+                => Tracer m (RemoteTransitionTrace peerAddr)
+                -> Tracer m (InboundGovernorTrace peerAddr)
                 -> ServerControlChannel muxMode peerAddr ByteString m a b
                 -> DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket peerAddr
                                         versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
                 -> m Void
-inboundGovernor tracer serverControlChannel inboundIdleTimeout
+inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                 connectionManager observableStateVar = do
     let state = InboundGovernorState {
             igsConnections   = Map.empty,
@@ -238,6 +241,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
 
               -- update state and continue the recursive loop
               let state' = state { igsConnections }
+              traceWith trTracer (mkRemoteTransitionTrace connId state state')
               inboundGovernorLoop state'
 
         MuxFinished connId merr -> do
@@ -248,6 +252,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
 
           -- the connection manager does should realise this on itself.
           let state' = unregisterConnection connId state
+          traceWith trTracer (mkRemoteTransitionTrace connId state state')
           inboundGovernorLoop state'
 
         MiniProtocolTerminated
@@ -269,6 +274,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                 TrResponderErrored tConnId num e
 
               let state' = unregisterConnection tConnId state
+              traceWith trTracer (mkRemoteTransitionTrace tConnId state state')
               inboundGovernorLoop state'
 
             Right _ -> do
@@ -286,6 +292,9 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                              . updateMiniProtocol tConnId num completionAction
                              $ state
 
+                  -- remote state is only updated when 'isHot' is 'True'
+                  when isHot
+                     $ traceWith trTracer (mkRemoteTransitionTrace tConnId state state')
                   inboundGovernorLoop state'
 
                 Left err -> do
@@ -296,6 +305,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                   Mux.stopMux tMux
 
                   let state' = unregisterConnection tConnId state
+                  traceWith trTracer (mkRemoteTransitionTrace tConnId state state')
                   inboundGovernorLoop state'
 
 
@@ -312,6 +322,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
               !timeoutSTM = LazySTM.readTVar v >>= check
 
           let state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
+          traceWith trTracer (mkRemoteTransitionTrace connId state state')
           inboundGovernorLoop state'
 
         -- @
@@ -321,6 +332,10 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
         -- @
         --    Awake^{dataFlow}_{Remote}
         -- @
+        --
+        -- Note: the 'AwakeRemote' is detected as soon as mux detects any
+        -- traffic.  This means that we'll observe this transition also if the
+        -- first message that arrives is terminating a mini-protocol.
         AwakeRemote connId -> do
           -- notify the connection manager about the transiton
           res <- promotedToWarmRemote connectionManager
@@ -331,11 +346,13 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                          connId
                          RemoteWarm
                          state
+          traceWith trTracer (mkRemoteTransitionTrace connId state state')
           inboundGovernorLoop state'
 
         RemotePromotedToHot connId -> do
           traceWith tracer (TrPromotedToHotRemote connId)
           let state' = updateRemoteState connId RemoteHot state
+          traceWith trTracer (mkRemoteTransitionTrace connId state state')
           inboundGovernorLoop state'
 
         CommitRemote connId -> do
@@ -352,6 +369,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
               -- @'InTerminatingState'@,
               -- @'InTermiantedState'@.
               let state' = unregisterConnection connId state 
+              traceWith trTracer (mkRemoteTransitionTrace connId state state')
               inboundGovernorLoop state'
 
             OperationSuccess transition ->
@@ -364,6 +382,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                   --                               → TerminatingState
                   -- @
                   let state' = unregisterConnection connId state
+                  traceWith trTracer (mkRemoteTransitionTrace connId state state')
                   inboundGovernorLoop state'
 
                 -- the connection is still used by p2p-governor, carry on but put
@@ -385,6 +404,7 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                 -- manager was requested outbound connection.
                 KeepTr -> do
                   let state' = updateRemoteState connId RemoteCold state
+                  traceWith trTracer (mkRemoteTransitionTrace connId state state')
                   inboundGovernorLoop state'
 
 
@@ -481,7 +501,7 @@ data RemoteSt = RemoteWarmSt
               | RemoteHotSt
               | RemoteIdleSt
               | RemoteColdSt
-  deriving Show
+  deriving (Eq, Show)
 
 
 mkRemoteSt :: RemoteState m -> RemoteSt
@@ -489,6 +509,31 @@ mkRemoteSt  RemoteWarm    = RemoteWarmSt
 mkRemoteSt  RemoteHot     = RemoteHotSt
 mkRemoteSt (RemoteIdle _) = RemoteIdleSt
 mkRemoteSt  RemoteCold    = RemoteColdSt
+
+
+-- | 'Nothing' represents unitialised state.
+--
+type RemoteTransition = Transition' (Maybe RemoteSt)
+
+type RemoteTransitionTrace peerAddr = TransitionTrace' peerAddr (Maybe RemoteSt)
+
+mkRemoteTransitionTrace :: Ord peerAddr
+                        => ConnectionId peerAddr
+                        -> InboundGovernorState muxMode peerAddr m a b
+                        -> InboundGovernorState muxMode peerAddr m a b
+                        -> RemoteTransitionTrace peerAddr
+mkRemoteTransitionTrace connId fromState toState =
+    TransitionTrace
+      (remoteAddress connId)
+      Transition { fromState = mkRemoteSt
+                             . csRemoteState
+                           <$> Map.lookup connId (igsConnections fromState)
+                 , toState   = mkRemoteSt
+                             . csRemoteState
+                           <$> Map.lookup connId (igsConnections toState)
+                 }
+
+
 
 
 data InboundGovernorTrace peerAddr
