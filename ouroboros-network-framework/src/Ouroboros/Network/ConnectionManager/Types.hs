@@ -577,6 +577,9 @@ promotedToWarmRemote =
 -- This executes:
 --
 -- * \(DemotedToCold^{*}_{Remote}\) transition.
+--
+-- This method is idempotent.
+--
 demotedToColdRemote
     :: HasResponder muxMode ~ True
     => ConnectionManager muxMode socket peerAddr handle handleError m
