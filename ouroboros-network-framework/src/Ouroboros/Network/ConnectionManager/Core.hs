@@ -1720,14 +1720,14 @@ withConnectionManager ConnectionManagerArguments {
                 return (UnsupportedState (UnnegotiatedSt provenance))
               OutboundUniState _connId _connThread _handle ->
                 return (UnsupportedState OutboundUniSt)
-              OutboundDupState _connId _connThread _handle expired ->
-                return (UnsupportedState (OutboundDupSt expired))
+              OutboundDupState _connId _connThread _handle _expired ->
+                return (OperationSuccess (mkTransition connState connState))
               -- one can only enter 'OutboundIdleState' if remote state is
               -- already cold.
-              OutboundIdleState _connId _connThread _handle dataFlow ->
-                return (UnsupportedState (OutboundIdleSt dataFlow))
-              InboundIdleState _connId _connThread _handle dataFlow ->
-                return (UnsupportedState (InboundIdleSt dataFlow))
+              OutboundIdleState _connId _connThread _handle _dataFlow ->
+                return (OperationSuccess (mkTransition connState connState))
+              InboundIdleState _connId _connThread _handle _dataFlow ->
+                return (OperationSuccess (mkTransition connState connState))
 
               -- @
               --   DemotedToCold^{dataFlow}_{Remote}
