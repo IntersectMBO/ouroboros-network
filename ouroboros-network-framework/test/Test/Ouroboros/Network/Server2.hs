@@ -76,7 +76,8 @@ import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.InboundGovernor (RemoteSt (..))
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
+                   RemoteSt (..))
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
@@ -444,6 +445,7 @@ withBidirectionalConnectionManager
     -- ^ identifier (for logging)
     -> Tracer m (WithName name (RemoteTransitionTrace peerAddr))
     -> Tracer m (WithName name (AbstractTransitionTrace peerAddr))
+    -> Tracer m (WithName name (InboundGovernorTrace peerAddr))
     -> Snocket m socket peerAddr
     -> socket
     -- ^ listening socket
@@ -461,7 +463,9 @@ withBidirectionalConnectionManager
        -> Async m Void
        -> m a)
     -> m a
-withBidirectionalConnectionManager name timeouts inboundTrTracer cmTrTracer snocket socket localAddress
+withBidirectionalConnectionManager name timeouts
+                                   inboundTrTracer cmTrTracer inboundTracer
+                                   snocket socket localAddress
                                    accumulatorInit nextRequests k = do
     mainThreadId <- myThreadId
     inbgovControlChannel      <- Server.newControlChannel
@@ -524,7 +528,7 @@ withBidirectionalConnectionManager name timeouts inboundTrTracer cmTrTracer snoc
                     serverTracer =
                       WithName name `contramap` nullTracer, -- ServerTrace
                     serverInboundGovernorTracer =
-                      WithName name `contramap` nullTracer, -- InboundGovernorTrace
+                      WithName name `contramap` inboundTracer, -- InboundGovernorTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = tProtocolIdleTimeout timeouts,
@@ -706,7 +710,8 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
     withInitiatorOnlyConnectionManager
       "client" timeouts nullTracer snocket Nothing nextReqs
       $ \connectionManager ->
-        withBidirectionalConnectionManager "server" timeouts nullTracer nullTracer
+        withBidirectionalConnectionManager "server" timeouts
+                                           nullTracer nullTracer nullTracer
                                            snocket socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
@@ -808,14 +813,14 @@ bidirectionalExperiment
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
-                                         nullTracer nullTracer
+                                         nullTracer nullTracer nullTracer
                                          snocket socket0
                                          (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
         (\connectionManager0 _serverAddr0 _serverAsync0 ->
           withBidirectionalConnectionManager "node-1" timeouts
-                                             nullTracer nullTracer
+                                             nullTracer nullTracer nullTracer
                                              snocket socket1
                                              (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
@@ -1189,6 +1194,8 @@ multinodeExperiment
                           (RemoteTransitionTrace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
                           (AbstractTransitionTrace peerAddr))
+    -> Tracer m (WithName (Name peerAddr)
+                          (InboundGovernorTrace peerAddr))
     -> Snocket m socket peerAddr
     -> Snocket.AddressFamily peerAddr
     -- ^ either run the main node in 'Duplex' or 'Unidirectional' mode.
@@ -1197,7 +1204,7 @@ multinodeExperiment
     -> DataFlow
     -> MultiNodeScript req peerAddr
     -> m ()
-multinodeExperiment inboundTrTracer cmTrTracer
+multinodeExperiment inboundTrTracer cmTrTracer inboundTracer
                     snocket addrFamily serverAddr accInit
                     dataFlow0 (MultiNodeScript script) =
   withJobPool $ \jobpool -> do
@@ -1320,7 +1327,7 @@ multinodeExperiment inboundTrTracer cmTrTracer
                 Duplex ->
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
-                          inboundTrTracer cmTrTracer
+                          inboundTrTracer cmTrTracer inboundTracer
                           snocket fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           ( \ connectionManager _ _serverAsync -> do
@@ -1604,6 +1611,14 @@ verifyRemoteTransition Transition {fromState, toState} =
 
 
 
+data Three a b c
+    = First  a
+    | Second b
+    | Third  c
+  deriving Show
+
+
+
 -- | Property wrapping `multinodeExperiment`.
 --
 -- Note: this test validates both connection manager and inbound governor state
@@ -1614,21 +1629,26 @@ verifyRemoteTransition Transition {fromState, toState} =
 prop_multinode_Sim :: Int -> ArbDataFlow -> MultiNodeScript Int TestAddr -> Property
 prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
   let evs :: Trace (SimResult ())
-                   (Either (RemoteTransitionTrace SimAddr)
-                           (AbstractTransitionTrace SimAddr))
+                   (Three (RemoteTransitionTrace SimAddr)
+                          (AbstractTransitionTrace SimAddr)
+                          (InboundGovernorTrace SimAddr))
       evs = fmap wnEvent
           . Trace.filter ((MainServer ==) . wnName)
           . traceSelectTraceEvents
               (\ev ->
                 case ev of
                   EventLog dyn ->
-                        fmap Left
+                        fmap First
                         <$> fromDynamic
                               @(WithName (Name SimAddr) (RemoteTransitionTrace   SimAddr))
                               dyn
-                    <|> fmap Right
+                    <|> fmap Second
                         <$> fromDynamic
                               @(WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                              dyn
+                    <|> fmap Third
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
                               dyn
                   _ ->
                        Nothing
@@ -1643,6 +1663,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
                     $ \snocket ->
                        multinodeExperiment (Tracer traceM)
                                            (Tracer traceM)
+                                           (Tracer traceM)
                                            snocket
                                            Snocket.TestFamily
                                            (Snocket.TestAddress 0)
@@ -1656,10 +1677,37 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
 
   in counterexample (ppScript script)
     . counterexample (Trace.ppTrace show show evs)
-    . (\ ( l :: Trace (SimResult ()) (RemoteTransitionTrace   SimAddr)
-         , r :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+    . (\ ( tr1 :: Trace (SimResult ()) (RemoteTransitionTrace   SimAddr)
+         , tr2 :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+         , tr3 :: Trace (SimResult ()) (InboundGovernorTrace    SimAddr)
          )
        ->
+        ( getAllProperty
+        . bifoldMap
+            ( \ _ -> AllProperty (property True))
+            ( \ tr -> case tr of
+                -- verify that 'unregisterInboundConnection' does not return
+                -- 'UnsupportedState'.
+                TrDemotedToColdRemote _ res ->
+                  case res of
+                    UnsupportedState {}
+                      -> AllProperty (counterexample (show tr) False)
+                    _ -> AllProperty (property True)
+
+                -- verify that 'demotedToColdRemote' does not return
+                -- 'UnsupportedState'
+                TrWaitIdleRemote _ res ->
+                  case res of
+                    UnsupportedState {}
+                      -> AllProperty (counterexample (show tr) False)
+                    _ -> AllProperty (property True)
+
+                _     -> AllProperty (property True)
+            )
+
+        $ tr3
+        )
+        .&&.
         ( mkProperty
         . bifoldMap
            ( \ case
@@ -1694,7 +1742,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
               }
            )
          . splitConns
-         $ r
+         $ tr2
          )
          .&&.
          ( getAllProperty
@@ -1710,7 +1758,7 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
                 . verifyRemoteTransition
                 $ tr
             )
-         $ l
+         $ tr1
          )
 
      )
@@ -1773,15 +1821,21 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
 
 -- Right fold of the 'Trace' which splits its results.
 --
-traceSplit :: Trace a (Either b c) -> (Trace a b, Trace a c)
-traceSplit = go [] []
+traceSplit :: Trace a (Three b c d) -> (Trace a b, Trace a c, Trace a d)
+traceSplit = go [] [] []
   where
     -- this version seems the fastest one (faster than a strict version, DList
     -- style or a coinductive definition).
-    go :: [b] -> [c] -> Trace a (Either b c) -> (Trace a b, Trace a c)
-    go bs cs (Nil a) = (foldl' (flip Cons) (Nil a) bs, foldl' (flip Cons) (Nil a) cs)
-    go bs cs (Cons (Left  b) o) = go (b : bs)      cs  o
-    go bs cs (Cons (Right c) o) = go      bs  (c : cs) o
+    go :: [b] -> [c] -> [d]
+       -> Trace a (Three b c d)
+       -> (Trace a b, Trace a c, Trace a d)
+    go bs cs ds (Nil a) = ( foldl' (flip Cons) (Nil a) bs
+                          , foldl' (flip Cons) (Nil a) cs
+                          , foldl' (flip Cons) (Nil a) ds
+                          )
+    go bs cs ds (Cons (First  b) o) = go (b : bs)      cs       ds o
+    go bs cs ds (Cons (Second c) o) = go      bs  (c : cs)      ds o
+    go bs cs ds (Cons (Third d) o) = go       bs       cs  (d : ds) o
 
 
 splitConns :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
