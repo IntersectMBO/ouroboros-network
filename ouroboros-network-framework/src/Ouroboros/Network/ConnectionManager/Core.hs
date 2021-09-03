@@ -1719,6 +1719,7 @@ withConnectionManager ConnectionManagerArguments {
                 assert False $
                 return (UnsupportedState (UnnegotiatedSt provenance))
               OutboundUniState _connId _connThread _handle ->
+                assert False $
                 return (UnsupportedState OutboundUniSt)
               OutboundDupState _connId _connThread _handle _expired ->
                 return (OperationSuccess (mkTransition connState connState))
