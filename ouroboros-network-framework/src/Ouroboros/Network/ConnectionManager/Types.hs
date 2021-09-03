@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -839,7 +840,15 @@ data Transition' state = Transition
     { fromState :: !state
     , toState   :: !state
     }
-  deriving (Eq, Functor, Show)
+  deriving (Eq, Functor)
+
+instance Show state
+      => Show (Transition' state) where
+    show Transition { fromState, toState } =
+      concat [ show fromState
+             , " → "
+             , show toState
+             ]
 
 type Transition state   = Transition' (MaybeUnknown state)
 type AbstractTransition = Transition' AbstractState
@@ -854,6 +863,16 @@ data TransitionTrace' peerAddr state = TransitionTrace
     { ttPeerAddr   :: peerAddr
     , ttTransition :: Transition' state
     }
-  deriving (Show, Functor)
+  deriving Functor
+
+instance (Show peerAddr, Show state)
+      =>  Show (TransitionTrace' peerAddr state) where
+    show (TransitionTrace addr tr) =
+      concat [ "TransitionTrace @("
+             , show addr
+             , ") ("
+             , show tr
+             , ")"
+             ]
 
 type TransitionTrace peerAddr state = TransitionTrace' peerAddr (MaybeUnknown state)
