@@ -366,14 +366,6 @@ inboundGovernor tracer serverControlChannel inboundIdleTimeout
                   let state' = unregisterConnection connId state
                   inboundGovernorLoop state'
 
-                DemotedToColdRemoteTr -> do
-                  -- @
-                  --    Commit^{dataFlow}_{Remote} : InboundIdleState dataFlow
-                  --                               → TerminatingState
-                  -- @
-                  let state' = unregisterConnection connId state
-                  inboundGovernorLoop state'
-
                 -- the connection is still used by p2p-governor, carry on but put
                 -- it in 'RemoteCold' state.  This will ensure we keep ready to
                 -- serve the peer.
