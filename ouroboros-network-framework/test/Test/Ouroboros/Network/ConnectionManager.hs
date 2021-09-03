@@ -1736,6 +1736,8 @@ verifyAbstractTransition Transition { fromState, toState } =
       (OutboundDupSt Ticking, OutboundDupSt Expired) -> True
       -- @DemotedToCold^{Duplex}_{Local}@
       (OutboundDupSt Expired, OutboundIdleSt Duplex) -> True
+      -- identity transition executed by 'demotedToColdRemote'
+      (OutboundIdleSt dataFlow, OutboundIdleSt dataFlow') -> dataFlow == dataFlow'
 
       --
       -- Outbound ↔ Inbound
@@ -1748,6 +1750,9 @@ verifyAbstractTransition Transition { fromState, toState } =
       -- @PromotedToWarm^{Duplex}_{Remote}@
       (OutboundDupSt Ticking, DuplexSt) -> True
       (OutboundDupSt Expired, DuplexSt) -> True
+      -- can be executed by 'demotedToColdRemote'
+      (OutboundDupSt expired, OutboundDupSt expired')
+                                        -> expired == expired'
       -- @PromotedToWarm^{Duplex}_{Local}@
       (InboundSt Duplex, DuplexSt) -> True
       -- @DemotedToCold^{Duplex}_{Remote}@
@@ -1769,7 +1774,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       -- @Negotiated^{Unidirectional}_{Inbound}
       (UnnegotiatedSt Inbound, InboundIdleSt Unidirectional) -> True
 
-      -- 'unregisterOutboundConnection' might perfrom
+      -- 'unregisterOutboundConnection' and 'demotedToColdRemote' might perfrom
       (InboundIdleSt Duplex, InboundIdleSt Duplex) -> True
       -- @Awake^{Duplex}_{Remote}
       (InboundIdleSt Duplex, InboundSt Duplex) -> True
