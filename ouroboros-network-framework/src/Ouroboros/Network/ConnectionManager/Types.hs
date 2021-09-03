@@ -439,10 +439,6 @@ data DemotedToColdRemoteTr =
     --
     CommitTr
 
-    -- | @DemotedToCold^{Remote}@ transition from @'InboundState' dataFlow@
-    --
-  | DemotedToColdRemoteTr
-
     -- | Either @DemotedToCold^{Remote}@ transition from @'DuplexState'@, or
     -- a level triggered @Awake^{Duplex}_{Local}@ transition.  In both cases
     -- the server must keep the responder side of all protocols ready.
