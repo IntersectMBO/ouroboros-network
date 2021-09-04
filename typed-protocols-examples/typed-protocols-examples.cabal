@@ -50,6 +50,7 @@ library
                      singletons,
                      contra-tracer,
                      io-classes,
+                     network,
                      time,
                      typed-protocols,
                      typed-protocols-cborg

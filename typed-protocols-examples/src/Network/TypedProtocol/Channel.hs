@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -10,6 +11,9 @@ module Network.TypedProtocol.Channel
   , fixedInputChannel
   , mvarsAsChannel
   , handlesAsChannel
+#if !defined(mingw32_HOST_OS)
+  , socketAsChannel
+#endif
   , createConnectedChannels
   , createConnectedBufferedChannels
   , createPipelineTestChannels
@@ -23,9 +27,17 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BS (createAndTrim')
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
+import           Data.Word (Word8)
+import           Foreign.C.Error (eAGAIN, eWOULDBLOCK, getErrno, throwErrno)
+import           Foreign.C.Types
+import           Foreign.Ptr (Ptr, castPtr)
 import           Numeric.Natural
+
+import           Network.Socket (Socket, withFdSocket)
+import qualified Network.Socket.ByteString.Lazy as Socket
 
 import qualified System.IO as IO (Handle, hFlush, hIsEOF)
 
@@ -280,6 +292,56 @@ delayChannel :: ( MonadSTM m
 delayChannel delay = channelEffect (\_ -> return ())
                                    (\_ -> threadDelay delay)
 
+
+#if !defined(mingw32_HOST_OS)
+socketAsChannel :: Socket
+                -> Channel IO LBS.ByteString
+socketAsChannel sock =
+    Channel{send, recv, tryRecv}
+  where
+    send :: LBS.ByteString -> IO ()
+    send = Socket.sendAll sock
+
+    recv :: IO (Maybe LBS.ByteString)
+    recv = do
+      bs <- Socket.recv sock (fromIntegral smallChunkSize)
+      if LBS.null bs
+        then return Nothing
+        else return (Just bs)
+
+    tryRecv :: IO (Maybe (Maybe LBS.ByteString))
+    tryRecv = do
+      (bs, wouldBlock) <- BS.createAndTrim' smallChunkSize $ \ptr -> do
+        r <- recvBufNoWait sock ptr smallChunkSize
+        case r of
+          (-1) -> return (0, 0, True)
+          (-2) -> throwErrno "tryRecv"
+          _    -> return (0, r, False)
+      return $
+        case () of
+          _ | wouldBlock -> Nothing
+            | BS.null bs -> Just Nothing
+            | otherwise  -> Just (Just (LBS.fromStrict bs))
+
+
+
+-- | Copied from 'Network.Socket.Buffer.recvBufNoWait'.
+--
+recvBufNoWait :: Socket -> Ptr Word8 -> Int -> IO Int
+recvBufNoWait s ptr nbytes = withFdSocket s $ \fd -> do
+    r <- c_recv fd (castPtr ptr) (fromIntegral nbytes) 0{-flags-}
+    if r >= 0 then
+        return $ fromIntegral r
+      else do
+        err <- getErrno
+        if err == eAGAIN || err == eWOULDBLOCK then
+            return (-1)
+          else
+            return (-2)
+
+foreign import ccall unsafe "recv"
+  c_recv :: CInt -> Ptr CChar -> CSize -> CInt -> IO CInt
+#endif
 
 -- | Channel which logs sent and received messages.
 --
