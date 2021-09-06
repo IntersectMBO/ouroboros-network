@@ -20,6 +20,7 @@ module Ouroboros.Consensus.NodeKernel (
   , getMempoolWriter
   , getPeersFromCurrentLedger
   , getPeersFromCurrentLedgerAfterSlot
+  , initBlockFetchConsensusInterface
   , initNodeKernel
   ) where
 

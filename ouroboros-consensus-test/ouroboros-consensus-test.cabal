@@ -131,6 +131,7 @@ test-suite test-consensus
   hs-source-dirs:      test-consensus
   main-is:             Main.hs
   other-modules:
+                       Test.Consensus.BlockFetchConsensusInterfaceTest
                        Test.Consensus.BlockchainTime.Simple
                        Test.Consensus.HardFork.Forecast
                        Test.Consensus.HardFork.History
@@ -178,6 +179,7 @@ test-suite test-consensus
                      , ouroboros-network
                      , ouroboros-network-framework
                      , ouroboros-consensus
+                     , ouroboros-consensus-byron
                      , ouroboros-consensus-mock
                      , ouroboros-consensus-test
 
