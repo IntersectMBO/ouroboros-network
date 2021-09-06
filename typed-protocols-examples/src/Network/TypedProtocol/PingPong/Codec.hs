@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -9,6 +10,7 @@ module Network.TypedProtocol.PingPong.Codec where
 import           Data.Singletons
 
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.PingPong.Type
 
 
@@ -26,14 +28,17 @@ codecPingPong =
     encode MsgPong = "pong\n"
 
     decode :: forall (st :: PingPong).
-              SingI st
+              SingI (PeerHasAgency st)
            => m (DecodeStep String CodecFailure m (SomeMessage st))
     decode =
       decodeTerminatedFrame '\n' $ \str trailing ->
-        case (sing :: Sing st, str) of
-          (SingBusy, "pong") -> DecodeDone (SomeMessage MsgPong) trailing
-          (SingIdle, "ping") -> DecodeDone (SomeMessage MsgPing) trailing
-          (SingIdle, "done") -> DecodeDone (SomeMessage MsgDone) trailing
+        case (sing :: Sing (PeerHasAgency st), str) of
+          (SingServerHasAgency SingBusy, "pong") ->
+            DecodeDone (SomeMessage MsgPong) trailing
+          (SingClientHasAgency SingIdle, "ping") ->
+            DecodeDone (SomeMessage MsgPing) trailing
+          (SingClientHasAgency SingIdle, "done") ->
+            DecodeDone (SomeMessage MsgDone) trailing
 
           (_       , _     ) -> DecodeFail failure
             where failure = CodecFailure ("unexpected server message: " ++ str)
@@ -66,28 +71,30 @@ codecPingPongId =
     Codec{encode,decode}
   where
     encode :: forall (st :: PingPong) (st' :: PingPong)
-           .  SingI st
+           .  SingI (PeerHasAgency st)
            => Message PingPong st st'
            -> AnyMessage PingPong
     encode msg = AnyMessage msg
 
-    decode :: forall (st :: PingPong)
-           .  SingI st
+    decode :: forall (st :: PingPong).
+              SingI (PeerHasAgency st)
            => m (DecodeStep (AnyMessage PingPong) CodecFailure m (SomeMessage st))
     decode =
-      let stok :: Sing st
+      let stok :: Sing (PeerHasAgency st)
           stok = sing in
       pure $ DecodePartial $ \mb ->
         case mb of
           Nothing -> return $ DecodeFail (CodecFailure "expected more data")
           Just (AnyMessage msg) -> return $
             case (stok, msg) of
-              (SingBusy, MsgPong) ->
+              (SingServerHasAgency SingBusy, MsgPong) ->
                 DecodeDone (SomeMessage msg) Nothing
-              (SingIdle, MsgPing) ->
+              (SingClientHasAgency SingIdle, MsgPing) ->
                 DecodeDone (SomeMessage msg) Nothing
-              (SingIdle, MsgDone) ->
+              (SingClientHasAgency SingIdle, MsgDone) ->
                 DecodeDone (SomeMessage msg) Nothing
 
-              (_      , _     ) -> DecodeFail failure
+              (SingServerHasAgency _      , _     ) -> DecodeFail failure
+                where failure = CodecFailure ("unexpected server message: " ++ show msg)
+              (SingClientHasAgency _      , _     ) -> DecodeFail failure
                 where failure = CodecFailure ("unexpected client message: " ++ show msg )

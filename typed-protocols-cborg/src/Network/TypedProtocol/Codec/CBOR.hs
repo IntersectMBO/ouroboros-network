@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE MonoLocalBinds      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -46,11 +48,11 @@ mkCodecCborStrictBS
   :: forall ps m. MonadST m
 
   => (forall (st :: ps) (st' :: ps).
-             SingI st
+             SingI (PeerHasAgency st)
           => Message ps st st' -> CBOR.Encoding)
 
   -> (forall (st :: ps) s.
-             SingI st
+             SingI (PeerHasAgency st)
           => CBOR.Decoder s (SomeMessage st))
 
   -> Codec ps DeserialiseFailure m BS.ByteString
@@ -100,11 +102,11 @@ mkCodecCborLazyBS
   :: forall ps m. MonadST m
 
   => (forall (st :: ps) (st' :: ps).
-             SingI st
+             SingI (PeerHasAgency st)
           => Message ps st st' -> CBOR.Encoding)
 
   -> (forall (st :: ps) s.
-             SingI st
+             SingI (PeerHasAgency st)
           => CBOR.Decoder s (SomeMessage st))
 
   -> Codec ps CBOR.DeserialiseFailure m LBS.ByteString

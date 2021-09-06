@@ -11,6 +11,7 @@ module Network.TypedProtocol.ReqResp.Codec where
 import           Data.Singletons
 
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.PingPong.Codec (decodeTerminatedFrame)
 import           Network.TypedProtocol.ReqResp.Type
 import           Text.Read (readMaybe)
@@ -33,17 +34,17 @@ codecReqResp =
 
     decode :: forall req' resp' m'
                      (st :: ReqResp req' resp')
-           .  (Monad m', SingI st, Read req', Read resp')
+           .  (Monad m', SingI (PeerHasAgency st), Read req', Read resp')
            => m' (DecodeStep String CodecFailure m' (SomeMessage st))
     decode =
       decodeTerminatedFrame '\n' $ \str trailing ->
-        case (sing :: Sing st, break (==' ') str) of
-          (SingIdle, ("MsgReq", str'))
+        case (sing :: Sing (PeerHasAgency st), break (==' ') str) of
+          (SingClientHasAgency SingIdle, ("MsgReq", str'))
              | Just resp <- readMaybe str'
             -> DecodeDone (SomeMessage (MsgReq resp)) trailing
-          (SingIdle, ("MsgDone", ""))
+          (SingClientHasAgency SingIdle, ("MsgDone", ""))
             -> DecodeDone (SomeMessage MsgDone) trailing
-          (SingBusy, ("MsgResp", str'))
+          (SingServerHasAgency SingBusy, ("MsgResp", str'))
              | Just resp <- readMaybe str'
             -> DecodeDone (SomeMessage (MsgResp resp)) trailing
 
@@ -60,29 +61,31 @@ codecReqRespId =
   where
     encode :: forall (st  :: ReqResp req resp)
                      (st' :: ReqResp req resp)
-           .  SingI st
+           .  SingI (PeerHasAgency st)
            => Message (ReqResp req resp) st st'
            -> AnyMessage (ReqResp req resp)
     encode msg = AnyMessage msg
 
     decode :: forall (st :: ReqResp req resp)
-           .  SingI st
+           .  SingI (PeerHasAgency st)
            => m (DecodeStep (AnyMessage (ReqResp req resp)) CodecFailure m (SomeMessage st))
     decode =
-      let stok :: Sing st
+      let stok :: Sing (PeerHasAgency st)
           stok = sing in
       pure $ DecodePartial $ \mb ->
         case mb of
           Nothing -> return $ DecodeFail (CodecFailure "expected more data")
           Just (AnyMessage msg) -> return $
             case (stok, msg) of
-              (SingIdle, MsgReq{})
+              (SingClientHasAgency SingIdle, MsgReq{})
                 -> DecodeDone (SomeMessage msg) Nothing
-              (SingIdle, MsgDone)
+              (SingClientHasAgency SingIdle, MsgDone)
                 -> DecodeDone (SomeMessage msg) Nothing
-              (SingBusy, MsgResp{})
+              (SingServerHasAgency SingBusy, MsgResp{})
                 -> DecodeDone (SomeMessage msg) Nothing
 
-              (_      , _     ) -> DecodeFail failure
+              (SingServerHasAgency _      , _     ) -> DecodeFail failure
                 where failure = CodecFailure ("unexpected server message: " ++ show msg)
+              (SingClientHasAgency _      , _     ) -> DecodeFail failure
+                where failure = CodecFailure ("unexpected client message: " ++ show msg)
 

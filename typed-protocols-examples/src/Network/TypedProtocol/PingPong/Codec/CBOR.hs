@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -34,18 +35,15 @@ codecPingPong = mkCodecCborLazyBS encodeMsg decodeMsg
   encodeMsg MsgDone = CBOR.encodeWord 2
 
   decodeMsg :: forall s (st :: PingPong).
-               SingI st
+               SingI (PeerHasAgency st)
             => CBOR.Decoder s (SomeMessage st)
   decodeMsg = do
     key <- CBOR.decodeWord
-    case (sing :: Sing st, key) of
-      (SingIdle, 0) -> return $ SomeMessage MsgPing
-      (SingBusy, 1) -> return $ SomeMessage MsgPong
-      (SingIdle, 2) -> return $ SomeMessage MsgDone
+    case (sing :: Sing (PeerHasAgency st), key) of
+      (SingClientHasAgency SingIdle, 0) -> return $ SomeMessage MsgPing
+      (SingServerHasAgency SingBusy, 1) -> return $ SomeMessage MsgPong
+      (SingClientHasAgency SingIdle, 2) -> return $ SomeMessage MsgDone
 
       -- TODO proper exceptions
-      (SingIdle, _) -> fail "codecPingPong.StIdle: unexpected key"
-      (SingBusy, _) -> fail "codecPingPong.StBusy: unexpected key"
-      (SingDone, _) -> fail "codecPingPong.StDone: unexpected key"
-
-
+      (SingClientHasAgency SingIdle, _) -> fail "codecPingPong.StIdle: unexpected key"
+      (SingServerHasAgency SingBusy, _) -> fail "codecPingPong.StBusy: unexpected key"

@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -44,18 +45,17 @@ codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
     CBOR.encodeListLen 1 <> CBOR.encodeWord 2
 
   decodeMsg :: forall s (st :: ReqResp req resp).
-               SingI st
+               SingI (PeerHasAgency st)
             => CBOR.Decoder s (SomeMessage st)
   decodeMsg = do
     _ <- CBOR.decodeListLen
     key <- CBOR.decodeWord
-    case (sing :: Sing st, key) of
-      (SingIdle, 0) -> SomeMessage . MsgReq  <$> CBOR.decode
-      (SingBusy, 1) -> SomeMessage . MsgResp <$> CBOR.decode
-      (SingIdle, 2) -> return $ SomeMessage MsgDone
+    case (sing :: Sing (PeerHasAgency st), key) of
+      (SingClientHasAgency SingIdle, 0) -> SomeMessage . MsgReq  <$> CBOR.decode
+      (SingServerHasAgency SingBusy, 1) -> SomeMessage . MsgResp <$> CBOR.decode
+      (SingClientHasAgency SingIdle, 2) -> return $ SomeMessage MsgDone
 
       -- TODO proper exceptions
-      (SingIdle, _) -> fail "codecReqResp.StIdle: unexpected key"
-      (SingBusy, _) -> fail "codecReqResp.StBusy: unexpected key"
-      (SingDone, _) -> fail "codecReqResp.StBusy: unexpected key"
+      (SingClientHasAgency SingIdle, _) -> fail "codecReqResp.StIdle: unexpected key"
+      (SingServerHasAgency SingBusy, _) -> fail "codecReqResp.StBusy: unexpected key"
 

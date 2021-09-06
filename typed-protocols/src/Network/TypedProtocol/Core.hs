@@ -2,6 +2,8 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveFunctor            #-}
 {-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE QuantifiedConstraints    #-}
@@ -12,6 +14,8 @@
 {-# LANGUAGE TypeFamilyDependencies   #-}
 {-# LANGUAGE TypeInType               #-}
 {-# LANGUAGE TypeOperators            #-}
+-- need for 'Show' instance of 'ProtocolState'
+{-# LANGUAGE UndecidableInstances     #-}
 
 
 -- | This module defines the core of the typed protocol framework.
@@ -29,6 +33,7 @@ module Network.TypedProtocol.Core
   , PeerRole (..)
   , SingPeerRole (..)
   , Agency (..)
+  , SingAgency (..)
   , RelativeAgency (..)
   , Relative
   , ReflRelativeAgency (..)
@@ -41,6 +46,16 @@ module Network.TypedProtocol.Core
   , type (|>)
   , SingQueue (..)
   , (|>)
+  , ProtocolState
+  , ProtocolState' (..)
+  , SingProtocolState
+  , SingProtocolState' (..)
+  , psAgency
+  , PeerHasAgency
+  , PeerHasAgency' (..)
+  , SingPeerHasAgency
+  , SingPeerHasAgency' (..)
+  , phaAgency
     -- * Protocol proofs and tests
     -- $tests
     -- $lemmas
@@ -206,6 +221,8 @@ data SingPeerRole pr where
     SingAsClient :: SingPeerRole AsClient
     SingAsServer :: SingPeerRole AsServer
 
+deriving instance Show (SingPeerRole pr)
+
 type instance Sing = SingPeerRole
 instance SingI AsClient where
     sing = SingAsClient
@@ -217,6 +234,21 @@ data Agency where
     ServerAgency :: Agency
     NobodyAgency :: Agency
 
+type SingAgency :: Agency -> Type
+data SingAgency a where
+    SingClientAgency :: SingAgency ClientAgency
+    SingServerAgency :: SingAgency ServerAgency
+    SingNobodyAgency :: SingAgency NobodyAgency
+
+deriving instance Show (SingAgency a)
+
+type instance Sing = SingAgency
+instance SingI ClientAgency where
+    sing = SingClientAgency
+instance SingI ServerAgency where
+    sing = SingServerAgency
+instance SingI NobodyAgency where
+    sing = SingNobodyAgency
 
 data RelativeAgency where
     WeHaveAgency    :: RelativeAgency
@@ -341,6 +373,105 @@ class Protocol ps where
   type StateAgency (st :: ps) :: Agency
 
 
+-- | 'ProtocolState' is a type level tuple which consists of state type and its
+-- agency.  This is just a short cut which allows us to give access to both
+-- through a single singleton type 'SingProtocolState'.
+--
+type ProtocolState (st :: ps) = 'PS st (StateAgency st)
+data ProtocolState' ps agency =  PS ps agency
+
+
+-- | 'ProtocolState' singleton type. It's type it more general that what we
+-- need, see 'SingProtocolState' type alias.
+--
+-- 'SingProtocolState' provides @'Sing' st@ explicitly and @'SingAgency'
+-- ('AgencyState' st)@ implicitly using 'SingI' type class constraint.  The
+-- 'SingAgency' singleton is available using 'psAgency'.
+--
+type SingProtocolState' :: ProtocolState' ps Agency -> Type
+data SingProtocolState' x where
+  SingProtocolState :: ( StateAgency st ~ a
+                       , SingI a
+                       )
+                    => { psState :: !(Sing st) }
+                    -> SingProtocolState' (ProtocolState st)
+
+deriving instance Show (Sing st)
+               => Show (SingProtocolState' ('PS st agency))
+
+
+psAgency :: forall ps (st :: ps).
+            SingProtocolState st
+         -> SingAgency (StateAgency st)
+psAgency SingProtocolState {} = sing
+
+-- | A convenient type alias.
+--
+type SingProtocolState (st :: ps) = SingProtocolState' (ProtocolState st)
+
+-- | 'Peer' type provides access to 'SingProtocolState' constructors thought
+-- the 'SingI' type class.  At a given state one can pattern match on it to
+-- branch on possible 'ProtocolState's:
+--
+-- @
+-- case sing :: Sing (SingProtocolState st) of -- @st@ must be in scope
+--    tok ->
+-- @
+--
+type instance Sing = SingProtocolState'
+instance ( SingI st
+         , SingI (a :: Agency)
+         , a ~ StateAgency st
+         )
+      => SingI ('PS st a) where
+    sing = SingProtocolState sing
+
+
+type PeerHasAgency  (st :: ps) = 'PeerHasAgency st (StateAgency st)
+data PeerHasAgency'  ps agency =  PeerHasAgency ps agency
+
+
+-- | Singletons for active states in which one of the sides has agency.
+--
+type SingPeerHasAgency' :: PeerHasAgency' ps Agency -> Type
+data SingPeerHasAgency' x where
+    SingClientHasAgency :: StateAgency st ~ ClientAgency
+                        => { phaState :: Sing st }
+                        -> SingPeerHasAgency' (PeerHasAgency st)
+
+    SingServerHasAgency :: StateAgency st ~ ServerAgency
+                        => { phaState :: Sing st }
+                        -> SingPeerHasAgency' (PeerHasAgency st)
+
+-- | 'SingActiveState' is a convenient type alias for the `SingActiveState'`
+-- type.
+--
+type SingPeerHasAgency (st :: ps) = SingPeerHasAgency' (PeerHasAgency st)
+
+
+deriving instance Show (Sing st)
+               => Show (SingPeerHasAgency' ('PeerHasAgency st agency))
+
+type instance Sing = SingPeerHasAgency'
+instance ( SingI st
+         , ClientAgency ~ StateAgency st
+         )
+      => SingI ('PeerHasAgency st ClientAgency) where
+    sing = SingClientHasAgency sing
+instance ( SingI st
+         , ServerAgency ~ StateAgency st
+         )
+      => SingI ('PeerHasAgency st ServerAgency) where
+    sing = SingServerHasAgency sing
+
+
+-- | Extract @'Sing' 'StateAgency' st@ from @'SingPeerHasAgency' st@.
+--
+phaAgency :: SingPeerHasAgency st -> Sing (StateAgency st)
+phaAgency (SingClientHasAgency _) = SingClientAgency
+phaAgency (SingServerHasAgency _) = SingServerAgency
+
+
 -- | A type function to flip the client and server roles.
 --
 type        FlipAgency :: PeerRole -> PeerRole
@@ -359,7 +490,7 @@ data ReflNobodyHasAgency ra ra' where
 
 
 -- | A proof that if both @Relative pr a@ and @Relative (FlipAgency pr) a@ are
--- equal then nobody has agency.  In particual this lemma excludes the
+-- equal then nobody has agency.  In particular this lemma excludes the
 -- possibility that client and server has agency at the same state.
 --
 exclusionLemma_ClientAndServerHaveAgency

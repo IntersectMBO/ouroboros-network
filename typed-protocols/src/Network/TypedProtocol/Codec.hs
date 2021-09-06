@@ -1,17 +1,20 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeInType            #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE QuantifiedConstraints    #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeInType               #-}
 -- @UndecidableInstances@ extension is required for defining @Show@ instance of
 -- @'AnyMessage'@ and @'AnyMessage'@.
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 module Network.TypedProtocol.Codec
   ( -- * Defining and using Codecs
@@ -22,6 +25,10 @@ module Network.TypedProtocol.Codec
     -- ** Related types
   , PeerRole (..)
   , SomeMessage (..)
+  , PeerHasAgency
+  , PeerHasAgency' (..)
+  , SingPeerHasAgency
+  , SingPeerHasAgency' (..)
   , CodecFailure (..)
     -- ** Incremental decoding
   , DecodeStep (..)
@@ -46,7 +53,7 @@ import           Data.Monoid (All (..))
 
 import           Data.Singletons
 
-import           Network.TypedProtocol.Core (PeerRole (..), Protocol (..))
+import           Network.TypedProtocol.Core
 
 
 -- | When decoding a 'Message' we only know the expected \"from\" state. We
@@ -55,7 +62,10 @@ import           Network.TypedProtocol.Core (PeerRole (..), Protocol (..))
 -- type to hide the \"to"\ state.
 --
 data SomeMessage (st :: ps) where
-     SomeMessage :: Message ps st st' -> SomeMessage st
+     SomeMessage :: ( SingI (ProtocolState st)
+                    , SingI (ProtocolState st')
+                    )
+                 => Message ps st st' -> SomeMessage st
 
 
 -- | A codec for a 'Protocol' handles the encoding and decoding of typed
@@ -132,12 +142,12 @@ data SomeMessage (st :: ps) where
 --
 data Codec ps failure m bytes = Codec {
        encode :: forall (st :: ps) (st' :: ps).
-                 SingI st
+                 SingI (PeerHasAgency st)
               => Message ps st st'
               -> bytes,
 
        decode :: forall (st :: ps).
-                 SingI st
+                 SingI (PeerHasAgency st)
               => m (DecodeStep bytes failure m (SomeMessage st))
      }
 
@@ -294,7 +304,7 @@ runDecoderPure runM decoder bs = runM (runDecoder bs =<< decoder)
 --
 data AnyMessage ps where
   AnyMessage :: forall ps (st :: ps) (st' :: ps).
-                SingI st
+                SingI (PeerHasAgency st)
              => Message ps (st :: ps) (st' :: ps)
              -> AnyMessage ps
 
@@ -386,7 +396,7 @@ prop_codec_splits splits runM codec msg =
 data SamePeerHasAgency (pr :: PeerRole) (ps :: Type) where
   SamePeerHasAgency
     :: forall (pr :: PeerRole) ps (st :: ps) proxy.
-       SingI st
+       SingI (PeerHasAgency st)
     => !(proxy st)
     -> SamePeerHasAgency pr ps
 
@@ -410,14 +420,14 @@ prop_codec_binary_compatM
      )
   => Codec psA failure m bytes
   -> Codec psB failure m bytes
-  -> (forall pr (stA :: psA). Sing stA -> SamePeerHasAgency pr psB)
+  -> (forall pr (stA :: psA). SingPeerHasAgency stA -> SamePeerHasAgency pr psB)
      -- ^ The states of A map directly of states of B.
   -> AnyMessage psA
   -> m Bool
 prop_codec_binary_compatM
     codecA codecB stokEq
     (AnyMessage (msgA :: Message psA stA stA')) =
-  let stokA :: Sing stA
+  let stokA :: Sing (PeerHasAgency stA)
       stokA = sing
   in case stokEq stokA of
     SamePeerHasAgency (_ :: proxy stB) -> do
@@ -445,7 +455,7 @@ prop_codec_binary_compat
   => (forall a. m a -> a)
   -> Codec psA failure m bytes
   -> Codec psB failure m bytes
-  -> (forall pr (stA :: psA). Sing stA -> SamePeerHasAgency pr psB)
+  -> (forall pr (stA :: psA). SingPeerHasAgency stA -> SamePeerHasAgency pr psB)
   -> AnyMessage psA
   -> Bool
 prop_codec_binary_compat runM codecA codecB stokEq msgA =

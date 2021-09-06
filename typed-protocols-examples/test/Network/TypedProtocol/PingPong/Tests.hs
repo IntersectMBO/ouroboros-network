@@ -189,8 +189,10 @@ prop_connect (NonNegative n) =
            (pingPongClientPeer (pingPongClientCount n))
            (pingPongServerPeer  pingPongServerCount))
 
-    of ((), n', TerminalStates SingDone ReflNobodyAgency
-                               SingDone ReflNobodyAgency) ->
+    of ((), n', TerminalStates (SingProtocolState SingDone)
+                               ReflNobodyAgency
+                               (SingProtocolState SingDone)
+                               ReflNobodyAgency) ->
         n == n'
 
 
@@ -211,8 +213,10 @@ connect_pipelined client cs =
             (pingPongClientPeerPipelined client)
             (pingPongServerPeer pingPongServerCount))
 
-    of (reqResps, n, TerminalStates SingDone ReflNobodyAgency
-                                    SingDone ReflNobodyAgency) ->
+    of (reqResps, n, TerminalStates (SingProtocolState SingDone)
+                                    ReflNobodyAgency
+                                    (SingProtocolState SingDone)
+                                    ReflNobodyAgency) ->
          (n, reqResps)
 
 
