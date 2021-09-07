@@ -164,8 +164,8 @@ instance Mapping DiffMap where
 
 data PTMap k a = PTMap !(PMap k a) !(DiffMap k a)
 
-makePTMap :: Ord k => Map k a -> Set k -> PTMap k a
-makePTMap m ks = PTMap (makePMap m ks) (DiffMap (MapDiff Map.empty))
+makePTMap :: PMap k a -> PTMap k a
+makePTMap m = PTMap m (DiffMap (MapDiff Map.empty))
 
 instance Mapping PTMap where
   lookup k (PTMap m _) = lookup k m
@@ -173,6 +173,10 @@ instance Mapping PTMap where
   insert k v (PTMap m d) = PTMap (insert k v m) (insert k v d)
   delete k   (PTMap m d) = PTMap (delete k   m) (delete k   d)
   update k v (PTMap m d) = PTMap (update k v m) (update k v d)
+
+
+applyPTDiffMap :: (Ord k, Semigroup v) => PMap k v -> DiffMap k v -> PTMap k v
+applyPTDiffMap (PMap m s) (DiffMap d) = makePTMap (PMap (applyDiff m d) s)
 
 
 -- Vertical composition
@@ -350,7 +354,7 @@ instance HasOnDiskMappings state
 -- Disk operations
 ------------------
 
-class DiskDB state dbhandle where
+class DiskDB dbhandle state where
   readDB  :: dbhandle -> OnDiskMappings state KeySet -> IO (OnDiskMappings state PMap)
   writeDB :: dbhandle -> OnDiskMappings state DiffMap -> IO ()
 
@@ -362,7 +366,7 @@ newtype TVarDB state = TVarDB (OnDiskMappings state TVarDBTable)
 
 newtype TVarDBTable k v = TVarDBTable (TVar (Map k v))
 
-instance HasOnDiskMappings state => DiskDB state (TVarDB state) where
+instance HasOnDiskMappings state => DiskDB (TVarDB state) state where
 
   readDB  (TVarDB tables) keysets = traverse2Mappings readTVarDBTable  tables keysets
   writeDB (TVarDB tables) diffs   = traverse2Mappings_ writeTVarDBTable tables diffs
@@ -448,6 +452,7 @@ newtype TxIx  = TxIx Int           deriving (Eq, Ord, Show)
 data    TxOut = TxOut !Addr !Coin  deriving (Eq, Show)
 newtype Addr  = Addr Int           deriving (Eq, Ord, Show)
 newtype Coin  = Coin Int           deriving (Eq, Num, Show)
+newtype SlotNo= SlotNo Int         deriving (Eq, Enum, Show)
 
 instance Semigroup Coin  where a <> b = a + b
 instance Semigroup TxOut where _ <> _ = error "Semigroup TxOut: cannot use updates on the utxo"
@@ -490,6 +495,10 @@ instance HasOnlyMappings (OnDiskMappings LedgerState) where
   traverse2Mappings f st1 st2 =
     LedgerStateMappings <$> f (utxoMapping st1) (utxoMapping st2)
                         <*> f (utxoaggMapping st1) (utxoaggMapping st2)
+
+  traverse2Mappings_ f st1 st2 =
+     () <$ f (utxoMapping st1) (utxoMapping st2)
+        <* f (utxoaggMapping st1) (utxoaggMapping st2)
 
 instance HasOnDiskMappings LedgerState where
 
@@ -591,4 +600,89 @@ insertOutput txin txout@(TxOut addr coin) UTxOState {utxo, utxoagg} =
       utxo    = insert txin txout utxo,
       utxoagg = update addr coin utxoagg
     }
+
+-- Keys needed for applyBlock
+applyBlockKeys :: [Tx] -> OnDiskMappings LedgerState KeySet
+applyBlockKeys = undefined
+
+
+-- Example chain selection
+--------------------------
+
+type ChainFragment = [Block]
+
+findIntersection :: ChainFragment -> ChainFragment -> SlotNo
+findIntersection = undefined
+
+
+type LedgerStateSeq = DbExtensionSeq LedgerState
+
+-- | This is a drop \/ split operation, at the given slot number.
+-- We use it to rewind to an intersection point.
+--
+rewindLedgerStateSeq :: SlotNo -> LedgerStateSeq -> LedgerStateSeq
+rewindLedgerStateSeq = undefined
+    -- This will be a simple fingertree split on the SlotNo
+
+ledgerStateForBlock :: LedgerStateSeq
+                    -> OnDiskMappings LedgerState PMap
+                    -> LedgerState PTMap
+ledgerStateForBlock lseq rs =
+    injectOnDiskMappings (zipMappings applyPTDiffMap rs d) s
+  where
+    s :: LedgerState EmptyMap
+    _ FT.:> (DbExtension s _) = FT.viewr lseq
+
+    d :: OnDiskMappings LedgerState DiffMap
+    DbExtensionsMeasure _ d = FT.measure lseq
+
+extendLedgerStateSeq :: LedgerStateSeq -> LedgerState PTMap -> LedgerStateSeq
+extendLedgerStateSeq lseq ls =
+    lseq FT.|> DbExtension s d
+  where
+    s :: LedgerState EmptyMap
+    s = fmapMappings (const EmptyMap) ls
+
+    d :: OnDiskMappings LedgerState DiffMap
+    d = fmapMappings (\(PTMap _ diff) -> diff) (projectOnDiskMappings ls)
+
+
+-- | A highly simplfied chain selection algorithm where we just look at a
+-- single candidate chain (which we assume is longer) and just evaluate
+-- if the blocks are valid. If they are, we adopt the chain.
+--
+considerChain :: TVarDB LedgerState  -- ^ The ledger state disk db
+              -> TVar ChainFragment  -- ^ Our current chain
+              -> TVar LedgerStateSeq -- ^ The ledger state in-mem extension
+                                     --   matching the current chain
+              -> ChainFragment       -- ^ The candidate chain
+              -> IO ()
+considerChain db chainvar lseqvar candidate = do
+    -- start by reading state and finding the intersection
+    (lseq, chain) <- STM.atomically $ (,) <$> STM.readTVar lseqvar
+                                          <*> STM.readTVar chainvar
+    let intersectSlot = findIntersection chain candidate
+
+    result <- evaluateCandidate (rewindLedgerStateSeq intersectSlot lseq) candidate
+    case result of
+      Nothing -> return ()
+      Just lseq' ->
+        -- Adopt the new chain and corresponding ledger state
+        STM.atomically $ do
+          STM.writeTVar chainvar candidate
+          STM.writeTVar lseqvar lseq'
+  where
+    evaluateCandidate !lseq [] =
+      -- If we got to the end without failing, we assume we've got the longer
+      -- chain now, so return the corresponding ledger state (seq)
+      return (Just lseq)
+
+    evaluateCandidate !lseq (b:bs) = do
+      rs <- readDB db (applyBlockKeys b)
+      case applyBlock b (ledgerStateForBlock lseq rs) of
+        Nothing -> return Nothing
+        Just ledgerstate' ->
+            evaluateCandidate lseq' bs
+          where
+            lseq' = extendLedgerStateSeq lseq ledgerstate'
 
