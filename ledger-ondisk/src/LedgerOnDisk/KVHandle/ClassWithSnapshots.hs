@@ -67,18 +67,18 @@ instance Comonad (DBResponse dbhandle) where
   duplicate x = x <$ x
 
 data DBOpArgs dbhandle = DBOpArgs
-  { rangeQueryMetadata :: !(Map RangeQueryId (DBOnDiskMappings dbhandle RangeQueryMetadata))
-  , kvResults :: !(Map (Maybe (Snapshot dbhandle)) (DBOnDiskMappings dbhandle PTMap))
+  { pointQueryResults :: !(DBOnDiskMappings dbhandle PTMap)
+  , rangeQueryResults :: !(DBOnDiskMappings dbhandle Map)
   }
 
 deriving stock instance
-  ( Show (DBOnDiskMappings dbhandle RangeQueryMetadata)
+  ( Show (DBOnDiskMappings dbhandle Map)
   , Show (DBOnDiskMappings dbhandle PTMap)
   , Show (Snapshot dbhandle)
   ) => Show (DBOpArgs dbhandle)
 
 deriving stock instance
-  ( Eq (DBOnDiskMappings dbhandle RangeQueryMetadata)
+  ( Eq (DBOnDiskMappings dbhandle Map)
   , Eq (DBOnDiskMappings dbhandle PTMap)
   , Eq (Snapshot dbhandle)
   ) => Eq (DBOpArgs dbhandle)

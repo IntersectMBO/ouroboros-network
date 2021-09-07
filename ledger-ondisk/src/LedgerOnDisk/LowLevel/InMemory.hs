@@ -25,21 +25,21 @@ newtype InMemoryROHandle state = InMemoryROHandle (OnDiskMappings state Map)
 proxyDBKVConstraint :: Proxy KeysAreOrd
 proxyDBKVConstraint = Proxy
 
-doQuery :: Ord k => Query k v -> Map k v -> QueryResult k v
-doQuery q m0 = runIdentity $ runQuery doLookup doRangeQuery q
-  where
-    doLookup k = coerce $ Map.lookup k m0
-    doRangeQuery mb_k n = coerce $ let
-      m1
-        | Just k <- mb_k = let
-            (_, mb_r, r0) = Map.splitLookup k m0
-            in maybe id (Map.insert k) mb_r r0
-        | otherwise = m0
-      (result, rest) = Map.splitAt (fromIntegral n) m1
-      returnedRows = fromIntegral $ length result
-      remaining_rows = fromIntegral $ length rest
-      nextKey = (\(k, _) -> (k, remaining_rows)) <$> Map.lookupMin rest
-      in (RangeQueryMetadata { returnedRows, nextKey }, Map.toList result)
+-- doQuery :: Ord k => Query k v -> Map k v -> QueryResult k v
+-- doQuery q m0 = runIdentity $ runQuery doLookup doRangeQuery q
+--   where
+--     doLookup k = coerce $ Map.lookup k m0
+--     doRangeQuery mb_k n = coerce $ let
+--       m1
+--         | Just k <- mb_k = let
+--             (_, mb_r, r0) = Map.splitLookup k m0
+--             in maybe id (Map.insert k) mb_r r0
+--         | otherwise = m0
+--       (result, rest) = Map.splitAt (fromIntegral n) m1
+--       returnedRows = fromIntegral $ length result
+--       remaining_rows = fromIntegral $ length rest
+--       nextKey = (\(k, _) -> (k, remaining_rows)) <$> Map.lookupMin rest
+--       in (RangeQueryMetadata { returnedRows, nextKey }, Map.toList result)
 
 applyDiffMap :: Ord k => DiffMap k v -> Map k v -> Map k v
 applyDiffMap (DiffMap d) = applyDifftoMap d
@@ -50,7 +50,7 @@ instance
   type DBKVConstraint (InMemoryROHandle state) = KeysAreOrd
   type ROLLT (InMemoryROHandle state) = state
 
-  readSnapshot (InMemoryROHandle odm) q = pure . runIdentity  $ zipMappings proxyDBKVConstraint (coerce doQuery) q odm
+  readSnapshot (InMemoryROHandle odm) q = pure . runIdentity  $ zipMappings proxyDBKVConstraint (coerce queryMap) q odm
   closeHandle _ = pure ()
 
 data InMemoryHandle state = InMemoryHandle
@@ -66,7 +66,7 @@ instance
 
   read InMemoryHandle {..} q = withMVar dataMV $ \odm -> do
     seq_id <- readTVarIO seqIdTV
-    x <- zipMappings proxyDBKVConstraint (\q' m -> pure $ doQuery q' m) q odm
+    x <- zipMappings proxyDBKVConstraint (\q' m -> pure $ queryMap q' m) q odm
     pure (seq_id, x)
 
   write InMemoryHandle {..} d = modifyMVar dataMV $ \odm -> do
