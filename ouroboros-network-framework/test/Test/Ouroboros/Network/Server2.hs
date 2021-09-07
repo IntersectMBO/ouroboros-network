@@ -103,7 +103,7 @@ import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket
 
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
-import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), AbsBearerInfo, toBearerInfo)
+import           Test.Simulation.Network.Snocket hiding (tests)
 import           Test.Ouroboros.Network.ConnectionManager (verifyAbstractTransition)
 
 tests :: TestTree
@@ -332,7 +332,7 @@ withInitiatorOnlyConnectionManager name timeouts cmTrTracer snocket localAddr
           cmIPv6Address = Nothing,
           cmAddressType = \_ -> Just IPv4Address,
           cmSnocket = snocket,
-          connectionDataFlow = const Unidirectional,
+          connectionDataFlow = getProtocolDataFlow . snd,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
@@ -350,7 +350,7 @@ withInitiatorOnlyConnectionManager name timeouts cmTrTracer snocket localAddr
             -- TraceSendRecv
             haHandshakeTracer = (name,) `contramap` nullTracer,
             haHandshakeCodec = unversionedHandshakeCodec,
-            haVersionDataCodec = unversionedProtocolDataCodec,
+            haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
             haAcceptVersion = acceptableVersion,
             haTimeLimits = handshakeTimeLimits
           }
@@ -515,7 +515,7 @@ withBidirectionalConnectionManager name timeouts
           cmSnocket      = snocket,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
           cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          connectionDataFlow = const Duplex,
+          connectionDataFlow = getProtocolDataFlow . snd,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
@@ -531,7 +531,7 @@ withBidirectionalConnectionManager name timeouts
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
-              haVersionDataCodec = unversionedProtocolDataCodec,
+              haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
               haTimeLimits = handshakeTimeLimits
             }
