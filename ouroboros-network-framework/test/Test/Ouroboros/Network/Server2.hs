@@ -1684,37 +1684,6 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
                        Nothing
               )
           $ runSimTrace sim
-        where
-          sim :: IOSim s ()
-          sim = do
-            mb <- timeout 7200
-                    ( withSnocket
-                        debugTracer
-                        -- We do this instead of generating a list of
-                        -- 'BearerInfo' where the last element is
-                        -- 'noAttenuation' because we need the last element
-                        -- to run to be 'noAttenuation' and not the last element
-                        -- of the list. The test is designed in this way so we
-                        -- can not do much about it. This is okay because the
-                        -- diffusion simulation will not need to relay on such
-                        -- an invariant; the outbound governor is the component
-                        -- which makes sure that a progress is made.
-                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                    $ \snocket ->
-                       multinodeExperiment (Tracer traceM)
-                                           (Tracer traceM)
-                                           (Tracer traceM)
-                                           snocket
-                                           Snocket.TestFamily
-                                           (Snocket.TestAddress 0)
-                                           serverAcc
-                                           dataFlow
-                                           (unTestAddr <$> script)
-                    )
-            case mb of
-              Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
-              Just a  -> return a
-
   in counterexample (ppScript script)
     . counterexample (ppOctopus show show evs)
     . (\ ( tr1 :: Octopus (Value ()) (RemoteTransitionTrace   SimAddr)
@@ -1805,6 +1774,35 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
    . octoSplit
    $ evs
   where
+    sim :: IOSim s ()
+    sim = do
+      mb <- timeout 7200
+              ( withSnocket
+                  debugTracer
+                  -- We do this instead of generating a list of
+                  -- 'BearerInfo' where the last element is
+                  -- 'noAttenuation' because we need the last element
+                  -- to run to be 'noAttenuation' and not the last element
+                  -- of the list. The test is designed in this way so we
+                  -- can not do much about it. This is okay because the
+                  -- diffusion simulation will not need to relay on such an
+                  -- invariant; the outbound governor is the component which
+                  -- makes sure that a progress is made.
+                  (Script (toBearerInfo absBi :| [noAttenuation]))
+              $ \snocket ->
+                 multinodeExperiment (Tracer traceM)
+                                     (Tracer traceM)
+                                     (Tracer traceM)
+                                     snocket
+                                     Snocket.TestFamily
+                                     (Snocket.TestAddress 0)
+                                     serverAcc
+                                     dataFlow
+                                     (unTestAddr <$> script)
+              )
+      case mb of
+        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Just a  -> return a
 
     -- classify negotiated data flow
     classifyNegotiatedDataFlow :: [AbstractTransition] -> NegotiatedDataFlow
