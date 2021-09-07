@@ -1,28 +1,39 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns #-}
 
 module UTxOAPI where
 
 import           Prelude hiding (lookup)
+
+import           Data.Kind
+import           Data.Functor.Identity
 
 import qualified Data.Hashable as H
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as Map
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
+import qualified Data.Set as Set
+import qualified Data.FingerTree as FT
+
+import           Control.Concurrent.STM (TVar)
+import qualified Control.Concurrent.STM as STM
 
 
 
 -- Diffs
 --------
 
-class Monoid (Diff a) => ApplyDiff a where
-  type Diff a
+class Monoid (Diff a) => Changes a where
+  data Diff a
 
   applyDiff :: a -> Diff a -> a
 
@@ -32,49 +43,57 @@ class Monoid (Diff a) => ApplyDiff a where
 
 -- ⊙ ⊕ ∣ |
 
-(◁) :: ApplyDiff a => a -> Diff a -> a
+(◁) :: Changes a => a -> Diff a -> a
 (◁) = applyDiff
 
-prop_applyDiff :: (ApplyDiff a, Eq a) => a -> Diff a -> Diff a -> Bool
+prop_applyDiff :: (Changes a, Eq a) => a -> Diff a -> Diff a -> Bool
 prop_applyDiff x d d' =
     (x ◁ d) ◁ d' == x ◁ (d <> d')
 
 
-instance (Ord k, Monoid a) => ApplyDiff (Map k a) where
-    type Diff (Map k a) = Map k (Update a)
+instance (Ord k, Semigroup a) => Changes (Map k a) where
+  newtype Diff (Map k a) = MapDiff (Map k (MapDiffElem a))
 
-    applyDiff :: Map k a -> Map k (Update a) -> Map k a
-    applyDiff =
-        Map.merge
-          Map.preserveMissing
-          (Map.mapMaybeMissing      (\_ -> insertUpdate))
-          (Map.zipWithMaybeMatched  (\_ -> applyUpdate))
-      where
-        insertUpdate :: Update a -> Maybe a
-        insertUpdate  Delete    = Nothing
-        insertUpdate (Insert x) = Just x
-        insertUpdate (Update x) = Just x
+  applyDiff :: Map k a -> Diff (Map k a) -> Map k a
+  applyDiff m (MapDiff md) =
+      Map.merge
+        Map.preserveMissing
+        (Map.mapMaybeMissing      insert)
+        (Map.zipWithMaybeMatched  apply)
+        m
+        md
+    where
+      insert :: k -> MapDiffElem a -> Maybe a
+      insert _    MapElemDelete     = Nothing
+      insert _ (  MapElemInsert x)  = Just x
+      insert _ (  MapElemUpdate x)  = Just x
 
-        applyUpdate :: a -> Update a -> Maybe a
-        applyUpdate _  Delete    = Nothing
-        applyUpdate _ (Insert y) = Just y
-        applyUpdate x (Update y) = Just (x<>y)
+      apply :: k -> a -> MapDiffElem a -> Maybe a
+      apply _ _    MapElemDelete     = Nothing
+      apply _ _ (  MapElemInsert y)  = Just y
+      apply _ x (  MapElemUpdate y)  = Just (x<>y)
 
-data Update a = Delete | Insert !a | Update !a
+instance (Ord k, Semigroup a) => Monoid (Diff (Map k a)) where
+  mempty = MapDiff Map.empty
 
-instance Semigroup a => Semigroup (Update a) where
-  Delete   <> Delete   = Delete
-  Insert _ <> Insert y = Insert y
-  Update x <> Update y = Update (x <> y)
+instance (Ord k, Semigroup a) => Semigroup (Diff (Map k a)) where
+  MapDiff a <> MapDiff b = MapDiff (Map.unionWith (<>) a b)
 
-  Insert _ <> Delete   = Delete
-  Delete   <> Insert y = Insert y
+data MapDiffElem a = MapElemDelete | MapElemInsert !a | MapElemUpdate !a
 
-  Update _ <> Delete   = Delete
-  Delete   <> Update y = Insert y
+instance Semigroup a => Semigroup (MapDiffElem a) where
+  MapElemDelete     <> MapElemDelete     = MapElemDelete
+  MapElemInsert  _  <> MapElemInsert  y  = MapElemInsert     y
+  MapElemUpdate  x  <> MapElemUpdate  y  = MapElemUpdate  (  x <> y)
 
-  Insert x <> Update y = Insert (x <> y)
-  Update _ <> Insert y = Insert y
+  MapElemInsert  _  <> MapElemDelete     = MapElemDelete
+  MapElemDelete     <> MapElemInsert  y  = MapElemInsert     y
+
+  MapElemUpdate  _  <> MapElemDelete     = MapElemDelete
+  MapElemDelete     <> MapElemUpdate  y  = MapElemInsert     y
+
+  MapElemInsert  x  <> MapElemUpdate  y  = MapElemInsert  (  x <> y)
+  MapElemUpdate  _  <> MapElemInsert  y  = MapElemInsert     y
 
 
 
@@ -96,8 +115,6 @@ instance Semigroup a => Semigroup (Update a) where
 -- updates made to the map and write the differences out to disk at the end.
 -- The partial tracking map is the data structure we use to do this.
 
-data PTMap k a = PTMap !(Map k (Maybe a)) !(Map k (Update a))
-
 -- Another trick will be to parametrise code over the map type, to enable
 -- us to swap out a normal Data.Map for a PTMap.
 
@@ -110,23 +127,52 @@ class Mapping map where
   delete :: Ord k => k      -> map k a -> map k a
 
 
+data PMap k a = PMap !(Map k a)  -- The keys asked for that are present
+                     !(Set k)    -- The keys asked for that are not present
+
+makePMap :: Ord k => Map k a -> Set k -> PMap k a
+makePMap m ks =
+    PMap present absent
+  where
+    present = Map.restrictKeys m ks
+    absent  = ks Set.\\ Map.keysSet present
+
+instance Mapping PMap where
+  lookup k (PMap present absent) =
+    case Map.lookup k present of
+      Just v        -> Just v
+      Nothing
+        | Set.member k absent
+                    -> Nothing
+        | otherwise -> error "PMap.lookup: used a key not fetched from disk"
+
+  insert k v (PMap present absent) = PMap (Map.insert k v present) absent
+  delete k   (PMap present absent) = PMap (Map.delete k   present) absent
+  update k v (PMap present absent) = PMap (Map.insertWith (<>) k v present) absent
+
+
+newtype DiffMap  k v = DiffMap (Diff (Map k v))
+  deriving (Semigroup, Monoid)
+
+instance Mapping DiffMap where
+  lookup _ _ = error "DiffMap.lookup not supported"
+
+  insert k v (DiffMap (MapDiff d)) = DiffMap (MapDiff (Map.insert k (MapElemInsert v) d))
+  delete k   (DiffMap (MapDiff d)) = DiffMap (MapDiff (Map.insert k MapElemDelete     d))
+  update k v (DiffMap (MapDiff d)) = DiffMap (MapDiff (Map.insertWith (<>) k (MapElemUpdate v) d))
+
+
+data PTMap k a = PTMap !(PMap k a) !(DiffMap k a)
+
+makePTMap :: Ord k => Map k a -> Set k -> PTMap k a
+makePTMap m ks = PTMap (makePMap m ks) (DiffMap (MapDiff Map.empty))
+
 instance Mapping PTMap where
-  lookup k (PTMap m _d) =
-    case Map.lookup k m of
-      Nothing -> error "PTMap.lookup: used a key not fetched from disk"
-      Just v  -> v
+  lookup k (PTMap m _) = lookup k m
 
-  insert k v (PTMap m d) =
-    PTMap (Map.insert k (Just v) m)
-          (Map.insert k (Insert v) d)
-
-  delete k (PTMap m d) =
-    PTMap (Map.insert k Nothing m)
-          (Map.insert k Delete d)
-
-  update k v (PTMap m d) =
-    PTMap (Map.insertWith (<>) k (Just v) m)
-          (Map.insertWith (<>) k (Update v) d)
+  insert k v (PTMap m d) = PTMap (insert k v m) (insert k v d)
+  delete k   (PTMap m d) = PTMap (delete k   m) (delete k   d)
+  update k v (PTMap m d) = PTMap (update k v m) (update k v d)
 
 
 -- Vertical composition
@@ -145,13 +191,104 @@ instance Mapping PTMap where
 -- mapping from disk before a series of operations, and when we collect the
 -- updates at the end to write out to disk again.
 
-class HasOnDiskMappings state where
+data    EmptyMap k v = EmptyMap
+newtype KeySet   k v = KeySet (Set k)
+
+
+class HasMappings (state :: (* -> * -> *) -> *) where
+  type StateMappingKeyConstraint   state :: * -> Constraint
+  type StateMappingValueConstraint state :: * -> Constraint
+
+  traverseMappings :: Applicative f
+                   => (forall k v. Ord k
+                                => Semigroup v
+                                => StateMappingKeyConstraint   state k
+                                => StateMappingValueConstraint state v
+                                => map k v -> f (map' k v))
+                   -> state map -> f (state map')
+
+  -- The common pure case, not needing Applicative
+  fmapMappings :: (forall k v. Ord k
+                            => Semigroup v
+                            => StateMappingKeyConstraint   state k
+                            => StateMappingValueConstraint state v
+                            => map k v -> map' k v)
+               -> state map -> state map'
+  fmapMappings f = runIdentity . traverseMappings (pure . f)
+
+-- | In addition to 'HasMappings', if the state type consists only of mappings
+-- then we can zip two states together just using a function on the matching
+-- maps. Or similarly we can make one from scratch with constant mappings.
+--
+-- This zip would not be possible if the state contained any other data as we
+-- would need combining functions for the other parts.
+--
+class HasMappings state => HasOnlyMappings state where
+  traverse0Mappings :: Applicative f
+                    => (forall k v. Ord k
+                                 => Semigroup v
+                                 => StateMappingKeyConstraint   state k
+                                 => StateMappingValueConstraint state v
+                                 => f (map k v))
+                    -> f (state map)
+
+  traverse2Mappings :: Applicative f
+                    => (forall k v. Ord k
+                                 => Semigroup v
+                                 => StateMappingKeyConstraint   state k
+                                 => StateMappingValueConstraint state v
+                                 => map k v -> map' k v -> f (map'' k v))
+                    -> state map -> state map' -> f (state map'')
+
+  traverse2Mappings_ :: Applicative f
+                     => (forall k v. Ord k
+                                  => Semigroup v
+                                  => StateMappingKeyConstraint   state k
+                                  => StateMappingValueConstraint state v
+                                  => map k v -> map' k v -> f ())
+                     -> state map -> state map' -> f ()
+
+  -- The common pure case, not needing Applicative
+  constMappings :: (forall k v. Ord k
+                             => Semigroup v
+                             => StateMappingKeyConstraint   state k
+                             => StateMappingValueConstraint state v
+                             => map k v)
+                -> state map
+  constMappings f = runIdentity (traverse0Mappings (pure f))
+
+  zipMappings  :: (forall k v. Ord k
+                            => Semigroup v
+                            => StateMappingKeyConstraint   state k
+                            => StateMappingValueConstraint state v
+                            => map k v -> map' k v -> map'' k v)
+               -> state map -> state map' -> state map''
+  zipMappings f a b = runIdentity (traverse2Mappings (\x y -> pure (f x y)) a b)
+
+class (HasMappings state, HasOnlyMappings (OnDiskMappings state))
+   => HasOnDiskMappings state where
 
   data OnDiskMappings state :: (* -> * -> *) -> *
 
   projectOnDiskMappings :: state map -> OnDiskMappings state map
   injectOnDiskMappings  :: OnDiskMappings state map -> state any -> state map
 
+
+class MonoidialMapping map where
+    memptyMap   :: (Ord k, Semigroup v) => map k v
+    mappendMaps :: (Ord k, Semigroup v) => map k v -> map k v -> map k v
+
+instance MonoidialMapping DiffMap where
+    memptyMap   = mempty
+    mappendMaps = (<>)
+
+instance (HasOnlyMappings (OnDiskMappings state), MonoidialMapping map)
+      => Semigroup (OnDiskMappings state map) where
+   (<>) = zipMappings mappendMaps
+
+instance (HasOnlyMappings (OnDiskMappings state), MonoidialMapping map)
+      => Monoid (OnDiskMappings state map) where
+   mempty = constMappings memptyMap
 
 
 -- Horizontal composition
@@ -174,23 +311,75 @@ class HasOnDiskMappings state where
 -- Atomic, Consistent, Isolated but not Durable.
 
 
+-- Diff sequences
+-----------------
+
+-- | A DB extension sequence is a sequence of in-memory extensions
+-- (i.e. changes) to some other (e.g. disk-based) database.
+--
+type DbExtensionSeq state =
+       FT.FingerTree (DbExtensionsMeasure state)
+                     (DbExtension state)
+
+-- | An individual DB extension is a state where the mappings are actually
+-- differences on mappings.
+--
+-- As a potential optimisation (reduced number of potentially-expensive
+-- 'projectOnDiskMappings' traversals) we could split it out and keep the
+-- in-memory only bits and the on-disk differences separately.
+--
+data DbExtension state = DbExtension !(state EmptyMap)
+                                     !(OnDiskMappings state DiffMap)
+
+data DbExtensionsMeasure state =
+       DbExtensionsMeasure !Int !(OnDiskMappings state DiffMap)
+
+instance HasOnDiskMappings state => Semigroup (DbExtensionsMeasure state) where
+  DbExtensionsMeasure l1 a1 <> DbExtensionsMeasure l2 a2 =
+    DbExtensionsMeasure (l1+l2) (a1 <> a2)
+
+instance HasOnDiskMappings state => Monoid (DbExtensionsMeasure state) where
+  mempty = DbExtensionsMeasure 0 mempty
+
+instance HasOnDiskMappings state
+      => FT.Measured (DbExtensionsMeasure state) (DbExtension state) where
+  measure (DbExtension _s d) = DbExtensionsMeasure 1 d
+
+
+
 -- Disk operations
 ------------------
 
+class DiskDB state dbhandle where
+  readDB  :: dbhandle -> OnDiskMappings state KeySet -> IO (OnDiskMappings state PMap)
+  writeDB :: dbhandle -> OnDiskMappings state DiffMap -> IO ()
+
 {-
-newtype Keys k a = Keys (Set k)
-
-class DB state dbhandle where
-  prepare :: dbhandle
-          -> OnDiskMappings state Keys
-          -> IO (OnDiskMappings state PTMap)
-
-  -- ...
-
-
 class DBTable tblhandle
 -}
 
+newtype TVarDB state = TVarDB (OnDiskMappings state TVarDBTable)
+
+newtype TVarDBTable k v = TVarDBTable (TVar (Map k v))
+
+instance HasOnDiskMappings state => DiskDB state (TVarDB state) where
+
+  readDB  (TVarDB tables) keysets = traverse2Mappings readTVarDBTable  tables keysets
+  writeDB (TVarDB tables) diffs   = traverse2Mappings_ writeTVarDBTable tables diffs
+
+readTVarDBTable :: Ord k => TVarDBTable k v -> KeySet k v -> IO (PMap k v)
+readTVarDBTable (TVarDBTable tv) (KeySet ks) =
+  STM.atomically $ do
+    tbl <- STM.readTVar tv
+    let !pmap = makePMap tbl ks
+    return pmap
+
+writeTVarDBTable :: (Ord k, Semigroup v) => TVarDBTable k v -> DiffMap k v -> IO ()
+writeTVarDBTable (TVarDBTable tv) (DiffMap d) =
+  STM.atomically $ do
+    tbl <- STM.readTVar tv
+    let !tbl' = applyDiff tbl d
+    STM.writeTVar tv tbl'
 
 
 
@@ -212,8 +401,8 @@ abs (DbModel d m) = d ◁ m
 flush :: (Ord k, Monoid a) => DbModel k a -> DbModel k a
 flush (DbModel d m) = DbModel (d ◁ m) mempty
 
-prepare :: DbModel k a -> Set k -> PTMap k a
-prepare (DbModel d m)
+--prepare :: DbModel k a -> Set k -> PTMap k a
+--prepare (DbModel d m)
 
 
 -- Example
@@ -260,7 +449,47 @@ data    TxOut = TxOut !Addr !Coin  deriving (Eq, Show)
 newtype Addr  = Addr Int           deriving (Eq, Ord, Show)
 newtype Coin  = Coin Int           deriving (Eq, Num, Show)
 
-instance Semigroup Coin where a <> b = a + b
+instance Semigroup Coin  where a <> b = a + b
+instance Semigroup TxOut where _ <> _ = error "Semigroup TxOut: cannot use updates on the utxo"
+
+class Example a
+instance Example TxIn
+instance Example TxOut
+instance Example Addr
+instance Example Coin
+
+instance HasMappings LedgerState where
+  type StateMappingKeyConstraint   LedgerState = Example
+  type StateMappingValueConstraint LedgerState = Example
+
+  traverseMappings f LedgerState { utxos, pparams } =
+    LedgerState <$> traverseMappings f utxos
+                <*> pure pparams
+
+instance HasMappings UTxOState where
+  type StateMappingKeyConstraint   UTxOState = Example
+  type StateMappingValueConstraint UTxOState = Example
+
+  traverseMappings f UTxOState { utxo, utxoagg } =
+    UTxOState <$> f utxo
+              <*> f utxoagg
+
+instance HasMappings (OnDiskMappings LedgerState) where
+  type StateMappingKeyConstraint   (OnDiskMappings LedgerState) = Example
+  type StateMappingValueConstraint (OnDiskMappings LedgerState) = Example
+
+  traverseMappings f LedgerStateMappings { utxoMapping, utxoaggMapping } =
+    LedgerStateMappings <$> f utxoMapping
+                        <*> f utxoaggMapping
+
+instance HasOnlyMappings (OnDiskMappings LedgerState) where
+  traverse0Mappings f =
+    LedgerStateMappings <$> f
+                        <*> f
+
+  traverse2Mappings f st1 st2 =
+    LedgerStateMappings <$> f (utxoMapping st1) (utxoMapping st2)
+                        <*> f (utxoaggMapping st1) (utxoaggMapping st2)
 
 instance HasOnDiskMappings LedgerState where
 

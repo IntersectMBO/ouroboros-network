@@ -69,8 +69,20 @@ We start with a typical module preamble.
 \begin{code}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module UTxOAPI where
+
+import            Data.Map.Strict (Map)
+import qualified  Data.Map.Strict as Map
+import qualified  Data.Map.Merge.Strict as Map
 \end{code}
+
+%% ! as bang pattern, so prefix operator not infix
+%format ! = "~ !"
+%format <> = "\diamond"
+%format mempty = "\emptyset"
 
 \section{Ledger state handling in the current consensus and ledger layers}
 
@@ -292,7 +304,76 @@ class Monoid (Diff a) => Changes a where
 \end{code}
 The |Diff a| corresponds to the $\Delta{A}$ and |applyDiff| to the
 $\triangleleft$ operator. The |Monoid (Diff a)| superclass constraint captures
-the point that differences form a monoid.
+the point that differences form a monoid. We notate the monoid unit element as
+|mempty| and use |<>| for composition operator.
+
+\subsection{Differences on |Map|}
+To give an intersting and useful example, we provide an instance for ordinary
+finite mappings based on ordered keys: Haskell's usual |Map| type.
+
+The representation for a difference of a map will be itself a map, but with
+an element type that tracks the changes to the element.
+\begin{code}
+data MapDiffElem a = MapElemDelete | MapElemInsert !a | MapElemUpdate !a
+\end{code}
+The |Changes| instance gives the representation and the apply operator. For
+maps the |applyDiff| is a merge of the underlying map with the map of changes.
+The strategy for the merge is:
+\begin{itemize}
+\item for elements only in the underlying map, to preserve them;
+\item for elements only in the overlay, to insert them; and
+\item for elements in both maps to apply the per-element change to the
+      underlying value.
+\end{itemize}
+The code for the merge follows straightforwardly from the above.
+\begin{code}
+instance (Ord k, Monoid a) => Changes (Map k a) where
+  newtype Diff (Map k a) = MapDiff (Map k (MapDiffElem a))
+
+  applyDiff :: Map k a -> Diff (Map k a) -> Map k a
+  applyDiff m (MapDiff md) =
+      Map.merge
+        Map.preserveMissing
+        (Map.mapMaybeMissing      insert)
+        (Map.zipWithMaybeMatched  apply)
+        m
+        md
+    where
+      insert :: k -> MapDiffElem a -> Maybe a
+      insert _    MapElemDelete     = Nothing
+      insert _ (  MapElemInsert x)  = Just x
+      insert _ (  MapElemUpdate x)  = Just x
+
+      apply :: k -> a -> MapDiffElem a -> Maybe a
+      apply _ _    MapElemDelete     = Nothing
+      apply _ _ (  MapElemInsert y)  = Just y
+      apply _ x (  MapElemUpdate y)  = Just (x<>y)
+\end{code}
+Finally we need that changes on maps be monoidal: with empty maps and
+composition of changes. We define the composition of differences on maps to
+be the point-wise composition of matching elements, which in turn relies on
+the |MapDiffElem| forming a semi-group.
+\begin{code}
+instance (Ord k, Semigroup a) => Monoid (Diff (Map k a)) where
+  mempty = MapDiff Map.empty
+
+instance (Ord k, Semigroup a) => Semigroup (Diff (Map k a)) where
+  MapDiff a <> MapDiff b = MapDiff (Map.unionWith (<>) a b)
+
+instance Semigroup a => Semigroup (MapDiffElem a) where
+  MapElemDelete     <> MapElemDelete     = MapElemDelete
+  MapElemInsert  _  <> MapElemInsert  y  = MapElemInsert     y
+  MapElemUpdate  x  <> MapElemUpdate  y  = MapElemUpdate  (  x <> y)
+
+  MapElemInsert  _  <> MapElemDelete     = MapElemDelete
+  MapElemDelete     <> MapElemInsert  y  = MapElemInsert     y
+
+  MapElemUpdate  _  <> MapElemDelete     = MapElemDelete
+  MapElemDelete     <> MapElemUpdate  y  = MapElemInsert     y
+
+  MapElemInsert  x  <> MapElemUpdate  y  = MapElemInsert  (  x <> y)
+  MapElemUpdate  _  <> MapElemInsert  y  = MapElemInsert     y
+\end{code}
 
 \section{Abstract models of hybrid on-disk/in-memory databases}
 \label{abstract-models}
@@ -817,6 +898,7 @@ Here is the same in pictorial style:
 \end{center}
 
 \subsection{Multiple logical database states}
+\label{multiple-logical-database-states}
 
 In the models so far, while we have of course defined many logical values of
 a database, we have implicitly assumed that these are the evolving states of
@@ -912,15 +994,15 @@ measures other than simply length.
 
 There's a few operations we need to be able to perform in this setting
 \begin{enumerate}
-\item Perform a transaction. We need to be able to append to the end of the
-      sequence of logical database values. This corresponds to adding a block
-      to the end of the chain, or adding more transactions to a mempool.
-\item Replace any suffix of the sequence of logical database values. This is
-      actually a strict generalisation of 1. above. This corresponds to
-      switching to a fork, which is a generalisation of appending a single
-      block. The replacement sub-sequence can start anywhere in the sequence and
-      the replacement can have any length sequence of differences arising from
-      blocks.
+\item Perform reads of sets of keys and `fast forward' the resulting read set
+      using the accumulated sequence of differences.
+\item Replace any suffix of the sequence of logical database values. This
+      corresponds to switching to a fork. The replacement sub-sequence can
+      start anywhere in the sequence and the replacement can have any length
+      sequence of differences arising from blocks. The very common special case
+      is to append to the end of the sequence of logical database values.
+      This corresponds to adding a block to the end of the chain, or adding
+      more transactions to a mempool.
 \item Flush changes to disk. We need to be able to take some of the oldest
       changes and apply them to the disk store.
 \end{enumerate}
@@ -938,6 +1020,28 @@ In section ?? we will look at a design for the consensus ledger state
 management and chain selection based on the abstract model here, relying only
 on the operations we have identified here.
 
+\section{Introducing a simple ledger example}
+To help us illustrate the API ideas we will want to use a simple but realistic
+example.
+
+We will use a running example of a simplified ledger, with ledger state and
+ledger rules for validating blocks containing transactions. We start with
+various basic types needed to represent transactions and their constituent
+parts.
+\begin{code}
+newtype  Block  = Block [Tx]          deriving (Eq, Show)
+data     Tx     = Tx [TxIn] [TxOut]   deriving (Eq, Show)
+data     TxIn   = TxIn !TxId !TxIx    deriving (Eq, Ord, Show)
+newtype  TxId   = TxId Int            deriving (Eq, Ord, Show)
+newtype  TxIx   = TxIx Int            deriving (Eq, Ord, Show)
+data     TxOut  = TxOut !Addr !Coin   deriving (Eq, Show)
+newtype  Addr   = Addr Int            deriving (Eq, Ord, Show)
+newtype  Coin   = Coin Int            deriving (Eq, Show)
+
+instance Semigroup Coin where Coin a <> Coin b = Coin (a + b)
+\end{code}
+We will flesh out the example further in later sections.
+
 \section{Partitioned and hybrid in-memory/on-disk storage}
 
 As discussed in \cref{partitioned-representation}, only the large mappings will
@@ -951,9 +1055,13 @@ is:
       recent changes are kept in memory, while the bulk of the data is kept on
       disk.
 \end{description}
-In this section we will focus on the partitioning, while keeping in mind that
-the data kept primarily on disk will also have recent changes kept in memory.
+In this section we will focus on the partitioning idea. We will not include the
+ideas of hybrid representations from \cref{sec:hybrid-on-disk-in-memory-db} or
+of multiple logical database values discussed in
+\cref{multiple-logical-database-states}. We will postpone incorporating these
+for later sections.
 
+\subsection{Parametrising over large mappings}
 The approach we will take is the following. The ledger state is a relatively
 complicated compound type consisting of many nested records and tuples.
 Consider this compound type as a tree where type containment corresponds to
@@ -961,10 +1069,76 @@ child-node relationships and atomic types correspond to leaf nodes. For example
 a pair of integers would correspond to a root node, for the pair itself, and
 two child nodes, for the two integers. Given this way of thinking of the type
 we then say that we will keep the root of the type in memory. Specific leaf
-nodes corresponding to the large mappings will be on disk. All other leaf nodes
-and interior nodes will also be in memory. So overall we have a type that is
-in memory except for certain designated finite mappings.
+nodes corresponding to the large mappings will be kept on disk. All other leaf
+nodes and interior nodes will also be in memory. So overall our ambition is
+to simulate a type that is in memory except for certain designated finite
+mappings which are kept on disk.
 
+To realise this ambition we will use a number of tricks with the choice of the
+representation of mappings in the ledger state type. To do so we will
+parametrise the ledger state over the choice of the mapping type. We
+will then pick different choices of mapping for different purposes.
+
+\subsection{The example ledger state}
+To illustrate this idea we will return to our example ledger and define our
+ledger state. Note that the ledger state type is parametrised by the type of
+large mappings.
+\begin{code}
+data  LedgerState map =
+      LedgerState {
+        utxos    :: UTxOState map,
+        pparams  :: PParams
+      }
+\end{code}
+The |pparams| stands in for other state, like protocol parameters. The exact
+content of this does not matter for the example. It is merely a place-holder.
+\begin{code}
+data PParams = PParams
+\end{code}
+The |utxos| represents some nested part of the overall ledger state. In
+particular it demonstrates two large mappings, a UTxO and an aggregation of the
+coin values in the UTxO by the address. Here is where we actually use the map
+collection type.
+\begin{code}
+data  UTxOState map =
+      UTxOState {
+        utxo     :: map TxIn TxOut,
+        utxoagg  :: map Addr Coin
+      }
+\end{code}
+We can recover a `normal' in-memory ledger state representation by choosing to
+instantiate with the ordinary in-memory map type |Map| to give us
+|LedgerState Map|. We might use this for a reference implementation that does
+everything in-memory.
+
+\subsection{Always-empty mappings}
+We can also define an always-empty map type that has a nullary representation.
+\begin{code}
+data EmptyMap k v = EmptyMap
+\end{code}
+If we pick this map type, i.e. |LedgerState EmptyMap|, it would give us a
+ledger state with no data for the large mappings at all. This gives us a
+kind of ledger containing only those parts of the ledger state that are only
+kept in memory. This will be useful.
+
+\subsection{Selecting only the mappings}
+In addition to taking a ledger state type and picking the type of the large
+mappings within it, we will also need to work with \emph{only} the large
+mappings without all of the other parts of the ledger state. We still want to
+be able to select the mapping representation.
+
+We will use a class to capture the notion of 
+\begin{code}
+class HasOnDiskMappings (state :: (* -> * -> *) -> *) where
+
+  data OnDiskMappings state :: (* -> * -> *) -> *
+
+  projectOnDiskMappings  :: state map -> OnDiskMappings state map
+  injectOnDiskMappings   :: OnDiskMappings state map -> state any -> state map
+\end{code}
+
+
+Performing a transaction in this partitioned setting is depicted as follows.
 \begin{center}
 \begin{tikzpicture}
 \begin{scope}[thick]
@@ -1050,15 +1224,11 @@ in memory except for certain designated finite mappings.
 \end{scope}
 \end{tikzpicture}
 \end{center}
+We start on the left hand side with an on-disk store and an in-memory value.
+This value is those parts of the ledger state that are only kept in memory.
+The leaf types corresponding to the large mappings are replaced with nullary
+place holders.
 
-\begin{code}
-class HasOnDiskMappings (state :: (* -> * -> *) -> *) where
-
-  data OnDiskMappings state :: (* -> * -> *) -> *
-
-  projectOnDiskMappings  :: state map -> OnDiskMappings state map
-  injectOnDiskMappings   :: OnDiskMappings state map -> state any -> state map
-\end{code}
 
 
 \section{Partial tracking mappings}
@@ -1076,8 +1246,41 @@ correspondence.
 For the special case of functions on finite mappings, that use a limited number
 of operations, we can derive such difference functions automatically. This also
 generalises to combinations of finite mappings. As discussed in
-\cref{partitioned-representation} 
+\cref{partitioned-representation} ...
 
+\begin{code}
+class Mapping map where
+
+  lookup  ::                 Ord k => k        -> map k a -> Maybe a
+  insert  ::                 Ord k => k  -> a  -> map k a -> map k a
+  delete  ::                 Ord k => k        -> map k a -> map k a
+  update  :: Semigroup a =>  Ord k => k  -> a  -> map k a -> map k a
+\end{code}
+
+
+A straightforward way to define 
+\begin{code}
+data PTMap k a = PTMap  !(Map k (Maybe a))
+                        !(Diff (Map k a))
+
+instance Mapping PTMap where
+  lookup k (PTMap m _) =
+    case Map.lookup k m of
+      Nothing  -> error "PTMap.lookup: used a key not fetched from disk"
+      Just v   -> v
+
+  insert k v (PTMap m (MapDiff d)) =
+    PTMap  (             Map.insert k (Just v)           m)
+           (MapDiff   (  Map.insert k (MapElemInsert v)  d))
+
+  delete k (PTMap m (MapDiff d)) =
+    PTMap  (           Map.insert k Nothing        m)
+           (MapDiff (  Map.insert k MapElemDelete  d))
+
+  update k v (PTMap m (MapDiff d)) =
+    PTMap  (           Map.insertWith (<>) k (Just v)           m)
+           (MapDiff (  Map.insertWith (<>) k (MapElemUpdate v)  d))
+\end{code}
 
 \addcontentsline{toc}{section}{References}
 \bibliographystyle{plainnat}
