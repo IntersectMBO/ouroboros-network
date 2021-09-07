@@ -85,7 +85,8 @@ import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec ( noTimeLimitsHandshake
+import           Ouroboros.Network.Protocol.Handshake.Codec ( cborTermVersionDataCodec
+                                                            , noTimeLimitsHandshake
                                                             , timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -101,7 +102,7 @@ import           Simulation.Network.Snocket
 
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
-import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), AbsBearerInfo, toBearerInfo)
+import           Test.Simulation.Network.Snocket hiding (tests)
 import           Test.Ouroboros.Network.ConnectionManager (verifyAbstractTransition)
 
 tests :: TestTree
@@ -315,7 +316,7 @@ withInitiatorOnlyConnectionManager name timeouts cmTrTracer snocket localAddr
           cmIPv6Address = Nothing,
           cmAddressType = \_ -> Just IPv4Address,
           cmSnocket = snocket,
-          connectionDataFlow = const Unidirectional,
+          connectionDataFlow = getProtocolDataFlow . snd,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
@@ -333,11 +334,11 @@ withInitiatorOnlyConnectionManager name timeouts cmTrTracer snocket localAddr
             -- TraceSendRecv
             haHandshakeTracer = (name,) `contramap` nullTracer,
             haHandshakeCodec = unversionedHandshakeCodec,
-            haVersionDataCodec = unversionedProtocolDataCodec,
+            haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
             haAcceptVersion = acceptableVersion,
             haTimeLimits = handshakeTimeLimits
           }
-        (unversionedProtocol clientApplication)
+        (dataFlowProtocol Unidirectional clientApplication)
         (mainThreadId, debugMuxErrorRethrowPolicy
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
@@ -499,7 +500,7 @@ withBidirectionalConnectionManager name timeouts
           cmSnocket      = snocket,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
           cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          connectionDataFlow = const Duplex,
+          connectionDataFlow = getProtocolDataFlow . snd,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
@@ -515,11 +516,11 @@ withBidirectionalConnectionManager name timeouts
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
-              haVersionDataCodec = unversionedProtocolDataCodec,
+              haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
               haTimeLimits = handshakeTimeLimits
             }
-          (unversionedProtocol serverApplication)
+          (dataFlowProtocol Duplex serverApplication)
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
