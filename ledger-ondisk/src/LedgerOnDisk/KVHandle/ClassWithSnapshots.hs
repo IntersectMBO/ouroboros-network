@@ -123,6 +123,8 @@ class
   -- The superclass constraint guarantees  state can only contain appropriate keys and values
   type DBKVConstraint dbhandle :: Type -> Type -> Constraint
 
+  -- | The type the DB stores.
+  -- TODO better name plz
   type T dbhandle :: (Type -> Type -> Type) -> Type
 
   -- | The abstract type representing prepared - but not submitted - queries

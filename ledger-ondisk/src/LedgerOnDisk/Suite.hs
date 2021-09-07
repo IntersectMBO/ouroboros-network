@@ -12,6 +12,8 @@ import qualified Test.Tasty.QuickCheck.Laws as Laws
 
 import qualified LedgerOnDisk.Class
 import qualified LedgerOnDisk.WWB
+import qualified LedgerOnDisk.KVHandle.RangeQuerySuite
+
 import Data.Proxy
 import Control.Monad.Reader
 import GHC.Base (noinline)
@@ -75,4 +77,5 @@ tests = testGroup "LedgerOnDisk"
     , testProperty "prop_applyDtoHashMap" $ prop_applyDtoHashMap (Proxy @ (Sum Int))
     , testProperty "prop_applyDtoHashMaybeMap" $ prop_applyDtoHashMaybeMap (Proxy @ (Sum Int))
     ]
+  , LedgerOnDisk.KVHandle.RangeQuerySuite.suite
   ]

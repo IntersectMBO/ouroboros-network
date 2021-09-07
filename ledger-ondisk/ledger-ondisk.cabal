@@ -42,7 +42,9 @@ library
                        LedgerOnDisk.KVHandle.OnDiskMappings
                        LedgerOnDisk.KVHandle.Class
                        LedgerOnDisk.KVHandle.RangeQuery
+                       LedgerOnDisk.KVHandle.RangeQuerySuite
                        LedgerOnDisk.KVHandle.ClassWithSnapshots
+
 
                        LedgerOnDisk.Haskey.Types
                        LedgerOnDisk.Haskey.Impl
@@ -51,6 +53,9 @@ library
 
                        LedgerOnDisk.Mapping.Class
                        LedgerOnDisk.Mapping.PTMap
+
+                       LedgerOnDisk.LowLevel.Class
+                       LedgerOnDisk.LowLevel.InMemory
 
                        Example.Types
                        Example.Rules

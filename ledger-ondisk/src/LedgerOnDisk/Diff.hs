@@ -62,18 +62,18 @@ applyD x = \case
   DRemove -> Nothing
   DNoChange -> x
 
-applyDforK :: (Eq k, Hashable k, Semigroup v) => k -> Diff v -> HashMap k v -> HashMap k v
+applyDforK :: (Eq k, Hashable k) => k -> Diff v -> HashMap k v -> HashMap k v
 applyDforK k = \case
   DChangeTo v -> HashMap.insert k v
   DMappend v -> HashMap.insertWith (<>) k v
   DRemove -> HashMap.delete k
   DNoChange -> id
 
-applyDtoHashMap :: (Semigroup v, Eq k, Hashable k) => HashMap k (Diff v) -> HashMap k v -> HashMap k v
+applyDtoHashMap :: (Eq k, Hashable k) => HashMap k (Diff v) -> HashMap k v -> HashMap k v
 applyDtoHashMap d = appEndo (HashMap.foldMapWithKey go d) where
   go k = Endo . applyDforK k
 
-applyDifftoMap :: Semigroup v => Ord k => Map k (Diff v) -> Map k v -> Map k v
+applyDifftoMap :: Ord k => Map k (Diff v) -> Map k v -> Map k v
 applyDifftoMap d = appEndo (Map.foldMapWithKey go d) where
   go k = Endo . \case
     DChangeTo v -> Map.insert k v

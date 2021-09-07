@@ -21,6 +21,7 @@ import Data.HashMap.Strict (HashMap)
 import Data.Map.Strict (Map)
 import Data.Proxy
 import Data.Set (Set)
+import Test.QuickCheck
 
 -- | An instance 'HasOnDiskMappings state' witnesses a type of the shape `(Type -> Type -> Type) -> Type` embeds
 -- a collection of maps 'OnDiskMappings state'. We can think of 'state map' as being isomorphic to '(t, OnDiskMappings state map)'
@@ -28,7 +29,9 @@ import Data.Set (Set)
 class HasOnDiskMappings state where
   data OnDiskMappings state :: (Type -> Type -> Type) -> Type
 
-  onDiskMappingsLens ::  Lens (state map1) (state map2) (OnDiskMappings state map1) (OnDiskMappings state map2)
+  onDiskMappingsLens ::  Lens (state map1) (state map2)
+    (OnDiskMappings state map1) (OnDiskMappings state map2)
+
   projectOnDiskMappings :: state map -> OnDiskMappings state map
   projectOnDiskMappings = view onDiskMappingsLens
   injectOnDiskMappings :: OnDiskMappings state map -> state any -> state map
@@ -49,7 +52,7 @@ instance Monoid (NullMap k a) where
 type role Keys nominal nominal
 newtype Keys k a = Keys (Set k)
   deriving stock (Eq, Show)
-  deriving newtype (Semigroup, Monoid)
+  deriving newtype (Semigroup, Monoid, Arbitrary)
 
 instance forall (state :: (Type -> Type -> Type) -> Type) (map :: Type -> Type -> Type) (c :: Type -> Type -> Constraint).
   ( SemigroupMap map ~ c
@@ -72,7 +75,7 @@ type instance SemigroupMap HashMap = KeysHashableValuesSemigroups
 type instance SemigroupMap NullMap = UnrestrictedKeysAndValues
 type instance SemigroupMap Keys = KeysAreOrd
 type instance SemigroupMap DiffMap = KeysAreOrd
-type instance SemigroupMap PTMap = KeysAreOrd
+-- type instance SemigroupMap PTMap = KeysAreOrd
 
 class (Ord k) => KeysAreOrd k v
 instance (Ord k) => KeysAreOrd k v
