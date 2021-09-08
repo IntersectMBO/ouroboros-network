@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -38,10 +39,10 @@ import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                      ConnectionId, LocalAddress,
                      NetworkClientSubcriptionTracers,
                      NodeToClientProtocols (..),
+                     NodeToClientVersion,
                      NodeToClientVersionData (NodeToClientVersionData),
                      ncSubscriptionWorker, newNetworkMutableState,
                      versionedNodeToClientProtocols)
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion)
 import           Ouroboros.Network.Protocol.Handshake.Version (Versions,
                    foldMapVersions)
 import qualified Ouroboros.Network.Snocket as Snocket

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -12,6 +13,7 @@
 module Ouroboros.Consensus.Ledger.Query (
     BlockQuery
   , ConfigSupportsNode (..)
+  , HeaderStateTip (..)
   , Query (..)
   , QueryLedger (..)
   , QueryVersion (..)
@@ -22,6 +24,11 @@ module Ouroboros.Consensus.Ledger.Query (
   , queryEncodeNodeToClient
   ) where
 
+import           GHC.Generics (Generic)
+
+import           Cardano.Slotting.Block (BlockNo (..))
+import           Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
+
 import           Control.Exception (Exception, throw)
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
@@ -30,6 +37,7 @@ import           Data.Typeable (Typeable)
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Codec.CBOR.Decoding
 import           Codec.CBOR.Encoding
+import           Codec.Serialise (Serialise (..))
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
@@ -46,6 +54,12 @@ import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
+
+import           Ouroboros.Consensus.HeaderValidation (AnnTip (..),
+                     HasAnnTip (..), HeaderState (..))
+
+import           Ouroboros.Network.Block (HeaderHash)
+
 
 {-------------------------------------------------------------------------------
   Queries
@@ -65,12 +79,19 @@ data Query blk result where
   -- Supported by 'QueryVersion' >= 'QueryVersion1'.
   GetSystemStart :: Query blk SystemStart
 
+  -- | Get the 'GetHeaderStateTip' time.
+  --
+  -- Supported by 'QueryVersion' >= 'QueryVersionX'. -- TODO jky what version?
+  GetHeaderStateTip :: Query blk (WithOrigin (HeaderStateTip blk))
+
+
 instance (ShowProxy (BlockQuery blk)) => ShowProxy (Query blk) where
   showProxy (Proxy :: Proxy (Query blk)) = "Query (" ++ showProxy (Proxy @(BlockQuery blk)) ++ ")"
 
-instance (ShowQuery (BlockQuery blk)) => ShowQuery (Query blk) where
+instance (ShowQuery (BlockQuery blk), Show (HeaderHash blk)) => ShowQuery (Query blk) where
   showResult (BlockQuery blockQuery) = showResult blockQuery
   showResult GetSystemStart          = show
+  showResult GetHeaderStateTip       = show
 
 instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond (BlockQuery blockQueryA) == SomeSecond (BlockQuery blockQueryB)
@@ -80,9 +101,13 @@ instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond GetSystemStart == SomeSecond GetSystemStart = True
   SomeSecond GetSystemStart == _                         = False
 
+  SomeSecond GetHeaderStateTip == SomeSecond GetHeaderStateTip = True
+  SomeSecond GetHeaderStateTip == _                            = False
+
 instance Show (SomeSecond BlockQuery blk) => Show (SomeSecond Query blk) where
   show (SomeSecond (BlockQuery blockQueryA)) = "Query " ++ show (SomeSecond blockQueryA)
   show (SomeSecond GetSystemStart) = "Query GetSystemStart"
+  show (SomeSecond GetHeaderStateTip) = "Query GetHeaderStateTip"
 
 
 -- | Exception thrown in the encoders
@@ -127,6 +152,9 @@ queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
         GetSystemStart ->
             encodeListLen 1
          <> encodeWord8 1
+        GetHeaderStateTip ->
+            encodeListLen 1
+         <> encodeWord8 2
   where
     encodeBlockQuery blockQuery =
       encodeNodeToClient
@@ -152,6 +180,7 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
         case (size, tag) of
           (2, 0) -> decodeBlockQuery
           (1, 1) -> return (SomeSecond GetSystemStart)
+          (1, 2) -> return (SomeSecond GetHeaderStateTip)
           _      -> fail $ "Query: invalid size and tag" <> show (size, tag)
   where
     decodeBlockQuery = do
@@ -162,15 +191,21 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
         blockVersion
       return (SomeSecond (BlockQuery blockQuery))
 
-instance SerialiseResult blk (BlockQuery blk) => SerialiseResult blk (Query blk) where
+instance Serialise (HeaderHash blk) => Serialise (HeaderStateTip blk) where
+
+instance (SerialiseResult blk (BlockQuery blk), Serialise (HeaderHash blk), Typeable blk) => SerialiseResult blk (Query blk) where
   encodeResult codecConfig blockVersion (BlockQuery blockQuery) result
     = encodeResult codecConfig blockVersion blockQuery result
   encodeResult _ _ GetSystemStart result
+    = toCBOR result
+  encodeResult _ _ GetHeaderStateTip result
     = toCBOR result
 
   decodeResult codecConfig blockVersion (BlockQuery query)
     = decodeResult codecConfig blockVersion query
   decodeResult _ _ GetSystemStart
+    = fromCBOR
+  decodeResult _ _ GetHeaderStateTip
     = fromCBOR
 
 instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
@@ -182,12 +217,25 @@ instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
     = Just Refl
   sameDepIndex GetSystemStart _
     = Nothing
+  sameDepIndex GetHeaderStateTip GetHeaderStateTip
+    = Just Refl
+  sameDepIndex GetHeaderStateTip _
+    = Nothing
 
 deriving instance Show (BlockQuery blk result) => Show (Query blk result)
 
+data HeaderStateTip blk = HeaderStateTip {
+      queriedTipSlotNo  :: !SlotNo
+    , queriedTipBlockNo :: !BlockNo
+    , queriedTipInfo    :: !(HeaderHash blk)
+    }
+  deriving (Generic)
+
+deriving instance Show (HeaderHash blk) => Show (HeaderStateTip blk)
+
 -- | Answer the given query about the extended ledger state.
-answerQuery ::
-     (QueryLedger blk, ConfigSupportsNode blk)
+answerQuery :: forall blk result.
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
   -> Query blk result
   -> ExtLedgerState blk
@@ -195,6 +243,13 @@ answerQuery ::
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
   GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
+  GetHeaderStateTip -> case headerStateTip (headerState st) of
+    Origin -> Origin
+    At hst -> At HeaderStateTip
+      { queriedTipSlotNo  = annTipSlotNo hst
+      , queriedTipBlockNo = annTipBlockNo hst
+      , queriedTipInfo    = tipInfoHash (Proxy @blk) (annTipInfo hst)
+      }
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type

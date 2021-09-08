@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -5,6 +6,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+
 -- | Run the whole Node
 --
 -- Intended for qualified import.
@@ -51,6 +53,7 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
+
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
@@ -230,8 +233,7 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 -------------------------------------------------------------------------------}
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
-run :: forall blk.
-     RunNode blk
+run :: forall blk. RunNode blk
   => RunNodeArgs IO RemoteAddress LocalAddress blk
   -> StdRunNodeArgs IO blk
   -> IO ()
