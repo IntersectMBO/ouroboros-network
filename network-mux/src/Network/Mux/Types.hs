@@ -229,7 +229,7 @@ newtype SDUSize = SDUSize { getSDUSize :: Word16 }
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.
 --
 muxBearerAsChannel
-  :: forall m. Functor m
+  :: forall m. Applicative m
   => MuxBearer m
   -> MiniProtocolNum
   -> MiniProtocolDir
@@ -237,7 +237,8 @@ muxBearerAsChannel
 muxBearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),
-        recv = Just . msBlob . fst <$> read bearer noTimeout
+        recv = Just . msBlob . fst <$> read bearer noTimeout,
+        tryRecv = pure Nothing
       }
     where
       -- wrap a 'ByteString' as 'MuxSDU'
