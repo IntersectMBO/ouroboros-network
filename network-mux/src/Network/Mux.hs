@@ -548,7 +548,7 @@ muxChannel
     -> IngressQueue m
     -> Channel m
 muxChannel tracer egressQueue want@(Wanton w) mc md q =
-    Channel { send, recv}
+    Channel { send, recv, tryRecv }
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
@@ -586,6 +586,22 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         traceWith tracer $ MuxTraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
+
+    tryRecv :: m (Maybe (Maybe BL.ByteString))
+    tryRecv = do
+        -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
+        -- matching ingress queue. This is the same queue the 'demux' thread writes to.
+        traceWith tracer $ MuxTraceChannelTryRecvStart mc
+        mblob <- atomically $ do
+            blob <- readTVar q
+            if blob == BL.empty
+                then return Nothing
+                else writeTVar q BL.empty >> return (Just blob)
+        case mblob of
+          Nothing   -> traceWith tracer (MuxTraceChannelTryRecvEnd mc Nothing)
+          Just blob -> traceWith tracer (MuxTraceChannelTryRecvEnd mc
+                                          (Just $ fromIntegral $ BL.length blob))
+        return $ Just <$> mblob
 
 traceMuxBearerState :: Tracer m MuxTrace -> MuxBearerState -> m ()
 traceMuxBearerState tracer state =

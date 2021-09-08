@@ -20,13 +20,24 @@ module Network.Mux.Channel
   , loggingChannel
   ) where
 
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
+import qualified Data.ByteString               as BS
+#if !defined(mingw32_HOST_OS)
+import qualified Data.ByteString.Internal      as BS (createAndTrim')
+#endif
+import qualified Data.ByteString.Lazy          as LBS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
-import qualified Network.Socket as Socket
-import qualified Network.Socket.ByteString as Socket
-import qualified System.IO as IO (Handle, IOMode (..), hFlush, hIsEOF, withFile)
+import           Data.Foldable (traverse_)
+#if !defined(mingw32_HOST_OS)
+import           Data.Word (Word8)
+import           Foreign.Ptr (Ptr, castPtr)
+import           Foreign.C.Error (eAGAIN, eWOULDBLOCK, getErrno, throwErrno)
+import           Foreign.C.Types
+#endif
 import qualified System.Process as IO (createPipe)
+import qualified System.IO      as IO ( Handle, withFile, IOMode(..), hFlush,
+                                        hIsEOF )
+import qualified Network.Socket            as Socket
+import qualified Network.Socket.ByteString as Socket
 
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
@@ -49,7 +60,12 @@ data Channel m = Channel {
     -- It may raise exceptions (as appropriate for the monad and kind of
     -- channel).
     --
-    recv :: m (Maybe LBS.ByteString)
+    recv :: m (Maybe LBS.ByteString),
+
+    -- | Try read some input from the channel.  Return @Nothing@ if no input is
+    -- available.  It must be a non-blocking IO.
+    --
+    tryRecv :: m (Maybe (Maybe LBS.ByteString))
   }
 
 
@@ -66,7 +82,7 @@ handlesAsChannel :: IO.Handle -- ^ Read handle
                  -> IO.Handle -- ^ Write handle
                  -> Channel IO
 handlesAsChannel hndRead hndWrite =
-    Channel{send, recv}
+    Channel{send, recv, tryRecv}
   where
     send :: LBS.ByteString -> IO ()
     send chunk = do
@@ -79,6 +95,13 @@ handlesAsChannel hndRead hndWrite =
       if eof
         then return Nothing
         else Just . LBS.fromStrict <$> BS.hGetSome hndRead LBS.smallChunkSize
+
+    tryRecv :: IO (Maybe (Maybe LBS.ByteString))
+    tryRecv = do
+      eof <- IO.hIsEOF hndRead
+      if eof
+        then return (Just Nothing)
+        else Just . Just <$> LBS.hGetNonBlocking hndRead LBS.smallChunkSize
 
 -- | Create a pair of 'Channel's that are connected internally.
 --
@@ -100,7 +123,7 @@ createBufferConnectedChannels = do
             buffersAsChannel bufferA bufferB)
   where
     buffersAsChannel bufferRead bufferWrite =
-        Channel{send, recv}
+        Channel{send, recv, tryRecv}
       where
         send :: LBS.ByteString -> m ()
         send x = sequence_ [ atomically (putTMVar bufferWrite c)
@@ -110,6 +133,9 @@ createBufferConnectedChannels = do
 
         recv :: m (Maybe LBS.ByteString)
         recv   = Just . LBS.fromStrict <$> atomically (takeTMVar bufferRead)
+
+        tryRecv :: m (Maybe (Maybe LBS.ByteString))
+        tryRecv = fmap (Just . LBS.fromStrict) <$> atomically (tryTakeTMVar bufferRead)
 
 
 -- | Create a local pipe, with both ends in this process, and expose that as
@@ -151,7 +177,7 @@ withFifosAsChannel fifoPathRead fifoPathWrite action =
 ---
 socketAsChannel :: Socket.Socket -> Channel IO
 socketAsChannel socket =
-    Channel{send, recv}
+    Channel{send, recv, tryRecv}
   where
     send :: LBS.ByteString -> IO ()
     send chunks =
@@ -167,6 +193,43 @@ socketAsChannel socket =
       if BS.null chunk
         then return Nothing
         else return (Just (LBS.fromStrict chunk))
+
+    tryRecv :: IO (Maybe (Maybe LBS.ByteString))
+#if defined(mingw32_HOST_OS)
+    -- TODO
+    tryRecv = return Nothing
+#else
+    tryRecv = do
+      (bs, wouldBlock) <- BS.createAndTrim' LBS.smallChunkSize $ \ptr -> do
+        r <- recvBufNoWait socket ptr LBS.smallChunkSize
+        case r of
+          (-1) -> return (0, 0, True)
+          (-2) -> throwErrno "tryRecv"
+          _    -> return (0, r, False)
+      return $
+        case () of
+          _ | wouldBlock -> Nothing
+            | BS.null bs -> Just Nothing
+            | otherwise  -> Just (Just (LBS.fromStrict bs))
+
+
+-- | Copied from 'Network.Socket.Buffer.recvBufNoWait'.
+--
+recvBufNoWait :: Socket.Socket -> Ptr Word8 -> Int -> IO Int
+recvBufNoWait s ptr nbytes = Socket.withFdSocket s $ \fd -> do
+    r <- c_recv fd (castPtr ptr) (fromIntegral nbytes) 0{-flags-}
+    if r >= 0 then
+        return $ fromIntegral r
+      else do
+        err <- getErrno
+        if err == eAGAIN || err == eWOULDBLOCK then
+            return (-1)
+          else
+            return (-2)
+
+foreign import ccall unsafe "recv"
+  c_recv :: CInt -> Ptr CChar -> CSize -> CInt -> IO CInt
+#endif
 
 #if !defined(mingw32_HOST_OS)
 --- | Create a local socket, with both ends in this process, and expose that as
@@ -192,7 +255,7 @@ channelEffect :: forall m.
               -> (Maybe LBS.ByteString -> m ()) -- ^ Action after 'recv'
               -> Channel m
               -> Channel m
-channelEffect beforeSend afterRecv Channel{send, recv} =
+channelEffect beforeSend afterRecv Channel{send, recv, tryRecv} =
     Channel{
       send = \x -> do
         beforeSend x
@@ -201,6 +264,11 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
     , recv = do
         mx <- recv
         afterRecv mx
+        return mx
+
+    , tryRecv = do
+        mx <- tryRecv
+        traverse_ afterRecv mx
         return mx
     }
 
@@ -224,10 +292,11 @@ loggingChannel :: ( MonadSay m
                => id
                -> Channel m
                -> Channel m
-loggingChannel ident Channel{send,recv} =
+loggingChannel ident Channel{send,recv,tryRecv} =
   Channel {
-    send = loggingSend,
-    recv = loggingRecv
+    send    = loggingSend,
+    recv    = loggingRecv,
+    tryRecv = loggingTryRecv
   }
  where
   loggingSend a = do
@@ -239,4 +308,11 @@ loggingChannel ident Channel{send,recv} =
     case msg of
       Nothing -> return ()
       Just a  -> say (show ident ++ ":recv:" ++ show a)
+    return msg
+
+  loggingTryRecv = do
+    msg <- tryRecv
+    case msg of
+      Just (Just a) -> say (show ident ++ ":recv:" ++ show a)
+      _             -> return ()
     return msg
