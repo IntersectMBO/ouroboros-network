@@ -394,6 +394,7 @@ data TraceFetchClientState header =
           PeerFetchInFlightLimits
          (PeerFetchStatus header)
          NominalDiffTime
+         SizeInBytes
 
        -- | Mark the successful end of receiving a streaming batch of blocks
        --
@@ -567,6 +568,7 @@ completeBlockDownload tracer blockFetchSize inflightlimits header blockDelay
         inflight' inflightlimits
         currentStatus'
         blockDelay
+        (blockFetchSize header)
 
 
 completeFetchBatch :: MonadSTM m
