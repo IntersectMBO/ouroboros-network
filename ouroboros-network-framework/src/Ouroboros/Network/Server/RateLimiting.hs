@@ -132,6 +132,8 @@ runConnectionRateLimits tracer
         let remainingDelay = acceptedConnectionsDelay - end `diffTime` start
         when (remainingDelay > 0)
           $ threadDelay remainingDelay
+        numberOfConnections' <- atomically numberOfConnectionsSTM
+        traceWith tracer $ ServerTraceAcceptConnectionResume numberOfConnections'
 
 
 --
@@ -144,14 +146,18 @@ runConnectionRateLimits tracer
 data AcceptConnectionsPolicyTrace
       = ServerTraceAcceptConnectionRateLimiting DiffTime Int
       | ServerTraceAcceptConnectionHardLimit Word32
+      | ServerTraceAcceptConnectionResume Int
   deriving (Eq, Ord, Typeable)
 
 instance Show AcceptConnectionsPolicyTrace where
     show (ServerTraceAcceptConnectionRateLimiting delay numberOfConnections) =
       printf
-        "rate limiting accepting connections, dalaying next accept for %s, currently serving %s connections"
+        "rate limiting accepting connections, delaying next accept for %s, currently serving %s connections"
         (show delay) (show numberOfConnections)
     show (ServerTraceAcceptConnectionHardLimit limit) =
       printf
         "hard rate limit reached, waiting until the number of connections drops below %s"
         (show limit)
+    show (ServerTraceAcceptConnectionResume numberOfConnections) =
+      printf "hard rate limit over, accepting connections again, currently serving %d connections"
+        numberOfConnections
