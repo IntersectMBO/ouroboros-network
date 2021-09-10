@@ -26,8 +26,9 @@ import           Ouroboros.Consensus.Util.Assert
 
 import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (hashTxSeq, toTxSeq)
+import qualified Cardano.Protocol.TPraos.BHeader as SL
 import qualified Shelley.Spec.Ledger.API as SL (extractTx)
-import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Shelley.Spec.Ledger.BlockChain as SL (Block (..), bBodySize)
 
 import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
@@ -61,8 +62,7 @@ forgeShelleyBlock hotKey canBeLeader cfg maxTxCapacityOverrides curNo curSlot ti
     let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
     return $
       assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) $
-      assertWithMsg bodySizeEstimate $
-        blk
+      assertWithMsg bodySizeEstimate blk
   where
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg

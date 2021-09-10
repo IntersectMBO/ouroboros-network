@@ -46,6 +46,7 @@ library
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-byron
                      , cardano-ledger-core
+                     , cardano-protocol-tpraos
                      , shelley-spec-ledger
                      , shelley-spec-ledger-test
 
@@ -97,6 +98,7 @@ test-suite test
                      , cardano-ledger-core
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
+                     , cardano-protocol-tpraos
                      , shelley-spec-ledger
 
                      , ouroboros-network
