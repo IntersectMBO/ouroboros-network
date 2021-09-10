@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
 
+import           Block.Alonzo ()
 import           Block.Byron (Args (..), openGenesisByron)
 import           Block.Shelley (Args (..))
 import           HasAnalysis
@@ -58,9 +59,9 @@ analyseBlock f =
 instance HasProtocolInfo (CardanoBlock StandardCrypto) where
   data Args (CardanoBlock StandardCrypto) =
     CardanoBlockArgs {
-        byronArgs   :: Args ByronBlock
-      , shelleyArgs :: Args (ShelleyBlock StandardShelley)
-      , alonzoArgs  :: FilePath
+        byronArgs        :: Args ByronBlock
+      , shelleyArgs      :: Args (ShelleyBlock StandardShelley)
+      , configFileAlonzo :: FilePath
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
@@ -69,7 +70,8 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     genesisByron <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
     genesisShelley <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
-    genesisAlonzo <- undefined alonzoArgs
+    genesisAlonzo <- either (error . show) return =<<
+      Aeson.eitherDecodeFileStrict' configFileAlonzo
     return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley genesisAlonzo initialNonce
 
 instance HasAnalysis (CardanoBlock StandardCrypto) where
