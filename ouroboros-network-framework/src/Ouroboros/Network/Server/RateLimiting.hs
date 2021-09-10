@@ -129,7 +129,7 @@ runConnectionRateLimits tracer
           numberOfConnections' <- numberOfConnectionsSTM
           check (numberOfConnections' < fromIntegral limit)
         end <- getMonotonicTime
-        let remainingDelay = end `diffTime` start - acceptedConnectionsDelay
+        let remainingDelay = acceptedConnectionsDelay - end `diffTime` start
         when (remainingDelay > 0)
           $ threadDelay remainingDelay
 
