@@ -92,7 +92,6 @@ import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
-
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot (SlotNo (..))
 

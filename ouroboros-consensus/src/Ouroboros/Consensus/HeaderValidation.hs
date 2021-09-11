@@ -31,6 +31,7 @@ module Ouroboros.Consensus.HeaderValidation (
   , HeaderState (..)
   , castHeaderState
   , genesisHeaderState
+  , headerStateBlockNo
   , headerStatePoint
   , tickHeaderState
     -- * Validate header envelope
@@ -199,6 +200,9 @@ tickHeaderState cfg ledgerView slot HeaderState {..} = TickedHeaderState {
 
 genesisHeaderState :: ChainDepState (BlockProtocol blk) -> HeaderState blk
 genesisHeaderState = HeaderState Origin
+
+headerStateBlockNo :: HeaderState blk -> WithOrigin BlockNo
+headerStateBlockNo = fmap annTipBlockNo . headerStateTip
 
 headerStatePoint :: HasAnnTip blk => HeaderState blk -> Point blk
 headerStatePoint =
