@@ -28,9 +28,16 @@ import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Slotting.Block (BlockNo (..))
+import           Cardano.Slotting.Slot (WithOrigin (..))
+
 import           Codec.CBOR.Decoding
 import           Codec.CBOR.Encoding
+import           Codec.Serialise (Serialise)
+import           Codec.Serialise.Class (decode, encode)
 
+import           Ouroboros.Network.Block (HeaderHash, Point (..), StandardHash,
+                     decodePoint, encodePoint)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (ShowQuery (..))
 
@@ -38,6 +45,8 @@ import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
+                     headerStateBlockNo, headerStatePoint)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -50,6 +59,13 @@ import           Ouroboros.Consensus.Util.DepPair
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
+
+queryName :: Query blk result -> String
+queryName query = case query of
+  BlockQuery _    -> "BlockQuery"
+  GetSystemStart  -> "GetSystemStart"
+  GetChainBlockNo -> "GetChainBlockNo"
+  GetChainPoint   -> "GetChainPoint"
 
 -- | Different queries supported by the ledger for all block types, indexed
 -- by the result type.
@@ -65,12 +81,24 @@ data Query blk result where
   -- Supported by 'QueryVersion' >= 'QueryVersion1'.
   GetSystemStart :: Query blk SystemStart
 
+  -- | Get the 'GetChainBlockNo' time.
+  --
+  -- Supported by 'QueryVersion' >= 'QueryVersion2'.
+  GetChainBlockNo :: Query blk (WithOrigin BlockNo)
+
+  -- | Get the 'GetChainPoint' time.
+  --
+  -- Supported by 'QueryVersion' >= 'QueryVersion2'.
+  GetChainPoint :: Query blk (Point blk)
+
 instance (ShowProxy (BlockQuery blk)) => ShowProxy (Query blk) where
   showProxy (Proxy :: Proxy (Query blk)) = "Query (" ++ showProxy (Proxy @(BlockQuery blk)) ++ ")"
 
-instance (ShowQuery (BlockQuery blk)) => ShowQuery (Query blk) where
+instance (ShowQuery (BlockQuery blk), StandardHash blk) => ShowQuery (Query blk) where
   showResult (BlockQuery blockQuery) = showResult blockQuery
   showResult GetSystemStart          = show
+  showResult GetChainBlockNo         = show
+  showResult GetChainPoint           = show
 
 instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond (BlockQuery blockQueryA) == SomeSecond (BlockQuery blockQueryB)
@@ -80,9 +108,17 @@ instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond GetSystemStart == SomeSecond GetSystemStart = True
   SomeSecond GetSystemStart == _                         = False
 
+  SomeSecond GetChainBlockNo == SomeSecond GetChainBlockNo  = True
+  SomeSecond GetChainBlockNo == _                           = False
+
+  SomeSecond GetChainPoint == SomeSecond GetChainPoint  = True
+  SomeSecond GetChainPoint == _                         = False
+
 instance Show (SomeSecond BlockQuery blk) => Show (SomeSecond Query blk) where
-  show (SomeSecond (BlockQuery blockQueryA)) = "Query " ++ show (SomeSecond blockQueryA)
-  show (SomeSecond GetSystemStart) = "Query GetSystemStart"
+  show (SomeSecond (BlockQuery blockQueryA))  = "Query " ++ show (SomeSecond blockQueryA)
+  show (SomeSecond GetSystemStart)            = "Query GetSystemStart"
+  show (SomeSecond GetChainBlockNo)           = "Query GetChainBlockNo"
+  show (SomeSecond GetChainPoint)             = "Query GetChainPoint"
 
 
 -- | Exception thrown in the encoders
@@ -118,16 +154,40 @@ queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
           throw $ QueryEncoderUnsupportedQuery (SomeSecond query) queryVersion
 
     -- From version 1 onwards, we use normal constructor tags
-    QueryVersion1 ->
+    _ ->
       case query of
         BlockQuery blockQuery ->
-            encodeListLen 2
-         <> encodeWord8 0
-         <> encodeBlockQuery blockQuery
+          requireVersion QueryVersion1 $ mconcat
+            [ encodeListLen 2
+            , encodeWord8 0
+            , encodeBlockQuery blockQuery
+            ]
+
         GetSystemStart ->
-            encodeListLen 1
-         <> encodeWord8 1
+          requireVersion QueryVersion1 $ mconcat
+            [ encodeListLen 1
+            , encodeWord8 1
+            ]
+
+        GetChainBlockNo ->
+          requireVersion QueryVersion2 $ mconcat
+            [ encodeListLen 1
+            , encodeWord8 2
+            ]
+
+        GetChainPoint ->
+          requireVersion QueryVersion2 $ mconcat
+            [ encodeListLen 1
+            , encodeWord8 3
+            ]
+
   where
+    requireVersion :: QueryVersion -> a -> a
+    requireVersion expectedVersion a =
+      if queryVersion >= expectedVersion
+        then a
+        else throw $ QueryEncoderUnsupportedQuery (SomeSecond query) queryVersion
+
     encodeBlockQuery blockQuery =
       encodeNodeToClient
         @blk
@@ -146,14 +206,28 @@ queryDecodeNodeToClient ::
 queryDecodeNodeToClient codecConfig queryVersion blockVersion
   = case queryVersion of
       TopLevelQueryDisabled -> decodeBlockQuery
-      QueryVersion1 -> do
+      QueryVersion1         -> handleTopLevelQuery
+      QueryVersion2         -> handleTopLevelQuery
+  where
+    handleTopLevelQuery :: Decoder s (SomeSecond Query blk)
+    handleTopLevelQuery = do
         size <- decodeListLen
         tag  <- decodeWord8
         case (size, tag) of
-          (2, 0) -> decodeBlockQuery
-          (1, 1) -> return (SomeSecond GetSystemStart)
+          (2, 0) -> requireVersion QueryVersion1 =<< decodeBlockQuery
+          (1, 1) -> requireVersion QueryVersion1 $ SomeSecond GetSystemStart
+          (1, 2) -> requireVersion QueryVersion2 $ SomeSecond GetChainBlockNo
+          (1, 3) -> requireVersion QueryVersion2 $ SomeSecond GetChainPoint
           _      -> fail $ "Query: invalid size and tag" <> show (size, tag)
-  where
+
+    requireVersion :: QueryVersion -> SomeSecond Query blk -> Decoder s (SomeSecond Query blk)
+    requireVersion expectedVersion someSecondQuery =
+      if queryVersion >= expectedVersion
+        then return someSecondQuery
+        else case someSecondQuery of
+          SomeSecond query -> fail $ "Query: " <> queryName query <> " requires at least " <> show expectedVersion
+
+    decodeBlockQuery :: Decoder s (SomeSecond Query blk)
     decodeBlockQuery = do
       SomeSecond blockQuery <- decodeNodeToClient
         @blk
@@ -162,16 +236,26 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
         blockVersion
       return (SomeSecond (BlockQuery blockQuery))
 
-instance SerialiseResult blk (BlockQuery blk) => SerialiseResult blk (Query blk) where
+instance ( SerialiseResult blk (BlockQuery blk)
+         , Serialise (HeaderHash blk)
+         ) => SerialiseResult blk (Query blk) where
   encodeResult codecConfig blockVersion (BlockQuery blockQuery) result
     = encodeResult codecConfig blockVersion blockQuery result
   encodeResult _ _ GetSystemStart result
     = toCBOR result
+  encodeResult _ _ GetChainBlockNo result
+    = toCBOR result
+  encodeResult _ _ GetChainPoint result
+    = encodePoint encode result
 
   decodeResult codecConfig blockVersion (BlockQuery query)
     = decodeResult codecConfig blockVersion query
   decodeResult _ _ GetSystemStart
     = fromCBOR
+  decodeResult _ _ GetChainBlockNo
+    = fromCBOR
+  decodeResult _ _ GetChainPoint
+    = decodePoint decode
 
 instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
   sameDepIndex (BlockQuery blockQueryA) (BlockQuery blockQueryB)
@@ -182,12 +266,20 @@ instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
     = Just Refl
   sameDepIndex GetSystemStart _
     = Nothing
+  sameDepIndex GetChainBlockNo GetChainBlockNo
+    = Just Refl
+  sameDepIndex GetChainBlockNo _
+    = Nothing
+  sameDepIndex GetChainPoint GetChainPoint
+    = Just Refl
+  sameDepIndex GetChainPoint _
+    = Nothing
 
 deriving instance Show (BlockQuery blk result) => Show (Query blk result)
 
 -- | Answer the given query about the extended ledger state.
 answerQuery ::
-     (QueryLedger blk, ConfigSupportsNode blk)
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
   -> Query blk result
   -> ExtLedgerState blk
@@ -195,6 +287,8 @@ answerQuery ::
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
   GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
+  GetChainBlockNo -> headerStateBlockNo (headerState st)
+  GetChainPoint -> headerStatePoint (headerState st)
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type

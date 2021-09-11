@@ -41,6 +41,8 @@ data NodeToClientVersion
     -- ^ 'LocalStateQuery' protocol codec change, allows to acquire tip point.
     | NodeToClientV_9
     -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
+    | NodeToClientV_10
+    -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -53,15 +55,16 @@ data NodeToClientVersion
 nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
 nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     where
-      encodeTerm NodeToClientV_1 = CBOR.TInt 1
-      encodeTerm NodeToClientV_2 = CBOR.TInt (2 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_3 = CBOR.TInt (3 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_4 = CBOR.TInt (4 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_5 = CBOR.TInt (5 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_6 = CBOR.TInt (6 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_7 = CBOR.TInt (7 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_8 = CBOR.TInt (8 `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_9 = CBOR.TInt (9 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_1  = CBOR.TInt 1
+      encodeTerm NodeToClientV_2  = CBOR.TInt (2  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_3  = CBOR.TInt (3  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_4  = CBOR.TInt (4  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_5  = CBOR.TInt (5  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_6  = CBOR.TInt (6  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_7  = CBOR.TInt (7  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_8  = CBOR.TInt (8  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_9  = CBOR.TInt (9  `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_10 = CBOR.TInt (10 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -76,6 +79,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (7, True)  -> Right NodeToClientV_7
         (8, True)  -> Right NodeToClientV_8
         (9, True)  -> Right NodeToClientV_9
+        (10, True) -> Right NodeToClientV_10
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
