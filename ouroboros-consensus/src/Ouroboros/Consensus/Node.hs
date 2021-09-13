@@ -53,6 +53,7 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
@@ -233,7 +234,7 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 -------------------------------------------------------------------------------}
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
-run :: forall blk. RunNode blk
+run :: forall blk. (RunNode blk, FromCBOR (Point blk), ToCBOR (Point blk))
   => RunNodeArgs IO RemoteAddress LocalAddress blk
   -> StdRunNodeArgs IO blk
   -> IO ()
@@ -249,6 +250,8 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
+     , FromCBOR (Point blk)
+     , ToCBOR (Point blk)
      )
   => RunNodeArgs m addrNTN addrNTC blk
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk

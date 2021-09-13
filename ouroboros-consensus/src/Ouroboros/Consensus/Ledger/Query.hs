@@ -58,8 +58,8 @@ import           Ouroboros.Consensus.Util.DepPair
 import           Ouroboros.Consensus.HeaderValidation (AnnTip (..),
                      HasAnnTip (..), HeaderState (..))
 
-import           Ouroboros.Network.Block (HeaderHash)
-
+import           Ouroboros.Network.Block (HeaderHash, Point (..), StandardHash)
+import qualified Ouroboros.Network.Point as Point
 
 {-------------------------------------------------------------------------------
   Queries
@@ -79,19 +79,25 @@ data Query blk result where
   -- Supported by 'QueryVersion' >= 'QueryVersion1'.
   GetSystemStart :: Query blk SystemStart
 
-  -- | Get the 'GetHeaderStateTip' time.
+  -- | Get the 'GetTipBlockNo' time.
   --
   -- Supported by 'QueryVersion' >= 'QueryVersion2'.
-  GetHeaderStateTip :: Query blk (WithOrigin (HeaderStateTip blk))
+  GetTipBlockNo :: Query blk (WithOrigin BlockNo)
+
+  -- | Get the 'GetTipPoint' time.
+  --
+  -- Supported by 'QueryVersion' >= 'QueryVersion2'.
+  GetTipPoint :: Query blk (Point blk)
 
 
 instance (ShowProxy (BlockQuery blk)) => ShowProxy (Query blk) where
   showProxy (Proxy :: Proxy (Query blk)) = "Query (" ++ showProxy (Proxy @(BlockQuery blk)) ++ ")"
 
-instance (ShowQuery (BlockQuery blk), Show (HeaderHash blk)) => ShowQuery (Query blk) where
+instance (ShowQuery (BlockQuery blk), StandardHash blk) => ShowQuery (Query blk) where
   showResult (BlockQuery blockQuery) = showResult blockQuery
   showResult GetSystemStart          = show
-  showResult GetHeaderStateTip       = show
+  showResult GetTipBlockNo           = show
+  showResult GetTipPoint             = show
 
 instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond (BlockQuery blockQueryA) == SomeSecond (BlockQuery blockQueryB)
@@ -101,13 +107,17 @@ instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
   SomeSecond GetSystemStart == SomeSecond GetSystemStart = True
   SomeSecond GetSystemStart == _                         = False
 
-  SomeSecond GetHeaderStateTip == SomeSecond GetHeaderStateTip = True
-  SomeSecond GetHeaderStateTip == _                            = False
+  SomeSecond GetTipBlockNo == SomeSecond GetTipBlockNo = True
+  SomeSecond GetTipBlockNo == _                        = False
+
+  SomeSecond GetTipPoint == SomeSecond GetTipPoint = True
+  SomeSecond GetTipPoint == _                      = False
 
 instance Show (SomeSecond BlockQuery blk) => Show (SomeSecond Query blk) where
   show (SomeSecond (BlockQuery blockQueryA)) = "Query " ++ show (SomeSecond blockQueryA)
   show (SomeSecond GetSystemStart) = "Query GetSystemStart"
-  show (SomeSecond GetHeaderStateTip) = "Query GetHeaderStateTip"
+  show (SomeSecond GetTipBlockNo) = "Query GetTipBlockNo"
+  show (SomeSecond GetTipPoint) = "Query GetTipPoint"
 
 
 -- | Exception thrown in the encoders
@@ -159,10 +169,16 @@ queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
             , encodeWord8 1
             ]
 
-        GetHeaderStateTip ->
+        GetTipBlockNo ->
           requireVersion QueryVersion2 queryVersion $ mconcat
             [ encodeListLen 1
             , encodeWord8 2
+            ]
+
+        GetTipPoint ->
+          requireVersion QueryVersion2 queryVersion $ mconcat
+            [ encodeListLen 1
+            , encodeWord8 3
             ]
 
   where
@@ -200,7 +216,8 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
         case (size, tag) of
           (2, 0) -> requireVersion "BlockQuery"        QueryVersion1   decodeBlockQuery
           (1, 1) -> requireVersion "GetSystemStart"    QueryVersion1 $ return (SomeSecond GetSystemStart)
-          (1, 2) -> requireVersion "GetHeaderStateTip" QueryVersion2 $ return (SomeSecond GetHeaderStateTip)
+          (1, 2) -> requireVersion "GetTipBlockNo"     QueryVersion2 $ return (SomeSecond GetTipBlockNo)
+          (1, 3) -> requireVersion "GetTipPoint"       QueryVersion2 $ return (SomeSecond GetTipPoint)
           _      -> fail $ "Query: invalid size and tag" <> show (size, tag)
 
     requireVersion :: String -> QueryVersion -> Decoder s (SomeSecond Query blk) -> Decoder s (SomeSecond Query blk)
@@ -220,19 +237,27 @@ queryDecodeNodeToClient codecConfig queryVersion blockVersion
 
 instance Serialise (HeaderHash blk) => Serialise (HeaderStateTip blk) where
 
-instance (SerialiseResult blk (BlockQuery blk), Serialise (HeaderHash blk), Typeable blk) => SerialiseResult blk (Query blk) where
+instance
+    ( SerialiseResult blk (BlockQuery blk)
+    , FromCBOR (Point blk)
+    , ToCBOR (Point blk)
+    ) => SerialiseResult blk (Query blk) where
   encodeResult codecConfig blockVersion (BlockQuery blockQuery) result
     = encodeResult codecConfig blockVersion blockQuery result
   encodeResult _ _ GetSystemStart result
     = toCBOR result
-  encodeResult _ _ GetHeaderStateTip result
+  encodeResult _ _ GetTipBlockNo result
+    = toCBOR result
+  encodeResult _ _ GetTipPoint result
     = toCBOR result
 
   decodeResult codecConfig blockVersion (BlockQuery query)
     = decodeResult codecConfig blockVersion query
   decodeResult _ _ GetSystemStart
     = fromCBOR
-  decodeResult _ _ GetHeaderStateTip
+  decodeResult _ _ GetTipBlockNo
+    = fromCBOR
+  decodeResult _ _ GetTipPoint
     = fromCBOR
 
 instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
@@ -244,9 +269,13 @@ instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
     = Just Refl
   sameDepIndex GetSystemStart _
     = Nothing
-  sameDepIndex GetHeaderStateTip GetHeaderStateTip
+  sameDepIndex GetTipBlockNo GetTipBlockNo
     = Just Refl
-  sameDepIndex GetHeaderStateTip _
+  sameDepIndex GetTipBlockNo _
+    = Nothing
+  sameDepIndex GetTipPoint GetTipPoint
+    = Just Refl
+  sameDepIndex GetTipPoint _
     = Nothing
 
 deriving instance Show (BlockQuery blk result) => Show (Query blk result)
@@ -270,13 +299,12 @@ answerQuery :: forall blk result.
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
   GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
-  GetHeaderStateTip -> case headerStateTip (headerState st) of
+  GetTipBlockNo -> case headerStateTip (headerState st) of
     Origin -> Origin
-    At hst -> At HeaderStateTip
-      { queriedTipSlotNo  = annTipSlotNo hst
-      , queriedTipBlockNo = annTipBlockNo hst
-      , queriedTipInfo    = tipInfoHash (Proxy @blk) (annTipInfo hst)
-      }
+    At hst -> At (annTipBlockNo hst)
+  GetTipPoint -> case headerStateTip (headerState st) of
+    Origin -> Point Origin
+    At hst -> Point (At (Point.Block (annTipSlotNo hst) (tipInfoHash (Proxy @blk) (annTipInfo hst))))
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type

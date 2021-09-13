@@ -33,6 +33,8 @@ module Ouroboros.Consensus.Network.NodeToClient (
   , responder
   ) where
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (..))
@@ -166,8 +168,9 @@ defaultCodecs :: forall m blk.
                  ( MonadST m
                  , SerialiseNodeToClientConstraints blk
                  , ShowQuery (BlockQuery blk)
-                 , Show (HeaderHash blk)
-                 , Serialise (HeaderHash blk)
+                 , StandardHash blk
+                 , FromCBOR (Point blk)
+                 , ToCBOR (Point blk)
                  )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
@@ -220,8 +223,9 @@ clientCodecs :: forall m blk.
                 ( MonadST m
                 , SerialiseNodeToClientConstraints blk
                 , ShowQuery (BlockQuery blk)
-                , Serialise (HeaderHash blk)
-                , Show (HeaderHash blk)
+                , StandardHash blk
+                , FromCBOR (Point blk)
+                , ToCBOR (Point blk)
                 )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk

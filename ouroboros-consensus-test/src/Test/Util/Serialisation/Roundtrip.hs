@@ -243,7 +243,7 @@ instance ( blockVersion ~ BlockNodeToClientVersion blk
               return (WithVersion (queryVersion, blockV) (SomeSecond GetSystemStart))
           , queryFrequencyFor Query.QueryVersion2 1 $ do
               blockV <- arbitrary
-              return (WithVersion (queryVersion, blockV) (SomeSecond GetHeaderStateTip))
+              return (WithVersion (queryVersion, blockV) (SomeSecond GetTipBlockNo))
           ]
         where
           queryFrequencyFor expectedVersion n f =

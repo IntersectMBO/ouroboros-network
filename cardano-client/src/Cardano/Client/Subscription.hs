@@ -22,6 +22,9 @@ module Cardano.Client.Subscription (
   , cTxSubmissionCodec
   ) where
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Ouroboros.Network.Block (Point (..))
+
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM
 import qualified Data.ByteString.Lazy as BSL
@@ -56,7 +59,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run (RunNode)
 
 subscribe ::
-     RunNode blk
+     (RunNode blk, FromCBOR (Point blk), ToCBOR (Point blk))
   => Snocket.LocalSnocket
   -> CodecConfig blk
   -> NetworkMagic
@@ -79,7 +82,7 @@ subscribe snocket codecConfig networkMagic tracers subscriptionParams protocols 
             protocols version codecs connectionId))
 
 versionedProtocols ::
-     forall blk m appType bytes a b. (MonadST m, RunNode blk)
+     forall blk m appType bytes a b. (MonadST m, RunNode blk, FromCBOR (Point blk), ToCBOR (Point blk))
   => CodecConfig blk
   -> NetworkMagic
   -> (   NodeToClientVersion

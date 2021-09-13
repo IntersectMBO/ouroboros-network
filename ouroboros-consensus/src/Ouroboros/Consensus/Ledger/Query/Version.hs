@@ -19,7 +19,7 @@ data QueryVersion
   -- Adds support for 'GetSystemStart'.
   | QueryVersion1
 
-  -- Adds support for 'GetHeaderStateTip'.
+  -- Adds support for 'GetTipBlockNo' and 'GetTipPoint'.
   | QueryVersion2
   deriving (Eq, Ord, Enum, Bounded, Show)
 
