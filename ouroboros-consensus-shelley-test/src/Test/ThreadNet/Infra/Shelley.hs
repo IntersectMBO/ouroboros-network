@@ -81,8 +81,8 @@ import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Cardano.Ledger.Val as SL
+import qualified Cardano.Protocol.TPraos.OCert as SL (OCertSignable (..))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.OCert as SL (OCertSignable (..))
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))

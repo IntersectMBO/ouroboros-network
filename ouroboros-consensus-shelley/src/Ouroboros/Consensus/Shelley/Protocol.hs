@@ -68,9 +68,9 @@ import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import           Cardano.Ledger.Crypto (StandardCrypto, VRF)
+import qualified Cardano.Protocol.TPraos.BHeader as SL (mkSeed, seedEta, seedL)
+import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL (mkSeed, seedEta, seedL)
-import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
 import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
