@@ -21,7 +21,7 @@
 module LedgerOnDisk.QSM.Suite where
 
 import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import           Test.Tasty.QuickCheckLabels
 -- import qualified LedgerOnDisk.QSM.Model
 import           LedgerOnDisk.Simple
 import Test.StateMachine.Lockstep.NAry

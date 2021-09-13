@@ -64,7 +64,11 @@ data UTxOState map =
 
        -- | An aggregation of the UTxO's coins by address.
        utxoagg :: map Addr Coin
+       -- ,
+       -- extra :: Bool
      }
+
+-- add snapshots + iteration over snapshots
 
 -- LedgerState PTMap
 
@@ -98,16 +102,15 @@ data TxOut = TxOut !Addr !Coin
 instance Haskey.Value TxOut where
   fixedSize _ = Haskey.fixedSize (Proxy :: Proxy (Addr, Coin))
 
+-- data Addr  = PaymentAddr Int64 | StakingAddress Int64
 newtype Addr  = Addr Int64
   deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass (H.Hashable)
-  deriving newtype (Binary, Haskey.Value, Haskey.Key)
+  deriving newtype (Binary, Haskey.Value, Haskey.Key, H.Hashable)
 
 newtype Coin  = Coin Int64
   deriving stock (Eq, Show, Generic)
-  deriving newtype (Num, Binary, Haskey.Value)
+  deriving newtype (Num, Binary, Haskey.Value, H.Hashable)
   deriving (Semigroup, Monoid) via (Sum Int64)
-  deriving anyclass (H.Hashable)
 
 -- class (c TxIn TxOut, c Addr Coin) => UTxOStateKVConstraint (c :: Type -> Type -> Constraint)
 -- instance (c TxIn TxOut, c Addr Coin) => UTxOStateKVConstraint (c :: Type -> Type -> Constraint)
@@ -184,7 +187,11 @@ instance forall map.
 
 instance Haskey.Value (OnDiskMappings LedgerState map) => Haskey.Root (OnDiskMappings LedgerState map)
 
+type StakePool = Int
+
 data Tx = Tx [TxIn] [TxOut] | LollyScramble [TxOut]
+  -- | RegisterAddr Addr StakePool
+  -- | DeregisterAddr Addr StakePool
   deriving stock (Eq, Show, Generic)
   deriving anyclass (H.Hashable)
 

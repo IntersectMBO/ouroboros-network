@@ -28,7 +28,10 @@ class
   -- The superclass constraint guarantees  state can only contain appropriate keys and values
   type DBKVConstraint rohandle :: Type -> Type -> Constraint
   type ROLLT rohandle :: (Type -> Type -> Type) -> Type
-  readSnapshot :: rohandle -> OnDiskMappings (ROLLT rohandle) Query -> IO (OnDiskMappings (ROLLT rohandle) QueryResult)
+
+  readSnapshot :: rohandle
+    -> OnDiskMappings (ROLLT rohandle) Query
+    -> IO (OnDiskMappings (ROLLT rohandle) QueryResult)
   closeHandle :: rohandle -> IO ()
 
 class
@@ -43,9 +46,18 @@ class
   -- perhaps (Binary (ROHandle dbhandle)) as a superclass constraint is adequate?
   type ROHandle dbhandle :: Type
 
-  read :: dbhandle -> OnDiskMappings (LLT dbhandle) Query -> IO (SeqId, OnDiskMappings (LLT dbhandle) QueryResult)
+  -- read :: dbhandle
+  --   -> OnDiskMappings (LLT dbhandle) Query
+  --   -> IO [(SeqId, OnDiskMappings (LLT dbhandle) QueryResult)]
+  read :: dbhandle
+    -> OnDiskMappings (LLT dbhandle) Query
+    -> IO (SeqId, OnDiskMappings (LLT dbhandle) QueryResult)
   write :: dbhandle ->OnDiskMappings (LLT dbhandle) DiffMap -> IO SeqId
 
+  -- | getSeqId returning x means that reads return all writes with seqId < x
   getSeqId :: dbhandle -> STM SeqId
 
   snapshot :: dbhandle -> IO (ROHandle dbhandle)
+
+  -- listSnapshots?
+  -- listSnapshots :: dbhandle -> IO [ROHandle dbhandle]

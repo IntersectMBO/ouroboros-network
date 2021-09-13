@@ -3,7 +3,7 @@
 module Main (main) where
 
 import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import           Test.Tasty.QuickCheckLabels
 import           Test.QuickCheck.Instances.UnorderedContainers ()
 import Data.Maybe
 

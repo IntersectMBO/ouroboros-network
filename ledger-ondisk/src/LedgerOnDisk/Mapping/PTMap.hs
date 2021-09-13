@@ -1,6 +1,4 @@
 {-# LANGUAGE RankNTypes #-}
--- |
-
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -9,6 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DerivingVia #-}
 module LedgerOnDisk.Mapping.PTMap where
 
 import LedgerOnDisk.Mapping.Class
@@ -16,17 +15,13 @@ import LedgerOnDisk.Diff
 import Prelude hiding (lookup)
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
+import Data.Map.Monoidal (MonoidalMap(..))
 
 -- note, not an instance of Mapping
-data DiffMap k a where
+newtype DiffMap k a where
   DiffMap :: Map k (Diff a) -> DiffMap k a
   deriving stock (Eq, Show)
-
-instance (Ord k) => Semigroup (DiffMap k a) where
-  DiffMap m1 <> DiffMap m2 = DiffMap $ Map.unionWith (<>) m1 m2
-
-instance (Ord k) => Monoid (DiffMap k a) where
-  mempty = DiffMap Map.empty
+  deriving (Semigroup, Monoid) via MonoidalMap k (Diff a)
 
 data PTMap k a = PTMap !(Map k a) !(DiffMap k a)
   deriving stock (Eq, Show)

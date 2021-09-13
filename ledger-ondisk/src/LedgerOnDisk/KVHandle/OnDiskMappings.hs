@@ -97,8 +97,6 @@ instance (KeysAreHashable k v, ValuesAreSemigroups k v) => KeysHashableValuesSem
 
 -- | An instance 'HasConstrainedOnDiskMappings c state' gives a collection of methods for working with OnDiskMappings.
 -- 'c :: Type -> Type -> Constraint' is a constraint operations will assume on all k, v , for each 'map k v' in the OnDiskMappings
---
--- I think this is some kind of higher-order 'Zip' from 'semialign'
 class HasOnDiskMappings state => HasConstrainedOnDiskMappings (c :: Type -> Type -> Constraint) state where
   {-# MINIMAL zipMappings #-}
   -- | Only required method. Example:

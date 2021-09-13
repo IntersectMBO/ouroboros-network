@@ -47,9 +47,9 @@ instance forall (state :: (Type -> Type -> Type) -> Type).
     q' = Map.mapKeysMonotonic coerce q
     in coerce <$> haskeyPrepareQuery h q'
 
-  submit (coerce -> rh) op = do
-    (payload, coerce -> snapshot) <- haskeySubmitQuery rh $ \rangeQueryMetadata (Map.mapKeysMonotonic coerce -> kvResults) -> case op DBOpArgs{..} of
-      DBOpResult{..} -> (payload, snapshot, changes)
-    pure DBResponse{..}
+  -- submit (coerce -> rh) op = do
+  --   (payload, coerce -> snapshot) <- haskeySubmitQuery rh $ \rangeQueryResults (Map.mapKeysMonotonic coerce -> pointQueryResults) -> case op DBOpArgs{..} of
+  --     DBOpResult{..} -> (payload, snapshot, changes)
+  --   pure DBResponse{..}
 
   rollback _ _ = throwIO $ userError "unimplemented"

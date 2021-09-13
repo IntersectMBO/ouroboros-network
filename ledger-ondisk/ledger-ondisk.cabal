@@ -67,6 +67,7 @@ library
                        -- KVableClass
 
                        Test.Tasty.QuickCheckStateMachine
+                       Test.Tasty.QuickCheckLabels
   build-depends:       base,
                        unordered-containers,
                        transformers,

@@ -23,7 +23,7 @@ import LedgerOnDisk.WWB
 import Test.QuickCheck
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashMap.Strict (HashMap)
-import Test.Tasty.QuickCheck
+import Test.Tasty.QuickCheckLabels
 import LedgerOnDisk.Diff
 import Data.Monoid
 

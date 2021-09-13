@@ -266,7 +266,7 @@ haskeyPrepareQuery _ _ = throwM $ userError "unimplemented"
 
 -- haskeySubmitQuery ::
 --   HaskeyReadSet state
---   -> ( Map RangeQueryId (OnDiskMappings state RangeQueryMetadata)
+--   -> ( OnDiskMappings state QueryResults)
 --      -> Map (Maybe (HaskeySnapshot state)) (OnDiskMappings state PTMap)
 --      -> (a, Bool, OnDiskMappings state DiffMap)
 --      )
