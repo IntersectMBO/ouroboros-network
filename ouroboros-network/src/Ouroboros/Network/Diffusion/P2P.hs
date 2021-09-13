@@ -1358,7 +1358,7 @@ run tracers p2pTracers args p2pArgs apps p2pApps = do
 --
 
 -- | For Node-To-Node protocol, any connection which negotiated at least
--- 'NodeToNodeV_7' version and did not declared 'InitiatorOnlyDiffusionMode'
+-- 'NodeToNodeV_8' version and did not declared 'InitiatorOnlyDiffusionMode'
 -- will run in 'Duplex' mode.   All connections from lower versions or one that
 -- declared themselves as 'InitiatorOnly' will run in 'UnidirectionalMode'
 --
@@ -1366,7 +1366,7 @@ nodeDataFlow :: NodeToNodeVersion
              -> NodeToNodeVersionData
              -> DataFlow
 nodeDataFlow v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiffusionMode }
-                 | v >= NodeToNodeV_7
+                 | v >= NodeToNodeV_8
                  = Duplex
 nodeDataFlow _ _ = Unidirectional
 
