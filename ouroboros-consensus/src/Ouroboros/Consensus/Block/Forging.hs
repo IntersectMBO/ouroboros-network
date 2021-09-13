@@ -20,6 +20,8 @@ module Ouroboros.Consensus.Block.Forging (
   , forgeStateUpdateInfoFromUpdateInfo
     -- * 'UpdateInfo'
   , UpdateInfo (..)
+    -- * Selecting transaction sequence prefixes
+  , takeLargestPrefixThatFits
   ) where
 
 import           Control.Tracer (Tracer, traceWith)
@@ -27,10 +29,14 @@ import           Data.Kind (Type)
 import           Data.Text (Text)
 import           GHC.Stack
 
+import qualified Data.Measure as Measure
+
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 
@@ -145,6 +151,28 @@ data BlockForging m blk = BlockForging {
         -> IsLeader (BlockProtocol blk) -- Proof we are leader
         -> m blk
     }
+
+-- | The prefix of transactions to include in the block
+--
+-- Filters out all transactions that do not fit the maximum size of total
+-- transactions in a single block, which is determined by querying the ledger
+-- state for the current limit and the given override. The result is the
+-- pointwise minimum of the ledger-specific capacity and the result of the
+-- override. In other words, the override can only reduce (parts of) the
+-- 'TxLimits.TxMeasure'.
+takeLargestPrefixThatFits ::
+     TxLimits blk
+  => TxLimits.Overrides blk
+  -> TickedLedgerState blk
+  -> [Validated (GenTx blk)]
+  -> [Validated (GenTx blk)]
+takeLargestPrefixThatFits overrides ledger txs =
+    Measure.take TxLimits.txMeasure capacity txs
+  where
+    capacity =
+      TxLimits.applyOverrides
+        overrides
+        (TxLimits.txsBlockCapacity ledger)
 
 data ShouldForge blk =
     -- | Before check whether we are a leader in this slot, we tried to update

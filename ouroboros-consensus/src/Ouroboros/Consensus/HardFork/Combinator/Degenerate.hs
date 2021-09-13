@@ -13,6 +13,7 @@
 module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
     -- * Pattern synonyms
     BlockConfig (DegenBlockConfig)
+  , BlockQuery (DegenQuery)
   , CodecConfig (DegenCodecConfig)
   , ConsensusConfig (DegenConsensusConfig)
   , Either (DegenQueryResult)
@@ -25,7 +26,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   , Header (DegenHeader)
   , LedgerState (DegenLedgerState)
   , OneEraTipInfo (DegenTipInfo)
-  , Query (DegenQuery)
   , TopLevelConfig (DegenTopLevelConfig)
   , TxId (DegenGenTxId)
   ) where
@@ -138,8 +138,8 @@ pattern DegenTipInfo x <- (project' (Proxy @(WrapTipInfo b)) -> x)
 pattern DegenQuery ::
      ()
   => HardForkQueryResult '[b] result ~ a
-  => Query b result
-  -> Query (HardForkBlock '[b]) a
+  => BlockQuery b result
+  -> BlockQuery (HardForkBlock '[b]) a
 pattern DegenQuery x <- (projQuery' -> ProjHardForkQuery x)
   where
     DegenQuery x = injQuery x

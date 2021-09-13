@@ -21,11 +21,10 @@ library
   build-depends:       base,
                        bytestring        >=0.10 && <0.11,
                        containers,
-                       io-sim-classes,
+                       io-classes,
                        ouroboros-consensus,
                        ouroboros-network,
                        ouroboros-network-framework,
-                       typed-protocols,
                        network-mux
 
   ghc-options:         -Wall

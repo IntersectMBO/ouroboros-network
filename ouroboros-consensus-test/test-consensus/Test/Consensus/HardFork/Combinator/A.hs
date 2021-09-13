@@ -87,7 +87,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util (repeatedlyM, (.:))
+import           Ouroboros.Consensus.Util (repeatedlyM, (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -210,22 +210,29 @@ instance GetTip (Ticked (LedgerState BlockA)) where
 
 instance IsLedger (LedgerState BlockA) where
   type LedgerErr (LedgerState BlockA) = Void
-  applyChainTick _ _ = TickedLedgerStateA
+
+  type AuxLedgerEvent (LedgerState BlockA) =
+    VoidLedgerEvent (LedgerState BlockA)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateA
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
-  applyLedgerBlock cfg blk =
-        fmap setTip
+  applyBlockLedgerResult cfg blk =
+        fmap (pureLedgerResult . setTip)
       . repeatedlyM
-          (fmap fst .: applyTx cfg (blockSlot blk))
+          (fmap fst .: applyTx cfg DoNotIntervene (blockSlot blk))
           (blkA_body blk)
     where
       setTip :: TickedLedgerState BlockA -> LedgerState BlockA
       setTip (TickedLedgerStateA st) = st { lgrA_tip = blockPoint blk }
 
-  reapplyLedgerBlock cfg blk st =
-      case runExcept $ applyLedgerBlock cfg blk st of
-        Left  _   -> error "reapplyLedgerBlock: impossible"
-        Right st' -> st'
+  reapplyBlockLedgerResult =
+      dontExpectError ..: applyBlockLedgerResult
+    where
+      dontExpectError :: Except a b -> b
+      dontExpectError mb = case runExcept mb of
+        Left  _ -> error "reapplyBlockLedgerResult: unexpected error"
+        Right b -> b
 
 instance UpdateLedger BlockA
 
@@ -313,14 +320,14 @@ newtype instance Validated (GenTx BlockA) = ValidatedGenTxA { forgetValidatedGen
 type instance ApplyTxErr BlockA = Void
 
 instance LedgerSupportsMempool BlockA where
-  applyTx _ sno tx@(TxA _ payload) (TickedLedgerStateA st) =
+  applyTx _ _wti sno tx@(TxA _ payload) (TickedLedgerStateA st) =
       case payload of
         InitiateAtoB -> do
           return (TickedLedgerStateA $ st { lgrA_transition = Just sno }, ValidatedGenTxA tx)
 
-  reapplyTx cfg slot = fmap fst .: (applyTx cfg slot . forgetValidatedGenTxA)
+  reapplyTx cfg slot = fmap fst .: (applyTx cfg DoNotIntervene slot . forgetValidatedGenTxA)
 
-  maxTxCapacity _ = maxBound
+  txsMaxBytes   _ = maxBound
   txInBlockSize _ = 0
 
   txForgetValidated = forgetValidatedGenTxA
@@ -332,16 +339,16 @@ newtype instance TxId (GenTx BlockA) = TxIdA Int
 instance HasTxId (GenTx BlockA) where
   txId = txA_id
 
-instance ShowQuery (Query BlockA) where
+instance ShowQuery (BlockQuery BlockA) where
   showResult qry = case qry of {}
 
-data instance Query BlockA result
+data instance BlockQuery BlockA result
   deriving (Show)
 
 instance QueryLedger BlockA where
-  answerQuery _ qry = case qry of {}
+  answerBlockQuery _ qry = case qry of {}
 
-instance SameDepIndex (Query BlockA) where
+instance SameDepIndex (BlockQuery BlockA) where
   sameDepIndex qry _qry' = case qry of {}
 
 instance ConvertRawHash BlockA where
@@ -474,7 +481,7 @@ instance SingleEraBlock BlockA where
             (boundEpoch eraStart)
 
 instance HasTxs BlockA where
-  extractTxs = fmap ValidatedGenTxA . blkA_body
+  extractTxs = blkA_body
 
 {-------------------------------------------------------------------------------
   Condense
@@ -565,10 +572,10 @@ instance SerialiseNodeToClient BlockA Void where
   encodeNodeToClient _ _ = absurd
   decodeNodeToClient _ _ = fail "no ApplyTxErr to be decoded"
 
-instance SerialiseNodeToClient BlockA (SomeSecond Query BlockA) where
+instance SerialiseNodeToClient BlockA (SomeSecond BlockQuery BlockA) where
   encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = fail "there are no queries to be decoded"
 
-instance SerialiseResult BlockA (Query BlockA) where
+instance SerialiseResult BlockA (BlockQuery BlockA) where
   encodeResult _ _ = \case {}
   decodeResult _ _ = \case {}

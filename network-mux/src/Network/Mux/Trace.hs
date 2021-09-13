@@ -64,9 +64,9 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   | MuxSDUWriteTimeout
                   -- ^ thrown when writing a single SDU takes too long
                   | MuxShutdown !(Maybe MuxErrorType)
-                  -- ^ Result of runMiniProtocol's completionAction in case of an error.
-                  | MuxCleanShutdown
-                  -- ^ Mux stopped by 'stopMux'
+                  -- ^ Result of runMiniProtocol's completionAction in case of
+                  -- an error or mux being closed while a mini-protocol was
+                  -- still running, this is not a clean exit.
                   | MuxBlockedOnCompletionVar !MiniProtocolNum
                   -- ^  Mux blocked on @completionVar@.
                   deriving (Show, Eq)

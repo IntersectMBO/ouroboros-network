@@ -34,8 +34,8 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
   , encodeByronQuery
   , encodeByronResult
     -- * Type family instances
+  , BlockQuery (..)
   , LedgerState (..)
-  , Query (..)
   , Ticked (..)
     -- * Auxiliary
   , validationErrorImpossible
@@ -78,7 +78,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Util (ShowProxy (..))
+import           Ouroboros.Consensus.Util (ShowProxy (..), (..:))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -172,7 +172,10 @@ data instance Ticked (LedgerState ByronBlock) = TickedByronLedgerState {
 instance IsLedger (LedgerState ByronBlock) where
   type LedgerErr (LedgerState ByronBlock) = CC.ChainValidationError
 
-  applyChainTick cfg slotNo ByronLedgerState{..} =
+  type AuxLedgerEvent (LedgerState ByronBlock) =
+    VoidLedgerEvent (LedgerState ByronBlock)
+
+  applyChainTickLedgerResult cfg slotNo ByronLedgerState{..} = pureLedgerResult $
       TickedByronLedgerState {
           tickedByronLedgerState =
             CC.applyChainTick cfg (toByronSlotNo slotNo) byronLedgerState
@@ -185,33 +188,33 @@ instance IsLedger (LedgerState ByronBlock) where
 -------------------------------------------------------------------------------}
 
 instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
-  applyLedgerBlock = applyByronBlock validationMode
+  applyBlockLedgerResult = fmap pureLedgerResult ..: applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.BlockValidation
 
-  reapplyLedgerBlock cfg blk st =
-      validationErrorImpossible $
-        applyByronBlock validationMode cfg blk st
+  reapplyBlockLedgerResult =
+          (pureLedgerResult . validationErrorImpossible)
+      ..: applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
 
-data instance Query ByronBlock :: Type -> Type where
-  GetUpdateInterfaceState :: Query ByronBlock UPI.State
+data instance BlockQuery ByronBlock :: Type -> Type where
+  GetUpdateInterfaceState :: BlockQuery ByronBlock UPI.State
 
 instance QueryLedger ByronBlock where
-  answerQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
+  answerBlockQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
-instance SameDepIndex (Query ByronBlock) where
+instance SameDepIndex (BlockQuery ByronBlock) where
   sameDepIndex GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
 
-deriving instance Eq (Query ByronBlock result)
-deriving instance Show (Query ByronBlock result)
+deriving instance Eq (BlockQuery ByronBlock result)
+deriving instance Show (BlockQuery ByronBlock result)
 
-instance ShowQuery (Query ByronBlock) where
+instance ShowQuery (BlockQuery ByronBlock) where
   showResult GetUpdateInterfaceState = show
 
-instance ShowProxy (Query ByronBlock) where
+instance ShowProxy (BlockQuery ByronBlock) where
 
 instance LedgerSupportsPeerSelection ByronBlock where
   getPeers = const []
@@ -480,22 +483,22 @@ decodeByronLedgerState = do
       <*> decode
       <*> decodeByronTransition
 
-encodeByronQuery :: Query ByronBlock result -> Encoding
+encodeByronQuery :: BlockQuery ByronBlock result -> Encoding
 encodeByronQuery query = case query of
     GetUpdateInterfaceState -> CBOR.encodeWord8 0
 
-decodeByronQuery :: Decoder s (SomeSecond Query ByronBlock)
+decodeByronQuery :: Decoder s (SomeSecond BlockQuery ByronBlock)
 decodeByronQuery = do
     tag <- CBOR.decodeWord8
     case tag of
       0 -> return $ SomeSecond GetUpdateInterfaceState
       _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
 
-encodeByronResult :: Query ByronBlock result -> result -> Encoding
+encodeByronResult :: BlockQuery ByronBlock result -> result -> Encoding
 encodeByronResult query = case query of
     GetUpdateInterfaceState -> toCBOR
 
-decodeByronResult :: Query ByronBlock result
+decodeByronResult :: BlockQuery ByronBlock result
                   -> forall s. Decoder s result
 decodeByronResult query = case query of
     GetUpdateInterfaceState -> fromCBOR

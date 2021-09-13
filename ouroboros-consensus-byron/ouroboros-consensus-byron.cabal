@@ -85,13 +85,10 @@ executable db-converter
   build-depends:       base
                      , bytestring
                      , cardano-binary
-                     , cardano-crypto-wrapper
                      , cardano-ledger-byron
-                     , cardano-slotting
                      , directory
                      , filepath
                      , mtl
-                     , optparse-applicative
                      , optparse-generic
                      , resourcet
                      , streaming

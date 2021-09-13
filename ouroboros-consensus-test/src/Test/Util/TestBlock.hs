@@ -21,9 +21,9 @@
 module Test.Util.TestBlock (
     -- * Blocks
     BlockConfig (..)
+  , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
-  , Query (..)
   , StorageConfig (..)
   , TestBlock (..)
   , TestBlockError (..)
@@ -65,6 +65,8 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
+import           Data.Time.Calendar (fromGregorian)
+import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
@@ -76,6 +78,7 @@ import           Test.QuickCheck hiding (Result)
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -251,6 +254,15 @@ data instance StorageConfig TestBlock = TestBlockStorageConfig
 instance HasNetworkProtocolVersion TestBlock where
   -- Use defaults
 
+instance ConfigSupportsNode TestBlock where
+  getSystemStart = const (SystemStart dummyDate)
+    where
+      --  This doesn't matter much
+      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
+
+  getNetworkMagic = const (NetworkMagic 42)
+
+
 {-------------------------------------------------------------------------------
   NestedCtxt
 -------------------------------------------------------------------------------}
@@ -315,18 +327,22 @@ instance GetTip (Ticked (LedgerState TestBlock)) where
 instance IsLedger (LedgerState TestBlock) where
   type LedgerErr (LedgerState TestBlock) = TestBlockError
 
-  applyChainTick _ _ = TickedTestLedger
+  type AuxLedgerEvent (LedgerState TestBlock) =
+    VoidLedgerEvent (LedgerState TestBlock)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyLedgerBlock _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
+  applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
     = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
-    = return     $ TestLedger (Chain.blockPoint tb)
+    = return     $ pureLedgerResult $ TestLedger (Chain.blockPoint tb)
 
-  reapplyLedgerBlock _ tb _ = TestLedger (Chain.blockPoint tb)
+  reapplyBlockLedgerResult _ tb _ =
+                   pureLedgerResult $ TestLedger (Chain.blockPoint tb)
 
 newtype instance LedgerState TestBlock =
     TestLedger {
@@ -375,20 +391,20 @@ instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
   hardForkSummary = neverForksHardForkSummary id
 
-data instance Query TestBlock result where
-  QueryLedgerTip :: Query TestBlock (Point TestBlock)
+data instance BlockQuery TestBlock result where
+  QueryLedgerTip :: BlockQuery TestBlock (Point TestBlock)
 
 instance QueryLedger TestBlock where
-  answerQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
+  answerBlockQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
 
-instance SameDepIndex (Query TestBlock) where
+instance SameDepIndex (BlockQuery TestBlock) where
   sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
-deriving instance Eq (Query TestBlock result)
-deriving instance Show (Query TestBlock result)
+deriving instance Eq (BlockQuery TestBlock result)
+deriving instance Show (BlockQuery TestBlock result)
 
-instance ShowQuery (Query TestBlock) where
+instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
 
 testInitLedger :: LedgerState TestBlock

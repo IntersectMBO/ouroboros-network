@@ -118,12 +118,16 @@ library
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.Inspect
                        Ouroboros.Consensus.Ledger.Query
+                       Ouroboros.Consensus.Ledger.Query.Version
                        Ouroboros.Consensus.Ledger.SupportsMempool
                        Ouroboros.Consensus.Ledger.SupportsPeerSelection
                        Ouroboros.Consensus.Ledger.SupportsProtocol
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
+                       Ouroboros.Consensus.Mempool.Impl.Pure
+                       Ouroboros.Consensus.Mempool.Impl.Types
+                       Ouroboros.Consensus.Mempool.TxLimits
                        Ouroboros.Consensus.Mempool.TxSeq
                        Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                        Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -238,6 +242,8 @@ library
 
                        -- Strict wrapper around SOP
                        Data.SOP.Strict
+  if os(windows)
+     exposed-modules:  Ouroboros.Consensus.Storage.Seek
 
   default-language:    Haskell2010
   other-extensions:
@@ -276,6 +282,7 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.15
+                     , base-deriving-via
                      , base16-bytestring
                      , bimap             >=0.3   && <0.5
                      , binary            >=0.8   && <0.11
@@ -293,6 +300,7 @@ library
                      , filelock
                      , filepath          >=1.4   && <1.5
                      , hashable
+                     , measures
                      , mtl               >=2.2   && <2.3
                      , nothunks          >=0.1.2 && <0.2
                      , psqueues          >=0.2.3 && <0.3
@@ -310,7 +318,7 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
-                     , io-sim-classes    >=0.2   && <0.3
+                     , io-classes        >=0.2   && <0.3
                      , typed-protocols
                      , network-mux
                      , ouroboros-network-framework
@@ -318,7 +326,13 @@ library
 
 
   if os(windows)
-     build-depends:    Win32 >= 2.6.2.0
+    if impl(ghc >= 8.10.2) && impl(ghc < 8.11)
+      -- Fix the Win32 version to be whatever is shipped with GHC.  This is important
+      -- because we have other code that uses the GHC API which requires this specific
+      -- version of the Win32 or constraint solving will fail.
+      build-depends:   Win32 == 2.6.1.0
+    else
+      build-depends:   Win32
   else
      build-depends:    unix
                      , unix-bytestring

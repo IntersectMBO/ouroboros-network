@@ -42,6 +42,10 @@ tests =
   , testProperty "timers (IOSim)"           (withMaxSuccess 1000 prop_timers_ST)
   -- fails since we just use `threadDelay` to schedule timers in `IO`.
   , testProperty "timers (IO)"              (expectFailure prop_timers_IO)
+  , testProperty "timeout (IOSim): no deadlock"
+                                            prop_timeout_no_deadlock_Sim
+  , testProperty "timeout (IO): no deadlock"
+                                            prop_timeout_no_deadlock_IO
   , testProperty "threadId order (IOSim)"   (withMaxSuccess 1000 prop_threadId_order_order_Sim)
   , testProperty "forkIO order (IOSim)"     (withMaxSuccess 1000 prop_fork_order_ST)
   , testProperty "order (IO)"               (expectFailure prop_fork_order_IO)
@@ -852,6 +856,36 @@ prop_stm_referenceM (SomeTerm _tyrep t) = do
     return (r1 === r2)
 
 
+-- | Check that 'timeout' does not deadlock when executed with asynchronous
+-- exceptions uninterruptibly masked.
+--
+prop_timeout_no_deadlockM :: forall m. ( MonadFork m, MonadSTM m, MonadTimer m, MonadMask m )
+                          => m Bool
+prop_timeout_no_deadlockM = do
+    v <- registerDelay' 0.01
+    r <- uninterruptibleMask_ $ timeout 0.02 $ do
+      atomically $ do
+        readTVar v >>= check
+        return True
+    case r of
+      Nothing -> return False
+      Just b  -> return b
+  where
+    -- Like 'registerDelay', but does not require threaded RTS in the @m ~ IO@
+    -- case.
+    registerDelay' :: DiffTime -> m (StrictTVar m Bool)
+    registerDelay' delta = do
+      v <- newTVarIO False
+      _ <- forkIO $ do
+             threadDelay delta
+             atomically (writeTVar v True)
+      return v
+
+prop_timeout_no_deadlock_Sim :: Bool
+prop_timeout_no_deadlock_Sim = runSimOrThrow prop_timeout_no_deadlockM
+
+prop_timeout_no_deadlock_IO :: Property
+prop_timeout_no_deadlock_IO = ioProperty prop_timeout_no_deadlockM
 
 --
 -- Utils

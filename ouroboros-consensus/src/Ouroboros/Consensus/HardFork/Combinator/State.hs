@@ -153,7 +153,7 @@ epochInfoLedger :: All SingleEraBlock xs
                 -> HardForkState LedgerState xs
                 -> EpochInfo (Except PastHorizonException)
 epochInfoLedger cfg st =
-    History.snapshotEpochInfo $
+    History.summaryToEpochInfo $
       reconstructSummaryLedger cfg st
 
 -- | Construct 'EpochInfo' given precomputed 'TransitionInfo'
@@ -163,7 +163,7 @@ epochInfoPrecomputedTransitionInfo ::
   -> HardForkState f xs
   -> EpochInfo (Except PastHorizonException)
 epochInfoPrecomputedTransitionInfo shape transition st =
-    History.snapshotEpochInfo $
+    History.summaryToEpochInfo $
       reconstructSummary shape transition st
 
 {-------------------------------------------------------------------------------

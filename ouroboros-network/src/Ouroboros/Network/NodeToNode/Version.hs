@@ -52,6 +52,7 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * new 'KeepAlive' codec
+    -- * Enable @CardanoNodeToNodeVersion5@, i.e., Alonzo
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion

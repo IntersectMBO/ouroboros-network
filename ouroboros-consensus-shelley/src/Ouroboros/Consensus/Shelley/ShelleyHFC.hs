@@ -23,14 +23,17 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC (
   ) where
 
 import           Control.Monad (guard)
-import           Control.Monad.Except (throwError)
+import           Control.Monad.Except (runExcept, throwError, withExceptT)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.SOP.Strict
+import qualified Data.Text as T (pack)
 import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
+
+import           Cardano.Slotting.EpochInfo (hoistEpochInfo)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -40,8 +43,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
-import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
-                     toPureEpochInfo)
+import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -199,7 +201,10 @@ instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
   completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
       cfg {
           shelleyLedgerGlobals = (shelleyLedgerGlobals cfg) {
-              SL.epochInfo = toPureEpochInfo epochInfo
+              SL.epochInfoWithErr =
+                  hoistEpochInfo
+                    (runExcept . withExceptT (T.pack . show))
+                    epochInfo
             }
         }
 
@@ -303,17 +308,18 @@ instance ( ShelleyBasedEra era
         }
 
 instance ( ShelleyBasedEra era
-         , SL.TranslateEra era SL.Tx
+         , SL.TranslateEra era WrapTx
          ) => SL.TranslateEra era (GenTx :.: ShelleyBlock) where
-  type TranslationError era (GenTx :.: ShelleyBlock) = SL.TranslationError era SL.Tx
+  type TranslationError era (GenTx :.: ShelleyBlock) = SL.TranslationError era WrapTx
   translateEra ctxt (Comp (ShelleyTx _txId tx)) =
-    -- TODO will the txId stay the same? If so, we could avoid recomputing it
-    Comp . mkShelleyTx <$> SL.translateEra ctxt tx
+        Comp . mkShelleyTx . unwrapTx @era
+    <$> SL.translateEra ctxt (WrapTx @(SL.PreviousEra era) tx)
 
 instance ( ShelleyBasedEra era
-         , SL.TranslateEra era WrapTxInBlock
+         , SL.TranslateEra era WrapTx
          ) => SL.TranslateEra era (WrapValidatedGenTx :.: ShelleyBlock) where
-  type TranslationError era (WrapValidatedGenTx :.: ShelleyBlock) = SL.TranslationError era WrapTxInBlock
-  translateEra ctxt (Comp (WrapValidatedGenTx (ShelleyValidatedTx _txId tx))) =
-        Comp . WrapValidatedGenTx . mkShelleyValidatedTx . unwrapTxInBlock @era
-    <$> SL.translateEra ctxt (WrapTxInBlock @(SL.PreviousEra era) tx)
+  type TranslationError era (WrapValidatedGenTx :.: ShelleyBlock) = SL.TranslationError era WrapTx
+  translateEra ctxt (Comp (WrapValidatedGenTx (ShelleyValidatedTx _txId vtx))) =
+        Comp . WrapValidatedGenTx
+      . mkShelleyValidatedTx . SL.coerceValidated
+    <$> SL.translateValidated @era @WrapTx ctxt (SL.coerceValidated vtx)

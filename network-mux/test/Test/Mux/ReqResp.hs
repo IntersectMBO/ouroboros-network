@@ -66,10 +66,13 @@ data ReqRespClient req resp m a where
 
   SendMsgDone :: m a -> ReqRespClient req resp m a
 
+  EarlyExit   ::   a -> ReqRespClient req resp m a
+
 
 data TraceSendRecv msg
   = TraceSend msg
   | TraceRecv msg
+  | TraceEarlyExit
   | TraceFailure CBOR.DeserialiseFailure
   deriving Show
 
@@ -150,6 +153,10 @@ runClient tracer channel@Channel {send} =
         a <- ma
         return (a, trailing)
 
+    go trailing (EarlyExit a) = do
+      traceWith tracer TraceEarlyExit
+      return (a, trailing)
+
 
 -- | Server which receives 'req' and responds with 'resp'.
 --
@@ -165,12 +172,11 @@ data ReqRespServer req resp m a = ReqRespServer {
 
 
 runServer :: forall req resp m a.
-             ( Monad m
+             ( MonadST m
              , Serialise req
              , Serialise resp
              , Show req
              , Show resp
-             , m ~ IO
              )
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
           -> Channel m

@@ -137,7 +137,7 @@ data ChainDB m blk = ChainDB {
       --
       -- Suppose the current chain is
       --
-      -- > a -> b -> c -> d -> e -> ff
+      -- > a -> b -> c -> d -> e -> f
       --
       -- and suppose @k = 2@; this means that the most distant fork we can
       -- switch to is something like

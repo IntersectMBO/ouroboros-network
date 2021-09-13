@@ -20,10 +20,8 @@ import           Cardano.Crypto.KES (MockKES)
 
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto (..))
-import qualified Cardano.Ledger.Era as CL
 import           Control.State.Transition.Extended (PredicateFailure)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BlockChain as SL
 import qualified Shelley.Spec.Ledger.Tx as SL (ValidateScript)
 
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
@@ -33,7 +31,6 @@ import qualified Test.Shelley.Spec.Ledger.Generator.EraGen as SL (EraGen)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyBasedEra,
                      ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto (PraosCrypto)
 
 -- | A mock replacement for 'StandardCrypto'
 --
@@ -52,7 +49,7 @@ instance HashAlgorithm h => Crypto (MockCrypto h) where
 
 type MockShelley h = ShelleyEra (MockCrypto h)
 
-instance HashAlgorithm h => PraosCrypto (MockCrypto h)
+instance HashAlgorithm h => SL.PraosCrypto (MockCrypto h)
 
 type Block h = ShelleyBlock (MockShelley h)
 
@@ -66,8 +63,9 @@ type CanMock era =
   , Arbitrary (Core.PParams era)
   , Arbitrary (Core.Script era)
   , Arbitrary (Core.TxBody era)
+  , Arbitrary (Core.Tx era)
   , Arbitrary (Core.TxOut era)
   , Arbitrary (Core.Value era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
-  , CL.TxSeq era ~ SL.TxSeq era
+  , Arbitrary (Core.Witnesses era)
   )

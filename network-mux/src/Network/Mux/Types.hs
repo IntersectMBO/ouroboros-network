@@ -29,6 +29,7 @@ module Network.Mux.Types (
     , muxBearerAsChannel
     , MuxSDU (..)
     , MuxSDUHeader (..)
+    , SDUSize (..)
     , msTimestamp
     , setTimestamp
     , msNum
@@ -212,9 +213,11 @@ data MuxBearer m = MuxBearer {
     -- | Read a MuxSDU
     , read    :: TimeoutFn m -> m (MuxSDU, Time)
     -- | Return a suitable MuxSDU payload size.
-    , sduSize :: Word16
+    , sduSize :: SDUSize
     }
 
+newtype SDUSize = SDUSize { getSDUSize :: Word16 }
+  deriving Show
 
 -- | A channel which wraps each message as an 'MuxSDU' using giving
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.

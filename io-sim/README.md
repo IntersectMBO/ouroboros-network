@@ -15,7 +15,7 @@ A pure simulator monad built on top of the `ST` monad which supports:
 
 `io-sim` is a drop-in replacement for the `IO` monad.  It was designed to write easily
 testable Haskell networking code.  Using
-[io-sim-classes](https://hackage.haskell.org/package/io-sim-classes) library
+[io-classes](https://hackage.haskell.org/package/io-classes) library
 one can write code that can run in both: real `IO` and the `SimM` monad.  One
 of the design goals was to keep the api as close as possible to `base`,
 `exceptions`, `async` and `stm` packages.
@@ -23,7 +23,7 @@ of the design goals was to keep the api as close as possible to `base`,
 As a design choice `IOSim` does not support `MVar`s by default, but they can be
 simulated using `stm` interface.
 
-`io-sim` supports both `io-sim-classes` class hierarchy and `base`
+`io-sim` supports both `io-classes` class hierarchy and `base`
 / `exceptions` class hierarchies (they diverge in some detail).
 
 

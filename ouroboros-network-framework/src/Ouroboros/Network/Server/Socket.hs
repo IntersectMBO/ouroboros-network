@@ -32,6 +32,7 @@ import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
 import Control.Monad (forM_, join)
 import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
+import Control.Monad.Class.MonadTimer (threadDelay)
 import Control.Tracer (Tracer, traceWith)
 import Data.Foldable (traverse_)
 import Data.Set (Set)
@@ -168,7 +169,10 @@ acceptLoop
 acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket = do
     mNextSocket <- acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
     case mNextSocket of
-      Nothing -> pure ()
+      Nothing -> do
+        -- Thread delay to mitigate potential livelock.
+        threadDelay 0.5
+        acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
       Just nextSocket ->
         acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException nextSocket
 
@@ -198,6 +202,8 @@ acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionsLimit b
   outcome <- try (restore (acceptConnection socket))
   case outcome :: Either IOException (addr, channel, IO (), Socket addr channel) of
     Left ex -> do
+      -- Classify the exception, if it is fatal to the node or not.
+      -- If it is fatal to the node the exception will propagate.
       restore (acceptException ex)
       pure Nothing
     Right (addr, channel, close, nextSocket) -> do
@@ -288,12 +294,12 @@ run errroPolicyTrace acceptPolicyTrace socket acceptedConnectionLimit acceptExce
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
   let acceptLoopDo = acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
-      -- The accept loop is killed when the main loop stops.
-      mainDo = Async.withAsync acceptLoopDo $ \_ ->
-        mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
+      -- The accept loop is killed when the main loop stops and the main
+      -- loop is killed if the accept loop stops.
+      mainDo = mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
       killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
         forM_ (Set.toList children) Async.cancel
   -- After both the main and accept loop have been killed, any remaining
   -- spawned threads are cancelled.
-  mainDo `finally` killChildren
+  (snd <$> Async.concurrently acceptLoopDo mainDo) `finally` killChildren

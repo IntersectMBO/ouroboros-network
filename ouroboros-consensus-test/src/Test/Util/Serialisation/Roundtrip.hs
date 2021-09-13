@@ -1,13 +1,16 @@
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE DerivingVia          #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Test.Util.Serialisation.Roundtrip (
     -- * Basic test helpers
@@ -15,6 +18,7 @@ module Test.Util.Serialisation.Roundtrip (
   , roundtrip'
     -- * Test skeleton
   , Arbitrary'
+  , Coherent (..)
   , SomeResult (..)
   , WithVersion (..)
   , prop_hashSize
@@ -36,6 +40,8 @@ import qualified Data.ByteString.Lazy.Char8 as Char8
 import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Typeable
+import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
 
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
                      mkSerialised)
@@ -43,7 +49,9 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Query (Query)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..),
+                     QueryVersion)
+import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -54,6 +62,8 @@ import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
+
+import           Test.Util.Orphans.Arbitrary ()
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -125,6 +135,7 @@ roundtrip_all
      , Arbitrary' (ChainDepState (BlockProtocol blk))
 
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) blk
+     , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Coherent blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (Header blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToNodeVersion blk) (GenTxId blk)
@@ -133,8 +144,9 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
+     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeSecond Query blk)
      )
   => CodecConfig blk
   -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
@@ -147,7 +159,7 @@ roundtrip_all ccfg dictNestedHdr =
       , testProperty "envelopes"          $ roundtrip_envelopes             ccfg
       , testProperty "ConvertRawHash"     $ roundtrip_ConvertRawHash        (Proxy @blk)
       , testProperty "hashSize"           $ prop_hashSize                   (Proxy @blk)
-      , testProperty "estimateBlockSize"  $ prop_estimateBlockSize         ccfg
+      , testProperty "estimateBlockSize"  $ prop_estimateBlockSize          ccfg
       ]
 
 -- TODO how can we ensure that we have a test for each constraint listed in
@@ -201,12 +213,55 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
 data WithVersion v a = WithVersion v a
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Arbitrary a => Arbitrary (WithVersion () a) where
-  arbitrary = WithVersion () <$> arbitrary
-
 -- | Similar to @Arbitrary'@, but with an 'Arbitrary' instasnce for
 -- @('WithVersion' v a)@.
 type ArbitraryWithVersion v a = (Arbitrary (WithVersion v a), Eq a, Show a)
+
+instance ( blockVersion ~ BlockNodeToClientVersion blk
+         , Arbitrary blockVersion
+         , Arbitrary (WithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk))
+         )
+      => Arbitrary (WithVersion (QueryVersion, blockVersion) (SomeSecond Query blk)) where
+  arbitrary = do
+    queryVersion <- arbitrary
+    case queryVersion of
+      -- This case statement will cause a warning when we add a new top
+      -- level query and hence a new QueryVersion. In that case we should
+      -- support such top level `Query` constructors in this Arbitrary instance.
+      Query.TopLevelQueryDisabled ->
+        arbitraryBlockQuery queryVersion
+
+      Query.QueryVersion1 ->
+        frequency
+          [ (15, arbitraryBlockQuery queryVersion)
+          , (1,  do blockV <- arbitrary
+                    return (WithVersion (queryVersion, blockV)
+                                        (SomeSecond GetSystemStart)))
+          ]
+    where
+      arbitraryBlockQuery :: QueryVersion
+                          -> Gen (WithVersion (QueryVersion, blockVersion)
+                                              (SomeSecond Query blk))
+      arbitraryBlockQuery queryVersion = do
+        WithVersion blockV (SomeSecond someBlockQuery) <- arbitrary
+        return (WithVersion (queryVersion, blockV)
+                            (SomeSecond (BlockQuery someBlockQuery)))
+
+-- | This is @OVERLAPPABLE@ because we have to override the default behaviour
+-- for e.g. 'Query's.
+instance {-# OVERLAPPABLE #-} (Arbitrary version, Arbitrary a)
+      => Arbitrary (WithVersion version a) where
+  arbitrary = WithVersion <$> arbitrary <*> arbitrary
+
+-- | Used to generate slightly less arbitrary values
+--
+-- Like some other QuickCheck modifiers, the exact meaning is
+-- context-dependent. The original motivating example is that some of our
+-- serialization-adjacent properties require that the generated block contains
+-- a header and a body that match, ie are /coherent/.
+newtype Coherent a = Coherent { getCoherent :: a }
+  deriving (Eq, Generic)
+  deriving (Show) via (Quiet (Coherent a))
 
 -- TODO how can we ensure that we have a test for each constraint listed in
 -- 'SerialiseNodeToNodeConstraints'?
@@ -313,8 +368,9 @@ roundtrip_SerialiseNodeToClient
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond Query blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
+     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeSecond Query blk)
 
        -- Needed for testing the @Serialised blk@
      , EncodeDisk blk blk
@@ -323,10 +379,25 @@ roundtrip_SerialiseNodeToClient
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToClient ccfg =
-    [ rt (Proxy @blk)                    "blk"
-    , rt (Proxy @(GenTx blk))            "GenTx"
-    , rt (Proxy @(ApplyTxErr blk))       "ApplyTxErr"
-    , rt (Proxy @(SomeSecond Query blk)) "Query"
+    [ rt (Proxy @blk)                         "blk"
+    , rt (Proxy @(GenTx blk))                 "GenTx"
+    , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
+    , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
+    , rtWith
+        @(SomeSecond Query blk)
+        @(QueryVersion, BlockNodeToClientVersion blk)
+        (\(queryVersion, blockVersion) query -> Query.queryEncodeNodeToClient
+                          ccfg
+                          queryVersion
+                          blockVersion
+                          query
+        )
+        (\(queryVersion, blockVersion) -> Query.queryDecodeNodeToClient
+                          ccfg
+                          queryVersion
+                          blockVersion
+        )
+        "Query"
       -- See roundtrip_SerialiseNodeToNode for more info
     , testProperty "roundtrip Serialised blk" $
         \(WithVersion version blk) ->
@@ -365,10 +436,23 @@ roundtrip_SerialiseNodeToClient ccfg =
          , SerialiseNodeToClient blk a
          )
        => Proxy a -> String -> TestTree
-    rt _ name =
+    rt _ name = rtWith (enc @a) (dec @a) name
+
+    rtWith
+      :: forall a version.
+         ( Arbitrary (WithVersion version a)
+         , Eq a
+         , Show a
+         , Show version
+         )
+       => (version -> a -> Encoding)
+       -> (version -> forall s. Decoder s a)
+       -> String
+       -> TestTree
+    rtWith enc' dec' name =
       testProperty ("roundtrip " <> name) $
         \(WithVersion version a) ->
-          roundtrip @a (enc version) (dec version) a
+          roundtrip @a (enc' version) (dec' version) a
 
 {-------------------------------------------------------------------------------
   Checking envelopes
@@ -441,9 +525,9 @@ prop_hashSize p h =
 prop_estimateBlockSize ::
      (SerialiseNodeToNodeConstraints blk, GetHeader blk)
   => CodecConfig blk
-  -> WithVersion (BlockNodeToNodeVersion blk) blk
+  -> WithVersion (BlockNodeToNodeVersion blk) (Coherent blk)
   -> Property
-prop_estimateBlockSize ccfg (WithVersion version blk)
+prop_estimateBlockSize ccfg (WithVersion version (Coherent blk))
   | actualBlockSize > expectedBlockSize
   = counterexample
       ("actualBlockSize > expectedBlockSize: "
@@ -507,7 +591,7 @@ decodeThroughSerialised dec decSerialised = do
 -- need them in the tests.
 data SomeResult blk where
   SomeResult :: (Eq result, Show result, Typeable result)
-             => Query blk result -> result -> SomeResult blk
+             => BlockQuery blk result -> result -> SomeResult blk
 
 instance Show (SomeResult blk) where
   show (SomeResult _ result) = show result

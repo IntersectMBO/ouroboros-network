@@ -93,7 +93,7 @@ newFollower ::
   -> m (Follower m blk b)
 newFollower h registry blockComponent = getEnv h $ \CDB{..} -> do
     -- The following operations don't need to be done in a single transaction
-    followerKey  <- atomically $ stateTVar cdbNextFollowerKey $ \r -> (succ r, r)
+    followerKey  <- atomically $ stateTVar cdbNextFollowerKey $ \r -> (r, succ r)
     varFollower <- newTVarIO FollowerInit
     let followerHandle = mkFollowerHandle varFollower
     atomically $ modifyTVar cdbFollowers $ Map.insert followerKey followerHandle
@@ -498,7 +498,7 @@ forward registry varFollower blockComponent CDB{..} = \pts -> do
     updateState :: FollowerState m blk b -> m ()
     updateState newFollowerState = join $ atomically $
       stateTVar varFollower $ \followerState ->
-        (newFollowerState, ) $ case followerState of
+        (, newFollowerState) $ case followerState of
           -- Return a continuation (that we'll 'join') that closes the
           -- previous iterator.
           FollowerInImmutableDB _ immIt -> ImmutableDB.iteratorClose immIt

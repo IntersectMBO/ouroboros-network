@@ -24,9 +24,11 @@ import qualified Cardano.Chain.Update as Byron.Update
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..))
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto
+import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
+import           Cardano.Ledger.Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 
@@ -58,6 +60,7 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     CardanoBlockArgs {
         byronArgs   :: Args ByronBlock
       , shelleyArgs :: Args (ShelleyBlock StandardShelley)
+      , alonzoArgs  :: FilePath
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
@@ -66,7 +69,8 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     genesisByron <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
     genesisShelley <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
-    return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley initialNonce
+    genesisAlonzo <- undefined alonzoArgs
+    return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley genesisAlonzo initialNonce
 
 instance HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
@@ -81,14 +85,20 @@ parseCardanoArgs :: Parser CardanoBlockArgs
 parseCardanoArgs = CardanoBlockArgs
     <$> argsParser Proxy
     <*> argsParser Proxy
+    <*> strOption (mconcat [
+            long "configAlonzo"
+          , help "Path to config file"
+          , metavar "PATH"
+          ])
 
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
   -> Maybe PBftSignatureThreshold
   -> ShelleyGenesis StandardShelley
+  -> SL.AlonzoGenesis
   -> Nonce
   -> ProtocolInfo IO (CardanoBlock StandardCrypto)
-mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonce =
+mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlonzo initialNonce =
     protocolInfoCardano
       ProtocolParamsByron {
           byronGenesis                = genesisByron
@@ -96,6 +106,7 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
         , byronProtocolVersion        = Byron.Update.ProtocolVersion 1 2 0
         , byronSoftwareVersion        = Byron.Update.SoftwareVersion (Byron.Update.ApplicationName "db-analyser") 2
         , byronLeaderCredentials      = Nothing
+        , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsShelleyBased {
           shelleyBasedGenesis           = genesisShelley
@@ -103,22 +114,36 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley initialNonc
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
-          shelleyProtVer = ProtVer 2 0
+          shelleyProtVer                = ProtVer 2 0
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAllegra {
-          allegraProtVer = ProtVer 3 0
+          allegraProtVer                = ProtVer 3 0
+        , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsMary {
-          maryProtVer    = ProtVer 4 0
+          maryProtVer                   = ProtVer 4 0
+        , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
-      ProtocolParamsTransition {
-          transitionTrigger = TriggerHardForkAtVersion 2
+      ProtocolParamsAlonzo {
+          alonzoProtVer                 = ProtVer 5 0
+        , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
-      ProtocolParamsTransition {
-          transitionTrigger = TriggerHardForkAtVersion 3
+      ProtocolTransitionParamsShelleyBased {
+          transitionTranslationContext = ()
+        , transitionTrigger            = TriggerHardForkAtVersion 2
         }
-      ProtocolParamsTransition {
-          transitionTrigger = TriggerHardForkAtVersion 4
+      ProtocolTransitionParamsShelleyBased {
+          transitionTranslationContext = ()
+        , transitionTrigger            = TriggerHardForkAtVersion 3
+        }
+      ProtocolTransitionParamsShelleyBased {
+          transitionTranslationContext = ()
+        , transitionTrigger            = TriggerHardForkAtVersion 4
+        }
+      ProtocolTransitionParamsShelleyBased {
+          transitionTranslationContext = genesisAlonzo
+        , transitionTrigger            = TriggerHardForkAtVersion 5
         }
 
 castHeaderHash ::

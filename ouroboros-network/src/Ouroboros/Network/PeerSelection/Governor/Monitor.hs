@@ -73,7 +73,7 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
 --
 jobs :: MonadSTM m
-     => JobPool m (Completion m peeraddr peerconn)
+     => JobPool () m (Completion m peeraddr peerconn)
      -> PeerSelectionState peeraddr peerconn
      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 jobs jobPool st =

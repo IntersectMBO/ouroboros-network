@@ -3,6 +3,7 @@ index-state: 2021-02-15T00:00:00Z
 packages: ./typed-protocols
           ./typed-protocols-examples
           ./ouroboros-network-testing
+          ./monoidal-synchronisation
           ./network-mux
           ./ouroboros-network-framework
           ./ouroboros-network
@@ -19,7 +20,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus-shelley-test
           ./ouroboros-consensus-test
           ./io-sim
-          ./io-sim-classes
+          ./io-classes
           ./ntp-client
           ./cardano-client
           ./ledger-ondisk
@@ -28,15 +29,16 @@ packages: ./typed-protocols
           ./ledger-ondisk/haskey
 
 constraints:
-  ip < 1.5,
-  hedgehog >= 1.0,
-  bimap >= 0.4.0,
-  ListLike >= 4.7.3
+    ip < 1.5
+  , hedgehog >= 1.0
+  , bimap >= 0.4.0
+  , ListLike >= 4.7.3
+  , witherable >= 0.4
 
 package Win32-network
   tests: True
 
-package io-sim-classes
+package io-classes
   flags: +asserts
 
 package network-mux
@@ -131,6 +133,9 @@ package goblins
 package shelley-spec-ledger-test
   tests: False
 
+package cardano-ledger-alonzo-test
+  tests: False
+
 package shelley-spec-non-integral
   tests: False
 
@@ -140,11 +145,40 @@ package small-steps
 package small-steps-test
   tests: False
 
+package plutus-tx
+  tests: False
+
+package plutus-core
+  tests: False
+
+package prettyprinter-configurable
+  tests: False
+
+allow-newer:
+  monoidal-containers:aeson,
+  size-based:template-haskell,
+
+  -- TODO: This is only needed until index-state is updated to 2021-02-17 or later.
+  test-framework:random,
+  test-framework-quickcheck2:random
+
+constraints:
+  -- bizarre issue: in earlier versions they define their own 'GEq', in newer
+  -- ones they reuse the one from 'some', but there isn't e.g. a proper version
+  -- constraint from dependent-sum-template (which is the library we actually use).
+  , dependent-sum > 0.6.2.0
+
+-- ---------------------------------------------------------
+-- The "cabal" wrapper script provided by nix-shell will cut off / restore the remainder of this file
+-- in order to force usage of nix provided dependencies for `source-repository-package`s.
+-- --------------------------- 8< --------------------------
+-- Please do not put any `source-repository-package` clause above this line.
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/Win32-network
-  tag: 94153b676617f8f33abe8d8182c37377d2784bd1
-  --sha256: 0pb7bg0936fldaa5r08nqbxvi2g8pcy4w3c7kdcg7pdgmimr30ss
+  tag: 3825d3abf75f83f406c1f7161883c438dac7277d
+  --sha256: 19wahfv726fa3mqajpqdqhnl9ica3xmf68i254q45iyjcpj1psqx
 
 source-repository-package
   type: git
@@ -165,22 +199,27 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 47db5b818ca4fa051f2e44cdf5e7c5c18c1fb0bf
-  --sha256: 0fr0r5dwfmsp15j19xh20js8nzsqyhwx4q797rxsvpyjfabb2y11
+  tag: cb0f19c85e5bb5299839ad4ed66af6fa61322cc4
+  --sha256: 0dnkfqcvbifbk3m5pg8kyjqjy0zj1l4vd23p39n6ym4q0bnib1cq
   subdir:
+    base-deriving-via
     binary
     binary/test
     cardano-crypto-class
     cardano-crypto-praos
+    measures
+    orphans-deriving-via
     slotting
     strict-containers
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: e8f19bcc9c8f405131cb95ca6ada26b2b4eac638
-  --sha256: 1v36d3lyhmadzj0abdfsppjna7n7llzqzp9ikx5yq28l2kda2f1p
+  tag: ab138130d979d273f31a7a383c9ab81906e0727c
+  --sha256: 1pqdm1v6sjf19z3cy4jsyj81wizwafa1lprafnwn5plqd9qimz55
   subdir:
+    alonzo/impl
+    alonzo/test
     byron/chain/executable-spec
     byron/crypto
     byron/crypto/test
@@ -188,6 +227,7 @@ source-repository-package
     byron/ledger/impl
     byron/ledger/impl/test
     cardano-ledger-core
+    cardano-protocol-tpraos
     semantics/executable-spec
     semantics/small-steps-test
     shelley/chain-and-ledger/dependencies/non-integer
@@ -198,15 +238,35 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/plutus
+  tag: 8c83c4abe211b4bbcaca3cdf1b2c0e38d0eb683f
+  --sha256: 1643s1g3jlm9pgalpc3vpij1zqb1n8yv8irq6qc43gs9bvl0wc3l
+  subdir:
+    plutus-ledger-api
+    plutus-tx
+    plutus-core
+    prettyprinter-configurable
+    word-array
+
+source-repository-package
+  type: git
   location: https://github.com/input-output-hk/goblins
   tag: cde90a2b27f79187ca8310b6549331e59595e7ba
   --sha256: 17c88rbva3iw82yg9srlxjv2ia5wjb9cyqw44hik565f5v9svnyg
 
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/cardano-crypto/
+  location: https://github.com/input-output-hk/cardano-crypto
   tag: f73079303f663e028288f9f4a9e08bcca39a923e
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
+
+-- Drops an instance breaking the Plutus code. Should be released to Hackage
+-- eventually.
+source-repository-package
+  type: git
+  location: https://github.com/michaelpj/flat.git
+  tag: ee59880f47ab835dbd73bea0847dab7869fc20d8
+  --sha256: 1lrzknw765pz2j97nvv9ip3l1mcpf2zr4n56hwlz0rk7wq7ls4cm
 
 source-repository-package
   type: git

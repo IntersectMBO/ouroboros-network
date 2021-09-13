@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,20 +28,23 @@ module Test.Util.Serialisation.Golden (
   ) where
 
 import           Codec.CBOR.Encoding (Encoding)
-import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..))
+import           Codec.CBOR.FlatTerm (TermToken (..))
 import qualified Codec.CBOR.FlatTerm as CBOR
 import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (encode)
 import           Control.Exception (SomeException, evaluate, try)
-import           Data.Bifunctor (first)
+import           Data.Bifunctor (bimap, first)
 import qualified Data.ByteString as Strict
+import qualified Data.ByteString.Base16 as Base16 (encode)
+import qualified Data.ByteString.Char8 as Strict8 (unpack)
+import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.UTF8 as BS.UTF8
 import           Data.List (nub)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           Data.TreeDiff (Expr (..), ToExpr (..), ansiWlEditExpr, ediff)
-import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           System.Directory (createDirectoryIfMissing)
 import           System.FilePath (takeDirectory, (</>))
@@ -55,7 +59,8 @@ import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
-import           Ouroboros.Consensus.Ledger.Query (Query)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
+                     nodeToClientVersionToQueryVersion)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -151,11 +156,11 @@ goldenTestCBOR testName example enc goldenFile =
               , BS.UTF8.toString golden
               ]
 
-          (Right actualFlatTerm, Right goldenFlatTerm)
+          (Right _actualFlatTerm, Right _goldenFlatTerm)
             | actual == golden -> Nothing
             | otherwise -> Just $ unlines [
                 "Golden term /= actual term, diff golden actual:"
-              , showFlatTermDiff goldenFlatTerm actualFlatTerm
+              , diffToExpr (CBORBytes golden) (CBORBytes actual)
               ]
 
           (Right actualFlatTerm, Left _) -> Just $ unlines [
@@ -213,7 +218,7 @@ data Examples blk = Examples {
     , exampleGenTx            :: Labelled (GenTx blk)
     , exampleGenTxId          :: Labelled (GenTxId blk)
     , exampleApplyTxErr       :: Labelled (ApplyTxErr blk)
-    , exampleQuery            :: Labelled (SomeSecond Query blk)
+    , exampleQuery            :: Labelled (SomeSecond BlockQuery blk)
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
     , exampleLedgerState      :: Labelled (LedgerState blk)
@@ -329,7 +334,7 @@ goldenTest_all ::
      , SupportedNetworkProtocolVersion  blk
 
      , ToGoldenDirectory (BlockNodeToNodeVersion   blk)
-     , ToGoldenDirectory (BlockNodeToClientVersion blk)
+     , ToGoldenDirectory (QueryVersion, BlockNodeToClientVersion blk)
 
      , HasCallStack
      )
@@ -421,7 +426,7 @@ goldenTest_SerialiseNodeToClient ::
      forall blk.
      ( SerialiseNodeToClientConstraints blk
      , SupportedNetworkProtocolVersion blk
-     , ToGoldenDirectory (BlockNodeToClientVersion blk)
+     , ToGoldenDirectory (QueryVersion, BlockNodeToClientVersion blk)
      , HasCallStack
      )
   => CodecConfig blk
@@ -430,12 +435,12 @@ goldenTest_SerialiseNodeToClient ::
   -> TestTree
 goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
     testGroup "SerialiseNodeToClient" [
-        testVersion version
-      | version <- nub $ Map.elems $ supportedNodeToClientVersions $ Proxy @blk
+        testVersion (nodeToClientVersionToQueryVersion version, blockVersion)
+      | (version, blockVersion) <- nub $ Map.toList $ supportedNodeToClientVersions $ Proxy @blk
       ]
   where
-    testVersion :: BlockNodeToClientVersion blk -> TestTree
-    testVersion version = testGroup (toGoldenDirectory version) [
+    testVersion :: (QueryVersion, BlockNodeToClientVersion blk) -> TestTree
+    testVersion versions@(_, blockVersion) = testGroup (toGoldenDirectory versions) [
           test "Block"           exampleBlock           enc'
         , test "SerialisedBlock" exampleSerialisedBlock enc'
         , test "GenTx"           exampleGenTx           enc'
@@ -446,10 +451,10 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
       where
 
         enc' :: SerialiseNodeToClient blk a => a -> Encoding
-        enc' = encodeNodeToClient codecConfig version
+        enc' = encodeNodeToClient codecConfig blockVersion
 
         encRes :: SomeResult blk -> Encoding
-        encRes (SomeResult q r) = encodeResult codecConfig version q r
+        encRes (SomeResult q r) = encodeResult codecConfig blockVersion q r
 
         test :: TestName -> Labelled a -> (a -> Encoding) -> TestTree
         test testName exampleValues enc =
@@ -457,14 +462,11 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
               testName
               exampleValues
               enc
-              (goldenDir </> toGoldenDirectory version)
+              (goldenDir </> toGoldenDirectory versions)
 
 {-------------------------------------------------------------------------------
   FlatTerm
 -------------------------------------------------------------------------------}
-
-deriving instance Generic TermToken
-deriving instance ToExpr  TermToken
 
 instance Condense TermToken where
   condense = show
@@ -473,38 +475,64 @@ instance Condense TermToken where
   Diffing Cbor
 -------------------------------------------------------------------------------}
 
-data CborTree =
-    FlatTerm   TermToken
-  | NestedTerm CborForest
+diffToExpr :: ToExpr a => a -> a -> String
+diffToExpr x y = show (ansiWlEditExpr (ediff x y))
 
-type CborForest = [CborTree]
+newtype CBORBytes = CBORBytes Strict.ByteString
 
-instance ToExpr CborTree where
-  toExpr (FlatTerm term)     = toExpr term
-  toExpr (NestedTerm forest) = App "CBOR-in-CBOR" [Lst (map toExpr forest)]
+instance ToExpr CBORBytes where
+  toExpr (CBORBytes bytes) =
+      case CBOR.deserialiseFromBytes CBOR.decodeTerm $ Lazy.fromStrict bytes of
+        Left err -> error $ "Error decoding CBOR: " ++ show err
+        Right (bytesLeftOver, term)
+          | Lazy.null bytesLeftOver -> termToExpr term
+          | otherwise ->
+            error $
+            unlines
+              [ "Unexpected leftover bytes: "
+              , show $ showHexBytesGrouped $ Lazy.toStrict bytesLeftOver
+              , "when decoding"
+              , show term
+              ]
+    where
+      hexByteString bs =
+        [ toExpr (Strict.length bs)
+        , Lst (map toExpr $ showHexBytesGrouped bs)
+        ]
+      termToExpr =
+        \case
+          CBOR.TInt i                     -> App "TInt" [toExpr i]
+          CBOR.TInteger i                 -> App "TInteger" [toExpr i]
+          CBOR.TBytes bs                  -> App "TBytes" $ hexByteString bs
+          CBOR.TBytesI bs                 ->
+            App "TBytesI" $ hexByteString $ Lazy.toStrict bs
+          CBOR.TString s                  -> App "TString" [toExpr s]
+          CBOR.TStringI s                 -> App "TStringI" [toExpr s]
+          CBOR.TList xs                   ->
+            App "TList" [Lst (map termToExpr xs)]
+          CBOR.TListI xs                  ->
+            App "TListI" [Lst (map termToExpr xs)]
+          CBOR.TMap xs                    ->
+            App "TMap" [Lst (map (toExpr . bimap termToExpr termToExpr) xs)]
+          CBOR.TMapI xs                   ->
+            App "TMapI" [Lst (map (toExpr . bimap termToExpr termToExpr) xs)]
+          CBOR.TTagged 24 (CBOR.TBytes x) ->
+            App "CBOR-in-CBOR" [toExpr (CBORBytes x)]
+          CBOR.TTagged t x                ->
+            App "TTagged" [toExpr t, termToExpr x]
+          CBOR.TBool x                    -> App "TBool" [toExpr x]
+          CBOR.TNull                      -> App "TNull" []
+          CBOR.TSimple x                  -> App "TSimple" [toExpr x]
+          CBOR.THalf x                    -> App "THalf" [toExpr x]
+          CBOR.TFloat x                   -> App "TFloat" [toExpr x]
+          CBOR.TDouble x                  -> App "TDouble" [toExpr x]
 
-flatTermToCborForest :: FlatTerm -> Either CBOR.DeserialiseFailure CborForest
-flatTermToCborForest = go
+-- | Show a ByteString as hex groups of 8bytes each. This is a slightly more
+-- useful form for debugging, rather than bunch of escaped characters.
+showHexBytesGrouped :: Strict.ByteString -> [String]
+showHexBytesGrouped bs =
+    [ "0x" <> Strict8.unpack (Strict.take 16 $ Strict.drop i bs16)
+    | i <- [0,16 .. Strict.length bs16 - 1]
+    ]
   where
-    go :: FlatTerm -> Either CBOR.DeserialiseFailure CborForest
-    go []                              = return []
-    go (TkTag 24 : TkBytes bytes : ts) = do
-        nestedCBOR <- decodeAsFlatTerm bytes
-        t' <- go nestedCBOR
-        (NestedTerm t' :) <$> go ts
-    go (t : ts) = (FlatTerm t :) <$> go ts
-
--- | Shows the diff between two 'FlatTerm's as a 'String' using
--- "Data.TreeDiff".
---
--- Handles CBOR-in-CBOR.
-showFlatTermDiff :: FlatTerm -> FlatTerm -> String
-showFlatTermDiff a b
-    | Right a' <- flatTermToCborForest a
-    , Right b' <- flatTermToCborForest b
-    = diff a' b'
-    | otherwise
-    = diff a b
-  where
-    diff :: ToExpr a => a -> a -> String
-    diff x y = show (ansiWlEditExpr (ediff x y))
+    bs16 = Base16.encode bs

@@ -29,6 +29,7 @@ let
     ++ iohkNixMain.overlays.crypto
     # iohkNix: nix utilities and niv:
     ++ iohkNixMain.overlays.iohkNix
+    ++ iohkNixMain.overlays.utils
     # our own overlays:
     ++ [
       (pkgs: _: with pkgs; {

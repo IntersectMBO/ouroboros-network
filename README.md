@@ -2,9 +2,9 @@
 
 # Ouroboros-Network
 
-* io-sim - `IOSim` simulator monad which supports asynchronous exceptions,
+* `io-sim` - `IOSim` simulator monad which supports asynchronous exceptions,
   `STM` transactions and `async` interface, timers.
-* io-sim-classes - type classes, all of them have instance for both `IOSim` and
+* `io-classes` - type classes, all of them have instance for both `IOSim` and
   `IO`.
 * `typed-protocols` - session type framework with support of [protocol pipelining](https://en.wikipedia.org/wiki/Protocol_pipelining)
   * See 45min Haskell eXchange 2019 [talk](https://skillsmatter.com/skillscasts/14633-45-minute-talk-by-duncan-coutts) by @dcoutts.
@@ -52,7 +52,7 @@ The API consists of three layers:
 ## Demo applications
 
 * [demo-chain-sync](https://github.com/input-output-hk/ouroboros-network/wiki/Ouroboros-Network-Demo)
-* [cardano-ping](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/cardano-ping.hs)
+* [cardano-ping](https://github.com/input-output-hk/ouroboros-network/wiki/cardano-ping)
 * [mux-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/mux-demo.hs)
 * [demo-ping-pong](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network-framework/demo/ping-pong.hs)
 * [named-pipe-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/Win32-network/demo/named-pipe-demo.hs) (Windows only)

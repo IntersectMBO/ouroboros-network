@@ -104,13 +104,13 @@ jobPromoteWarmPeer :: forall peeraddr peerconn m.
                    => PeerSelectionActions peeraddr peerconn m
                    -> peeraddr
                    -> peerconn
-                   -> Job m (Completion m peeraddr peerconn)
+                   -> Job () m (Completion m peeraddr peerconn)
 jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {activatePeerConnection}}
                    peeraddr peerconn =
-    Job job handler "promoteWarmPeer"
+    Job job handler () "promoteWarmPeer"
   where
-    handler :: SomeException -> Completion m peeraddr peerconn
-    handler e =
+    handler :: SomeException -> m (Completion m peeraddr peerconn)
+    handler e = return $
       --TODO: decide what happens if promotion fails, do we stay warm or go to
       -- cold? Will this be reported asynchronously via the state monitoring?
       Completion $ \st@PeerSelectionState {
@@ -226,13 +226,13 @@ jobDemoteActivePeer :: forall peeraddr peerconn m.
                     => PeerSelectionActions peeraddr peerconn m
                     -> peeraddr
                     -> peerconn
-                    -> Job m (Completion m peeraddr peerconn)
+                    -> Job () m (Completion m peeraddr peerconn)
 jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
                     peeraddr peerconn =
-    Job job handler "demoteActivePeer"
+    Job job handler () "demoteActivePeer"
   where
-    handler :: SomeException -> Completion m peeraddr peerconn
-    handler e =
+    handler :: SomeException -> m (Completion m peeraddr peerconn)
+    handler e = return $
       -- It's quite bad if closing fails, but the best we can do is revert to
       -- the state where we believed these peers are still warm, since then we
       -- can have another go at the ones we didn't yet try to close, or perhaps

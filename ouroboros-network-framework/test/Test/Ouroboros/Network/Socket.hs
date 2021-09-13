@@ -31,6 +31,7 @@ import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Monad.Class.MonadThrow
 import           Control.Concurrent (ThreadId)
 import           Control.Exception (IOException)
@@ -327,6 +328,7 @@ prop_socket_recv_error f rerr =
         Socket.bind sd (Socket.addrAddress muxAddress)
         addr <- Socket.getSocketName sd
         Socket.listen sd 1
+        lock <- newEmptyTMVarIO
 
         withAsync
           (
@@ -343,6 +345,9 @@ prop_socket_recv_error f rerr =
                           localAddress = Socket.addrAddress muxAddress,
                           remoteAddress
                         }
+                  _ <- async $ do
+                    threadDelay 0.1
+                    atomically $ putTMVar lock ()
                   Mx.muxStart nullTracer (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app) bearer
           )
           $ \muxAsync -> do
@@ -357,7 +362,9 @@ prop_socket_recv_error f rerr =
           Socket.sendAll sd' $ BL.singleton 0xa
 #endif
 
-          when (rerr == RecvSocketClosed) $ Socket.close sd'
+          when (rerr == RecvSocketClosed) $ do
+            atomically $ takeTMVar lock
+            Socket.close sd'
 
           res <- waitCatch muxAsync
           result <- case res of
@@ -365,11 +372,11 @@ prop_socket_recv_error f rerr =
                   case fromException e of
                         Just me -> return $
                             case Mx.errorType me of
-                                 Mx.MuxBearerClosed -> rerr ===RecvSocketClosed
+                                 Mx.MuxBearerClosed -> rerr === RecvSocketClosed
                                  MuxSDUReadTimeout  -> rerr === RecvSDUTimeout
-                                 _                  -> property False
+                                 _                  -> counterexample (show $ Mx.errorType me) False
                         Nothing -> return $ counterexample (show e) False
-              Right _ -> return $ property False
+              Right _ -> return $ counterexample "expected error" False
 
           when (rerr /= RecvSocketClosed) $ Socket.close sd'
           return result

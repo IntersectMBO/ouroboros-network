@@ -9,6 +9,7 @@ let
 in
 pkgs.runCommand "ouroboros-network-docs"
 {
+  meta.platforms = with pkgs.lib.platforms; [ linux darwin ];
   nativeBuildInputs = [ imagemagick ];
   buildInputs = [
     (texlive.combine {

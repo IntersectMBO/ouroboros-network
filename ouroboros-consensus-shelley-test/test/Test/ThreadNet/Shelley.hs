@@ -32,9 +32,9 @@ import           Test.Util.Nightly
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
+import qualified Cardano.Ledger.BaseTypes as SL (UnitInterval,
+                     mkNonceFromNumber, unboundRational)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (UnitInterval,
-                     mkNonceFromNumber, unitIntervalToRational)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
@@ -349,7 +349,7 @@ prop_simple_real_tpraos_convergence TestSetup
             ) $
           counterexample msg $
           dWasFreeToVary .||.
-            SL.unitIntervalToRational actual ===
+            SL.unboundRational actual ===
               decentralizationParamToRational expected
         | (nid, lsUnticked) <- finalLedgers
         ]
@@ -369,5 +369,6 @@ prop_simple_real_tpraos_convergence TestSetup
         ledgerConfig :: LedgerConfig (ShelleyBlock Era)
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
+            ()  -- trivial translation context
             (fixedEpochInfo epochSize tpraosSlotLength)
             (MaxMajorProtVer 1000) -- TODO

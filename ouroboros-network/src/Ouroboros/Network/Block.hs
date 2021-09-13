@@ -47,6 +47,7 @@ module Ouroboros.Network.Block (
   , getTipBlockNo
   , getTipSlotNo
   , getLegacyTipBlockNo
+  , tipFromHeader
   , legacyTip
   , toLegacyTip
   , encodeTip
@@ -284,6 +285,15 @@ getTipSlotNo :: Tip b -> WithOrigin SlotNo
 getTipSlotNo TipGenesis  = Origin
 getTipSlotNo (Tip s _ _) = At s
 
+tipFromHeader ::  HasHeader a => a -> Tip a
+tipFromHeader a = Tip headerFieldSlot headerFieldHash headerFieldBlockNo
+  where
+    HeaderFields { headerFieldSlot
+                 , headerFieldBlockNo
+                 , headerFieldHash
+                 } = getHeaderFields a
+
+
 -- | Get the block number associated with a 'Tip', or 'genesisBlockNo' otherwise
 --
 -- TODO: This is /wrong/. There /is/ no block number if we are at genesis
@@ -293,10 +303,12 @@ getLegacyTipBlockNo :: Tip b -> BlockNo
 getLegacyTipBlockNo = fromWithOrigin genesisBlockNo . getTipBlockNo
   where
     genesisBlockNo = BlockNo 0
+{-# DEPRECATED getLegacyTipBlockNo "Use getTipBlockNo" #-}
 
 -- | Translate to the format it was before (to maintain binary compatibility)
 toLegacyTip :: Tip b -> (Point b, BlockNo)
 toLegacyTip tip = (getTipPoint tip, getLegacyTipBlockNo tip)
+{-# DEPRECATED toLegacyTip "Use getTipPoint and getTipBlockNo" #-}
 
 -- | Inverse of 'toLegacyTip'
 --
@@ -305,6 +317,7 @@ toLegacyTip tip = (getTipPoint tip, getLegacyTipBlockNo tip)
 legacyTip :: Point b -> BlockNo -> Tip b
 legacyTip GenesisPoint     _ = TipGenesis -- Ignore block number
 legacyTip (BlockPoint s h) b = Tip s h b
+{-# DEPRECATED legacyTip "Use tipFromHeader instead" #-}
 
 encodeTip :: (HeaderHash blk -> Encoding)
           -> (Tip        blk -> Encoding)
@@ -314,7 +327,11 @@ encodeTip encodeHeaderHash tip = mconcat
     , encode                       tipBlockNo
     ]
   where
-    (tipPoint, tipBlockNo) = toLegacyTip tip
+    tipPoint   = getTipPoint tip
+    -- note: 'encodePoint' would encode 'Origin' differently than @'Block' 0@,
+    -- we keep the encoding backward compatible.
+    tipBlockNo = fromWithOrigin (BlockNo 0)
+                                (getTipBlockNo tip)
 
 -- TODO: add a test, which should compare with 'encodedTip', including various
 -- instantiations of 'blk', e.g. 'ByronBlock, etc.  Thus this test should live
@@ -328,13 +345,17 @@ encodedTipSize encodedHeaderHashSize tipProxy =
   -- 'encodedSizeExpr', also include a test in `cardano-ledger-byron`.
   + szGreedy (unBlockNo . snd . toLegacyTip <$> tipProxy)
 
-decodeTip :: (forall s. Decoder s (HeaderHash blk))
+decodeTip :: forall blk.
+             (forall s. Decoder s (HeaderHash blk))
           -> (forall s. Decoder s (Tip        blk))
 decodeTip decodeHeaderHash = do
-  Dec.decodeListLenOf 2
-  tipPoint    <- decodePoint decodeHeaderHash
-  tipBlockNo  <- decode
-  return $ legacyTip tipPoint tipBlockNo
+    Dec.decodeListLenOf 2
+    tipPoint    <- decodePoint decodeHeaderHash
+    tipBlockNo  <- decode
+    return $ case tipPoint :: Point blk of
+      GenesisPoint   -> TipGenesis
+      BlockPoint s h -> Tip s h tipBlockNo
+
 
 {-------------------------------------------------------------------------------
   ChainUpdate type

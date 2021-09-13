@@ -370,6 +370,11 @@ data TraceFetchClientState header =
      | AcknowledgedFetchRequest
          (FetchRequest header)
 
+       -- | Mark the point when fetch request for a fragment is actually sent
+       -- over the wire.
+     | SendFetchRequest
+         (AnchoredFragment header)
+
        -- | Mark the start of receiving a streaming batch of blocks. This will
        -- be followed by one or more 'CompletedBlockFetch' and a final
        -- 'CompletedFetchBatch'.

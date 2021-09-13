@@ -184,11 +184,15 @@ instance GetTip (Ticked (LedgerState BlockB)) where
 
 instance IsLedger (LedgerState BlockB) where
   type LedgerErr (LedgerState BlockB) = Void
-  applyChainTick _ _ = TickedLedgerStateB
+
+  type AuxLedgerEvent (LedgerState BlockB) =
+    VoidLedgerEvent (LedgerState BlockB)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateB
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
-  applyLedgerBlock   = \_ b _ -> return $ LgrB (blockPoint b)
-  reapplyLedgerBlock = \_ b _ -> LgrB (blockPoint b)
+  applyBlockLedgerResult   = \_ b _ -> return $ pureLedgerResult $ LgrB (blockPoint b)
+  reapplyBlockLedgerResult = \_ b _ ->          pureLedgerResult $ LgrB (blockPoint b)
 
 instance UpdateLedger BlockB
 
@@ -257,10 +261,10 @@ data instance Validated (GenTx BlockB)
 type instance ApplyTxErr BlockB = Void
 
 instance LedgerSupportsMempool BlockB where
-  applyTx   = \_ _ tx -> case tx of {}
+  applyTx   = \_ _ _wti tx -> case tx of {}
   reapplyTx = \_ _ vtx -> case vtx of {}
 
-  maxTxCapacity _ = maxBound
+  txsMaxBytes   _ = maxBound
   txInBlockSize _ = 0
 
   txForgetValidated = \case {}
@@ -272,16 +276,16 @@ data instance TxId (GenTx BlockB)
 instance HasTxId (GenTx BlockB) where
   txId tx = case tx of {}
 
-instance ShowQuery (Query BlockB) where
+instance ShowQuery (BlockQuery BlockB) where
   showResult qry = case qry of {}
 
-data instance Query BlockB result
+data instance BlockQuery BlockB result
   deriving (Show)
 
 instance QueryLedger BlockB where
-  answerQuery _ qry = case qry of {}
+  answerBlockQuery _ qry = case qry of {}
 
-instance SameDepIndex (Query BlockB) where
+instance SameDepIndex (BlockQuery BlockB) where
   sameDepIndex qry _qry' = case qry of {}
 
 instance ConvertRawHash BlockB where
@@ -426,10 +430,10 @@ instance SerialiseNodeToClient BlockB Void where
   encodeNodeToClient _ _ = absurd
   decodeNodeToClient _ _ = fail "no ApplyTxErr to be decoded"
 
-instance SerialiseNodeToClient BlockB (SomeSecond Query BlockB) where
+instance SerialiseNodeToClient BlockB (SomeSecond BlockQuery BlockB) where
   encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = fail "there are no queries to be decoded"
 
-instance SerialiseResult BlockB (Query BlockB) where
+instance SerialiseResult BlockB (BlockQuery BlockB) where
   encodeResult _ _ = \case {}
   decodeResult _ _ = \case {}

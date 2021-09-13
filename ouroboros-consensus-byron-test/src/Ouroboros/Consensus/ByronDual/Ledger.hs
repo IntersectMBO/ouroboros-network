@@ -46,6 +46,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -207,11 +208,11 @@ bridgeTransactionIds = Spec.Test.transactionIds
 forgeDualByronBlock
   :: HasCallStack
   => TopLevelConfig DualByronBlock
-  -> BlockNo                            -- ^ Current block number
-  -> SlotNo                             -- ^ Current slot number
-  -> TickedLedgerState DualByronBlock   -- ^ Ledger
-  -> [Validated (GenTx DualByronBlock)] -- ^ Txs to add in the block
-  -> PBftIsLeader PBftByronCrypto       -- ^ Leader proof ('IsLeader')
+  -> BlockNo                              -- ^ Current block number
+  -> SlotNo                               -- ^ Current slot number
+  -> TickedLedgerState DualByronBlock     -- ^ Ledger
+  -> [Validated (GenTx DualByronBlock)]   -- ^ Txs to add in the block
+  -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
 forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but
@@ -220,7 +221,6 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     -- the two blocks (which we would have gotten if we would have elaborated
     -- the block instead). Fortunately, this is okay, since the bridge for the
     -- block can be computed from the bridge information of all of the txs.
-
     DualBlock {
         dualBlockMain   = main
       , dualBlockAux    = Just aux
@@ -230,6 +230,7 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     main :: ByronBlock
     main = forgeByronBlock
              (dualTopLevelConfigMain cfg)
+             (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)

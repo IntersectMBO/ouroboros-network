@@ -1,0 +1,88 @@
+name:                io-classes
+version:             0.2.0.0
+synopsis:            Type classes for concurrency with STM, ST and timing
+-- description:
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+copyright:           2019 Input Output (Hong Kong) Ltd.
+author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+maintainer:
+category:            Control
+build-type:          Simple
+cabal-version:       >=1.10
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+  subdir:   io-classes
+
+flag checktvarinvariant
+  Description: Enable runtime invariant checks on StrictT(M)Var
+  Manual: True
+  Default: False
+
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
+library
+  hs-source-dirs:      src
+
+  -- At this experiment/prototype stage everything is exposed.
+  -- This has to be tidied up once the design becomes clear.
+  exposed-modules:
+                       Control.Monad.Class.MonadAsync
+                       Control.Monad.Class.MonadEventlog
+                       Control.Monad.Class.MonadFork
+                       Control.Monad.Class.MonadSay
+                       Control.Monad.Class.MonadST
+                       Control.Monad.Class.MonadSTM
+                       Control.Monad.Class.MonadSTM.Strict
+                       Control.Monad.Class.MonadThrow
+                       Control.Monad.Class.MonadTime
+                       Control.Monad.Class.MonadTimer
+  default-language:    Haskell2010
+  other-extensions:    CPP
+                       TypeFamilies
+                       TypeFamilyDependencies
+                       MultiParamTypeClasses
+                       FunctionalDependencies
+                       FlexibleInstances
+                       FlexibleContexts
+                       ScopedTypeVariables
+                       RankNTypes
+  build-depends:       base  >=4.9 && <4.15,
+                       async >=2.1,
+                       bytestring,
+                       mtl   >=2.2 && <2.3,
+                       stm   >=2.5 && <2.6,
+                       time  >=1.9.1 && <1.11
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
+  if flag(checktvarinvariant)
+    cpp-options: -DCHECK_TVAR_INVARIANT
+
+test-suite test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:       Test.MonadTimer
+  default-language:    Haskell2010
+  build-depends:       base,
+                       io-classes,
+
+                       QuickCheck,
+                       tasty,
+                       tasty-quickcheck

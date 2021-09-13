@@ -361,10 +361,10 @@ instance MonadDelay (OverrideDelay (IOSim s)) where
         Nothing -> return ()
         Just t  -> setCurrentTime t
     where
-      nextDelay :: Schedule -> (Schedule, Maybe UTCTime)
+      nextDelay :: Schedule -> (Maybe UTCTime, Schedule)
       nextDelay = \case
-          Schedule []     -> (Schedule [], Nothing)
-          Schedule (t:ts) -> (Schedule ts, Just $ offsetToTime t)
+          Schedule []     -> (Nothing, Schedule [])
+          Schedule (t:ts) -> (Just $ offsetToTime t, Schedule ts)
 
       offsetToTime :: Fixed E1 -> UTCTime
       offsetToTime t = Time.addUTCTime (realToFrac t) dawnOfTime

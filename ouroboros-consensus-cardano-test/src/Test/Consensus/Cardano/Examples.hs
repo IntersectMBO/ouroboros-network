@@ -66,6 +66,7 @@ eraExamples =
     :* Shelley.examplesShelley
     :* Shelley.examplesAllegra
     :* Shelley.examplesMary
+    :* Shelley.examplesAlonzo
     :* Nil
 
 -- | By using this function, we can't forget to update this test when adding a
@@ -82,6 +83,7 @@ combineEras = mconcat . hcollapse . hap eraInjections
         :* fn (K . injExamples "Shelley" (IS IZ))
         :* fn (K . injExamples "Allegra" (IS (IS IZ)))
         :* fn (K . injExamples "Mary"    (IS (IS (IS IZ))))
+        :* fn (K . injExamples "Alonzo"  (IS (IS (IS (IS IZ)))))
         :* Nil
 
     injExamples ::
@@ -108,20 +110,20 @@ instance Inject SomeResult where
 
 instance Inject Examples where
   inject startBounds (idx :: Index xs x) Golden.Examples {..} = Golden.Examples {
-        exampleBlock            = inj (Proxy @I)                  exampleBlock
-      , exampleSerialisedBlock  = inj (Proxy @Serialised)         exampleSerialisedBlock
-      , exampleHeader           = inj (Proxy @Header)             exampleHeader
-      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)   exampleSerialisedHeader
-      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)     exampleHeaderHash
-      , exampleGenTx            = inj (Proxy @GenTx)              exampleGenTx
-      , exampleGenTxId          = inj (Proxy @WrapGenTxId)        exampleGenTxId
-      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)     exampleApplyTxErr
-      , exampleQuery            = inj (Proxy @(SomeSecond Query)) exampleQuery
-      , exampleResult           = inj (Proxy @SomeResult)         exampleResult
-      , exampleAnnTip           = inj (Proxy @AnnTip)             exampleAnnTip
-      , exampleLedgerState      = inj (Proxy @LedgerState)        exampleLedgerState
-      , exampleChainDepState    = inj (Proxy @WrapChainDepState)  exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)     exampleExtLedgerState
+        exampleBlock            = inj (Proxy @I)                       exampleBlock
+      , exampleSerialisedBlock  = inj (Proxy @Serialised)              exampleSerialisedBlock
+      , exampleHeader           = inj (Proxy @Header)                  exampleHeader
+      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)        exampleSerialisedHeader
+      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)          exampleHeaderHash
+      , exampleGenTx            = inj (Proxy @GenTx)                   exampleGenTx
+      , exampleGenTxId          = inj (Proxy @WrapGenTxId)             exampleGenTxId
+      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)          exampleApplyTxErr
+      , exampleQuery            = inj (Proxy @(SomeSecond BlockQuery)) exampleQuery
+      , exampleResult           = inj (Proxy @SomeResult)              exampleResult
+      , exampleAnnTip           = inj (Proxy @AnnTip)                  exampleAnnTip
+      , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
+      , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
+      , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)          exampleExtLedgerState
       }
     where
       inj ::
@@ -148,6 +150,9 @@ allegraEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 
 maryEraParams :: History.EraParams
 maryEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+
+alonzoEraParams :: History.EraParams
+alonzoEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 
 -- | We use 10, 20, 30, 40, ... as the transition epochs
 shelleyTransitionEpoch :: EpochNo
@@ -177,12 +182,20 @@ maryStartBound =
       allegraStartBound
       30
 
+alonzoStartBound :: History.Bound
+alonzoStartBound =
+    History.mkUpperBound
+      maryEraParams
+      maryStartBound
+      40
+
 exampleStartBounds :: Exactly (CardanoEras Crypto) History.Bound
 exampleStartBounds = Exactly $
     (  K byronStartBound
     :* K shelleyStartBound
     :* K allegraStartBound
     :* K maryStartBound
+    :* K alonzoStartBound
     :* Nil
     )
 
@@ -192,6 +205,7 @@ cardanoShape = History.Shape $ Exactly $
     :* K shelleyEraParams
     :* K allegraEraParams
     :* K maryEraParams
+    :* K alonzoEraParams
     :* Nil
     )
 
@@ -214,6 +228,7 @@ codecConfig :: CardanoCodecConfig Crypto
 codecConfig =
     CardanoCodecConfig
       Byron.codecConfig
+      Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig
@@ -277,23 +292,23 @@ exampleApplyTxErrWrongEraShelley :: ApplyTxErr (CardanoBlock Crypto)
 exampleApplyTxErrWrongEraShelley =
       HardForkApplyTxErrWrongEra exampleEraMismatchShelley
 
-exampleQueryEraMismatchByron :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryEraMismatchByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryEraMismatchByron =
     SomeSecond (QueryIfCurrentShelley Shelley.GetLedgerTip)
 
-exampleQueryEraMismatchShelley :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryEraMismatchShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryEraMismatchShelley =
     SomeSecond (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
 
-exampleQueryAnytimeByron :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryAnytimeByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryAnytimeByron =
     SomeSecond (QueryAnytimeByron GetEraStart)
 
-exampleQueryAnytimeShelley :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryAnytimeShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryAnytimeShelley =
     SomeSecond (QueryAnytimeShelley GetEraStart)
 
-exampleQueryHardFork :: SomeSecond Query (CardanoBlock Crypto)
+exampleQueryHardFork :: SomeSecond BlockQuery (CardanoBlock Crypto)
 exampleQueryHardFork =
     SomeSecond (QueryHardFork GetInterpreter)
 

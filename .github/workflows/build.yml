@@ -110,9 +110,9 @@ jobs:
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
 
-    - name: Use cabal.project.local.ci.windows
+    - name: Use cabal.project.local.ci
       run: |
-        cat ./cabal.project.local.ci.windows >> ./cabal.project.local
+        cat ./cabal.project.local.ci >> ./cabal.project.local
 
         cat >> cabal.project.local <<EOF
         package cardano-crypto-praos
@@ -136,6 +136,19 @@ jobs:
           cat "$x"
         done
 
+    - name: Build io-classes [build]
+      # +checktvarinvariant is set in cabal.project.local.ci
+      run: cabal --builddir="$CABAL_BUILDDIR" build -f -checktvarinvariant io-classes
+
+    - name: Set checkinvariant flag
+      run: |
+        cat >> cabal.project.local <<EOF
+        package io-classes
+          flags: +checktvarinvariant
+        EOF
+
+        cat ./cabal.project.local
+
     - name: Build projects [build]
       run: cabal --builddir="$CABAL_BUILDDIR" build all
 
@@ -147,8 +160,8 @@ jobs:
     - name: io-sim [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run io-sim:test
 
-    - name: io-sim-classes [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run io-sim-classes:test
+    - name: io-classes [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" run io-classes:test
 
     - name: typed-protocols-examples [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run typed-protocols-examples:tests
@@ -158,7 +171,7 @@ jobs:
 
     # issue: #1818
     - name: ourobors-network-framework [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"' 
+      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
 
     - name: ouroboros-network [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test

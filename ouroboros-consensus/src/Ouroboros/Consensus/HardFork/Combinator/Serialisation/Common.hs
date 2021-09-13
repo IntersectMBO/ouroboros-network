@@ -646,19 +646,19 @@ undistribSerialisedHeader =
 
 distribQueryIfCurrent ::
      Some (QueryIfCurrent xs)
-  -> NS (SomeSecond Query) xs
+  -> NS (SomeSecond BlockQuery) xs
 distribQueryIfCurrent = \(Some qry) -> go qry
   where
-    go :: QueryIfCurrent xs result -> NS (SomeSecond Query) xs
+    go :: QueryIfCurrent xs result -> NS (SomeSecond BlockQuery) xs
     go (QZ qry) = Z (SomeSecond qry)
     go (QS qry) = S (go qry)
 
 undistribQueryIfCurrent ::
-     NS (SomeSecond Query) xs
+     NS (SomeSecond BlockQuery) xs
   -> Some (QueryIfCurrent xs)
 undistribQueryIfCurrent = go
   where
-    go :: NS (SomeSecond Query) xs -> Some (QueryIfCurrent xs)
+    go :: NS (SomeSecond BlockQuery) xs -> Some (QueryIfCurrent xs)
     go (Z qry) = case qry of
                    SomeSecond qry' ->
                      Some (QZ qry')

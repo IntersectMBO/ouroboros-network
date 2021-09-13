@@ -103,6 +103,7 @@ mkHandlers
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , QueryLedger blk
+     , ConfigSupportsNode blk
      )
   => NodeKernelArgs m remotePeer localPeer blk
   -> NodeKernel     m remotePeer localPeer blk
@@ -162,7 +163,7 @@ type ClientCodecs blk  m =
 defaultCodecs :: forall m blk.
                  ( MonadST m
                  , SerialiseNodeToClientConstraints blk
-                 , ShowQuery (Query blk)
+                 , ShowQuery (BlockQuery blk)
                  )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
@@ -190,12 +191,15 @@ defaultCodecs ccfg version networkVersion = Codecs {
           (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> dec)
+          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
+          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
   where
+    queryVersion :: QueryVersion
+    queryVersion = nodeToClientVersionToQueryVersion networkVersion
+
     p :: Proxy blk
     p = Proxy
 
@@ -211,7 +215,7 @@ defaultCodecs ccfg version networkVersion = Codecs {
 clientCodecs :: forall m blk.
                 ( MonadST m
                 , SerialiseNodeToClientConstraints blk
-                , ShowQuery (Query blk)
+                , ShowQuery (BlockQuery blk)
                 )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk
@@ -239,12 +243,15 @@ clientCodecs ccfg version networkVersion = Codecs {
           (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (enc . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> dec)
+          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
+          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
     }
   where
+    queryVersion :: QueryVersion
+    queryVersion = nodeToClientVersionToQueryVersion networkVersion
+
     p :: Proxy blk
     p = Proxy
 
@@ -303,7 +310,7 @@ nullTracers = Tracers {
 showTracers :: ( Show peer
                , Show (GenTx blk)
                , Show (ApplyTxErr blk)
-               , ShowQuery (Query blk)
+               , ShowQuery (BlockQuery blk)
                , HasHeader blk
                )
             => Tracer m String -> Tracers m peer blk e
@@ -341,9 +348,9 @@ mkApps
      , Exception e
      , ShowProxy blk
      , ShowProxy (ApplyTxErr blk)
-     , ShowProxy (Query blk)
+     , ShowProxy (BlockQuery blk)
      , ShowProxy (GenTx blk)
-     , ShowQuery (Query blk)
+     , ShowQuery (BlockQuery blk)
      )
   => NodeKernel m remotePeer localPeer blk
   -> Tracers m localPeer blk e

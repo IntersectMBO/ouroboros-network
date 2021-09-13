@@ -465,7 +465,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           -> Tracer m (DebugPeerSelection peeraddr peerconn)
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
-                          -> JobPool m (Completion m peeraddr peerconn)
+                          -> JobPool () m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =

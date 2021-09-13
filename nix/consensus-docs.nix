@@ -8,7 +8,8 @@ let
 in
 pkgs.runCommand "ouroboros-consensus-docs"
 {
-  nativeBuildInputs = [ bash ];
+  meta.platforms = with pkgs.lib.platforms; [ linux darwin ];
+  nativeBuildInputs = [ imagemagick ];
   buildInputs = [
     (texlive.combine {
       inherit (texlive)

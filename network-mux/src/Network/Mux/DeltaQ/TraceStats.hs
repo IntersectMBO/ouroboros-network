@@ -23,7 +23,7 @@ step :: RemoteClockModel        -- ^ Remote clock timestamp
      -> Int                     -- ^ the number of octets in the
                                 --   observed outcome
      -> StatsA                  -- ^ accumulation state
-     -> (StatsA, Maybe OneWayDeltaQSample)
+     -> (Maybe OneWayDeltaQSample, StatsA)
 step remoteTS localTS obsSize s
  | isNothing (referenceTimePoint s) -- first observation this sample period
    = step remoteTS localTS obsSize
@@ -37,11 +37,11 @@ step remoteTS localTS obsSize s
           Just a  -> a
           Nothing -> error "step: missing referenceTimePoint"
         transitTime       = calcTransitTime refTimePoint remoteTS localTS
-    in (recordObservation s localTS obsSize transitTime, Nothing)
+    in (Nothing, recordObservation s localTS obsSize transitTime)
  | otherwise                    -- need to start next sample period
   = let sample  = constructSample s
-        (s', _) = step remoteTS localTS obsSize initialStatsA
-    in (s', Just sample)
+        (_, s') = step remoteTS localTS obsSize initialStatsA
+    in (Just sample, s')
 
 -- Calculate the transit time by transforming the remotely reported
 -- emit time into local clock domain then calculating differences.

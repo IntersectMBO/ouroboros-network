@@ -25,6 +25,7 @@ import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as CL
 import qualified Shelley.Spec.Ledger.API as SL
 
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
 import           Ouroboros.Consensus.Shelley.Eras (ShelleyBasedEra,
@@ -40,12 +41,12 @@ import           HasAnalysis
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyBasedEra era
-         , HasField "outputs" (Core.TxBody era) (StrictSeq (SL.TxOut era))
+         , HasField "outputs" (Core.TxBody era) (StrictSeq (Core.TxOut era))
          ) => HasAnalysis (ShelleyBlock era) where
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body -> sum $ fmap countOutputs (CL.fromTxSeq @era body)
     where
-      countOutputs :: CL.TxInBlock era -> Int
+      countOutputs :: Core.Tx era -> Int
       countOutputs = length . getField @"outputs" . getField @"body"
 
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
@@ -83,7 +84,8 @@ mkShelleyProtocolInfo genesis initialNonce =
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
-          shelleyProtVer = SL.ProtVer 2 0
+          shelleyProtVer                = SL.ProtVer 2 0
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
 
 parseShelleyArgs :: Parser ShelleyBlockArgs

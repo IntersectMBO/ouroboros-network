@@ -24,6 +24,9 @@ data ShelleyNodeToClientVersion =
 
     -- | New query introduced
   | ShelleyNodeToClientVersion3
+
+    -- | New queries introduced
+  | ShelleyNodeToClientVersion4
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion (ShelleyBlock era) where

@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -74,7 +75,10 @@ dualByronBlockForging creds = BlockForging {
     , forgeBlock       = return .....: forgeDualByronBlock
     }
   where
-    BlockForging {..} = byronBlockForging creds
+    BlockForging {..} =
+      byronBlockForging
+        (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+        creds
 
 {-------------------------------------------------------------------------------
   ProtocolInfo

@@ -24,8 +24,8 @@
 -- None of the definitions in this module depend on, or even refer to, any
 -- specific consensus protocols.
 module Ouroboros.Consensus.Mock.Ledger.Block (
-    Header (..)
-  , Query (..)
+    BlockQuery (..)
+  , Header (..)
   , SimpleBlock
   , SimpleBlock' (..)
   , SimpleBody (..)
@@ -77,7 +77,7 @@ import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (ToCBOR (..))
-import           Cardano.Crypto.Hash (Hash, HashAlgorithm, MD5, ShortHash)
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
 import           Ouroboros.Consensus.Block
@@ -96,7 +96,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
-                     (.:))
+                     (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -350,16 +350,18 @@ instance MockProtocolSpecific c ext
       => IsLedger (LedgerState (SimpleBlock c ext)) where
   type LedgerErr (LedgerState (SimpleBlock c ext)) = MockError (SimpleBlock c ext)
 
-  applyChainTick _ _ = TickedSimpleLedgerState
+  type AuxLedgerEvent (LedgerState (SimpleBlock c ext)) = VoidLedgerEvent (SimpleBlock c ext)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedSimpleLedgerState
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
-  applyLedgerBlock _ = updateSimpleLedgerState
+  applyBlockLedgerResult _ = fmap pureLedgerResult .: updateSimpleLedgerState
 
-  reapplyLedgerBlock cfg =
-      (mustSucceed . runExcept) .: applyLedgerBlock cfg
+  reapplyBlockLedgerResult =
+      (mustSucceed . runExcept) ..: applyBlockLedgerResult
     where
-      mustSucceed (Left  err) = error ("reapplyLedgerBlock: unexpected error: " <> show err)
+      mustSucceed (Left  err) = error ("reapplyBlockLedgerResult: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
 
 newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
@@ -428,7 +430,7 @@ type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
 instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where
-  applyTx _cfg slot tx st = do
+  applyTx _cfg _wti slot tx st = do
       st' <- updateSimpleUTxO slot tx st
       return (st', ValidatedSimpleGenTx tx)
   reapplyTx _cfg slot vtx st =
@@ -436,7 +438,7 @@ instance MockProtocolSpecific c ext
 
   -- Large value so that the Mempool tests never run out of capacity when they
   -- don't override it.
-  maxTxCapacity = const 1000000000
+  txsMaxBytes   = const 1000000000
   txInBlockSize = txSize
 
   txForgetValidated = forgetValidatedSimpleGenTx
@@ -460,7 +462,7 @@ instance (Typeable p, Typeable c) => NoThunks (Validated (GenTx (SimpleBlock p c
   showTypeOf _ = show $ typeRep (Proxy @(Validated (GenTx (SimpleBlock p c))))
 
 instance HasTxs (SimpleBlock c ext) where
-  extractTxs = map (ValidatedSimpleGenTx . mkSimpleGenTx) . simpleTxs . simpleBody
+  extractTxs = map mkSimpleGenTx . simpleTxs . simpleBody
 
 instance Mock.HasMockTxs (GenTx (SimpleBlock p c)) where
   getMockTxs = Mock.getMockTxs . simpleGenTx
@@ -490,25 +492,25 @@ txSize = fromIntegral . Lazy.length . serialise
   Support for QueryLedger
 -------------------------------------------------------------------------------}
 
-data instance Query (SimpleBlock c ext) result where
-    QueryLedgerTip :: Query (SimpleBlock c ext) (Point (SimpleBlock c ext))
+data instance BlockQuery (SimpleBlock c ext) result where
+    QueryLedgerTip :: BlockQuery (SimpleBlock c ext) (Point (SimpleBlock c ext))
 
 instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
-  answerQuery _cfg QueryLedgerTip =
+  answerBlockQuery _cfg QueryLedgerTip =
         castPoint
       . ledgerTipPoint (Proxy @(SimpleBlock c ext))
       . ledgerState
 
-instance SameDepIndex (Query (SimpleBlock c ext)) where
+instance SameDepIndex (BlockQuery (SimpleBlock c ext)) where
   sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
 
-deriving instance Show (Query (SimpleBlock c ext) result)
+deriving instance Show (BlockQuery (SimpleBlock c ext) result)
 
 instance (Typeable c, Typeable ext)
-    => ShowProxy (Query (SimpleBlock c ext)) where
+    => ShowProxy (BlockQuery (SimpleBlock c ext)) where
 
 instance (SimpleCrypto c, Typeable ext)
-      => ShowQuery (Query (SimpleBlock c ext)) where
+      => ShowQuery (BlockQuery (SimpleBlock c ext)) where
   showResult QueryLedgerTip = show
 
 {-------------------------------------------------------------------------------
@@ -529,7 +531,7 @@ data SimpleStandardCrypto
 data SimpleMockCrypto
 
 instance SimpleCrypto SimpleStandardCrypto where
-  type SimpleHash SimpleStandardCrypto = MD5
+  type SimpleHash SimpleStandardCrypto = SHA256
 
 instance SimpleCrypto SimpleMockCrypto where
   type SimpleHash SimpleMockCrypto = ShortHash

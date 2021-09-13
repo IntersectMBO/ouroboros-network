@@ -32,6 +32,8 @@ import           Test.ThreadNet.TxGen (TxGen (..))
 
 import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
+import           Test.Shelley.Spec.Ledger.Generator.EraGen
+                     (EraGen (genEraTwoPhase2Arg, genEraTwoPhase3Arg))
 import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
@@ -81,7 +83,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
         mbTx <- genTx cfg curSlotNo st stgeGenEnv
         case mbTx of
           Nothing -> return (reverse acc)  -- cannot afford more transactions
-          Just tx -> case runExcept $ fst <$> applyTx lcfg curSlotNo tx st of
+          Just tx -> case runExcept $ fst <$> applyTx lcfg DoNotIntervene curSlotNo tx st of
               -- We don't mind generating invalid transactions
               Left  _   -> go (tx:acc) (n - 1) st
               Right st' -> go (tx:acc) (n - 1) st'
@@ -130,7 +132,7 @@ mkGenEnv ::
   => WhetherToGeneratePPUs
   -> [CoreNode (MockCrypto h)]
   -> Gen.GenEnv (MockShelley h)
-mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
+mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace scriptSpace constants
   where
     -- Configuration of the transaction generator
     constants :: Gen.Constants
@@ -170,3 +172,9 @@ mkGenEnv whetherPPUs coreNodes = Gen.GenEnv keySpace constants
             ksStakePools
           } =
             Gen.Presets.keySpace @(MockShelley h) constants
+
+    scriptSpace :: Gen.ScriptSpace (MockShelley h)
+    scriptSpace =
+      Gen.Presets.scriptSpace @(MockShelley h)
+           (genEraTwoPhase3Arg @(MockShelley h))
+           (genEraTwoPhase2Arg @(MockShelley h))

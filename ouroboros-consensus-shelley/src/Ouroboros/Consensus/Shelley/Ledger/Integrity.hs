@@ -12,8 +12,8 @@ import           Data.Word (Word64)
 
 import           Ouroboros.Consensus.Block
 
+import qualified Cardano.Ledger.Keys as SL (verifySignedKES)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.Keys as SL (verifySignedKES)
 
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 

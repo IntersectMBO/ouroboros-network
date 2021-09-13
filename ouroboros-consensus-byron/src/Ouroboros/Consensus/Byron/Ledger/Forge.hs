@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -35,7 +36,9 @@ import           Cardano.Crypto.DSIGN
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+                     (LedgerSupportsMempool (..), txForgetValidated)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -48,11 +51,13 @@ import           Ouroboros.Consensus.Byron.Protocol
 forgeByronBlock
   :: HasCallStack
   => TopLevelConfig ByronBlock
-  -> BlockNo                         -- ^ Current block number
-  -> SlotNo                          -- ^ Current slot number
-  -> TickedLedgerState ByronBlock    -- ^ Current ledger
-  -> [Validated (GenTx ByronBlock)]  -- ^ Txs to add in the block
-  -> PBftIsLeader PBftByronCrypto    -- ^ Leader proof ('IsLeader')
+  -> TxLimits.Overrides ByronBlock    -- ^ How to override max tx capacity
+                                      --   defined by ledger
+  -> BlockNo                          -- ^ Current block number
+  -> SlotNo                           -- ^ Current slot number
+  -> TickedLedgerState ByronBlock     -- ^ Current ledger
+  -> [Validated (GenTx ByronBlock)]   -- ^ Txs to consider adding in the block
+  -> PBftIsLeader PBftByronCrypto     -- ^ Leader proof ('IsLeader')
   -> ByronBlock
 forgeByronBlock cfg = forgeRegularBlock (configBlock cfg)
 
@@ -123,13 +128,15 @@ initBlockPayloads = BlockPayloads
 forgeRegularBlock
   :: HasCallStack
   => BlockConfig ByronBlock
+  -> TxLimits.Overrides ByronBlock     -- ^ How to override max tx capacity
+                                       --   defined by ledger
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number
   -> TickedLedgerState ByronBlock      -- ^ Current ledger
-  -> [Validated (GenTx ByronBlock)]    -- ^ Txs to add in the block
+  -> [Validated (GenTx ByronBlock)]    -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock
-forgeRegularBlock cfg bno sno st txs isLeader =
+forgeRegularBlock cfg maxTxCapacityOverrides bno sno st txs isLeader =
     forge $
       forgePBftFields
         (mkByronContextDSIGN cfg)
@@ -144,7 +151,7 @@ forgeRegularBlock cfg bno sno st txs isLeader =
         foldr
           extendBlockPayloads
           initBlockPayloads
-          (map txForgetValidated txs)
+          (takeLargestPrefixThatFits maxTxCapacityOverrides st txs)
 
     txPayload :: CC.UTxO.TxPayload
     txPayload = CC.UTxO.mkTxPayload (bpTxs blockPayloads)
@@ -156,14 +163,14 @@ forgeRegularBlock cfg bno sno st txs isLeader =
     updatePayload = CC.Update.payload (bpUpProposal blockPayloads)
                                       (bpUpVotes blockPayloads)
 
-    extendBlockPayloads :: GenTx ByronBlock
+    extendBlockPayloads :: Validated (GenTx ByronBlock)
                         -> BlockPayloads
                         -> BlockPayloads
-    extendBlockPayloads genTx bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} =
+    extendBlockPayloads validatedGenTx bp@BlockPayloads{bpTxs, bpDlgCerts, bpUpVotes} =
       -- TODO: We should try to use 'recoverProof' (and other variants of
       -- 'recoverBytes') here as opposed to throwing away the serializations
       -- (the 'ByteString' annotations) with 'void' as we're currently doing.
-      case genTx of
+      case txForgetValidated validatedGenTx of
         ByronTx             _ tx   -> bp { bpTxs        = void tx : bpTxs }
         ByronDlg            _ cert -> bp { bpDlgCerts   = void cert : bpDlgCerts }
         -- TODO: We should throw an error if we encounter multiple

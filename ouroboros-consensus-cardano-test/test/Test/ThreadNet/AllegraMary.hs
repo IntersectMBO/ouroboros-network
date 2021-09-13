@@ -42,8 +42,8 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
-import qualified Shelley.Spec.Ledger.BaseTypes as SL
-import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Cardano.Ledger.BaseTypes as SL
+import qualified Cardano.Protocol.TPraos.OCert as SL
 import qualified Shelley.Spec.Ledger.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -52,7 +52,8 @@ import           Ouroboros.Consensus.Shelley.Node
 
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
-                     (ProtocolParamsTransition (..), TriggerHardFork (..))
+                     (ProtocolTransitionParamsShelleyBased (..),
+                     TriggerHardFork (..))
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network (NodeOutput (..),
@@ -247,7 +248,7 @@ prop_simple_allegraMary_convergence TestSetup
                 tniCrucialTxs   =
                   if not setupHardFork then [] else
                   fmap GenTxShelley1 $
-                  Shelley.mkAllegraSetDecentralizationParamTxs
+                  Shelley.mkMASetDecentralizationParamTxs
                     coreNodes
                     (SL.ProtVer majorVersion2 0)
                     (SlotNo $ unNumSlots numSlots)   -- never expire
@@ -263,8 +264,10 @@ prop_simple_allegraMary_convergence TestSetup
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
-                    ProtocolParamsTransition {
-                        transitionTrigger = TriggerHardForkAtVersion majorVersion2
+                    ProtocolTransitionParamsShelleyBased {
+                        transitionTranslationContext = ()
+                      , transitionTrigger            =
+                          TriggerHardForkAtVersion majorVersion2
                       }
               }
           , mkRekeyM = Nothing
@@ -351,7 +354,7 @@ prop_simple_allegraMary_convergence TestSetup
     finalBlockEra =
         if rsEra2Blocks reachesEra2
         then "Allegra"
-        else "Shelley"
+        else "Mary"
 
     finalIntersectionDepth :: Word64
     finalIntersectionDepth = depth

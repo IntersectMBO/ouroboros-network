@@ -1,5 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE DeriveFoldable    #-}
+{-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -10,9 +13,16 @@ module Ouroboros.Consensus.Ledger.Basics (
     GetTip (..)
   , getTipHash
   , getTipSlot
+    -- * Ledger Events
+  , LedgerResult (..)
+  , VoidLedgerEvent
+  , castLedgerResult
+  , embedLedgerResult
+  , pureLedgerResult
     -- * Definition of a ledger independent of a choice of block
   , IsLedger (..)
   , LedgerCfg
+  , applyChainTick
     -- * Link block to its ledger
   , LedgerConfig
   , LedgerError
@@ -25,6 +35,7 @@ import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util ((..:))
 
 {-------------------------------------------------------------------------------
   Tip
@@ -45,6 +56,43 @@ getTipSlot :: GetTip l => l -> WithOrigin SlotNo
 getTipSlot = pointSlot . getTip
 
 {-------------------------------------------------------------------------------
+  Events directly from the ledger
+-------------------------------------------------------------------------------}
+
+-- | A 'Data.Void.Void' isomorph for explicitly declaring that some ledger has
+-- no events
+data VoidLedgerEvent l
+
+-- | The result of invoke a ledger function that does validation
+--
+-- Note: we do not instantiate 'Applicative' or 'Monad' for this type because
+-- those interfaces would typically incur space leaks. We encourage you to
+-- process the events each time you invoke a ledger function.
+data LedgerResult l a = LedgerResult
+  { lrEvents :: [AuxLedgerEvent l]
+  , lrResult :: !a
+  }
+  deriving (Foldable, Functor, Traversable)
+
+castLedgerResult ::
+     (AuxLedgerEvent l ~ AuxLedgerEvent l')
+  => LedgerResult l  a
+  -> LedgerResult l' a
+castLedgerResult (LedgerResult x0 x1) = LedgerResult x0 x1
+
+embedLedgerResult ::
+     (AuxLedgerEvent l -> AuxLedgerEvent l')
+  -> LedgerResult l  a
+  -> LedgerResult l' a
+embedLedgerResult inj lr = lr{lrEvents = inj `map` lrEvents lr}
+
+pureLedgerResult :: a -> LedgerResult l a
+pureLedgerResult a = LedgerResult {
+    lrEvents = mempty
+  , lrResult = a
+  }
+
+{-------------------------------------------------------------------------------
   Definition of a ledger independent of a choice of block
 -------------------------------------------------------------------------------}
 
@@ -63,7 +111,8 @@ class ( -- Requirements on the ledger state itself
       , NoThunks (LedgerErr l)
         -- Get the tip
         --
-        -- See comment for 'applyChainTick' about the tip of the ticked ledger.
+        -- See comment for 'applyChainTickLedgerResult' about the tip of the
+        -- ticked ledger.
       , GetTip l
       , GetTip (Ticked l)
       ) => IsLedger l where
@@ -72,6 +121,13 @@ class ( -- Requirements on the ledger state itself
   -- This is defined here rather than in 'ApplyBlock', since the /type/ of
   -- these errors does not depend on the type of the block.
   type family LedgerErr l :: Type
+
+  -- | Event emitted by the ledger
+  --
+  -- TODO we call this 'AuxLedgerEvent' to differentiate from 'LedgerEvent' in
+  -- 'InspectLedger'. When that module is rewritten to make use of ledger
+  -- derived events, we may rename this type.
+  type family AuxLedgerEvent l :: Type
 
   -- | Apply "slot based" state transformations
   --
@@ -94,13 +150,21 @@ class ( -- Requirements on the ledger state itself
   -- PRECONDITION: The slot number must be strictly greater than the slot at
   -- the tip of the ledger (except for EBBs, obviously..).
   --
-  -- NOTE: 'applyChainTick' should /not/ change the tip of the underlying ledger
-  -- state, which should still refer to the most recent applied /block/. In
-  -- other words, we should have
+  -- NOTE: 'applyChainTickLedgerResult' should /not/ change the tip of the
+  -- underlying ledger state, which should still refer to the most recent
+  -- applied /block/. In other words, we should have
   --
   -- >    ledgerTipPoint (applyChainTick cfg slot st)
   -- > == ledgerTipPoint st
-  applyChainTick :: LedgerCfg l -> SlotNo -> l -> Ticked l
+  applyChainTickLedgerResult ::
+       LedgerCfg l
+    -> SlotNo
+    -> l
+    -> LedgerResult l (Ticked l)
+
+-- | 'lrResult' after 'applyChainTickLedgerResult'
+applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l -> Ticked l
+applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
   Link block to its ledger

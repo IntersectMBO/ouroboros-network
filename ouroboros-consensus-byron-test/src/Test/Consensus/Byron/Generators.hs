@@ -59,8 +59,8 @@ import qualified Test.Cardano.Chain.Update.Gen as UG
 import qualified Test.Cardano.Crypto.Gen as CC
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
-                     WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (Coherent (..),
+                     SomeResult (..), WithVersion (..))
 
 {-------------------------------------------------------------------------------
   Generators
@@ -87,7 +87,10 @@ instance Arbitrary RegularBlock where
     hedgehog (CC.genBlock protocolMagicId epochSlots)
 
 instance Arbitrary ByronBlock where
-  arbitrary = frequency
+  arbitrary = getCoherent <$> arbitrary
+
+instance Arbitrary (Coherent ByronBlock) where
+  arbitrary = Coherent <$> frequency
       [ (3, genBlock)
       , (1, genBoundaryBlock)
       ]
@@ -159,7 +162,7 @@ instance Arbitrary API.ApplyMempoolPayloadErr where
     -- , MempoolUpdateVoteErr     <$> arbitrary
     ]
 
-instance Arbitrary (SomeSecond Query ByronBlock) where
+instance Arbitrary (SomeSecond BlockQuery ByronBlock) where
   arbitrary = pure $ SomeSecond GetUpdateInterfaceState
 
 instance Arbitrary EpochNumber where
@@ -313,14 +316,3 @@ instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeSecond (NestedCtxt H
                    , SomeSecond . NestedCtxt $ CtxtByronBoundary size
                    ]
       return (WithVersion version ctxt)
-
--- | All other types are unaffected by the versioning for
--- 'ByronNodeToNodeVersion'.
-instance {-# OVERLAPPABLE #-} Arbitrary a
-      => Arbitrary (WithVersion ByronNodeToNodeVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary
-
--- | No types are affected by the versioning for
--- 'ByronNodeToClientVersion'.
-instance Arbitrary a => Arbitrary (WithVersion ByronNodeToClientVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary

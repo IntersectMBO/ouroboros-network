@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 {-# LANGUAGE UndecidableSuperClasses  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -20,6 +21,7 @@
 module Ouroboros.Consensus.Shelley.Node (
     MaxMajorProtVer (..)
   , ProtocolParamsAllegra (..)
+  , ProtocolParamsAlonzo (..)
   , ProtocolParamsMary (..)
   , ProtocolParamsShelley (..)
   , ProtocolParamsShelleyBased (..)
@@ -60,6 +62,8 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -68,11 +72,14 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
+import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.API as SL
+import qualified Shelley.Spec.Ledger.EpochBoundary as SL
+                     (PulsingStakeDistr (Completed))
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
-import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -120,12 +127,18 @@ type instance ForgeStateUpdateError (ShelleyBlock era) = HotKey.KESEvolutionErro
 -- In case the same credentials should be shared across multiple Shelley-based
 -- eras, use 'shelleySharedBlockForging'.
 shelleyBlockForging ::
-     forall m era. (ShelleyBasedEra era, IOLike m)
+     forall m era. (ShelleyBasedEra era, TxLimits (ShelleyBlock era), IOLike m)
   => TPraosParams
+  -> TxLimits.Overrides (ShelleyBlock era)
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
-shelleyBlockForging tpraosParams credentials =
-    aux <$> shelleySharedBlockForging (Proxy @'[era]) tpraosParams credentials
+shelleyBlockForging tpraosParams maxTxCapacityOverrides credentials =
+      fmap aux
+    $ shelleySharedBlockForging
+        (Proxy @'[era])
+        tpraosParams
+        credentials
+        (Comp maxTxCapacityOverrides :* Nil)
   where
     aux ::
          NP (BlockForging m :.: ShelleyBlock) '[era]
@@ -134,8 +147,8 @@ shelleyBlockForging tpraosParams credentials =
 
 -- | Needed in 'shelleySharedBlockForging' because we can't partially apply
 -- equality constraints.
-class    (ShelleyBasedEra era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
-instance (ShelleyBasedEra era, EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+class    (ShelleyBasedEra era, TxLimits (ShelleyBlock era), EraCrypto era ~ c) => ShelleyEraWithCrypto c era
+instance (ShelleyBasedEra era, TxLimits (ShelleyBlock era), EraCrypto era ~ c) => ShelleyEraWithCrypto c era
 
 -- | Create a 'BlockForging' record for each of the given Shelley-based eras,
 -- safely sharing the same set of credentials for all of them.
@@ -151,7 +164,8 @@ shelleySharedBlockForging ::
   => Proxy eras
   -> TPraosParams
   -> TPraosLeaderCredentials c
-  -> m (NP (BlockForging m :.: ShelleyBlock) eras)
+  -> NP    (TxLimits.Overrides :.: ShelleyBlock) eras
+  -> m (NP (BlockForging m     :.: ShelleyBlock) eras)
 shelleySharedBlockForging
                     _
                     TPraosParams {..}
@@ -159,14 +173,21 @@ shelleySharedBlockForging
                         tpraosLeaderCredentialsInitSignKey = initSignKey
                       , tpraosLeaderCredentialsCanBeLeader = canBeLeader
                       , tpraosLeaderCredentialsLabel       = label
-                      } = do
+                      }
+                    maxTxCapacityOverridess = do
     hotKey <- HotKey.mkHotKey @m @c initSignKey startPeriod tpraosMaxKESEvo
-    return $ hcpure (Proxy @(ShelleyEraWithCrypto c)) (Comp (aux hotKey))
+    return $
+      hcmap
+        (Proxy @(ShelleyEraWithCrypto c))
+        (aux hotKey)
+        maxTxCapacityOverridess
   where
     aux ::
          forall era. ShelleyEraWithCrypto c era
-      => HotKey c m -> BlockForging m (ShelleyBlock era)
-    aux hotKey = BlockForging {
+      => HotKey c m
+      -> (TxLimits.Overrides :.: ShelleyBlock) era
+      -> (BlockForging m     :.: ShelleyBlock) era
+    aux hotKey (Comp maxTxCapacityOverrides) = Comp $ BlockForging {
           forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
         , canBeLeader      = canBeLeader
         , updateForgeState = \_ curSlot _ ->
@@ -177,7 +198,12 @@ shelleySharedBlockForging
                                    (configConsensus cfg)
                                    forgingVRFHash
                                    curSlot
-        , forgeBlock       = forgeShelleyBlock hotKey canBeLeader
+        , forgeBlock       = \cfg ->
+            forgeShelleyBlock
+              hotKey
+              canBeLeader
+              cfg
+              maxTxCapacityOverrides
         }
 
     forgingVRFHash :: SL.Hash c (SL.VerKeyVRF c)
@@ -230,50 +256,83 @@ data ProtocolParamsShelleyBased era = ProtocolParamsShelleyBased {
     }
 
 -- | Parameters needed to run Shelley
-data ProtocolParamsShelley = ProtocolParamsShelley {
-      shelleyProtVer :: SL.ProtVer
+data ProtocolParamsShelley c = ProtocolParamsShelley {
+      shelleyProtVer                :: SL.ProtVer
+    , shelleyMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (ShelleyEra c))
     }
 
 -- | Parameters needed to run Allegra
-data ProtocolParamsAllegra = ProtocolParamsAllegra {
-      allegraProtVer :: SL.ProtVer
+data ProtocolParamsAllegra c = ProtocolParamsAllegra {
+      allegraProtVer                :: SL.ProtVer
+    , allegraMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (AllegraEra c))
     }
 
 -- | Parameters needed to run Mary
-data ProtocolParamsMary = ProtocolParamsMary {
-      maryProtVer :: SL.ProtVer
+data ProtocolParamsMary c = ProtocolParamsMary {
+      maryProtVer                :: SL.ProtVer
+    , maryMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (MaryEra c))
+    }
+
+-- | Parameters needed to run Alonzo
+data ProtocolParamsAlonzo c = ProtocolParamsAlonzo {
+      alonzoProtVer                :: SL.ProtVer
+    , alonzoMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (AlonzoEra c))
     }
 
 protocolInfoShelley ::
-     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c))
+     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c), TxLimits (ShelleyBlock (ShelleyEra c)))
   => ProtocolParamsShelleyBased (ShelleyEra c)
-  -> ProtocolParamsShelley
+  -> ProtocolParamsShelley c
   -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
 protocolInfoShelley protocolParamsShelleyBased
                     ProtocolParamsShelley {
-                        shelleyProtVer = protVer
+                        shelleyProtVer                = protVer
+                      , shelleyMaxTxCapacityOverrides = maxTxCapacityOverrides
                       } =
-    protocolInfoShelleyBased protocolParamsShelleyBased protVer
+    protocolInfoShelleyBased
+      protocolParamsShelleyBased
+      ()  -- trivial translation context
+      protVer
+      maxTxCapacityOverrides
 
 protocolInfoShelleyBased ::
-     forall m era. (IOLike m, ShelleyBasedEra era)
+     forall m era. (IOLike m, ShelleyBasedEra era, TxLimits (ShelleyBlock era))
   => ProtocolParamsShelleyBased era
+  -> Core.TranslationContext era
   -> SL.ProtVer
-  -> ProtocolInfo m (ShelleyBlock era)
+  -> TxLimits.Overrides (ShelleyBlock era)
+  -> ProtocolInfo m     (ShelleyBlock era)
 protocolInfoShelleyBased ProtocolParamsShelleyBased {
                              shelleyBasedGenesis           = genesis
                            , shelleyBasedInitialNonce      = initialNonce
                            , shelleyBasedLeaderCredentials = credentialss
                            }
-                         protVer =
+                         transCtxt
+                         protVer
+                         maxTxCapacityOverrides =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
       , pInfoBlockForging =
-          traverse (shelleyBlockForging tpraosParams) credentialss
+          traverse
+            (shelleyBlockForging tpraosParams maxTxCapacityOverrides)
+            credentialss
       }
   where
+
+    -- | Currently for all existing eras in ledger-specs (Shelley, Allegra, Mary
+    -- and Alonzo) it happens to be the case that AdditionalGenesisConfig and
+    -- TranslationContext are instantiated to the same type.
+    -- We take advantage of this fact below to simplify our code, but we are
+    -- aware that this might change in future (for new eras), breaking this
+    -- code.
+    --
+    -- see type equality constraint in
+    -- Ouroboros.Consensus.Shelley.Eras.ShelleyBasedEra
+    additionalGenesisConfig :: SL.AdditionalGenesisConfig era
+    additionalGenesisConfig = transCtxt
+
     maxMajorProtVer :: MaxMajorProtVer
     maxMajorProtVer = MaxMajorProtVer $ SL.pvMajor protVer
 
@@ -293,7 +352,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
       }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock era)
-    ledgerConfig = mkShelleyLedgerConfig genesis epochInfo maxMajorProtVer
+    ledgerConfig = mkShelleyLedgerConfig genesis transCtxt epochInfo maxMajorProtVer
 
     epochInfo :: EpochInfo (Except History.PastHorizonException)
     epochInfo =
@@ -322,7 +381,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
         shelleyLedgerTip        = Origin
       , shelleyLedgerState      =
           registerGenesisStaking (SL.sgStaking genesis) $
-            SL.initialState genesis ()
+            SL.initialState genesis additionalGenesisConfig
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
       }
 
@@ -409,7 +468,7 @@ registerGenesisStaking staking nes = nes {
             }
         }
         , SL.esSnapshots = (SL.esSnapshots epochState) {
-              SL._pstakeMark = initSnapShot
+              SL._pstakeMark = SL.Completed initSnapShot
             }
         }
 

@@ -814,7 +814,7 @@ hardForkEpochInfo ArbitraryChain{..} for =
                                  tickedHardForkLedgerViewTransition
                                  tickedHardForkLedgerViewPerEra
            in (
-             HF.toPureEpochInfo (HF.snapshotEpochInfo reconstructed)
+             HF.toPureEpochInfo (HF.summaryToEpochInfo reconstructed)
            , show view
            , show reconstructed
            )

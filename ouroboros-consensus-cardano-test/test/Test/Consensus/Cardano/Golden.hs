@@ -5,7 +5,10 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Golden (tests) where
 
+import           System.FilePath ((</>))
+
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
+import           Ouroboros.Consensus.Ledger.Query (QueryVersion)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node
@@ -27,15 +30,17 @@ instance CardanoHardForkConstraints c
     CardanoNodeToNodeVersion2 -> "CardanoNodeToNodeVersion2"
     CardanoNodeToNodeVersion3 -> "CardanoNodeToNodeVersion3"
     CardanoNodeToNodeVersion4 -> "CardanoNodeToNodeVersion4"
+    CardanoNodeToNodeVersion5 -> "CardanoNodeToNodeVersion5"
     _                         -> error $ "Unknown version: " <> show v
 
 instance CardanoHardForkConstraints c
-      => ToGoldenDirectory (HardForkNodeToClientVersion (CardanoEras c)) where
-  toGoldenDirectory v = case v of
+      => ToGoldenDirectory (QueryVersion, HardForkNodeToClientVersion (CardanoEras c)) where
+  toGoldenDirectory (queryVersion, blockVersion) = show queryVersion </> case blockVersion of
     CardanoNodeToClientVersion1 -> "CardanoNodeToClientVersion1"
     CardanoNodeToClientVersion2 -> "CardanoNodeToClientVersion2"
     CardanoNodeToClientVersion3 -> "CardanoNodeToClientVersion3"
     CardanoNodeToClientVersion4 -> "CardanoNodeToClientVersion4"
     CardanoNodeToClientVersion5 -> "CardanoNodeToClientVersion5"
     CardanoNodeToClientVersion6 -> "CardanoNodeToClientVersion6"
-    _                           -> error $ "Unknown version: " <> show v
+    CardanoNodeToClientVersion7 -> "CardanoNodeToClientVersion7"
+    _                           -> error $ "Unknown version: " <> show blockVersion

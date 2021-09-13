@@ -19,7 +19,6 @@ module Test.ThreadNet.Infra.Shelley (
   , genCoreNode
   , incrementMinorProtVer
   , initialLovelacePerCoreNode
-  , mkAllegraSetDecentralizationParamTxs
   , mkCredential
   , mkEpochSize
   , mkGenesisConfig
@@ -28,6 +27,7 @@ module Test.ThreadNet.Infra.Shelley (
   , mkKeyHashVrf
   , mkKeyPair
   , mkLeaderCredentials
+  , mkMASetDecentralizationParamTxs
   , mkProtocolShelley
   , mkSetDecentralizationParamTxs
   , mkVerKey
@@ -40,6 +40,7 @@ import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe.Strict (maybeToStrictMaybe)
 import           Data.Ratio (denominator, numerator)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Set (Set)
@@ -61,6 +62,7 @@ import           Cardano.Crypto.VRF (SignKeyVRF, VRFAlgorithm, VerKeyVRF,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
@@ -69,19 +71,18 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
-import qualified Cardano.Ledger.Core
+import           Cardano.Ledger.BaseTypes (boundRational)
+import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
-import qualified Cardano.Ledger.Era
+import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
+import qualified Cardano.Ledger.Keys
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
-import qualified Cardano.Ledger.Shelley.Constraints as SL
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
+import qualified Cardano.Ledger.Val as SL
+import qualified Cardano.Protocol.TPraos.OCert as SL (OCertSignable (..))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (truncateUnitInterval,
-                     unitIntervalFromRational)
-import qualified Shelley.Spec.Ledger.Keys
-import qualified Shelley.Spec.Ledger.OCert as SL (OCertSignable (..))
 import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
                      emptyPParamsUpdate)
 import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
@@ -94,6 +95,7 @@ import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
 
 import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
+import           Test.Shelley.Spec.Ledger.Utils (unsafeBoundRational)
 
 {-------------------------------------------------------------------------------
   The decentralization parameter
@@ -179,7 +181,7 @@ genCoreNode startKESPeriod = do
     vrfKey <- genKeyVRF   <$> genSeed (seedSizeVRF   (Proxy @(VRF   c)))
     kesKey <- genKeyKES   <$> genSeed (seedSizeKES   (Proxy @(KES   c)))
     let kesPub = deriveVerKeyKES kesKey
-        sigma  = Shelley.Spec.Ledger.Keys.signedDSIGN
+        sigma  = Cardano.Ledger.Keys.signedDSIGN
           @c
           delKey
           (SL.OCertSignable kesPub certificateIssueNumber startKESPeriod)
@@ -289,7 +291,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       sgSystemStart           = dawnOfTime
     , sgNetworkMagic          = 0
     , sgNetworkId             = networkId
-    , sgActiveSlotsCoeff      = f
+    , sgActiveSlotsCoeff      = unsafeBoundRational f
     , sgSecurityParam         = maxRollbacks k
     , sgEpochLength           = mkEpochSize k f
     , sgSlotsPerKESPeriod     = slotsPerEvolution kesCfg
@@ -324,7 +326,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
     pparams :: SL.PParams era
     pparams = SL.emptyPParams
       { SL._d               =
-          SL.unitIntervalFromRational $ decentralizationParamToRational d
+          unsafeBoundRational (decentralizationParamToRational d)
       , SL._maxBBSize       = 10000 -- TODO
       , SL._maxBHSize       = 1000 -- TODO
       , SL._protocolVersion = pVer
@@ -384,7 +386,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
                   -- Each core node pledges its full stake to the pool.
                 , SL._poolPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
                 , SL._poolCost = SL.Coin 1
-                , SL._poolMargin = SL.truncateUnitInterval 0
+                , SL._poolMargin = minBound
                   -- Reward accounts live in a separate "namespace" to other
                   -- accounts, so it should be fine to use the same address.
                 , SL._poolRAcnt = SL.RewardAcnt networkId $ mkCredential cnDelegateKey
@@ -416,7 +418,8 @@ mkProtocolShelley genesis initialNonce protVer coreNode =
         , shelleyBasedLeaderCredentials = [mkLeaderCredentials coreNode]
         }
       ProtocolParamsShelley {
-          shelleyProtVer = protVer
+          shelleyProtVer                = protVer
+        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
 {-------------------------------------------------------------------------------
   Necessary transactions for updating the 'DecentralizationParam'
@@ -501,8 +504,8 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
         [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
           , SL.emptyPParamsUpdate
               { SL._d =
-                  SL.SJust $
-                  SL.unitIntervalFromRational $
+                  maybeToStrictMaybe $
+                  boundRational $
                   decentralizationParamToRational dNew
               , SL._protocolVersion =
                   SL.SJust pVer
@@ -546,20 +549,21 @@ networkId = SL.Testnet
 --
 -- Our current plan is to replace all of this infrastructure with the ThreadNet
 -- rewrite; so we're minimizing the work and maintenance here for now.
-mkAllegraSetDecentralizationParamTxs ::
+mkMASetDecentralizationParamTxs ::
      forall era.
      ( ShelleyBasedEra era
-     , Cardano.Ledger.Core.TxBody era ~ MA.TxBody era
-     , Cardano.Ledger.Core.Value  era ~ SL.Coin
-     , Cardano.Ledger.Core.PParams era ~ SL.PParams era
-     , SL.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
+     , Core.Tx era ~ SL.Tx era
+     , Core.TxBody era ~ MA.TxBody era
+     , Core.PParams era ~ SL.PParams era
+     , Core.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
+     , Core.Witnesses era ~ SL.WitnessSet era
      )
-  => [CoreNode (Cardano.Ledger.Era.Crypto era)]
+  => [CoreNode (Core.Crypto era)]
   -> ProtVer   -- ^ The proposed protocol version
   -> SlotNo   -- ^ The TTL
   -> DecentralizationParam   -- ^ The new value
   -> [GenTx (ShelleyBlock era)]
-mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
+mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
     SL.Tx
@@ -578,7 +582,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 
     -- Every node signs the transaction body, since it includes a " vote " from
     -- every node.
-    signatures :: Set (SL.WitVKey 'SL.Witness (Cardano.Ledger.Era.Crypto era))
+    signatures :: Set (SL.WitVKey 'SL.Witness (Core.Crypto era))
     signatures =
         SL.makeWitnessesVKey
           (eraIndTxBodyHash' body)
@@ -613,14 +617,14 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
             }
         update'  = SL.SJust update
         adHash   = SL.SNothing
-        mint     = SL.Coin 0
+        mint     = SL.inject $ SL.Coin 0
 
     -- Every Shelley transaction requires one input.
     --
     -- We use the input of the first node, but we just put it all right back.
     --
     -- ASSUMPTION: This transaction runs in the first slot.
-    touchCoins :: (SL.TxIn (Cardano.Ledger.Era.Crypto era), SL.TxOut era)
+    touchCoins :: (SL.TxIn (Core.Crypto era), SL.TxOut era)
     touchCoins = case coreNodes of
         []   -> error "no nodes!"
         cn:_ ->
@@ -631,7 +635,7 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
             addr = SL.Addr networkId
                 (mkCredential (cnDelegateKey cn))
                 (SL.StakeRefBase (mkCredential (cnStakingKey cn)))
-            coin = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+            coin = SL.inject $ SL.Coin $ fromIntegral initialLovelacePerCoreNode
 
     -- One replicant of the parameter update per each node.
     update :: SL.Update era
@@ -641,8 +645,8 @@ mkAllegraSetDecentralizationParamTxs coreNodes pVer ttl dNew =
         [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
           , SL.emptyPParamsUpdate
               { SL._d =
-                  SL.SJust $
-                  SL.unitIntervalFromRational $
+                  maybeToStrictMaybe $
+                  boundRational $
                   decentralizationParamToRational dNew
               , SL._protocolVersion =
                   SL.SJust pVer

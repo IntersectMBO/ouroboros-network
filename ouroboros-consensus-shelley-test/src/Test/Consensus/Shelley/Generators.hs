@@ -19,10 +19,12 @@ import           Ouroboros.Network.Block (mkSerialised)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto,
                      TPraosState (..))
@@ -31,16 +33,18 @@ import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip (SomeResult (..),
-                     WithVersion (..))
+import           Test.Util.Serialisation.Roundtrip (Coherent (..),
+                     SomeResult (..), WithVersion (..))
 
-import           Test.Cardano.Ledger.Allegra ()
-import           Test.Cardano.Ledger.Mary ()
+import           Test.Cardano.Ledger.AllegraEraGen ()
+import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
+import           Test.Cardano.Ledger.MaryEraGen ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
 import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
-import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators ()
+import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators
+                     (genCoherentBlock)
 import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 {-------------------------------------------------------------------------------
@@ -50,8 +54,15 @@ import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
   necessarily valid
 -------------------------------------------------------------------------------}
 
+-- | The upstream 'Arbitrary' instance for Shelley blocks does not generate
+-- coherent blocks, so neither does this.
 instance CanMock era => Arbitrary (ShelleyBlock era) where
   arbitrary = mkShelleyBlock <$> arbitrary
+
+-- | This uses a different upstream generator to ensure the header and block
+-- body relate as expected.
+instance CanMock era => Arbitrary (Coherent (ShelleyBlock era)) where
+  arbitrary = Coherent . mkShelleyBlock <$> genCoherentBlock
 
 instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
   arbitrary = getHeader <$> arbitrary
@@ -65,7 +76,7 @@ instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
 instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance CanMock era => Arbitrary (SomeSecond Query (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock era)) where
   arbitrary = oneof
     [ pure $ SomeSecond GetLedgerTip
     , pure $ SomeSecond GetEpochNo
@@ -158,24 +169,11 @@ instance PraosCrypto c => Arbitrary (SL.ChainDepState c) where
   Versioned generators for serialisation
 -------------------------------------------------------------------------------}
 
--- | We only have single version, so no special casing required.
---
--- This blanket orphan instance will have to be replaced with more specific
--- ones, once we introduce a different Shelley version.
-instance Arbitrary a => Arbitrary (WithVersion ShelleyNodeToNodeVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary
-
--- | This is @OVERLAPPABLE@ because we have to override the default behaviour
--- for 'Query's.
-instance {-# OVERLAPPABLE #-} Arbitrary a
-      => Arbitrary (WithVersion ShelleyNodeToClientVersion a) where
-  arbitrary = WithVersion <$> arbitrary <*> arbitrary
-
 -- | Some 'Query's are only supported by 'ShelleyNodeToClientVersion2', so we
 -- make sure to not generate those queries in combination with
 -- 'ShelleyNodeToClientVersion1'.
 instance CanMock era
-      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond Query (ShelleyBlock era))) where
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock era))) where
   arbitrary = do
       query@(SomeSecond q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q

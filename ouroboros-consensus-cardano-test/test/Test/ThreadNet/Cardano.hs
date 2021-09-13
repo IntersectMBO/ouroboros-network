@@ -24,6 +24,7 @@ import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
@@ -43,10 +44,9 @@ import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
+import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff)
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.BaseTypes as SL (ActiveSlotCoeff)
 
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Cardano.Node
 
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 import           Test.ThreadNet.General
+import qualified Test.ThreadNet.Infra.Alonzo as Alonzo
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Network (NodeOutput (..),
@@ -257,8 +258,10 @@ prop_simple_cardano_convergence TestSetup
                   genesisShelley
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
-                  ProtocolParamsTransition {
-                      transitionTrigger = TriggerHardForkAtVersion shelleyMajorVersion
+                  ProtocolTransitionParamsShelleyBased {
+                      transitionTranslationContext = ()
+                    , transitionTrigger            =
+                        TriggerHardForkAtVersion shelleyMajorVersion
                     }
             , mkRekeyM = Nothing
             }
@@ -454,9 +457,7 @@ mkProtocolCardanoAndHardForkTxs
   -> SL.Nonce
   -> Shelley.CoreNode c
      -- HardForks
-  -> ProtocolParamsTransition
-       ByronBlock
-       (ShelleyBlock (ShelleyEra c))
+  -> ProtocolTransitionParamsShelleyBased (ShelleyEra c)
   -> TestNodeInitialization m (CardanoBlock c)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
@@ -492,6 +493,7 @@ mkProtocolCardanoAndHardForkTxs
           , byronProtocolVersion        = propPV
           , byronSoftwareVersion        = softVerByron
           , byronLeaderCredentials      = Just leaderCredentialsByron
+          , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsShelleyBased {
             shelleyBasedGenesis           = genesisShelley
@@ -499,20 +501,36 @@ mkProtocolCardanoAndHardForkTxs
           , shelleyBasedLeaderCredentials = [leaderCredentialsShelley]
           }
         ProtocolParamsShelley {
-            shelleyProtVer = SL.ProtVer shelleyMajorVersion 0
+            shelleyProtVer                = SL.ProtVer shelleyMajorVersion 0
+          , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsAllegra {
-            allegraProtVer = SL.ProtVer allegraMajorVersion 0
+            allegraProtVer                = SL.ProtVer allegraMajorVersion 0
+          , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsMary {
-            maryProtVer    = SL.ProtVer maryMajorVersion    0
+            maryProtVer                   = SL.ProtVer maryMajorVersion    0
+          , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          }
+        ProtocolParamsAlonzo {
+            alonzoProtVer                 = SL.ProtVer alonzoMajorVersion  0
+          , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         protocolParamsByronShelley
-        ProtocolParamsTransition {
-            transitionTrigger = TriggerHardForkAtVersion allegraMajorVersion
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext = ()
+          , transitionTrigger            =
+              TriggerHardForkAtVersion allegraMajorVersion
           }
-        ProtocolParamsTransition {
-            transitionTrigger = TriggerHardForkAtVersion maryMajorVersion
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext = ()
+          , transitionTrigger            =
+              TriggerHardForkAtVersion maryMajorVersion
+          }
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
+          , transitionTrigger            =
+              TriggerHardForkAtVersion alonzoMajorVersion
           }
 
     -- Byron
@@ -563,6 +581,11 @@ allegraMajorVersion = shelleyMajorVersion + 1
 -- See 'byronMajorVersion'
 maryMajorVersion :: Num a => a
 maryMajorVersion = allegraMajorVersion + 1
+
+-- | The major protocol version of Alonzo in this test
+--
+alonzoMajorVersion :: Num a => a
+alonzoMajorVersion = maryMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --

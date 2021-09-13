@@ -40,7 +40,7 @@ import qualified Ouroboros.Consensus.HardFork.History.Qry as Qry
 -- at least two eras
 data HardForkCompatQuery blk :: Type -> Type where
   CompatIfCurrent ::
-       Query blk result
+       BlockQuery blk result
     -> HardForkCompatQuery blk result
 
   CompatAnytime ::
@@ -58,7 +58,7 @@ data HardForkCompatQuery blk :: Type -> Type where
 
 -- | Submit query to underlying ledger
 compatIfCurrent ::
-     Query blk result
+     BlockQuery blk result
   -> HardForkCompatQuery blk result
 compatIfCurrent = CompatIfCurrent
 
@@ -83,7 +83,7 @@ compatGetInterpreter = CompatHardFork GetInterpreter
 -- at least two eras
 forwardCompatQuery ::
        forall m x xs. IsNonEmpty xs
-    => (forall result. Query (HardForkBlock (x ': xs)) result -> m result)
+    => (forall result. BlockQuery (HardForkBlock (x ': xs)) result -> m result)
     -- ^ Submit a query through the LocalStateQuery protocol.
     -> (forall result. HardForkCompatQuery (HardForkBlock (x ': xs)) result -> m result)
 forwardCompatQuery f = go
@@ -99,7 +99,7 @@ singleEraCompatQuery ::
        forall m blk era. (Monad m, HardForkIndices blk ~ '[era])
     => EpochSize
     -> SlotLength
-    -> (forall result. Query blk result -> m result)
+    -> (forall result. BlockQuery blk result -> m result)
     -- ^ Submit a query through the LocalStateQuery protocol.
     -> (forall result. HardForkCompatQuery blk result -> m result)
 singleEraCompatQuery epochSize slotLen f = go

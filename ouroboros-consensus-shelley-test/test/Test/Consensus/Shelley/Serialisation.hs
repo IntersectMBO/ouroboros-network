@@ -87,20 +87,22 @@ testTPraosSlotsPerKESPeriod :: Word64
 testTPraosSlotsPerKESPeriod = maxBound
 
 -- | Test that the block we generate pass the 'verifyBlockIntegrity' check
-prop_blockIntegrity :: Block ShortHash -> Bool
-prop_blockIntegrity = verifyBlockIntegrity testTPraosSlotsPerKESPeriod
+prop_blockIntegrity :: Coherent (Block ShortHash) -> Bool
+prop_blockIntegrity =
+    verifyBlockIntegrity testTPraosSlotsPerKESPeriod . getCoherent
 
 -- | Test that the block we generate pass the 'verifyHeaderIntegrity' check
 prop_headerIntegrity :: Header (Block ShortHash) -> Bool
 prop_headerIntegrity = verifyHeaderIntegrity testTPraosSlotsPerKESPeriod
 
 -- | Test that we can detect random bitflips in blocks.
-prop_detectCorruption_Block :: Block ShortHash -> Corruption -> Property
-prop_detectCorruption_Block =
+prop_detectCorruption_Block :: Coherent (Block ShortHash) -> Corruption -> Property
+prop_detectCorruption_Block (Coherent blk) =
     detectCorruption
       encodeShelleyBlock
       decodeShelleyBlock
       (verifyBlockIntegrity testTPraosSlotsPerKESPeriod)
+      blk
 
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Header :: Header (Block ShortHash) -> Corruption -> Property

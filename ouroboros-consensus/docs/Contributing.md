@@ -16,10 +16,10 @@ start.
   * [git process][consensus-git]
   * TODO quick-start guide
 
-[consensus-git]: https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/GitProcess.md
+[consensus-git]: GitProcess.md
 
-[consensus-onboarding]: https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Onboarding.md
+[consensus-onboarding]: Onboarding.md
 
-[consensus-style]: https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/StyleGuide.md
+[consensus-style]: StyleGuide.md
 
-[iohk-onboarding]: https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/IOHKOnboarding.md
+[iohk-onboarding]: IOHKOnboarding.md

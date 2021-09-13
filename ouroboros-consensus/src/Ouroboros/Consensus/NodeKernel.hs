@@ -12,8 +12,7 @@
 
 module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
-    MaxTxCapacityOverride (..)
-  , MempoolCapacityBytesOverride (..)
+    MempoolCapacityBytesOverride (..)
   , NodeKernel (..)
   , NodeKernelArgs (..)
   , TraceForgeEvent (..)
@@ -34,7 +33,6 @@ import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy
 import qualified Data.Text as Text
 import           Data.Time.Clock (UTCTime)
-import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 import           System.Random (StdGen)
 
@@ -108,21 +106,6 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     , getTracers             :: Tracers m remotePeer localPeer blk
     }
 
--- | The maximum transaction capacity of a block is computed by taking the max
--- block size from the protocol parameters in the current ledger state and
--- subtracting the size of the header.
---
--- It is possible to override this maximum transaction capacity with a lower
--- value. We ignore higher values than the ledger state's max block size. Such
--- blocks would be rejected by the ledger anyway.
-data MaxTxCapacityOverride
-  = NoMaxTxCapacityOverride
-    -- ^ Don't override the maximum transaction capacity as computed from the
-    -- current ledger state.
-  | MaxTxCapacityOverride !Word32
-    -- ^ Use the following maximum size in bytes for the transaction capacity
-    -- of a block.
-
 -- | Arguments required when initializing a node
 data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
       tracers                 :: Tracers m remotePeer localPeer blk
@@ -133,7 +116,6 @@ data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
     , initChainDB             :: StorageConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
     , blockForging            :: [BlockForging m blk]
-    , maxTxCapacityOverride   :: MaxTxCapacityOverride
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
     , blockFetchConfiguration :: BlockFetchConfiguration
@@ -150,7 +132,7 @@ initNodeKernel
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
-initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverride
+initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
                                    , blockForging, chainDB, initChainDB
                                    , blockFetchConfiguration
                                    } = do
@@ -159,7 +141,7 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers, maxTxCapacityOverri
 
     st <- initInternalState args
 
-    mapM_ (forkBlockForging maxTxCapacityOverride st) blockForging
+    mapM_ (forkBlockForging st) blockForging
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              mempool } = st
@@ -410,11 +392,10 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
 forkBlockForging
     :: forall m remotePeer localPeer blk.
        (IOLike m, RunNode blk)
-    => MaxTxCapacityOverride
-    -> InternalState m remotePeer localPeer blk
+    => InternalState m remotePeer localPeer blk
     -> BlockForging m blk
     -> m ()
-forkBlockForging maxTxCapacityOverride IS{..} blockForging =
+forkBlockForging IS{..} blockForging =
       void
     $ forkLinkedWatcher registry threadLabel
     $ knownSlotWatcher btime
@@ -539,9 +520,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
                                (ForgeInKnownSlot
                                   currentSlot
                                   tickedLedgerState)
-        let txs = map fst $ snapshotTxsForSize
-                              mempoolSnapshot
-                              (computeMaxTxCapacity tickedLedgerState)
+        let txs = map fst $ snapshotTxs mempoolSnapshot
 
         -- Actually produce the block
         newBlock <- lift $
@@ -552,6 +531,7 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
             tickedLedgerState
             txs
             proof
+
         trace $ TraceForgedBlock
                   currentSlot
                   (ledgerTipPoint (Proxy @blk) (ledgerState unticked))
@@ -599,19 +579,6 @@ forkBlockForging maxTxCapacityOverride IS{..} blockForging =
           lift
         . traceWith (forgeTracer tracers)
         . TraceLabelCreds (forgeLabel blockForging)
-
-    -- Compute maximum block transaction capacity
-    --
-    -- We allow the override to /reduce/ the maximum size, but not increase
-    -- it. This is important because any blocks exceeding the max block size
-    -- are invalid according to the ledger and we want certainly don't want to
-    -- forge invalid blocks.
-    computeMaxTxCapacity :: TickedLedgerState blk -> Word32
-    computeMaxTxCapacity ledger = case maxTxCapacityOverride of
-          NoMaxTxCapacityOverride     -> noOverride
-          MaxTxCapacityOverride txCap -> noOverride `min` txCap
-      where
-        noOverride = maxTxCapacity ledger
 
 -- | Context required to forge a block
 data BlockContext blk = BlockContext

@@ -13,7 +13,7 @@ This site contains Haskell documentation of
 
     * __[io-sim](io-sim/Control-Monad-IOSim.html)__ - `IOSim` moand which
       allows us to test networking code in simulation.
-    * __[io-sim-classes](#n.2.1.1)__ - abstract classes under 'Control.Monad.Class' which
+    * __[io-classes](#n.2.1.1)__ - abstract classes under 'Control.Monad.Class' which
       allow to use real `IO` or the `SimIO` monad in a polymorphic way.
 
 * __Network__ - low level networking libraries, independent of our choices

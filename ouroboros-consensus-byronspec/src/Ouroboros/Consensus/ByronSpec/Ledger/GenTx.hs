@@ -49,7 +49,7 @@ data ByronSpecGenTx =
 --
 -- We don't distinguish these from any other kind of CHAIN failure.
 newtype ByronSpecGenTxErr = ByronSpecGenTxErr {
-      unByronSpecGenTxErr :: [[Spec.PredicateFailure Spec.CHAIN]]
+      unByronSpecGenTxErr :: [Spec.PredicateFailure Spec.CHAIN]
     }
   deriving (Show, Generic, Serialise)
 

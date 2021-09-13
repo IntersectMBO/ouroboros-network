@@ -78,6 +78,16 @@ import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
                      (byronBlockEncodingOverhead)
+import           Ouroboros.Consensus.Mempool.TxLimits
+
+{-------------------------------------------------------------------------------
+  TxLimits
+-------------------------------------------------------------------------------}
+
+instance TxLimits ByronBlock where
+  type TxMeasure ByronBlock = ByteSize
+  txMeasure        = ByteSize . txInBlockSize . txForgetValidated
+  txsBlockCapacity = ByteSize . txsMaxBytes
 
 {-------------------------------------------------------------------------------
   Transactions
@@ -116,7 +126,7 @@ instance LedgerSupportsMempool ByronBlock where
     where
       tx' = toMempoolPayload tx
 
-  applyTx cfg slot tx st =
+  applyTx cfg _wti slot tx st =
           (\st' -> (st', ValidatedByronTx tx))
       <$> applyByronGenTx validationMode cfg slot tx st
     where
@@ -127,7 +137,7 @@ instance LedgerSupportsMempool ByronBlock where
     where
       validationMode = CC.ValidationMode CC.NoBlockValidation Utxo.TxValidationNoCrypto
 
-  maxTxCapacity st =
+  txsMaxBytes st =
     CC.getMaxBlockSize (tickedByronLedgerState st) - byronBlockEncodingOverhead
 
   txInBlockSize =
@@ -158,7 +168,7 @@ instance HasTxs ByronBlock where
   extractTxs blk = case byronBlockRaw blk of
     -- EBBs don't contain transactions
     CC.ABOBBoundary _ebb    -> []
-    CC.ABOBBlock regularBlk -> ValidatedByronTx . fromMempoolPayload <$>
+    CC.ABOBBlock regularBlk -> fromMempoolPayload <$>
         maybeToList proposal <> votes <> dlgs <> txs
       where
         body = CC.blockBody regularBlk

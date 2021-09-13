@@ -24,9 +24,14 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.Assert
 
+import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (hashTxSeq, toTxSeq)
-import qualified Shelley.Spec.Ledger.BlockChain as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import qualified Shelley.Spec.Ledger.API as SL (extractTx)
+import qualified Shelley.Spec.Ledger.BlockChain as SL (Block (..), bBodySize)
 
+import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
@@ -40,28 +45,36 @@ import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 -------------------------------------------------------------------------------}
 
 forgeShelleyBlock ::
-     forall m era. (ShelleyBasedEra era, Monad m)
+     forall m era. (ShelleyBasedEra era, TxLimits (ShelleyBlock era), Monad m)
   => HotKey (EraCrypto era) m
   -> TPraosCanBeLeader (EraCrypto era)
   -> TopLevelConfig (ShelleyBlock era)
-  -> BlockNo                                -- ^ Current block number
-  -> SlotNo                                 -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock era)   -- ^ Current ledger
-  -> [Validated (GenTx (ShelleyBlock era))] -- ^ Txs to add in the block
-  -> TPraosIsLeader (EraCrypto era)         -- ^ Leader proof
+  -> TxLimits.Overrides (ShelleyBlock era)     -- ^ How to override max tx
+                                               -- capacity defined by ledger
+  -> BlockNo                                   -- ^ Current block number
+  -> SlotNo                                    -- ^ Current slot number
+  -> TickedLedgerState (ShelleyBlock era)      -- ^ Current ledger
+  -> [Validated (GenTx (ShelleyBlock era))]    -- ^ Txs to add in the block
+  -> TPraosIsLeader (EraCrypto era)            -- ^ Leader proof
   -> m (ShelleyBlock era)
-forgeShelleyBlock hotKey canBeLeader cfg curNo curSlot tickedLedger txs isLeader = do
+forgeShelleyBlock hotKey canBeLeader cfg maxTxCapacityOverrides curNo curSlot tickedLedger txs isLeader = do
     tpraosFields <- forgeTPraosFields hotKey canBeLeader isLeader mkBhBody
     let blk = mkShelleyBlock $ SL.Block (mkHeader tpraosFields) body
     return $
       assert (verifyBlockIntegrity tpraosSlotsPerKESPeriod blk) $
-      assertWithMsg bodySizeEstimate $
-        blk
+      assertWithMsg bodySizeEstimate blk
   where
     TPraosConfig { tpraosParams = TPraosParams { tpraosSlotsPerKESPeriod } } =
       configConsensus cfg
 
-    body = SL.toTxSeq @era $ Seq.fromList $ (\(ShelleyValidatedTx _ tx) -> tx) <$> txs
+    body =
+        SL.toTxSeq @era
+      . Seq.fromList
+      . fmap extractTx
+      $ takeLargestPrefixThatFits maxTxCapacityOverrides tickedLedger txs
+
+    extractTx :: Validated (GenTx (ShelleyBlock era)) -> Core.Tx era
+    extractTx (ShelleyValidatedTx _txid vtx) = SL.extractTx vtx
 
     mkHeader TPraosFields { tpraosSignature, tpraosToSign } =
       SL.BHeader tpraosToSign tpraosSignature
