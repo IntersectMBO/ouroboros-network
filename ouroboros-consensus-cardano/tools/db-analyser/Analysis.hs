@@ -1,14 +1,16 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-
 module Analysis (
     AnalysisEnv (..)
   , AnalysisName (..)
   , runAnalysis
   ) where
 
+import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
@@ -16,15 +18,26 @@ import           Data.Word (Word16)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract (tickThenApplyLedgerResult)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..))
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol (..))
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Util.ResourceRegistry
+
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
+                     (LgrDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
+                     writeSnapshot)
+import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes,
+                     encodeDisk)
 
 import           HasAnalysis (HasAnalysis)
 import qualified HasAnalysis
@@ -40,15 +53,23 @@ data AnalysisName =
   | ShowBlockTxsSize
   | ShowEBBs
   | OnlyValidation
+  | StoreLedgerStateAt SlotNo
   deriving Show
 
-runAnalysis :: HasAnalysis blk => AnalysisName -> Analysis blk
-runAnalysis ShowSlotBlockNo     = showSlotBlockNo
-runAnalysis CountTxOutputs      = countTxOutputs
-runAnalysis ShowBlockHeaderSize = showHeaderSize
-runAnalysis ShowBlockTxsSize    = showBlockTxsSize
-runAnalysis ShowEBBs            = showEBBs
-runAnalysis OnlyValidation      = \_ -> return ()
+runAnalysis ::
+     forall blk .
+     ( LgrDbSerialiseConstraints blk
+     , HasAnalysis blk
+     , LedgerSupportsProtocol blk
+     )
+  => AnalysisName -> Analysis blk
+runAnalysis ShowSlotBlockNo             = showSlotBlockNo
+runAnalysis CountTxOutputs              = countTxOutputs
+runAnalysis ShowBlockHeaderSize         = showHeaderSize
+runAnalysis ShowBlockTxsSize            = showBlockTxsSize
+runAnalysis ShowEBBs                    = showEBBs
+runAnalysis OnlyValidation              = \_ -> return ()
+runAnalysis (StoreLedgerStateAt slotNo) = storeLedgerStateAt slotNo
 
 type Analysis blk = AnalysisEnv blk -> IO ()
 
@@ -57,6 +78,7 @@ data AnalysisEnv blk = AnalysisEnv {
     , initLedger :: ExtLedgerState blk
     , db         :: Either (ImmutableDB IO blk) (ChainDB IO blk)
     , registry   :: ResourceRegistry IO
+    , ledgerDbFS :: SomeHasFS IO
     }
 
 {-------------------------------------------------------------------------------
@@ -160,6 +182,54 @@ showEBBs AnalysisEnv { db, registry } = do
               ]
           _otherwise ->
             return () -- Skip regular blocks
+
+{-------------------------------------------------------------------------------
+  Analysis: store a ledger at specific slot
+-------------------------------------------------------------------------------}
+
+storeLedgerStateAt ::
+     forall blk .
+     ( LgrDbSerialiseConstraints blk
+     , HasAnalysis blk
+     , LedgerSupportsProtocol blk
+     )
+  => SlotNo -> Analysis blk
+storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, ledgerDbFS }) = do
+    putStrLn $ "About to store snapshot of a ledger at " <>
+               show slotNo <> " " <>
+               "this might take a while..."
+    void $ processAll db registry GetBlock initLedger process
+  where
+    process :: ExtLedgerState blk -> blk -> IO (ExtLedgerState blk)
+    process oldLedger blk = do
+      let ledgerCfg     = ExtLedgerCfg cfg
+          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
+          newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
+      when (slotNo == blockSlot blk) $ storeLedgerState blk newLedger
+      return newLedger
+
+    storeLedgerState ::
+         blk
+      -> ExtLedgerState blk
+      -> IO ()
+    storeLedgerState blk ledgerState = do
+      let snapshot = DiskSnapshot
+                      (unSlotNo $ blockSlot blk)
+                      (Just $ "db-analyser")
+      writeSnapshot ledgerDbFS encLedger snapshot ledgerState
+      putStrLn $ "storing state at " <> intercalate "\t" [
+          show (blockNo   blk)
+        , show (blockSlot blk)
+        , show (blockHash blk)
+        ]
+
+    encLedger :: ExtLedgerState blk -> Encoding
+    encLedger =
+      let ccfg = configCodec cfg
+      in encodeExtLedgerState
+           (encodeDisk ccfg)
+           (encodeDisk ccfg)
+           (encodeDisk ccfg)
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB

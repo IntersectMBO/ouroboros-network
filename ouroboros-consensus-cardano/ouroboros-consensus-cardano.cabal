@@ -79,6 +79,7 @@ executable db-analyser
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-core
+                     , cborg
                      , containers
                      , contra-tracer
                      , mtl
