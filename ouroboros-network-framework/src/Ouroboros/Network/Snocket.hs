@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
@@ -33,6 +34,7 @@ import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Hashable
+import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
 #if !defined(mingw32_HOST_OS)
@@ -110,9 +112,9 @@ instance Functor m => Bifunctor (Accept m) where
 berkeleyAccept :: IOManager
                -> Socket
                -> Accept IO Socket SockAddr
-berkeleyAccept ioManager sock = go
+berkeleyAccept ioManager sock = go (0 :: Word64)
     where
-      go = Accept $ do
+      go !cnt = Accept $ do
         (sock', addr') <-
 #if !defined(mingw32_HOST_OS)
           Socket.accept sock
@@ -126,7 +128,19 @@ berkeleyAccept ioManager sock = go
           `catch` \(SomeAsyncException _) -> do
             Socket.close sock'
             throwIO e
-        return (sock', addr', go)
+
+        -- UNIX sockets don't provide a unique endpoint for the remote
+        -- side, but the InboundGovernor/Server requires one in order to
+        -- track connections.
+        -- So to differentiate clients we use a simple counter as the
+        -- remote end's address.
+        --
+        addr'' <- case addr' of
+                       Socket.SockAddrUnix _ ->
+                           return $ Socket.SockAddrUnix $ "temp-" ++ show cnt
+                       _                     -> return addr'
+
+        return (sock', addr'', go $ succ cnt)
 
 -- | Local address, on Unix is associated with `Socket.AF_UNIX` family, on
 --
