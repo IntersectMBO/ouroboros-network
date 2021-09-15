@@ -1,16 +1,22 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Block.Alonzo () where
+module Block.Alonzo (
+    AlonzoBlockArgs
+  , Args (..)
+  ) where
 
 import           Control.Applicative
 import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
+import           Options.Applicative
 import           Prelude
 
 import           Data.Aeson (FromJSON (..), (.:), (.:?))
@@ -21,8 +27,30 @@ import qualified Cardano.Ledger.Alonzo.Genesis as Alonzo
 import qualified Cardano.Ledger.Alonzo.Language as Alonzo
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import qualified Cardano.Ledger.BaseTypes as Ledger
+import           HasAnalysis (HasProtocolInfo (..))
+import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo)
+import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 
 import           Plutus.V1.Ledger.Api (defaultCostModelParams)
+
+instance HasProtocolInfo (ShelleyBlock StandardAlonzo) where
+  data Args (ShelleyBlock StandardAlonzo) = AlonzoBlockArgs {
+        configFileAlonzo :: FilePath
+      }
+    deriving (Show)
+
+  argsParser _ = AlonzoBlockArgs
+    <$> strOption (mconcat [
+            long "configAlonzo"
+          , help "Path to config file"
+          , metavar "PATH"
+          ])
+
+  -- | Not implemented because we don't anticipate running
+  -- an 'Alonzo only' chain.
+  mkProtocolInfo _ = undefined
+
+type AlonzoBlockArgs = Args (ShelleyBlock StandardAlonzo)
 
 instance FromJSON Alonzo.AlonzoGenesis where
   parseJSON = Aeson.withObject "Alonzo Genesis" $ \o -> do

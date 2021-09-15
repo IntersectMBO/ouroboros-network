@@ -32,14 +32,14 @@ import           Cardano.Ledger.Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 
-import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
-
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
+import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo,
+                     StandardShelley)
+import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 
-import           Block.Alonzo ()
+import           Block.Alonzo (Args (..))
 import           Block.Byron (Args (..), openGenesisByron)
 import           Block.Shelley (Args (..))
 import           HasAnalysis
@@ -59,14 +59,15 @@ analyseBlock f =
 instance HasProtocolInfo (CardanoBlock StandardCrypto) where
   data Args (CardanoBlock StandardCrypto) =
     CardanoBlockArgs {
-        byronArgs        :: Args ByronBlock
-      , shelleyArgs      :: Args (ShelleyBlock StandardShelley)
-      , configFileAlonzo :: FilePath
+        byronArgs   :: Args ByronBlock
+      , shelleyArgs :: Args (ShelleyBlock StandardShelley)
+      , alonzoArgs  :: Args (ShelleyBlock StandardAlonzo)
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
     let ByronBlockArgs {..}   = byronArgs
     let ShelleyBlockArgs {..} = shelleyArgs
+    let AlonzoBlockArgs {..}  = alonzoArgs
     genesisByron <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
     genesisShelley <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
@@ -87,11 +88,7 @@ parseCardanoArgs :: Parser CardanoBlockArgs
 parseCardanoArgs = CardanoBlockArgs
     <$> argsParser Proxy
     <*> argsParser Proxy
-    <*> strOption (mconcat [
-            long "configAlonzo"
-          , help "Path to config file"
-          , metavar "PATH"
-          ])
+    <*> argsParser Proxy
 
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
