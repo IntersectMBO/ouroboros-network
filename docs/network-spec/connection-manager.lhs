@@ -198,18 +198,18 @@ mini-protocols and running them in both directions over a single TCP bearer.
 \end{figure}
 
 Using a TCP connection in both directions rather than two independent TCP
-connections is good for efficient use of network resources, but more
-importantly it is crucial to support certain important scenarios where one node
-is behind a firewall that blocks incoming TCP connections. For example it is
-good practice to have a block-producing node be behind a firewall, while
-deploying relay nodes outside the firewall. If the node behind the firewall can
-establish an outbound TCP connection to its relays but still have those relays
-select the block-producing node as an upstream peer then it means we do not
-need to punch any holes in the firewall. If we were to only support running
-mini-protocols in one direction then this scenario would require a hole in the
-firewall to allow the relays to establish incoming connections to the
-block-producing node. That would be both less secure and also require more
-configuration and probably dynamic configuration at that.
+connections is good for efficient use of network resources, but more importantly
+it is crucial to support certain important scenarios where one node is behind a
+firewall that blocks incoming TCP connections. For example it is good practice
+to have a block-producing node be behind a firewall, while deploying relay nodes
+outside the firewall. If the node behind the firewall can establish an outbound
+TCP connection to its relays but still have those relays select the
+block-producing node as an upstream peer then it means that node operators do
+not need to configure any holes and/or port forwarding in the firewall. If we
+were to only support running mini-protocols in one direction then this scenario
+would require a hole in the firewall to allow the relays to establish incoming
+connections to the block-producing node. That would be both less secure and also
+require more configuration and probably dynamic configuration at that.
 
 Consider however what is required to make this scenario work.
 \begin{enumerate}
@@ -245,6 +245,7 @@ This leads to a couple observations:
 \end{enumerate}
 
 A consequence of all this is that we cannot use a classic client/server design.
+We are decoupling the ongoing role of the connection from who initiated it.
 That is, we cannot just run a server component that manages all the connections
 and threads for the server (inbound) side of things, and a separate component
 that manages the connections and threads for the client (outbound) side of
@@ -256,12 +257,17 @@ Although actual TCP connections must be a shared resource we do not wish to
 intermingle the code for handling the inbound and outbound directions. As noted
 above the selection of upstream (outbound) peers is quite complicated and we
 would not want to add to that complexity by mixing it with a lot of other
-concerns. To minimise complexity it would be preferable if the code that manages
+concerns, and vice versa.
+To minimise complexity it would be preferable if the code that manages
 the outbound side would be completely unaware of the inbound side and vice
 versa. Yet we still want the inbound and outbound sides to opportunistically
 share TCP connections where possible. This appears to be eminently achievable
 given that we are using multiplexing to run mini-protocols in either direction
 and concurrency for mini-protocol handlers to achieve a degree of modularity.
+
+The use of a single TCP connection helps with simplifying exception processing
+and timely mitigation of poor peer performance (whether connection related or
+otherwise). This is covered in more detail in \cref{sec:exceptions}.
 
 These ideas lead to the design illustrated in \cref{tik:components}. In this
 design there is an outbound and inbound side -- which are completely unaware of
@@ -331,7 +337,7 @@ resources. It has to provide an interface to the outbound side to enable the
 use of connections in an outbound direction. Correspondingly it must provide an
 interface to the inbound side to enable the use of connections in an inbound
 direction. Internally it must deal with connections being used in a
-unidirectional or duplex way, and transitions between directions. Of course it
+unidirectional or duplex way, and the transitions between. Of course it
 can be the case that connections are no longer required in either direction,
 and such connections should be closed in an orderly manner. This must be a
 responsibility of the connection manager since it is the only component that
@@ -351,6 +357,7 @@ is responsible for:
 \item continuously making progress towards the target number of peers in each
       state; and
 \item adjusting these targets over time to achieve a degree of `churn'.
+      \todo{need cross reference.}
 \end{itemize}
 Taken together, and with appropriate policies, a network of nodes should be
 able to self-organise and achieve the desired properties. We have simulation
@@ -381,7 +388,8 @@ and hence API names |acquireOutboundConnection| and |releaseOutboundConnection|.
 
 It is worth noting again that the P2P governor does not require exclusive
 access to the TCP bearer. It has no special TCP-specific needs in the setup or
-shutdown. It needs access to the multiplexer to be able to run a set of
+shutdown.
+It needs access to the multiplexer to be able to run a set of
 mini-protocols in one direction. So in a sense it needs exclusive access to
 `half' a multiplexer for a connection, but it does not need coordinate with or
 even to be aware of any use of the other `half' of the multiplexer. It is this
@@ -415,10 +423,13 @@ interactions with the the connection manager.
 \item[Hand over a new connection] Once the server component has successfully
   accepted a new connection, it needs to hand over responsibility for it to
   the connection manager.
+  \todo{be clearer in the responsiblities and the conditions that should hold}
 \end{description}
 
 
 \section{Inbound side: the inbound governor}
+\todo{this section needs to be clearer about assumed pre-conditions and
+      intended post-conditions}
 
 The inbound governor is responsible for starting, restarting and monitoring the
 server side of the mini-protocols.
@@ -429,6 +440,7 @@ server side of the mini-protocol should be restarted in its initial state in
 case the client wishes to use the protocol again later. It is the inbound
 governor that is responsible for doing this.
 
+\todo{this mux interaction lifetime may benefit from a seperate (sub-)section}
 The mux component provides a mechanism to start mini-protocol handlers on a
 connection for a specific mini-protocol number in a particular direction. These
 handlers can then be monitored to see when they terminate. The inbound governor
@@ -436,12 +448,14 @@ relies on this mechanism to monitor when the protocol handler terminates
 cleanly. When it does terminate cleanly the governor restarts the mini-protocol
 handler.
 
-All the mini-protocols have the property that agency starts with the client
-\footnote{Originally transaction submission protocol had agency start with the
+All the mini-protocols have the property that agency starts with the remote
+peer\footnote{Originally transaction submission protocol had agency start with the
 server side. A later protocol update reversed the initial agency so that they
 are now all consistent.}. This allows all of the server side protocols to be
 started in the mux `on-demand' mode. In the on-demand mode the protocol handler
 thread is not started until the first message arrives from the client.
+\todo{this lack of active processing locally is used as a witness of remote
+      peer idleness - where should we be explicit about that?}
 
 The inbound governor gets informed of new connections that it should monitor
 either via by the server or by the connection manager. The server informs the
@@ -499,7 +513,11 @@ only interact with the connection manager and not with the inbound governor.
 \end{center}
 \end{designalternative}
 
-The inbound governor 
+The inbound governor \todo{capture interfaces to other services}
+\todo{express intended sequencing more clearly}
+
+\section{Exception Processing}
+\label{sec:exceptions}
 
 \section{Components}
 
