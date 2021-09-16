@@ -345,7 +345,13 @@ type LocalHandle = Socket
 --
 #if defined(mingw32_HOST_OS)
 data LocalSocket = LocalSocket { getLocalHandle :: LocalHandle
+                                 -- ^ underlying windows 'HANDLE'
                                , getLocalPath   :: LocalAddress
+                                 -- ^ original path, used when creating the handle
+                               , getRemotePath  :: LocalAddress
+                                 -- ^ unique identifier (not a real path).  It
+                                 -- makes the pair of local and remote
+                                 -- addresses unique.
                                }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
@@ -369,7 +375,7 @@ localSnocket :: IOManager -> LocalSnocket
 #if defined(mingw32_HOST_OS)
 localSnocket ioManager = Snocket {
       getLocalAddr  = return . getLocalPath
-    , getRemoteAddr = return . getLocalPath
+    , getRemoteAddr = return . getRemotePath
     , addrFamily    = LocalFamily
 
     , open = \(LocalFamily addr) -> do
@@ -389,7 +395,7 @@ localSnocket ioManager = Snocket {
           `catch` \(SomeAsyncException _) -> do
             Win32.closeHandle hpipe
             throwIO e
-        pure (LocalSocket hpipe addr)
+        pure (LocalSocket hpipe addr (LocalAddress ""))
 
     -- To connect, simply create a file whose name is the named pipe name.
     , openToConnect  = \(LocalAddress pipeName) -> do
@@ -407,14 +413,14 @@ localSnocket ioManager = Snocket {
           `catch` \(SomeAsyncException _) -> do
             Win32.closeHandle hpipe
             throwIO e
-        return (LocalSocket hpipe (LocalAddress pipeName))
+        return (LocalSocket hpipe (LocalAddress pipeName) (LocalAddress pipeName))
     , connect  = \_ _ -> pure ()
 
     -- Bind and listen are no-op.
     , bind     = \_ _ -> pure ()
     , listen   = \_ -> pure ()
 
-    , accept   = \sock@(LocalSocket hpipe addr) -> Accept $ do
+    , accept   = \sock@(LocalSocket hpipe addr _) -> Accept $ do
           Win32.Async.connectNamedPipe hpipe
           return (Accepted sock addr, acceptNext 0 addr)
 
@@ -462,7 +468,7 @@ localSnocket ioManager = Snocket {
               -- remote end's address.
               --
               let addr' = LocalAddress $ "\\\\.\\pipe\\ouroboros-network-temp-" ++ show cnt
-              return (Accepted (LocalSocket hpipe addr') addr', acceptNext (succ cnt) addr)
+              return (Accepted (LocalSocket hpipe addr addr') addr', acceptNext (succ cnt) addr)
 
 -- local snocket on unix
 #else
@@ -527,7 +533,7 @@ socketFileDescriptor = fmap (FileDescriptor . fromIntegral) . Socket.unsafeFdSoc
 localSocketFileDescriptor :: LocalSocket -> IO FileDescriptor
 #if defined(mingw32_HOST_OS)
 localSocketFileDescriptor =
-  \(LocalSocket fd _) -> case ptrToIntPtr fd of
+  \(LocalSocket fd _ _) -> case ptrToIntPtr fd of
     IntPtr i -> return (FileDescriptor i)
 #else
 localSocketFileDescriptor = socketFileDescriptor . getLocalHandle
