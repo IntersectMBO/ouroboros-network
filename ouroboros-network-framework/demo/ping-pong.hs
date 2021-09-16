@@ -26,6 +26,7 @@ import System.Exit
 
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Snocket
+import qualified Ouroboros.Network.Snocket as Snocket
 import Ouroboros.Network.Mux
 import Ouroboros.Network.ErrorPolicy
 import Ouroboros.Network.IOManager
@@ -107,7 +108,7 @@ clientPingPong :: Bool -> IO ()
 clientPingPong pipelined =
     withIOManager $ \iomgr ->
     connectToNode
-      (localSnocket iomgr defaultLocalSocketAddrPath)
+      (Snocket.localSnocket iomgr)
       unversionedHandshakeCodec
       noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
@@ -145,7 +146,7 @@ serverPingPong =
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      (localSnocket iomgr defaultLocalSocketAddrPath)
+      (Snocket.localSnocket iomgr)
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -203,9 +204,9 @@ demoProtocol1 pingPong pingPong' =
 
 clientPingPong2 :: IO ()
 clientPingPong2 =
-    withIOManager $ \iomgr ->
+    withIOManager $ \iomgr -> do
     connectToNode
-      (localSnocket iomgr defaultLocalSocketAddrPath)
+      (Snocket.localSnocket iomgr)
       unversionedHandshakeCodec
       noTimeLimitsHandshake
       (cborTermVersionDataCodec unversionedProtocolDataCodec)
@@ -256,7 +257,7 @@ serverPingPong2 =
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      (localSnocket iomgr defaultLocalSocketAddrPath)
+      (Snocket.localSnocket iomgr)
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
