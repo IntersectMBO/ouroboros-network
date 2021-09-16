@@ -96,6 +96,7 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.TypedProtocol (Peer)
 import           Network.Mux (WithMuxBearer (..))
+import           Network.Mux.Types (MuxRuntimeError (..))
 
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver (TraceSendRecv(..))
@@ -364,7 +365,7 @@ networkErrorPolicies = ErrorPolicies
                       MuxIngressQueueOverRun       -> Just ourBug
                       MuxInitiatorOnly             -> Just ourBug
                       MuxShutdown {}               -> Just ourBug
-                      MuxBlockedOnCompletionVar {} -> Just ourBug
+                      MuxCleanShutdown             -> Just ourBug
 
                       -- in case of bearer closed / or IOException we suspend
                       -- the peer for a short time
@@ -375,6 +376,13 @@ networkErrorPolicies = ErrorPolicies
                       MuxIOException{}        -> Just (SuspendPeer shortDelay shortDelay)
                       MuxSDUReadTimeout       -> Just (SuspendPeer shortDelay shortDelay)
                       MuxSDUWriteTimeout      -> Just (SuspendPeer shortDelay shortDelay)
+
+      , ErrorPolicy
+          $ \(e :: MuxRuntimeError)
+                -> case e of
+                     ProtocolAlreadyRunning {}    -> Just ourBug
+                     UnknownProtocol {}           -> Just ourBug
+                     MuxBlockedOnCompletionVar {} -> Just ourBug
 
         -- Error thrown by 'IOManager', this is fatal on Windows, and it will
         -- never fire on other platofrms.
