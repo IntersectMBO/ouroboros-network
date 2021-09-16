@@ -32,13 +32,14 @@ import           Cardano.Ledger.Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 
-import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
-
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
+import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo,
+                     StandardShelley)
+import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 
+import           Block.Alonzo (Args (..))
 import           Block.Byron (Args (..), openGenesisByron)
 import           Block.Shelley (Args (..))
 import           HasAnalysis
@@ -60,16 +61,18 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     CardanoBlockArgs {
         byronArgs   :: Args ByronBlock
       , shelleyArgs :: Args (ShelleyBlock StandardShelley)
-      , alonzoArgs  :: FilePath
+      , alonzoArgs  :: Args (ShelleyBlock StandardAlonzo)
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
     let ByronBlockArgs {..}   = byronArgs
     let ShelleyBlockArgs {..} = shelleyArgs
+    let AlonzoBlockArgs {..}  = alonzoArgs
     genesisByron <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
     genesisShelley <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
-    genesisAlonzo <- undefined alonzoArgs
+    genesisAlonzo <- either (error . show) return =<<
+      Aeson.eitherDecodeFileStrict' configFileAlonzo
     return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley genesisAlonzo initialNonce
 
 instance HasAnalysis (CardanoBlock StandardCrypto) where
@@ -85,11 +88,7 @@ parseCardanoArgs :: Parser CardanoBlockArgs
 parseCardanoArgs = CardanoBlockArgs
     <$> argsParser Proxy
     <*> argsParser Proxy
-    <*> strOption (mconcat [
-            long "configAlonzo"
-          , help "Path to config file"
-          , metavar "PATH"
-          ])
+    <*> argsParser Proxy
 
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
@@ -114,15 +113,15 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
-          shelleyProtVer                = ProtVer 2 0
+          shelleyProtVer                = ProtVer 3 0
         , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAllegra {
-          allegraProtVer                = ProtVer 3 0
+          allegraProtVer                = ProtVer 4 0
         , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsMary {
-          maryProtVer                   = ProtVer 4 0
+          maryProtVer                   = ProtVer 5 0
         , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAlonzo {
