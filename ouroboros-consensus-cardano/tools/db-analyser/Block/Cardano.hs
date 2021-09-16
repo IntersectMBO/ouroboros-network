@@ -113,15 +113,15 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
-          shelleyProtVer                = ProtVer 2 0
+          shelleyProtVer                = ProtVer 3 0
         , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAllegra {
-          allegraProtVer                = ProtVer 3 0
+          allegraProtVer                = ProtVer 4 0
         , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsMary {
-          maryProtVer                   = ProtVer 4 0
+          maryProtVer                   = ProtVer 5 0
         , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAlonzo {
