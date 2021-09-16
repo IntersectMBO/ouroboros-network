@@ -344,11 +344,11 @@ type LocalHandle = Socket
 -- | System dependent LocalSnocket type
 --
 #if defined(mingw32_HOST_OS)
-data LocalSocket = LocalSocket { getLocalHandle :: LocalHandle
+data LocalSocket = LocalSocket { getLocalHandle :: !LocalHandle
                                  -- ^ underlying windows 'HANDLE'
-                               , getLocalPath   :: LocalAddress
+                               , getLocalPath   :: !LocalAddress
                                  -- ^ original path, used when creating the handle
-                               , getRemotePath  :: LocalAddress
+                               , getRemotePath  :: !LocalAddress
                                  -- ^ unique identifier (not a real path).  It
                                  -- makes the pair of local and remote
                                  -- addresses unique.
