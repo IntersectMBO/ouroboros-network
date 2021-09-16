@@ -46,9 +46,11 @@ instance HasProtocolInfo (ShelleyBlock StandardAlonzo) where
           , metavar "PATH"
           ])
 
-  -- | Not implemented because we don't anticipate running
-  -- an 'Alonzo only' chain.
-  mkProtocolInfo _ = undefined
+  -- | This function would only be used if we run an
+  -- Alonzo only chain. This should be dead code really.
+  mkProtocolInfo _ =
+    error $ "Not implemented because we don't "
+         <> "anticipate running an 'Alonzo only' chain."
 
 type AlonzoBlockArgs = Args (ShelleyBlock StandardAlonzo)
 
