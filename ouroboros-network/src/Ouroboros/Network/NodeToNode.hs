@@ -105,6 +105,7 @@ import           Data.Word
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Network.Mux (WithMuxBearer (..))
+import           Network.Mux.Types (MuxRuntimeError (..))
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.Codec
@@ -579,7 +580,14 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         MuxSDUReadTimeout            -> Just (SuspendPeer shortDelay shortDelay)
                         MuxSDUWriteTimeout           -> Just (SuspendPeer shortDelay shortDelay)
                         MuxShutdown {}               -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxBlockedOnCompletionVar {} -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxCleanShutdown             -> Just (SuspendPeer shortDelay shortDelay)
+
+        , ErrorPolicy
+            $ \(e :: MuxRuntimeError)
+                  -> case e of
+                       ProtocolAlreadyRunning {}    -> Just (SuspendPeer shortDelay shortDelay)
+                       UnknownProtocol {}           -> Just Throw
+                       MuxBlockedOnCompletionVar {} -> Just (SuspendPeer shortDelay shortDelay)
 
           -- Error policy for TxSubmission protocol: outbound side (client role)
         , ErrorPolicy

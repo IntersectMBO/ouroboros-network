@@ -67,8 +67,8 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   -- ^ Result of runMiniProtocol's completionAction in case of
                   -- an error or mux being closed while a mini-protocol was
                   -- still running, this is not a clean exit.
-                  | MuxBlockedOnCompletionVar !MiniProtocolNum
-                  -- ^  Mux blocked on @completionVar@.
+                  | MuxCleanShutdown
+                  -- ^ Mux stopped by 'stopMux'
                   deriving (Show, Eq)
 
 instance Exception MuxError where
