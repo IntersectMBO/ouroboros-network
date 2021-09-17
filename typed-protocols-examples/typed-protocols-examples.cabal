@@ -35,6 +35,8 @@ library
                    , Network.TypedProtocol.ReqResp.Codec.CBOR
                    , Network.TypedProtocol.ReqResp.Examples
 
+                   , Network.TypedProtocol.ReqResp2.Type
+                   , Network.TypedProtocol.ReqResp2.Client
   other-extensions:  GADTs
                    , RankNTypes
                    , PolyKinds
