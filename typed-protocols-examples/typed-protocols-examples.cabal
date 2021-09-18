@@ -37,6 +37,8 @@ library
 
                    , Network.TypedProtocol.ReqResp2.Type
                    , Network.TypedProtocol.ReqResp2.Client
+
+                   , Network.TypedProtocol.Trans.Wedge
   other-extensions:  GADTs
                    , RankNTypes
                    , PolyKinds
