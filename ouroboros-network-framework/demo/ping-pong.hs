@@ -37,9 +37,9 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 
 import           Network.TypedProtocol.PingPong.Client as PingPong
 import           Network.TypedProtocol.PingPong.Codec.CBOR as PingPong
+import           Network.TypedProtocol.PingPong.Examples
 import           Network.TypedProtocol.PingPong.Server as PingPong
 import           Network.TypedProtocol.PingPong.Type (PingPong)
-import           Network.TypedProtocol.Pipelined
 
 
 main :: IO ()
@@ -125,10 +125,10 @@ clientPingPong pipelined =
 
     pingPongInitiator | pipelined =
       InitiatorProtocolOnly $
-      mkMiniProtocolCbFromPeerPipelined $ \_ctx ->
+      mkMiniProtocolCbFromPeer $ \_ctx ->
         (contramap show stdoutTracer
         , codecPingPong
-        , pingPongClientPeerPipelined (pingPongClientPipelinedMax 5)
+        , void $ pingPongClientPeerPipelined (pingPongClientPipelinedMax 5)
         )
 
       | otherwise =
@@ -139,10 +139,6 @@ clientPingPong pipelined =
         , pingPongClientPeer (pingPongClientCount 5)
         )
 
-
-pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
-pingPongClientCount 0 = PingPong.SendMsgDone ()
-pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 
 serverPingPong :: IO Void
 serverPingPong =
@@ -177,16 +173,6 @@ serverPingPong =
         , codecPingPong
         , pingPongServerPeer pingPongServerStandard
         )
-
-pingPongServerStandard
-  :: Applicative m
-  => PingPongServer m ()
-pingPongServerStandard =
-    PingPongServer {
-      recvMsgPing = pure pingPongServerStandard,
-      recvMsgDone = ()
-    }
-
 
 --
 -- Ping pong demo2
@@ -246,23 +232,6 @@ clientPingPong2 =
         , pingPongClientPeer (pingPongClientCount 5)
         )
 
-pingPongClientPipelinedMax
-  :: forall m. Monad m
-  => Int
-  -> PingPongClientPipelined m ()
-pingPongClientPipelinedMax c =
-    PingPongClientPipelined (go [] Zero 0)
-  where
-    go :: [Either Int Int] -> Nat o -> Int
-       -> PingPongSender o Int m ()
-    go acc o        n | n < c
-                      = SendMsgPingPipelined
-                          (return n)
-                          (go (Left n : acc) (Succ o) (succ n))
-    go _    Zero     _ = SendMsgDonePipelined ()
-    go acc (Succ o) n = CollectPipelined
-                          Nothing
-                          (\n' -> go (Right n' : acc) o n)
 
 serverPingPong2 :: IO Void
 serverPingPong2 =

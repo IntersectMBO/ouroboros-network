@@ -46,7 +46,7 @@ data Channel m a = Channel {
        -- It may raise exceptions (as appropriate for the monad and kind of
        -- channel).
        --
-       send :: a -> m (),
+       send    :: a -> m (),
 
        -- | Read some input from the channel, or @Nothing@ to indicate EOF.
        --
@@ -56,23 +56,31 @@ data Channel m a = Channel {
        -- It may raise exceptions (as appropriate for the monad and kind of
        -- channel).
        --
-       recv :: m (Maybe a)
+       recv    :: m (Maybe a),
+
+       -- | Try read some input from the channel.  The outer @Nothing@
+       -- indicates that data is not available, the inner @Nothing@ indicates an
+       -- EOF.
+       --
+       tryRecv :: m (Maybe (Maybe a))
      }
 
 -- TODO: eliminate the second Channel type and these conversion functions.
 
 fromChannel :: Mx.Channel m
             -> Channel m LBS.ByteString
-fromChannel Mx.Channel { Mx.send, Mx.recv } = Channel {
-    send = send,
-    recv = recv
+fromChannel Mx.Channel { Mx.send, Mx.recv, Mx.tryRecv } = Channel {
+    send    = send,
+    recv    = recv,
+    tryRecv = tryRecv
   }
 
 toChannel :: Channel m LBS.ByteString
           -> Mx.Channel m
-toChannel Channel { send, recv } = Mx.Channel {
-    Mx.send = send,
-    Mx.recv = recv
+toChannel Channel { send, recv, tryRecv } = Mx.Channel {
+    Mx.send    = send,
+    Mx.recv    = recv,
+    Mx.tryRecv = tryRecv
   }
 
 -- | Create a local pipe, with both ends in this process, and expose that as
@@ -95,9 +103,11 @@ isoKleisliChannel
   -> (b -> m a)
   -> Channel m a
   -> Channel m b
-isoKleisliChannel f finv Channel{send, recv} = Channel {
-    send = finv >=> send,
-    recv = recv >>= traverse f
+isoKleisliChannel f finv Channel{send, recv, tryRecv} = Channel {
+    send    = finv    >=> send,
+    recv    = recv    >>= traverse f,
+    tryRecv = tryRecv >>= traverse (traverse f)
+
   }
 
 
@@ -106,8 +116,9 @@ hoistChannel
   -> Channel m a
   -> Channel n a
 hoistChannel nat channel = Channel
-  { send = nat . send channel
-  , recv = nat (recv channel)
+  { send    = nat . send channel
+  , recv    = nat (recv channel)
+  , tryRecv = nat (tryRecv channel)
   }
 
 -- | A 'Channel' with a fixed input, and where all output is discarded.
@@ -122,13 +133,15 @@ hoistChannel nat channel = Channel
 fixedInputChannel :: MonadSTM m => [a] -> m (Channel m a)
 fixedInputChannel xs0 = do
     v <- newTVarIO xs0
-    return Channel {send, recv = recv v}
+    return Channel {send, recv = recv v, tryRecv = tryRecv v}
   where
     recv v = atomically $ do
                xs <- readTVar v
                case xs of
                  []      -> return Nothing
                  (x:xs') -> writeTVar v xs' >> return (Just x)
+
+    tryRecv v = Just <$> recv v
 
     send _ = return ()
 
@@ -141,10 +154,11 @@ mvarsAsChannel :: MonadSTM m
                -> TMVar m a
                -> Channel m a
 mvarsAsChannel bufferRead bufferWrite =
-    Channel{send, recv}
+    Channel{send, recv, tryRecv}
   where
-    send x = atomically (putTMVar bufferWrite x)
-    recv   = atomically (Just <$> takeTMVar bufferRead)
+    send x  = atomically (putTMVar bufferWrite x)
+    recv    = atomically (     Just <$>    takeTMVar bufferRead)
+    tryRecv = atomically (fmap Just <$> tryTakeTMVar bufferRead)
 
 
 -- | Create a pair of channels that are connected via one-place buffers.
@@ -161,7 +175,6 @@ createConnectedChannels = do
     return (mvarsAsChannel bufferB bufferA,
             mvarsAsChannel bufferA bufferB)
 
-
 -- | Create a pair of channels that are connected via N-place buffers.
 --
 -- This variant /blocks/ when 'send' would exceed the maximum buffer size.
@@ -177,9 +190,10 @@ createConnectedBufferedChannels sz = do
     pure (wrap chan1, wrap chan2)
   where
     wrap :: Channel (STM m) a -> Channel m a
-    wrap Channel{send, recv} = Channel
-      { send = atomically . send
-      , recv = atomically recv
+    wrap Channel{send, recv, tryRecv} = Channel
+      { send    = atomically . send
+      , recv    = atomically recv
+      , tryRecv = atomically tryRecv
       }
 
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
@@ -197,10 +211,11 @@ createConnectedBufferedChannelsSTM sz = do
             queuesAsChannel bufferA bufferB)
   where
     queuesAsChannel bufferRead bufferWrite =
-        Channel{send, recv}
+        Channel{send, recv, tryRecv}
       where
-        send x = writeTBQueue bufferWrite x
-        recv   = Just <$> readTBQueue bufferRead
+        send x  = writeTBQueue bufferWrite x
+        recv    =      Just <$> readTBQueue bufferRead
+        tryRecv = fmap Just <$> tryReadTBQueue bufferRead
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -224,13 +239,14 @@ createPipelineTestChannels sz = do
             queuesAsChannel bufferA bufferB)
   where
     queuesAsChannel bufferRead bufferWrite =
-        Channel{send, recv}
+        Channel{send, recv, tryRecv}
       where
-        send x = atomically $ do
-                   full <- isFullTBQueue bufferWrite
-                   if full then error failureMsg
-                           else writeTBQueue bufferWrite x
-        recv   = atomically (Just <$> readTBQueue bufferRead)
+        send x  = atomically $ do
+                    full <- isFullTBQueue bufferWrite
+                    if full then error failureMsg
+                            else writeTBQueue bufferWrite x
+        recv    = atomically (     Just <$> readTBQueue bufferRead)
+        tryRecv = atomically (fmap Just <$> tryReadTBQueue bufferRead)
 
     failureMsg = "createPipelineTestChannels: "
               ++ "maximum pipeline depth exceeded: " ++ show sz
@@ -249,7 +265,7 @@ handlesAsChannel :: IO.Handle -- ^ Read handle
                  -> IO.Handle -- ^ Write handle
                  -> Channel IO LBS.ByteString
 handlesAsChannel hndRead hndWrite =
-    Channel{send, recv}
+    Channel{send, recv, tryRecv}
   where
     send :: LBS.ByteString -> IO ()
     send chunk = do
@@ -263,6 +279,14 @@ handlesAsChannel hndRead hndWrite =
         then return Nothing
         else Just . LBS.fromStrict <$> BS.hGetSome hndRead smallChunkSize
 
+    tryRecv :: IO (Maybe (Maybe LBS.ByteString))
+    tryRecv = do
+      eof <- IO.hIsEOF hndRead
+      if eof
+        then return Nothing
+        else Just . Just <$> LBS.hGetNonBlocking hndRead smallChunkSize
+
+
 
 -- | Transform a channel to add an extra action before /every/ send and after
 -- /every/ receive.
@@ -273,7 +297,7 @@ channelEffect :: forall m a.
               -> (Maybe a -> m ())  -- ^ Action after 'recv'
               -> Channel m a
               -> Channel m a
-channelEffect beforeSend afterRecv Channel{send, recv} =
+channelEffect beforeSend afterRecv Channel{send, recv, tryRecv} =
     Channel{
       send = \x -> do
         beforeSend x
@@ -282,6 +306,13 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
     , recv = do
         mx <- recv
         afterRecv mx
+        return mx
+
+    , tryRecv = do
+        mx <- tryRecv
+        case mx of
+          Just x -> afterRecv x
+          _      -> return ()
         return mx
     }
 
@@ -307,10 +338,11 @@ loggingChannel :: ( MonadSay m
                => id
                -> Channel m a
                -> Channel m a
-loggingChannel ident Channel{send,recv} =
+loggingChannel ident Channel{send,recv,tryRecv} =
   Channel {
-    send = loggingSend,
-    recv = loggingRecv
+    send    = loggingSend,
+    recv    = loggingRecv,
+    tryRecv = loggingTryRecv
   }
  where
   loggingSend a = do
@@ -322,4 +354,11 @@ loggingChannel ident Channel{send,recv} =
     case msg of
       Nothing -> return ()
       Just a  -> say (show ident ++ ":recv:" ++ show a)
+    return msg
+
+  loggingTryRecv = do
+    msg <- tryRecv
+    case msg of
+      Just (Just a) -> say (show ident ++ ":recv:" ++ show a)
+      _             -> return ()
     return msg

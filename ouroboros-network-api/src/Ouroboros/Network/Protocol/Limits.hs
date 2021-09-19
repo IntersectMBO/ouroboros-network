@@ -5,6 +5,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Protocol.Limits where
 
@@ -17,47 +18,51 @@ import           Ouroboros.Network.Util.ShowProxy
 
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
-       sizeLimitForState :: forall (pr :: PeerRole) (st :: ps).
-                            PeerHasAgency pr st -> Word,
+       sizeLimitForState :: forall (st :: ps). ActiveState st
+                         => StateToken st -> Word,
 
        dataSize          :: bytes -> Word
      }
 
 data ProtocolTimeLimits ps = ProtocolTimeLimits {
-       timeLimitForState :: forall (pr :: PeerRole) (st :: ps).
-                            PeerHasAgency pr st -> Maybe DiffTime
+       timeLimitForState :: forall  (st :: ps). ActiveState st
+                         => StateToken st -> Maybe DiffTime
      }
 
 data ProtocolLimitFailure where
-    ExceededSizeLimit :: forall (pr :: PeerRole) ps (st :: ps).
-                         ( forall (st' :: ps). Show (ClientHasAgency st')
-                         , forall (st' :: ps). Show (ServerHasAgency st')
+    ExceededSizeLimit :: forall ps (st :: ps).
+                         ( Show (StateToken st)
                          , ShowProxy ps
+                         , ActiveState st
                          )
-                      => PeerHasAgency pr st
+                      => StateToken st
                       -> ProtocolLimitFailure
-    ExceededTimeLimit :: forall (pr :: PeerRole) ps (st :: ps).
-                         ( forall (st' :: ps). Show (ClientHasAgency st')
-                         , forall (st' :: ps). Show (ServerHasAgency st')
+    ExceededTimeLimit :: forall ps (st :: ps).
+                         ( Show (StateToken st)
                          , ShowProxy ps
+                         , ActiveState st
                          )
-                      => PeerHasAgency pr st
+                      => StateToken st
                       -> ProtocolLimitFailure
 
 instance Show ProtocolLimitFailure where
-    show (ExceededSizeLimit (stok :: PeerHasAgency pr (st :: ps))) =
+    show (ExceededSizeLimit (stok :: StateToken (st :: ps))) =
       concat
         [ "ExceededSizeLimit ("
         , showProxy (Proxy :: Proxy ps)
-        , ") ("
+        , ") "
+        , show (activeAgency :: ActiveAgency st)
+        , " ("
         , show stok
         , ")"
         ]
-    show (ExceededTimeLimit (stok :: PeerHasAgency pr (st :: ps))) =
+    show (ExceededTimeLimit (stok :: StateToken (st :: ps))) =
       concat
         [ "ExceededTimeLimit ("
         , showProxy (Proxy :: Proxy ps)
-        , ") ("
+        , ") "
+        , show (activeAgency :: ActiveAgency st)
+        , " ("
         , show stok
         , ")"
         ]

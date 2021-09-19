@@ -20,8 +20,6 @@ import           Test.QuickCheck (Arbitrary (..), Property, choose,
                      counterexample, cover, frequency, label, property, shrink,
                      tabulate, (.&&.))
 
-import           Network.TypedProtocol.Core (PeerHasAgency (..))
-
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Driver.Limits (ProtocolTimeLimits (..))
@@ -85,8 +83,8 @@ verifyTimeouts st@(Just (state, t')) inDiffusion
         handshakeTimeout = case timeLimitsHandshake of
           (ProtocolTimeLimits stLimit) ->
             -- Should be the same but we bias to the shorter one
-            let time = min (fromMaybe 0 (stLimit (ClientAgency TokPropose)))
-                           (fromMaybe 0 (stLimit (ServerAgency TokConfirm)))
+            let time = min (fromMaybe 0 (stLimit SingPropose))
+                           (fromMaybe 0 (stLimit SingConfirm))
              in time + (0.1 * time)
 
      in case state of
