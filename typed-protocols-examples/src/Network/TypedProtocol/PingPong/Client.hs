@@ -15,6 +15,7 @@ module Network.TypedProtocol.PingPong.Client
   ) where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Client
 import           Network.TypedProtocol.PingPong.Type
 
 -- | A ping-pong client, on top of some effect 'm'.
@@ -53,23 +54,23 @@ data PingPongClient m a where
 pingPongClientPeer
   :: Monad m
   => PingPongClient m a
-  -> Peer PingPong AsClient NonPipelined Empty StIdle m a
+  -> Client PingPong NonPipelined Empty StIdle m a
 
 pingPongClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
     -- 'StDone' state. Once in the 'StDone' state we can actually stop using
     -- 'done', with a return value.
-    Yield ReflClientAgency MsgDone (Done ReflNobodyAgency result)
+    Yield MsgDone (Done result)
 
 pingPongClientPeer (SendMsgPing next) =
 
     -- Send our message.
-    Yield ReflClientAgency MsgPing $
+    Yield MsgPing $
 
     -- The type of our protocol means that we're now into the 'StBusy' state
     -- and the only thing we can do next is local effects or wait for a reply.
     -- We'll wait for a reply.
-    Await ReflServerAgency $ \MsgPong ->
+    Await $ \MsgPong ->
 
     -- Now in this case there is only one possible response, and we have
     -- one corresponding continuation 'kPong' to handle that response.
@@ -139,7 +140,7 @@ data PingPongClientIdle (q :: Queue PingPong) m a where
 pingPongClientPeerPipelined
   :: Functor m
   => PingPongClientPipelined m a
-  -> Peer PingPong AsClient 'Pipelined Empty StIdle m a
+  -> Client PingPong 'Pipelined Empty StIdle m a
 pingPongClientPeerPipelined (PingPongClientPipelined peer) =
     pingPongClientPeerIdle peer
 
@@ -147,28 +148,26 @@ pingPongClientPeerPipelined (PingPongClientPipelined peer) =
 pingPongClientPeerIdle
   :: forall (q :: Queue PingPong) m a. Functor m
   => PingPongClientIdle                q        m a
-  -> Peer PingPong AsClient 'Pipelined q StIdle m a
+  -> Client PingPong 'Pipelined q StIdle m a
 pingPongClientPeerIdle = go
   where
     go :: forall (q' :: Queue PingPong).
           PingPongClientIdle                q'        m a
-       -> Peer PingPong AsClient 'Pipelined q' StIdle m a
+       -> Client PingPong 'Pipelined q' StIdle m a
 
     go (SendMsgPingPipelined next) =
       -- Pipelined yield: send `MsgPing`, immediately follow with the next step.
       YieldPipelined
-        ReflClientAgency
         MsgPing
         (go next)
 
     go (CollectPipelined mNone collect) =
-      Collect ReflServerAgency
+      Collect
         (go <$> mNone)
         (\MsgPong -> CollectDone $ Effect (go <$> collect))
 
     go (SendMsgDonePipelined result) =
       -- Send `MsgDone` and complete the protocol
       Yield
-        ReflClientAgency
         MsgDone
-        (Done ReflNobodyAgency result)
+        (Done result)

@@ -37,6 +37,7 @@ import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Peer
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM

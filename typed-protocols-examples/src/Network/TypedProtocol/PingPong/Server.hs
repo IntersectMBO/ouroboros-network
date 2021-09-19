@@ -5,6 +5,7 @@
 module Network.TypedProtocol.PingPong.Server where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Server
 import           Network.TypedProtocol.PingPong.Type
 
 
@@ -25,11 +26,11 @@ data PingPongServer m a = PingPongServer {
 pingPongServerPeer
   :: Monad m
   => PingPongServer m a
-  -> Peer PingPong AsServer NonPipelined Empty StIdle m a
+  -> Server PingPong NonPipelined Empty StIdle m a
 pingPongServerPeer PingPongServer{..} =
 
     -- In the 'StIdle' the server is awaiting a request message
-    Await ReflClientAgency $ \req ->
+    Await $ \req ->
 
     -- The client got to choose between two messages and we have to handle
     -- either of them
@@ -37,10 +38,10 @@ pingPongServerPeer PingPongServer{..} =
 
       -- The client sent the done transition, so we're in the 'StDone' state
       -- so all we can do is stop using 'done', with a return value.
-      MsgDone -> Done ReflNobodyAgency recvMsgDone
+      MsgDone -> Done recvMsgDone
 
       -- The client sent us a ping request, so now we're in the 'StBusy' state
       -- which means it's the server's turn to send.
       MsgPing -> Effect $ do
         next <- recvMsgPing
-        pure $ Yield ReflServerAgency MsgPong (pingPongServerPeer next)
+        pure $ Yield MsgPong (pingPongServerPeer next)

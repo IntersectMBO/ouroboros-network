@@ -25,6 +25,7 @@ import           Data.Singletons
 
 import           Network.TypedProtocol.Codec (DecodeStep (..), SomeMessage (..))
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer
 
 
 -- $intro

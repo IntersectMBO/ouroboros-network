@@ -16,6 +16,7 @@ module Network.TypedProtocol.ReqResp.Client
   ) where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Client
 import           Network.TypedProtocol.ReqResp.Type
 
 data ReqRespClient req resp m a where
@@ -32,7 +33,7 @@ data ReqRespClient req resp m a where
 reqRespClientPeer
   :: Monad m
   => ReqRespClient req resp m a
-  -> Peer (ReqResp req resp) AsClient NonPipelined Empty StIdle m a
+  -> Client (ReqResp req resp) NonPipelined Empty StIdle m a
 
 reqRespClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
@@ -40,17 +41,17 @@ reqRespClientPeer (SendMsgDone result) =
     -- 'done', with a return value.
     Effect $ do
       r <- result
-      return $ Yield ReflClientAgency MsgDone (Done ReflNobodyAgency r)
+      return $ Yield MsgDone (Done r)
 
 reqRespClientPeer (SendMsgReq req next) =
 
     -- Send our message.
-    Yield ReflClientAgency (MsgReq req) $
+    Yield (MsgReq req) $
 
     -- The type of our protocol means that we're now into the 'StBusy' state
     -- and the only thing we can do next is local effects or wait for a reply.
     -- We'll wait for a reply.
-    Await ReflServerAgency $ \(MsgResp resp) ->
+    Await $ \(MsgResp resp) ->
 
     -- Now in this case there is only one possible response, and we have
     -- one corresponding continuation 'kPong' to handle that response.
@@ -101,7 +102,7 @@ data ReqRespIdle req resp (q :: Queue (ReqResp req resp)) m a where
 reqRespClientPeerPipelined
   :: Functor m
   => ReqRespClientPipelined req resp                          m a
-  -> Peer (ReqResp req resp) AsClient 'Pipelined Empty StIdle m a
+  -> Client (ReqResp req resp) 'Pipelined Empty StIdle m a
 reqRespClientPeerPipelined (ReqRespClientPipelined peer) =
     reqRespClientPeerIdle peer
 
@@ -110,31 +111,28 @@ reqRespClientPeerIdle
   :: forall req resp (q :: Queue (ReqResp req resp)) m a.
      Functor m
   => ReqRespIdle   req resp                      q        m a
-  -> Peer (ReqResp req resp) AsClient 'Pipelined q StIdle m a
+  -> Client (ReqResp req resp) 'Pipelined q StIdle m a
 
 reqRespClientPeerIdle = go
   where
     go :: forall (q' :: Queue (ReqResp req resp)).
           ReqRespIdle   req resp                      q'        m a
-       -> Peer (ReqResp req resp) AsClient 'Pipelined q' StIdle m a
+       -> Client (ReqResp req resp) 'Pipelined q' StIdle m a
 
     go (SendMsgReqPipelined req next) =
       -- Pipelined yield: send `MsgReq`, immediately follow with the next step.
       -- Await for a response in a continuation.
       YieldPipelined
-        ReflClientAgency
         (MsgReq req)
         (go next)
 
     go (CollectPipelined mNone collect) =
       Collect
-        ReflServerAgency
         (go <$> mNone)
         (\(MsgResp resp) -> CollectDone $ Effect $ go <$> collect resp)
 
     go (SendMsgDonePipelined result) =
       -- Send `MsgDone` and complete the protocol
       Yield
-        ReflClientAgency
         MsgDone
-        (Done ReflNobodyAgency result)
+        (Done result)
