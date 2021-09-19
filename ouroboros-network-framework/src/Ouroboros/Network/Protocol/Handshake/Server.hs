@@ -8,7 +8,7 @@ module Ouroboros.Network.Protocol.Handshake.Server (handshakeServerPeer) where
 
 import qualified Codec.CBOR.Term as CBOR
 
-import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Server
 
 import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse)
 import           Ouroboros.Network.Protocol.Handshake.Codec
@@ -25,18 +25,16 @@ handshakeServerPeer
   => VersionDataCodec CBOR.Term vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
-  -> Peer (Handshake vNumber CBOR.Term)
-          AsServer StPropose m
-          (Either (HandshakeProtocolError vNumber) (r, vNumber, vData))
+  -> Server (Handshake vNumber CBOR.Term)
+            NonPipelined Empty StPropose m stm
+            (Either (HandshakeProtocolError vNumber) (r, vNumber, vData))
 handshakeServerPeer codec@VersionDataCodec {encodeData} acceptVersion versions =
-    Await (ClientAgency TokPropose) $ \msg -> case msg of
+    Await $ \msg -> case msg of
       MsgProposeVersions vMap  ->
         case acceptOrRefuse codec acceptVersion versions vMap of
           (Right r@(_, vNumber, agreedData)) ->
-            Yield (ServerAgency TokConfirm)
-                  (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
-                  (Done TokDone (Right r))
+            Yield (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
+                  (Done (Right r))
           (Left vReason) ->
-            Yield (ServerAgency TokConfirm)
-                  (MsgRefuse vReason)
-                  (Done TokDone (Left (HandshakeError vReason)))
+            Yield (MsgRefuse vReason)
+                  (Done (Left (HandshakeError vReason)))

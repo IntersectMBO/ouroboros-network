@@ -469,6 +469,7 @@ runResponder :: forall (mode :: MuxMode) m a b.
                  ( HasResponder mode ~ True
                  , MonadAsync m
                  , MonadCatch m
+                 , MonadMask  m
                  , MonadThrow (STM m)
                  )
               => Mux.Mux mode m

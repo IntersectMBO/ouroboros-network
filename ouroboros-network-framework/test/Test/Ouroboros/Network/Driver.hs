@@ -145,10 +145,10 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
             Nothing                      -> False
 
     where
-      sendPeer :: Client (ReqResp String ()) NonPipelined Empty StIdle m [()]
+      sendPeer :: Client (ReqResp String ()) NonPipelined Empty StIdle m stm [()]
       sendPeer = reqRespClientPeer $ reqRespClientMap $ map fst reqPayloads
 
-      recvPeer :: Server (ReqResp String ()) NonPipelined Empty StIdle m [DiffTime]
+      recvPeer :: Server (ReqResp String ()) NonPipelined Empty StIdle m stm [DiffTime]
       recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
         (\a _ -> case a of
           [] -> error "prop_runPeerWithLimits: empty list"

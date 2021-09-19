@@ -69,6 +69,7 @@ import qualified Network.Mux as Mux
 import           Network.Mux.Types (MuxRuntimeError)
 import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer
 
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Codec.CBOR
@@ -96,8 +97,6 @@ import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec, noTimeLimitsHandshake,
                      timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Type
-                     (ClientHasAgency (TokPropose), Handshake,
-                     ServerHasAgency (TokConfirm))
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
@@ -662,23 +661,23 @@ withBidirectionalConnectionManager name timeouts
 
 
 reqRespSizeLimits :: forall req resp. ProtocolSizeLimits (ReqResp req resp)
-                                                        ByteString
+                                                         ByteString
 reqRespSizeLimits = ProtocolSizeLimits
     { sizeLimitForState
     , dataSize = fromIntegral . LBS.length
     }
   where
-    sizeLimitForState :: forall (pr :: PeerRole) (st :: ReqResp req resp).
-                         PeerHasAgency pr st -> Word
+    sizeLimitForState :: forall (st :: ReqResp req resp).
+                         SingPeerHasAgency st -> Word
     sizeLimitForState _ = maxBound
 
 reqRespTimeLimits :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
   where
-    timeLimitForState :: forall (pr :: PeerRole) (st :: ReqResp req resp).
-                         PeerHasAgency pr st -> Maybe DiffTime
-    timeLimitForState (ClientAgency TokIdle) = Nothing
-    timeLimitForState (ServerAgency TokBusy) = Just 60
+    timeLimitForState :: forall (st :: ReqResp req resp).
+                         SingPeerHasAgency st -> Maybe DiffTime
+    timeLimitForState (SingClientHasAgency SingIdle) = Nothing
+    timeLimitForState (SingServerHasAgency SingBusy) = Just 60
 
 
 
@@ -695,6 +694,7 @@ runInitiatorProtocols
     :: forall muxMode m a b.
        ( MonadAsync      m
        , MonadCatch      m
+       , MonadMask       m
        , MonadSTM        m
        , MonadThrow (STM m)
        , HasInitiator muxMode ~ True
@@ -2296,8 +2296,8 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
             handshakeTimeout = case timeLimitsHandshake of
               (ProtocolTimeLimits stLimit) ->
                 -- Should be the same but we bias to the shorter one
-                let time = min (fromMaybe 0 (stLimit (ClientAgency TokPropose)))
-                               (fromMaybe 0 (stLimit (ServerAgency TokConfirm)))
+                let time = min (fromMaybe 0 (stLimit (SingClientHasAgency SingPropose)))
+                               (fromMaybe 0 (stLimit (SingServerHasAgency SingConfirm)))
                  in time + (0.1 * time)
 
          in case state of

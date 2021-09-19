@@ -81,6 +81,7 @@ library
                      , mtl
                      , nothunks
                      , random
+                     , singletons
                      , stm
                      , text
                      , time
@@ -88,6 +89,7 @@ library
 
                      , cardano-prelude
                      , contra-tracer
+                     , strict-containers
 
                      , io-classes      >=0.1   && < 0.3
                      , monoidal-synchronisation
@@ -168,6 +170,7 @@ test-suite test
                      , network
                      , pretty-simple
                      , serialise
+                     , singletons
                      , text
                      , time
                      , quiet

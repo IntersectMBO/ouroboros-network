@@ -58,7 +58,7 @@ import           Data.Void (Void)
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Peer
 
 import           Network.Mux (HasInitiator, HasResponder,
                      MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
@@ -293,34 +293,25 @@ data RunMiniProtocol (mode :: MuxMode) bytes m a b where
        -> RunMiniProtocol InitiatorResponderMode bytes m a b
 
 data MuxPeer bytes m a where
-    MuxPeer :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
+    MuxPeer :: forall (pr :: PeerRole) (pl :: Pipelined) ps (st :: ps)
+                      failure bytes m a.
                ( Show failure
-               , forall (st' :: ps). Show (ClientHasAgency st')
-               , forall (st' :: ps). Show (ServerHasAgency st')
                , ShowProxy ps
+               , Exception failure
                )
             => Tracer m (TraceSendRecv ps)
             -> Codec ps failure m bytes
-            -> Peer ps pr st m a
-            -> MuxPeer bytes m a
-
-    MuxPeerPipelined
-             :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
-               ( Show failure
-               , forall (st' :: ps). Show (ClientHasAgency st')
-               , forall (st' :: ps). Show (ServerHasAgency st')
-               , ShowProxy ps
-               )
-            => Tracer m (TraceSendRecv ps)
-            -> Codec ps failure m bytes
-            -> PeerPipelined ps pr st m a
+            -> Peer ps pr pl Empty st m (STM m) a
             -> MuxPeer bytes m a
 
     MuxPeerRaw
            :: (Channel m bytes -> m (a, Maybe bytes))
            -> MuxPeer bytes m a
 
-toApplication :: (MonadCatch m, MonadAsync m)
+toApplication :: ( MonadAsync m
+                 , MonadMask  m
+                 , MonadThrow (STM m)
+                 )
               => ConnectionId addr
               -> ControlMessageSTM m
               -> OuroborosApplication mode addr LBS.ByteString m a b
@@ -376,7 +367,10 @@ mkMiniProtocolBundle = MiniProtocolBundle . foldMap fn
                ]
 
 toMuxRunMiniProtocol :: forall mode m a b.
-                        (MonadCatch m, MonadAsync m)
+                        ( MonadAsync m
+                        , MonadMask  m
+                        , MonadThrow (STM m)
+                        )
                      => RunMiniProtocol mode LBS.ByteString m a b
                      -> Mux.Compat.RunMiniProtocol mode m a b
 toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
@@ -391,17 +385,15 @@ toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
 -- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
 --
 runMuxPeer
-  :: ( MonadCatch m
-     , MonadAsync m
+  :: ( MonadAsync m
+     , MonadMask  m
+     , MonadThrow (STM m)
      )
   => MuxPeer bytes m a
   -> Channel m bytes
   -> m (a, Maybe bytes)
 runMuxPeer (MuxPeer tracer codec peer) channel =
     runPeer tracer codec channel peer
-
-runMuxPeer (MuxPeerPipelined tracer codec peer) channel =
-    runPipelinedPeer tracer codec channel peer
 
 runMuxPeer (MuxPeerRaw action) channel =
     action channel
