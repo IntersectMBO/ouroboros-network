@@ -106,13 +106,15 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
                 => (ReflRelativeAgency (StateAgency st)
                                         TheyHaveAgency
                                        (Relative pr (StateAgency st)))
-                -> Either (DecodeStep bytes failure m (SomeMessage st))
+                -> Either ( DecodeStep bytes failure m (SomeMessage st)
+                          , Maybe bytes
+                          )
                           (Maybe bytes)
                 -> m (SomeMessage st, Maybe bytes)
-    recvMessage _ dstate = do
-      result  <- case dstate of
-        Left decoder ->
-          runDecoderWithChannel channel Nothing decoder
+    recvMessage _ state = do
+      result  <- case state of
+        Left (decoder, trailing) ->
+          runDecoderWithChannel channel trailing decoder
         Right trailing ->
           runDecoderWithChannel channel trailing =<< decode
       case result of
@@ -127,15 +129,19 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
                    => (ReflRelativeAgency (StateAgency st)
                                            TheyHaveAgency
                                           (Relative pr (StateAgency st)))
-                   -> Either (DecodeStep bytes failure m (SomeMessage st))
+                   -> Either ( DecodeStep bytes failure m (SomeMessage st)
+                             , Maybe bytes
+                             )
                              (Maybe bytes)
-                   -> m (Either (DecodeStep bytes failure m (SomeMessage st))
+                   -> m (Either ( DecodeStep bytes failure m (SomeMessage st)
+                                , Maybe bytes
+                                )
                                 (SomeMessage st, Maybe bytes))
-    tryRecvMessage _ dstate = do
+    tryRecvMessage _ state = do
       result <-
-        case dstate of
-          Left decoder ->
-            tryRunDecoderWithChannel channel Nothing decoder
+        case state of
+          Left (decoder, trailing) ->
+            tryRunDecoderWithChannel channel trailing decoder
           Right trailing ->
             tryRunDecoderWithChannel channel trailing =<< decode
       case result of
@@ -196,16 +202,18 @@ tryRunDecoderWithChannel :: Monad m
                          -> Maybe bytes
                          -> DecodeStep bytes failure m a
                          -> m (Either failure
-                                (Either (DecodeStep bytes failure m a)
+                                (Either ( DecodeStep bytes failure m a
+                                        , Maybe bytes
+                                        )
                                         (a, Maybe bytes)))
 tryRunDecoderWithChannel Channel{tryRecv} = go
   where
     go _ (DecodeDone x trailing) = return (Right (Right (x, trailing)))
     go _ (DecodeFail failure)    = return (Left failure)
-    go Nothing d@(DecodePartial k) = do
+    go dstate@Nothing d@(DecodePartial k) = do
       r <- tryRecv
       case r of
-        Nothing -> return (Right (Left d))
+        Nothing -> return (Right (Left (d, dstate)))
         Just m  -> k m >>= go Nothing
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
