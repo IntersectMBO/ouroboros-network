@@ -19,7 +19,7 @@ import Data.Text (Text)
 
 import Codec.CBOR.Term qualified as CBOR
 
-import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client
 
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Type
@@ -37,50 +37,50 @@ handshakeClientPeer
   => VersionDataCodec CBOR.Term vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
-  -> Peer (Handshake vNumber CBOR.Term)
-          AsClient StPropose m
-          (Either
-            (HandshakeProtocolError vNumber)
-            (HandshakeResult r vNumber vData))
+  -> Client (Handshake vNumber CBOR.Term)
+            NonPipelined StPropose m
+            (Either
+              (HandshakeProtocolError vNumber)
+              (HandshakeResult r vNumber vData))
 handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
                     acceptVersion versions =
   -- send known versions
-  Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
+  Yield (MsgProposeVersions $ encodeVersions encodeData versions) $
 
-    Await (ServerAgency TokConfirm) $ \msg -> case msg of
+    Await $ \msg -> case msg of
       MsgReplyVersions vMap ->
         -- simultaneous open; 'accept' will choose version (the greatest common
         -- version), and check if we can accept received version data.
-        Done TokDone $ case acceptOrRefuse codec acceptVersion versions vMap of
+        Done $ case acceptOrRefuse codec acceptVersion versions vMap of
           Right (r, vNumber, vData) -> Right $ HandshakeNegotiationResult r vNumber vData
           Left vReason              -> Left (HandshakeError vReason)
 
       MsgQueryReply vMap ->
-        Done TokDone $ Right $ decodeQueryResult decodeData vMap
+        Done $ Right $ decodeQueryResult decodeData vMap
 
       -- the server refused common highest version
       MsgRefuse vReason ->
-        Done TokDone (Left $ HandshakeError vReason)
+        Done (Left $ HandshakeError vReason)
 
       -- the server accepted a version, sent back the version number and its
       -- version data blob
       MsgAcceptVersion vNumber vParams ->
         case vNumber `Map.lookup` getVersions versions of
-          Nothing -> Done TokDone (Left $ NotRecognisedVersion vNumber)
+          Nothing -> Done (Left $ NotRecognisedVersion vNumber)
           Just (Version app vData) ->
             case decodeData vNumber vParams of
 
               Left err ->
-                Done TokDone (Left (HandshakeError $ HandshakeDecodeError vNumber err))
+                Done (Left (HandshakeError $ HandshakeDecodeError vNumber err))
 
               Right vData' ->
                 case acceptVersion vData vData' of
                   Accept agreedData ->
-                    Done TokDone $ Right $ HandshakeNegotiationResult (app agreedData)
-                                                                      vNumber
-                                                                      agreedData
+                    Done $ Right $ HandshakeNegotiationResult (app agreedData)
+                                                              vNumber
+                                                              agreedData
                   Refuse err ->
-                    Done TokDone (Left (InvalidServerSelection vNumber err))
+                    Done (Left (InvalidServerSelection vNumber err))
 
 
 decodeQueryResult :: (vNumber -> bytes -> Either Text vData)

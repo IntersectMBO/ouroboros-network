@@ -12,6 +12,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeOperators         #-}
 
 module Ouroboros.Network.Mux
   ( -- * Basic notions
@@ -71,7 +72,7 @@ import Data.Void (Void)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Peer
 
 import Network.Mux (HasInitiator, HasResponder, MiniProtocolBundle (..),
            MiniProtocolInfo, MiniProtocolLimits (..), MiniProtocolNum,
@@ -310,23 +311,21 @@ data MiniProtocolCb ctx bytes m a where
 
     MuxPeer
       :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
-         ( Show failure
-         , forall (st' :: ps). Show (ClientHasAgency st')
-         , forall (st' :: ps). Show (ServerHasAgency st')
-         , ShowProxy ps
+         ( ShowProxy ps
+         , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+         , Show failure
          )
       => (ctx -> ( Tracer m (TraceSendRecv ps)
                  , Codec ps failure m bytes
-                 , Peer ps pr st m a
+                 , Peer ps pr NonPipelined st m a
                  ))
       -> MiniProtocolCb ctx bytes m a
 
     MuxPeerPipelined
       :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
-         ( Show failure
-         , forall (st' :: ps). Show (ClientHasAgency st')
-         , forall (st' :: ps). Show (ServerHasAgency st')
-         , ShowProxy ps
+         ( ShowProxy ps
+         , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+         , Show failure
          )
       => (ctx -> ( Tracer m (TraceSendRecv ps)
                  , Codec ps failure m bytes
@@ -359,14 +358,13 @@ pattern MuxPeerRaw { runMuxPeer } = MiniProtocolCb runMuxPeer
 mkMiniProtocolCbFromPeer
   :: forall (pr :: PeerRole) ps (st :: ps) failure bytes ctx m a.
      ( MonadThrow m
-     , Show failure
-     , forall (st' :: ps). Show (ClientHasAgency st')
-     , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
-             , Peer ps pr st m a
+             , Peer ps pr NonPipelined st m a
              )
      )
   -> MiniProtocolCb ctx bytes m a
@@ -383,10 +381,9 @@ mkMiniProtocolCbFromPeerPipelined
   :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
      ( MonadAsync m
      , MonadThrow m
-     , Show failure
-     , forall (st' :: ps). Show (ClientHasAgency st')
-     , forall (st' :: ps). Show (ServerHasAgency st')
      , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
@@ -463,7 +460,9 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 --
 -- Note that callbacks will always receive `IsNotBigLedgerPeer`.
 toApplication :: forall mode initiatorCtx responderCtx m a b.
-                 (MonadAsync m, MonadThrow m)
+                 ( MonadAsync m
+                 , MonadThrow m
+                 )
               => initiatorCtx
               -> responderCtx
               -> OuroborosApplication mode initiatorCtx responderCtx LBS.ByteString m a b

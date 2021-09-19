@@ -14,6 +14,8 @@ module Test.Ouroboros.Network.Driver (tests) where
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client (Client)
+import Network.TypedProtocol.Peer.Server (Server)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver
@@ -62,10 +64,11 @@ byteLimitsReqResp
   -> ProtocolSizeLimits (ReqResp req resp) String
 byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit (fromIntegral . length)
   where
-    stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
-                    PeerHasAgency pr st -> Word
-    stateToLimit (ClientAgency TokIdle) = limit
-    stateToLimit (ServerAgency TokBusy) = limit
+    stateToLimit :: forall (st  :: ReqResp req resp).  ActiveState st
+                 => StateToken st -> Word
+    stateToLimit SingIdle   = limit
+    stateToLimit SingBusy   = limit
+    stateToLimit a@SingDone = notActiveState a
 
 
 serverTimeout :: DiffTime
@@ -75,19 +78,23 @@ serverTimeout = 0.2 -- 200 ms
 timeLimitsReqResp :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 timeLimitsReqResp = ProtocolTimeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
-                    PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit (ClientAgency TokIdle) = Just serverTimeout
-    stateToLimit (ServerAgency TokBusy) = Just serverTimeout
+    stateToLimit :: forall (st  :: ReqResp req resp).
+                    ActiveState st
+                 => StateToken st -> Maybe DiffTime
+    stateToLimit SingIdle   = Just serverTimeout
+    stateToLimit SingBusy   = Just serverTimeout
+    stateToLimit a@SingDone = notActiveState a
 
 -- Unlimited Time
 timeUnLimitsReqResp :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st  :: ReqResp req resp).
-                    PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit (ClientAgency TokIdle) = Nothing
-    stateToLimit (ServerAgency TokBusy) = Nothing
+    stateToLimit :: forall (st  :: ReqResp req resp).
+                    ActiveState st
+                 => StateToken st -> Maybe DiffTime
+    stateToLimit SingIdle   = Nothing
+    stateToLimit SingBusy   = Nothing
+    stateToLimit a@SingDone = notActiveState a
 
 
 --
@@ -106,8 +113,8 @@ data ShouldFail
 -- with the given payloads.
 --
 prop_runPeerWithLimits
-  :: forall m. ( MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                 MonadThrow (STM m), MonadTimer m)
+  :: forall m. ( MonadAsync m, MonadDelay m, MonadFork m,
+                 MonadMask m, MonadThrow (STM m), MonadTimer m)
   => Tracer m (TraceSendRecv (ReqResp String ()))
   -> Word
   -- ^ byte limit
@@ -138,10 +145,10 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
             Nothing                      -> False
 
     where
-      sendPeer :: Peer (ReqResp String ()) AsClient StIdle m [()]
+      sendPeer :: Client (ReqResp String ()) NonPipelined StIdle m [()]
       sendPeer = reqRespClientPeer $ reqRespClientMap $ map fst reqPayloads
 
-      recvPeer :: Peer (ReqResp String ()) AsServer StIdle m [DiffTime]
+      recvPeer :: Server (ReqResp String ()) NonPipelined StIdle m [DiffTime]
       recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
         (\a _ -> case a of
           [] -> error "prop_runPeerWithLimits: empty list"
@@ -155,12 +162,12 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
       shouldFail ::  [(String, DiffTime)] -> Maybe ShouldFail
       shouldFail [] =
           -- Check @MsgDone@ which is always sent
-          let msgDone = encode (codecReqResp @String @() @m) (ClientAgency TokIdle) MsgDone in
+          let msgDone = encode (codecReqResp @String @() @m) MsgDone in
           if length msgDone > fromIntegral limit
              then Just ShouldExceededSizeLimit
              else Nothing
       shouldFail ((msg, delay):cmds) =
-          let msg' = encode (codecReqResp @String @() @m) (ClientAgency TokIdle) (MsgReq msg) in
+          let msg' = encode (codecReqResp @String @() @m) (MsgReq msg) in
           if length msg' > fromIntegral limit
           then Just ShouldExceededSizeLimit
           else if delay >= serverTimeout

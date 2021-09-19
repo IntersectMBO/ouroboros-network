@@ -143,8 +143,8 @@ mvarsAsChannel :: MonadSTM m
 mvarsAsChannel bufferRead bufferWrite =
     Channel{send, recv}
   where
-    send x = atomically (putTMVar bufferWrite x)
-    recv   = atomically (Just <$> takeTMVar bufferRead)
+    send x  = atomically (putTMVar bufferWrite x)
+    recv    = atomically (     Just <$>    takeTMVar bufferRead)
 
 
 -- | Create a pair of channels that are connected via one-place buffers.
@@ -160,7 +160,6 @@ createConnectedChannels = do
 
     return (mvarsAsChannel bufferB bufferA,
             mvarsAsChannel bufferA bufferB)
-
 
 -- | Create a pair of channels that are connected via N-place buffers.
 --
@@ -178,8 +177,8 @@ createConnectedBufferedChannels sz = do
   where
     wrap :: Channel (STM m) a -> Channel m a
     wrap Channel{send, recv} = Channel
-      { send = atomically . send
-      , recv = atomically recv
+      { send    = atomically . send
+      , recv    = atomically recv
       }
 
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
@@ -199,8 +198,8 @@ createConnectedBufferedChannelsSTM sz = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x = writeTBQueue bufferWrite x
-        recv   = Just <$> readTBQueue bufferRead
+        send x  = writeTBQueue bufferWrite x
+        recv    =      Just <$> readTBQueue bufferRead
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -226,11 +225,11 @@ createPipelineTestChannels sz = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x = atomically $ do
-                   full <- isFullTBQueue bufferWrite
-                   if full then error failureMsg
-                           else writeTBQueue bufferWrite x
-        recv   = atomically (Just <$> readTBQueue bufferRead)
+        send x  = atomically $ do
+                    full <- isFullTBQueue bufferWrite
+                    if full then error failureMsg
+                            else writeTBQueue bufferWrite x
+        recv    = atomically (     Just <$> readTBQueue bufferRead)
 
     failureMsg = "createPipelineTestChannels: "
               ++ "maximum pipeline depth exceeded: " ++ show sz
@@ -294,8 +293,13 @@ delayChannel :: MonadDelay m
              => DiffTime
              -> Channel m a
              -> Channel m a
-delayChannel delay = channelEffect (\_ -> return ())
-                                   (\_ -> threadDelay delay)
+delayChannel delay Channel{send, recv} =
+    Channel { send
+            , recv    = threadDelay (delay / 2)
+                     >> recv
+                     <* threadDelay (delay / 2)
+            }
+
 
 
 -- | Channel which logs sent and received messages.
@@ -309,8 +313,8 @@ loggingChannel :: ( MonadSay m
                -> Channel m a
 loggingChannel ident Channel{send,recv} =
   Channel {
-    send = loggingSend,
-    recv = loggingRecv
+    send    = loggingSend,
+    recv    = loggingRecv
   }
  where
   loggingSend a = do

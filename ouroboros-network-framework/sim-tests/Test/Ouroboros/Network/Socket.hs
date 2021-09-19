@@ -39,6 +39,7 @@ import Control.Monad.Class.MonadTimer.SI (threadDelay)
 import Control.Tracer
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer.Client (Client)
 import Network.TypedProtocol.ReqResp.Client qualified as ReqResp
 import Network.TypedProtocol.ReqResp.Codec.CBOR qualified as ReqResp
 import Network.TypedProtocol.ReqResp.Examples qualified as ReqResp
@@ -492,7 +493,8 @@ prop_socket_client_connect_error _ xs =
                     ReqResp.codecReqResp
                     channel
                     (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
-                            :: Peer (ReqResp.ReqResp Int Int) AsClient ReqResp.StIdle IO [Int])
+                            :: Client (ReqResp.ReqResp Int Int)
+                                      NonPipelined ReqResp.StIdle IO [Int])
             ((), trailing)
               <$ atomically (putTMVar cv ())
 
