@@ -43,7 +43,7 @@ import Data.Typeable (Typeable)
 import Network.Mux qualified as Mux
 import Network.Mux.Bearer qualified as Mux
 import Network.Socket qualified as Socket
-import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer
 
 import Options.Applicative
 
@@ -374,6 +374,7 @@ runInitiatorProtocols
        ( Alternative (STM m)
        , MonadAsync      m
        , MonadCatch      m
+       , MonadMask       m
        , MonadSTM        m
        , MonadThrow (STM m)
        , HasInitiator muxMode ~ True

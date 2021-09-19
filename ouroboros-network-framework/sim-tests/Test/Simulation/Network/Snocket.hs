@@ -56,6 +56,7 @@ import Simulation.Network.Snocket
 import Network.Mux as Mx
 import Network.TypedProtocol.Codec.CBOR
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Peer
 import Network.TypedProtocol.ReqResp.Client
 import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Type
@@ -116,40 +117,40 @@ codecReqResp :: forall req resp m.
              => Codec (ReqResp req resp) CBOR.DeserialiseFailure m ByteString
 codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
   where
-    encodeMsg :: forall (pr :: PeerRole) st st'.
-                 PeerHasAgency pr st
-              -> Message (ReqResp req resp) st st'
+    encodeMsg :: forall st st'.
+                 Message (ReqResp req resp) st st'
               -> CBOR.Encoding
-    encodeMsg (ClientAgency TokIdle) (MsgReq req) =
+    encodeMsg (MsgReq req) =
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 1
       <> Serialise.encode req
-    encodeMsg (ServerAgency TokBusy) (MsgResp resp) =
+    encodeMsg (MsgResp resp) =
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 2
       <> Serialise.encode resp
-    encodeMsg (ClientAgency TokIdle) MsgDone =
+    encodeMsg MsgDone =
          CBOR.encodeListLen 1
       <> CBOR.encodeWord 3
 
-    decodeMsg :: forall (pr :: PeerRole) s (st :: ReqResp req resp).
-                 PeerHasAgency pr st
+    decodeMsg :: forall s (st :: ReqResp req resp).
+                 ActiveState st
+              => StateToken st
               -> CBOR.Decoder s (SomeMessage st)
     decodeMsg stok = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
       case (stok, len, key) of
-        (ClientAgency TokIdle, 2, 1) -> do
+        (SingIdle, 2, 1) -> do
           payload <- Serialise.decode
           return (SomeMessage $ MsgReq payload)
-        (ServerAgency TokBusy, 2, 2) -> do
+        (SingBusy, 2, 2) -> do
           payload <- Serialise.decode
           return (SomeMessage $ MsgResp payload)
-        (ClientAgency TokIdle, 1, 3) ->
+        (SingIdle, 1, 3) ->
           return (SomeMessage MsgDone)
-        _ ->
-          fail (printf "codecReqResp (%s) unexpected key (%d, %d)"
-                       (show stok) key len)
+        (SingIdle, _, _) -> fail (printf "codecReqResp.StIdle: unexpected key (%d, %d)" key len)
+        (SingBusy, _, _) -> fail (printf "codecReqResp.StBusy: unexpected key (%d, %d)" key len)
+        (SingDone, _, _) -> notActiveState stok
 
 
 untilSuccess :: ( MonadCatch m
@@ -199,10 +200,10 @@ clientServerSimulation payloads =
     serverAddr :: TestAddr
     serverAddr = TestAddress 1
 
-    serverPeer :: Peer (ReqResp payload payload) AsServer StIdle m ()
+    serverPeer :: Peer (ReqResp payload payload) AsServer NonPipelined StIdle m ()
     serverPeer = reqRespServerPeer pingServer
 
-    clientPeer :: Peer (ReqResp payload payload) AsClient StIdle m Bool
+    clientPeer :: Peer (ReqResp payload payload) AsClient NonPipelined StIdle m Bool
     clientPeer = reqRespClientPeer (pingClient payloads)
 
     server :: TestSnocket m

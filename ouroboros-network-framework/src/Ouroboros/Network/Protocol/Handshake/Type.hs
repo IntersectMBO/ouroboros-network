@@ -16,10 +16,8 @@
 module Ouroboros.Network.Protocol.Handshake.Type
   ( -- * Handshake Protocol
     Handshake (..)
+  , SingHandshake (..)
   , Message (..)
-  , ClientHasAgency (..)
-  , ServerHasAgency (..)
-  , NobodyHasAgency (..)
     -- $simultanous-open
   , RefuseReason (..)
   , HandshakeProtocolError (..)
@@ -49,6 +47,20 @@ data Handshake vNumber vParams where
 
 instance ShowProxy (Handshake vNumber vParams) where
     showProxy _ = "Handshake"
+
+data SingHandshake (st :: Handshake vNumber vParams) where
+    SingPropose :: SingHandshake StPropose
+    SingConfirm :: SingHandshake StConfirm
+    SingDone    :: SingHandshake StDone
+
+deriving instance Show (SingHandshake st)
+
+instance StateTokenI StPropose where
+    stateToken = SingPropose
+instance StateTokenI StConfirm where
+    stateToken = SingConfirm
+instance StateTokenI StDone where
+    stateToken = SingDone
 
 -- |
 -- Reasons by which a server can refuse proposed version.
@@ -119,31 +131,12 @@ instance Protocol (Handshake vNumber vParams) where
         :: RefuseReason vNumber
         -> Message (Handshake vNumber vParams) StConfirm StDone
 
-    data ClientHasAgency st where
-      TokPropose :: ClientHasAgency StPropose
+    type StateAgency StPropose = ClientAgency
+    type StateAgency StConfirm = ServerAgency
+    type StateAgency StDone    = NobodyAgency
 
-    data ServerHasAgency st where
-      TokConfirm :: ServerHasAgency StConfirm
+    type StateToken = SingHandshake
 
-    data NobodyHasAgency st where
-      TokDone    :: NobodyHasAgency StDone
-
-    exclusionLemma_ClientAndServerHaveAgency TokPropose tok = case tok of {}
-    exclusionLemma_NobodyAndClientHaveAgency TokDone    tok = case tok of {}
-    exclusionLemma_NobodyAndServerHaveAgency TokDone    tok = case tok of {}
-
-instance forall vNumber vParams (st :: Handshake vNumber vParams). NFData (ClientHasAgency st) where
-  rnf TokPropose = ()
-
-instance forall vNumber vParams (st :: Handshake vNumber vParams). NFData (ServerHasAgency st) where
-  rnf TokConfirm = ()
-
-instance forall vNumber vParams (st :: Handshake vNumber vParams). NFData (NobodyHasAgency st) where
-  rnf TokDone = ()
-
-instance forall vNumber vParams (st :: Handshake vNumber vParams) pr. NFData (PeerHasAgency pr st) where
-  rnf (ClientAgency x) = rnf x
-  rnf (ServerAgency x) = rnf x
 
 instance ( NFData vNumber
          , NFData vParams
@@ -166,12 +159,6 @@ instance ( NFData vNumber
 
 deriving instance (Show vNumber, Show vParams)
     => Show (Message (Handshake vNumber vParams) from to)
-
-instance Show (ClientHasAgency (st :: Handshake vNumber vParams)) where
-    show TokPropose       = "TokPropose"
-
-instance Show (ServerHasAgency (st :: Handshake vNumber vParams)) where
-    show TokConfirm = "TokConfirm"
 
 -- | Extends handshake error @'RefuseReason'@ type, by client specific errors.
 --

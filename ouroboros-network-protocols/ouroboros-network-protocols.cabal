@@ -107,9 +107,9 @@ library
                        ouroboros-network-api
                                         ^>=0.9.0,
                        serialise,
-                       typed-protocols  ^>=0.1.1,
+                       typed-protocols  ^>=0.2,
                        typed-protocols-cborg
-                                        ^>=0.1
+                                        ^>=0.2
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

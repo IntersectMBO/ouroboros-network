@@ -161,7 +161,6 @@ createConnectedChannels = do
     return (mvarsAsChannel bufferB bufferA,
             mvarsAsChannel bufferA bufferB)
 
-
 -- | Create a pair of channels that are connected via N-place buffers.
 --
 -- This variant /blocks/ when 'send' would exceed the maximum buffer size.
@@ -178,8 +177,8 @@ createConnectedBufferedChannels sz = do
   where
     wrap :: Channel (STM m) a -> Channel m a
     wrap Channel{send, recv} = Channel
-      { send = atomically . send
-      , recv = atomically recv
+      { send    = atomically . send
+      , recv    = atomically recv
       }
 
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
@@ -199,8 +198,8 @@ createConnectedBufferedChannelsSTM sz = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x = writeTBQueue bufferWrite x
-        recv   = Just <$> readTBQueue bufferRead
+        send x  = writeTBQueue bufferWrite x
+        recv    = Just <$> readTBQueue bufferRead
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -294,8 +293,13 @@ delayChannel :: MonadDelay m
              => DiffTime
              -> Channel m a
              -> Channel m a
-delayChannel delay = channelEffect (\_ -> return ())
-                                   (\_ -> threadDelay delay)
+delayChannel delay Channel{send, recv} =
+    Channel { send
+            , recv    = threadDelay (delay / 2)
+                     >> recv
+                     <* threadDelay (delay / 2)
+            }
+
 
 
 -- | Channel which logs sent and received messages.
@@ -309,8 +313,8 @@ loggingChannel :: ( MonadSay m
                -> Channel m a
 loggingChannel ident Channel{send,recv} =
   Channel {
-    send = loggingSend,
-    recv = loggingRecv
+    send    = loggingSend,
+    recv    = loggingRecv
   }
  where
   loggingSend a = do
