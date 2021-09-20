@@ -152,7 +152,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
     forConcurrently_ (zip [0..] sockPaths) $ \(index, sockPath) -> do
       threadDelay (50000 * index)
       connectToNode
-        (localSnocket iocp sockPath)
+        (localSnocket iocp)
         unversionedHandshakeCodec
         noTimeLimitsHandshake
         (cborTermVersionDataCodec unversionedProtocolDataCodec)
@@ -182,7 +182,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
+      (localSnocket iocp)
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -365,7 +365,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     peerAsyncs <- sequence
                     [ async $
                         connectToNode
-                          (localSnocket iocp defaultLocalSocketAddrPath)
+                          (localSnocket iocp)
                           unversionedHandshakeCodec
                           noTimeLimitsHandshake
                           (cborTermVersionDataCodec unversionedProtocolDataCodec)
@@ -417,7 +417,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
-      (localSnocket iocp defaultLocalSocketAddrPath)
+      (localSnocket iocp)
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)

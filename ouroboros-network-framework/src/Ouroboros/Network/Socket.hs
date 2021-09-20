@@ -250,9 +250,10 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
  
+    handshakeBearer <- Snocket.toBearer sn sduHandshakeTimeout muxTracer sd
     app_e <-
       runHandshakeClient
-        (Snocket.toBearer sn sduHandshakeTimeout muxTracer sd)
+        handshakeBearer
         connectionId
         -- TODO: push 'HandshakeArguments' up the call stack.
         HandshakeArguments {
@@ -275,10 +276,11 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
 
          Right (app, _versionNumber, _agreedOptions) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+             bearer <- Snocket.toBearer sn sduTimeout muxTracer sd
              Mx.muxStart
                muxTracer
                (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
-               (Snocket.toBearer sn sduTimeout muxTracer sd)
+               bearer
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -374,9 +376,12 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
 
+        handshakeBearer <- Snocket.toBearer sn
+                                            sduHandshakeTimeout
+                                            muxTracer' sd
         app_e <-
           runHandshakeServer
-            (Snocket.toBearer sn sduHandshakeTimeout muxTracer' sd)
+            handshakeBearer
             connectionId
             HandshakeArguments {
               haHandshakeTracer  = handshakeTracer,
@@ -398,10 +403,11 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
              Right (SomeResponderApplication app, _versionNumber, _agreedOptions) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
+                 bearer <- Snocket.toBearer sn sduTimeout muxTracer' sd
                  Mx.muxStart
                    muxTracer'
                    (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
-                   (Snocket.toBearer sn sduTimeout muxTracer' sd)
+                   bearer
 
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
@@ -433,11 +439,16 @@ fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
   where
     go :: Snocket.Accept IO fd addr -> Server.Socket addr fd
     go (Snocket.Accept accept) = Server.Socket $ do
-      (sd', remoteAddr, next) <- accept
-      -- TOOD: we don't need to that on each accept
-      localAddr <- Snocket.getLocalAddr sn sd'
-      atomically $ addConnection tblVar remoteAddr localAddr Nothing
-      pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
+      (result, next) <- accept
+      case result of
+        Snocket.Accepted sd' remoteAddr -> do
+          -- TOOD: we don't need to that on each accept
+          localAddr <- Snocket.getLocalAddr sn sd'
+          atomically $ addConnection tblVar remoteAddr localAddr Nothing
+          pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
+        Snocket.AcceptFailure err ->
+          -- the is no way to construct 'Server.Socket'; This will be removed in a later commit!
+          throwIO err
 
     close remoteAddr localAddr sd' = do
         removeConnection tblVar remoteAddr localAddr
