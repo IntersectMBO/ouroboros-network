@@ -79,14 +79,14 @@ import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import qualified Cardano.Ledger.Keys
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.PParams as SL (emptyPParams,
+                     emptyPParamsUpdate)
+import qualified Cardano.Ledger.Shelley.Tx as SL (WitnessSetHKD (..))
+import qualified Cardano.Ledger.Shelley.UTxO as SL (makeWitnessesVKey)
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Cardano.Ledger.Val as SL
 import qualified Cardano.Protocol.TPraos.OCert as SL (OCertSignable (..))
-import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.PParams as SL (emptyPParams,
-                     emptyPParamsUpdate)
-import qualified Shelley.Spec.Ledger.Tx as SL (WitnessSetHKD (..))
-import qualified Shelley.Spec.Ledger.UTxO as SL (makeWitnessesVKey)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..),
@@ -94,8 +94,8 @@ import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..),
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Protocol
 
-import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
-import           Test.Shelley.Spec.Ledger.Utils (unsafeBoundRational)
+import qualified Test.Cardano.Ledger.Shelley.Generator.Core as Gen
+import           Test.Cardano.Ledger.Shelley.Utils (unsafeBoundRational)
 
 {-------------------------------------------------------------------------------
   The decentralization parameter

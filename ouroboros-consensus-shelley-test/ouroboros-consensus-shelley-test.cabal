@@ -45,10 +45,10 @@ library
                        -- cardano-ledger-specs
                      , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
+                     , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma
                      , cardano-ledger-shelley-ma-test
-                     , shelley-spec-ledger
-                     , shelley-spec-ledger-test
+                     , cardano-ledger-shelley-test
                      , small-steps
 
                      , ouroboros-network
@@ -92,7 +92,7 @@ test-suite test
                      , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-core
-                     , shelley-spec-ledger
+                     , cardano-ledger-shelley
 
                      , ouroboros-network
                      , ouroboros-consensus

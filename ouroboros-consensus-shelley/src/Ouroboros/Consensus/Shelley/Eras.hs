@@ -62,11 +62,11 @@ import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
 import           Cardano.Ledger.Serialization
 import           Cardano.Ledger.Shelley (ShelleyEra)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Rules.Ledger as SL
+import qualified Cardano.Ledger.Shelley.Rules.Utxow as SL
 import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
-import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.STS.Ledger as SL
-import qualified Shelley.Spec.Ledger.STS.Utxow as SL
 
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))

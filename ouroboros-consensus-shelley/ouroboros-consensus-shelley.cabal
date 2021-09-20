@@ -69,8 +69,8 @@ library
 
                        -- cardano-ledger-specs
                      , cardano-ledger-alonzo
+                     , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma
-                     , shelley-spec-ledger
                      , small-steps
 
                      , ouroboros-network

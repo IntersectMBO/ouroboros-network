@@ -46,9 +46,9 @@ library
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-byron
                      , cardano-ledger-core
+                     , cardano-ledger-shelley
+                     , cardano-ledger-shelley-test
                      , cardano-protocol-tpraos
-                     , shelley-spec-ledger
-                     , shelley-spec-ledger-test
 
                      , ouroboros-network
                      , ouroboros-consensus
@@ -95,11 +95,11 @@ test-suite test
                      , tasty
                      , tasty-quickcheck
 
-                     , cardano-ledger-core
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
+                     , cardano-ledger-core
+                     , cardano-ledger-shelley
                      , cardano-protocol-tpraos
-                     , shelley-spec-ledger
 
                      , ouroboros-network
                      , ouroboros-consensus

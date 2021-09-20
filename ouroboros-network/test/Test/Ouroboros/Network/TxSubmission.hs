@@ -269,10 +269,10 @@ instance Arbitrary a => Arbitrary (LargeNonEmptyList a) where
 
 prop_txSubmission :: Positive Word16
                   -> NonEmptyList (Tx Int)
-                  -- | The delay must be smaller (<) than 5s, so that overall
+                  -> Maybe (Positive SmallDelay)
+                  -- ^ The delay must be smaller (<) than 5s, so that overall
                   -- delay is less than 10s, otherwise 'smallDelay' in
                   -- 'timeLimitsTxSubmission' will kick in.
-                  -> Maybe (Positive SmallDelay)
                   -> Property
 prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
     let mbDelayTime = getSmallDelay . getPositive <$> delay

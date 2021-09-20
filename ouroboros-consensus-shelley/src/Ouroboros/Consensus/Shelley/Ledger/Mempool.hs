@@ -58,8 +58,8 @@ import           Cardano.Ledger.Alonzo.PParams
 import           Cardano.Ledger.Alonzo.Tx (ValidatedTx (..), totExUnits)
 import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (Crypto, TxSeq, fromTxSeq)
-import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.UTxO as SL (txid)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.UTxO as SL (txid)
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.Block

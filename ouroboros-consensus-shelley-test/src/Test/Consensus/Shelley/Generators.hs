@@ -22,7 +22,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -39,13 +39,13 @@ import           Test.Util.Serialisation.Roundtrip (Coherent (..),
 import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
+import           Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL
+import           Test.Cardano.Ledger.Shelley.Generator.ShelleyEraGen ()
+import           Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators
+                     (genCoherentBlock)
+import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
-import           Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL
-import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
-import           Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators
-                     (genCoherentBlock)
-import           Test.Shelley.Spec.Ledger.Serialisation.Generators ()
 
 {-------------------------------------------------------------------------------
   Generators

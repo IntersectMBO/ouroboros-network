@@ -53,7 +53,7 @@ import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.Crypto (Crypto, HASH)
 import qualified Cardano.Ledger.Era as SL (hashTxSeq)
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
 

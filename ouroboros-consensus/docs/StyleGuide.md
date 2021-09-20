@@ -910,7 +910,7 @@ the rules below, it is good practice to update the code's style to match them.
     import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 
     -- cardano-ledger-specs
-    import qualified Shelley.Spec.Ledger.API as SL
+    import qualified Cardano.Ledger.Shelley.API as SL
 
     -- ouroboros-consensus-shelley (or mock or byron)
     import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)

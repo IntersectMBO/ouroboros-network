@@ -80,7 +80,7 @@ import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
 import qualified Cardano.Ledger.Era as Core
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley

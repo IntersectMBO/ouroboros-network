@@ -27,7 +27,7 @@ be adding is the Alonzo era, which comes after the Mary era.
 * Locate the new tag in the ledger, e.g., `AlonzoEra`. This is an empty data
   type that is used at the type level to indicate the era. The ledger should
   have an instance of the `ShelleyBasedEra` class (the class defined in
-  `Shelley.Spec.Ledger.API`, do not confuse it with the class with the same name
+  `Cardano.Ledger.Shelley.API`, do not confuse it with the class with the same name
   in consensus) for this era. This class should provide all the instances
   consensus integration will rely on.
 

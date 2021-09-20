@@ -22,9 +22,9 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 
 import           Cardano.Ledger.BaseTypes
 import qualified Cardano.Ledger.Keys as SL
+import qualified Cardano.Ledger.Shelley.LedgerState as SL
+import qualified Cardano.Ledger.Shelley.TxBody as SL
 import qualified Cardano.Protocol.TPraos as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL
-import qualified Shelley.Spec.Ledger.TxBody as SL
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block

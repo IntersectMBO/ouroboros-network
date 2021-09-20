@@ -77,7 +77,7 @@ import qualified Cardano.Ledger.Alonzo.Genesis as Alonzo
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Mary.Translation ()
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 
@@ -249,7 +249,7 @@ type CardanoHardForkConstraints c =
   , ShelleyBasedEra (MaryEra    c)
   , ShelleyBasedEra (AlonzoEra  c)
     -- These equalities allow the transition from Byron to Shelley, since
-    -- @shelley-spec-ledger@ requires Ed25519 for Byron bootstrap addresses and
+    -- @cardano-ledger-shelley@ requires Ed25519 for Byron bootstrap addresses and
     -- the current Byron-to-Shelley translation requires a 224-bit hash for
     -- address and a 256-bit hash for header hashes.
   , HASH     c ~ Blake2b_256

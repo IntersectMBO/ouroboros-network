@@ -46,10 +46,10 @@ library
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-core
+                     , cardano-ledger-shelley
+                     , cardano-ledger-shelley-ma
                      , cardano-prelude
                      , cardano-slotting
-                     , shelley-spec-ledger
-                     , cardano-ledger-shelley-ma
 
                      , ouroboros-network
                      , ouroboros-consensus
@@ -79,12 +79,12 @@ executable db-analyser
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-core
+                     , cardano-ledger-shelley
                      , cborg
                      , containers
                      , contra-tracer
                      , mtl
                      , optparse-applicative
-                     , shelley-spec-ledger
                      , strict-containers
                      , text
 

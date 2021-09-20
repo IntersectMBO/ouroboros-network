@@ -41,7 +41,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
 import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis)
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Node

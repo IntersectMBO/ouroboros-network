@@ -44,7 +44,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import qualified Ouroboros.Consensus.HardFork.History as History
 
 import qualified Cardano.Ledger.Era as SL
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits

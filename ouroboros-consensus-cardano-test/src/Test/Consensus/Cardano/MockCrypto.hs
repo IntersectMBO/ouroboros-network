@@ -23,7 +23,7 @@ import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto)
 -- * Similarly, @HASH@ has to have the same bit size as Byron header hashes (ie
 --   256), that's why we use 'Blake2b_256' here.
 --
--- * The @shelley-spec-ledger@ package currently requires that @'DSIGN' ~
+-- * The @cardano-ledger-shelley@ package currently requires that @'DSIGN' ~
 --   'Ed25519DSIGN' in order to use Byron bootstrap witnesses.
 --
 -- * We can still use mock KES and mock VRF.
