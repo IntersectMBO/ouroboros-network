@@ -194,8 +194,26 @@ openDB :: forall m blk.
 openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock = do
     createDirectoryIfMissing hasFS True (mkFsPath [])
     (db, replayed) <- initFromDisk args replayTracer immutableDB
+    -- When initializing the ledger DB from disk we:
+    --
+    -- - Look for the newest valid snapshot, say 'Lbs', which corresponds to the
+    --   application of a block in the immutable DB, say 'b'.
+    --
+    -- - Push onto the ledger DB all the ledger states that result from applying
+    --   blocks found in the on-disk immutable DB, starting from the successor
+    --   of 'b'.
+    --
+    -- The anchor of 'LedgerDB' must be the oldest point we can rollback to. So
+    -- if we follow the procedure described above (that 'initFromDisk'
+    -- implements), the newest ledger state in 'db', say 'Lbn' corresponds to
+    -- the most recent block in the immutable DB. If this block is in the
+    -- immutable DB, it means that at some point it was part of a chain that was
+    -- >k blocks long. Thus 'Lbn' is the oldest point we can roll back to.
+    -- Therefore, we need to make the newest state (current) of the ledger DB
+    -- the anchor.
+    let dbPrunedToImmDBTip = LedgerDB.ledgerDbPrune (SecurityParam 0) db
     (varDB, varPrevApplied) <-
-      (,) <$> newTVarIO db <*> newTVarIO Set.empty
+      (,) <$> newTVarIO dbPrunedToImmDBTip <*> newTVarIO Set.empty
     return (
         LgrDB {
             varDB          = varDB

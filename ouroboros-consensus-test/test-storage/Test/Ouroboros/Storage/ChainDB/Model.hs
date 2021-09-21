@@ -62,13 +62,13 @@ module Test.Ouroboros.Storage.ChainDB.Model (
     -- * ModelSupportsBlock
   , ModelSupportsBlock
     -- * Exported for testing purposes
+  , ShouldGarbageCollect (GarbageCollect, DoNotGarbageCollect)
   , advanceCurSlot
   , between
   , blocks
   , chains
   , closeDB
   , copyToImmutableDB
-  , garbageCollect
   , garbageCollectable
   , garbageCollectableIteratorNext
   , garbageCollectablePoint
@@ -926,6 +926,15 @@ garbageCollectableIteratorNext secParam m itId =
       IteratorBlockGCed {} -> error "model doesn't return IteratorBlockGCed"
       IteratorResult blk   -> garbageCollectable secParam m blk
 
+-- | Delete blocks that are older than the security parameter from the volatile
+-- DB. This function assumes that the blocks that will be deleted are copied to
+-- the immutable DB.
+--
+-- If this function collects blocks that are not yet copied to the immutable DB
+-- the volatile fragment of the current chain will not be connected to the
+-- immutable part of the chain. For this reason, this function should not be
+-- used in isolation and is not exported.
+--
 garbageCollect :: forall blk. HasHeader blk
                => SecurityParam -> Model blk -> Model blk
 garbageCollect secParam m@Model{..} = m {
@@ -936,14 +945,24 @@ garbageCollect secParam m@Model{..} = m {
     collectable :: blk -> Bool
     collectable = garbageCollectable secParam m
 
+data ShouldGarbageCollect = GarbageCollect | DoNotGarbageCollect
+  deriving (Eq, Show)
+
 -- | Copy all blocks on the current chain older than @k@ to the \"mock
 -- ImmutableDB\" ('immutableDbChain').
 --
+-- The 'ShouldGarbageCollect' parameter determines if garbage collection should
+-- be performed __after__ copying.
+--
 -- Idempotent.
-copyToImmutableDB :: SecurityParam -> Model blk -> Model blk
-copyToImmutableDB secParam m = m {
-      immutableDbChain = immutableChain secParam m
-    }
+copyToImmutableDB :: forall blk. HasHeader blk
+                  => SecurityParam -> ShouldGarbageCollect -> Model blk -> Model blk
+copyToImmutableDB secParam shouldCollectGarbage m =
+      garbageCollectIf shouldCollectGarbage
+    $ m { immutableDbChain = immutableChain secParam m }
+  where
+    garbageCollectIf GarbageCollect      = garbageCollect secParam
+    garbageCollectIf DoNotGarbageCollect = id
 
 closeDB :: Model blk -> Model blk
 closeDB m@Model{..} = m {
