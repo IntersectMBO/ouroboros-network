@@ -444,16 +444,17 @@ peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
                       => Tracer m (TracePeerSelection peeraddr)
                       -> Tracer m (DebugPeerSelection peeraddr peerconn)
                       -> Tracer m PeerSelectionCounters
+                      -> StdGen
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer (debugTracer <> contramap transform countersTracer)
         actions policy
         jobPool
-        emptyPeerSelectionState
+        (emptyPeerSelectionState fuzzRng)
   where
     transform :: Ord peeraddr => DebugPeerSelection peeraddr peerconn -> PeerSelectionCounters
     transform (TraceGovernorState _ _ st) = peerStateToCounters st
