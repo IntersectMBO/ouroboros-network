@@ -29,6 +29,7 @@ import qualified Data.Signal as Signal
 import           Data.Signal (Signal, Events, E(E), TS(TS))
 import qualified Data.OrdPSQ as PSQ
 
+import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
 
@@ -1892,14 +1893,14 @@ selectEnvTargets f =
 -- This is a manual test that runs in IO and has to be observed to see that it
 -- is doing something sensible. It is not run automatically.
 --
-_governorFindingPublicRoots :: Int -> [DomainAddress] -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers domains =
+_governorFindingPublicRoots :: Int -> StrictTVar IO [RelayAddress] -> IO Void
+_governorFindingPublicRoots targetNumberOfRootPeers domainsVar =
     withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
       timeout
       DNS.defaultResolvConf
-      domains $ \requestPublicRootPeers ->
+      domainsVar $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer

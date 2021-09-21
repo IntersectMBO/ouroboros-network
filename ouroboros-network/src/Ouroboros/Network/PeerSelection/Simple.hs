@@ -15,9 +15,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Tracer (Tracer)
 
-import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map (Map)
-import qualified Data.Map as Map
 import           Data.Set (Set)
 import           Data.Void (Void)
 
@@ -38,9 +36,9 @@ withPeerSelectionActions
   -> STM IO PeerSelectionTargets
   -> [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ static local root peers
-  -> [(DomainAddress, PeerAdvertise)]
+  -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
-  -> [DomainAddress]
+  -> StrictTVar IO [RelayAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
   -> (NumberOfPeers -> STM IO ())
@@ -50,8 +48,8 @@ withPeerSelectionActions
   -- (only if local root peers where non-empty).
   -> IO a
 withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _staticLocalRootPeers
-  localRootPeers publicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
-    localRootsVar <- newTVarIO Map.empty
+  localRootPeersVar publicRootPeersVar peerStateActions reqLedgerPeers getLedgerPeers k = do
+    localRootsVar <- newTVarIO []
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
             readLocalRootPeers = pure [],
@@ -59,17 +57,14 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _s
             requestPeerGossip = \_ -> pure [],
             peerStateActions
           }
-    case localRootPeers of
-      []       -> k Nothing peerSelectionActions
-      (a : as) ->
-        withAsync
-          (localRootPeersProvider
-            localRootTracer
-            timeout
-            DNS.defaultResolvConf
-            localRootsVar
-            (a :| as))
-          (\thread -> k (Just thread) peerSelectionActions)
+    withAsync
+      (localRootPeersProvider
+        localRootTracer
+        timeout
+        DNS.defaultResolvConf
+        localRootsVar
+        localRootPeersVar)
+      (\thread -> k (Just thread) peerSelectionActions)
   where
     -- We first try to get poublic root peers from the ledger, but if it fails
     -- (for example because the node hasn't synced far enough) we fall back
@@ -90,6 +85,5 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _s
       publicRootPeersProvider publicRootTracer
                               timeout
                               DNS.defaultResolvConf
-                              publicRootPeers
+                              publicRootPeersVar
                               ($ n)
-
