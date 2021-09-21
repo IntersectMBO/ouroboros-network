@@ -1,0 +1,102 @@
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveAnyClass #-}
+-- |
+
+module LedgerOnDisk.V2.DumbDb where
+
+import LedgerOnDisk.V2.OnDiskMappings
+import LedgerOnDisk.V2.Diff
+import Data.IORef
+import Data.Map (Map)
+import Control.Concurrent.STM
+import LedgerOnDisk.V2.DB
+import LedgerOnDisk.V2.Query
+import Control.Exception
+import Data.Proxy
+import Control.Monad
+import Data.Kind
+
+
+
+instance (AllMap KeysOrd state) => DB (DumbDb (state :: StateKind MapFlavour)) where
+  type DBState (DumbDb state) = state
+  type SeqId (DumbDb state) = Int
+
+  readDB = readDumbDb
+  writeDB = writeDumbDb
+
+data BackingStore (t :: MapFlavour) k v = BackingStore
+  { bsRef :: IORef (Map k v)
+  , bsId :: TMVar Int
+  }
+
+
+data DumbDb (state :: StateKind MapFlavour) = DumbDb
+  { backingStore :: OnDiskMappings state BackingStore
+  }
+
+-- class KvDb dbhandle (t :: MapFlavour) k v where
+--   type KvSeqId dbhandle t k v :: Type
+
+--   readKvDb :: dbhandle -> Query t k v -> IO (QueryResult t k v, KvSeqId dbhandle t k v)
+--   writeKvdb :: dbhandle -> KvSeqId dbhandle t k v -> KvSeqId dbhandle t k v -> DiffMap t k v -> IO (KvSeqId dbhandle t k v )
+
+
+
+
+
+holdingSeqIdLock :: BackingStore t k v -> (Int ->  IO (a,  Int)) -> IO a
+holdingSeqIdLock BackingStore{..} act = bracketOnError
+  (atomically $ takeTMVar bsId)
+  (atomically . putTMVar  bsId) $ \sq -> mask $ \restore -> do
+    (r, sq') <- restore $ act sq
+    atomically $ putTMVar lastSeqId sq'
+    pure r
+
+
+
+data BadSeqIdException = BadSeqIdException
+  { was :: Int
+  , expected :: Int
+  } deriving stock (Show, Eq)
+  deriving anyclass (Exception)
+
+
+writeDumbDb :: forall (state :: StateKind MapFlavour) t k v.
+  Ord k
+  => Int
+  -> Int
+  -> BackingStore t k v
+  -> DiffMap t k v
+  -> IO Int
+writeDumbDb old_sq new_sq bs@BackingStore{..} dm = holdingSeqIdLock bs $ \sq -> do
+  when (old_sq /= sq) $ throwIO $ BadSeqIdException { was = sq, expected = old_sq }
+  atomicModifyIORef' ref ((,()) . applyDiffMapToMap dm)
+  pure (new_sq, new_sq)
+
+writeOne :: Ord k => DiffMap t k v -> BackingStore t k v -> IO ()
+writeOne dm (BackingStore ref) =
+
+
+readDumbDb :: forall (state :: StateKind MapFlavour). (AllMap KeysOrd state)
+  => DumbDb state
+  -> OnDiskMappings state Query
+  -> IO (OnDiskMappings state QueryResult, Int)
+readDumbDb db@DumbDb{..} q = holdingSeqIdLock db $ \sq -> (,sq) . (,sq) <$> zipAcOnDiskMappings (Proxy :: Proxy KeysOrd) readOne q backingStore
+
+readOne :: forall (t :: MapFlavour) k v. Ord k => Query t k v -> BackingStore t k v -> IO (QueryResult t k v)
+readOne q (BackingStore r) = queryMap q <$> readIORef r

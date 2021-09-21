@@ -46,10 +46,12 @@ instance forall (state :: (Type -> Type -> Type) -> Type).
   prepare (WrappedKVHandle h) (DBRequest q) = let
     q' = Map.mapKeysMonotonic coerce q
     in coerce <$> haskeyPrepareQuery h q'
-
   -- submit (coerce -> rh) op = do
   --   (payload, coerce -> snapshot) <- haskeySubmitQuery rh $ \rangeQueryResults (Map.mapKeysMonotonic coerce -> pointQueryResults) -> case op DBOpArgs{..} of
   --     DBOpResult{..} -> (payload, snapshot, changes)
   --   pure DBResponse{..}
 
   rollback _ _ = throwIO $ userError "unimplemented"
+
+-- >>> show "dougrulz"
+-- "\"dougrulz\""

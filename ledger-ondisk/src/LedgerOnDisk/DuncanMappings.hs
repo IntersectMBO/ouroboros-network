@@ -60,21 +60,21 @@ class (HasMappings state, HasOnlyMappings (OnDiskMappings state))
   projectOnDiskMappings :: state map -> OnDiskMappings state map
   injectOnDiskMappings  :: OnDiskMappings state map -> state any -> state map
 
-class MonoidialMapping map where
-    memptyMap   :: Ord k => map k v
-    mappendMaps :: Ord k => map k v -> map k v -> map k v
+-- class MonoidialMapping map where
+--     memptyMap   :: Ord k => map k v
+--     mappendMaps :: Ord k => map k v -> map k v -> map k v
 
-instance MonoidialMapping DiffMap where
-    memptyMap   = mempty
-    mappendMaps = (<>)
+-- instance MonoidialMapping DiffMap where
+--     memptyMap   = mempty
+--     mappendMaps = (<>)
 
-instance (HasOnlyMappings (OnDiskMappings state), MonoidialMapping map)
-      => Semigroup (OnDiskMappings state map) where
-   (<>) = zipMappings mappendMaps
+-- instance (HasOnlyMappings (OnDiskMappings state), MonoidialMapping map)
+--       => Semigroup (OnDiskMappings state map) where
+--    (<>) = zipMappings mappendMaps
 
-instance (HasOnlyMappings (OnDiskMappings state), MonoidialMapping map)
-      => Monoid (OnDiskMappings state map) where
-   mempty = constMappings memptyMap
+-- instance (HasOnlyMappings (OnDiskMappings state), MonoidialMapping map)
+--       => Monoid (OnDiskMappings state map) where
+--    mempty = constMappings memptyMap
 
 
 -------------------------------------

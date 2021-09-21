@@ -11,7 +11,7 @@ import Data.Hashable
 import LedgerOnDisk.Diff
 
 pureApplyOperation ::
-  (Eq k, Hashable k, Semigroup v) =>
+  (Eq k, Hashable k) =>
   HashSet k ->
   ( HashMap k (Maybe v) ->
     (HashMap k (Diff v), a)
