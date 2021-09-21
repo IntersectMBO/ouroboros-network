@@ -10,6 +10,7 @@ module Ouroboros.Network.PeerSelection.Simple
   ) where
 
 
+import           Data.Foldable (toList)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSTM.Strict
@@ -34,11 +35,9 @@ withPeerSelectionActions
   -> Tracer IO TracePublicRootPeers
   -> TimeoutFn IO
   -> STM IO PeerSelectionTargets
-  -> [(Int, Map RelayAddress PeerAdvertise)]
-  -- ^ static local root peers
-  -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
+  -> STM IO [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ local root peers
-  -> StrictTVar IO [RelayAddress]
+  -> STM IO [RelayAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
   -> (NumberOfPeers -> STM IO ())
@@ -47,12 +46,12 @@ withPeerSelectionActions
   -- ^ continuation, recieves a handle to the local roots peer provider thread
   -- (only if local root peers where non-empty).
   -> IO a
-withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _staticLocalRootPeers
-  localRootPeersVar publicRootPeersVar peerStateActions reqLedgerPeers getLedgerPeers k = do
-    localRootsVar <- newTVarIO []
+withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets
+  readLocalRootPeers readPublicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
+    localRootsVar <- newTVarIO mempty
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
-            readLocalRootPeers = pure [],
+            readLocalRootPeers = toList <$> readTVar localRootsVar,
             requestPublicRootPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions
@@ -62,7 +61,7 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _s
         localRootTracer
         timeout
         DNS.defaultResolvConf
-        localRootPeersVar
+        readLocalRootPeers
         localRootsVar)
       (\thread -> k (Just thread) peerSelectionActions)
   where
@@ -85,5 +84,5 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _s
       publicRootPeersProvider publicRootTracer
                               timeout
                               DNS.defaultResolvConf
-                              publicRootPeersVar
+                              readPublicRootPeers
                               ($ n)

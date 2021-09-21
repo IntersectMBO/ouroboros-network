@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 --  'resolverResource' and 'asyncResolverResource' are not used when compiled
 --  on @Windows@
@@ -33,6 +34,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     Socket.PortNumber,
   ) where
 
+import           Data.Aeson
 import           Data.Word (Word32)
 import           Data.List (elemIndex, foldl')
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -41,7 +43,12 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.IntMap.Strict as IntMap
+import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Text (Text)
+import qualified Data.Text as Text
+import           Text.Read (readMaybe)
 import           Data.Void (Void, absurd)
 
 import           Control.Applicative ((<|>))
@@ -75,6 +82,19 @@ data DomainAddress = DomainAddress {
   }
   deriving (Show, Eq, Ord)
 
+instance FromJSON DomainAddress where
+  parseJSON = withObject "DomainAddress" $ \v ->
+    DomainAddress
+      <$> (encodeUtf8 <$> v .: "addr")
+      <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
+
+instance ToJSON DomainAddress where
+  toJSON da =
+    object
+      [ "addr" .= decodeUtf8 (daDomain da)
+      , "port" .= (fromIntegral (daPortNumber da) :: Int)
+      ]
+
 -- | A relay can have either an IP address and a port number or
 -- a domain with a port number
 data RelayAddress = RelayDomain !DomainAddress
@@ -90,6 +110,33 @@ instance NFData RelayAddress where
     case ip of
       IP.IPv4 ipv4 -> rnf (IP.fromIPv4w ipv4)
       IP.IPv6 ipv6 -> rnf (IP.fromIPv6w ipv6)
+
+instance FromJSON RelayAddress where
+  parseJSON = withObject "RelayAddress" $ \v -> do
+    addr <- v .: "addr"
+    port <- v .: "port"
+    return (toRelayAddress addr port)
+
+instance ToJSON RelayAddress where
+  toJSON (RelayDomain (DomainAddress addr port)) =
+    object
+      [ "addr" .= decodeUtf8 addr
+      , "port" .= (fromIntegral port :: Int)
+      ]
+  toJSON (RelayAddress ip port) =
+    object
+      [ "addr" .= Text.pack (show ip)
+      , "port" .= (fromIntegral port :: Int)
+      ]
+
+-- | Parse a address field as either an IP address or a DNS address.
+-- Returns corresponding RelayAddress.
+--
+toRelayAddress :: Text -> Int -> RelayAddress
+toRelayAddress address port =
+    case readMaybe (Text.unpack address) of
+      Nothing   -> RelayDomain (DomainAddress (encodeUtf8 address) (fromIntegral port))
+      Just addr -> RelayAddress addr (fromIntegral port)
 
 -----------------------------------------------
 -- Resource
@@ -302,17 +349,17 @@ localRootPeersProvider
   :: Tracer IO TraceLocalRootPeers
   -> TimeoutFn IO
   -> DNS.ResolvConf
-  -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
-  -- ^ input 'TVar'
-  -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
+  -> STM IO [(Int, Map RelayAddress PeerAdvertise)]
+  -- ^ input
+  -> StrictTVar IO (Seq (Int, Map Socket.SockAddr PeerAdvertise))
   -- ^ output 'TVar'
   -> IO Void
 localRootPeersProvider tracer
                        timeout
                        resolvConf
-                       domainsGroupsVar 
+                       readDomainsGroups
                        rootPeersGroupsVar = do
-    atomically (readTVar domainsGroupsVar) >>= loop
+    atomically readDomainsGroups >>= loop
   where
     loop domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
@@ -322,18 +369,20 @@ localRootPeersProvider tracer
       let rr = newResolverResource resolvConf
 #endif
       let
-          -- Flatten the local root peers groups and associate a group index to
+          -- Flatten the local root peers groups and associate its index to
           -- each DomainAddress to be monitorized.
+          -- NOTE: We need to pair the index because the resulting list can be
+          -- sparse.
           domains :: [(Int, DomainAddress, PeerAdvertise)]
-          domains = [ (group, domain, pa)
-                    | (group, (_, m)) <- zip [0..] domainsGroups
+          domains = [ (index, domain, pa)
+                    | (index, (_, m)) <- zip [0..] domainsGroups
                     , (RelayDomain domain, pa) <- Map.toList m ]
           -- Since we want to preserve the number of groups, the targets, and
           -- the addresses within each group, we fill the TVar with
           -- a placeholder list, in order for each monitored DomainAddress to
           -- be updated in the correct group.
-          rootPeersGroups :: [(Int, Map Socket.SockAddr PeerAdvertise)]
-          rootPeersGroups = map (\(target, m) -> (target, f m)) domainsGroups
+          rootPeersGroups :: Seq (Int, Map Socket.SockAddr PeerAdvertise)
+          rootPeersGroups = Seq.fromList $ map (\(target, m) -> (target, f m)) domainsGroups
             where
                f :: Map RelayAddress PeerAdvertise -> Map Socket.SockAddr PeerAdvertise
                f = Map.mapKeys
@@ -365,7 +414,7 @@ localRootPeersProvider tracer
                     <$> waitAnyCatchSTM as)
               <|>
                   -- wait for configuraiton changes
-                  (do a <- readTVar domainsGroupsVar
+                  (do a <- readDomainsGroups
                       -- wait until the input domains groups changes
                       check (a /= domainsGroups)
                       return (Right a))
@@ -405,15 +454,15 @@ localRootPeersProvider tracer
 
     monitorDomain
       :: Resource DNSorIOError DNS.Resolver
-      -> [(Int, Map Socket.SockAddr PeerAdvertise)]
+      -> Seq (Int, Map Socket.SockAddr PeerAdvertise)
       -- ^ local group peers which didnhh
       -> (Int, DomainAddress, PeerAdvertise)
       -> IO Void
-    monitorDomain rr0 rootPeersGroups0 (group, domain, advertisePeer) =
+    monitorDomain rr0 rootPeersGroups0 (index, domain, advertisePeer) =
         go rr0 rootPeersGroups0 0
       where
         go :: Resource DNSorIOError DNS.Resolver
-           -> [(Int, Map Socket.SockAddr PeerAdvertise)]
+           -> Seq (Int, Map Socket.SockAddr PeerAdvertise)
            -> DiffTime -> IO Void
         go !rr !rootPeersGroups !ttl = do
           when (ttl > 0) $ do
@@ -429,21 +478,19 @@ localRootPeersProvider tracer
             Left err -> go rrNext rootPeersGroups (ttlForDnsError err ttl)
             Right results -> do
               rootPeersGroups' <- atomically $ do
-                let rootPeersGroups' = IntMap.fromList $ zip [0,1..] rootPeersGroups
-                    (target, entry)  = rootPeersGroups' IntMap.! group
+                let (target, entry)  = rootPeersGroups `Seq.index` index
                     resultsMap       = Map.fromList (map fst results)
                     entry'           = resultsMap <> entry
-                    newRootPeers     =
-                      IntMap.elems $
-                      IntMap.insert group
-                                    (target, entry')
-                                    rootPeersGroups'
+                    rootPeersGroups' =
+                      Seq.update index
+                                 (target, entry')
+                                 rootPeersGroups
 
                 -- Only overwrite if it changed:
                 when (entry /= entry') $
-                  writeTVar rootPeersGroupsVar newRootPeers
+                  writeTVar rootPeersGroupsVar rootPeersGroups'
 
-                return newRootPeers
+                return rootPeersGroups'
 
               go rrNext rootPeersGroups' (ttlForResults (map snd results))
 
@@ -465,11 +512,11 @@ data TracePublicRootPeers =
 publicRootPeersProvider :: Tracer IO TracePublicRootPeers
                         -> TimeoutFn IO
                         -> DNS.ResolvConf
-                        -> StrictTVar IO [RelayAddress]
+                        -> STM IO [RelayAddress]
                         -> ((Int -> IO (Set Socket.SockAddr, DiffTime)) -> IO a)
                         -> IO a
-publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
-    domains <- atomically $ readTVar domainsVar
+publicRootPeersProvider tracer timeout resolvConf readDomains action = do
+    domains <- atomically readDomains
     traceWith tracer (TracePublicRootRelayAddresses domains)
 #if !defined(mingw32_HOST_OS)
     rr <- resolverResource resolvConf
@@ -482,7 +529,7 @@ publicRootPeersProvider tracer timeout resolvConf domainsVar action = do
     requestPublicRootPeers :: StrictTVar IO (Resource DNSorIOError DNS.Resolver)
                            -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
-        domains <- atomically $ readTVar domainsVar
+        domains <- atomically readDomains
         traceWith tracer (TracePublicRootRelayAddresses domains)
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr

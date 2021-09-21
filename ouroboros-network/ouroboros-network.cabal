@@ -154,6 +154,7 @@ library
                        TypeFamilies,
                        TypeInType
   build-depends:       base              >=4.9 && <4.15,
+                       aeson,
                        async             >=2.2 && <2.3,
                        base16-bytestring,
                        bytestring        >=0.10 && <0.11,
@@ -276,6 +277,7 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection
                        Test.Ouroboros.Network.PeerSelection.Instances
                        Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+                       Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
                        Test.Ouroboros.Network.PeerSelection.Script
@@ -291,6 +293,7 @@ test-suite test
   default-language:    Haskell2010
   build-depends:       base,
                        QuickCheck,
+                       aeson,
                        array,
                        async,
                        bytestring,
@@ -299,6 +302,7 @@ test-suite test
                        dns,
                        deque,
                        hashable,
+                       iproute,
                        mtl,
                        network,
                        process,
@@ -308,6 +312,7 @@ test-suite test
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
+                       text,
 
                        cardano-prelude,
                        cardano-slotting,
