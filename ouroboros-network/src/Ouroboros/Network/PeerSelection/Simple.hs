@@ -35,7 +35,7 @@ withPeerSelectionActions
   :: Tracer IO TraceLocalRootPeers
   -> Tracer IO TracePublicRootPeers
   -> TimeoutFn IO
-  -> PeerSelectionTargets
+  -> STM IO PeerSelectionTargets
   -> [(Int, Map RelayAddress PeerAdvertise)]
   -- ^ static local root peers
   -> [(DomainAddress, PeerAdvertise)]
@@ -49,11 +49,11 @@ withPeerSelectionActions
   -- ^ continuation, recieves a handle to the local roots peer provider thread
   -- (only if local root peers where non-empty).
   -> IO a
-withPeerSelectionActions localRootTracer publicRootTracer timeout targets _staticLocalRootPeers
+withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _staticLocalRootPeers
   localRootPeers publicRootPeers peerStateActions reqLedgerPeers getLedgerPeers k = do
     localRootsVar <- newTVarIO Map.empty
     let peerSelectionActions = PeerSelectionActions {
-            readPeerSelectionTargets = pure targets,
+            readPeerSelectionTargets = readTargets,
             readLocalRootPeers = pure [],
             requestPublicRootPeers,
             requestPeerGossip = \_ -> pure [],

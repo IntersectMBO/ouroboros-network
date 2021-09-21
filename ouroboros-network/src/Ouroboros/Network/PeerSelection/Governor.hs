@@ -39,13 +39,13 @@ import           Data.Semigroup (Min(..))
 import           Control.Applicative (Alternative((<|>)))
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Concurrent.JobPool (JobPool)
-import           Control.Monad (forever)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith)
+import           System.Random
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -574,10 +574,11 @@ peerChurnGovernor :: forall m.
                      , MonadMonotonicTime m
                      , MonadDelay m
                      )
-                   => PeerSelectionTargets
-                 -> StrictTVar m PeerSelectionTargets
+                  => StdGen
+                  -> PeerSelectionTargets
+                  -> StrictTVar m PeerSelectionTargets
                   -> m Void
-peerChurnGovernor base peerSelectionVar = do
+peerChurnGovernor inRng base peerSelectionVar = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -589,9 +590,10 @@ peerChurnGovernor base peerSelectionVar = do
       targetNumberOfActivePeers = targetNumberOfActivePeers base
       })
   endTs0 <- getMonotonicTime
-  threadDelay $ diffTime churnInterval $ Time $ diffTime endTs0 startTs0
+  fuzzyDelay inRng (Time $ diffTime endTs0 startTs0) >>= go
 
-  forever $ do
+  where
+    go !rng = do
       startTs <- getMonotonicTime
 
       -- Purge the worst active peer(s).
@@ -629,13 +631,20 @@ peerChurnGovernor base peerSelectionVar = do
         , targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
         })
       endTs <- getMonotonicTime
-      threadDelay $ diffTime churnInterval $ Time $ diffTime endTs startTs
 
+      fuzzyDelay rng (Time $ diffTime endTs startTs) >>= go
 
-  where
-    -- The time between running the churn governor.
+    -- Randomly delay between churnInterval and churnInterval + maxFuzz seconds.
+    fuzzyDelay :: StdGen -> Time -> m StdGen
+    fuzzyDelay rng execTime = do
+      let (fuzz, rng') = randomR (0, 600 :: Double) rng
+      threadDelay $ realToFrac fuzz + churnInterval `diffTime` execTime
+      return rng'
+
+    -- The min time between running the churn governor.
     churnInterval :: Time
-    churnInterval = Time 3600 -- 1h
+    churnInterval = Time 3300
+
 
     -- Replace 20% or at least on peer every churnInterval.
     decrease :: Int -> Int
