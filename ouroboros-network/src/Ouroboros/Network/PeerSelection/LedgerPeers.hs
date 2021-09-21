@@ -13,14 +13,20 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
     PoolStake (..),
     AccPoolStake (..),
     TraceLedgerPeers (..),
+    NumberOfPeers (..),
     pickPeers,
     accPoolStake,
+    runLedgerPeers,
+    UseLedgerAfter (..),
 
     Socket.PortNumber
     ) where
 
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad (when)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.IP as IP
 import           Data.List (foldl')
@@ -29,8 +35,12 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Ratio
+import qualified Data.Set as Set
+import           Data.Set (Set)
 import           Data.Word
+import           Data.Void (Void)
 import qualified Network.Socket as Socket
+import           Network.Socket (SockAddr)
 import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
@@ -38,6 +48,15 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAddress (..))
 
 import           Text.Printf
+
+-- | Only use the ledger after the given slot number.
+data UseLedgerAfter = DontUseLedger | UseLedgerAfter SlotNo deriving (Eq, Show)
+
+isLedgerPeersEnabled :: UseLedgerAfter -> Bool
+isLedgerPeersEnabled DontUseLedger = False
+isLedgerPeersEnabled _             = True
+
+newtype NumberOfPeers = NumberOfPeers Word16 deriving Show
 
 newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
       lpGetPeers :: SlotNo -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
@@ -47,11 +66,17 @@ newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
 data TraceLedgerPeers =
       PickedPeer !RelayAddress !AccPoolStake ! PoolStake
       -- ^ Trace for a peer picked with accumulated and relative stake of its pool.
-    | PickedPeers !Word16 ![RelayAddress]
+    | PickedPeers !NumberOfPeers ![RelayAddress]
       -- ^ Trace for the number of peers we wanted to pick and the list of peers picked.
     | FetchingNewLedgerState !Int
       -- ^ Trace for fetching a new list of peers from the ledger. Int is the number of peers
       -- returned.
+    | DisabledLedgerPeers
+      -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedger.
+    | WaitingOnRequest
+    | RequestForPeers !NumberOfPeers
+    | ReusingLedgerState !Int !DiffTime
+    | FallingBackToBootstrapPeers
 
 
 instance Show TraceLedgerPeers where
@@ -62,15 +87,24 @@ instance Show TraceLedgerPeers where
             (fromRational (unAccPoolStake ackStake) :: Double)
             (show $ unPoolStake stake)
             (fromRational (unPoolStake stake) :: Double)
-    show (PickedPeers n peers) =
+    show (PickedPeers (NumberOfPeers n) peers) =
         printf "PickedPeers %d %s" n (show peers)
     show (FetchingNewLedgerState cnt) =
         printf "Fetching new ledgerstate, %d registered pools"
             cnt
+    show WaitingOnRequest = "WaitingOnRequest"
+    show (RequestForPeers (NumberOfPeers cnt)) = printf "RequestForPeers %d" cnt
+    show (ReusingLedgerState cnt age) =
+        printf "ReusingLedgerState %d peers age %s"
+          cnt
+          (show age)
+    show FallingBackToBootstrapPeers = "Falling back to bootstrap peers"
+    show DisabledLedgerPeers = "LedgerPeers is disabled"
 
-
-data RelayAddress = RelayAddressDomain DomainAddress
-                  | RelayAddressAddr IP.IP Socket.PortNumber
+-- | A relay can have either an IP address and a port number or
+-- a domain with a port number
+data RelayAddress = RelayDomain DomainAddress
+                  | RelayAddress IP.IP Socket.PortNumber
                   deriving (Show, Eq, Ord)
 
 -- | The relative stake of a stakepool in relation to the total amount staked.
@@ -125,10 +159,10 @@ pickPeers :: forall m. Monad m
           => StdGen
           -> Tracer m TraceLedgerPeers
           -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress)
-          -> Word16
+          -> NumberOfPeers
           -> m (StdGen, [RelayAddress])
 pickPeers inRng _ pools _ | Map.null pools = return (inRng, [])
-pickPeers inRng tracer pools cnt = go inRng cnt []
+pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
   where
     go :: StdGen -> Word16 -> [RelayAddress] -> m (StdGen, [RelayAddress])
     go rng 0 picked = return (rng, picked)
@@ -144,3 +178,92 @@ pickPeers inRng tracer pools cnt = go inRng cnt []
                      relay = relays NonEmpty.!! ix
                  traceWith tracer $ PickedPeer relay ackStake stake
                  go rng'' (n - 1) (relay : picked)
+
+
+-- | Run the LedgerPeers worker thread.
+runLedgerPeers :: forall m.
+                      ( MonadAsync m
+                      , MonadTime m
+                      )
+               => StdGen
+               -> Tracer m TraceLedgerPeers
+               -> UseLedgerAfter
+               -> LedgerPeersConsensusInterface m
+               -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
+               -> STM m NumberOfPeers
+               -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
+               -> m Void
+runLedgerPeers inRng tracer useLedgerAfter LedgerPeersConsensusInterface{..} doResolve
+               getReq putRsp = do
+    go inRng (Time 0) Map.empty
+  where
+    go :: StdGen -> Time -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress) -> m Void
+    go rng oldTs peerMap = do
+        let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerAfter
+                                  then 30
+                                  else 1847 -- Close to but not exactly 30min.
+
+        traceWith tracer WaitingOnRequest
+        numRequested <- atomically getReq
+        traceWith tracer $ RequestForPeers numRequested
+        !now <- getMonotonicTime
+        let age = diffTime now oldTs
+        (peerMap', ts) <- if age > peerListLifeTime
+                             then
+                                 case useLedgerAfter of
+                                   DontUseLedger -> do
+                                     traceWith tracer DisabledLedgerPeers
+                                     return (Map.empty, now)
+                                   UseLedgerAfter slot -> do
+                                     peers_m <- atomically $ lpGetPeers slot
+                                     let peers = maybe Map.empty accPoolStake peers_m
+                                     traceWith tracer $ FetchingNewLedgerState $ Map.size peers
+                                     return (peers, now)
+
+                             else do
+                                 traceWith tracer $ ReusingLedgerState (Map.size peerMap) age
+                                 return (peerMap, oldTs)
+
+        if Map.null peerMap'
+           then do
+               when (isLedgerPeersEnabled useLedgerAfter) $
+                   traceWith tracer FallingBackToBootstrapPeers
+               atomically $ putRsp Nothing
+               go rng ts peerMap'
+           else do
+               let ttl = 5 -- TTL, used as re-request interval by the governor.
+
+               (rng', !pickedPeers) <- pickPeers rng tracer peerMap' numRequested
+               traceWith tracer $ PickedPeers numRequested pickedPeers
+
+               let (plainAddrs, domains) = foldl' splitPeers (Set.empty, []) pickedPeers
+
+               domainAddrs <- doResolve domains
+
+               let (rng'', rngDomain) = split rng'
+                   pickedAddrs = snd $ foldl' pickDomainAddrs (rngDomain, plainAddrs)
+                                                       domainAddrs
+
+               atomically $ putRsp $ Just (pickedAddrs, ttl)
+               go rng'' ts peerMap'
+
+    -- Randomly pick one of the addresses returned in the DNS result.
+    pickDomainAddrs :: (StdGen, Set SockAddr)
+                    -> Set SockAddr
+                    -> (StdGen, Set SockAddr)
+    pickDomainAddrs (rng, pickedAddrs) addrs | Set.null addrs = (rng, pickedAddrs)
+    pickDomainAddrs (rng, pickedAddrs) addrs =
+        let (ix, rng') = randomR (0, Set.size addrs - 1) rng
+            !pickedAddr = Set.elemAt ix addrs in
+        (rng', Set.insert pickedAddr pickedAddrs)
+
+
+    -- Divide the picked peers form the ledger into addresses we can use directly and
+    -- domain names that we need to resolve.
+    splitPeers :: (Set SockAddr, [DomainAddress])
+               -> RelayAddress
+               -> (Set SockAddr, [DomainAddress])
+    splitPeers (addrs, domains) (RelayDomain domain) = (addrs, domain : domains)
+    splitPeers (addrs, domains) (RelayAddress ip port) =
+        let !addr = IP.toSockAddr (ip, port) in
+        (Set.insert addr addrs, domains)
