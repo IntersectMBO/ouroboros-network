@@ -1905,7 +1905,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
       tracer
       timeout
       DNS.defaultResolvConf
-      readDomains $ \requestPublicRootPeers ->
+      readDomains
+      ioDNSActions $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer
