@@ -31,6 +31,7 @@ module Ouroboros.Network.PeerSelection.Governor (
     sanePeerSelectionTargets,
     establishedPeersStatus,
     PeerSelectionState(..),
+    PeerSelectionCounters(..)
 ) where
 
 import           Data.Void (Void)
@@ -44,7 +45,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer(..), traceWith)
+import           Control.Tracer (Tracer(..), traceWith, contramap)
 import           System.Random
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -439,16 +440,20 @@ peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
                           Ord peeraddr)
                       => Tracer m (TracePeerSelection peeraddr)
                       -> Tracer m (DebugPeerSelection peeraddr peerconn)
+                      -> Tracer m PeerSelectionCounters
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer actions policy =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
-        tracer debugTracer
+        tracer (debugTracer <> contramap transform countersTracer)
         actions policy
         jobPool
         emptyPeerSelectionState
+  where
+    transform :: Ord peeraddr => DebugPeerSelection peeraddr peerconn -> PeerSelectionCounters
+    transform (TraceGovernorState _ _ st) = peerStateToCounters st
 
 
 -- | Our pattern here is a loop with two sets of guarded actions:
