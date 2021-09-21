@@ -228,6 +228,21 @@ acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionsLimit b
         Just io -> spawnOne addr statusVar resQ threadsVar applicationStart (io channel `finally` close)
       pure (Just nextSocket)
 
+trackConnections :: ThreadsVar
+                 -> Tracer IO AcceptConnectionsPolicyTrace
+                 -> IO ()
+trackConnections threadsVar tracer = go 0
+
+  where
+    go lastCount = do
+        count <- STM.atomically $ do
+            c <- Set.size <$> STM.readTVar threadsVar
+            if c == lastCount then STM.retry
+                              else return c
+        traceWith tracer $ ServerTraceAcceptConnections count
+        go count
+
+
 -- | Main server loop, which runs alongside the `acceptLoop`. It waits for
 -- the results of connection threads, as well as the `Main` action, which
 -- determines when/if the server should stop.
@@ -293,6 +308,7 @@ run
 run errroPolicyTrace acceptPolicyTrace socket acceptedConnectionLimit acceptException beginConnection applicationStart complete main statusVar = do
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
+  conMonitor <- Async.async (trackConnections threadsVar acceptPolicyTrace)
   let acceptLoopDo = acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
       -- The accept loop is killed when the main loop stops and the main
       -- loop is killed if the accept loop stops.
@@ -300,6 +316,7 @@ run errroPolicyTrace acceptPolicyTrace socket acceptedConnectionLimit acceptExce
       killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
         forM_ (Set.toList children) Async.cancel
+        Async.cancel conMonitor
   -- After both the main and accept loop have been killed, any remaining
   -- spawned threads are cancelled.
   (snd <$> Async.concurrently acceptLoopDo mainDo) `finally` killChildren

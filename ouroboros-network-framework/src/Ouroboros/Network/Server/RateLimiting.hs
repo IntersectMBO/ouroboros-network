@@ -147,6 +147,7 @@ data AcceptConnectionsPolicyTrace
       = ServerTraceAcceptConnectionRateLimiting DiffTime Int
       | ServerTraceAcceptConnectionHardLimit Word32
       | ServerTraceAcceptConnectionResume Int
+      | ServerTraceAcceptConnections Int
   deriving (Eq, Ord, Typeable)
 
 instance Show AcceptConnectionsPolicyTrace where
@@ -161,3 +162,4 @@ instance Show AcceptConnectionsPolicyTrace where
     show (ServerTraceAcceptConnectionResume numberOfConnections) =
       printf "hard rate limit over, accepting connections again, currently serving %d connections"
         numberOfConnections
+    show (ServerTraceAcceptConnections count) = printf "current connetions %d" count 
