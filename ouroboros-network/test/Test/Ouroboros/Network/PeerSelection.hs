@@ -28,6 +28,7 @@ import           Data.Void (Void)
 import qualified Data.Signal as Signal
 import           Data.Signal (Signal, Events, E(E), TS(TS))
 import qualified Data.OrdPSQ as PSQ
+import           System.Random (mkStdGen)
 
 import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
@@ -1863,7 +1864,8 @@ selectGovState :: Eq a
 selectGovState f =
     Signal.nub
   . fmap f
-  . Signal.fromChangeEvents Governor.emptyPeerSelectionState
+  -- TODO: #3182 Rng seed should come from quickcheck.
+  . Signal.fromChangeEvents (Governor.emptyPeerSelectionState $ mkStdGen 42)
   . Signal.selectEvents
       (\case GovernorDebug (TraceGovernorState _ _ st) -> Just st
              _                                         -> Nothing)
@@ -1903,6 +1905,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
 
         peerSelectionGovernor
           tracer tracer tracer
+          -- TODO: #3182 Rng seed should come from quickcheck.
+          (mkStdGen 42)
           actions { requestPublicRootPeers }
           policy
   where

@@ -16,6 +16,7 @@ import           Control.Concurrent.JobPool (Job(..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (SomeException)
+import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -218,6 +219,8 @@ belowTargetOther actions
     numAvailableToConnect= Set.size availableToConnect
 
 
+-- | Must be larger than '2' since we add a random value drawn from '(-2, 2)`.
+--
 baseColdPeerRetryDiffTime :: Int
 baseColdPeerRetryDiffTime = 5
 
@@ -239,6 +242,7 @@ jobPromoteColdPeer PeerSelectionActions {
     handler e = return $
       Completion $ \st@PeerSelectionState {
                       establishedPeers,
+                      fuzzRng,
                       targets = PeerSelectionTargets {
                                   targetNumberOfEstablishedPeers
                                 }
@@ -247,12 +251,15 @@ jobPromoteColdPeer PeerSelectionActions {
         let (failCount, knownPeers') = KnownPeers.incrementFailCount
                                          peeraddr
                                          (knownPeers st)
+            (fuzz, fuzzRng') = randomR (-2, 2 :: Double) fuzzRng
 
             -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
             delay :: DiffTime
-            delay = fromIntegral $
-                baseColdPeerRetryDiffTime
-              * 2 ^ (pred failCount `min` maxColdPeerRetryBackoff)
+            delay = realToFrac fuzz
+                  + fromIntegral
+                      ( baseColdPeerRetryDiffTime
+                      * 2 ^ (pred failCount `min` maxColdPeerRetryBackoff)
+                      )
         in
           Decision {
             decisionTrace = TracePromoteColdFailed targetNumberOfEstablishedPeers
@@ -264,7 +271,8 @@ jobPromoteColdPeer PeerSelectionActions {
                                                         (delay `addTime` now)
                                                         knownPeers',
                               inProgressPromoteCold = Set.delete peeraddr
-                                                        (inProgressPromoteCold st)
+                                                        (inProgressPromoteCold st),
+                              fuzzRng = fuzzRng'
                             },
             decisionJobs  = []
           }
