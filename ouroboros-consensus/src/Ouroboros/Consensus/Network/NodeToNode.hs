@@ -27,7 +27,7 @@ module Ouroboros.Consensus.Network.NodeToNode (
   , mkApps
     -- ** Projections
   , initiator
-  , responder
+  , initiatorAndResponder
     -- * Re-exports
   , ChainSyncTimeout (..)
   ) where
@@ -57,6 +57,9 @@ import           Ouroboros.Network.Driver
 import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.PeerSelection.PeerMetric.Type
+                     (ReportFetchedMetricsSTM, ReportHeaderMetricsSTM,
+                     ReportPeerMetrics (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
@@ -111,6 +114,7 @@ data Handlers m peer blk = Handlers {
         :: peer
         -> NodeToNodeVersion
         -> ControlMessageSTM m
+        -> ReportHeaderMetricsSTM m
         -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
@@ -127,6 +131,7 @@ data Handlers m peer blk = Handlers {
     , hBlockFetchClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
+        -> ReportFetchedMetricsSTM m
         -> BlockFetchClient (Header blk) blk m ()
 
     , hBlockFetchServer
@@ -453,9 +458,10 @@ mkApps
   -> Tracers m remotePeer blk e
   -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA)
   -> m ChainSyncTimeout
+  -> ReportPeerMetrics m remotePeer
   -> Handlers m remotePeer blk
   -> Apps m remotePeer bCS bBF bTX bTX2 bKA ()
-mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
+mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout ReportPeerMetrics {..} Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
@@ -487,7 +493,8 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
-                  $ hChainSyncClient them version controlMessageSTM varCandidate
+                  $ hChainSyncClient them version controlMessageSTM
+                      (reportHeader them) varCandidate
               return ((), trailing)
 
     aChainSyncServer
@@ -526,7 +533,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
           (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
           timeLimitsBlockFetch
           channel
-          $ hBlockFetchClient version controlMessageSTM clientCtx
+          $ hBlockFetchClient version controlMessageSTM (reportFetch them) clientCtx
 
     aBlockFetchServer
       :: NodeToNodeVersion
@@ -663,7 +670,7 @@ initiator
   :: MiniProtocolParameters
   -> NodeToNodeVersion
   -> Apps m (ConnectionId peer) b b b b b a
-  -> OuroborosApplication 'InitiatorMode peer b m a Void
+  -> OuroborosBundle 'InitiatorMode peer b m a Void
 initiator miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
@@ -687,28 +694,41 @@ initiator miniProtocolParameters version Apps {..} =
         })
       version
 
--- | A projection from 'NetworkApplication' to a server-side
--- 'OuroborosApplication' for the node-to-node protocols.
+-- | A bi-directional network applicaiton.
 --
--- See 'initiatorNetworkApplication' for rationale for the @_version@ arg.
-responder
+-- Implementation note: network currently doesn't enable protocols conditional
+-- on the protocol version, but it eventually may; this is why @_version@ is
+-- currently unused.
+initiatorAndResponder
   :: MiniProtocolParameters
   -> NodeToNodeVersion
   -> Apps m (ConnectionId peer) b b b b b a
-  -> OuroborosApplication 'ResponderMode peer b m Void a
-responder miniProtocolParameters version Apps {..} =
+  -> OuroborosBundle 'InitiatorResponderMode peer b m a a
+initiatorAndResponder miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
-      (\them _controlMessageSTM -> NodeToNodeProtocols {
+      (\them controlMessageSTM -> NodeToNodeProtocols {
           chainSyncProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aChainSyncServer version them))),
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aChainSyncClient version controlMessageSTM them))
+              (MuxPeerRaw (aChainSyncServer version                   them))),
           blockFetchProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer version them))),
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aBlockFetchClient version controlMessageSTM them))
+              (MuxPeerRaw (aBlockFetchServer version                   them))),
           txSubmissionProtocol =
             if version >= NodeToNodeV_6
-              then ResponderProtocolOnly (MuxPeerRaw (aTxSubmission2Server version them))
-              else ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer  version them)),
+              then
+                (InitiatorAndResponderProtocol
+                  (MuxPeerRaw (aTxSubmission2Client version controlMessageSTM them))
+                  (MuxPeerRaw (aTxSubmission2Server version                   them)))
+              else
+                (InitiatorAndResponderProtocol
+                  (MuxPeerRaw (aTxSubmissionClient version controlMessageSTM them))
+                  (MuxPeerRaw (aTxSubmissionServer version                   them))),
           keepAliveProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aKeepAliveServer version them)))
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them))
+              (MuxPeerRaw (aKeepAliveServer version                   them)))
         })
       version
