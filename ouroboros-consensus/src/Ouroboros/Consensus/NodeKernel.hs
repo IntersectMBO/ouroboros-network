@@ -102,6 +102,10 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
       -- | The fetch client registry, used for the block fetch clients.
     , getFetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
 
+      -- | The fetch mode, used by diffusion.
+      --
+    , getFetchMode           :: STM m FetchMode
+
       -- | Read the current candidates
     , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
 
@@ -164,6 +168,7 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
       , getMempool             = mempool
       , getTopLevelConfig      = cfg
       , getFetchClientRegistry = fetchClientRegistry
+      , getFetchMode           = readFetchMode blockFetchInterface
       , getNodeCandidates      = varCandidates
       , getTracers             = tracers
       }
