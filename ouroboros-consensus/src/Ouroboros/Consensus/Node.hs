@@ -30,9 +30,7 @@ module Ouroboros.Consensus.Node (
   , ConnectionId (..)
   , DiffusionArguments (..)
   , DiffusionTracers (..)
-  , DnsSubscriptionTarget (..)
   , HardForkBlockchainTimeArgs (..)
-  , IPSubscriptionTarget (..)
   , LastShutDownWasClean (..)
   , LowLevelRunNodeArgs (..)
   , MempoolCapacityBytesOverride (..)
@@ -58,6 +56,7 @@ import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 import           System.FilePath ((</>))
 import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 
@@ -87,11 +86,11 @@ import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Node.ErrorPolicy
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Recovery
+import           Ouroboros.Consensus.Node.RethrowPolicy
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
@@ -185,7 +184,7 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
              addrNTN        addrNTC
              versionDataNTN versionDataNTC
              m
-        -> m ()
+        -> m Void
 
     , llrnVersionDataNTC :: versionDataNTC
 
@@ -206,7 +205,7 @@ run :: forall blk.
      RunNode blk
   => RunNodeArgs IO RemoteAddress LocalAddress blk
   -> StdRunNodeArgs IO blk
-  -> IO ()
+  -> IO Void
 run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 
 -- | Start a node.
@@ -222,7 +221,7 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
      )
   => RunNodeArgs m addrNTN addrNTC blk
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
-  -> m ()
+  -> m Void
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
     llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
@@ -299,6 +298,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                                     ntnApps
                                     ntcApps
                                     nodeKernel
+                                    btime
 
       llrnRunDataDiffusion registry diffusionApplications
   where
@@ -346,27 +346,28 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NodeToClientVersion
           -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
          )
-      -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> NodeKernel m remotePeer localPeer blk
+      -> BlockchainTime m
       -> DiffusionApplications
            addrNTN addrNTC
            versionDataNTN versionDataNTC
            m
-    mkDiffusionApplications miniProtocolParams ntnApps ntcApps kernel =
+    mkDiffusionApplications miniProtocolParams ntnApps ntcApps kernel btime =
       DiffusionApplications {
-          daResponderApplication = combineVersions [
-              simpleSingletonVersions
-                version
-                llrnVersionDataNTN
-                (NTN.responder miniProtocolParams version $ ntnApps blockVersion)
-            | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
-            ]
-        , daInitiatorApplication = combineVersions [
-              simpleSingletonVersions
-                version
-                llrnVersionDataNTN
-                (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
-            | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
-            ]
+          daApplicationInitiatorMode = combineVersions
+             [ simpleSingletonVersions
+                 version
+                 llrnVersionDataNTN
+                 (NTN.initiator miniProtocolParams version $ ntnApps blockVersion)
+             | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
+             ]
+        , daApplicationInitiatorResponderMode = combineVersions
+             [ simpleSingletonVersions
+                 version
+                 llrnVersionDataNTN
+                 (NTN.initiatorAndResponder miniProtocolParams version $ ntnApps blockVersion)
+             | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
+             ]
         , daLocalResponderApplication = combineVersions [
               simpleSingletonVersions
                 version
@@ -374,7 +375,10 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 (NTC.responder version $ ntcApps blockVersion version)
             | (version, blockVersion) <- Map.toList llrnNodeToClientVersions
             ]
-        , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
+        , daMiniProtocolParameters = miniProtocolParams
+        , daRethrowPolicy = consensusRethrowPolicy (Proxy @blk)
+        , daLocalRethrowPolicy = consensusRethrowPolicy (Proxy @blk)
+        , daBlockFetchMode = getFetchMode (getChainDB kernel) btime
         , daLedgerPeersCtx = LedgerPeersConsensusInterface (getPeersFromCurrentLedgerAfterSlot kernel)
         }
 
@@ -595,12 +599,12 @@ stdVersionDataNTC networkMagic = NodeToClientVersionData
 
 stdRunDataDiffusion ::
      DiffusionTracers
-  -> DiffusionArguments
+  -> DiffusionArguments IO
   -> DiffusionApplications
        RemoteAddress LocalAddress
        NodeToNodeVersionData NodeToClientVersionData
        IO
-  -> IO ()
+  -> IO Void
 stdRunDataDiffusion = runDataDiffusion
 
 -- | Higher-level arguments that can determine the 'LowLevelRunNodeArgs' under
@@ -615,7 +619,7 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
   , srnSnapshotInterval            :: SnapshotInterval
   , srnDatabasePath                :: FilePath
     -- ^ Location of the DBs
-  , srnDiffusionArguments          :: DiffusionArguments
+  , srnDiffusionArguments          :: DiffusionArguments m
   , srnDiffusionTracers            :: DiffusionTracers
   , srnEnableInDevelopmentVersions :: Bool
     -- ^ If @False@, then the node will limit the negotiated NTN and NTC
