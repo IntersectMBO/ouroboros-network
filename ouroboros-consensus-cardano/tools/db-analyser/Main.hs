@@ -114,8 +114,15 @@ parseAnalysis = asum [
           long "show-ebbs"
         , help "Show all EBBs and their predecessors"
         ]
+    , storeLedgerParser
     , pure OnlyValidation
     ]
+
+storeLedgerParser :: Parser AnalysisName
+storeLedgerParser = (StoreLedgerStateAt . SlotNo . read) <$> strOption
+  (  long "store-ledger"
+  <> metavar "SLOT NUMBER"
+  <> help "Store ledger state at specific slot number" )
 
 blockTypeParser :: Parser BlockType
 blockTypeParser = subparser $ mconcat
@@ -187,6 +194,7 @@ analyse CmdLine {..} args =
             , initLedger
             , db = Left immutableDB
             , registry
+            , ledgerDbFS = ChainDB.cdbHasFSLgrDB args'
             }
           tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
           putStrLn $ "ImmutableDB tip: " ++ show tipPoint
@@ -198,6 +206,7 @@ analyse CmdLine {..} args =
             , initLedger
             , db = Right chainDB
             , registry
+            , ledgerDbFS = ChainDB.cdbHasFSLgrDB args'
             }
           tipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "ChainDB tip: " ++ show tipPoint
