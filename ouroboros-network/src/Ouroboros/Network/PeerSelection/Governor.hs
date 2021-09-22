@@ -51,6 +51,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith, contramap)
 import           System.Random
 
+import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
@@ -60,14 +61,6 @@ import qualified Ouroboros.Network.PeerSelection.Governor.Monitor          as Mo
 import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers        as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.BlockFetch (FetchMode (..))
-
-
--- TODO: at a later patch it will be defined in
--- 'Ouroboros.Network.Diffusion.Policies'
---
-closeConnectionTimeout :: DiffTime
-closeConnectionTimeout = 120
-
 
 {- $overview
 
