@@ -32,6 +32,9 @@ import           Data.Void (Void)
 import           Data.Word
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
+#if !defined(mingw32_HOST_OS)
+import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
+#endif
 
 --TODO: time utils should come from elsewhere
 import           Network.Mux.Time (microsecondsToDiffTime)
@@ -116,7 +119,7 @@ tests =
         --, testProperty "Resolve (IO)"      _prop_resolv_io
         -- the above tests takes about 10 minutes to run due to delays in
         -- realtime.
-        -- , testProperty "Resolve Subscribe (IO)" prop_sub_io
+        , testProperty "Resolve Subscribe (IO)" prop_sub_io
         , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
         , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
@@ -426,7 +429,7 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
     ipv6Client <- head <$> Socket.getAddrInfo Nothing (Just "::1") (Just "0")
 
     serverAids <- mapM (async . spawnServer serverCountVar serverPortMapVar
-                        observerdConnectionOrderVar serverWaitVar ) $
+                        observerdConnectionOrderVar serverWaitVar) $
                            zip (serverIdsv4 ++ serverIdsv6) $ ipv4Servers ++ ipv6Servers
 
     atomically $ do
@@ -488,13 +491,13 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
         :: StrictTVar IO Int
         -> Socket.Socket
         -> IO ()
-    initiatorCallback clientCountVar _ =
-        atomically $ do
-            clientsLeft <- readTVar clientCountVar
-            case clientsLeft of
-                 0 -> retry
-                 _ -> modifyTVar clientCountVar (\a -> a - 1)
+    initiatorCallback clientCountVar _sd = do
+#if !defined(mingw32_HOST_OS)
+        Socket.sendAll _sd $ BL.singleton 42
+        _ <- Socket.recv _sd 1
+#endif
 
+        atomically $ modifyTVar clientCountVar (\a -> a - 1)
 
     spawnServer serverCountVar serverPortMapVar traceVar stopVar (sid, addr) =
         bracket
@@ -510,7 +513,12 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
                 bracket
                     (Socket.accept sd)
                     (\(sd',_) -> Socket.close sd')
-                    (\(_,_) -> do
+                    (\(_sd',_) -> do
+#if !defined(mingw32_HOST_OS)
+                        buf <- Socket.recv _sd' 1
+                        Socket.sendAll _sd' buf
+#endif
+
                         atomically $ modifyTVar traceVar (\sids -> sid:sids)
                         atomically $ do
                             doneWaiting <- readTVar stopVar
