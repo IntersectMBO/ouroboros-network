@@ -939,8 +939,12 @@ mkSnocket state tr = Snocket { getLocalAddr
                                   )
                   FDListening localAddress queue -> do
                     cwi <- readTBQueue queue
+                    let connId = ConnectionId { localAddress, remoteAddress = cwiAddress cwi }
+                    modifyTVar (nsConnections state)
+                               (Map.adjust (\s -> s { connState = Established })
+                                           (normaliseId connId))
                     return $ Right ( cwi
-                                   , localAddress
+                                   , connId
                                    )
 
                   FDClosed {} ->
@@ -962,27 +966,22 @@ mkSnocket state tr = Snocket { getLocalAddr
                                            (STAcceptFailure fdType err))
                     return (AcceptFailure err, accept_)
 
-                  Right (chann, localAddress) -> do
+                  Right (chann, connId@ConnectionId { remoteAddress }) -> do
                     let ChannelWithInfo
-                          { cwiAddress       = remoteAddress
-                          , cwiSDUSize       = sduSize
+                          { cwiSDUSize       = sduSize
                           , cwiChannelLocal  = channelLocal
                           , cwiChannelRemote = channelRemote
                           } = chann
-                        connId = ConnectionId { localAddress, remoteAddress }
-                    fdRemote <- atomically $ do
-                      modifyTVar (nsConnections state)
-                                 (Map.adjust (\s -> s { connState = Established })
-                                             (normaliseId connId))
-                      FD <$> newTVar (FDConnected
-                                        connId
-                                        Connection
-                                          { connChannelLocal  = channelLocal
-                                          , connChannelRemote = channelRemote
-                                          , connSDUSize       = sduSize
-                                          , connState         = Established
-                                          })
-                    traceWith tr (WithAddr (Just localAddress) Nothing
+                    fdRemote <-
+                      FD <$> newTVarIO (FDConnected
+                                          connId
+                                          Connection
+                                            { connChannelLocal  = channelLocal
+                                            , connChannelRemote = channelRemote
+                                            , connSDUSize       = sduSize
+                                            , connState         = Established
+                                            })
+                    traceWith tr (WithAddr (Just (localAddress connId)) Nothing
                                            (STAccepted remoteAddress))
                     return (Accepted fdRemote remoteAddress, accept_)
 
