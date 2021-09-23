@@ -252,6 +252,10 @@ propRateLimit_SoftLimitDelay (Arb (events, policy)) =
                   WithNumberOfConnections ServerTraceAcceptConnectionResume {} _ ->
                       False
                   WithNumberOfConnections ServerTraceAcceptConnections {} _ -> True
+                  WithNumberOfConnections ServerTraceAcceptAccept {} _ -> True
+                  WithNumberOfConnections ServerTraceAcceptClose {} _ -> True
+                  WithNumberOfConnections ServerTraceAcceptReject {} _ -> True
+
                )
 
         . filter (\x ->

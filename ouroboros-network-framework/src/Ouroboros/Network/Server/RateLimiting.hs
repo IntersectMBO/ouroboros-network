@@ -148,6 +148,9 @@ data AcceptConnectionsPolicyTrace
       | ServerTraceAcceptConnectionHardLimit Word32
       | ServerTraceAcceptConnectionResume Int
       | ServerTraceAcceptConnections Int
+      | ServerTraceAcceptAccept String
+      | ServerTraceAcceptClose String
+      | ServerTraceAcceptReject String
   deriving (Eq, Ord, Typeable)
 
 instance Show AcceptConnectionsPolicyTrace where
@@ -163,3 +166,6 @@ instance Show AcceptConnectionsPolicyTrace where
       printf "hard rate limit over, accepting connections again, currently serving %d connections"
         numberOfConnections
     show (ServerTraceAcceptConnections count) = printf "current connetions %d" count 
+    show (ServerTraceAcceptAccept peer) = printf "XXX accept %s" peer
+    show (ServerTraceAcceptClose peer) = printf "XXX close %s" peer
+    show (ServerTraceAcceptReject peer) = printf "XXX reject %s" peer

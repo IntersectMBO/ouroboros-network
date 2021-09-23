@@ -30,7 +30,7 @@ import Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
-import Control.Monad (forM_, join)
+import Control.Monad (forM_, join, forever)
 import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
 import Control.Monad.Class.MonadTimer (threadDelay)
 import Control.Tracer (Tracer, traceWith)
@@ -156,7 +156,8 @@ spawnOne remoteAddr statusVar resQ threadsVar applicationStart io = mask_ $ do
 -- stop it, whether normally or exceptionally, it must be killed by an async
 -- exception, or the exception callback here must re-throw.
 acceptLoop
-  :: Tracer IO AcceptConnectionsPolicyTrace
+  :: Show addr
+  => Tracer IO AcceptConnectionsPolicyTrace
   -> ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
@@ -180,7 +181,8 @@ acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit b
 -- or reject), and spawn the thread if accepted.
 acceptOne
   :: forall addr channel st r.
-     Tracer IO AcceptConnectionsPolicyTrace
+     Show addr
+  => Tracer IO AcceptConnectionsPolicyTrace
   -> ResultQ addr r
   -> ThreadsVar
   -> StatusVar st
@@ -224,8 +226,12 @@ acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionsLimit b
       -- socket.
       choice <- decision `onException` close
       case choice of
-        Nothing -> close
-        Just io -> spawnOne addr statusVar resQ threadsVar applicationStart (io channel `finally` close)
+        Nothing -> do
+            traceWith acceptPolicyTrace $ ServerTraceAcceptReject $ show addr
+            close
+        Just io -> do
+            traceWith acceptPolicyTrace $ ServerTraceAcceptAccept $ show addr
+            spawnOne addr statusVar resQ threadsVar applicationStart (io channel `finally` close)
       pure (Just nextSocket)
 
 trackConnections :: ThreadsVar
@@ -242,6 +248,16 @@ trackConnections threadsVar tracer = go 0
         traceWith tracer $ ServerTraceAcceptConnections count
         go count
 
+trackConnectionDeath :: forall addr.
+                        Show addr
+                     => STM.TQueue addr
+                     -> Tracer IO AcceptConnectionsPolicyTrace
+                     -> IO ()
+trackConnectionDeath tq tracer = forever $ do
+    deadPeer <- STM.atomically $ STM.readTQueue tq
+    traceWith tracer $ ServerTraceAcceptClose $ show deadPeer
+
+
 
 -- | Main server loop, which runs alongside the `acceptLoop`. It waits for
 -- the results of connection threads, as well as the `Main` action, which
@@ -251,11 +267,12 @@ mainLoop
      Tracer IO (WithAddr addr ErrorPolicyTrace)
   -> ResultQ addr r
   -> ThreadsVar
+  -> STM.TQueue addr
   -> StatusVar st
   -> CompleteConnection addr st tr r
   -> Main st t
   -> IO t
-mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
+mainLoop errorPolicyTrace resQ threadsVar deathsVar statusVar complete main =
   join (STM.atomically $ mainTx `STM.orElse` connectionTx)
 
   where
@@ -284,15 +301,17 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
     STM.writeTVar statusVar carState
     -- It was inserted by `spawnOne`.
     STM.modifyTVar' threadsVar (Set.delete (resultThread result))
+    STM.writeTQueue deathsVar (resultAddr result)
     pure $ do
       traverse_ Async.cancel carThreads
       traverse_ (traceWith errorPolicyTrace) carTrace
-      mainLoop errorPolicyTrace resQ threadsVar statusVar complete main
+      mainLoop errorPolicyTrace resQ threadsVar deathsVar statusVar complete main
 
 
 -- | Run a server.
 run
-  :: Tracer IO (WithAddr addr ErrorPolicyTrace)
+  :: Show addr
+  => Tracer IO (WithAddr addr ErrorPolicyTrace)
   -> Tracer IO AcceptConnectionsPolicyTrace
   -- TODO: extend this trace to trace server action (this might be useful for
   -- debugging)
@@ -308,15 +327,18 @@ run
 run errroPolicyTrace acceptPolicyTrace socket acceptedConnectionLimit acceptException beginConnection applicationStart complete main statusVar = do
   resQ <- STM.newTQueueIO
   threadsVar <- STM.newTVarIO Set.empty
+  deathsVar <- STM.newTQueueIO
   conMonitor <- Async.async (trackConnections threadsVar acceptPolicyTrace)
+  deathMonitor <- Async.async (trackConnectionDeath deathsVar acceptPolicyTrace)
   let acceptLoopDo = acceptLoop acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionLimit beginConnection applicationStart acceptException socket
       -- The accept loop is killed when the main loop stops and the main
       -- loop is killed if the accept loop stops.
-      mainDo = mainLoop errroPolicyTrace resQ threadsVar statusVar complete main
+      mainDo = mainLoop errroPolicyTrace resQ threadsVar deathsVar statusVar complete main
       killChildren = do
         children <- STM.atomically $ STM.readTVar threadsVar
         forM_ (Set.toList children) Async.cancel
         Async.cancel conMonitor
+        Async.cancel deathMonitor
   -- After both the main and accept loop have been killed, any remaining
   -- spawned threads are cancelled.
   (snd <$> Async.concurrently acceptLoopDo mainDo) `finally` killChildren

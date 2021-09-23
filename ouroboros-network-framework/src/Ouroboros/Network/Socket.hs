@@ -515,6 +515,7 @@ runServerThread
        , Typeable vNumber
        , Show vNumber
        , Ord addr
+       , Show addr
        )
     => NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
@@ -624,6 +625,7 @@ withServerNode
        , Typeable vNumber
        , Show vNumber
        , Ord addr
+       , Show addr
        )
     => Snocket IO fd addr
     -> NetworkServerTracers addr vNumber
@@ -693,6 +695,7 @@ withServerNode'
        , Typeable vNumber
        , Show vNumber
        , Ord addr
+       , Show addr
        )
     => Snocket IO fd addr
     -> NetworkServerTracers addr vNumber
