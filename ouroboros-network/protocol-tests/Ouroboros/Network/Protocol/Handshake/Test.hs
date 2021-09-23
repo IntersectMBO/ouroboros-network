@@ -1,7 +1,9 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -20,13 +22,14 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
 import           Control.Monad.IOSim (runSimOrThrow)
-import           Control.Monad.Class.MonadAsync (MonadAsync)
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow ( MonadCatch
                                                 , MonadThrow
                                                 )
 import           Control.Tracer (nullTracer)
 
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Proofs
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
@@ -35,7 +38,8 @@ import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Driver.Simple ( runConnectedPeers
+import           Ouroboros.Network.Driver.Simple ( runPeer
+                                                 , runConnectedPeers
                                                  , runConnectedPeersAsymmetric
                                                  )
 
@@ -62,6 +66,8 @@ tests =
         , testProperty "pipe IO"               prop_pipe_IO
         , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
         , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
+        , testProperty "simultaneous open ST"  prop_channel_simultaneous_open_ST
+        , testProperty "simultaneous open IO"  prop_channel_simultaneous_open_IO
         , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
         , testProperty "codec RefuseReason"    prop_codec_RefuseReason
         , testProperty "codec"                 prop_codec_Handshake
@@ -539,12 +545,81 @@ prop_pipe_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
     ioProperty (prop_channel_asymmetric createPipeConnectedChannels clientVersions)
 
 
+-- | Run two handshake clients against each other, which simulates a TCP
+-- simultaneous open.
+--
+prop_channel_simultaneous_open
+    :: ( MonadAsync m
+       , MonadCatch m
+       , MonadST m
+       )
+    => m (Channel m ByteString, Channel m ByteString)
+    -> Versions VersionNumber VersionData Bool
+    -> Versions VersionNumber VersionData Bool
+    -> m Property
+prop_channel_simultaneous_open createChannels clientVersions serverVersions =
+  let (serverRes, clientRes) =
+        pureHandshake
+          ((maybeAccept .) . acceptableVersion)
+          serverVersions
+          clientVersions
+  in do
+    (clientChannel, serverChannel) <- createChannels
+    let client  = handshakeClientPeer
+                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    acceptableVersion
+                    clientVersions
+        client' = handshakeClientPeer
+                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    acceptableVersion
+                    serverVersions
+    (clientRes', serverRes') <-
+      (fst <$> runPeer nullTracer versionNumberHandshakeCodec clientChannel client)
+        `concurrently`
+      (fst <$> runPeer nullTracer versionNumberHandshakeCodec serverChannel client')
+    pure $
+      case (clientRes', serverRes') of
+        -- both succeeded, we just check that the application (which is
+        -- a boolean value) is the one that was put inside 'Version'
+        (Right (c,_,_), Right (s,_,_)) ->
+          label "both-succeed" $
+               Just c === clientRes
+          .&&. Just s === serverRes
+
+        -- both failed
+        (Left{}, Left{})   -> label "both-failed" True
+
+        -- it should not happen that one protocol succeeds and the other end
+        -- fails
+        _                  -> property False
+
+-- | Run 'prop_channel_simultaneous_open' in the simulation monad.
+--
+prop_channel_simultaneous_open_ST :: ArbitraryVersions -> Property
+prop_channel_simultaneous_open_ST (ArbitraryVersions clientVersions serverVersions) =
+  runSimOrThrow $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    clientVersions
+                    serverVersions
+
+-- | Run 'prop_channel_simultaneous_open' in the IO monad.
+--
+prop_channel_simultaneous_open_IO :: ArbitraryVersions -> Property
+prop_channel_simultaneous_open_IO (ArbitraryVersions clientVersions serverVersions) =
+  ioProperty $ prop_channel_simultaneous_open
+                 createConnectedChannels
+                 clientVersions
+                 serverVersions
+
 --
 -- Codec tests
 --
 
 instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
   AnyMessage (MsgProposeVersions vs) == AnyMessage (MsgProposeVersions vs')
+    = vs == vs'
+
+  AnyMessage (MsgProposeVersions' vs) == AnyMessage (MsgProposeVersions' vs')
     = vs == vs'
 
   AnyMessage (MsgAcceptVersion vNumber vParams) == AnyMessage (MsgAcceptVersion vNumber' vParams')
@@ -559,6 +634,12 @@ instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) whe
   arbitrary = oneof
     [     AnyMessageAndAgency (ClientAgency TokPropose)
         . MsgProposeVersions
+        . Map.mapWithKey (\v -> encodeTerm (dataCodecCBORTerm v) . versionData)
+        . getVersions
+      <$> genVersions
+
+    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+        . MsgProposeVersions'
         . Map.mapWithKey (\v -> encodeTerm (dataCodecCBORTerm v) . versionData)
         . getVersions
       <$> genVersions

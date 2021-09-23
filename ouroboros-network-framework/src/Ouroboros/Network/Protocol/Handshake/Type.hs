@@ -20,8 +20,9 @@ module Ouroboros.Network.Protocol.Handshake.Type
   , ClientHasAgency (..)
   , ServerHasAgency (..)
   , NobodyHasAgency (..)
+    -- $simultanous-open
   , RefuseReason (..)
-  , HandshakeClientProtocolError (..)
+  , HandshakeProtocolError (..)
   )
   where
 
@@ -33,7 +34,6 @@ import           Data.Map (Map)
 
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
-
 
 -- |
 -- The handshake mini-protocol is used initially to agree the version and
@@ -83,6 +83,16 @@ instance Protocol (Handshake vNumber vParams) where
         -> Message (Handshake vNumber vParams) StPropose StConfirm
 
       -- |
+      -- `MsgProposeVersions'` received as a response to 'MsgProposeVersions'.
+      -- It is not supported to explicitly send this message. It can only be
+      -- received as a copy of 'MsgProposeVersions' in a simultanous open
+      -- scenario.
+      --
+      MsgProposeVersions'
+        :: Map vNumber vParams
+        -> Message (Handshake vNumber vParams) StConfirm StDone
+
+      -- |
       -- The remote end decides which version to use and sends chosen version.
       -- The server is allowed to modify version parameters. 
       --
@@ -111,24 +121,32 @@ instance Protocol (Handshake vNumber vParams) where
     exclusionLemma_NobodyAndClientHaveAgency TokDone    tok = case tok of {}
     exclusionLemma_NobodyAndServerHaveAgency TokDone    tok = case tok of {}
 
+-- $simultanous-open
+--
+-- On simultanous open both sides will send `MsgProposeVersions`, which will be
+-- decoded as `MsgProposeVersions'` which is a terminal message of the
+-- protocol.  It is important to stress that in this case both sides will make
+-- the choice which version and parameters to pick.  Our algorithm for picking
+-- version is symmetric, which ensures that both sides will endup with the same
+-- choice.  If one side decides to refuse the version it will close the
+-- connection, without sending the reason to the other side.
+
 deriving instance (Show vNumber, Show vParams)
     => Show (Message (Handshake vNumber vParams) from to)
 
 instance Show (ClientHasAgency (st :: Handshake vNumber vParams)) where
-    show TokPropose = "TokPropose"
+    show TokPropose       = "TokPropose"
 
 instance Show (ServerHasAgency (st :: Handshake vNumber vParams)) where
     show TokConfirm = "TokConfirm"
 
--- |
--- Client errors, which extends handshake error @'RefuseReason'@ type,
--- by client specific errors.
+-- | Extends handshake error @'RefuseReason'@ type, by client specific errors.
 --
-data HandshakeClientProtocolError vNumber
+data HandshakeProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   | InvalidServerSelection vNumber Text
   deriving (Eq, Show)
 
 instance (Typeable vNumber, Show vNumber)
-    => Exception (HandshakeClientProtocolError vNumber)
+    => Exception (HandshakeProtocolError vNumber)

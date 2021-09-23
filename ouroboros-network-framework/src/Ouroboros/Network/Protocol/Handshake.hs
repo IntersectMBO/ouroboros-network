@@ -9,8 +9,9 @@ module Ouroboros.Network.Protocol.Handshake
   ( runHandshakeClient
   , runHandshakeServer
   , HandshakeArguments (..)
+  , Versions (..)
   , HandshakeException (..)
-  , HandshakeClientProtocolError (..)
+  , HandshakeProtocolError (..)
   , RefuseReason (..)
   , Accept (..)
   ) where
@@ -48,20 +49,21 @@ handshakeProtocolNum = MiniProtocolNum 0
 
 -- | Wrapper around initiator and responder errors experienced by tryHandshake.
 --
-data HandshakeException a =
+data HandshakeException vNumber =
     HandshakeProtocolLimit ProtocolLimitFailure
-  | HandshakeProtocolError a
+  | HandshakeProtocolError (HandshakeProtocolError vNumber)
+  deriving Show
 
 
 -- | Try to complete either initiator or responder side of the Handshake protocol
 -- within `handshakeTimeout` seconds.
 --
-tryHandshake :: forall m a r.
+tryHandshake :: forall m vNumber r.
                 ( MonadAsync m
                 , MonadMask m
                 )
-             => m (Either a r)
-             -> m (Either (HandshakeException a) r)
+             => m (Either (HandshakeProtocolError vNumber) r)
+             -> m (Either (HandshakeException vNumber)     r)
 tryHandshake doHandshake = do
     mapp <- try doHandshake
     case mapp of
@@ -78,7 +80,7 @@ tryHandshake doHandshake = do
 
 -- | Common arguments for both 'Handshake' client & server.
 --
-data HandshakeArguments connectionId vNumber vData m application = HandshakeArguments {
+data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- | 'Handshake' tracer
       --
       haHandshakeTracer :: Tracer m (WithMuxBearer connectionId
@@ -92,9 +94,6 @@ data HandshakeArguments connectionId vNumber vData m application = HandshakeArgu
       --
       haVersionDataCodec
         ::  VersionDataCodec CBOR.Term vNumber vData,
-
-      -- | versioned application aggreed upon with the 'Handshake' protocol.
-      haVersions :: Versions vNumber vData application,
 
       -- | accept version, first argument is our version data the second
       -- argument is the remote version data.
@@ -120,8 +119,9 @@ runHandshakeClient
        )
     => MuxBearer m
     -> connectionId
-    -> HandshakeArguments connectionId vNumber vData m application
-    -> m (Either (HandshakeException (HandshakeClientProtocolError vNumber))
+    -> HandshakeArguments connectionId vNumber vData m
+    -> Versions vNumber vData application
+    -> m (Either (HandshakeException vNumber)
                  (application, vNumber, vData))
 runHandshakeClient bearer
                    connectionId
@@ -129,10 +129,10 @@ runHandshakeClient bearer
                      haHandshakeTracer,
                      haHandshakeCodec,
                      haVersionDataCodec,
-                     haVersions,
                      haAcceptVersion,
                      haTimeLimits
-                   } =
+                   }
+                   versions  =
     tryHandshake
       (fst <$>
         runPeerWithLimits
@@ -141,7 +141,7 @@ runHandshakeClient bearer
           byteLimitsHandshake
           haTimeLimits
           (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum InitiatorDir))
-          (handshakeClientPeer haVersionDataCodec haAcceptVersion haVersions))
+          (handshakeClientPeer haVersionDataCodec haAcceptVersion versions))
 
 
 -- | Run server side of the 'Handshake' protocol.
@@ -157,9 +157,10 @@ runHandshakeServer
        )
     => MuxBearer m
     -> connectionId
-    -> HandshakeArguments connectionId vNumber vData m application
+    -> HandshakeArguments connectionId vNumber vData m
+    -> Versions vNumber vData application
     -> m (Either
-           (HandshakeException (RefuseReason vNumber))
+           (HandshakeException vNumber)
            (application, vNumber, vData))
 runHandshakeServer bearer
                    connectionId
@@ -167,10 +168,10 @@ runHandshakeServer bearer
                      haHandshakeTracer,
                      haHandshakeCodec,
                      haVersionDataCodec,
-                     haVersions,
                      haAcceptVersion,
                      haTimeLimits
-                   } =
+                   }
+                   versions  =
     tryHandshake
       (fst <$>
         runPeerWithLimits
@@ -179,4 +180,4 @@ runHandshakeServer bearer
           byteLimitsHandshake
           haTimeLimits
           (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir))
-          (handshakeServerPeer haVersionDataCodec haAcceptVersion haVersions))
+          (handshakeServerPeer haVersionDataCodec haAcceptVersion versions))

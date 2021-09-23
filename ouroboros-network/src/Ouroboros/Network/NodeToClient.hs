@@ -343,7 +343,7 @@ networkErrorPolicies = ErrorPolicies
         -- version or we refused it.  This is only for outbound connections to
         -- a local node, thus we throw the exception.
         ErrorPolicy
-          $ \(_ :: HandshakeClientProtocolError NodeToClientVersion)
+          $ \(_ :: HandshakeProtocolError NodeToClientVersion)
                 -> Just ourBug
 
         -- exception thrown by `runPeerWithLimits`
