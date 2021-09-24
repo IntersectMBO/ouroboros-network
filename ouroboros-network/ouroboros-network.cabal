@@ -299,6 +299,7 @@ test-suite test
                        async,
                        bytestring,
                        cborg,
+                       comonad,
                        containers,
                        dns,
                        deque,

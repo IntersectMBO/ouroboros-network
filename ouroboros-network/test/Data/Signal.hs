@@ -52,6 +52,7 @@ import qualified Data.OrdPSQ as PSQ
 import           Data.OrdPSQ (OrdPSQ)
 
 import           Control.Monad.Class.MonadTime (Time(..), DiffTime, addTime)
+import           Control.Comonad (Comonad (..), ComonadApply (..))
 
 
 --
@@ -146,6 +147,21 @@ mergeSignals (Signal f0 fs0) (Signal x0 xs0) =
     go _ x (OnlyInLeft   (E t f)         : rs) = E t (f x) : go f x rs
     go f _ (OnlyInRight          (E t x) : rs) = E t (f x) : go f x rs
     go _ _ (InBoth       (E t f) (E _ x) : rs) = E t (f x) : go f x rs
+
+instance Comonad Signal where
+    extract (Signal a _)    = a
+
+    duplicate s@(Signal _ as) = Signal s (fmap f <$> as)
+      where
+        f :: a -> Signal a
+        f = pure
+    {-# INLINE duplicate #-}
+
+    -- an inlined version of `fmap f . duplicate`:
+    extend f s@(Signal _ as) = Signal (f s) (fmap (f . pure) <$> as)
+    {-# INLINE extend #-}
+
+instance ComonadApply Signal
 
 compareTimestamp :: E a -> E b -> Ordering
 compareTimestamp (E ts _) (E ts' _) = compare ts ts'
