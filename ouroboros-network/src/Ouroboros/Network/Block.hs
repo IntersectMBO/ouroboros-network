@@ -420,12 +420,6 @@ instance Serialise (HeaderHash block) => Serialise (Point block) where
   encode = encodePoint encode
   decode = decodePoint decode
 
-instance (Typeable block, Serialise (HeaderHash block)) => FromCBOR (Point block) where
-  fromCBOR = decodePoint decode
-
-instance (Typeable block, Serialise (HeaderHash block)) => ToCBOR (Point block) where
-  toCBOR = encodePoint encode
-
 encodeChainHash :: (HeaderHash block -> Encoding)
                 -> (ChainHash  block -> Encoding)
 encodeChainHash encodeHash chainHash =
