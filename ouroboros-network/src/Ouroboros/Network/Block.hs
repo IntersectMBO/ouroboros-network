@@ -91,7 +91,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
+import           Cardano.Binary (Case (..), Size, szCases, szGreedy, ToCBOR (..), FromCBOR (..))
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot (SlotNo (..))
 
@@ -419,6 +419,12 @@ instance Serialise (HeaderHash b) => Serialise (ChainHash b) where
 instance Serialise (HeaderHash block) => Serialise (Point block) where
   encode = encodePoint encode
   decode = decodePoint decode
+
+instance (Typeable block, Serialise (HeaderHash block)) => FromCBOR (Point block) where
+  fromCBOR = decodePoint decode
+
+instance (Typeable block, Serialise (HeaderHash block)) => ToCBOR (Point block) where
+  toCBOR = encodePoint encode
 
 encodeChainHash :: (HeaderHash block -> Encoding)
                 -> (ChainHash  block -> Encoding)
