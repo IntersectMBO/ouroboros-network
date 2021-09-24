@@ -44,7 +44,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer(..), traceWith)
+import           Control.Tracer (Tracer(..), traceWith, nullTracer)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -434,7 +434,7 @@ peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
 peerSelectionGovernor tracer debugTracer actions policy =
-    JobPool.withJobPool $ \jobPool ->
+    JobPool.withJobPool nullTracer $ \jobPool ->
       peerSelectionGovernorLoop
         tracer debugTracer
         actions policy

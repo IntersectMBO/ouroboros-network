@@ -147,6 +147,14 @@ data MuxTrace =
     | MuxTraceStartedOnDemand !MiniProtocolNum !MiniProtocolDir
     | MuxTraceTerminating !MiniProtocolNum !MiniProtocolDir
     | MuxTraceShutdown
+    | MuxTraceCompatStoppingMux
+    | MuxTraceCompatWaiting
+    | MuxTraceCompatDone
+    | MuxTraceCompatTimeout
+    | MuxTraceCompatDoneAfterTimeout
+    | MuxTraceJobWaiting String
+    | MuxTraceJobTimeout String
+    | MuxTraceJobDone String
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -184,4 +192,12 @@ instance Show MuxTrace where
     show (MuxTraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
     show (MuxTraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
     show MuxTraceShutdown = "Mux shutdown"
+    show MuxTraceCompatStoppingMux = "Mux Compat stopping mux"
+    show MuxTraceCompatWaiting = "Mux Compat waiting"
+    show MuxTraceCompatDone = "Mux Compat Done"
+    show MuxTraceCompatTimeout = "Mux Compat timeout"
+    show MuxTraceCompatDoneAfterTimeout = "Mux Compat done after timeout"
+    show (MuxTraceJobDone label) = "Mux Job done " ++ label
+    show (MuxTraceJobWaiting label) = "Mux Job waiting " ++ label
+    show (MuxTraceJobTimeout label) = "Mux Job timeout " ++ label
 

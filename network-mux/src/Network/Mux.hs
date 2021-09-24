@@ -215,7 +215,7 @@ runMux :: forall m mode.
 runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
     egressQueue <- atomically $ newTBQueue 100
 
-    JobPool.withJobPool
+    JobPool.withJobPool tracer
       (\jobpool -> do
         JobPool.forkJob jobpool (muxerJob egressQueue)
         JobPool.forkJob jobpool demuxerJob
@@ -348,6 +348,7 @@ monitor :: forall mode m.
            , MonadAsync m
            , MonadMask m
            , MonadThrow (STM m)
+           , MonadTimer m
            )
         => Tracer m MuxTrace
         -> TimeoutFn m
@@ -456,7 +457,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
         EventControlCmd CmdShutdown -> do
           traceWith tracer MuxTraceShutdown
           atomically $ writeTVar muxStatus MuxStopping
-          JobPool.cancelGroup jobpool MiniProtocolJob
+          JobPool.cancelGroup tracer jobpool MiniProtocolJob
           -- wait for 2 seconds before the egress queue is drained
           _ <- timeout 2 $
             atomically $

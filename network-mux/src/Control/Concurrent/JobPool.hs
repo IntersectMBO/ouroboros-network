@@ -25,18 +25,23 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad (when)
 
+import           Control.Monad.Class.MonadTimer
+import           Control.Tracer
+import           Network.Mux.Trace
 
 data JobPool group m a = JobPool {
-       jobsVar         :: !(TVar m (Map (group, ThreadId m) (Async m ()))),
+       jobsVar         :: !(TVar m (Map (group, ThreadId m) (String, Async m ()))),
        completionQueue :: !(TQueue m a)
      }
 
 data Job group m a = Job (m a) (SomeException -> m a) group String
 
 withJobPool :: forall group m a b.
-               (MonadAsync m, MonadThrow m)
-            => (JobPool group m a -> m b) -> m b
-withJobPool =
+               (MonadAsync m, MonadThrow m, MonadTimer m)
+            =>  Tracer m MuxTrace
+            -> (JobPool group m a -> m b)
+            -> m b
+withJobPool tracer =
     bracket create close
   where
     create :: m (JobPool group m a)
@@ -55,7 +60,22 @@ withJobPool =
     close :: JobPool group m a -> m ()
     close JobPool{jobsVar} = do
       jobs <- atomically (readTVar jobsVar)
-      mapM_ uninterruptibleCancel jobs
+      mapM_ (cancelJob tracer) jobs
+
+cancelJob :: MonadAsync m
+          => MonadTimer m
+          => Tracer m MuxTrace
+          -> (String, Async m ())
+          -> m ()
+cancelJob tracer (label, aid) = do
+    traceWith tracer $ MuxTraceJobWaiting label
+    r_m <- timeout 15 $ cancel aid
+    case r_m of
+         Nothing -> do
+             traceWith tracer $ MuxTraceJobTimeout label
+             _ <- async (uninterruptibleCancel aid)
+             return ()
+         Just _ -> traceWith tracer $ MuxTraceJobDone label
 
 forkJob :: forall group m a.
            ( MonadAsync m, MonadMask m
@@ -76,7 +96,7 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler group label) =
           modifyTVar' jobsVar (Map.delete (group, tid))
 
       let !tid = asyncThreadId (Proxy :: Proxy m) jobAsync
-      atomically $ modifyTVar' jobsVar (Map.insert (group, tid) jobAsync)
+      atomically $ modifyTVar' jobsVar (Map.insert (group, tid) (label, jobAsync))
       return ()
   where
     notAsyncExceptions :: SomeException -> Maybe SomeException
@@ -101,14 +121,16 @@ collect :: MonadSTM m => JobPool group m a -> STM m a
 collect JobPool{completionQueue} = readTQueue completionQueue
 
 cancelGroup :: ( MonadAsync m
+               , MonadTimer m
                , Eq group
                )
-            => JobPool group m a -> group -> m ()
-cancelGroup JobPool { jobsVar } group = do
+            =>  Tracer m MuxTrace
+            -> JobPool group m a -> group -> m ()
+cancelGroup tracer JobPool { jobsVar } group = do
     jobs <- atomically (readTVar jobsVar)
-    _ <- Map.traverseWithKey (\(group', _) thread ->
+    _ <- Map.traverseWithKey (\(group', _) job ->
                                when (group' == group) $
-                                 cancel thread
+                                 cancelJob tracer job
                              )
                              jobs
     return ()

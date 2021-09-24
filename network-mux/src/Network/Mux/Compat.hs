@@ -56,7 +56,7 @@ import           Network.Mux.Trace
 import           Network.Mux.Channel
 import           Network.Mux (newMux, runMux, runMiniProtocol, stopMux,
                               StartOnDemandOrEagerly(..), traceMuxBearerState)
-
+import           Network.Mux.Timeout (withTimeoutSerial)
 
 newtype MuxApplication (mode :: MuxMode) m a b =
         MuxApplication [MuxMiniProtocol mode m a b]
@@ -124,9 +124,18 @@ muxStart tracer muxapp bearer = do
     -- Wait for the first MuxApplication to finish, then stop the mux.
     withAsync (runMux tracer mux bearer) $ \aid -> do
       waitOnAny resOps
-      stopMux mux
-      wait aid
-
+      withTimeoutSerial (\timeoutFn -> do
+        traceWith tracer MuxTraceCompatStoppingMux
+        stopMux mux
+        traceWith tracer MuxTraceCompatWaiting
+        r_m <- timeoutFn 15 $ wait aid
+        case r_m of
+             Nothing -> do
+                 traceWith tracer MuxTraceCompatTimeout
+                 wait aid
+                 traceWith tracer MuxTraceCompatDoneAfterTimeout
+             Just _ -> traceWith tracer MuxTraceCompatDone
+       )
   where
     waitOnAny :: [STM m (Either SomeException  ())] -> m ()
     waitOnAny resOps = atomically $ void $ foldr (<|>) retry resOps
