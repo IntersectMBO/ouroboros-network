@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE KindSignatures           #-}
 {-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 
@@ -97,29 +99,31 @@ direct (SendMsgPing kPong) PingPongServer{recvMsgPing} = do
     client' <- kPong
     direct client' server'
 
+type SingQueue = SingQueueF SingTr
+newtype SingTr st st' = SingT (SingTrans (Tr st st'))
 
 directPipelined :: Monad m
                 => PingPongClientPipelined m a
                 -> PingPongServer          m b
                 -> m (a, b)
 directPipelined (PingPongClientPipelined client0) server0 =
-    go SingEmpty client0 server0
+    go SingEmptyF client0 server0
   where
     go :: Monad m
        => SingQueue q
        -> PingPongClientIdle q m a
        -> PingPongServer       m b
        -> m (a, b)
-    go SingEmpty (SendMsgDonePipelined clientResult) PingPongServer{recvMsgDone} =
+    go SingEmptyF (SendMsgDonePipelined clientResult) PingPongServer{recvMsgDone} =
       pure (clientResult, recvMsgDone)
 
     go q (SendMsgPingPipelined client') PingPongServer{recvMsgPing} = do
       server' <- recvMsgPing
-      let singTr :: SingTrans (Tr StBusy StIdle)
-          singTr = SingTr
+      let singTr :: SingTr StBusy StIdle
+          singTr = SingT SingTr
       go (q |> singTr) client' server'
 
-    go (SingCons q) (CollectPipelined _ k) server = do
+    go (SingConsF _ q) (CollectPipelined _ k) server = do
       client' <- k
       go q client' server
 

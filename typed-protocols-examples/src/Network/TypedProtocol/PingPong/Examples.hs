@@ -60,21 +60,15 @@ pingPongClientCount n = SendMsgPing (pure (pingPongClientCount (n-1)))
 -- Pipelined examples
 --
 
-data SingQueuePP (q :: Queue PingPong) where
-    SingEmptyPP :: SingQueuePP Empty
-    SingConsPP  :: Int
-                -> SingQueuePP q
-                -> SingQueuePP (Tr StBusy StIdle <| q)
 
-snocPP :: Int
-       -> SingQueuePP q
-       -> SingQueuePP (q |> Tr StBusy StIdle)
-snocPP n  SingEmptyPP      = SingConsPP n SingEmptyPP
-snocPP n (SingConsPP n' q) = SingConsPP n' (n `snocPP` q)
+data F st st' where
+    F :: Int
+      -> F StBusy StIdle
 
-lengthPP :: SingQueuePP q -> Int
-lengthPP SingEmptyPP      = 0
-lengthPP (SingConsPP _ q) = 1 + lengthPP q
+
+lengthQ :: SingQueueF F q -> Int
+lengthQ SingEmptyF      = 0
+lengthQ (SingConsF _ q) = 1 + lengthQ q
 
 -- | A pipelined ping-pong client that sends eagerly rather than waiting to
 -- collect any replies. This is maximum pipelining in some sense, and
@@ -87,29 +81,29 @@ pingPongClientPipelinedMax
   => Int
   -> PingPongClientPipelined m [Either Int Int]
 pingPongClientPipelinedMax c =
-    PingPongClientPipelined (go [] SingEmptyPP 0)
+    PingPongClientPipelined (go [] SingEmptyF 0)
   where
     go :: forall (q :: Queue PingPong).
           [Either Int Int]
-       -> SingQueuePP q
+       -> SingQueueF F q
        -> Int
        -> PingPongClientIdle q m [Either Int Int]
-    go acc q                 n | n < c
-                               = sendMsgPing acc q n
-    go acc SingEmptyPP       _ = SendMsgDonePipelined (reverse acc)
-    go acc (SingConsPP n' q) n = CollectPipelined
-                                   Nothing
-                                   (pure $ go (Right n' : acc) q n)
+    go acc q                    n | n < c
+                                  = sendMsgPing acc q n
+    go acc SingEmptyF           _ = SendMsgDonePipelined (reverse acc)
+    go acc (SingConsF (F n') q) n = CollectPipelined
+                                      Nothing
+                                     (pure $ go (Right n' : acc) q n)
 
     sendMsgPing :: forall (q :: Queue PingPong).
                    [Either Int Int]
-                -> SingQueuePP q
+                -> SingQueueF F q
                 -> Int
                 -> PingPongClientIdle q m [Either Int Int]
     sendMsgPing acc q n =
       SendMsgPingPipelined
         (go (Left n : acc)
-            (n `snocPP` q)
+            (q |> F n)
             (succ n))
 
 
@@ -125,27 +119,27 @@ pingPongClientPipelinedMin
   => Int
   -> PingPongClientPipelined m [Either Int Int]
 pingPongClientPipelinedMin c =
-    PingPongClientPipelined (go [] SingEmptyPP 0)
+    PingPongClientPipelined (go [] SingEmptyF 0)
   where
     go :: forall (q :: Queue PingPong).
           [Either Int Int]
-       -> SingQueuePP q
+       -> SingQueueF F q
        -> Int
        -> PingPongClientIdle q m [Either Int Int]
-    go acc q@(SingConsPP n' q') n = CollectPipelined
-                                      (if n < c then Just (ping acc q n)
-                                                else Nothing)
-                                      (pure $ go (Right n' : acc) q' n)
-    go acc SingEmptyPP          n | n < c
-                                  = ping acc SingEmptyPP n
-    go acc SingEmptyPP          _ = SendMsgDonePipelined (reverse acc)
+    go acc q@(SingConsF (F n') q') n = CollectPipelined
+                                         (if n < c then Just (ping acc q n)
+                                                   else Nothing)
+                                         (pure $ go (Right n' : acc) q' n)
+    go acc SingEmptyF              n | n < c
+                                     = ping acc SingEmptyF n
+    go acc SingEmptyF              _ = SendMsgDonePipelined (reverse acc)
 
     ping :: [Either Int Int]
-         -> SingQueuePP q
+         -> SingQueueF F q
          -> Int
          -> PingPongClientIdle q m [Either Int Int]
     ping acc q n = SendMsgPingPipelined
-                     (go (Left n : acc) (n `snocPP` q) (succ n))
+                     (go (Left n : acc) (q |> F n) (succ n))
 
 
 -- | A pipelined ping-pong client that sends eagerly up to some maximum limit
@@ -160,23 +154,23 @@ pingPongClientPipelinedLimited
   => Int -> Int
   -> PingPongClientPipelined m [Either Int Int]
 pingPongClientPipelinedLimited omax c =
-    PingPongClientPipelined (go [] SingEmptyPP 0)
+    PingPongClientPipelined (go [] SingEmptyF 0)
   where
     go :: forall (q :: Queue PingPong).
          [Either Int Int]
-       -> SingQueuePP q
+       -> SingQueueF F q
        -> Int
        -> PingPongClientIdle q m [Either Int Int]
-    go acc q@(SingConsPP n' q') n = CollectPipelined
-                                      (if n < c && lengthPP q < omax
-                                         then Just (ping acc q n)
-                                         else Nothing)
-                                      (pure $ go (Right n' : acc) q' n)
-    go acc SingEmptyPP n | n < c
-                         = ping acc SingEmptyPP n
-    go acc SingEmptyPP _ = SendMsgDonePipelined (reverse acc)
+    go acc q@(SingConsF (F n') q') n = CollectPipelined
+                                         (if n < c && lengthQ q < omax
+                                            then Just (ping acc q n)
+                                            else Nothing)
+                                         (pure $ go (Right n' : acc) q' n)
+    go acc SingEmptyF              n | n < c
+                                     = ping acc SingEmptyF n
+    go acc SingEmptyF              _ = SendMsgDonePipelined (reverse acc)
 
-    ping :: [Either Int Int] -> SingQueuePP q -> Int
+    ping :: [Either Int Int] -> SingQueueF F q -> Int
          -> PingPongClientIdle q m [Either Int Int]
     ping acc q      n = SendMsgPingPipelined
-                          (go (Left n : acc) (n `snocPP` q) (succ n))
+                          (go (Left n : acc) (q |> F n) (succ n))

@@ -31,7 +31,7 @@ import           Data.Singletons
 import           Unsafe.Coerce (unsafeCoerce)
 
 import           Network.TypedProtocol.Codec (DecodeStep (..), SomeMessage (..))
-import           Network.TypedProtocol.Core hiding (SingQueue (..))
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Peer
 
 

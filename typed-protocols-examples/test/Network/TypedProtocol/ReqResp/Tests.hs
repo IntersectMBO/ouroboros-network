@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
@@ -18,7 +17,7 @@ module Network.TypedProtocol.ReqResp.Tests (tests) where
 
 import           Network.TypedProtocol.Channel
 import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Core hiding (SingQueue (..), (|>))
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Driver.Simple
 import           Network.TypedProtocol.Proofs
 
@@ -90,26 +89,10 @@ direct (SendMsgReq req kResp) ReqRespServer{recvMsgReq} = do
     client' <- kResp resp
     direct client' server'
 
-type SingQueue :: Type -> Queue ps -> Type
-data SingQueue resp q where
-    SingEmpty :: SingQueue resp Empty
-    SingCons  :: forall ps (st :: ps) (st' :: ps)
-                           resp
-                           (q :: Queue ps).
-                 resp
-              -> SingQueue resp q
-              -> SingQueue resp (Tr st st' <| q)
 
--- | Term level '|>' (snoc).
---
-(|>) :: forall ps (st :: ps) (st' :: ps) resp (q :: Queue ps).
-        SingQueue resp q
-     -> (resp, SingTrans (Tr st st'))
-     -> SingQueue resp (q |> Tr st st')
-
-(|>)  SingEmpty        (resp, !_) = SingCons resp SingEmpty
-
-(|>) (SingCons resp q)  a         = SingCons resp (q |> a)
+type F :: Type -> ps -> ps -> Type
+data F resp st st' where
+    F :: resp -> F resp StBusy StIdle
 
 
 directPipelined :: forall req resp m a b. Monad m
@@ -117,23 +100,21 @@ directPipelined :: forall req resp m a b. Monad m
                 -> ReqRespServer          req resp m b
                 -> m (a, b)
 directPipelined (ReqRespClientPipelined client0) server0 =
-    go SingEmpty client0 server0
+    go SingEmptyF client0 server0
   where
     go :: forall (q :: Queue (ReqResp req resp)).
-          SingQueue         resp q
+          SingQueueF (F resp) q
        -> ReqRespIdle   req resp q m a
        -> ReqRespServer req resp   m b
        -> m (a, b)
-    go SingEmpty (SendMsgDonePipelined clientResult) ReqRespServer{recvMsgDone} =
+    go SingEmptyF (SendMsgDonePipelined clientResult) ReqRespServer{recvMsgDone} =
       (clientResult,) <$> recvMsgDone
 
     go q (SendMsgReqPipelined req client') ReqRespServer{recvMsgReq} = do
       (resp, server') <- recvMsgReq req
-      let singTr :: SingTrans (Tr StBusy StIdle)
-          singTr = SingTr
-      go (q |> (resp, singTr)) client' server'
+      go (q |> F resp) client' server'
 
-    go (SingCons resp q) (CollectPipelined _ k) server = do
+    go (SingConsF (F resp) q) (CollectPipelined _ k) server = do
       client' <- k resp
       go q client' server
 

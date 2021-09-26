@@ -6,7 +6,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Network.TypedProtocol.ReqResp.Examples where
+module Network.TypedProtocol.ReqResp.Examples
+  ( reqRespClient
+  , reqRespServerMapAccumL
+  , reqRespClientMap
+  , reqRespClientMapPipelined
+  ) where
 
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
@@ -57,15 +62,8 @@ reqRespClientMap = go []
 -- Pipelined example
 --
 
-data SingQueueRR (q :: Queue (ReqResp req resp)) where
-    SingEmptyRR :: SingQueueRR Empty
-    SingConsRR  :: SingQueueRR q
-                -> SingQueueRR (Tr StBusy StIdle <| q)
-
-snocRR :: SingQueueRR q
-       -> SingQueueRR (q |> Tr StBusy StIdle)
-snocRR  SingEmptyRR   = SingConsRR SingEmptyRR
-snocRR (SingConsRR q) = SingConsRR (snocRR q)
+data F st st' where
+    F :: F StBusy StIdle
 
 -- | An example request\/response client that sends the given list of requests
 -- and collects the list of responses.
@@ -83,29 +81,29 @@ reqRespClientMapPipelined :: forall req resp m.
                           => [req]
                           -> ReqRespClientPipelined req resp m [resp]
 reqRespClientMapPipelined reqs0 =
-    ReqRespClientPipelined (go [] SingEmptyRR reqs0)
+    ReqRespClientPipelined (go [] SingEmptyF reqs0)
   where
     go :: forall (q :: Queue (ReqResp req resp)).
           [resp]
-       -> SingQueueRR q
+       -> SingQueueF F q
        -> [req]
        -> ReqRespIdle req resp q m [resp]
 
-    go resps SingEmptyRR reqs =
+    go resps SingEmptyF reqs =
       case reqs of
         []        -> SendMsgDonePipelined (reverse resps)
-        req:reqs' -> sendReq resps SingEmptyRR req reqs'
+        req:reqs' -> sendReq resps SingEmptyF req reqs'
 
-    go resps q@(SingConsRR q') reqs =
+    go resps q@(SingConsF F q') reqs =
       CollectPipelined
         (case reqs of
            []        -> Nothing
            req:reqs' -> Just (sendReq resps q req reqs'))
         (\resp -> pure $ go (resp:resps) q' reqs)
 
-    sendReq :: [resp] -> SingQueueRR q -> req -> [req]
+    sendReq :: [resp] -> SingQueueF F q -> req -> [req]
             -> ReqRespIdle req resp q m [resp]
     sendReq resps q req reqs' =
       SendMsgReqPipelined
         req
-        (go resps (snocRR q) reqs')
+        (go resps (q |> F) reqs')

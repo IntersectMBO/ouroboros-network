@@ -44,7 +44,7 @@ module Network.TypedProtocol.Core
   , Queue (..)
   , type (<|)
   , type (|>)
-  , SingQueue (..)
+  , SingQueueF (..)
   , (|>)
   , ProtocolState
   , ProtocolState' (..)
@@ -616,23 +616,26 @@ type family as |> b where
 infixr 5 |>
 
 -- | Singleton data type which allows to track the types of kind
--- @'Queue' ps@.
+-- @'Queue' ps@ and store a value which depends on a queued transition.
 --
-type SingQueue :: Queue ps -> Type
-data SingQueue q where
-    SingEmpty :: SingQueue Empty
-    SingCons  :: forall ps (st :: ps) (st' :: ps) (q :: Queue ps).
-                 SingQueue q
-              -> SingQueue (Tr st st' <| q)
+-- TODO: an optimised version of 'SingQueueF' which does not recurse.
+--
+type SingQueueF :: (ps -> ps -> Type) -> Queue ps -> Type
+data SingQueueF f q where
+    SingEmptyF :: SingQueueF f Empty
+    SingConsF  :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
+                  !(f st st')
+               -> !(SingQueueF f q)
+               -> SingQueueF f (Tr st st' <| q)
 
 -- | Term level '|>' (snoc).
 --
-(|>) :: forall ps (st :: ps) (st' :: ps) (q :: Queue ps).
-        SingQueue q
-     -> SingTrans (Tr st st')
-     -> SingQueue (q |> Tr st st')
-(|>)  SingEmpty   !_   = SingCons SingEmpty
-(|>) (SingCons q) !str = SingCons (q |> str)
+(|>) :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
+        SingQueueF f q
+     -> f st st'
+     -> SingQueueF f (q |> Tr st st')
+(|>)  SingEmptyF     !f  = SingConsF f SingEmptyF
+(|>) (SingConsF f q) !f' = SingConsF f (q |> f')
 
 -- | Promoted data type which indicates if 'Peer' is used in
 -- pipelined mode or not.
