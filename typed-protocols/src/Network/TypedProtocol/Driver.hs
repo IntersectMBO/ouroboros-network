@@ -1,13 +1,16 @@
 {-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE EmptyCase                #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeInType               #-}
 {-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE ViewPatterns             #-}
 
 -- | Actions for running 'Peer's with a 'Driver'
 --
@@ -23,10 +26,12 @@ module Network.TypedProtocol.Driver
   , DecodeStep (..)
   ) where
 
+import           Data.Kind (Type)
 import           Data.Singletons
+import           Unsafe.Coerce (unsafeCoerce)
 
 import           Network.TypedProtocol.Codec (DecodeStep (..), SomeMessage (..))
-import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Core hiding (SingQueue (..))
 import           Network.TypedProtocol.Peer
 
 
@@ -120,6 +125,101 @@ data Driver ps (pr :: PeerRole) bytes failure dstate m =
 -- Running peers
 --
 
+
+-- | A space efficient singleton for a non-empty 'Queue' type.  It has two
+-- public constructors 'SingSingleton' and 'SingCons'.
+--
+-- We use a 'newtype' rather than a 'GADT' which would allow to restrict 'q' to
+-- non-empty types.  The safe api is not checked by the type checker, it is
+-- rather declared to be safe, e.g. 'SingSingleton' and 'SingCons' are declared
+-- to define a complete pattern match.  Using 'UnsafeSingQueue' does not guarantee
+-- that the changes to the internal representation reflect correctly the changes
+-- at the type level nevertheless using it allows to reduce computational
+-- complexity (see 'snoc' below).
+--
+type SingQueue :: Queue ps -> Type
+newtype SingQueue q = UnsafeSingQueue Int
+
+
+-- | 'IsQueue' is an auxiliary type which allows to pattern match if the queue
+-- is a singleton or not.  The 'toIsQueue' function converts 'SingQueue' to
+-- 'IsQueue' in an efficient way.
+--
+-- 'IsQueue' mimics an inductive definition, but instead recursion, it is using
+-- 'SingQueue' in its 'IsCons' constructor.
+--
+type IsQueue :: Queue ps -> Type
+data IsQueue q where
+    IsEmpty :: IsQueue Empty
+    IsCons  :: forall ps (st :: ps) (st' :: ps) (q :: Queue ps).
+               SingQueue               q
+            -> IsQueue   (Tr st st' <| q)
+
+-- | Transform 'SingQueue' to 'IsQueue'.  Although this function is using
+-- 'unsafeCoerce' it is safe.
+--
+toIsQueue :: SingQueue q -> IsQueue q
+toIsQueue (UnsafeSingQueue n) | n < 0
+                              = error "toIsQueue: invalid value"
+toIsQueue (UnsafeSingQueue 0) = unsafeCoerce  IsEmpty
+toIsQueue (UnsafeSingQueue n) = unsafeCoerce (IsCons (UnsafeSingQueue $ pred n))
+  -- we subtract one, because 'IsCons' constructor takes singleton for the
+  -- remaining part of the list.
+
+-- | A safe 'SingQueue' bidirectional pattern for queues which holds exactly
+-- one element.
+--
+pattern SingEmpty :: ()
+                  => q ~ Empty
+                  => SingQueue q
+pattern SingEmpty <- (toIsQueue -> IsEmpty)
+  where
+    SingEmpty = UnsafeSingQueue 0
+
+
+-- | A safe 'SingQueue' bidirectional pattern for queues of length 2 or more.
+--
+pattern SingCons :: forall ps (q :: Queue ps).
+                    ()
+                 => forall (st :: ps) (st' :: ps) (q' :: Queue ps).
+                    (q ~ (Tr st st' <| q'))
+                 => SingQueue q'
+                    -- ^ singleton for the remaining part of the queue
+                 -> SingQueue q
+pattern SingCons n <- (toIsQueue -> IsCons n)
+  where
+    SingCons (UnsafeSingQueue n) = UnsafeSingQueue (succ n)
+
+{-# COMPLETE SingEmpty, SingCons #-}
+
+
+-- | A singleton for singleton queue.
+--
+singSingleton :: SingQueue (Tr st st' <| Empty)
+singSingleton = SingCons SingEmpty
+
+
+-- | 'snoc'
+--
+-- /complexity:/ @O(1)@
+--
+-- It is accessing the internal representation of 'SingQueue' in an unsafe way.
+-- It is possible to implement it using the safe api but then it would be @O(n)@
+-- instead.
+--
+snoc :: forall ps (st :: ps) (st' :: ps) (q :: Queue ps).
+        SingQueue  q
+     -> SingTrans      (Tr st st')
+     -> SingQueue (q |> Tr st st')
+snoc  SingEmpty                     _ = SingCons (UnsafeSingQueue 1)
+snoc (SingCons (UnsafeSingQueue n)) _ = SingCons (UnsafeSingQueue (succ n))
+
+
+uncons :: SingQueue (Tr st st <| q)
+       -> SingQueue              q
+uncons (SingCons q) = q
+
+
 -- | Run a peer with the given driver.
 --
 -- This runs the peer to completion (if the protocol allows for termination).
@@ -153,7 +253,7 @@ runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage} =
 
     goEmpty !dstate (YieldPipelined refl msg k) = do
       sendMessage refl msg
-      go (SingCons SingEmpty) (Right dstate) k
+      go singSingleton (Right dstate) k
 
 
     go :: forall st1 st2 st3 q'.
@@ -172,7 +272,7 @@ runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage} =
                   (k   :: Peer ps pr pl ((Tr st1 st2 <| q') |> Tr st' st'') st'' m a))
                 = do
       sendMessage refl msg
-      go (q |> (SingTr :: SingTrans (Tr st' st'')))
+      go (q `snoc` (SingTr :: SingTrans (Tr st' st'')))
          dstate k
 
     go (SingCons q) !dstate (Collect refl Nothing k) = do
@@ -187,14 +287,13 @@ runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage} =
         Right (SomeMessage msg, dstate') ->
           go (SingCons q') (Right dstate') (k msg)
 
-
-    go (SingCons SingEmpty)     (Right dstate) (CollectDone k) =
+    go (SingCons SingEmpty) (Right dstate) (CollectDone k) =
       goEmpty dstate k
 
-    go (SingCons q@SingCons {}) (Right dstate) (CollectDone k) =
-      go q (Right dstate) k
+    go q@(SingCons (SingCons {})) (Right dstate) (CollectDone k) =
+      go (uncons q) (Right dstate) k
 
-    go  SingCons {}              Left {}        CollectDone {} =
+    go _q             Left {}        CollectDone {} =
       -- 'CollectDone' can only be executed once `Collect` was effective, which
       -- means we cannot receive a partial decoder here.
       error "runPeerWithDriver: unexpected parital decoder"
