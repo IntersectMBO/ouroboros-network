@@ -48,6 +48,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , UnknownRange (..)
   , emptyIterator
   , streamAll
+  , streamFrom
   , traverseIterator
   , validBounds
     -- * Invalid block reason
@@ -549,6 +550,15 @@ data UnknownRange blk =
   deriving (Eq, Show)
 
 -- | Stream all blocks from the current chain.
+streamAll ::
+     (MonadSTM m, HasHeader blk, HasCallStack)
+  => ChainDB m blk
+  -> ResourceRegistry m
+  -> BlockComponent blk b
+  -> m (Iterator m blk b)
+streamAll = streamFrom (StreamFromExclusive GenesisPoint)
+
+-- | Stream blocks from the given point up to the tip from the current chain.
 --
 -- To stream all blocks from the current chain from the ChainDB, one would use
 -- @'StreamFromExclusive' 'genesisPoint'@ as the lower bound and
@@ -561,13 +571,14 @@ data UnknownRange blk =
 --
 -- Note that this is not a 'Follower', so the stream will not include blocks
 -- that are added to the current chain after starting the stream.
-streamAll ::
+streamFrom ::
      (MonadSTM m, HasHeader blk, HasCallStack)
-  => ChainDB m blk
+  => StreamFrom blk
+  -> ChainDB m blk
   -> ResourceRegistry m
   -> BlockComponent blk b
   -> m (Iterator m blk b)
-streamAll db registry blockComponent = do
+streamFrom from db registry blockComponent = do
     tip <- atomically $ getTipPoint db
     case pointToWithOriginRealPoint tip of
       Origin         -> return emptyIterator
@@ -576,7 +587,7 @@ streamAll db registry blockComponent = do
                    db
                    registry
                    blockComponent
-                   (StreamFromExclusive GenesisPoint)
+                   from
                    (StreamToInclusive tip')
         case errIt of
           Right it -> return it
