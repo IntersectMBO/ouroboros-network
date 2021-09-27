@@ -8,6 +8,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -42,6 +43,7 @@ import           Data.Bifunctor
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Dynamic (fromDynamic)
+import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void, ($>), (<&>))
 import           Data.List (dropWhileEnd, find, foldl', mapAccumL, intercalate, (\\), delete)
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -67,6 +69,7 @@ import           Network.Mux.Types (MuxRuntimeError)
 import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Core
 
+import           Network.TypedProtocol.ReqResp.Type
 import           Network.TypedProtocol.ReqResp.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
@@ -77,7 +80,7 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Driver.Limits (ProtocolTimeLimits)
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
                    RemoteSt (..))
@@ -390,13 +393,17 @@ withInitiatorOnlyConnectionManager name timeouts cmTrTracer snocket localAddr
                      -> RunMiniProtocol InitiatorMode ByteString m [resp] Void
     reqRespInitiator protocolNum nextRequest =
       InitiatorProtocolOnly
-        (MuxPeer
-          ((name,"Initiator",protocolNum,) `contramap` nullTracer) -- TraceSendRecv
-          codecReqResp
-          (Effect $ do
-            reqs <- atomically nextRequest
-            pure $ reqRespClientPeer (reqRespClientMap reqs)))
-
+        (MuxPeerRaw $ \channel ->
+          runPeerWithLimits
+            (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
+            -- TraceSendRecv
+            codecReqResp
+            reqRespSizeLimits
+            reqRespTimeLimits
+            channel
+            (Effect $ do
+              reqs <- atomically nextRequest
+              pure $ reqRespClientPeer (reqRespClientMap reqs)))
 
 
 --
@@ -614,16 +621,26 @@ withBidirectionalConnectionManager name timeouts
       -> RunMiniProtocol InitiatorResponderMode ByteString m [resp] acc
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
-        (MuxPeer
-          (WithName (name,"Initiator",protocolNum) `contramap` nullTracer) -- TraceSendRecv
-          codecReqResp
-          (Effect $ do
-            reqs <- atomically nextRequest
-            pure $ reqRespClientPeer (reqRespClientMap reqs)))
-        (MuxPeer
-          (WithName (name,"Responder",protocolNum) `contramap` nullTracer) -- TraceSendRecv
-          codecReqResp
-          (reqRespServerPeer $ reqRespServerMapAccumL' accInit))
+        (MuxPeerRaw $ \channel ->
+          runPeerWithLimits
+            (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
+            -- TraceSendRecv
+            codecReqResp
+            reqRespSizeLimits
+            reqRespTimeLimits
+            channel
+            (Effect $ do
+              reqs <- atomically nextRequest
+              pure $ reqRespClientPeer (reqRespClientMap reqs)))
+        (MuxPeerRaw $ \channel ->
+          runPeerWithLimits
+            (WithName (name,"Responder",protocolNum) `contramap` nullTracer)
+            -- TraceSendRecv
+            codecReqResp
+            reqRespSizeLimits
+            reqRespTimeLimits
+            channel
+            (reqRespServerPeer $ reqRespServerMapAccumL' accInit))
 
     reqRespServerMapAccumL' :: acc -> ReqRespServer req resp m acc
     reqRespServerMapAccumL' = go
@@ -637,6 +654,25 @@ withBidirectionalConnectionManager name timeouts
               recvMsgDone = return acc
             }
 
+
+reqRespSizeLimits :: forall req resp. ProtocolSizeLimits (ReqResp req resp)
+                                                        ByteString
+reqRespSizeLimits = ProtocolSizeLimits
+    { sizeLimitForState
+    , dataSize = fromIntegral . LBS.length
+    }
+  where
+    sizeLimitForState :: forall (pr :: PeerRole) (st :: ReqResp req resp).
+                         PeerHasAgency pr st -> Word
+    sizeLimitForState _ = maxBound
+
+reqRespTimeLimits :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
+reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
+  where
+    timeLimitForState :: forall (pr :: PeerRole) (st :: ReqResp req resp).
+                         PeerHasAgency pr st -> Maybe DiffTime
+    timeLimitForState (ClientAgency TokIdle) = Nothing
+    timeLimitForState (ServerAgency TokBusy) = Just 60
 
 
 
