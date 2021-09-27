@@ -21,28 +21,48 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module LedgerOnDisk.V2.OnDiskMappings where
 
 import Data.Kind
 import Data.SOP
-import Control.Lens
+-- import Control.Lens
 import Data.SOP.NP
 import Data.Coerce
 import Data.Map (Map)
 import Data.Map.Monoidal (MonoidalMap(..))
-import Data.GADT.Compare
-import Type.Reflection
-import Data.Type.Equality
 import Data.Functor
-import Control.Monad
 import Data.Monoid hiding (All)
+import qualified Data.Monoid (All(..))
+import GHC.Generics hiding ((:.:))
+import Test.QuickCheck hiding (Fn)
+import Data.Functor.Const
+import Data.Functor.Identity
+import Data.List (intercalate)
+import Data.SOP.Dict
 
--- data MapKind = MapRO | MapRW
 
+-------------------------------------------------------------------
+{-
+Some preliminaries.
 
-type MapKind ki = ki -> Type -> Type -> Type
-type StateKind ki = MapKind ki -> Type
+At a top level we are concerned with types of the form `T (map :: ki -> Type -> Type -> Type)`
+
+for example
+
+type ki = 'Bool
+data PetStore map = PetStore
+  { inventory :: map 'True String Int
+  , orders :: map 'False String Double
+  , balance :: Int
+  }
+
+-}
+
+type TableKind ki = ki -> Type -> Type -> Type
+type StateKind ki = TableKind ki -> Type
+type TableConstraintKind ki = ki -> Type -> Type -> Constraint
 
 type family FstOf3 (tlm :: (k, l, m)) :: k where
   FstOf3 '(k, _, _) = k
@@ -53,35 +73,61 @@ type family SndOf3 (tlm :: (k, l, m)) :: l where
 type family ThirdOf3 (tlm :: (k, l, m)) :: m where
   ThirdOf3 '(_, _, m) = m
 
-data CurriedMap (map :: MapKind ki) (tkv :: (ki, Type, Type)) where
-  CurriedMap :: map t k v -> CurriedMap map '(t, k, v)
+data CurriedMap (map :: TableKind ki) (tkv :: (ki, Type, Type)) where
+  CurryMap :: { uncurryMap :: map t k v} -> CurriedMap map '(t, k, v)
+
+deriving stock instance (IsOnDiskTuple tkv, Eq (map (FstOf3 tkv) (SndOf3 tkv) (ThirdOf3 tkv))) => Eq (CurriedMap map tkv)
+deriving stock instance (IsOnDiskTuple tkv, Show (map (FstOf3 tkv) (SndOf3 tkv) (ThirdOf3 tkv))) => Show (CurriedMap map tkv)
 
 type ToTuple tkv = '(FstOf3 tkv, SndOf3 tkv, ThirdOf3 tkv)
 
--- Try delete Top
 class (tkv ~ ToTuple tkv) => IsOnDiskTuple (tkv :: (ki, Type, Type))
 instance (tkv ~ ToTuple tkv) => IsOnDiskTuple (tkv :: (ki, Type, Type))
 
 class (c (FstOf3 tkv) (SndOf3 tkv) (ThirdOf3 tkv), IsOnDiskTuple tkv)
-  => CurriedConstraint (c :: ki -> Type -> Type -> Constraint) (tkv :: (ki, Type, Type)) where
+  => CurriedConstraint (c :: TableConstraintKind ki) (tkv :: (ki, Type, Type)) where
 
 instance (c (FstOf3 tkv) (SndOf3 tkv) (ThirdOf3 tkv), IsOnDiskTuple tkv)
-  => CurriedConstraint (c :: ki -> Type -> Type -> Constraint) (tkv :: (ki, Type, Type)) where
+  => CurriedConstraint (c :: TableConstraintKind ki) (tkv :: (ki, Type, Type)) where
 
-class Top3 (t :: ki) k v
-instance Top3 (t :: ki) k v
+{-| OnDiskMappingsTypes
+
+Witnesses that (state map) is isomorphic to (a, NP map xs), where a is existensial and xs is `OnDiskMappingsTypes state`, and so fixed
+by the instance.
+
+Instances of `HasOnDiskMappings` are recommended to define a pattern synonym, for `PetStore`:
+
+pattern OdmPetStore ::
+  forall map. ()
+  => ()
+  => map 'True String Int
+  -> map 'False String Double
+  -> OnDiskMappings PetStore map
+pattern OdmPetStore { inventory, orders, balance } = OnDiskMappings $ CurriedMap inventory :* CurriedMap orders :* balance :* Nil
+
+-- TODO Revisit ^^^ when you have a bit more experience
+-}
 
 class (All IsOnDiskTuple (OnDiskMappingsTypes state)) => HasOnDiskMappings (state :: StateKind ki) where
+  {-# MINIMAL tableTags, (onDiskMappingsLens | projectOnDiskMappings, injectOnDiskMappings) #-}
+
+  data TableTag ki :: ki -> Type -> Type -> Type
+  tableTags :: OnDiskMappings state (TableTag ki)
 
   type OnDiskMappingsTypes state :: [ (ki, Type, Type) ]
-
-  onDiskMappingsLens :: Lens (state map1) (state map2) (OnDiskMappings state map1) (OnDiskMappings state map2)
+  -- This is a lens, but we don't depend on lens here
+  onDiskMappingsLens :: forall f (map1 :: TableKind ki) (map2 :: TableKind ki). Functor f
+    => (OnDiskMappings state map1 -> f (OnDiskMappings state map2))
+    -> state map1 -> f (state map2)
+  onDiskMappingsLens f s = flip injectOnDiskMappings s <$> f (projectOnDiskMappings s)
 
   projectOnDiskMappings :: state map -> OnDiskMappings state map
-  projectOnDiskMappings = view onDiskMappingsLens
+  projectOnDiskMappings = getConst . onDiskMappingsLens Const
 
   injectOnDiskMappings :: OnDiskMappings state map -> state anymap -> state map
-  injectOnDiskMappings = set onDiskMappingsLens
+  injectOnDiskMappings a s = runIdentity $ onDiskMappingsLens (const $ pure a) s
+
+newtype OnDiskMappings (state :: StateKind ki) map = OnDiskMappings (NP (CurriedMap map) (OnDiskMappingsTypes state))
 
 newtype ApMap map1 map2 t k v where
   ApMap :: (map1 t k v -> map2 t k v) -> ApMap map1 map2 t k v
@@ -89,47 +135,43 @@ newtype ApMap map1 map2 t k v where
 newtype ComposeMap f map (t :: ki) k v where
   ComposeMap :: f (map t k v) -> ComposeMap f map t k v
 
-newtype OnDiskMappings (state :: StateKind ki) map = OnDiskMappings (NP (CurriedMap map) (OnDiskMappingsTypes state))
 
 -- Probs doesn't need to be a class, but what's the downside?
-class (HasOnDiskMappings state, All (CurriedConstraint c) (OnDiskMappingsTypes state)) => AllMap (c :: ki -> Type -> Type -> Constraint) state
-instance (HasOnDiskMappings state, All (CurriedConstraint c) (OnDiskMappingsTypes state)) => AllMap (c :: ki -> Type -> Type -> Constraint) state
+class (HasOnDiskMappings state, All (CurriedConstraint c) (OnDiskMappingsTypes state)) => AllMap (c :: TableConstraintKind ki) (state :: StateKind ki)
+instance (HasOnDiskMappings state, All (CurriedConstraint c) (OnDiskMappingsTypes state)) => AllMap (c :: TableConstraintKind ki) (state :: StateKind ki)
 
-class EmptyConstraint t k v
-instance EmptyConstraint t k v
-
-pureOnDiskMappings :: forall ki (map :: MapKind ki) (state :: StateKind ki).
+pureOnDiskMappings :: forall ki (map :: TableKind ki) (state :: StateKind ki).
   (HasOnDiskMappings state)
   => (forall (t :: ki) k v. map t k v)
   -> OnDiskMappings state map
-pureOnDiskMappings mk_map = OnDiskMappings $ hcpure (Proxy :: Proxy IsOnDiskTuple) (CurriedMap mk_map)
+pureOnDiskMappings mk_map = OnDiskMappings $ hcpure (Proxy :: Proxy IsOnDiskTuple) (CurryMap mk_map)
 
-purecOnDiskMappings :: forall ki (c :: ki -> Type -> Type -> Constraint) (map :: MapKind ki) (state :: StateKind ki) proxy.
+pureAOnDiskMappings :: forall ki (map :: TableKind ki) (state :: StateKind ki) f.
+  (HasOnDiskMappings state, Applicative f)
+  => (forall (t :: ki) k v. f (map t k v))
+  -> f (OnDiskMappings state map)
+pureAOnDiskMappings mk_map = sequenceOnDiskMappings $ OnDiskMappings $ hcpure (Proxy :: Proxy IsOnDiskTuple) (CurryMap . ComposeMap $ mk_map)
+
+
+purecOnDiskMappings :: forall ki (c :: TableConstraintKind ki) (map :: TableKind ki) (state :: StateKind ki) proxy.
   (AllMap c state)
   => proxy c
   -> (forall (t :: ki) k v. c t k v => map t k v)
   -> OnDiskMappings state map
-purecOnDiskMappings _ mk_map = OnDiskMappings $ hcpure (Proxy :: Proxy (CurriedConstraint c)) (CurriedMap mk_map)
+purecOnDiskMappings _ mk_map = OnDiskMappings $ hcpure (Proxy :: Proxy (CurriedConstraint c)) (CurryMap mk_map)
 
-apOnDiskMappings :: forall ki (state :: StateKind ki) (map1 :: MapKind ki) (map2 :: MapKind ki).
+apOnDiskMappings :: forall ki (state :: StateKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki).
   (HasOnDiskMappings state)
   => OnDiskMappings state (map1 `ApMap` map2) -> OnDiskMappings state map1 -> OnDiskMappings state map2
 apOnDiskMappings (OnDiskMappings x) (OnDiskMappings y) = OnDiskMappings $ ap_NP (map_NP go x) y
   where
     go :: forall (tkv :: (ki, Type, Type)). CurriedMap (map1 `ApMap` map2) tkv -> (CurriedMap map1 -.-> CurriedMap map2) tkv
-    go (CurriedMap (ApMap f)) = Fn $ \(CurriedMap  m) -> CurriedMap (f m)
+    go (CurryMap ap_map) = Fn $ \(CurryMap m) -> CurryMap $ coerce ap_map m
 
-collapseOnDiskMappings :: forall ki (state :: StateKind ki) a. HasOnDiskMappings state => OnDiskMappings state (ConstMap a) -> [a]
-collapseOnDiskMappings odm = appEndo (foldMapOnDiskMappings (\(ConstMap x) -> Endo (x :)) odm) []
-
-traversecOnDiskMappings :: forall ki proxy state f c map1 map2. (Applicative f, AllMap c state)
-  => proxy c
-  -> (forall (t :: ki) k v. c t k v => map1 t k v -> f (map2 t k v))
-  -> OnDiskMappings state map1 -> f (OnDiskMappings state map2)
-traversecOnDiskMappings _ f (OnDiskMappings np) = OnDiskMappings <$> hctraverse' (Proxy :: Proxy (CurriedConstraint c)) go np
-  where
-    go :: CurriedConstraint c tkv => CurriedMap map1 tkv -> f (CurriedMap map2 tkv)
-    go (CurriedMap m) = CurriedMap <$> f m
+collapseOnDiskMappings :: forall ki (state :: StateKind ki) a.
+  HasOnDiskMappings state =>
+  OnDiskMappings state (ConstMap a) -> [a]
+collapseOnDiskMappings odm = appEndo (coerce $ foldMapOnDiskMappings (Dual . Endo . (:) . getConstMap) odm) []
 
 traverseOnDiskMappings :: forall ki state f map1 map2. (Applicative f, HasOnDiskMappings state)
   => (forall (t :: ki) k v. map1 t k v -> f (map2 t k v))
@@ -137,23 +179,35 @@ traverseOnDiskMappings :: forall ki state f map1 map2. (Applicative f, HasOnDisk
 traverseOnDiskMappings f (OnDiskMappings np) = OnDiskMappings <$> hctraverse' (Proxy :: Proxy IsOnDiskTuple) go np
   where
     go :: CurriedMap map1 tkv -> f (CurriedMap map2 tkv)
-    go (CurriedMap m) = CurriedMap <$> f m
+    go (CurryMap m) = fmap CurryMap . f $ m
+
+traversecOnDiskMappings :: forall ki proxy (state :: StateKind ki) (c :: TableConstraintKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki) f.
+  (Applicative f, AllMap c state)
+  => proxy c
+  -> (forall (t :: ki) k v. c t k v => map1 t k v -> f (map2 t k v))
+  -> OnDiskMappings state map1 -> f (OnDiskMappings state map2)
+traversecOnDiskMappings _ f (OnDiskMappings np) = OnDiskMappings <$> hctraverse'
+  (Proxy :: Proxy (CurriedConstraint c))
+  (fmap CurryMap . f . uncurryMap)
+  np
 
 traverseOnDiskMappings_ :: forall ki state f map1. (Applicative f, HasOnDiskMappings state)
   => (forall (t :: ki) k v. map1 t k v -> f ())
   -> OnDiskMappings state map1 -> f ()
-traverseOnDiskMappings_ f (OnDiskMappings np) = hctraverse_ (Proxy :: Proxy IsOnDiskTuple) go np
-  where
-    go :: CurriedMap map1 tkv -> f ()
-    go (CurriedMap m) = f m
+traverseOnDiskMappings_ f (OnDiskMappings np) = hctraverse_ (Proxy :: Proxy IsOnDiskTuple) (f . uncurryMap) np
 
-sequenceOnDiskMappings :: forall ki (state :: StateKind ki) f (map :: MapKind ki).
+sequenceOnDiskMappings :: forall ki (state :: StateKind ki) f (map :: TableKind ki).
   (Applicative f, HasOnDiskMappings state)
   => OnDiskMappings state (ComposeMap f map) -> f (OnDiskMappings state map)
 sequenceOnDiskMappings (OnDiskMappings x) = OnDiskMappings <$> hsequence' (map_NP go x)
   where
     go :: CurriedMap (ComposeMap f map) tkv -> (f :.: CurriedMap map) tkv
-    go (CurriedMap (ComposeMap f_map)) = Comp (CurriedMap <$> f_map)
+    go (CurryMap (ComposeMap f_map)) = Comp (CurryMap <$> f_map)
+
+sequenceOnDiskMappings_ :: forall ki (state :: StateKind ki) f.
+  (Applicative f, HasOnDiskMappings state)
+  => OnDiskMappings state (ComposeMap f NullMap) -> f ()
+sequenceOnDiskMappings_ x = void $ sequenceOnDiskMappings x
 
 foldMapOnDiskMappings :: forall ki state map a. (Monoid a, HasOnDiskMappings state)
   => (forall (t :: ki) k v. map t k v -> a)
@@ -167,9 +221,9 @@ foldMapcOnDiskMappings :: forall ki proxy state c map a. (Monoid a, AllMap c sta
 foldMapcOnDiskMappings _ f (OnDiskMappings np)= hcfoldMap (Proxy :: Proxy (CurriedConstraint c)) go np
   where
     go :: CurriedConstraint c tkv => CurriedMap map tkv -> a
-    go (CurriedMap m) = f m
+    go (CurryMap m) = f m
 
-mapOnDiskMappings :: forall ki (state :: StateKind ki) map1 map2.
+mapOnDiskMappings :: forall ki (state :: StateKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki).
   (HasOnDiskMappings state)
   => (forall (t :: ki) k v. map1 t k v -> map2 t k v)
   -> OnDiskMappings state map1 -> OnDiskMappings state map2
@@ -181,64 +235,98 @@ mapcOnDiskMappings :: forall ki proxy (state :: StateKind ki) c map1 map2. AllMa
   -> OnDiskMappings state map1 -> OnDiskMappings state map2
 mapcOnDiskMappings p f x = runIdentity $ traversecOnDiskMappings p (pure . f) x
 
-zipOnDiskMappings :: forall ki (state :: StateKind ki) (map1 :: MapKind ki) (map2 :: MapKind ki) (map3 :: MapKind ki).
+zipOnDiskMappings :: forall ki (state :: StateKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki) (map3 :: TableKind ki).
   (HasOnDiskMappings state)
   => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> map3 t k v)
   -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3
-zipOnDiskMappings f x y = go `apOnDiskMappings` y
-  where
-    go :: OnDiskMappings state (ApMap map2 map3)
-    go = mapOnDiskMappings (coerce . f ) x
+zipOnDiskMappings f x y = mapOnDiskMappings (coerce . f ) x `apOnDiskMappings` y
 
-zipcOnDiskMappings :: forall ki proxy (state :: StateKind ki) c (map1 :: MapKind ki) (map2 :: MapKind ki) (map3 :: MapKind ki). (AllMap c state, HasOnDiskMappings state)
+zip3OnDiskMappings :: forall ki (state :: StateKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki) (map3 :: TableKind ki) (map4 :: TableKind ki).
+  (HasOnDiskMappings state)
+  => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> map3 t k v -> map4 t k v)
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> OnDiskMappings state map4
+zip3OnDiskMappings f x y z = mapOnDiskMappings (coerce . f ) x `apOnDiskMappings` y `apOnDiskMappings` z
+
+zip4OnDiskMappings :: forall ki (state :: StateKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki)
+  (map3 :: TableKind ki) (map4 :: TableKind ki) (map5 :: TableKind ki).
+  (HasOnDiskMappings state)
+  => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> map3 t k v -> map4 t k v -> map5 t k v)
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> OnDiskMappings state map4 -> OnDiskMappings state map5
+zip4OnDiskMappings f a b c d =  mapOnDiskMappings (coerce . f) a `apOnDiskMappings` b `apOnDiskMappings` c `apOnDiskMappings` d
+
+zipcOnDiskMappings :: forall ki proxy (state :: StateKind ki) c (map1 :: TableKind ki) (map2 :: TableKind ki) (map3 :: TableKind ki). (AllMap c state, HasOnDiskMappings state)
   => proxy c
   -> (forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> map3 t k v)
   -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3
-zipcOnDiskMappings p f x y = go `apOnDiskMappings` y
-  where
-    go :: OnDiskMappings state (ApMap map2 map3)
-    go = mapcOnDiskMappings p (coerce . f ) x
+zipcOnDiskMappings p f x y = mapcOnDiskMappings p (coerce . f ) x `apOnDiskMappings` y
 
 zipAOnDiskMappings :: forall ki (state :: StateKind ki) map1 map2 map3 f.
   (HasOnDiskMappings state, Applicative f)
   => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> f (map3 t k v))
   -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> f (OnDiskMappings state map3)
-zipAOnDiskMappings f x y = sequenceOnDiskMappings $ go `apOnDiskMappings` y
-  where
-    go :: OnDiskMappings state (ApMap map2 (ComposeMap f map3))
-    go = mapOnDiskMappings (coerce . f ) x
+zipAOnDiskMappings f x y = sequenceOnDiskMappings $ mapOnDiskMappings (coerce . f ) x `apOnDiskMappings` y
 
-zipAcOnDiskMappings :: forall ki f proxy (state :: StateKind ki) c (map1 :: MapKind ki) (map2 :: MapKind ki) (map3 :: MapKind ki).
+zip3AOnDiskMappings :: forall ki (state :: StateKind ki) map1 map2 map3 map4 f.
+  (HasOnDiskMappings state, Applicative f)
+  => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> map3 t k v -> f (map4 t k v))
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> f (OnDiskMappings state map4)
+zip3AOnDiskMappings f x y z = sequenceOnDiskMappings $ mapOnDiskMappings (coerce . f ) x `apOnDiskMappings` y `apOnDiskMappings` z
+
+zip4AOnDiskMappings :: forall ki (state :: StateKind ki) map1 map2 map3 map4 map5 f.
+  (HasOnDiskMappings state, Applicative f)
+  => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> map3 t k v -> map4 t k v -> f (map5 t k v))
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> OnDiskMappings state map4 -> f (OnDiskMappings state map5)
+zip4AOnDiskMappings f x1 x2 x3 x4 = sequenceOnDiskMappings $ mapOnDiskMappings (coerce . f ) x1 `apOnDiskMappings` x2 `apOnDiskMappings` x3 `apOnDiskMappings` x4
+
+zipAcOnDiskMappings :: forall ki f proxy (state :: StateKind ki) c (map1 :: TableKind ki) (map2 :: TableKind ki) (map3 :: TableKind ki).
   (AllMap c state, Applicative f)
   => proxy c
   -> (forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> f (map3 t k v))
   -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> f (OnDiskMappings state map3)
-zipAcOnDiskMappings p f x y = sequenceOnDiskMappings $ go `apOnDiskMappings` y
-  where
-    go :: OnDiskMappings state (ApMap map2 (ComposeMap f map3))
-    go = mapcOnDiskMappings p (coerce . f ) x
+zipAcOnDiskMappings p f x y = sequenceOnDiskMappings $ mapcOnDiskMappings p (coerce . f ) x `apOnDiskMappings` y
 
-zip4AcOnDiskMappings :: forall ki f proxy (state :: StateKind ki) c (map1 :: MapKind ki) (map2 :: MapKind ki) (map3 :: MapKind ki) (map4 :: MapKind ki) (map5 :: MapKind ki).
+zip3AcOnDiskMappings :: forall ki f proxy (state :: StateKind ki) c (map1 :: TableKind ki) (map2 :: TableKind ki) (map3 :: TableKind ki) (map4 :: TableKind ki).
+  (AllMap c state, Applicative f)
+  => proxy c
+  -> (forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> map3 t k v -> f (map4 t k v))
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> f (OnDiskMappings state map4)
+zip3AcOnDiskMappings p f a b c = sequenceOnDiskMappings $  a' `apOnDiskMappings` b `apOnDiskMappings` c
+  where
+    a' = mapcOnDiskMappings p (coerce . f)  a
+
+zip4AcOnDiskMappings :: forall ki f proxy (state :: StateKind ki) c (map1 :: TableKind ki) (map2 :: TableKind ki)
+  (map3 :: TableKind ki) (map4 :: TableKind ki) (map5 :: TableKind ki).
   (AllMap c state, Applicative f)
   => proxy c
   -> (forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> map3 t k v -> map4 t k v -> f (map5 t k v))
   -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> OnDiskMappings state map4 -> f (OnDiskMappings state map5)
-zip4AcOnDiskMappings p f a b c d = sequenceOnDiskMappings $  a' `apOnDiskMappings` b `apOnDiskMappings` c `apOnDiskMappings` d
+zip4AcOnDiskMappings p f a b c d = sequenceOnDiskMappings $ mapcOnDiskMappings p (coerce . f) a `apOnDiskMappings` b `apOnDiskMappings` c `apOnDiskMappings` d
+
+zip3AOnDiskMappings_ :: forall ki (state :: StateKind ki) map1 map2 map3 f.
+  (HasOnDiskMappings state, Applicative f)
+  => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> map3 t k v -> f (NullMap t k v))
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> f ()
+zip3AOnDiskMappings_ f x y z = sequenceOnDiskMappings_ $ mapOnDiskMappings (coerce . f ) x `apOnDiskMappings` y `apOnDiskMappings` z
+
+zip3AcOnDiskMappings_ :: forall ki (state :: StateKind ki) map1 map2 map3 f proxy c.
+  (AllMap c state, Applicative f)
+  => proxy c
+  -> (forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> map3 t k v -> f ())
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> f ()
+zip3AcOnDiskMappings_ p f x y z = sequenceOnDiskMappings_ $ go `apOnDiskMappings` y `apOnDiskMappings` z
   where
-    a' = mapcOnDiskMappings p (coerce . f)  a
+    go = mapcOnDiskMappings p (\a0 -> ApMap (\a1 -> ApMap (\a2 -> ComposeMap ( f a0 a1 a2 $> NullMap)))) x
 
--- zip4AcOnDiskMappings_ :: forall ki f proxy (state :: StateKind ki) c (map1 :: MapKind ki) (map2 :: MapKind ki) (map3 :: MapKind ki) (map4 :: MapKind ki) (map5 :: MapKind ki).
---   (AllMap c state, Applicative f)
---   => proxy c
---   -> (forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> map3 t k v -> map4 t k v -> f ())
---   -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> OnDiskMappings state map3 -> OnDiskMappings state map4 -> f ()
--- zip4AcOnDiskMappings_ p f a b c d = void $ zip4AcOnDiskMappings p f' a b c d
---   where
---     f' :: forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> map3 t k v -> map4 t k v -> f (NullMap t k v)
---     f' a' b' c' d' = f a' b' c' d' $> NullMap
---     -- a'' = mapcOnDiskMappings p (coerce . f') a
+zipAOnDiskMappings_:: forall ki f (state :: StateKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki).
+  (HasOnDiskMappings state, Applicative f)
+  => (forall (t :: ki) k v. map1 t k v -> map2 t k v -> f ())
+  -> OnDiskMappings state map1 -> OnDiskMappings state map2 -> f ()
+zipAOnDiskMappings_  f x y = void $ sequenceOnDiskMappings $  go `apOnDiskMappings` y
+  where
+    go :: OnDiskMappings state (ApMap map2 (ComposeMap f NullMap))
+    go = mapOnDiskMappings (\v -> ApMap (\z -> ComposeMap ( f v z $> NullMap))) x
 
-zipAcOnDiskMappings_:: forall ki f proxy (state :: StateKind ki) c (map1 :: MapKind ki) (map2 :: MapKind ki).
+zipAcOnDiskMappings_:: forall ki f proxy (state :: StateKind ki) c (map1 :: TableKind ki) (map2 :: TableKind ki).
   (AllMap c state, Applicative f)
   => proxy c
   -> (forall (t :: ki) k v. c t k v => map1 t k v -> map2 t k v -> f ())
@@ -249,29 +337,8 @@ zipAcOnDiskMappings_ p f x y = void $ sequenceOnDiskMappings $  go `apOnDiskMapp
     go = mapcOnDiskMappings p (\v -> ApMap (\z -> ComposeMap ( f v z $> NullMap))) x
 
 
-
-
-
--- data WrappedTuple tkv where
---   WrappedTuple :: tkv ~ (t,k,v) => WrappedTuple '(t, k, v)
-
--- data MapDict c t k v where
---   MapDict :: c t k v => MapDict c t k v
-
--- pureAllMap :: forall ki proxy state. HasOnDiskMappings state => proxy state -> Dict (All Top) (OnDiskMappingsTypes state)
--- pureAllMap _ = pureAll
-
--- allOnDiskTuplesMap :: forall ki proxy (state :: StateKind ki). HasOnDiskMappings state => proxy state -> Dict (All (IsOnDiskTuple )) (OnDiskMappingsTypes state)
--- allOnDiskTuplesMap _ = Dict
-
--- pureEmptyConstraintMap :: forall ki proxy (state :: StateKind ki). HasOnDiskMappings state => proxy state -> Dict (All (CurriedConstraint EmptyConstraint)) (OnDiskMappingsTypes state)
--- pureEmptyConstraintMap p = mapAll go $ allOnDiskTuplesMap p
---   where
---     go :: forall a. (EmptyConstraint (FstOf3 a) (SndOf3 a) (ThirdOf3 a)) => Dict (IsOnDiskTuple) a -> Dict (CurriedConstraint EmptyConstraint) a
---     go Dict = Dict
-
 data NullMap t k v = NullMap
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Show, Functor)
 
 instance Semigroup (NullMap t k v) where
   _ <> _ = NullMap
@@ -279,35 +346,73 @@ instance Semigroup (NullMap t k v) where
 instance Monoid (NullMap t k v) where
   mempty = NullMap
 
-newtype ConstMap a t k v = ConstMap a
+newtype ConstMap a t k v = ConstMap { getConstMap :: a }
   deriving stock (Eq, Show)
+  deriving newtype Arbitrary
   deriving (Functor, Applicative) via (Const a)
 
 deriving via (Const a v) instance Semigroup a => Semigroup (ConstMap a t k v)
 deriving via (Const a v) instance Monoid a => Monoid (ConstMap a t k v)
 
+class c (map t k v) => MapIs c map t k v
+instance c (map t k v) => MapIs c map t k v
 
-class Semigroup (map t k v)  => SemigroupMap (map :: MapKind ki) (t :: ki) k v
-instance Semigroup (map t k v)  => SemigroupMap map t k v
+-- class Semigroup (map t k v)  => SemigroupMap (map :: TableKind ki) (t :: ki) k v
+-- instance Semigroup (map t k v)  => SemigroupMap map t k v
 
-class (Monoid (map t k v), SemigroupMap map t k v)  => MonoidMap (map :: MapKind ki) (t :: ki) k v
-instance (SemigroupMap map t k v, Monoid (map t k v))  => MonoidMap map t k v
+-- class (Monoid (map t k v), SemigroupMap map t k v)  => MonoidMap (map :: TableKind ki) (t :: ki) k v
+-- instance (SemigroupMap map t k v, Monoid (map t k v))  => MonoidMap map t k v
 
-instance (HasOnDiskMappings state, AllMap (SemigroupMap map) state)
-  => Semigroup (OnDiskMappings (state :: StateKind ki) (map :: MapKind ki)) where
-  x <> y =  zipcOnDiskMappings (Proxy :: Proxy (SemigroupMap map)) (<>) x y
+instance (HasOnDiskMappings state, AllMap (MapIs Semigroup map) state)
+  => Semigroup (OnDiskMappings (state :: StateKind ki) (map :: TableKind ki)) where
+  x <> y =  zipcOnDiskMappings (Proxy :: Proxy (MapIs Semigroup map)) (<>) x y
 
 instance
   ( HasOnDiskMappings state
-  , AllMap (MonoidMap map) state
-  , Semigroup (OnDiskMappings state map)
-  ) => Monoid (OnDiskMappings (state :: StateKind ki) (map :: MapKind ki)) where
+  , AllMap (MapIs Semigroup map) state
+  , AllMap (MapIs Monoid map) state
+  -- , Semigroup (OnDiskMappings state map)
+  ) => Monoid (OnDiskMappings (state :: StateKind ki) (map :: TableKind ki)) where
   mempty :: OnDiskMappings state map
-  mempty = purecOnDiskMappings (Proxy :: Proxy (MonoidMap map)) mempty
+  mempty = purecOnDiskMappings (Proxy :: Proxy (MapIs Monoid map)) mempty
 
-newtype DataMap t k v = DataMap (Map k v)
-  deriving stock (Show, Eq)
-  deriving newtype (Functor)
+-- allComposeDict :: forall c map state proxy.
+--   (AllMap (MapIs c map) state, HasOnDiskMappings state)
+--   => proxy '(state, map, c)
+--   -> Dict (All (Compose c (CurriedMap map))) (OnDiskMappingsTypes state)
+-- allComposeDict _ = all_NP go where
+--   d1 :: Dict (All (CurriedConstraint (MapIs c map))) (OnDiskMappingsTypes state)
+--   d1 = Dict
+--   d2 :: NP (Dict (CurriedConstraint (MapIs c map))) (OnDiskMappingsTypes state)
+--   d2 = unAll_NP d1
+--   go :: NP (Dict (Compose c (CurriedMap map))) (OnDiskMappingsTypes state)
+--   go = hmap (\Dict -> Dict) d2
+
+-- deriving newtype instance (HasOnDiskMappings state, AllMap (MapIs Eq map) state) => Eq (OnDiskMappings state map)
+instance (HasOnDiskMappings state, AllMap (MapIs Eq map) state) => Eq (OnDiskMappings state map) where
+  x == y = Data.Monoid.getAll . foldMapOnDiskMappings getConstMap $ zipcOnDiskMappings (Proxy :: Proxy (MapIs Eq map)) go  x y where
+    go :: Eq (map t k v) => map t k v -> map t k v -> ConstMap Data.Monoid.All t k v
+    go z w = coerce $ z == w
+
+    -- allComposeDict (Proxy :: Proxy '(state, map, Eq)) `withDict` go where
+    -- go :: All (Compose Eq (CurriedMap map)) (OnDiskMappingsTypes state) => Bool
+    -- go = x == y
+
+-- class (Show (map1 t k v), Show (map2 t k v)) => ShowMapAux map1 map2 t k v
+-- instance (Show (map1 t k v), Show (map2 t k v)) => ShowMapAux map1 map2 t k v
+
+instance (HasOnDiskMappings state, AllMap (MapIs Show map) state) => Show (OnDiskMappings state map) where
+  showsPrec d odm = showParen (d >= 10) $ showString $ "OnDiskMappings: {" <> showmappings <> "}" where
+    showmappings = intercalate "," $ foldMapOnDiskMappings getConstMap $ mapcOnDiskMappings (Proxy :: Proxy (MapIs Show map)) go odm where
+      go :: (Show (map t k v)) => map t k v -> ConstMap [String] t k v
+      go m = ConstMap [show m]
+
+-- instance (HasOnDiskMappings state, AllMap (MapIs Arbitrary map) state) => Eq (OnDiskMappings state map) where
+--   arbitrary = getAll . foldMapOnDiskMappings getConstMap $ zipOnDiskMappings (\z w -> ConstMap . All $ z == w) x y
+
+newtype DataMap (t :: ki) k v = DataMap (Map k v)
+  deriving stock (Show, Eq, Generic)
+  deriving newtype (Functor, Arbitrary)
   deriving (Semigroup, Monoid) via MonoidalMap k v
 
 class (Ord k, Semigroup v) => KeysOrdValuesSemigroup t k v
@@ -319,15 +424,18 @@ instance Ord k => KeysOrd t k v
 nullMappings :: forall ki (state :: StateKind ki). HasOnDiskMappings state => OnDiskMappings state NullMap
 nullMappings = pureOnDiskMappings (NullMap :: forall (t :: ki) k v. NullMap t k v)
 
-data ProductMap (map1 :: MapKind ki) (map2 :: MapKind ki) (t :: ki) k v = ProductMap (map1 t k v) (map2 t k v)
+data ProductMap (map1 :: TableKind ki) (map2 :: TableKind ki) (t :: ki) k v = ProductMap (map1 t k v) (map2 t k v)
 
-liftProductMapRight :: forall ki (state ::StateKind ki) (map1 :: MapKind ki) (map2 :: MapKind ki) (map3 :: MapKind ki).
+liftProductMapRight :: forall ki (state ::StateKind ki) (map1 :: TableKind ki) (map2 :: TableKind ki) (map3 :: TableKind ki).
   HasOnDiskMappings state
   => (OnDiskMappings state map2 -> OnDiskMappings state map3)
   -> OnDiskMappings state (map1 `ProductMap` map2) -> OnDiskMappings state (map1 `ProductMap` map3)
 liftProductMapRight f x = zipOnDiskMappings (\(ProductMap l _) res -> ProductMap l res) x (f justRightMaps)
   where
     justRightMaps = mapOnDiskMappings (\(ProductMap _ r) -> r) x
+
+liftOnDiskMappingsToComposeMap :: (Applicative f, HasOnDiskMappings state) => OnDiskMappings state map -> OnDiskMappings state (ComposeMap f map)
+liftOnDiskMappingsToComposeMap = mapOnDiskMappings (ComposeMap . pure)
 
 lowerProductMapLeft :: HasOnDiskMappings state => OnDiskMappings state (ProductMap map1 map2) -> OnDiskMappings state map1
 lowerProductMapLeft = mapOnDiskMappings $ \(ProductMap x _) -> x
@@ -339,15 +447,3 @@ newtype MaybeMap map t k v = MaybeMap (Maybe (map t k v))
 odmProductMapToTuple :: HasOnDiskMappings state => OnDiskMappings state (ProductMap map1 map2) -> (OnDiskMappings state map1, OnDiskMappings state map2)
 odmProductMapToTuple odm = (lowerProductMapLeft odm, lowerProductMapRight odm)
 
-data TableId state t k v = TableId (NS (K Int) (OnDiskMappingsTypes state))
-
--- indexedOnDiskMappings :: OnDiskMappings state (TableId state)
--- indexedOnDiskMappings
-curriedMapEquality :: forall map x y. (Typeable x, Typeable y) => CurriedMap map x -> CurriedMap map y -> Maybe (x :~: y)
-
-curriedMapEquality _ _ = (typeRep :: TypeRep x) `testEquality` (typeRep :: TypeRep y)
-
--- instance GEq (CurriedMap TableId) where
---   geq x@(CurriedMap (TableId i1 :: TableId (t1 :: ki) k1 v1)) y@(CurriedMap (TableId i2 :: TableId (t2 :: ki) k2 v2)) = do
---     guard (i1 == i2)
---     curriedMapEquality x y

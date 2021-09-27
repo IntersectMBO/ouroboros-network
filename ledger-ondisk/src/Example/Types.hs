@@ -189,9 +189,9 @@ instance Haskey.Value (OnDiskMappings LedgerState map) => Haskey.Root (OnDiskMap
 
 type StakePool = Int
 
+-- | RegisterAddr Addr StakePool
+-- | DeregisterAddr Addr StakePool
 data Tx = Tx [TxIn] [TxOut] | LollyScramble [TxOut]
-  -- | RegisterAddr Addr StakePool
-  -- | DeregisterAddr Addr StakePool
   deriving stock (Eq, Show, Generic)
   deriving anyclass (H.Hashable)
 

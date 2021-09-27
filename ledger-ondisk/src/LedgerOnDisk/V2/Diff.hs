@@ -8,6 +8,9 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- |
 
@@ -27,10 +30,16 @@ import Control.Monad.Trans.Writer.CPS
 import Control.Monad.IO.Class
 import qualified Data.Map.Merge.Strict as Map
 import Data.Set (Set)
+import Data.Coerce
 
 data DBDiff t k v
 
 data MapFlavour = MK_RO | MK_RW | MK_RWU
+
+data MapTag t where
+  MapTagRO :: MapTag 'MK_RO
+  MapTagRW :: MapTag 'MK_RW
+  MapTagRWU :: MapTag 'MK_RWU
 
 data Diff v = DNoChange | DRemove | DChangeTo !v
   deriving stock (Eq, Show, Generic)
@@ -99,24 +108,24 @@ mappend == <>: succeeeded
 
 -}
 
-data DiffMap (t :: MapFlavour) k v where
-  DiffMapRWU :: Semigroup v => Map k (DiffWithMappend v) -> DiffMap 'MK_RWU k v
-  DiffMapRW :: Map k (Diff v) -> DiffMap 'MK_RW k v
-  RetargetSnapshot :: {- TODO -} DiffMap 'MK_RO k v
-  DiffMapMempty :: DiffMap t k v
+data DiffMap0 (t :: MapFlavour) k v where
+  DiffMapRWU :: (Ord k, Semigroup v) => Map k (DiffWithMappend v) -> DiffMap0 'MK_RWU k v
+  DiffMapRW :: Ord k => Map k (Diff v) -> DiffMap0 'MK_RW k v
+  DiffMapRO :: DiffMap0 'MK_RO k v
 
-deriving stock instance(Eq k, Eq v) => Eq (DiffMap t k v)
-deriving stock instance(Show k, Show v) => Show (DiffMap t k v)
+deriving stock instance(Eq k, Eq v) => Eq (DiffMap0 t k v)
+deriving stock instance(Show k, Show v) => Show (DiffMap0 t k v)
 
-instance Ord k => Semigroup (DiffMap t k v) where
-  DiffMapMempty <> x = x
-  x <> DiffMapMempty  = x
+instance Semigroup (DiffMap0 t k v) where
+  DiffMapRO <> DiffMapRO = DiffMapRO
   DiffMapRWU x <> DiffMapRWU y = DiffMapRWU $ Map.unionWith (<>) x y
   DiffMapRW x <> DiffMapRW y = DiffMapRW $ Map.unionWith (<>) x y
-  RetargetSnapshot <> RetargetSnapshot = RetargetSnapshot
 
-instance Ord k => Monoid (DiffMap t k v) where
-  mempty = DiffMapMempty
+newtype DiffMap (t :: MapFlavour) k v = DiffMap (Maybe (DiffMap0 t k v))
+  deriving stock (Eq, Show)
+  deriving newtype (Semigroup, Monoid)
+
+deriving newtype instance (Arbitrary (DiffMap0 t k v)) => Arbitrary (DiffMap t k v)
 
 instance Arbitrary v => Arbitrary (Diff v) where
   shrink = genericShrink
@@ -126,26 +135,35 @@ instance (Semigroup v, Arbitrary v) => Arbitrary (DiffWithMappend v) where
   shrink = genericShrink
   arbitrary = oneof [ DWMDiff <$> arbitrary, DMappend <$> arbitrary ]
 
-instance (Ord k, Arbitrary k, Arbitrary v) => Arbitrary (DiffMap 'MK_RW k v) where
+instance (Ord k, Arbitrary k, Arbitrary v) => Arbitrary (DiffMap0 'MK_RW k v) where
   arbitrary = DiffMapRW <$> arbitrary
   shrink = \case
     DiffMapRW m -> DiffMapRW <$> shrink m
-    DiffMapMempty -> []
 
-restrictDiffMap :: Ord k => Set k -> DiffMap t k v -> DiffMap t k v
-restrictDiffMap s = \case
-  DiffMapRW m -> DiffMapRW (Map.restrictKeys m s)
-  DiffMapMempty -> DiffMapMempty
-  DiffMapRWU m -> DiffMapRWU (Map.restrictKeys m s)
-  RetargetSnapshot -> RetargetSnapshot
+instance (Ord k, Arbitrary k, Arbitrary v, Semigroup v) => Arbitrary (DiffMap0 'MK_RWU k v) where
+  arbitrary = DiffMapRWU <$> arbitrary
+  shrink = \case
+    DiffMapRWU m -> DiffMapRWU <$> shrink m
 
-applyDiffMapToMap :: Ord k => DiffMap t k v -> Map k v -> Map k v
-applyDiffMapToMap dm x = case dm of
-  DiffMapRWU m -> applyDiffWithMappendToMap m x
-  DiffMapRW m -> applyDiffToMap m x
-  RetargetSnapshot -> error "dunno"
-  DiffMapMempty -> x
+instance Arbitrary (DiffMap0 'MK_RO k v) where
+  arbitrary = pure DiffMapRO
 
+
+restrictDiffMap :: Set k -> DiffMap t k v -> DiffMap t k v
+restrictDiffMap s dm = case coerce dm of
+  Nothing -> dm
+  Just dm0
+    | DiffMapRO <- dm0 -> dm
+    | DiffMapRW m <- dm0 -> DiffMap . pure . DiffMapRW . Map.restrictKeys m $ s
+    | DiffMapRWU m <- dm0 -> DiffMap . pure . DiffMapRWU . Map.restrictKeys m $ s
+
+applyDiffMapToMap :: DiffMap t k v -> Map k v -> Map k v
+applyDiffMapToMap dm x = case coerce dm of
+  Nothing -> x
+  Just dm0
+    | DiffMapRO <- dm0 -> x
+    | DiffMapRW m <- dm0 -> applyDiffToMap m x
+    | DiffMapRWU m <- dm0 -> applyDiffWithMappendToMap m x
 
 applyDiffToValue :: Diff v -> Maybe v -> Maybe v
 applyDiffToValue d x = case d of
@@ -175,10 +193,10 @@ prop_applyDiffMapToMap_is_homomorphism :: DiffMap 'MK_RW Int Int -> DiffMap 'MK_
 prop_applyDiffMapToMap_is_homomorphism dm1 dm2 m = applyDiffMapToMap dm1 (applyDiffMapToMap dm2 m)  === applyDiffMapToMap (dm1 <> dm2) m
 
 prop_applyDiffMapToMap_deletes :: Int -> Map Int Int -> Property
-prop_applyDiffMapToMap_deletes k m = property $ Map.notMember k (applyDiffMapToMap (DiffMapRW $ Map.singleton k DRemove) m)
+prop_applyDiffMapToMap_deletes k m = property $ Map.notMember k (applyDiffMapToMap (coerce . Just . DiffMapRW . Map.singleton k $ DRemove) m)
 
 prop_applyDiffMapToMap_inserts :: Int -> Int -> Map Int Int -> Property
-prop_applyDiffMapToMap_inserts k v m = property $ Map.member k (applyDiffMapToMap (DiffMapRW . Map.singleton k . DChangeTo $ v) m)
+prop_applyDiffMapToMap_inserts k v m = property $ Map.member k (applyDiffMapToMap (coerce . Just . DiffMapRW . Map.singleton k . DChangeTo $ v) m)
 
 {-
 prop>  prop_applyDiffMapToMap_is_homomorphism

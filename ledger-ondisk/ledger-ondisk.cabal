@@ -41,6 +41,9 @@ library
                        LedgerOnDisk.V2.Db
                        LedgerOnDisk.V2.DumbDb
                        LedgerOnDisk.V2.SmartDb
+                       LedgerOnDisk.V2.Diff
+                       LedgerOnDisk.V2.Fingertree
+                       LedgerOnDisk.V2.Snapshot
 
                        LedgerOnDisk.App.HaskeyKV
 
