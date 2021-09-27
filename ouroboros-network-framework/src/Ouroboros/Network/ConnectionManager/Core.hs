@@ -474,8 +474,8 @@ withConnectionManager
        , MonadAsync         m
        , MonadEvaluate      m
        , MonadMask          m
-       , MonadTimer         m
        , MonadThrow    (STM m)
+       , MonadTimer         m
 
        , Ord      peerAddr
        , Show     peerAddr
@@ -1304,6 +1304,14 @@ withConnectionManager ConnectionManagerArguments {
 
             tr <- atomically $ do
               connState <- readTVar connVar
+              !_ <- assert (case connState of
+                                  ReservedOutboundState -> True
+                                  _ -> False)
+                           (pure ())
+              -- @
+              --  Connected : ReservedOutboundState
+              --            → UnnegotiatedState Outbound
+              -- @
               let connState' = UnnegotiatedState provenance connId connThread
               writeTVar connVar connState'
               return (mkTransition connState connState')
@@ -1336,36 +1344,50 @@ withConnectionManager ConnectionManagerArguments {
                          , Disconnected connId (Just handleError)
                          )
 
-              -- @
-              --  Connected : ReservedOutboundState
-              --            → UnnegotiatedState Outbound
-              -- @
               Right (handle, version) -> do
                 let dataFlow = connectionDataFlow version
                 -- We can safely overwrite the state: after successful
                 -- `connect` it's not possible to have a race condition
                 -- with any other inbound thread.  We are also guaranteed
                 -- to have exclusive access as an outbound thread.
-                transition <- atomically $ do
+                mbTransition <- atomically $ do
                   connState <- readTVar  connVar
-                  case dataFlow of
-                    Unidirectional -> do
-                      let connState' = OutboundUniState connId connThread handle
-                      writeTVar connVar connState'
-                      return (mkTransition connState connState')
-                    Duplex -> do
-                      let connState' = OutboundDupState connId connThread handle Ticking
-                      writeTVar connVar connState'
-                      case inboundGovernorControlChannel of
-                        InResponderMode controlChannel ->
-                          newOutboundConnection controlChannel connId dataFlow handle
-                        NotInResponderMode -> return ()
-                      return (mkTransition connState connState')
+                  case connState of
+                    UnnegotiatedState {} ->
+                      case dataFlow of
+                        Unidirectional -> do
+                          -- @
+                          --  Negotiated^{Unidirectional}_{Outbound}
+                          --    : UnnegotiatedState Outbound
+                          --    → OutboundUniState Outbound
+                          -- @
+                          let connState' = OutboundUniState connId connThread handle
+                          writeTVar connVar connState'
+                          return (Just $ mkTransition connState connState')
+                        Duplex -> do
+                          -- @
+                          --  Negotiated^{Duplex}_{Outbound}
+                          --    : UnnegotiatedState Outbound
+                          --    → OutboundDupState^\tau  Outbound
+                          -- @
+                          let connState' = OutboundDupState connId connThread handle Ticking
+                          writeTVar connVar connState'
+                          case inboundGovernorControlChannel of
+                            InResponderMode controlChannel ->
+                              newOutboundConnection controlChannel connId dataFlow handle
+                            NotInResponderMode -> return ()
+                          return (Just $ mkTransition connState connState')
+                    TerminatedState _ ->
+                      return Nothing
+                    _ ->
+                      let st = abstractState (Known connState) in
+                      throwSTM (withCallStack (ForbiddenOperation peerAddr st))
                 traceCounters stateVar
-                traceWith
-                  trTracer
-                  (TransitionTrace peerAddr transition)
-                return (Connected connId dataFlow handle)
+                traverse_ (traceWith trTracer .  TransitionTrace peerAddr)
+                          mbTransition
+                return $ case mbTransition of
+                  Just _  -> Connected    connId dataFlow handle
+                  Nothing -> Disconnected connId Nothing
 
           Right (There connId) -> do
             -- We can only enter the 'There' case if there is an inbound
