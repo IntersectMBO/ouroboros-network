@@ -163,7 +163,7 @@ run blockGeneratorArgs limits ni na =
                                               m
             interfaces = Diff.P2P.Interfaces
               { Diff.P2P.diNtnSnocket            = iNtnSnocket ni
-              , Diff.P2P.diNtnHandshakeArguments = 
+              , Diff.P2P.diNtnHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer      = nullTracer
                     , haHandshakeCodec       = unversionedHandshakeCodec
