@@ -1706,9 +1706,12 @@ verifyRemoteTransition Transition {fromState, toState} =
 
       -- This might happen if starting any of the responders errored.
       (Nothing,           Nothing)           -> True
-      -- @RemoteWarmSt → RemoteWarmSt@ trnasition is observed if a hot or warm
-      -- protocol terminates (which triggers @RemoteEstSt -> RemoteWarmSt@)
+      -- @RemoteWarmSt → RemoteWarmSt@, @RemoteIdleSt → RemoteIdleSt@ and
+      -- @RemoteColdSt → RemoteColdSt@ transition are observed if a hot or
+      -- warm protocol terminates (which triggers @RemoteEstSt -> RemoteWarmSt@)
       (Just RemoteWarmSt, Just RemoteWarmSt) -> True
+      (Just RemoteIdleSt, Just RemoteIdleSt) -> True
+      (Just RemoteColdSt, Just RemoteColdSt) -> True
 
       (_,                 _)                 -> False
 
