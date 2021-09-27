@@ -147,7 +147,6 @@ data ClientAndServerData req = ClientAndServerData {
   }
   deriving Show
 
-
 -- Number of rounds to exhoust all the requests.
 --
 numberOfRounds :: ClientAndServerData req ->  Int
@@ -827,7 +826,7 @@ prop_unidirectional_Sim :: NonFailingBearerInfoScript
 prop_unidirectional_Sim (NonFailingBearerInfoScript script) clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
-                (Script (toBearerInfo absBi :| [noAttenuation])) $ \snock ->
+                (toBearerInfo <$> script) $ \snock ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
         Snocket.bind   snock fd serverAddr
@@ -1737,9 +1736,12 @@ verifyRemoteTransition Transition {fromState, toState} =
 
       -- This might happen if starting any of the responders errored.
       (Nothing,           Nothing)           -> True
-      -- @RemoteWarmSt → RemoteWarmSt@ trnasition is observed if a hot or warm
-      -- protocol terminates (which triggers @RemoteEstSt -> RemoteWarmSt@)
+      -- @RemoteWarmSt → RemoteWarmSt@, @RemoteIdleSt → RemoteIdleSt@ and
+      -- @RemoteColdSt → RemoteColdSt@ transition are observed if a hot or
+      -- warm protocol terminates (which triggers @RemoteEstSt -> RemoteWarmSt@)
       (Just RemoteWarmSt, Just RemoteWarmSt) -> True
+      (Just RemoteIdleSt, Just RemoteIdleSt) -> True
+      (Just RemoteColdSt, Just RemoteColdSt) -> True
 
       (_,                 _)                 -> False
 
@@ -1959,7 +1961,6 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
                 ) as of
         Nothing -> IdleConn
         Just {} -> ActiveConn
-
 
 -- Right fold of the 'Octopus' which splits its results.
 --
