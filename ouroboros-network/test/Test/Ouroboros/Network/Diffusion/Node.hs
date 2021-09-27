@@ -49,7 +49,6 @@ import           System.Random (StdGen, split)
 import qualified Codec.CBOR.Term as CBOR
 
 import           Network.DNS (Domain)
-import           Network.Mux.Bearer.AttenuatedChannel (CloseError)
 
 import           Ouroboros.Network.BlockFetch.Decision (FetchMode (..))
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
@@ -157,7 +156,7 @@ run blockGeneratorArgs limits ni na =
                                               m
             interfaces = Diff.P2P.Interfaces
               { Diff.P2P.diNtnSnocket            = iNtnSnocket ni
-              , Diff.P2P.diNtnHandshakeArguments = 
+              , Diff.P2P.diNtnHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer      = nullTracer
                     , haHandshakeCodec       = unversionedHandshakeCodec
@@ -200,8 +199,6 @@ run blockGeneratorArgs limits ni na =
               , Diff.P2P.daRethrowPolicy          =
                      muxErrorRethrowPolicy
                   <> ioErrorRethrowPolicy
-                  <> mkRethrowPolicy
-                      ( \ _ (_ :: CloseError) -> ShutdownNode)
 
                 -- we are not using local connections, so we can make all the
                 -- errors fatal.
