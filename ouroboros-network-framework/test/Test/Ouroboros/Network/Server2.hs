@@ -113,6 +113,8 @@ tests =
   , testProperty "bidirectional_IO"   prop_bidirectional_IO
   , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
   , testProperty "multinode_Sim"      prop_multinode_Sim
+  , testProperty "unit_connection_terminated_when_negotiating"
+                 unit_connection_terminated_when_negotiating
   , testGroup "generators"
     [ testProperty "MultiNodeScript"  prop_generator_MultiNodeScript
     ]
@@ -1897,6 +1899,32 @@ traceSplit = go [] [] []
     go bs cs ds (Cons (First  b) o) = go (b : bs)      cs       ds o
     go bs cs ds (Cons (Second c) o) = go      bs  (c : cs)      ds o
     go bs cs ds (Cons (Third d) o) = go       bs       cs  (d : ds) o
+
+-- | Connection terminated while negotiating it.
+--
+unit_connection_terminated_when_negotiating :: Property
+unit_connection_terminated_when_negotiating =
+    prop_multinode_Sim
+        0 (ArbDataFlow Unidirectional)
+        AbsBearerInfo
+          { abiConnectionDelay = SmallDelay
+          , abiInboundAttenuation = NoAttenuation FastSpeed
+          , abiOutboundAttenuation = NoAttenuation FastSpeed
+          , abiInboundWriteFailure = Nothing
+          , abiOutboundWriteFailure = Just 3
+          , abiSDUSize = LargeSDU
+          }
+        (MultiNodeScript
+          [ StartServer 0           (TestAddr {unTestAddr = TestAddress 24}) 0
+          , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 24})
+          , StartServer 0           (TestAddr {unTestAddr = TestAddress 40}) 0
+          , OutboundMiniprotocols 0 (TestAddr {unTestAddr = TestAddress 24})
+                                    (Bundle { withHot         = WithHot [0]
+                                            , withWarm        = WithWarm []
+                                            , withEstablished = WithEstablished []
+                                            })
+          , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 40})
+          ])
 
 
 splitConns :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
