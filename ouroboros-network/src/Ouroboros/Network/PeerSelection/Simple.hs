@@ -42,8 +42,7 @@ withPeerSelectionActions
   -> STM IO [RelayAddress]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
-  -> (NumberOfPeers -> STM IO ())
-  -> STM IO (Maybe (Set Socket.SockAddr, DiffTime))
+  -> (NumberOfPeers -> IO (Maybe (Set Socket.SockAddr, DiffTime)))
   -> (Maybe (Async IO Void)
       -> PeerSelectionActions Socket.SockAddr peerconn IO
       -> IO a)
@@ -58,7 +57,6 @@ withPeerSelectionActions
   readLocalRootPeers
   readPublicRootPeers
   peerStateActions
-  reqLedgerPeers
   getLedgerPeers
   k = do
     localRootsVar <- newTVarIO mempty
@@ -85,8 +83,7 @@ withPeerSelectionActions
     requestPublicRootPeers :: DNSActions DNS.Resolver IOException IO
                            -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers dnsActions n = do
-      atomically $ reqLedgerPeers $ NumberOfPeers $ fromIntegral n
-      peers_m <- atomically getLedgerPeers
+      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n)
       case peers_m of
            Nothing    -> requestConfiguredRootPeers dnsActions n
            Just peers -> return peers

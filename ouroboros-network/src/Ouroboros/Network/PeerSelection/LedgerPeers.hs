@@ -17,7 +17,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
     NumberOfPeers (..),
     pickPeers,
     accPoolStake,
-    runLedgerPeers,
+    withLedgerPeers,
     UseLedgerAfter (..),
 
     Socket.PortNumber
@@ -201,20 +201,21 @@ pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
 
 
 -- | Run the LedgerPeers worker thread.
-runLedgerPeers :: forall m.
-                      ( MonadAsync m
-                      , MonadTime m
-                      )
-               => StdGen
-               -> Tracer m TraceLedgerPeers
-               -> STM m UseLedgerAfter
-               -> LedgerPeersConsensusInterface m
-               -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
-               -> STM m NumberOfPeers
-               -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
-               -> m Void
-runLedgerPeers inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
-               getReq putRsp = do
+--
+ledgerPeersThread :: forall m.
+                     ( MonadAsync m
+                     , MonadTime m
+                     )
+                  => StdGen
+                  -> Tracer m TraceLedgerPeers
+                  -> STM m UseLedgerAfter
+                  -> LedgerPeersConsensusInterface m
+                  -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
+                  -> STM m NumberOfPeers
+                  -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
+                  -> m Void
+ledgerPeersThread inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
+                  getReq putRsp =
     go inRng (Time 0) Map.empty
   where
     go :: StdGen -> Time -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress) -> m Void
@@ -290,3 +291,34 @@ runLedgerPeers inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{..}
     splitPeers (addrs, domains) (RelayAddress ip port) =
         let !addr = IP.toSockAddr (ip, port) in
         (Set.insert addr addrs, domains)
+
+
+-- | For a LederPeers worker thread and submit request and receive responses.
+--
+withLedgerPeers :: forall m a.
+                   ( MonadAsync m
+                   , MonadTime m
+                   )
+                => StdGen
+                -> Tracer m TraceLedgerPeers
+                -> STM m UseLedgerAfter
+                -> LedgerPeersConsensusInterface m
+                -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
+                -> ( (NumberOfPeers -> m (Maybe (Set SockAddr, DiffTime)))
+                     -> Async m Void
+                     -> m a )
+                -> m a
+withLedgerPeers inRng tracer readUseLedgerAfter interface doResolve k = do
+    reqVar  <- newEmptyTMVarIO 
+    respVar <- newEmptyTMVarIO
+    let getRequest  = takeTMVar reqVar
+        putResponse = putTMVar  respVar
+        request :: NumberOfPeers -> m (Maybe (Set SockAddr, DiffTime))
+        request = \numberOfPeers -> do
+          atomically $ putTMVar reqVar numberOfPeers
+          atomically $ takeTMVar respVar
+    withAsync
+      ( ledgerPeersThread inRng tracer readUseLedgerAfter interface doResolve
+                          getRequest putResponse )
+      $ \ thread -> k request thread
+
