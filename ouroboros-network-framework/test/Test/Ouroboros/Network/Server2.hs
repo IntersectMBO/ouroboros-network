@@ -823,11 +823,13 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
 
-prop_unidirectional_Sim :: AbsBearerInfo -> ClientAndServerData Int -> Property
-prop_unidirectional_Sim absBi clientAndServerData =
+prop_unidirectional_Sim :: NonFailingBearerInfoScript
+                        -> ClientAndServerData Int
+                        -> Property
+prop_unidirectional_Sim (NonFailingBearerInfoScript script) clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
-                (Script (toBearerInfo absBi :| [noAttenuation])) $ \snock ->
+                (toBearerInfo <$> script) $ \snock ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
         Snocket.bind   snock fd serverAddr
