@@ -1801,7 +1801,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       -- Terminate
       --
 
-      -- @Termiante@
+      -- @Terminate@
       (TerminatingSt, TerminatedSt) -> True
 
       -- explicit prohibition of reflexive terminate transition
