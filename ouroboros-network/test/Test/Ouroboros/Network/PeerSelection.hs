@@ -1893,7 +1893,7 @@ selectEnvTargets f =
 -- This is a manual test that runs in IO and has to be observed to see that it
 -- is doing something sensible. It is not run automatically.
 --
-_governorFindingPublicRoots :: Int -> STM IO [RelayAddress] -> IO Void
+_governorFindingPublicRoots :: Int -> STM IO [RelayAccessPoint] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     withTimeoutSerial $ \timeout ->
     publicRootPeersProvider

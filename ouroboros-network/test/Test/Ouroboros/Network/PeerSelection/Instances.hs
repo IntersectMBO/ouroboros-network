@@ -17,7 +17,8 @@ module Test.Ouroboros.Network.PeerSelection.Instances (
 import           Data.Word (Word32)
 import           Data.Text.Encoding (encodeUtf8)
 
-import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAddress(..), RelayAddress(..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                   (DomainAccessPoint (..), RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.Types
 
@@ -71,9 +72,9 @@ instance Arbitrary PeerSelectionTargets where
     , let targets' = PeerSelectionTargets r' k' e' a'
     , sanePeerSelectionTargets targets' ]
 
-instance Arbitrary DomainAddress where
+instance Arbitrary DomainAccessPoint where
   arbitrary =
-    DomainAddress . encodeUtf8
+    DomainAccessPoint . encodeUtf8
       <$> elements domains
       <*> (fromIntegral <$> (arbitrary :: Gen Int))
     where
@@ -99,11 +100,11 @@ genIPv6 =
              <*> arbitrary
              <*> arbitrary
 
-instance Arbitrary RelayAddress where
+instance Arbitrary RelayAccessPoint where
   arbitrary =
-      oneof [ RelayDomain  <$> arbitrary
-            , RelayAddress <$> oneof [genIPv4, genIPv6]
-                           <*> (fromIntegral <$> (arbitrary :: Gen Int))
+      oneof [ RelayDomainAccessPoint <$> arbitrary
+            , RelayAccessAddress <$> oneof [genIPv4, genIPv6]
+                                 <*> (fromIntegral <$> (arbitrary :: Gen Int))
             ]
 
 prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool

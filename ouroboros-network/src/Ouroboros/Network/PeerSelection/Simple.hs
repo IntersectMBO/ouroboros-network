@@ -37,9 +37,9 @@ withPeerSelectionActions
   -> Tracer IO TracePublicRootPeers
   -> TimeoutFn IO
   -> STM IO PeerSelectionTargets
-  -> STM IO [(Int, Map RelayAddress PeerAdvertise)]
+  -> STM IO [(Int, Map RelayAccessPoint PeerAdvertise)]
   -- ^ local root peers
-  -> STM IO [RelayAddress]
+  -> STM IO [RelayAccessPoint]
   -- ^ public root peers
   -> PeerStateActions Socket.SockAddr peerconn IO
   -> (NumberOfPeers -> IO (Maybe (Set Socket.SockAddr, DiffTime)))

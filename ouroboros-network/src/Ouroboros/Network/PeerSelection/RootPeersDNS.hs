@@ -17,8 +17,8 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
 
     -- * DNS based provider for local root peers
     localRootPeersProvider,
-    DomainAddress (..),
-    RelayAddress (..),
+    DomainAccessPoint (..),
+    RelayAccessPoint (..),
     IP.IP (..),
     TraceLocalRootPeers(..),
 
@@ -27,7 +27,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     TracePublicRootPeers(..),
 
     -- DNS lookup support
-    resolveDomainAddresses,
+    resolveDomainAccessPoint,
 
     -- * DNS type re-exports
     DNS.ResolvConf,
@@ -38,7 +38,6 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     Socket.PortNumber,
   ) where
 
-import           Data.Aeson
 import           Data.Word (Word32)
 import           Data.List (elemIndex, foldl')
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -48,14 +47,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import           Data.Text (Text)
-import qualified Data.Text as Text
-import           Text.Read (readMaybe)
 import           Data.Void (Void, absurd)
 
 import           Control.Applicative ((<|>))
-import           Control.DeepSeq (NFData (..))
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
@@ -72,6 +66,7 @@ import qualified Network.Socket as Socket
 import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Types
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                  ( DNSorIOError (..)
                  , DNSActions (..)
@@ -81,86 +76,20 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                  , withResource'
                  )
 
--- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
--- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
---
-data DomainAddress = DomainAddress {
-    daDomain     :: !DNS.Domain,
-    daPortNumber :: !Socket.PortNumber
-  }
-  deriving (Show, Eq, Ord)
-
-instance FromJSON DomainAddress where
-  parseJSON = withObject "DomainAddress" $ \v ->
-    DomainAddress
-      <$> (encodeUtf8 <$> v .: "addr")
-      <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
-
-instance ToJSON DomainAddress where
-  toJSON da =
-    object
-      [ "addr" .= decodeUtf8 (daDomain da)
-      , "port" .= (fromIntegral (daPortNumber da) :: Int)
-      ]
-
--- | A relay can have either an IP address and a port number or
--- a domain with a port number
---
-data RelayAddress = RelayDomain !DomainAddress
-                  | RelayAddress !IP.IP !Socket.PortNumber
-                  deriving (Show, Eq, Ord)
-
--- 'IP' nor 'IPv6' is strict, 'IPv4' is strict only because it's a newtype for
--- a primitive type ('Word32').
---
-instance NFData RelayAddress where
-  rnf (RelayDomain domain) = domain `seq` ()
-  rnf (RelayAddress ip !_port) =
-    case ip of
-      IP.IPv4 ipv4 -> rnf (IP.fromIPv4w ipv4)
-      IP.IPv6 ipv6 -> rnf (IP.fromIPv6w ipv6)
-
-instance FromJSON RelayAddress where
-  parseJSON = withObject "RelayAddress" $ \v -> do
-    addr <- v .: "addr"
-    port <- v .: "port"
-    return (toRelayAddress addr port)
-
-instance ToJSON RelayAddress where
-  toJSON (RelayDomain (DomainAddress addr port)) =
-    object
-      [ "addr" .= decodeUtf8 addr
-      , "port" .= (fromIntegral port :: Int)
-      ]
-  toJSON (RelayAddress ip port) =
-    object
-      [ "addr" .= Text.pack (show ip)
-      , "port" .= (fromIntegral port :: Int)
-      ]
-
--- | Parse a address field as either an IP address or a DNS address.
--- Returns corresponding RelayAddress.
---
-toRelayAddress :: Text -> Int -> RelayAddress
-toRelayAddress address port =
-    case readMaybe (Text.unpack address) of
-      Nothing   -> RelayDomain (DomainAddress (encodeUtf8 address) (fromIntegral port))
-      Just addr -> RelayAddress addr (fromIntegral port)
-
 -----------------------------------------------
 -- local root peer set provider based on DNS
 --
 
 data TraceLocalRootPeers exception =
-       TraceLocalRootDomains [(Int, Map RelayAddress PeerAdvertise)]
+       TraceLocalRootDomains [(Int, Map RelayAccessPoint PeerAdvertise)]
        -- ^ 'Int' is the configured valency for the local producer groups
-     | TraceLocalRootWaiting DomainAddress DiffTime
-     | TraceLocalRootResult  DomainAddress [(IPv4, DNS.TTL)]
+     | TraceLocalRootWaiting DomainAccessPoint DiffTime
+     | TraceLocalRootResult  DomainAccessPoint [(IPv4, DNS.TTL)]
      | TraceLocalRootGroups  (Seq (Int, Map Socket.SockAddr PeerAdvertise))
        -- ^ This traces the results of the local root peer provider
-     | TraceLocalRootFailure DomainAddress (DNSorIOError exception)
+     | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
-     | TraceLocalRootError   DomainAddress SomeException 
+     | TraceLocalRootError   DomainAccessPoint SomeException
   deriving Show
 
 -- | Resolve 'RelayAddress'-es of local root peers using dns if needed.  Local
@@ -178,7 +107,7 @@ localRootPeersProvider
   -> TimeoutFn m
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
-  -> STM m [(Int, Map RelayAddress PeerAdvertise)]
+  -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
   -- ^ input
   -> StrictTVar m (Seq (Int, Map Socket.SockAddr PeerAdvertise))
   -- ^ output 'TVar'
@@ -202,10 +131,10 @@ localRootPeersProvider tracer
           -- each DomainAddress to be monitorized.
           -- NOTE: We need to pair the index because the resulting list can be
           -- sparse.
-          domains :: [(Int, DomainAddress, PeerAdvertise)]
+          domains :: [(Int, DomainAccessPoint, PeerAdvertise)]
           domains = [ (index, domain, pa)
                     | (index, (_, m)) <- zip [0..] domainsGroups
-                    , (RelayDomain domain, pa) <- Map.toList m ]
+                    , (RelayDomainAccessPoint domain, pa) <- Map.toList m ]
           -- Since we want to preserve the number of groups, the targets, and
           -- the addresses within each group, we fill the TVar with
           -- a placeholder list, in order for each monitored DomainAddress to
@@ -213,18 +142,19 @@ localRootPeersProvider tracer
           rootPeersGroups :: Seq (Int, Map Socket.SockAddr PeerAdvertise)
           rootPeersGroups = Seq.fromList $ map (\(target, m) -> (target, f m)) domainsGroups
             where
-               f :: Map RelayAddress PeerAdvertise -> Map Socket.SockAddr PeerAdvertise
+               f :: Map RelayAccessPoint PeerAdvertise
+                 -> Map Socket.SockAddr PeerAdvertise
                f = Map.mapKeys
                      (\k -> case k of
-                       RelayAddress ip port ->
+                       RelayAccessAddress ip port ->
                          IP.toSockAddr (ip, port)
                        _ ->
                          error "localRootPeersProvider: impossible happend"
                      )
                  . Map.filterWithKey
                      (\k _ -> case k of
-                       RelayAddress {} -> True
-                       RelayDomain {}  -> False
+                       RelayAccessAddress {} -> True
+                       RelayAccessDomain {}  -> False
                      )
 
       -- Launch DomainAddress monitoring threads and wait for threads to error
@@ -234,7 +164,7 @@ localRootPeersProvider tracer
           res <- atomically $
                   -- wait until any of the monitoring threads errors
                   ((\(a, res) ->
-                      let domain :: DomainAddress
+                      let domain :: DomainAccessPoint
                           domain = case a `elemIndex` as of
                             Nothing  -> error "localRootPeersProvider: impossible happened"
                             Just idx -> case (domains !! idx) of (_, x, _) -> x
@@ -260,13 +190,13 @@ localRootPeersProvider tracer
 
     resolveDomain
       :: resolver
-      -> DomainAddress
+      -> DomainAccessPoint
       -> PeerAdvertise
       -> m (Either DNS.DNSError [((Socket.SockAddr, PeerAdvertise), DNS.TTL)])
     resolveDomain resolver
-                  domain@DomainAddress {daDomain, daPortNumber}
+                  domain@DomainAccessPoint {dapDomain, dapPortNumber}
                   advertisePeer = do
-      reply <- dnsLookupAWithTTL timeout resolvConf resolver daDomain
+      reply <- dnsLookupAWithTTL timeout resolvConf resolver dapDomain
       case reply of
         Left  err -> do
           traceWith tracer (TraceLocalRootFailure domain (DNSError err))
@@ -275,7 +205,7 @@ localRootPeersProvider tracer
         Right results -> do
           traceWith tracer (TraceLocalRootResult domain results)
           return $ Right [ (( Socket.SockAddrInet
-                               daPortNumber
+                               dapPortNumber
                                (IP.toHostAddress addr)
                            , advertisePeer)
                            , _ttl)
@@ -285,7 +215,7 @@ localRootPeersProvider tracer
       :: Resource m (DNSorIOError exception) resolver
       -> Seq (Int, Map Socket.SockAddr PeerAdvertise)
       -- ^ local group peers which didnhh
-      -> (Int, DomainAddress, PeerAdvertise)
+      -> (Int, DomainAccessPoint, PeerAdvertise)
       -> m Void
     monitorDomain rr0 rootPeersGroups0 (index, domain, advertisePeer) =
         go rr0 rootPeersGroups0 0
@@ -331,8 +261,8 @@ localRootPeersProvider tracer
 --
 
 data TracePublicRootPeers =
-       TracePublicRootRelayAddresses [RelayAddress]
-     | TracePublicRootDomains [DomainAddress]
+       TracePublicRootRelayAccessPoint [RelayAccessPoint]
+     | TracePublicRootDomains [DomainAccessPoint]
      | TracePublicRootResult  DNS.Domain [(IPv4, DNS.TTL)]
      | TracePublicRootFailure DNS.Domain DNS.DNSError
        --TODO: classify DNS errors, config error vs transitory
@@ -347,7 +277,7 @@ publicRootPeersProvider
   => Tracer m TracePublicRootPeers
   -> TimeoutFn m
   -> DNS.ResolvConf
-  -> STM m [RelayAddress]
+  -> STM m [RelayAccessPoint]
   -> DNSActions resolver exception m
   -> ((Int -> m (Set Socket.SockAddr, DiffTime)) -> m a)
   -> m a
@@ -361,7 +291,7 @@ publicRootPeersProvider tracer
                         }
                         action = do
     domains <- atomically readDomains
-    traceWith tracer (TracePublicRootRelayAddresses domains)
+    traceWith tracer (TracePublicRootRelayAccessPoint domains)
     rr <- dnsResolverResource resolvConf
     resourceVar <- newTVarIO rr
     action (requestPublicRootPeers resourceVar)
@@ -372,7 +302,7 @@ publicRootPeersProvider tracer
       -> m (Set Socket.SockAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
         domains <- atomically readDomains
-        traceWith tracer (TracePublicRootRelayAddresses domains)
+        traceWith tracer (TracePublicRootRelayAccessPoint domains)
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr
         atomically $ writeTVar resourceVar rr'
@@ -381,31 +311,31 @@ publicRootPeersProvider tracer
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ (,) domain
+                  [ (,) (DomainAccessPoint domain port)
                       <$> dnsLookupAWithTTL
                             timeout
                             resolvConf
                             resolver
-                            (daDomain domain)
-                  | RelayDomain domain <- domains ]
+                            domain
+                  | RelayAccessDomain domain port <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.
             results <- withAsyncAll lookups (atomically . mapM waitSTM)
             sequence_
               [ traceWith tracer $ case result of
-                  Left  dnserr -> TracePublicRootFailure daDomain dnserr
-                  Right ipttls -> TracePublicRootResult  daDomain ipttls
-              | (DomainAddress {daDomain}, result) <- results ]
-            let successes = [ ( Socket.SockAddrInet daPortNumber
+                  Left  dnserr -> TracePublicRootFailure dapDomain dnserr
+                  Right ipttls -> TracePublicRootResult  dapDomain ipttls
+              | (DomainAccessPoint {dapDomain}, result) <- results ]
+            let successes = [ ( Socket.SockAddrInet dapPortNumber
                                                     (IP.toHostAddress ip)
                               , ipttl)
-                            | ( DomainAddress {daPortNumber}
+                            | ( DomainAccessPoint {dapPortNumber}
                               , Right ipttls) <- results
                             , (ip, ipttl) <- ipttls
                             ]
                 !domainsIps = [ IP.toSockAddr (ip, port)
-                              | RelayAddress ip port <- domains ]
+                              | RelayAccessAddress ip port <- domains ]
                 !ips      = Set.fromList  (map fst successes ++ domainsIps)
                 !ttl      = ttlForResults (map snd successes)
             -- If all the lookups failed we'll return an empty set with a minimum
@@ -414,24 +344,24 @@ publicRootPeersProvider tracer
 
 -- | Provides DNS resolution functionality.
 --
-resolveDomainAddresses
+resolveDomainAccessPoint
   :: forall exception resolver m.
   (MonadThrow m, MonadAsync m, Exception exception)
   => Tracer m TracePublicRootPeers
   -> TimeoutFn m
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
-  -> [DomainAddress]
-  -> m (Map DomainAddress (Set Socket.SockAddr))
-resolveDomainAddresses tracer
-                       timeout
-                       resolvConf
-                       DNSActions {
-                          dnsResolverResource,
-                          dnsLookupAWithTTL
-                        }
-                       domains
-                       = do
+  -> [DomainAccessPoint]
+  -> m (Map DomainAccessPoint (Set Socket.SockAddr))
+resolveDomainAccessPoint tracer
+                         timeout
+                         resolvConf
+                         DNSActions {
+                            dnsResolverResource,
+                            dnsLookupAWithTTL
+                          }
+                         domains
+                         = do
     traceWith tracer (TracePublicRootDomains domains)
     rr <- dnsResolverResource resolvConf
     resourceVar <- newTVarIO rr
@@ -439,7 +369,7 @@ resolveDomainAddresses tracer
   where
     requestPublicRootPeers
       :: StrictTVar m (Resource m (DNSorIOError exception) resolver)
-      -> m (Map DomainAddress (Set Socket.SockAddr))
+      -> m (Map DomainAccessPoint (Set Socket.SockAddr))
     requestPublicRootPeers resourceVar = do
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr
@@ -454,7 +384,7 @@ resolveDomainAddresses tracer
                             timeout
                             resolvConf
                             resolver
-                            (daDomain domain)
+                            (dapDomain domain)
                   | domain <- domains ]
             -- The timeouts here are handled by the 'lookupAWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
@@ -462,14 +392,14 @@ resolveDomainAddresses tracer
             results <- withAsyncAll lookups (atomically . mapM waitSTM)
             sequence_
               [ traceWith tracer $ case result of
-                  Left  dnserr -> TracePublicRootFailure daDomain dnserr
-                  Right ipttls -> TracePublicRootResult  daDomain ipttls
-              | (DomainAddress {daDomain}, result) <- results ]
+                  Left  dnserr -> TracePublicRootFailure dapDomain dnserr
+                  Right ipttls -> TracePublicRootResult  dapDomain ipttls
+              | (DomainAccessPoint {dapDomain}, result) <- results ]
             return $ foldl' buildResult Map.empty results
 
-    buildResult :: Map DomainAddress (Set Socket.SockAddr)
-                -> (DomainAddress, Either DNS.DNSError [(IPv4, DNS.TTL)])
-                -> Map DomainAddress (Set Socket.SockAddr)
+    buildResult :: Map DomainAccessPoint (Set Socket.SockAddr)
+                -> (DomainAccessPoint, Either DNS.DNSError [(IPv4, DNS.TTL)])
+                -> Map DomainAccessPoint (Set Socket.SockAddr)
     buildResult mr (_, Left _) = mr
     buildResult mr (domain, Right ipsttls) =
         Map.alter addFn domain mr
@@ -478,7 +408,7 @@ resolveDomainAddresses tracer
         addFn Nothing =
             let ips = map fst ipsttls
                 !addrs =
-                  map ( Socket.SockAddrInet (daPortNumber domain)
+                  map ( Socket.SockAddrInet (dapPortNumber domain)
                       . IP.toHostAddress)
                       ips
                 !addrSet = Set.fromList addrs in
@@ -486,7 +416,7 @@ resolveDomainAddresses tracer
         addFn (Just addrSet) =
             let ips = map fst ipsttls
                 !addrs =
-                  map ( Socket.SockAddrInet (daPortNumber domain)
+                  map ( Socket.SockAddrInet (dapPortNumber domain)
                       . IP.toHostAddress)
                       ips
                 !addrSet' = Set.union addrSet (Set.fromList addrs) in
@@ -530,7 +460,7 @@ withAsyncAll xs0 action = go [] xs0
 -- Examples
 --
 {-
-exampleLocal :: [DomainAddress] -> IO ()
+exampleLocal :: [DomainAccessPoint] -> IO ()
 exampleLocal domains = do
       rootPeersVar <- newTVarIO Map.empty
       withAsync (observer rootPeersVar Map.empty) $ \_ ->
@@ -554,7 +484,7 @@ exampleLocal domains = do
       traceWith (showTracing stdoutTracer) x
       observer var x
 
-examplePublic :: [DomainAddress] -> IO ()
+examplePublic :: [DomainAccessPoint] -> IO ()
 examplePublic domains = do
     withTimeoutSerial $ \timeout ->
       publicRootPeersProvider

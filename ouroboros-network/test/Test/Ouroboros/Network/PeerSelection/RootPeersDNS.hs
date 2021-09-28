@@ -69,7 +69,7 @@ tests =
 --
 
 data MockRoots = MockRoots {
-  mockLocalRootPeers :: [(Int, Map RelayAddress PeerAdvertise)],
+  mockLocalRootPeers :: [(Int, Map RelayAccessPoint PeerAdvertise)],
   mockDNSMap :: Map Domain [IPv4],
   mockStdGen :: StdGen
 } deriving Show
@@ -91,10 +91,8 @@ genMockRoots = sized $ \relaysNumber -> do
           zipWith
             (\tag rel
               -> case rel of
-                   RelayDomain (DomainAddress domain port)
-                     -> RelayDomain
-                        (DomainAddress (domain <> (pack . show) tag)
-                                       port)
+                   RelayAccessDomain domain port
+                     -> RelayAccessDomain (domain <> (pack . show) tag) port
                    x -> x
             )
             [(0 :: Int), 1 .. ]
@@ -104,7 +102,7 @@ genMockRoots = sized $ \relaysNumber -> do
 
         localRootPeers = zip targets relaysMap
 
-        domains = [ domain | RelayDomain (DomainAddress domain _) <- taggedRelays ]
+        domains = [ domain | RelayAccessDomain domain _ <- taggedRelays ]
 
         ipsPerDomain = 2
 
@@ -134,10 +132,10 @@ simpleMockRoots = MockRoots localRootPeers dnsMap (mkStdGen 60)
     localRootPeers =
       [ ( 2
         , Map.fromList
-          [ ( RelayAddress (read "192.0.2.1")           (read "3333")
+          [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
             , DoAdvertisePeer
             )
-          , ( RelayDomain  (DomainAddress "test.domain" (read "4444"))
+          , ( RelayAccessDomain  "test.domain"      (read "4444")
             , DoNotAdvertisePeer
             )
           ]
@@ -229,17 +227,17 @@ mockPublicRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) n = do
 -- | 'resolveDomainAddresses' running with a given MockRoots env
 --
 mockResolveDomainAddresses :: forall s. MockRoots
-                           -> IOSim s (Map DomainAddress (Set SockAddr))
+                           -> IOSim s (Map DomainAccessPoint (Set SockAddr))
 mockResolveDomainAddresses (MockRoots localRootPeers dnsMap stdGen) = do
       genVar <- newTVarIO stdGen
 
-      resolveDomainAddresses tracerTracePublicRoots
-                             MonadTimer.timeout
-                             DNSResolver.defaultResolvConf
-                             (mockDNSActions @Failure dnsMap genVar)
-                             [ domain
-                             | (_, m) <- localRootPeers
-                             , RelayDomain domain <- Map.keys m ]
+      resolveDomainAccessPoint tracerTracePublicRoots
+                               MonadTimer.timeout
+                               DNSResolver.defaultResolvConf
+                               (mockDNSActions @Failure dnsMap genVar)
+                               [ domain
+                               | (_, m) <- localRootPeers
+                               , RelayDomainAccessPoint domain <- Map.keys m ]
 
 --
 -- Utils for properties
@@ -282,7 +280,7 @@ selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- tr
 selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers Failure)]
                             -> [(Time, (Domain, [IPv4]))]
 selectLocalRootResultEvents trace = [ (t, (domain, map fst r))
-                                    | (t, TraceLocalRootResult (DomainAddress domain _) r) <- trace ]
+                                    | (t, TraceLocalRootResult (DomainAccessPoint domain _) r) <- trace ]
 
 selectPublicRootPeersEvents :: [(Time, TestTraceEvent Failure)]
                             -> [(Time, TracePublicRootPeers)]
@@ -370,7 +368,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _) =
                             -- which group index does a particular domain
                             -- address belongs
                             index = foldr (\(i, (_, m)) prev ->
-                                            case Map.lookup (RelayDomain da) m of
+                                            case Map.lookup (RelayDomainAccessPoint da) m of
                                               Nothing -> prev
                                               Just _  -> i
                                           ) (-1) db
@@ -431,13 +429,13 @@ prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap _) n =
 
           successesMap = Map.fromList $ map snd successes
 
-          -- Update MockRoots with only the RelayAddresses that failed the
+          -- Update MockRoots with only the RelayAccessPoint that failed the
           -- DNS timeouts
           failuresMap  =
             [ ( i
-              , Map.fromList [ (RelayDomain domain, pa)
-                             | (RelayDomain domain, pa) <- Map.toList m
-                             , daDomain domain `elem` map snd failures
+              , Map.fromList [ (RelayAccessDomain domain port, pa)
+                             | (RelayAccessDomain domain port, pa) <- Map.toList m
+                             , domain `elem` map snd failures
                              ]
               )
             | (i, m) <- mockLocalRootPeers mr

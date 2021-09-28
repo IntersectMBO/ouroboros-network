@@ -738,14 +738,14 @@ getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
   -> (LedgerState blk -> Bool)
-  -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
+  -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedger kernel p = do
     immutableLedger <-
       ledgerState <$> ChainDB.getImmutableLedger (getChainDB kernel)
     return $ do
       guard (p immutableLedger)
       return
-        $ map (second (fmap stakePoolRelayAddress))
+        $ map (second (fmap stakePoolRelayAccessPoint))
         $ force
         $ getPeers immutableLedger
 
@@ -759,7 +759,7 @@ getPeersFromCurrentLedgerAfterSlot ::
      )
   => NodeKernel m remotePeer localPeer blk
   -> SlotNo
-  -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
+  -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedgerAfterSlot kernel slotNo =
     getPeersFromCurrentLedger kernel afterSlotNo
   where

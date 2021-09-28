@@ -2,39 +2,39 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
     LedgerSupportsPeerSelection (..)
   , PoolStake (..)
   , StakePoolRelay (..)
-  , stakePoolRelayAddress
+  , stakePoolRelayAccessPoint
     -- * Re-exports for convenience
-  , DomainAddress (..)
+  , DomainAccessPoint (..)
   , IP (..)
   , PortNumber
-  , RelayAddress (..)
+  , RelayAccessPoint (..)
   ) where
 
 import           Control.DeepSeq (NFData (..))
 import           Data.List.NonEmpty (NonEmpty)
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (DomainAddress (..), IP (..), PoolStake (..), PortNumber,
-                     RelayAddress (..))
+                     (DomainAccessPoint (..), IP (..), PoolStake (..),
+                     PortNumber, RelayAccessPoint (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 
 -- | A relay registered for a stake pool
 data StakePoolRelay =
     -- | One of the current relays
-    CurrentRelay RelayAddress
+    CurrentRelay RelayAccessPoint
 
     -- | One of the future relays
-  | FutureRelay  RelayAddress
+  | FutureRelay  RelayAccessPoint
   deriving (Show, Eq)
 
 instance NFData StakePoolRelay where
     rnf (CurrentRelay ra) = rnf ra
     rnf (FutureRelay  ra) = rnf ra
 
-stakePoolRelayAddress :: StakePoolRelay -> RelayAddress
-stakePoolRelayAddress (CurrentRelay ra) = ra
-stakePoolRelayAddress (FutureRelay  ra) = ra
+stakePoolRelayAccessPoint :: StakePoolRelay -> RelayAccessPoint
+stakePoolRelayAccessPoint (CurrentRelay ra) = ra
+stakePoolRelayAccessPoint (FutureRelay  ra) = ra
 
 class LedgerSupportsPeerSelection blk where
   -- | Return peers registered in the ledger ordered by descending 'PoolStake'.

@@ -7,10 +7,10 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.PeerSelection.LedgerPeers (
-    DomainAddress (..),
+    DomainAccessPoint (..),
     IP.IP (..),
     LedgerPeersConsensusInterface (..),
-    RelayAddress (..),
+    RelayAccessPoint (..),
     PoolStake (..),
     AccPoolStake (..),
     TraceLedgerPeers (..),
@@ -48,7 +48,7 @@ import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (RelayAddress (..), DomainAddress (..))
+                     (RelayAccessPoint (..), DomainAccessPoint (..))
 
 import           Text.Printf
 
@@ -62,14 +62,14 @@ isLedgerPeersEnabled _             = True
 newtype NumberOfPeers = NumberOfPeers Word16 deriving Show
 
 newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
-      lpGetPeers :: SlotNo -> STM m (Maybe [(PoolStake, NonEmpty RelayAddress)])
+      lpGetPeers :: SlotNo -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
     }
 
 -- | Trace LedgerPeers events.
 data TraceLedgerPeers =
-      PickedPeer !RelayAddress !AccPoolStake ! PoolStake
+      PickedPeer !RelayAccessPoint !AccPoolStake !PoolStake
       -- ^ Trace for a peer picked with accumulated and relative stake of its pool.
-    | PickedPeers !NumberOfPeers ![RelayAddress]
+    | PickedPeers !NumberOfPeers ![RelayAccessPoint]
       -- ^ Trace for the number of peers we wanted to pick and the list of peers picked.
     | FetchingNewLedgerState !Int
       -- ^ Trace for fetching a new list of peers from the ledger. Int is the number of peers
@@ -131,16 +131,16 @@ newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
 -- O(log n) time by taking advantage of Map.lookupGE (returns the smallest key greater or equal
 -- to the provided value).
 --
-accPoolStake :: [(PoolStake, NonEmpty RelayAddress)]
-             -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress)
+accPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
+             -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
 accPoolStake pl =
     let pl' = reRelativeStake pl
         ackList = foldl' fn [] pl' in
     Map.fromList ackList
   where
-    fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAddress))]
-       -> (PoolStake, NonEmpty RelayAddress)
-       -> [(AccPoolStake, (PoolStake, NonEmpty RelayAddress))]
+    fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
+       -> (PoolStake, NonEmpty RelayAccessPoint)
+       -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
     fn [] (s, rs) =
         [(AccPoolStake (unPoolStake s), (s, rs))]
     fn ps (s, !rs) =
@@ -156,8 +156,8 @@ accPoolStake pl =
 -- of down stream peers smaller pools are likely to get.
 -- https://en.wikipedia.org/wiki/Penrose_method
 --
-reRelativeStake :: [(PoolStake, NonEmpty RelayAddress)]
-                -> [(PoolStake, NonEmpty RelayAddress)]
+reRelativeStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
+                -> [(PoolStake, NonEmpty RelayAccessPoint)]
 reRelativeStake pl =
     let total = foldl' (+) 0 $ map (adjustment . fst) pl
         pl' = map  (\(s, rls) -> (adjustment s / total, rls)) pl
@@ -178,13 +178,13 @@ reRelativeStake pl =
 pickPeers :: forall m. Monad m
           => StdGen
           -> Tracer m TraceLedgerPeers
-          -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress)
+          -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
           -> NumberOfPeers
-          -> m (StdGen, [RelayAddress])
+          -> m (StdGen, [RelayAccessPoint])
 pickPeers inRng _ pools _ | Map.null pools = return (inRng, [])
 pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
   where
-    go :: StdGen -> Word16 -> [RelayAddress] -> m (StdGen, [RelayAddress])
+    go :: StdGen -> Word16 -> [RelayAccessPoint] -> m (StdGen, [RelayAccessPoint])
     go rng 0 picked = return (rng, picked)
     go rng n picked =
         let (r :: Word64, rng') = random rng
@@ -210,7 +210,7 @@ ledgerPeersThread :: forall m.
                   -> Tracer m TraceLedgerPeers
                   -> STM m UseLedgerAfter
                   -> LedgerPeersConsensusInterface m
-                  -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
+                  -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set SockAddr)))
                   -> STM m NumberOfPeers
                   -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
                   -> m Void
@@ -218,7 +218,8 @@ ledgerPeersThread inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{
                   getReq putRsp =
     go inRng (Time 0) Map.empty
   where
-    go :: StdGen -> Time -> Map AccPoolStake (PoolStake, NonEmpty RelayAddress) -> m Void
+    go :: StdGen -> Time -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+       -> m Void
     go rng oldTs peerMap = do
         useLedgerAfter <- atomically readUseLedgerAfter
         traceWith tracer (TraceUseLedgerAfter useLedgerAfter)
@@ -284,11 +285,11 @@ ledgerPeersThread inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{
 
     -- Divide the picked peers form the ledger into addresses we can use directly and
     -- domain names that we need to resolve.
-    splitPeers :: (Set SockAddr, [DomainAddress])
-               -> RelayAddress
-               -> (Set SockAddr, [DomainAddress])
-    splitPeers (addrs, domains) (RelayDomain domain) = (addrs, domain : domains)
-    splitPeers (addrs, domains) (RelayAddress ip port) =
+    splitPeers :: (Set SockAddr, [DomainAccessPoint])
+               -> RelayAccessPoint
+               -> (Set SockAddr, [DomainAccessPoint])
+    splitPeers (addrs, domains) (RelayDomainAccessPoint domain) = (addrs, domain : domains)
+    splitPeers (addrs, domains) (RelayAccessAddress ip port) =
         let !addr = IP.toSockAddr (ip, port) in
         (Set.insert addr addrs, domains)
 
@@ -303,7 +304,7 @@ withLedgerPeers :: forall m a.
                 -> Tracer m TraceLedgerPeers
                 -> STM m UseLedgerAfter
                 -> LedgerPeersConsensusInterface m
-                -> ([DomainAddress] -> m (Map DomainAddress (Set SockAddr)))
+                -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set SockAddr)))
                 -> ( (NumberOfPeers -> m (Maybe (Set SockAddr, DiffTime)))
                      -> Async m Void
                      -> m a )

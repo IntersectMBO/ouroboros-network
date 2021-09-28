@@ -32,17 +32,18 @@ tests = testGroup "LedgerPeers"
   , testProperty "Pick" prop_pick
   ]
 
-newtype ArbitraryRelayAddress = ArbitraryRelayAddress RelayAddress
+newtype ArbitraryRelayAccessPoint = ArbitraryRelayAccessPoint RelayAccessPoint
 
-instance Arbitrary ArbitraryRelayAddress where
-    arbitrary = do
-      ArbitraryRelayAddress <$> elements [ RelayAddress (read "1.1.1.1") 1234
-               , RelayDomain (DomainAddress "relay.iohk.example" 1234)
-               ]
+instance Arbitrary ArbitraryRelayAccessPoint where
+    arbitrary =
+      ArbitraryRelayAccessPoint <$>
+        elements [ RelayAccessAddress (read "1.1.1.1")     1234
+                 , RelayAccessDomain  "relay.iohk.example" 1234
+                 ]
 
 data StakePool = StakePool {
       spStake :: !Word64
-    , spRelay :: NonEmpty RelayAddress
+    , spRelay :: NonEmpty RelayAccessPoint
     } deriving Show
 
 
@@ -50,19 +51,21 @@ data StakePool = StakePool {
 instance Arbitrary StakePool where
     arbitrary = do
         stake <- choose (0, 1000000)
-        (ArbitraryRelayAddress firstRelay) <- arbitrary
+        (ArbitraryRelayAccessPoint firstRelay) <- arbitrary
         moreRelays <- map unAddr <$> arbitrary
         return $ StakePool stake (firstRelay :| moreRelays)
       where
-        unAddr (ArbitraryRelayAddress a) = a
+        unAddr (ArbitraryRelayAccessPoint a) = a
 
-newtype LedgerPools = LedgerPools [(PoolStake, NonEmpty RelayAddress)] deriving Show
+newtype LedgerPools = LedgerPools [(PoolStake, NonEmpty RelayAccessPoint)]
+  deriving Show
 
 instance Arbitrary LedgerPools where
     arbitrary = LedgerPools . calculateRelativeStake <$> arbitrary
 
       where
-        calculateRelativeStake :: [StakePool] -> [(PoolStake, NonEmpty RelayAddress)]
+        calculateRelativeStake :: [StakePool]
+                               -> [(PoolStake, NonEmpty RelayAccessPoint)]
         calculateRelativeStake sps =
             let totalStake = foldl' (\s p -> s + spStake p) 0 sps in
             map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
@@ -73,8 +76,8 @@ prop_pick100 :: Word16
              -> Property
 prop_pick100 seed =
     let rng = mkStdGen $ fromIntegral seed
-        sps = [ (1, RelayAddress (read "1.1.1.1") 1  :| [])
-              , (0, RelayAddress (read "0.0.0.0") 0  :| [])
+        sps = [ (1, RelayAccessAddress (read "1.1.1.1") 1  :| [])
+              , (0, RelayAccessAddress (read "0.0.0.0") 0  :| [])
               ]
         peerMap = accPoolStake sps
         tr = (runSimTrace $ pickPeers rng verboseTracer peerMap $ NumberOfPeers 1) in
@@ -87,7 +90,7 @@ prop_pick100 seed =
                  return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
              SimReturn (_, peers) _trace -> do
                  -- printf "Log: %s\n" (intercalate "\n" _trace)
-                 return $ peers === [ RelayAddress (read "1.1.1.1") 1 ]
+                 return $ peers === [ RelayAccessAddress (read "1.1.1.1") 1 ]
 
 -- | Veify that given at least one peer we manage to pick `count` peers.
 prop_pick :: LedgerPools
