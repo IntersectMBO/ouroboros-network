@@ -25,8 +25,9 @@ module Test.Ouroboros.Network.Server2
   ( tests
   ) where
 
+
 import           Control.Applicative ((<|>))
-import           Control.Exception (AssertionFailed)
+import           Control.Exception (AssertionFailed, SomeAsyncException (SomeAsyncException))
 import           Control.Monad (replicateM, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
@@ -1624,7 +1625,10 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
                         TokWarm        -> "warm"
                         TokEstablished -> "cold"
                   q <$ labelTQueue q ("protoVar." ++ temp ++ "@" ++ show localAddr)
-            connHandle <- try @_ @SomeException
+            connHandle <- tryJust (\(e :: SomeException) ->
+                                       case fromException e of
+                                         Just SomeAsyncException {} -> Nothing
+                                         _                          -> Just e)
                           $ requestOutboundConnection cm remoteAddr
             case connHandle of
               Left _ ->
@@ -1654,12 +1658,21 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
               -- We want to throw because the generator invariant should never put us in
               -- this case
               Nothing -> throwIO (NoActiveConnection localAddr remoteAddr)
-              Just (Handle mux muxBundle _) ->
+              Just (Handle mux muxBundle _) -> do
                 -- TODO:
                 -- At times this throws 'ProtocolAlreadyRunning'.
-                void $ try @_ @SomeException
+                r <- tryJust (\(e :: SomeException) ->
+                                  case fromException e of
+                                    Just SomeAsyncException {} -> Nothing -- rethrown
+                                    _                          -> Just e)
                      $ runInitiatorProtocols muxMode mux muxBundle
-            go unregister connMap
+                case r of
+                  -- Lost connection to peer
+                  Left  {} -> do
+                    atomically
+                      $ modifyTVar connVar (Map.delete (connId remoteAddr))
+                    go unregister (Map.delete remoteAddr connMap)
+                  Right {} -> go unregister connMap
           Shutdown -> return ()
           where
             connId remoteAddr = ConnectionId { localAddress  = localAddr
