@@ -676,17 +676,18 @@ withConnectionManager ConnectionManagerArguments {
                          )
 
             case mConnVar of
-              Left Unknown -> do
-                assert False $
+              Left Unknown ->
+                assert False $ do
                   traceWith tracer (TrUnexpectedlyMissingConnectionState connId)
+                  traceCounters stateVar
 
               Left connState@Known {} -> do
-                traceCounters stateVar
                 traceWith trTracer (TransitionTrace peerAddr
                                       Transition
                                          { fromState = connState
                                          , toState   = Unknown
                                          })
+                traceCounters stateVar
               -- This case is impossible to reach since the previous atomically block
               -- does not return the 'Race' constructor.
               Left _ -> error "connection cleanup handler: impossible happened"
@@ -792,10 +793,11 @@ withConnectionManager ConnectionManagerArguments {
                                    Transition { fromState = connState
                                               , toState   = Known connState'
                                               })
-
               return ( Map.insert peerAddr connVar state
                      , (connVar, connId, connThread, reader)
                      )
+
+        traceCounters stateVar
 
         res <- atomically $ readPromise reader
         case res of
@@ -869,7 +871,6 @@ withConnectionManager ConnectionManagerArguments {
                 TerminatedState {} -> return Nothing
 
             traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
-
             traceCounters stateVar
 
             -- Note that we don't set a timeout thread here which would perform
@@ -1149,6 +1150,7 @@ withConnectionManager ConnectionManagerArguments {
                      )
 
         traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
+        traceCounters stateVar
         case eHandleWedge of
           Left e ->
             throwIO e
@@ -1249,8 +1251,8 @@ withConnectionManager ConnectionManagerArguments {
               let connState' = UnnegotiatedState provenance connId connThread
               writeTVar connVar connState'
               return (mkTransition connState connState')
-            traceCounters stateVar
             traceWith trTracer (TransitionTrace peerAddr tr)
+            traceCounters stateVar
 
             res <- atomically (readPromise reader)
             case res of
@@ -1316,9 +1318,9 @@ withConnectionManager ConnectionManagerArguments {
                     _ ->
                       let st = abstractState (Known connState) in
                       throwSTM (withCallStack (ForbiddenOperation peerAddr st))
-                traceCounters stateVar
                 traverse_ (traceWith trTracer .  TransitionTrace peerAddr)
                           mbTransition
+                traceCounters stateVar
                 return $ case mbTransition of
                   Just _  -> Connected    connId dataFlow handle
                   Nothing -> Disconnected connId Nothing
@@ -1564,10 +1566,10 @@ withConnectionManager ConnectionManagerArguments {
               TerminatedState _handleError ->
                 return (DemoteToColdLocalNoop Nothing (abstractState $ Known connState))
 
-      traceCounters stateVar
       case transition of
         DemotedToColdLocal connId connThread connVar tr -> do
           traceWith trTracer (TransitionTrace peerAddr tr)
+          traceCounters stateVar
           timeoutVar <- registerDelay cmOutboundIdleTimeout
           r <- atomically $ runFirstToFinish $
                FirstToFinish (do connState <- readTVar connVar
@@ -1587,6 +1589,7 @@ withConnectionManager ConnectionManagerArguments {
               atomically $ writeTVar connVar connState'
               traceWith trTracer (TransitionTrace peerAddr
                                    (mkTransition connState connState'))
+              traceCounters stateVar
               -- We relay on the `finally` handler of connection thread to:
               --
               -- - close the socket,
@@ -1605,6 +1608,8 @@ withConnectionManager ConnectionManagerArguments {
           traceWith tracer (TrPruneConnections (Map.keys pruneMap))
           -- previous comment applies here as well.
           traverse_ cancel pruneMap
+
+          traceCounters stateVar
           return (OperationSuccess (abstractState (fromState tr)))
 
         DemoteToColdLocalError trace st -> do
@@ -1613,6 +1618,7 @@ withConnectionManager ConnectionManagerArguments {
 
         DemoteToColdLocalNoop tr a -> do
           traverse_ (traceWith trTracer) (TransitionTrace peerAddr <$> tr)
+          traceCounters stateVar
           return (OperationSuccess a)
 
 
@@ -1679,12 +1685,11 @@ withConnectionManager ConnectionManagerArguments {
               TerminatedState {} ->
                 return (UnsupportedState TerminatedSt)
 
-      traceCounters stateVar
-
       -- trace transition
       case result of
-        OperationSuccess tr ->
+        OperationSuccess tr -> do
           traceWith trTracer (TransitionTrace peerAddr tr)
+          traceCounters stateVar
         _ -> return ()
       return (abstractState . fromState <$> result)
 
@@ -1744,12 +1749,13 @@ withConnectionManager ConnectionManagerArguments {
               TerminatedState {} ->
                 return (UnsupportedState TerminatedSt)
 
-      traceCounters stateVar
       -- trace transition
       case result of
         OperationSuccess tr ->
           traceWith trTracer (TransitionTrace peerAddr tr)
         _ -> return ()
+
+      traceCounters stateVar
       return (abstractState . fromState <$> result)
 
 
