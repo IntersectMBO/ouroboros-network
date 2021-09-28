@@ -1,9 +1,14 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- | Database analyse tool.
 module Main (main) where
 
+import           Codec.CBOR.Decoding (Decoder)
+import           Codec.Serialise (Serialise (decode))
+import           Control.Monad.Except (runExceptT)
 import           Data.Foldable (asum)
 import           Options.Applicative
 import           System.IO
@@ -13,9 +18,11 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
+import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -25,6 +32,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
+                     readSnapshot)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
@@ -41,14 +50,18 @@ main = do
       ShelleyBlock args -> analyse cmdLine args
       CardanoBlock args -> analyse cmdLine args
 
+data SelectDB =
+    SelectChainDB
+  | SelectImmutableDB (Maybe DiskSnapshot)
+
 data CmdLine = CmdLine {
-    dbDir           :: FilePath
-  , verbose         :: Bool
-  , onlyImmutableDB :: Bool
-  , validation      :: Maybe ValidateBlocks
-  , blockType       :: BlockType
-  , analysis        :: AnalysisName
-  , limit           :: Limit
+    dbDir      :: FilePath
+  , verbose    :: Bool
+  , selectDB   :: SelectDB
+  , validation :: Maybe ValidateBlocks
+  , blockType  :: BlockType
+  , analysis   :: AnalysisName
+  , limit      :: Limit
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation
@@ -73,14 +86,29 @@ parseCmdLine = CmdLine
             long "verbose"
           , help "Enable verbose logging"
           ])
-    <*> switch (mconcat [
-            long "onlyImmutableDB"
-          , help "Validate only the Immutable DB (e.g. do not do ledger validation)"
-          ])
+    <*> parseSelectDB
     <*> parseValidationPolicy
     <*> blockTypeParser
     <*> parseAnalysis
     <*> parseLimit
+
+parseSelectDB :: Parser SelectDB
+parseSelectDB = asum [
+    SelectImmutableDB . snd <$> ((,) <$> onlyImmutableDB <*> analyseFrom)
+  , pure SelectChainDB
+  ]
+  where
+    onlyImmutableDB = flag' () (mconcat [
+        long "only-immutable-db"
+      , help "Validate only the Immutable DB (e.g. do not do ledger validation)"
+      ])
+
+    analyseFrom :: Parser (Maybe DiskSnapshot)
+    analyseFrom = optional $ ((flip DiskSnapshot $ Just "db-analyser") . read) <$> strOption
+      (  long "analyse-from"
+      <> metavar "SLOT_NUMBER"
+      <> help "Start analysis from ledger state stored at specific slot number" )
+
 
 parseValidationPolicy :: Parser (Maybe ValidateBlocks)
 parseValidationPolicy = parseMaybe $ asum [
@@ -123,7 +151,7 @@ parseAnalysis = asum [
 storeLedgerParser :: Parser AnalysisName
 storeLedgerParser = (StoreLedgerStateAt . SlotNo . read) <$> strOption
   (  long "store-ledger"
-  <> metavar "SLOT NUMBER"
+  <> metavar "SLOT_NUMBER"
   <> help "Store ledger state at specific slot number" )
 
 parseLimit :: Parser Limit
@@ -171,6 +199,7 @@ getCmdLine = execParser opts
 -------------------------------------------------------------------------------}
 
 analyse ::
+     forall blk .
      ( Node.RunNode blk
      , Show (Header blk)
      , HasAnalysis blk
@@ -183,14 +212,14 @@ analyse CmdLine {..} args =
     withRegistry $ \registry -> do
 
       tracer <- mkTracer verbose
-      ProtocolInfo { pInfoInitLedger = initLedger, pInfoConfig = cfg } <-
+      ProtocolInfo { pInfoInitLedger = genesisLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
           k          = configSecurityParam cfg
           diskPolicy = defaultDiskPolicy k DefaultSnapshotInterval
           args' =
             Node.mkChainDbArgs
-              registry InFuture.dontCheck cfg initLedger chunkInfo $
+              registry InFuture.dontCheck cfg genesisLedger chunkInfo $
             ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
@@ -198,32 +227,37 @@ analyse CmdLine {..} args =
             , ChainDB.cdbTracer                = tracer
             }
           (immutableDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
+          ledgerDbFS = ChainDB.cdbHasFSLgrDB chainDbArgs
 
-      if onlyImmutableDB then
-        ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs) $ \immutableDB -> do
-          runAnalysis analysis $ AnalysisEnv {
-              cfg
-            , initLedger
-            , db = Left immutableDB
-            , registry
-            , ledgerDbFS = ChainDB.cdbHasFSLgrDB args'
-            , limit = limit
-            }
-          tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
-          putStrLn $ "ImmutableDB tip: " ++ show tipPoint
-
-      else
-        ChainDB.withDB chainDbArgs $ \chainDB -> do
-          runAnalysis analysis $ AnalysisEnv {
-              cfg
-            , initLedger
-            , db = Right chainDB
-            , registry
-            , ledgerDbFS = ChainDB.cdbHasFSLgrDB args'
-            , limit = limit
-            }
-          tipPoint <- atomically $ ChainDB.getTipPoint chainDB
-          putStrLn $ "ChainDB tip: " ++ show tipPoint
+      case selectDB of
+        SelectImmutableDB initializeFrom -> do
+          initLedgerErr <- runExceptT $ case initializeFrom of
+            Nothing       -> pure genesisLedger
+            Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
+          initLedger <- either (error . show) pure initLedgerErr
+          ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs) $ \immutableDB -> do
+            runAnalysis analysis $ AnalysisEnv {
+                cfg
+              , initLedger
+              , db = Left immutableDB
+              , registry
+              , ledgerDbFS = ledgerDbFS
+              , limit = limit
+              }
+            tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
+            putStrLn $ "ImmutableDB tip: " ++ show tipPoint
+        SelectChainDB ->
+          ChainDB.withDB chainDbArgs $ \chainDB -> do
+            runAnalysis analysis $ AnalysisEnv {
+                cfg
+              , initLedger = genesisLedger
+              , db = Right chainDB
+              , registry
+              , ledgerDbFS = ledgerDbFS
+              , limit = limit
+              }
+            tipPoint <- atomically $ ChainDB.getTipPoint chainDB
+            putStrLn $ "ChainDB tip: " ++ show tipPoint
   where
     mkTracer False = return nullTracer
     mkTracer True  = do
@@ -245,3 +279,11 @@ analyse CmdLine {..} args =
       (_, Just MinimumBlockValidation) -> VolatileDB.NoValidation
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
+
+    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk)
+    decodeExtLedgerState' cfg =
+      let ccfg = configCodec cfg
+      in decodeExtLedgerState
+           (decodeDisk ccfg)
+           (decodeDisk ccfg)
+           (decodeDisk ccfg)
