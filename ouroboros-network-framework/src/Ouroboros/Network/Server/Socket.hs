@@ -117,7 +117,6 @@ data Result addr r = Result
 -- the server shuts down.
 type ThreadsVar = STM.TVar (Set (Async ()))
 
-
 -- | The action runs inside `try`, and when it finishes, puts its result
 -- into the `ResultQ`. Takes care of inserting/deleting from the `ThreadsVar`.
 --
@@ -227,11 +226,13 @@ acceptOne acceptPolicyTrace resQ threadsVar statusVar acceptedConnectionsLimit b
       choice <- decision `onException` close
       case choice of
         Nothing -> do
-            traceWith acceptPolicyTrace $ ServerTraceAcceptReject $ show addr
+            size <- STM.atomically $ Set.size <$> STM.readTVar threadsVar
+            traceWith acceptPolicyTrace $ ServerTraceAcceptReject (show addr) size
             close
         Just io -> do
-            traceWith acceptPolicyTrace $ ServerTraceAcceptAccept $ show addr
             spawnOne addr statusVar resQ threadsVar applicationStart (io channel `finally` close)
+            size <- STM.atomically $ Set.size <$> STM.readTVar threadsVar
+            traceWith acceptPolicyTrace $ ServerTraceAcceptAccept (show addr) size
       pure (Just nextSocket)
 
 trackConnections :: ThreadsVar
@@ -250,13 +251,12 @@ trackConnections threadsVar tracer = go 0
 
 trackConnectionDeath :: forall addr.
                         Show addr
-                     => STM.TQueue addr
+                     => STM.TQueue (addr, Int)
                      -> Tracer IO AcceptConnectionsPolicyTrace
                      -> IO ()
 trackConnectionDeath tq tracer = forever $ do
-    deadPeer <- STM.atomically $ STM.readTQueue tq
-    traceWith tracer $ ServerTraceAcceptClose $ show deadPeer
-
+    (deadPeer, size) <- STM.atomically $ STM.readTQueue tq
+    traceWith tracer $ ServerTraceAcceptClose (show deadPeer) size
 
 
 -- | Main server loop, which runs alongside the `acceptLoop`. It waits for
@@ -264,10 +264,11 @@ trackConnectionDeath tq tracer = forever $ do
 -- determines when/if the server should stop.
 mainLoop
   :: forall addr st tr r t .
-     Tracer IO (WithAddr addr ErrorPolicyTrace)
+     Show addr
+  => Tracer IO (WithAddr addr ErrorPolicyTrace)
   -> ResultQ addr r
   -> ThreadsVar
-  -> STM.TQueue addr
+  -> STM.TQueue (addr, Int)
   -> StatusVar st
   -> CompleteConnection addr st tr r
   -> Main st t
@@ -290,6 +291,9 @@ mainLoop errorPolicyTrace resQ threadsVar deathsVar statusVar complete main =
   connectionTx :: STM (IO t)
   connectionTx = do
     result <- STM.readTQueue resQ
+    -- Make sure the don't cleanup before spawnOne has inserted the thread
+    isMember <- Set.member (resultThread result) <$> STM.readTVar threadsVar
+    STM.check isMember
     st <- STM.readTVar statusVar
     CompleteApplicationResult
       { carState
@@ -301,7 +305,8 @@ mainLoop errorPolicyTrace resQ threadsVar deathsVar statusVar complete main =
     STM.writeTVar statusVar carState
     -- It was inserted by `spawnOne`.
     STM.modifyTVar' threadsVar (Set.delete (resultThread result))
-    STM.writeTQueue deathsVar (resultAddr result)
+    size <- Set.size <$> STM.readTVar threadsVar
+    STM.writeTQueue deathsVar ((resultAddr result), size)
     pure $ do
       traverse_ Async.cancel carThreads
       traverse_ (traceWith errorPolicyTrace) carTrace
