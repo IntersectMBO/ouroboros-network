@@ -81,10 +81,10 @@ import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Core
+import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Control.State.Transition.Extended as STS
-import qualified Shelley.Spec.Ledger.API as SL
 
-import qualified Shelley.Spec.Ledger.STS.Chain as SL (PredicateFailure)
+import qualified Cardano.Ledger.Shelley.Rules.Chain as SL (PredicateFailure)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block

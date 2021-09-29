@@ -73,11 +73,11 @@ import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Cardano.Ledger.Era as Core
+import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
+import qualified Cardano.Ledger.Shelley.LedgerState as SL (stakeDistr)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
-import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger

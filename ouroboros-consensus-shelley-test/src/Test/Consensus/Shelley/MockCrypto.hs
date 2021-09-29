@@ -20,13 +20,13 @@ import           Cardano.Crypto.KES (MockKES)
 
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto (..))
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Tx as SL (ValidateScript)
 import           Control.State.Transition.Extended (PredicateFailure)
-import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.Tx as SL (ValidateScript)
 
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
-import qualified Test.Shelley.Spec.Ledger.ConcreteCryptoTypes as SL (Mock)
-import qualified Test.Shelley.Spec.Ledger.Generator.EraGen as SL (EraGen)
+import qualified Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL (Mock)
+import qualified Test.Cardano.Ledger.Shelley.Generator.EraGen as SL (EraGen)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyBasedEra,
                      ShelleyEra)

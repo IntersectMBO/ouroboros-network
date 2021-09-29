@@ -22,7 +22,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger
 
@@ -30,13 +30,13 @@ import           Test.QuickCheck
 
 import           Test.ThreadNet.TxGen (TxGen (..))
 
-import qualified Test.Shelley.Spec.Ledger.Generator.Constants as Gen
-import qualified Test.Shelley.Spec.Ledger.Generator.Core as Gen
-import           Test.Shelley.Spec.Ledger.Generator.EraGen
+import qualified Test.Cardano.Ledger.Shelley.Generator.Constants as Gen
+import qualified Test.Cardano.Ledger.Shelley.Generator.Core as Gen
+import           Test.Cardano.Ledger.Shelley.Generator.EraGen
                      (EraGen (genEraTwoPhase2Arg, genEraTwoPhase3Arg))
-import qualified Test.Shelley.Spec.Ledger.Generator.Presets as Gen.Presets
-import           Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
-import qualified Test.Shelley.Spec.Ledger.Generator.Utxo as Gen
+import qualified Test.Cardano.Ledger.Shelley.Generator.Presets as Gen.Presets
+import           Test.Cardano.Ledger.Shelley.Generator.ShelleyEraGen ()
+import qualified Test.Cardano.Ledger.Shelley.Generator.Utxo as Gen
 
 import           Test.Consensus.Shelley.MockCrypto (MockCrypto, MockShelley)
 import           Test.ThreadNet.Infra.Shelley

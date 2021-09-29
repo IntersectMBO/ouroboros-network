@@ -4,7 +4,7 @@ import qualified Data.Map as Map
 
 import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis (..))
 import           Cardano.Ledger.Alonzo.Scripts (Prices (..))
-import           Shelley.Spec.Ledger.API (Coin (..))
+import           Cardano.Ledger.Shelley.API (Coin (..))
 
 degenerateAlonzoGenesis :: AlonzoGenesis
 degenerateAlonzoGenesis = AlonzoGenesis {

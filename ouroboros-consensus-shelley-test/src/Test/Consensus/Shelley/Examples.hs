@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Storage.Serialisation
 
-import           Test.Shelley.Spec.Ledger.Orphans ()
+import           Test.Cardano.Ledger.Shelley.Orphans ()
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -48,7 +48,7 @@ import           Test.Cardano.Ledger.Alonzo.Examples.Consensus
                      (ledgerExamplesAlonzo)
 import           Test.Cardano.Ledger.Mary.Examples.Consensus
                      (ledgerExamplesMary)
-import           Test.Shelley.Spec.Ledger.Examples.Consensus
+import           Test.Cardano.Ledger.Shelley.Examples.Consensus
                      (ShelleyLedgerExamples (..), ShelleyResultExamples (..),
                      ledgerExamplesShelley, testShelleyGenesis)
 

@@ -50,9 +50,10 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import qualified Cardano.Ledger.Core as LC
-import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.LedgerState as SL (RewardAccounts)
-import qualified Shelley.Spec.Ledger.RewardProvenance as SL (RewardProvenance)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.LedgerState as SL (RewardAccounts)
+import qualified Cardano.Ledger.Shelley.RewardProvenance as SL
+                     (RewardProvenance)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block

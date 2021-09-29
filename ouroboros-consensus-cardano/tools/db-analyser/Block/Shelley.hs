@@ -23,7 +23,7 @@ import           Options.Applicative
 
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as CL
-import qualified Shelley.Spec.Ledger.API as SL
+import qualified Cardano.Ledger.Shelley.API as SL
 
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
