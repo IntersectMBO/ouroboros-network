@@ -258,6 +258,10 @@ mainLoop errorPolicyTrace resQ threadsVar statusVar complete main =
   connectionTx :: STM (IO t)
   connectionTx = do
     result <- STM.readTQueue resQ
+    -- Make sure we don't cleanup before spawnOne has inserted the thread
+    isMember <- Set.member (resultThread result) <$> STM.readTVar threadsVar
+    STM.check isMember
+
     st <- STM.readTVar statusVar
     CompleteApplicationResult
       { carState
