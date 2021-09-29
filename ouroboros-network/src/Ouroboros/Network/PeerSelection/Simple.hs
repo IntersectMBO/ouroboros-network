@@ -24,7 +24,6 @@ import           Data.Void (Void)
 
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
-import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -35,7 +34,6 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 withPeerSelectionActions
   :: Tracer IO (TraceLocalRootPeers IOException)
   -> Tracer IO TracePublicRootPeers
-  -> TimeoutFn IO
   -> STM IO PeerSelectionTargets
   -> STM IO [(Int, Map RelayAccessPoint PeerAdvertise)]
   -- ^ local root peers
@@ -52,7 +50,6 @@ withPeerSelectionActions
 withPeerSelectionActions
   localRootTracer
   publicRootTracer
-  timeout
   readTargets
   readLocalRootPeers
   readPublicRootPeers
@@ -70,7 +67,6 @@ withPeerSelectionActions
     withAsync
       (localRootPeersProvider
         localRootTracer
-        timeout
         DNS.defaultResolvConf
         ioDNSActions
         readLocalRootPeers
@@ -95,7 +91,6 @@ withPeerSelectionActions
                                -> Int -> IO (Set Socket.SockAddr, DiffTime)
     requestConfiguredRootPeers dnsActions n =
       publicRootPeersProvider publicRootTracer
-                              timeout
                               DNS.defaultResolvConf
                               readPublicRootPeers
                               dnsActions

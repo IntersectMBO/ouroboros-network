@@ -31,7 +31,7 @@ import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadSTM.Strict
 #endif
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer(..), traceWith)
 
@@ -40,7 +40,6 @@ import           System.Directory (getModificationTime)
 import           Data.IP (IPv4)
 import           Network.DNS (DNSError)
 import qualified Network.DNS as DNS
-import           Network.Mux.Timeout
 
 
 data DNSorIOError exception
@@ -123,8 +122,7 @@ data DNSActions resolver exception m = DNSActions {
     -- DNS library timeouts do not work reliably on Windows (#1873), hence the
     -- additional timeout.
     --
-    dnsLookupAWithTTL        :: TimeoutFn m
-                             -> DNS.ResolvConf
+    dnsLookupAWithTTL        :: DNS.ResolvConf
                              -> resolver
                              -> DNS.Domain
                              -> m (Either DNS.DNSError [(IPv4, DNS.TTL)])
@@ -272,12 +270,11 @@ asyncResolverResource resolvConf = return go
 -- DNS library timeouts do not work reliably on Windows (#1873), hence the
 -- additional timeout.
 --
-lookupAWithTTL :: TimeoutFn IO
-               -> DNS.ResolvConf
+lookupAWithTTL :: DNS.ResolvConf
                -> DNS.Resolver
                -> DNS.Domain
                -> IO (Either DNS.DNSError [(IPv4, DNS.TTL)])
-lookupAWithTTL timeout resolvConf resolver domain = do
+lookupAWithTTL resolvConf resolver domain = do
     reply <- timeout (microsecondsAsIntToDiffTime
                       $ DNS.resolvTimeout resolvConf)
                     (DNS.lookupRaw resolver domain DNS.A)

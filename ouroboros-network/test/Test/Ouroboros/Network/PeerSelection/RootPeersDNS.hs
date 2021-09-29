@@ -26,7 +26,6 @@ import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.ByteString.Char8 (pack)
 import           Data.Set (Set)
 import           Data.Time (DiffTime)
-import           Network.Mux.Timeout (TimeoutFn)
 import qualified Network.DNS.Resolver as DNSResolver
 import           Network.DNS (DNSError(NameError, TimeoutExpired))
 import           Network.Socket (SockAddr (..))
@@ -167,12 +166,11 @@ mockDNSActions dnsMap stdGenVar =
    dnsResolverResource      _ = return (constantResource ())
    dnsAsyncResolverResource _ = return (constantResource ())
 
-   dnsLookupAWithTTL :: TimeoutFn (IOSim s)
-                     -> resolvConf
+   dnsLookupAWithTTL :: resolvConf
                      -> resolver
                      -> Domain
                      -> IOSim s (Either DNSError [(IPv4, TTL)])
-   dnsLookupAWithTTL timeout _ _ domain = do
+   dnsLookupAWithTTL _ _ domain = do
      gen <- atomically $ readTVar stdGenVar
 
          -- Small probability of timeout
@@ -183,7 +181,7 @@ mockDNSActions dnsMap stdGenVar =
      atomically $ writeTVar stdGenVar g'
 
      dnsLookup <-
-        timeout dtTimeout $ do
+        MonadTimer.timeout dtTimeout $ do
           MonadTimer.threadDelay dtDelay
           case Map.lookup domain dnsMap of
             Nothing -> return (Left NameError)
@@ -202,7 +200,6 @@ mockLocalRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) = do
       genVar <- newTVarIO stdGen
 
       localRootPeersProvider tracerTraceLocalRoots
-                             MonadTimer.timeout
                              DNSResolver.defaultResolvConf
                              (mockDNSActions dnsMap genVar)
                              (readTVar localRootPeersVar)
@@ -218,7 +215,6 @@ mockPublicRootPeersProvider (MockRoots localRootPeers dnsMap stdGen) n = do
       genVar <- newTVarIO stdGen
 
       publicRootPeersProvider tracerTracePublicRoots
-                              MonadTimer.timeout
                               DNSResolver.defaultResolvConf
                               (readTVar localRootPeersVar)
                               (mockDNSActions @Failure dnsMap genVar)
@@ -232,7 +228,6 @@ mockResolveDomainAddresses (MockRoots localRootPeers dnsMap stdGen) = do
       genVar <- newTVarIO stdGen
 
       resolveDomainAccessPoint tracerTracePublicRoots
-                               MonadTimer.timeout
                                DNSResolver.defaultResolvConf
                                (mockDNSActions @Failure dnsMap genVar)
                                [ domain

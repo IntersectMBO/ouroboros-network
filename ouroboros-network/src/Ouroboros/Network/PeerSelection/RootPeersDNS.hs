@@ -54,7 +54,7 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer(..), contramap, traceWith)
 
@@ -63,7 +63,6 @@ import           Data.IP (IPv4)
 import qualified Data.IP as IP
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
-import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -104,7 +103,6 @@ localRootPeersProvider
      , Eq (Async m Void)
      )
   => Tracer m (TraceLocalRootPeers exception)
-  -> TimeoutFn m
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
   -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
@@ -113,7 +111,6 @@ localRootPeersProvider
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
-                       timeout
                        resolvConf
                        DNSActions {
                          dnsAsyncResolverResource,
@@ -196,7 +193,7 @@ localRootPeersProvider tracer
     resolveDomain resolver
                   domain@DomainAccessPoint {dapDomain, dapPortNumber}
                   advertisePeer = do
-      reply <- dnsLookupAWithTTL timeout resolvConf resolver dapDomain
+      reply <- dnsLookupAWithTTL resolvConf resolver dapDomain
       case reply of
         Left  err -> do
           traceWith tracer (TraceLocalRootFailure domain (DNSError err))
@@ -275,14 +272,12 @@ publicRootPeersProvider
   :: forall resolver exception a m.
      (MonadThrow m, MonadAsync m, Exception exception)
   => Tracer m TracePublicRootPeers
-  -> TimeoutFn m
   -> DNS.ResolvConf
   -> STM m [RelayAccessPoint]
   -> DNSActions resolver exception m
   -> ((Int -> m (Set Socket.SockAddr, DiffTime)) -> m a)
   -> m a
 publicRootPeersProvider tracer
-                        timeout
                         resolvConf
                         readDomains
                         DNSActions {
@@ -313,7 +308,6 @@ publicRootPeersProvider tracer
             let lookups =
                   [ (,) (DomainAccessPoint domain port)
                       <$> dnsLookupAWithTTL
-                            timeout
                             resolvConf
                             resolver
                             domain
@@ -348,13 +342,11 @@ resolveDomainAccessPoint
   :: forall exception resolver m.
   (MonadThrow m, MonadAsync m, Exception exception)
   => Tracer m TracePublicRootPeers
-  -> TimeoutFn m
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
   -> [DomainAccessPoint]
   -> m (Map DomainAccessPoint (Set Socket.SockAddr))
 resolveDomainAccessPoint tracer
-                         timeout
                          resolvConf
                          DNSActions {
                             dnsResolverResource,
@@ -381,7 +373,6 @@ resolveDomainAccessPoint tracer
             let lookups =
                   [ (,) domain
                       <$> dnsLookupAWithTTL
-                            timeout
                             resolvConf
                             resolver
                             (dapDomain domain)
@@ -467,13 +458,11 @@ exampleLocal domains = do
         provider rootPeersVar
   where
     provider rootPeersVar =
-      withTimeoutSerial $ \timeout ->
-        localRootPeersProvider
-          (showTracing stdoutTracer)
-          timeout
-          DNS.defaultResolvConf
-          rootPeersVar
-          (map (\d -> (d, DoAdvertisePeer)) domains)
+      localRootPeersProvider
+        (showTracing stdoutTracer)
+        DNS.defaultResolvConf
+        rootPeersVar
+        (map (\d -> (d, DoAdvertisePeer)) domains)
 
     observer :: (Eq a, Show a) => StrictTVar IO a -> a -> IO ()
     observer var fingerprint = do
@@ -486,14 +475,12 @@ exampleLocal domains = do
 
 examplePublic :: [DomainAccessPoint] -> IO ()
 examplePublic domains = do
-    withTimeoutSerial $ \timeout ->
-      publicRootPeersProvider
-        (showTracing stdoutTracer)
-        timeout
-        DNS.defaultResolvConf
-        domains $ \requestPublicRootPeers ->
-          forever $ do
-            (ips, ttl) <- requestPublicRootPeers 42
-            traceWith (showTracing stdoutTracer) (ips, ttl)
-            threadDelay ttl
+    publicRootPeersProvider
+      (showTracing stdoutTracer)
+      DNS.defaultResolvConf
+      domains $ \requestPublicRootPeers ->
+        forever $ do
+          (ips, ttl) <- requestPublicRootPeers 42
+          traceWith (showTracing stdoutTracer) (ips, ttl)
+          threadDelay ttl
 -}

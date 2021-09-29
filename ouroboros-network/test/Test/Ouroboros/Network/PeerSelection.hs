@@ -36,7 +36,6 @@ import           Control.Tracer (Tracer (..))
 
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
-import           Network.Mux.Timeout
 
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
@@ -1895,10 +1894,8 @@ selectEnvTargets f =
 --
 _governorFindingPublicRoots :: Int -> STM IO [RelayAccessPoint] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
-    withTimeoutSerial $ \timeout ->
     publicRootPeersProvider
       tracer
-      timeout
       DNS.defaultResolvConf
       readDomains
       ioDNSActions $ \requestPublicRootPeers ->
