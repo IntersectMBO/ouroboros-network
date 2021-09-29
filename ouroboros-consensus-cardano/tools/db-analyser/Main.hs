@@ -48,6 +48,7 @@ data CmdLine = CmdLine {
   , validation      :: Maybe ValidateBlocks
   , blockType       :: BlockType
   , analysis        :: AnalysisName
+  , limit           :: Limit
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation
@@ -79,6 +80,7 @@ parseCmdLine = CmdLine
     <*> parseValidationPolicy
     <*> blockTypeParser
     <*> parseAnalysis
+    <*> parseLimit
 
 parseValidationPolicy :: Parser (Maybe ValidateBlocks)
 parseValidationPolicy = parseMaybe $ asum [
@@ -114,8 +116,25 @@ parseAnalysis = asum [
           long "show-ebbs"
         , help "Show all EBBs and their predecessors"
         ]
+    , storeLedgerParser
     , pure OnlyValidation
     ]
+
+storeLedgerParser :: Parser AnalysisName
+storeLedgerParser = (StoreLedgerStateAt . SlotNo . read) <$> strOption
+  (  long "store-ledger"
+  <> metavar "SLOT NUMBER"
+  <> help "Store ledger state at specific slot number" )
+
+parseLimit :: Parser Limit
+parseLimit = asum [
+    Limit . read <$> strOption (mconcat [
+        long "num-blocks-to-process"
+      , help "Maximum number of blocks we want to process"
+      , metavar "INT"
+      ])
+  , pure Unlimited
+  ]
 
 blockTypeParser :: Parser BlockType
 blockTypeParser = subparser $ mconcat
@@ -187,6 +206,8 @@ analyse CmdLine {..} args =
             , initLedger
             , db = Left immutableDB
             , registry
+            , ledgerDbFS = ChainDB.cdbHasFSLgrDB args'
+            , limit = limit
             }
           tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
           putStrLn $ "ImmutableDB tip: " ++ show tipPoint
@@ -198,6 +219,8 @@ analyse CmdLine {..} args =
             , initLedger
             , db = Right chainDB
             , registry
+            , ledgerDbFS = ChainDB.cdbHasFSLgrDB args'
+            , limit = limit
             }
           tipPoint <- atomically $ ChainDB.getTipPoint chainDB
           putStrLn $ "ChainDB tip: " ++ show tipPoint

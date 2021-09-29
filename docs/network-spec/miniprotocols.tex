@@ -359,6 +359,7 @@ The protocol uses the following messages.
 \newcommand{\StPropose}{\state{StPropose}}
 \newcommand{\StConfirm}{\state{StConfirm}}
 \newcommand{\MsgProposeVersions}{\msg{MsgProposeVersions}}
+\newcommand{\MsgProposeVersionsX}{\msg{MsgProposeVersions'}}
 \newcommand{\MsgAcceptVersion}{\msg{MsgAcceptVersion}}
 \newcommand{\MsgRefuse}{\msg{MsgRefuse}}
 
@@ -380,6 +381,8 @@ A node, that runs the handshake protocol, must instantiate it with the set of
 supported protocol versions and callback functions for handling the protocol parameters.
 These callback functions are specific for the supported protocol versions.
 
+The handshake mini protocol is designed to handle simultantous TCP open.
+
 \subsection{State machine}
 
 \begin{figure}[h]
@@ -392,15 +395,16 @@ These callback functions are specific for the supported protocol versions.
 \end{figure}
 
 \begin{figure}[h]
-  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=6cm, semithick]
+  \begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=6cm, semithick]
     \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, mygreen, initial]                                     (Propose)    {\StPropose};
-    \node[state, myblue, right of=Propose]                             (Confirm)    {\StConfirm};
-    \node[state, right of=Confirm]                                   (Done)       {\StDone};
+    \node[state, green, initial]   (StPropose) at (0,  0) {\StPropose};
+    \node[state, blue]             (StConfirm) at (5,  0) {\StConfirm};
+    \node[state, right of=Confirm] (StDone)    at (7,  0) {\StDone};
 
-    \draw (Propose)      edge[]      node{\MsgProposeVersions}          (Confirm);
-    \draw (Confirm)      edge[above, bend left]       node{\MsgAcceptVersion}     (Done);
-    \draw (Confirm)      edge[below, bend right]      node{\MsgRefuse}            (Done);
+    \draw (StPropose) --node[above=1em]{\MsgProposeVersions} (StConfirm);
+    \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion}     (StDone.170);
+    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}            (StDone.190);
+    \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em] {\MsgProposeVersionsX} (StDone.west);
   \end{tikzpicture}
 \end{figure}
 
@@ -408,22 +412,29 @@ Messages of the protocol:
 \begin{description}
 \item [\MsgProposeVersions{} {\boldmath $(versionTable)$}]
       The client proposes a number of possible versions and protocol parameters.
+\item [\MsgProposeVersionsX{} {\boldmath $(versionTable)$}]
+      In TCP simultanous open the client will receive \MsgProposeVersionsX{}
+      (which was sent as \MsgProposeVersions{}) as a reply to its own
+      \MsgProposeVersions{}; thus both \MsgProposeVersions{} and
+      \MsgProposeVersionsX{} have to have the same CBOR encoding.
 \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
 \item [\MsgRefuse{} {\boldmath $(reason)$}]
       The server refuses the proposed versions.
 \end{description}
 
+{\small
 \begin{table}[h]
   \begin{tabular}{|l|l|l|l|} \hline
   \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from          & message/event         & parameters              & to                \\ \hline\hline
-    \StPropose    & \MsgProposeVersions   & $versionTable$          & \StConfirm        \\ \hline
-    \StConfirm    & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
-    \StConfirm    & \MsgRefuse            & $reason$                & \StDone           \\ \hline
+    from       & message/event         & parameters                        & to \\ \hline\hline
+    \StPropose & \MsgProposeVersions   & $versionTable$                    & \StConfirm \\ \hline
+    \StConfirm & \MsgProposeVersionsX  & $versionTable$                    & \StDone \\ \hline
+    \StConfirm & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
+    \StConfirm & \MsgRefuse            & $reason$                          & \StDone \\ \hline
   \end{tabular}
-  \caption{Handhsake mini-protocol messages.}
 \end{table}
+}
 
 \subsection{Client and Server Implementation}
 Section~\ref{handshake-cddl} contains the CDDL-specification of the binary format of the handshake messages.
@@ -475,6 +486,13 @@ The handshake protocol is designed,
 such that a server can always handle requests for protocol versions that it does not support.
 The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
 version.
+
+In case of simultaneous open TCP connection, both handshake clients will send
+their \MsgProposeVersions{}, both will interpet the incoming message as
+\MsgProposeVersionsX{} (thus both must have the same encoding, the
+implementation can disntiguish them by the protocol state).  Both clients
+should choose the highest version of the protocol available.  If any side does
+not accept any version (or its parameters) it can reset the connection.
 
 The handshake mini protocol runs before the MUX/DEMUX itself is initialised.
 Each message is transmitted within a single MUX segment, i.e. with a proper

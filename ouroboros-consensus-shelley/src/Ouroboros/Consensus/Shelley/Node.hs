@@ -77,8 +77,6 @@ import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.API as SL
-import qualified Shelley.Spec.Ledger.EpochBoundary as SL
-                     (PulsingStakeDistr (Completed))
 import qualified Shelley.Spec.Ledger.LedgerState as SL (stakeDistr)
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -468,7 +466,7 @@ registerGenesisStaking staking nes = nes {
             }
         }
         , SL.esSnapshots = (SL.esSnapshots epochState) {
-              SL._pstakeMark = SL.Completed initSnapShot
+              SL._pstakeMark = initSnapShot
             }
         }
 

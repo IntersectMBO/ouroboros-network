@@ -79,20 +79,24 @@ executable db-analyser
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
                      , cardano-ledger-core
+                     , cborg
                      , containers
                      , contra-tracer
                      , mtl
                      , optparse-applicative
                      , shelley-spec-ledger
                      , strict-containers
+                     , text
 
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-cardano
                      , ouroboros-consensus-shelley
                      , ouroboros-network
+                     , plutus-ledger-api
   other-modules:
                        Analysis
+                     , Block.Alonzo
                      , Block.Byron
                      , Block.Cardano
                      , Block.Shelley

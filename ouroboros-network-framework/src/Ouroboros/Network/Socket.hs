@@ -69,7 +69,7 @@ module Ouroboros.Network.Socket (
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Exception (IOException, SomeException (..))
+import           Control.Exception (SomeException (..))
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Control.Monad.STM as STM
 import           Control.Monad.Class.MonadSTM.Strict
@@ -83,10 +83,10 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Proxy (Proxy (..))
 import           Data.Void
 import           Data.Word (Word16)
+import           GHC.IO.Exception
 #if !defined(mingw32_HOST_OS)
-import           GHC.IO.Exception (IOErrorType (..))
+import           Foreign.C.Error
 #endif
-import           System.IO.Error
 
 import qualified Network.Socket as Socket
 
@@ -103,7 +103,6 @@ import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.IOManager (IOManager)
 import           Ouroboros.Network.Snocket (Snocket)
@@ -250,19 +249,20 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
  
+    handshakeBearer <- Snocket.toBearer sn sduHandshakeTimeout muxTracer sd
     app_e <-
       runHandshakeClient
-        (Snocket.toBearer sn sduHandshakeTimeout muxTracer sd)
+        handshakeBearer
         connectionId
         -- TODO: push 'HandshakeArguments' up the call stack.
         HandshakeArguments {
           haHandshakeTracer  = nctHandshakeTracer,
           haHandshakeCodec   = handshakeCodec,
           haVersionDataCodec = versionDataCodec,
-          haVersions         = versions,
           haAcceptVersion    = acceptVersion,
           haTimeLimits       = handshakeTimeLimits
         }
+        versions
     ts_end <- getMonotonicTime
     case app_e of
          Left (HandshakeProtocolLimit err) -> do
@@ -275,10 +275,11 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
 
          Right (app, _versionNumber, _agreedOptions) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
+             bearer <- Snocket.toBearer sn sduTimeout muxTracer sd
              Mx.muxStart
                muxTracer
                (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
-               (Snocket.toBearer sn sduTimeout muxTracer sd)
+               bearer
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -374,18 +375,21 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
 
+        handshakeBearer <- Snocket.toBearer sn
+                                            sduHandshakeTimeout
+                                            muxTracer' sd
         app_e <-
           runHandshakeServer
-            (Snocket.toBearer sn sduHandshakeTimeout muxTracer' sd)
+            handshakeBearer
             connectionId
             HandshakeArguments {
               haHandshakeTracer  = handshakeTracer,
               haHandshakeCodec   = handshakeCodec,
               haVersionDataCodec = versionDataCodec,
-              haVersions         = versions,
               haAcceptVersion    = acceptVersion,
               haTimeLimits       = handshakeTimeLimits
             }
+           versions
 
         case app_e of
              Left (HandshakeProtocolLimit err) -> do
@@ -398,10 +402,11 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
              Right (SomeResponderApplication app, _versionNumber, _agreedOptions) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
+                 bearer <- Snocket.toBearer sn sduTimeout muxTracer' sd
                  Mx.muxStart
                    muxTracer'
                    (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
-                   (Snocket.toBearer sn sduTimeout muxTracer' sd)
+                   bearer
 
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
@@ -433,11 +438,16 @@ fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
   where
     go :: Snocket.Accept IO fd addr -> Server.Socket addr fd
     go (Snocket.Accept accept) = Server.Socket $ do
-      (sd', remoteAddr, next) <- accept
-      -- TOOD: we don't need to that on each accept
-      localAddr <- Snocket.getLocalAddr sn sd'
-      atomically $ addConnection tblVar remoteAddr localAddr Nothing
-      pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
+      (result, next) <- accept
+      case result of
+        Snocket.Accepted sd' remoteAddr -> do
+          -- TOOD: we don't need to that on each accept
+          localAddr <- Snocket.getLocalAddr sn sd'
+          atomically $ addConnection tblVar remoteAddr localAddr Nothing
+          pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
+        Snocket.AcceptFailure err ->
+          -- the is no way to construct 'Server.Socket'; This will be removed in a later commit!
+          throwIO err
 
     close remoteAddr localAddr sd' = do
         removeConnection tblVar remoteAddr localAddr
@@ -580,6 +590,28 @@ runServerThread NetworkServerTracers { nstMuxTracer
         fmap (unregisterProducer remoteAddr thread)
           <$> completeApplicationTx errorPolicies (ApplicationResult t remoteAddr r) st
 
+    iseCONNABORTED :: IOError -> Bool
+#if defined(mingw32_HOST_OS)
+    -- On Windows the network packet classifies all errors
+    -- as OtherError. This means that we're forced to match
+    -- on the error string. The text string comes from
+    -- the network package's winSockErr.c, and if it ever
+    -- changes we must update our text string too.
+    iseCONNABORTED (IOError _ _ _ "Software caused connection abort (WSAECONNABORTED)" _ _) = True
+    iseCONNABORTED _ = False
+#else
+    iseCONNABORTED (IOError _ _ _ _ (Just cerrno) _) = eCONNABORTED == Errno cerrno
+#if defined(darwin_HOST_OS)
+    -- There is a bug in accept for IPv6 sockets. Instead of returning -1
+    -- and setting errno to ECONNABORTED an invalid (>= 0) file descriptor
+    -- is returned, with the client address left unchanged. The uninitialized
+    -- client address causes the network package to throw the user error below.
+    iseCONNABORTED (IOError _ UserError _ "Network.Socket.Types.peekSockAddr: address family '0' not supported." _ _) = True
+#endif
+    iseCONNABORTED _ = False
+#endif
+
+
     acceptException :: addr -> IOException -> IO ()
     acceptException a e = do
       traceWith (WithAddr a `contramap` nstErrorPolicyTracer) $ ErrorPolicyAcceptException e
@@ -589,26 +621,8 @@ runServerThread NetworkServerTracers { nstMuxTracer
       -- problem.
       -- NB. This piece of code is fragile and depends on specific
       -- strings/mappings in the network and base libraries.
-#if defined(mingw32_HOST_OS)
-      -- On Windows the network packet classifies all errors as OtherError.
-      -- This means that we're forced to match on the error string. The text
-      -- string comes from the network package's winSockErr.c, and if it ever
-      -- changes we must update our text string too.
-      case ioeGetErrorString e of
-           "Software caused connection abort (WSAECONNABORTED)" -> return ()
-           _ -> throwIO e
-#else
-      -- ECONNABORTED is mapped to OtherError so we're forced to match on it.
-      -- On, FreeBSD, Linux and OSX accept can also return the following
-      -- errors which are translated to OtherError EFAULT, ENOTSOCK,
-      -- EOPNOTSUPP, EWOULDBLOCK.
-      -- This limitation arises from the haskell base library.
-      -- Those errors are triggered by bugs in our code, network package or
-      -- the RTS. If that happens we've at least logged the relevant error.
-      case ioeGetErrorType e of
-           OtherError -> return ()
-           _          -> throwIO e
-#endif
+      if iseCONNABORTED e then return ()
+                          else throwIO e
 
     acceptConnectionTx sockAddr t connAddr st = do
       d <- beforeConnectTx t connAddr st

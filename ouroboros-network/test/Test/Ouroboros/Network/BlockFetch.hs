@@ -258,7 +258,7 @@ tracePropertyBlocksRequestedAndRecievedPerPeer fork1 fork2 es =
       Map.fromListWith (flip (++))
         [ (peer, [pt])
         | TraceFetchClientState
-            (TraceLabelPeer peer (CompletedBlockFetch pt _ _ _ _)) <- es
+            (TraceLabelPeer peer (CompletedBlockFetch pt _ _ _ _ _)) <- es
         ]
 
 
@@ -302,7 +302,7 @@ tracePropertyBlocksRequestedAndRecievedAllPeers fork1 fork2 es =
       Set.fromList
         [ pt
         | TraceFetchClientState
-            (TraceLabelPeer _ (CompletedBlockFetch pt _ _ _ _)) <- es
+            (TraceLabelPeer _ (CompletedBlockFetch pt _ _ _ _ _)) <- es
         ]
 
 
@@ -617,8 +617,8 @@ _unit_bracketSyncWithFetchClient step = do
 -- make a proper calucation what should it be.  At the moment this test shows
 -- that the block fetch protocol can exit within some large time limit.
 --
-prop_terminate :: TestChainFork -> Delay -> Property
-prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Delay delay) =
+prop_terminate :: TestChainFork -> Positive SmallDelay -> Property
+prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Positive (SmallDelay delay)) =
     let tr = runSimTrace simulation
         trace :: [FetchRequestTrace]
         trace  = selectTraceEventsDynamic tr

@@ -32,6 +32,7 @@ import           Data.Text (Text)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
+import           Text.Printf
 
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
@@ -130,15 +131,16 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
         -> CBOR.Encoding
 
       encodeMsg (ClientAgency TokPropose) (MsgProposeVersions vs) =
-        let vs' = Map.toAscList vs
-        in
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 0
-        <> CBOR.encodeMapLen (fromIntegral $ length vs')
-        <> mconcat [    CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
-                     <> CBOR.encodeTerm vParams
-                   | (vNumber, vParams) <- vs'
-                   ]
+        <> encodeVersions versionNumberCodec vs
+
+      -- Although `MsgProposeVersions'` shall not be sent, for testing purposes
+      -- it is useful to have an encoder for it.
+      encodeMsg (ServerAgency TokConfirm) (MsgProposeVersions' vs) =
+           CBOR.encodeListLen 2
+        <> CBOR.encodeWord 0
+        <> encodeVersions versionNumberCodec vs
 
       encodeMsg (ServerAgency TokConfirm) (MsgAcceptVersion vNumber vParams) =
            CBOR.encodeListLen 3
@@ -151,41 +153,22 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
         <> CBOR.encodeWord 2
         <> encodeRefuseReason versionNumberCodec vReason
 
-      -- decode a map checking the assumption that
-      --  * keys are different
-      --  * keys are encoded in ascending order
-      -- fail when one of these assumptions is not met
-      decodeMap :: Int
-                -> Maybe vNumber
-                -> [(vNumber, CBOR.Term)]
-                -> CBOR.Decoder s (Map vNumber CBOR.Term)
-      decodeMap 0  _     !vs = return $ Map.fromDistinctAscList $ reverse vs
-      decodeMap !l !prev !vs = do
-        vNumberTerm <- CBOR.decodeTerm
-        vParams <- CBOR.decodeTerm
-        case decodeTerm versionNumberCodec vNumberTerm of
-          -- error when decoding un-recognized version; skip the version
-          -- TODO: include error in the dictionary
-          Left _        -> decodeMap (pred l) prev vs
-
-          Right vNumber -> do
-            let next = Just vNumber
-            unless (next > prev)
-              $ fail "codecHandshake.Propose: unordered version"
-            decodeMap (pred l) next ((vNumber, vParams) : vs)
-
       decodeMsg :: forall (pr :: PeerRole) s (st :: Handshake vNumber CBOR.Term).
                    PeerHasAgency pr st
                 -> CBOR.Decoder s (SomeMessage st)
       decodeMsg stok = do
-        _ <- CBOR.decodeListLen
+        len <- CBOR.decodeListLen
         key <- CBOR.decodeWord
-        case (stok, key) of
-          (ClientAgency TokPropose, 0) -> do
+        case (stok, key, len) of
+          (ClientAgency TokPropose, 0, 2) -> do
             l  <- CBOR.decodeMapLen
-            vMap <- decodeMap l Nothing []
+            vMap <- decodeVersions versionNumberCodec l
             pure $ SomeMessage $ MsgProposeVersions vMap
-          (ServerAgency TokConfirm, 1) -> do
+          (ServerAgency TokConfirm, 0, 2) -> do
+            l  <- CBOR.decodeMapLen
+            vMap <- decodeVersions versionNumberCodec l
+            pure $ SomeMessage $ MsgProposeVersions' vMap
+          (ServerAgency TokConfirm, 1, 3) -> do
             v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
             case v of
               -- at this stage we can throw exception when decoding
@@ -194,11 +177,62 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
               Left e -> fail ("codecHandshake.MsgAcceptVersion: not recognized version: " ++ show e)
               Right vNumber ->
                 SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
-          (ServerAgency TokConfirm, 2) ->
+          (ServerAgency TokConfirm, 2, 2) ->
             SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
 
-          (ClientAgency TokPropose, _) -> fail "codecHandshake.Propose: unexpected key"
-          (ServerAgency TokConfirm, _) -> fail "codecHandshake.Confirm: unexpected key"
+          (ClientAgency TokPropose, _, _) ->
+            fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
+          (ServerAgency TokConfirm, _, _) ->
+            fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
+
+
+-- | Encode version map preserving the ascending order of keys.
+--
+encodeVersions :: CodecCBORTerm (failure, Maybe Int) vNumber
+               -> Map vNumber CBOR.Term
+               -> CBOR.Encoding
+encodeVersions versionNumberCodec vs =
+       CBOR.encodeMapLen (fromIntegral (Map.size vs))
+    <> Map.foldMapWithKey
+        (\vNumber vParams ->
+            CBOR.encodeTerm (encodeTerm versionNumberCodec vNumber)
+         <> CBOR.encodeTerm vParams
+        )
+        vs
+
+
+-- | decode a map checking the assumption that
+--
+-- * keys are different
+-- * keys are encoded in ascending order
+--
+-- fail when one of these assumptions is not met.
+--
+decodeVersions :: forall vNumber failure s.
+                  Ord vNumber
+               => CodecCBORTerm (failure, Maybe Int) vNumber
+               -> Int
+               -> CBOR.Decoder s (Map vNumber CBOR.Term)
+decodeVersions versionNumberCodec size = go size Nothing []
+  where
+    go :: Int
+       -> Maybe vNumber
+       -> [(vNumber, CBOR.Term)]
+       -> CBOR.Decoder s (Map vNumber CBOR.Term)
+    go 0  _     !vs = return $ Map.fromDistinctAscList $ reverse vs
+    go !l !prev !vs = do
+      vNumberTerm <- CBOR.decodeTerm
+      vParams <- CBOR.decodeTerm
+      case decodeTerm versionNumberCodec vNumberTerm of
+        -- error when decoding un-recognized version; skip the version
+        -- TODO: include error in the dictionary
+        Left _        -> go (pred l) prev vs
+
+        Right vNumber -> do
+          let next = Just vNumber
+          unless (next > prev)
+            $ fail "codecHandshake.Propose: unordered version"
+          go (pred l) next ((vNumber, vParams) : vs)
 
 
 encodeRefuseReason :: CodecCBORTerm fail vNumber

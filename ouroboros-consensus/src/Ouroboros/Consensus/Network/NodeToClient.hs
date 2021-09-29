@@ -35,6 +35,8 @@ module Ouroboros.Consensus.Network.NodeToClient (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise (Serialise)
+
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
@@ -164,6 +166,8 @@ defaultCodecs :: forall m blk.
                  ( MonadST m
                  , SerialiseNodeToClientConstraints blk
                  , ShowQuery (BlockQuery blk)
+                 , StandardHash blk
+                 , Serialise (HeaderHash blk)
                  )
               => CodecConfig blk
               -> BlockNodeToClientVersion blk
@@ -216,6 +220,8 @@ clientCodecs :: forall m blk.
                 ( MonadST m
                 , SerialiseNodeToClientConstraints blk
                 , ShowQuery (BlockQuery blk)
+                , StandardHash blk
+                , Serialise (HeaderHash blk)
                 )
              => CodecConfig blk
              -> BlockNodeToClientVersion blk

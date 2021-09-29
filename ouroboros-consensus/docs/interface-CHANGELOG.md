@@ -56,6 +56,15 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2021-09-22
+
+### Added
+
+- New supported node to client version `NodeToClientV_10` with new queries:
+  - `GetChainBlockNo`: Get the chain block number
+  - `GetChainPoint`: Get the chain point, which includes the slot number and
+    header hash.
+
 ## Circa 2021-08-31
 
 ### Added

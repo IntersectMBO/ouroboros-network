@@ -78,7 +78,9 @@ readQueueChannel QueueChannel { qcRead } =
     atomically $ do
       a <- readTVar qcRead >>= traverse readTQueue
       case a of
-        Nothing           -> throwSTM (resourceVanishedIOError "sim.readQueueChannel")
+        Nothing           -> throwSTM (resourceVanishedIOError
+                                        "AttenuatedChannel.readQueueChannel"
+                                         "channel vanished")
         Just msg@MsgClose -> writeTVar qcRead Nothing
                           >> return msg
         Just msg          -> return msg
@@ -194,7 +196,8 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
 
             ( d, Failure ) -> threadDelay d
                            >> throwIO (resourceVanishedIOError
-                                        "AttenuatedChannel.read")
+                                        "AttenuatedChannel.read"
+                                        "read attenuation")
 
     acWrite :: StrictTVar m Int
             -> BL.ByteString
@@ -207,12 +210,13 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
         Just limit  | wCount >= limit
                    -> throwIO $
                         resourceVanishedIOError
-                          "AttenuatedChannel.write: write limit reached"
+                          "AttenuatedChannel.write"
+                          "write limit reached (write attenuation)"
         _          -> return ()
 
       sent <- writeQueueChannel qc (MsgBytes bs)
       when (not sent) $
-        throwIO (resourceVanishedIOError "AttenuatedChannel.write")
+        throwIO (resourceVanishedIOError "AttenuatedChannel.write" "")
 
     acClose :: m ()
     acClose = do
@@ -322,12 +326,12 @@ data AttenuatedChannelTrace =
 -- Utils
 --
 
-resourceVanishedIOError :: String -> IOError
-resourceVanishedIOError ioe_location = IOError
+resourceVanishedIOError :: String -> String -> IOError
+resourceVanishedIOError ioe_location ioe_description = IOError
   { ioe_handle      = Nothing
   , ioe_type        = ResourceVanished
   , ioe_location
-  , ioe_description = ""
+  , ioe_description
   , ioe_errno       = Nothing
   , ioe_filename    = Nothing
   }
