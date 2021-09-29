@@ -209,8 +209,13 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
           newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
-      when (slotNo == blockSlot blk) $ storeLedgerState blk newLedger
-      return (Continue, newLedger)
+      when (blockSlot blk == slotNo) $ storeLedgerState blk newLedger
+      return (continue blk, newLedger)
+
+    continue :: blk -> NextStep
+    continue blk
+      | blockSlot blk >= slotNo = Stop
+      | otherwise               = Continue
 
     storeLedgerState ::
          blk
