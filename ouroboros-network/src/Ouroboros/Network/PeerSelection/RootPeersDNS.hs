@@ -322,8 +322,8 @@ localRootPeersProvider tracer
       let rr = newResolverResource resolvConf
 #endif
       let
-          -- Flatten the local root peers groups and associate a group index to each
-          -- DomainAddress to be monitorized.
+          -- Flatten the local root peers groups and associate a group index to
+          -- each DomainAddress to be monitorized.
           domains :: [(Int, DomainAddress, PeerAdvertise)]
           domains = [ (group, domain, pa)
                     | (group, (_, m)) <- zip [0..] domainsGroups
@@ -349,13 +349,10 @@ localRootPeersProvider tracer
                        RelayDomain {}  -> False
                      )
 
-      atomically $
-        writeTVar rootPeersGroupsVar rootPeersGroups
-
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
       domainsGroups' <-
-        withAsyncAll (monitorDomain rr `map` domains) $ \as -> do
+        withAsyncAll (monitorDomain rr rootPeersGroups `map` domains) $ \as -> do
           res <- atomically $
                   -- wait until any of the monitoring threads errors
                   ((\(a, res) ->
@@ -408,13 +405,17 @@ localRootPeersProvider tracer
 
     monitorDomain
       :: Resource DNSorIOError DNS.Resolver
+      -> [(Int, Map Socket.SockAddr PeerAdvertise)]
+      -- ^ local group peers which didnhh
       -> (Int, DomainAddress, PeerAdvertise)
       -> IO Void
-    monitorDomain rr0 (group, domain, advertisePeer) =
-        go rr0 0
+    monitorDomain rr0 rootPeersGroups0 (group, domain, advertisePeer) =
+        go rr0 rootPeersGroups0 0
       where
-        go :: Resource DNSorIOError DNS.Resolver -> DiffTime -> IO Void
-        go !rr !ttl = do
+        go :: Resource DNSorIOError DNS.Resolver
+           -> [(Int, Map Socket.SockAddr PeerAdvertise)]
+           -> DiffTime -> IO Void
+        go !rr !rootPeersGroups !ttl = do
           when (ttl > 0) $ do
             traceWith tracer (TraceLocalRootWaiting domain ttl)
             threadDelay ttl
@@ -425,10 +426,9 @@ localRootPeersProvider tracer
                           rr
           reply <- resolveDomain resolver domain advertisePeer
           case reply of
-            Left err -> go rrNext (ttlForDnsError err ttl)
+            Left err -> go rrNext rootPeersGroups (ttlForDnsError err ttl)
             Right results -> do
-              atomically $ do
-                rootPeersGroups <- readTVar rootPeersGroupsVar
+              rootPeersGroups' <- atomically $ do
                 let rootPeersGroups' = IntMap.fromList $ zip [0,1..] rootPeersGroups
                     (target, entry)  = rootPeersGroups' IntMap.! group
                     resultsMap       = Map.fromList (map fst results)
@@ -443,7 +443,9 @@ localRootPeersProvider tracer
                 when (entry /= entry') $
                   writeTVar rootPeersGroupsVar newRootPeers
 
-              go rrNext (ttlForResults (map snd results))
+                return newRootPeers
+
+              go rrNext rootPeersGroups' (ttlForResults (map snd results))
 
 
 ---------------------------------------------
