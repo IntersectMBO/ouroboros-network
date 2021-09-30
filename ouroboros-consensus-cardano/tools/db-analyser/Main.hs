@@ -149,6 +149,7 @@ parseAnalysis = asum [
           long "count-blocks"
         , help "Count number of blocks processed"
         ]
+    , checkNoThunksParser
     , pure OnlyValidation
     ]
 
@@ -157,6 +158,12 @@ storeLedgerParser = (StoreLedgerStateAt . SlotNo . read) <$> strOption
   (  long "store-ledger"
   <> metavar "SLOT_NUMBER"
   <> help "Store ledger state at specific slot number" )
+
+checkNoThunksParser :: Parser AnalysisName
+checkNoThunksParser = (CheckNoThunksEvery . read) <$> strOption
+  (  long "checkThunks"
+  <> metavar "BLOCK_COUNT"
+  <> help "Check the ledger state for thunks every n blocks" )
 
 parseLimit :: Parser Limit
 parseLimit = asum [
