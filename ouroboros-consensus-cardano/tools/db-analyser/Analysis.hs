@@ -18,7 +18,8 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Word (Word16)
+import           Data.Word (Word16, Word64)
+import           NoThunks.Class (noThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -29,7 +30,8 @@ import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
-import           Ouroboros.Consensus.Storage.Common (StreamFrom (..))
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
+                     StreamFrom (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -38,7 +40,6 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
@@ -61,6 +62,7 @@ data AnalysisName =
   | ShowEBBs
   | OnlyValidation
   | StoreLedgerStateAt SlotNo
+  | CheckNoThunksEvery Word64
   deriving Show
 
 runAnalysis ::
@@ -77,6 +79,7 @@ runAnalysis ShowBlockTxsSize            = showBlockTxsSize
 runAnalysis ShowEBBs                    = showEBBs
 runAnalysis OnlyValidation              = \_ -> return ()
 runAnalysis (StoreLedgerStateAt slotNo) = storeLedgerStateAt slotNo
+runAnalysis (CheckNoThunksEvery nBks)   = checkNoThunksEvery nBks
 
 type Analysis blk = AnalysisEnv blk -> IO ()
 
@@ -252,6 +255,43 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
            (encodeDisk ccfg)
            (encodeDisk ccfg)
            (encodeDisk ccfg)
+
+{-------------------------------------------------------------------------------
+  Analysis: check for ledger state thunks every n blocks
+-------------------------------------------------------------------------------}
+
+checkNoThunksEvery ::
+  forall blk.
+  ( HasAnalysis blk,
+    LedgerSupportsProtocol blk
+  ) =>
+  Word64 ->
+  Analysis blk
+checkNoThunksEvery
+  nBlocks
+  (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
+    putStrLn $
+      "Checking ledger state for thunks every "
+        <> show nBlocks
+        <> " blocks."
+    void $ processAll db registry GetBlock initLedger limit initLedger process
+  where
+    process :: ExtLedgerState blk -> blk -> IO (ExtLedgerState blk)
+    process oldLedger blk = do
+      let ledgerCfg     = ExtLedgerCfg cfg
+          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
+          newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
+          bn            = blockNo blk
+      when (unBlockNo bn `mod` nBlocks == 0 ) $ checkNoThunks bn newLedger
+      return newLedger
+
+    checkNoThunks :: BlockNo -> ExtLedgerState blk -> IO ()
+    checkNoThunks bn ls =
+      noThunks [] (ledgerState ls) >>= \case
+        Nothing -> putStrLn $ "BlockNo " <> show bn <> ": no thunks found."
+        Just ti -> do
+          putStrLn $ "BlockNo " <> show bn <> ": thunks found."
+          print ti
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB
