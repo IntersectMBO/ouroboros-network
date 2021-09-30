@@ -34,7 +34,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
   ) where
 
 import           Data.Word (Word32)
-import           Data.List (foldl')
+import           Data.List (elemIndex, foldl')
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Set as Set
@@ -42,12 +42,12 @@ import           Data.Set (Set)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.IntMap.Strict as IntMap
-import           Data.Void (Void)
+import           Data.Void (Void, absurd)
 
 import           Control.Applicative ((<|>))
 import           Control.DeepSeq (NFData (..))
 import           Control.Exception (IOException)
-import           Control.Monad (when, void)
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -290,78 +290,98 @@ data TraceLocalRootPeers =
      | TraceLocalRootResult  DomainAddress [(IPv4, DNS.TTL)]
      | TraceLocalRootFailure DomainAddress DNSorIOError
        --TODO: classify DNS errors, config error vs transitory
+     | TraceLocalRootError   DomainAddress SomeException 
   deriving Show
 
--- |
+-- | Resolve 'RelayAddress'-es of local root peers using dns if needed.  Local
+-- roots are provided wrapped in a 'StrictTVar', which value might change
+-- (re-read form a config file).  The resolved dns names are available through
+-- the output 'StrictTVar'.
 --
 localRootPeersProvider
   :: Tracer IO TraceLocalRootPeers
   -> TimeoutFn IO
   -> DNS.ResolvConf
-  -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
   -> StrictTVar IO [(Int, Map RelayAddress PeerAdvertise)]
+  -- ^ input 'TVar'
+  -> StrictTVar IO [(Int, Map Socket.SockAddr PeerAdvertise)]
+  -- ^ output 'TVar'
   -> IO Void
 localRootPeersProvider tracer
                        timeout
                        resolvConf
-                       rootPeersGroupsVar
-                       domainsGroupsVar = do
-  domainsGroups <- atomically $ readTVar domainsGroupsVar
-  traceWith tracer (TraceLocalRootDomains domainsGroups)
-#if !defined(mingw32_HOST_OS)
-  rr <- asyncResolverResource resolvConf
-#else
-  let rr = newResolverResource resolvConf
-#endif
-  let
-      -- Flatten the local root peers groups and associate a group index to each
-      -- DomainAddress to be monitorized.
-      domains :: [(Int, DomainAddress, PeerAdvertise)]
-      domains = [ (group, domain, pa)
-                  | (group, (_, m)) <- zip [0..] domainsGroups
-                  , (RelayDomain domain, pa) <- Map.toList m ]
-      -- Since we want to preserve the number of groups, the targets, and
-      -- the addresses within each group, we fill the TVar with
-      -- a placeholder list, in order for each monitored DomainAddress to
-      -- be updated in the correct group.
-      rootPeersGroups :: [(Int, Map Socket.SockAddr PeerAdvertise)]
-      rootPeersGroups = map (\(target, m) -> (target, f m)) domainsGroups
-        where
-           f :: Map RelayAddress PeerAdvertise -> Map Socket.SockAddr PeerAdvertise
-           f =   Map.mapKeys
-                   (\k -> case k of
-                     RelayAddress ip port ->
-                       IP.toSockAddr (ip, port)
-                     _ ->
-                       error "localRootPeersProvider: impossible happend"
-                   )
-               . Map.filterWithKey
-                   (\k _ -> case k of
-                     RelayAddress {} -> True
-                     RelayDomain {}  -> False
-                   )
-
-  atomically $
-    writeTVar rootPeersGroupsVar rootPeersGroups
-
-  -- Launch DomainAddress monitoring threads and
-  -- wait for threads to return or for local config changes
-  withAsyncAll (map (monitorDomain rr) domains) $ \as ->
-    atomically $
-        void (waitAnySTM as) <|> waitConfigChanged domainsGroups
-
-  -- Recursive call to remonitor all new/updated local root peers
-  localRootPeersProvider tracer
-                         timeout
-                         resolvConf
-                         rootPeersGroupsVar
-                         domainsGroupsVar
-
+                       domainsGroupsVar 
+                       rootPeersGroupsVar = do
+    atomically (readTVar domainsGroupsVar) >>= loop
   where
-    waitConfigChanged :: [(Int, Map RelayAddress PeerAdvertise)] -> STM IO ()
-    waitConfigChanged dg = do
-      dg' <- readTVar domainsGroupsVar
-      check (dg /= dg')
+    loop domainsGroups = do
+      traceWith tracer (TraceLocalRootDomains domainsGroups)
+#if !defined(mingw32_HOST_OS)
+      rr <- asyncResolverResource resolvConf
+#else
+      let rr = newResolverResource resolvConf
+#endif
+      let
+          -- Flatten the local root peers groups and associate a group index to each
+          -- DomainAddress to be monitorized.
+          domains :: [(Int, DomainAddress, PeerAdvertise)]
+          domains = [ (group, domain, pa)
+                    | (group, (_, m)) <- zip [0..] domainsGroups
+                    , (RelayDomain domain, pa) <- Map.toList m ]
+          -- Since we want to preserve the number of groups, the targets, and
+          -- the addresses within each group, we fill the TVar with
+          -- a placeholder list, in order for each monitored DomainAddress to
+          -- be updated in the correct group.
+          rootPeersGroups :: [(Int, Map Socket.SockAddr PeerAdvertise)]
+          rootPeersGroups = map (\(target, m) -> (target, f m)) domainsGroups
+            where
+               f :: Map RelayAddress PeerAdvertise -> Map Socket.SockAddr PeerAdvertise
+               f = Map.mapKeys
+                     (\k -> case k of
+                       RelayAddress ip port ->
+                         IP.toSockAddr (ip, port)
+                       _ ->
+                         error "localRootPeersProvider: impossible happend"
+                     )
+                 . Map.filterWithKey
+                     (\k _ -> case k of
+                       RelayAddress {} -> True
+                       RelayDomain {}  -> False
+                     )
+
+      atomically $
+        writeTVar rootPeersGroupsVar rootPeersGroups
+
+      -- Launch DomainAddress monitoring threads and wait for threads to error
+      -- or for local configuration changes.
+      domainsGroups' <-
+        withAsyncAll (monitorDomain rr `map` domains) $ \as -> do
+          res <- atomically $
+                  -- wait until any of the monitoring threads errors
+                  ((\(a, res) ->
+                      let domain :: DomainAddress
+                          domain = case a `elemIndex` as of
+                            Nothing  -> error "localRootPeersProvider: impossible happened"
+                            Just idx -> case (domains !! idx) of (_, x, _) -> x
+                      in either (Left . (domain,)) absurd res)
+                    -- the monitoring thread cannot return, it can only error
+                    <$> waitAnyCatchSTM as)
+              <|>
+                  -- wait for configuraiton changes
+                  (do a <- readTVar domainsGroupsVar
+                      -- wait until the input domains groups changes
+                      check (a /= domainsGroups)
+                      return (Right a))
+          case res of
+            Left (domain, err)    -> traceWith tracer (TraceLocalRootError domain err)
+                                  -- current domain groups haven't changed, we
+                                  -- can return them
+                                  >> return domainsGroups
+            Right domainsGroups'  -> return domainsGroups'
+      -- we continue the loop outside of 'withAsyncAll',  this makes sure that
+      -- all the monitoring threads are killed.
+      loop domainsGroups'
+
 
     resolveDomain
       :: DNS.Resolver
@@ -611,7 +631,7 @@ clipTTLAbove = min 86400  -- and 24hrs
 withAsyncAll :: [IO a] -> ([Async IO a] -> IO b) -> IO b
 withAsyncAll xs0 action = go [] xs0
   where
-    go as []     = action as
+    go as []     = action (reverse as)
     go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
 ---------------------------------------------

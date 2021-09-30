@@ -62,8 +62,8 @@ withPeerSelectionActions localRootTracer publicRootTracer timeout readTargets _s
         localRootTracer
         timeout
         DNS.defaultResolvConf
-        localRootsVar
-        localRootPeersVar)
+        localRootPeersVar
+        localRootsVar)
       (\thread -> k (Just thread) peerSelectionActions)
   where
     -- We first try to get poublic root peers from the ledger, but if it fails
