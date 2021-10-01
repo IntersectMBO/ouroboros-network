@@ -15,7 +15,6 @@ module Ouroboros.Network.PeerSelection.LedgerPeers (
     AccPoolStake (..),
     TraceLedgerPeers (..),
     NumberOfPeers (..),
-    pickPeers,
     accPoolStake,
     withLedgerPeers,
     UseLedgerAfter (..),
