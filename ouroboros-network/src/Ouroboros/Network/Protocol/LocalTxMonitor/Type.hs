@@ -13,6 +13,34 @@
 -- This is used by local clients (like wallets, explorers and CLI tools) to
 -- monitor the transactions passing through the mempool of a local node.
 --
+-- The protocol is stateful such that the server keeps track of the transactions
+-- already sent to the client.
+--
+--
+--                     START
+--                       ⇓
+--                     ┌───────────────┐
+--             ┌──────▶│     Idle      │⇒ DONE
+--             │       └───┬───────────┘
+--             │           │
+--             │   Acquire │
+--             │           ▼
+--             │       ┌───────────────┐
+--     Release │       │   Acquiring   │
+--             │       └───┬───────────┘
+--             │           │       ▲
+--             │  Acquired │       │ ReAcquire
+--             │           ▼       │
+--             │       ┌───────────┴───┐
+--             └───────┤   Acquired    │
+--                     └───┬───────────┘
+--                         │       ▲
+--            HasTx/NextTx │       │ Reply (HasTx/NextTx)
+--                         ▼       │
+--                     ┌───────────┴───┐
+--                     │      Busy     │
+--                     └───────────────┘
+--
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
 
