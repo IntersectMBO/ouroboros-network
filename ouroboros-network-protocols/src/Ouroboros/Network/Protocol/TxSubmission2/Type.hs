@@ -1,11 +1,12 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 -- | The type of the transaction submission protocol.
 --
@@ -13,7 +14,9 @@
 --
 module Ouroboros.Network.Protocol.TxSubmission2.Type where
 
+import           Data.Kind (Type)
 import           Data.List.NonEmpty (NonEmpty)
+import           Data.Singletons
 import           Data.Word (Word16, Word32)
 
 import           Network.TypedProtocol.Core
@@ -58,7 +61,7 @@ data TxSubmission2 txid tx where
   --
   -- There are two sub-states for this, for blocking and non-blocking cases.
   --
-  StTxIds  :: StBlockingStyle -> TxSubmission2 txid tx
+  StTxIds  :: BlockingStyle -> TxSubmission2 txid tx
 
   -- | The client (outbound side) has agency; it must reply with the list of
   -- transactions.
@@ -69,12 +72,30 @@ data TxSubmission2 txid tx where
   --
   StDone   :: TxSubmission2 txid tx
 
+type SingTxSubmission :: TxSubmission2 txid tx
+                      -> Type
+data SingTxSubmission k where
+    SingInit  :: SingTxSubmission  StInit
+    SingIdle  :: SingTxSubmission  StIdle
+    SingTxIds :: SingBlockingStyle stBlocking
+              -> SingTxSubmission (StTxIds stBlocking)
+    SingTxs   :: SingTxSubmission  StTxs
+    SingDone  :: SingTxSubmission  StDone
+
+deriving instance Show (SingTxSubmission k)
+
+instance StateTokenI StInit               where stateToken = SingInit
+instance StateTokenI StIdle               where stateToken = SingIdle
+instance SingI stBlocking
+      => StateTokenI (StTxIds stBlocking) where stateToken = SingTxIds sing
+instance StateTokenI StTxs                where stateToken = SingTxs
+instance StateTokenI StDone               where stateToken = SingDone
 
 instance ( ShowProxy txid
          , ShowProxy tx
          ) => ShowProxy (TxSubmission2 txid tx) where
     showProxy _ = concat
-      [ "TxSubmission "
+      [ "TxSubmission2 "
       , showProxy (Proxy :: Proxy txid)
       , " "
       , showProxy (Proxy :: Proxy tx)
@@ -84,15 +105,15 @@ instance ShowProxy (StIdle :: TxSubmission2 txid tx) where
     showProxy _ = "StIdle"
 
 
-data StBlockingStyle where
+data BlockingStyle where
 
   -- | In this sub-state the reply need not be prompt. There is no timeout.
   --
-  StBlocking    :: StBlockingStyle
+  Blocking    :: BlockingStyle
 
   -- | In this state the peer must reply. There is a timeout.
   --
-  StNonBlocking :: StBlockingStyle
+  NonBlocking :: BlockingStyle
 
 
 -- | There are some constraints of the protocol that are not captured in the
@@ -167,7 +188,7 @@ instance Protocol (TxSubmission2 txid tx) where
     --   unacknowledged transactions.
     --
     MsgRequestTxIds
-      :: TokBlockingStyle blocking
+      :: SingBlockingStyle blocking
       -> Word16 -- ^ Acknowledge this number of outstanding txids
       -> Word16 -- ^ Request up to this number of txids.
       -> Message (TxSubmission2 txid tx) StIdle (StTxIds blocking)
@@ -177,8 +198,8 @@ instance Protocol (TxSubmission2 txid tx) where
     --
     -- The list must not be longer than the maximum number requested.
     --
-    -- In the 'StTxIds' 'StBlocking' state the list must be non-empty while
-    -- in the 'StTxIds' 'StNonBlocking' state the list may be empty.
+    -- In the 'StTxIds' 'Blocking' state the list must be non-empty while
+    -- in the 'StTxIds' 'NonBlocking' state the list may be empty.
     --
     -- These transactions are added to the notional FIFO of outstanding
     -- transaction identifiers for the protocol.
@@ -227,46 +248,41 @@ instance Protocol (TxSubmission2 txid tx) where
     -- making a blocking call for more transaction identifiers.
     --
     MsgDone
-      :: Message (TxSubmission2 txid tx) (StTxIds StBlocking) StDone
+      :: Message (TxSubmission2 txid tx) (StTxIds Blocking) StDone
 
 
-  data ClientHasAgency st where
-    TokInit   :: ClientHasAgency StInit
-    TokTxIds  :: TokBlockingStyle b -> ClientHasAgency (StTxIds b)
-    TokTxs    :: ClientHasAgency StTxs
+  type StateAgency  StInit     = ClientAgency
+  type StateAgency (StTxIds b) = ClientAgency
+  type StateAgency  StTxs      = ClientAgency
+  type StateAgency  StIdle     = ServerAgency
+  type StateAgency  StDone     = NobodyAgency
 
-  data ServerHasAgency st where
-    TokIdle   :: ServerHasAgency StIdle
-
-  data NobodyHasAgency st where
-    TokDone   :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency tok TokIdle = case tok of {}
-
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
+  type StateToken = SingTxSubmission
 
 
--- | The value level equivalent of 'StBlockingStyle'.
+
+-- | The value level equivalent of 'BlockingStyle'.
 --
 -- This is also used in 'MsgRequestTxIds' where it is interpreted (and can be
 -- encoded) as a 'Bool' with 'True' for blocking, and 'False' for non-blocking.
 --
-data TokBlockingStyle (k :: StBlockingStyle) where
-  TokBlocking    :: TokBlockingStyle StBlocking
-  TokNonBlocking :: TokBlockingStyle StNonBlocking
+data SingBlockingStyle (k :: BlockingStyle) where
+  SingBlocking    :: SingBlockingStyle Blocking
+  SingNonBlocking :: SingBlockingStyle NonBlocking
 
-deriving instance Eq   (TokBlockingStyle b)
-deriving instance Show (TokBlockingStyle b)
+deriving instance Eq   (SingBlockingStyle b)
+deriving instance Show (SingBlockingStyle b)
+type instance Sing = SingBlockingStyle
+instance SingI Blocking    where sing = SingBlocking
+instance SingI NonBlocking where sing = SingNonBlocking
 
 -- | We have requests for lists of things. In the blocking case the
 -- corresponding reply must be non-empty, whereas in the non-blocking case
 -- and empty reply is fine.
 --
-data BlockingReplyList (blocking :: StBlockingStyle) a where
-  BlockingReply    :: NonEmpty a  -> BlockingReplyList StBlocking    a
-  NonBlockingReply ::         [a] -> BlockingReplyList StNonBlocking a
+data BlockingReplyList (blocking :: BlockingStyle) a where
+  BlockingReply    :: NonEmpty a  -> BlockingReplyList Blocking    a
+  NonBlockingReply ::         [a] -> BlockingReplyList NonBlocking a
 
 deriving instance Eq   a => Eq   (BlockingReplyList blocking a)
 deriving instance Show a => Show (BlockingReplyList blocking a)
@@ -276,12 +292,3 @@ deriving instance (Eq txid, Eq tx) =>
 
 deriving instance (Show txid, Show tx) =>
                   Show (Message (TxSubmission2 txid tx) from to)
-
-instance Show (ClientHasAgency (st :: TxSubmission2 txid tx)) where
-  show TokInit                   = "TokInit"
-  show (TokTxIds TokBlocking)    = "TokTxIds TokBlocking"
-  show (TokTxIds TokNonBlocking) = "TokTxIds TokNonBlocking"
-  show TokTxs                    = "TokTxs"
-
-instance Show (ServerHasAgency (st :: TxSubmission2 txid tx)) where
-  show TokIdle = "TokIdle"

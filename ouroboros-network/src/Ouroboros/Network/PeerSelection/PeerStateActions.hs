@@ -1056,6 +1056,7 @@ startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature)
                   ( Alternative (STM m)
                   , MonadAsync m
                   , MonadCatch m
+                  , MonadMask  m
                   , MonadThrow (STM m)
                   , HasInitiator muxMode ~ True
                   )

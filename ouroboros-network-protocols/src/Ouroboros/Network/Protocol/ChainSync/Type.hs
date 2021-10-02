@@ -1,9 +1,10 @@
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 -- | The type of the chain synchronisation protocol.
@@ -13,9 +14,9 @@
 --
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
-import           Data.Proxy (Proxy (..))
+import           Data.Singletons
 
-import           Network.TypedProtocol.Core (Protocol (..))
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
@@ -44,6 +45,24 @@ data ChainSync header point tip where
   StDone      :: ChainSync header point tip
 
 
+-- | Singletons for 'ChainSync' state types.
+--
+data SingChainSync (k :: ChainSync header point tip) where
+    SingIdle      :: SingChainSync StIdle
+    SingNext      :: SingNextKind k
+                  -> SingChainSync (StNext k)
+    SingIntersect :: SingChainSync StIntersect
+    SingDone      :: SingChainSync StDone
+
+deriving instance Show (SingChainSync k)
+
+instance StateTokenI StIdle      where stateToken = SingIdle
+instance SingI k =>
+         StateTokenI (StNext k)  where stateToken = SingNext sing
+instance StateTokenI StIntersect where stateToken = SingIntersect
+instance StateTokenI StDone      where stateToken = SingDone
+
+
 instance (ShowProxy header, ShowProxy tip)
       => ShowProxy (ChainSync header point tip) where
     showProxy _ = concat
@@ -63,6 +82,16 @@ data StNextKind where
   -- | The server must now reply, having already sent an await message.
   StMustReply :: StNextKind
 
+
+data SingNextKind (k :: StNextKind) where
+  SingCanAwait  :: SingNextKind StCanAwait
+  SingMustReply :: SingNextKind StMustReply
+
+deriving instance Show (SingNextKind k)
+
+type instance Sing = SingNextKind
+instance SingI StCanAwait  where sing = SingCanAwait
+instance SingI StMustReply where sing = SingMustReply
 
 instance Protocol (ChainSync header point tip) where
 
@@ -141,24 +170,12 @@ instance Protocol (ChainSync header point tip) where
   -- Idle states are where it is for the client to send a message,
   -- busy states are where the server is expected to send a reply.
   --
-  data ClientHasAgency st where
-    TokIdle      :: ClientHasAgency StIdle
+  type StateAgency StIdle      = ClientAgency
+  type StateAgency (StNext _)  = ServerAgency
+  type StateAgency StIntersect = ServerAgency
+  type StateAgency StDone      = NobodyAgency
 
-  data ServerHasAgency st where
-    TokNext      :: TokNextKind k -> ServerHasAgency (StNext k)
-    TokIntersect :: ServerHasAgency StIntersect
-
-  data NobodyHasAgency st where
-    TokDone      :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
-
-
-data TokNextKind (k :: StNextKind) where
-  TokCanAwait  :: TokNextKind StCanAwait
-  TokMustReply :: TokNextKind StMustReply
+  type StateToken = SingChainSync
 
 
 instance (Show header, Show point, Show tip)
@@ -181,11 +198,3 @@ instance (Show header, Show point, Show tip)
   show (MsgIntersectNotFound tip) = "MsgIntersectNotFound "
                                   ++ show tip
   show MsgDone{}                  = "MsgDone"
-
-instance Show (ClientHasAgency (st :: ChainSync header point tip)) where
-    show TokIdle = "TokIdle"
-
-instance Show (ServerHasAgency (st :: ChainSync header point tip)) where
-    show (TokNext TokCanAwait)  = "TokNext TokCanAwait"
-    show (TokNext TokMustReply) = "TokNext TokMustReply"
-    show TokIntersect           = "TokIntersect"

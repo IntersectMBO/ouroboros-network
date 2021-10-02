@@ -10,7 +10,7 @@ import qualified Pipes
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Mock.Chain (Chain, HasHeader, Point)
 import qualified Ouroboros.Network.Mock.Chain as Chain

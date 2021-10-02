@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -22,15 +23,17 @@ module Ouroboros.Network.Protocol.TxSubmission2.Client
   , ClientStTxIds (..)
   , ClientStTxs (..)
   , TxSizeInBytes
-  , TokBlockingStyle (..)
+  , SingBlockingStyle (..)
   , BlockingReplyList (..)
     -- * Execution as a typed protocol
   , txSubmissionClientPeer
   ) where
 
+import           Data.Singletons
 import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Client
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
@@ -56,7 +59,7 @@ newtype TxSubmissionClient txid tx m a = TxSubmissionClient {
 data ClientStIdle txid tx m a = ClientStIdle {
 
     recvMsgRequestTxIds      :: forall blocking.
-                                TokBlockingStyle blocking
+                                SingBlockingStyle blocking
                              -> Word16
                              -> Word16
                              -> m (ClientStTxIds blocking txid tx m a),
@@ -65,15 +68,16 @@ data ClientStIdle txid tx m a = ClientStIdle {
                              -> m (ClientStTxs txid tx m a)
   }
 
-data ClientStTxIds blocking txid tx m a where
-  SendMsgReplyTxIds :: BlockingReplyList blocking (txid, TxSizeInBytes)
+data ClientStTxIds (blocking :: BlockingStyle) txid tx m a where
+  SendMsgReplyTxIds :: SingI blocking
+                    => BlockingReplyList blocking (txid, TxSizeInBytes)
                     -> ClientStIdle           txid tx m a
                     -> ClientStTxIds blocking txid tx m a
 
   -- | In the blocking case, the client can terminate the protocol. This could
   -- be used when the client knows there will be no more transactions to submit.
   --
-  SendMsgDone       :: a -> ClientStTxIds StBlocking txid tx m a
+  SendMsgDone       :: a -> ClientStTxIds Blocking txid tx m a
 
 
 data ClientStTxs txid tx m a where
@@ -84,32 +88,28 @@ data ClientStTxs txid tx m a where
 
 -- | A non-pipelined 'Peer' representing the 'TxSubmissionClient'.
 --
-txSubmissionClientPeer :: forall txid tx m a. Monad m
-                       => TxSubmissionClient txid tx m a
-                       -> Peer (TxSubmission2 txid tx) AsClient StInit m a
+txSubmissionClientPeer
+    :: forall txid tx m stm a. Monad m
+    => TxSubmissionClient txid tx m a
+    -> Client (TxSubmission2 txid tx) NonPipelined Empty StInit m stm a
 txSubmissionClientPeer (TxSubmissionClient client) =
-    Yield (ClientAgency TokInit) MsgInit $
-    Effect $ go <$> client
+    Yield MsgInit $ Effect (go <$> client)
   where
     go :: ClientStIdle txid tx m a
-       -> Peer (TxSubmission2 txid tx) AsClient StIdle m a
+       -> Client (TxSubmission2 txid tx) NonPipelined Empty StIdle m stm a
     go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs} =
-      Await (ServerAgency TokIdle) $ \msg -> case msg of
+      Await $ \msg -> case msg of
         MsgRequestTxIds blocking ackNo reqNo -> Effect $ do
           reply <- recvMsgRequestTxIds blocking ackNo reqNo
           case reply of
             SendMsgReplyTxIds txids k ->
-              return $ Yield (ClientAgency (TokTxIds blocking))
-                             (MsgReplyTxIds txids)
+              return $ Yield (MsgReplyTxIds txids)
                              (go k)
 
             SendMsgDone result ->
-              return $ Yield (ClientAgency (TokTxIds TokBlocking))
-                              MsgDone
-                             (Done TokDone result)
+              return $ Yield MsgDone (Done result)
 
         MsgRequestTxs txids -> Effect $ do
           SendMsgReplyTxs txs k <- recvMsgRequestTxs txids
-          return $ Yield (ClientAgency TokTxs)
-                         (MsgReplyTxs txs)
+          return $ Yield (MsgReplyTxs txs)
                          (go k)

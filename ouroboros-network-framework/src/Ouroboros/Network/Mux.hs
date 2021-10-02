@@ -91,8 +91,6 @@ import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
-
-
 -- |  There are three kinds of applications: warm, hot and established (ones
 -- that run in both warm and hot states).
 --

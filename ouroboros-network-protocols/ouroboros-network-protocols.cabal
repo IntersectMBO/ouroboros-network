@@ -34,6 +34,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+                       Data.Type.Nat
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined
                        Ouroboros.Network.Protocol.ChainSync.Codec
@@ -96,6 +97,7 @@ library
   build-depends:       base              >=4.14 && <4.19,
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
+                       singletons       ^>=3.0,
 
                        io-classes       ^>=1.2,
                        si-timers,
@@ -105,7 +107,9 @@ library
                        serialise,
                        typed-protocols  ^>=0.2,
                        typed-protocols-cborg
-                                         >=0.1 && <1.0
+                                        ^>=0.2,
+                       typed-protocols-stateful,
+                       typed-protocols-stateful-cborg
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

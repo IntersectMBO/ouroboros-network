@@ -27,8 +27,7 @@ library
 
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
-  exposed-modules:
-                       Ouroboros.Network.BlockFetch
+  exposed-modules:     Ouroboros.Network.BlockFetch
                        Ouroboros.Network.BlockFetch.Client
                        Ouroboros.Network.BlockFetch.ClientRegistry
                        Ouroboros.Network.BlockFetch.ClientState
@@ -112,6 +111,7 @@ library
                        network           >=3.1.2 && <3.2,
                        nothunks,
                        psqueues          >=0.2.3 && <0.3,
+                       singletons,
                        random,
 
                        cardano-prelude,
@@ -130,6 +130,12 @@ library
                        ouroboros-network-protocols ^>=0.5.2.0,
                        strict-stm,
                        typed-protocols  ^>=0.2,
+                       typed-protocols-cborg
+                                        ^>=0.2,
+                       typed-protocols-stateful
+                                        ^>=0.2,
+                       typed-protocols-stateful-cborg
+                                        ^>=0.2
   if !os(windows)
     build-depends:     directory,
                        unix

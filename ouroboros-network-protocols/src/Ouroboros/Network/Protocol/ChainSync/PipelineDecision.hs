@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Protocol.ChainSync.PipelineDecision
   ( PipelineDecision (..)
@@ -16,8 +18,7 @@ module Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Control.Exception (assert)
 import           Data.Word
 
-import           Network.TypedProtocol.Pipelined
-
+import           Data.Type.Nat
 import           Ouroboros.Network.Block (BlockNo)
 import           Ouroboros.Network.Point (WithOrigin (..))
 

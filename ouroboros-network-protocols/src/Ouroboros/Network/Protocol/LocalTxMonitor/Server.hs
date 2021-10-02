@@ -27,6 +27,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Server
   ) where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Server
 
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
@@ -98,36 +99,36 @@ data ServerStBusy (kind :: StBusyKind) txid tx slot m a where
 -- client-side of the 'LocalTxMonitor' protocol.
 --
 localTxMonitorServerPeer ::
-     forall txid tx slot m a.
+     forall txid tx slot m stm a.
      ( Monad m
      )
   => LocalTxMonitorServer txid tx slot m a
-  -> Peer (LocalTxMonitor txid tx slot) AsServer StIdle m a
+  -> Server (LocalTxMonitor txid tx slot) 'NonPipelined Empty StIdle m stm a
 localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
     Effect $ handleStIdle <$> mServer
   where
     handleStIdle ::
          ServerStIdle txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer StIdle m a
+      -> Server (LocalTxMonitor txid tx slot) 'NonPipelined Empty StIdle m stm a
     handleStIdle = \case
       ServerStIdle{recvMsgDone, recvMsgAcquire} ->
-        Await (ClientAgency TokIdle) $ \case
+        Await $ \case
           MsgAcquire ->
             Effect $ handleStAcquiring <$> recvMsgAcquire
           MsgDone ->
-            Effect $ Done TokDone <$> recvMsgDone
+            Effect $ Done <$> recvMsgDone
 
     handleStAcquiring ::
          ServerStAcquiring txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer StAcquiring m a
+      -> Server (LocalTxMonitor txid tx slot) 'NonPipelined Empty StAcquiring m stm a
     handleStAcquiring = \case
       SendMsgAcquired slot serverStAcquired ->
-        Yield (ServerAgency TokAcquiring) (MsgAcquired slot) $
+        Yield (MsgAcquired slot) $
           handleStAcquired serverStAcquired
 
     handleStAcquired ::
          ServerStAcquired txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer StAcquired m a
+      -> Server (LocalTxMonitor txid tx slot) 'NonPipelined Empty StAcquired m stm a
     handleStAcquired = \case
       ServerStAcquired
         { recvMsgNextTx
@@ -135,7 +136,7 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
         , recvMsgGetSizes
         , recvMsgAwaitAcquire
         , recvMsgRelease
-        } -> Await (ClientAgency TokAcquired) $ \case
+        } -> Await $ \case
           MsgNextTx ->
             Effect $ handleNextTx <$> recvMsgNextTx
           MsgHasTx txid ->
@@ -149,24 +150,24 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
 
     handleNextTx ::
          ServerStBusy NextTx txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy NextTx) m a
+      -> Server (LocalTxMonitor txid tx slot) 'NonPipelined Empty (StBusy NextTx) m stm a
     handleNextTx = \case
       SendMsgReplyNextTx tx serverStAcquired ->
-        Yield (ServerAgency (TokBusy TokNextTx)) (MsgReplyNextTx tx) $
+        Yield (MsgReplyNextTx tx) $
           handleStAcquired serverStAcquired
 
     handleHasTx ::
          ServerStBusy HasTx txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy HasTx) m a
+      -> Server (LocalTxMonitor txid tx slot) 'NonPipelined Empty (StBusy HasTx) m stm a
     handleHasTx = \case
       SendMsgReplyHasTx res serverStAcquired ->
-        Yield (ServerAgency (TokBusy TokHasTx)) (MsgReplyHasTx res) $
+        Yield (MsgReplyHasTx res) $
           handleStAcquired serverStAcquired
 
     handleGetSizes ::
          ServerStBusy GetSizes txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy GetSizes) m a
+      -> Server (LocalTxMonitor txid tx slot) 'NonPipelined Empty (StBusy GetSizes) m stm a
     handleGetSizes = \case
       SendMsgReplyGetSizes sizes serverStAcquired ->
-        Yield (ServerAgency (TokBusy TokGetSizes)) (MsgReplyGetSizes sizes) $
+        Yield (MsgReplyGetSizes sizes) $
           handleStAcquired serverStAcquired

@@ -18,6 +18,7 @@ module Ouroboros.Network.BlockFetch.ClientState
   , FetchRequest (..)
   , addNewFetchRequest
   , acknowledgeFetchRequest
+  , acknowledgeFetchRequestSTM
   , startedFetchBatch
   , completeBlockDownload
   , completeFetchBatch
@@ -54,7 +55,7 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                      (PeerFetchInFlightLimits (..), PeerGSV, SizeInBytes,
                      calculatePeerFetchInFlightLimits)
 import           Ouroboros.Network.ControlMessage (ControlMessageSTM,
-                     timeoutWithControlMessage)
+                     timeoutWithControlMessage, timeoutWithControlMessageSTM)
 import           Ouroboros.Network.Point (withOriginToMaybe)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
@@ -514,6 +515,16 @@ acknowledgeFetchRequest tracer controlMessageSTM FetchClientStateVars {fetchClie
       Just (request, _, _) -> do
         traceWith tracer (AcknowledgedFetchRequest request)
         return result
+
+acknowledgeFetchRequestSTM :: MonadSTM m
+                           => ControlMessageSTM m
+                           -> FetchClientStateVars m header
+                           -> STM m (Maybe ( FetchRequest header
+                                           , PeerGSV
+                                           , PeerFetchInFlightLimits
+                                           ))
+acknowledgeFetchRequestSTM controlMessageSTM FetchClientStateVars {fetchClientRequestVar} =
+    timeoutWithControlMessageSTM controlMessageSTM (takeTFetchRequestVar fetchClientRequestVar)
 
 startedFetchBatch :: MonadSTM m
                   => Tracer m (TraceFetchClientState header)

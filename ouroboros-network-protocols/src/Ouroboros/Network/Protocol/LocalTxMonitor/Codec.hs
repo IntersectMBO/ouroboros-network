@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -16,6 +17,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Codec
 import           Control.Monad.Class.MonadST
 
 import           Network.TypedProtocol.Codec.CBOR
+import           Network.TypedProtocol.Core
 
 import           Data.ByteString.Lazy (ByteString)
 
@@ -44,17 +46,14 @@ codecLocalTxMonitor encodeTxId decodeTxId
     mkCodecCborLazyBS encode decode
   where
     encode ::
-         forall (pr  :: PeerRole) (st  :: ptcl) (st' :: ptcl). ()
-      => PeerHasAgency pr st
-      -> Message ptcl st st'
+         forall (st  :: ptcl) (st' :: ptcl).
+         Message ptcl st st'
       -> CBOR.Encoding
-    encode (ClientAgency TokIdle) = \case
+    encode = \case
       MsgDone ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 0
       MsgAcquire ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 1
-
-    encode (ClientAgency TokAcquired) = \case
       MsgAwaitAcquire ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 1
       MsgRelease ->
@@ -65,22 +64,14 @@ codecLocalTxMonitor encodeTxId decodeTxId
         CBOR.encodeListLen 2 <> CBOR.encodeWord 7 <> encodeTxId txid
       MsgGetSizes ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 9
-
-    encode (ServerAgency TokAcquiring) = \case
       MsgAcquired slot ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> encodeSlot slot
-
-    encode (ServerAgency (TokBusy TokNextTx)) = \case
       MsgReplyNextTx Nothing ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 6
       MsgReplyNextTx (Just tx) ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 6 <> encodeTx tx
-
-    encode (ServerAgency (TokBusy TokHasTx)) = \case
       MsgReplyHasTx has ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 8 <> CBOR.encodeBool has
-
-    encode (ServerAgency (TokBusy TokGetSizes)) = \case
       MsgReplyGetSizes sz ->
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 10
@@ -90,45 +81,46 @@ codecLocalTxMonitor encodeTxId decodeTxId
         <> CBOR.encodeWord32 (numberOfTxs sz)
 
     decode ::
-         forall s (pr :: PeerRole) (st :: ptcl). ()
-      => PeerHasAgency pr st
+         forall s (st :: ptcl).
+         ActiveState st
+      => StateToken st
       -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
       case (stok, len, key) of
-        (ClientAgency TokIdle, 1, 0) ->
+        (SingIdle, 1, 0) ->
           return (SomeMessage MsgDone)
-        (ClientAgency TokIdle, 1, 1) ->
+        (SingIdle, 1, 1) ->
           return (SomeMessage MsgAcquire)
 
-        (ClientAgency TokAcquired, 1, 1) ->
+        (SingAcquired, 1, 1) ->
           return (SomeMessage MsgAwaitAcquire)
-        (ClientAgency TokAcquired, 1, 3) ->
+        (SingAcquired, 1, 3) ->
           return (SomeMessage MsgRelease)
-        (ClientAgency TokAcquired, 1, 5) ->
+        (SingAcquired, 1, 5) ->
           return (SomeMessage MsgNextTx)
-        (ClientAgency TokAcquired, 2, 7) -> do
+        (SingAcquired, 2, 7) -> do
           txid <- decodeTxId
           return (SomeMessage (MsgHasTx txid))
-        (ClientAgency TokAcquired, 1, 9) ->
+        (SingAcquired, 1, 9) ->
           return (SomeMessage MsgGetSizes)
 
-        (ServerAgency TokAcquiring, 2, 2) -> do
+        (SingAcquiring, 2, 2) -> do
           slot <- decodeSlot
           return (SomeMessage (MsgAcquired slot))
 
-        (ServerAgency (TokBusy TokNextTx), 1, 6) ->
+        (SingBusy SingNextTx, 1, 6) ->
           return (SomeMessage (MsgReplyNextTx Nothing))
-        (ServerAgency (TokBusy TokNextTx), 2, 6) -> do
+        (SingBusy SingNextTx, 2, 6) -> do
           tx <- decodeTx
           return (SomeMessage (MsgReplyNextTx (Just tx)))
 
-        (ServerAgency (TokBusy TokHasTx), 2, 8) -> do
+        (SingBusy SingHasTx, 2, 8) -> do
           has <- CBOR.decodeBool
           return (SomeMessage (MsgReplyHasTx has))
 
-        (ServerAgency (TokBusy TokGetSizes), 2, 10) -> do
+        (SingBusy SingGetSizes, 2, 10) -> do
           _len <- CBOR.decodeListLen
           capacityInBytes <- CBOR.decodeWord32
           sizeInBytes <- CBOR.decodeWord32
@@ -136,14 +128,11 @@ codecLocalTxMonitor encodeTxId decodeTxId
           let sizes = MempoolSizeAndCapacity { capacityInBytes, sizeInBytes, numberOfTxs }
           return (SomeMessage (MsgReplyGetSizes sizes))
 
-        (ClientAgency TokIdle, _, _) ->
-          fail (printf "codecLocalTxMonitor (%s) unexpected key (%d, %d)" (show stok) key len)
-        (ClientAgency TokAcquired, _, _) ->
-          fail (printf "codecLocalTxMonitor (%s) unexpected key (%d, %d)" (show stok) key len)
-        (ServerAgency TokAcquiring, _, _) ->
-          fail (printf "codecLocalTxMonitor (%s) unexpected key (%d, %d)" (show stok) key len)
-        (ServerAgency (TokBusy _), _, _) ->
-          fail (printf "codecLocalTxMonitor (%s) unexpected key (%d, %d)" (show stok) key len)
+        (SingDone, _, _) -> notActiveState stok
+
+        (_, _, _) ->
+          fail (printf "codecLocalTxMonitor (%s, %s) unexpected key (%d, %d)"
+                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
 
 -- | An identity 'Codec' for the 'LocalTxMonitor' protocol. It does not do
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
@@ -158,31 +147,34 @@ codecLocalTxMonitorId =
     Codec encode decode
   where
     encode ::
-         forall (pr :: PeerRole) st st'. ()
-      => PeerHasAgency pr st
-      -> Message ptcl st st'
+         forall st st'.
+         StateTokenI st
+      => ActiveState st
+      => Message ptcl st st'
       -> AnyMessage ptcl
-    encode _ =
-      AnyMessage
+    encode = AnyMessage
 
     decode ::
-         forall (pr :: PeerRole) (st :: ptcl). ()
-      => PeerHasAgency pr st
+         forall (st :: ptcl).
+         ActiveState st
+      => StateToken st
       -> m (DecodeStep (AnyMessage ptcl) CodecFailure m (SomeMessage st))
     decode stok =
-      let res :: Message ptcl st st' -> m (DecodeStep bytes failure m (SomeMessage st))
+      let res :: (StateTokenI st, StateTokenI st')
+              => Message ptcl st st' -> m (DecodeStep bytes failure m (SomeMessage st))
           res msg = return (DecodeDone (SomeMessage msg) Nothing)
-       in return $ DecodePartial $ \bytes -> case (stok, bytes) of
-        (ClientAgency TokIdle,     Just (AnyMessage msg@MsgAcquire{}))      -> res msg
-        (ClientAgency TokIdle,     Just (AnyMessage msg@MsgDone{}))         -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgAwaitAcquire{})) -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgNextTx{}))       -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgHasTx{}))        -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgRelease{}))      -> res msg
+      in return $ DecodePartial $ \bytes -> case (stok, bytes) of
+        (SingIdle,     Just (AnyMessage msg@MsgAcquire{}))      -> res msg
+        (SingIdle,     Just (AnyMessage msg@MsgDone{}))         -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgAwaitAcquire{})) -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgNextTx{}))       -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgHasTx{}))        -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgRelease{}))      -> res msg
+        (SingAcquiring,       Just (AnyMessage msg@MsgAcquired{}))    -> res msg
+        (SingBusy SingNextTx, Just (AnyMessage msg@MsgReplyNextTx{})) -> res msg
+        (SingBusy SingHasTx,  Just (AnyMessage msg@MsgReplyHasTx{}))  -> res msg
 
-        (ServerAgency TokAcquiring,        Just (AnyMessage msg@MsgAcquired{}))    -> res msg
-        (ServerAgency (TokBusy TokNextTx), Just (AnyMessage msg@MsgReplyNextTx{})) -> res msg
-        (ServerAgency (TokBusy TokHasTx),  Just (AnyMessage msg@MsgReplyHasTx{}))  -> res msg
+        (SingDone, _) -> notActiveState stok
 
         (_, Nothing) ->
           return (DecodeFail CodecFailureOutOfInput)

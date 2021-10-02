@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -19,7 +21,6 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client
   , localStateQueryClientNull
     -- * Utilities
   , mapLocalStateQueryClient
-  , Some (..)
   ) where
 
 import           Control.Monad (forever)
@@ -27,6 +28,7 @@ import           Control.Monad.Class.MonadTimer
 import           Data.Kind (Type)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Stateful.Peer.Client
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
@@ -46,7 +48,7 @@ localStateQueryClientNull =
 -- | In the 'StIdle' protocol state, the client has agency and must send:
 --
 --  * a request to acquire a state
---  * a termination messge
+--  * a termination message
 --
 data ClientStIdle block point query (m :: Type -> Type) a where
   SendMsgAcquire :: Maybe point
@@ -94,7 +96,7 @@ data ClientStAcquired block point query m a where
 --
 --  * a result
 --
-data ClientStQuerying block point query m a result = ClientStQuerying {
+newtype ClientStQuerying block point query m a result = ClientStQuerying {
       recvMsgResult :: result -> m (ClientStAcquired block point query m a)
     }
 
@@ -129,7 +131,7 @@ mapLocalStateQueryClient fpoint fquery fresult =
     goAcquiring ClientStAcquiring { recvMsgAcquired, recvMsgFailure } =
       ClientStAcquiring {
         recvMsgAcquired = goAcquired <$> recvMsgAcquired,
-        recvMsgFailure  = \failure -> fmap goIdle (recvMsgFailure failure)
+        recvMsgFailure  = fmap goIdle . recvMsgFailure
       }
 
     goAcquired :: ClientStAcquired block  point  query  m a
@@ -157,55 +159,59 @@ mapLocalStateQueryClient fpoint fquery fresult =
 -- client side of the 'LocalStateQuery' protocol.
 --
 localStateQueryClientPeer
-  :: forall block point (query :: Type -> Type) m a.
+  :: forall block point (query :: Type -> Type) m stm a.
      Monad m
   => LocalStateQueryClient block point query m a
-  -> Peer (LocalStateQuery block point query) AsClient StIdle m a
+  -> Client (LocalStateQuery block point query) 'NonPipelined Empty StIdle State m stm a
 localStateQueryClientPeer (LocalStateQueryClient handler) =
     Effect $ handleStIdle <$> handler
   where
     handleStIdle
       :: ClientStIdle block point query m a
-      -> Peer (LocalStateQuery block point query) AsClient StIdle m a
+      -> Client (LocalStateQuery block point query) 'NonPipelined Empty StIdle State m stm a
     handleStIdle req = case req of
       SendMsgAcquire pt stAcquiring ->
-        Yield (ClientAgency TokIdle)
+        Yield StateAcquiring
               (MsgAcquire pt)
               (handleStAcquiring stAcquiring)
       SendMsgDone a ->
-        Yield (ClientAgency TokIdle)
-              MsgDone
-              (Done TokDone a)
+        Yield StateDone MsgDone (Done a)
 
     handleStAcquiring
       :: ClientStAcquiring block point query m a
-      -> Peer (LocalStateQuery block point query) AsClient StAcquiring m a
+      -> Client (LocalStateQuery block point query) 'NonPipelined Empty StAcquiring State m stm a
     handleStAcquiring ClientStAcquiring{recvMsgAcquired, recvMsgFailure} =
-      Await (ServerAgency TokAcquiring) $ \req -> case req of
-        MsgAcquired        -> Effect $ handleStAcquired <$> recvMsgAcquired
-        MsgFailure failure -> Effect $ handleStIdle <$> recvMsgFailure failure
+      Await $ \_ req -> case req of
+        MsgAcquired        -> ( Effect $ handleStAcquired <$> recvMsgAcquired
+                              , StateAcquired
+                              )
+        MsgFailure failure -> ( Effect $ handleStIdle <$> recvMsgFailure failure
+                              , StateIdle
+                              )
 
     handleStAcquired
       :: ClientStAcquired block point query m a
-      -> Peer (LocalStateQuery block point query) AsClient StAcquired m a
+      -> Client (LocalStateQuery block point query) 'NonPipelined Empty StAcquired State m stm a
     handleStAcquired req = case req of
       SendMsgQuery query stQuerying ->
-        Yield (ClientAgency TokAcquired)
+        Yield (StateQuerying query)
               (MsgQuery query)
               (handleStQuerying query stQuerying)
       SendMsgReAcquire pt stAcquiring ->
-        Yield (ClientAgency TokAcquired)
+        Yield StateAcquiring
               (MsgReAcquire pt)
               (handleStAcquiring stAcquiring)
       SendMsgRelease stIdle ->
-        Yield (ClientAgency TokAcquired)
+        Yield StateIdle
               MsgRelease
               (Effect (handleStIdle <$> stIdle))
 
     handleStQuerying
       :: query result
       -> ClientStQuerying block point query m a result
-      -> Peer (LocalStateQuery block point query) AsClient (StQuerying result) m a
-    handleStQuerying query ClientStQuerying{recvMsgResult} =
-      Await (ServerAgency (TokQuerying query)) $ \req -> case req of
-        MsgResult _ result -> Effect (handleStAcquired <$> recvMsgResult result)
+      -> Client (LocalStateQuery block point query) 'NonPipelined Empty (StQuerying result) State m stm a
+    handleStQuerying _ ClientStQuerying{recvMsgResult} =
+      Await $ \_ req -> case req of
+        MsgResult _ result -> ( Effect (handleStAcquired <$> recvMsgResult result)
+                              , StateAcquired
+                              )

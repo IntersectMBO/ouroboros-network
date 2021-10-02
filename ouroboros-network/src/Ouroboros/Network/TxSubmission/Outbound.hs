@@ -91,7 +91,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
       where
         recvMsgRequestTxIds :: forall blocking.
-                               TokBlockingStyle blocking
+                               SingBlockingStyle blocking
                             -> Word16
                             -> Word16
                             -> m (ClientStTxIds blocking txid tx m ())
@@ -113,7 +113,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- Grab info about any new txs after the last tx idx we've seen,
           -- up to  the number that the peer has requested.
           mbtxs <- case blocking of
-            TokBlocking -> do
+            SingBlocking -> do
               when (reqNo == 0) $
                 throwIO ProtocolErrorRequestedNothing
               unless (Seq.null unackedSeq') $
@@ -126,7 +126,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                   check (not $ null txs)
                   pure (take (fromIntegral reqNo) txs)
 
-            TokNonBlocking -> do
+            SingNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $
                 throwIO ProtocolErrorRequestedNothing
               when (Seq.null unackedSeq') $
@@ -138,8 +138,8 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                 return (Just $ take (fromIntegral reqNo) txs)
 
           return $! case (mbtxs, blocking) of
-            (Nothing, TokBlocking)    -> SendMsgDone ()
-            (Nothing, TokNonBlocking) -> error "txSubmissionOutbound: impossible happend!"
+            (Nothing, SingBlocking)    -> SendMsgDone ()
+            (Nothing, SingNonBlocking) -> error "txSubmissionOutbound: impossible happend!"
             (Just txs, _) ->
               -- These txs should all be fresh
               assert (all (\(_, idx, _) -> idx > lastIdx) txs) $
@@ -155,8 +155,8 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
 
                 -- Our reply type is different in the blocking vs non-blocking cases
                 in case blocking of
-                    TokNonBlocking -> SendMsgReplyTxIds (NonBlockingReply txs') client'
-                    TokBlocking    -> SendMsgReplyTxIds (BlockingReply   txs'') client'
+                    SingNonBlocking -> SendMsgReplyTxIds (NonBlockingReply txs') client'
+                    SingBlocking    -> SendMsgReplyTxIds (BlockingReply   txs'') client'
                       where
                         txs'' = case NonEmpty.nonEmpty txs' of
                           Just  x -> x

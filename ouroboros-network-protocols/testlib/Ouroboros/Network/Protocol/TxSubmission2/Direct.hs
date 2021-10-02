@@ -7,7 +7,7 @@
 
 module Ouroboros.Network.Protocol.TxSubmission2.Direct (directPipelined) where
 
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Proofs (Queue (..), enqueue)
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Client

@@ -26,7 +26,7 @@ import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Network.TypedProtocol.Pipelined (N, Nat (..))
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Server

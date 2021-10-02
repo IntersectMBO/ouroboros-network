@@ -17,7 +17,7 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Data.Word
 
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..),
                      blockNo, getTipBlockNo)
