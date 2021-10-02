@@ -379,7 +379,7 @@ type ProtocolState (st :: ps) = 'PS st (StateAgency st)
 data ProtocolState' ps agency =  PS ps agency
 
 
--- | 'ProtocolState' singleton type. It's type it more general that what we
+-- | 'ProtocolState' singleton type. It's type is more general that what we
 -- need, see 'SingProtocolState' type alias.
 --
 -- 'SingProtocolState' provides @'Sing' st@ explicitly and @'SingAgency'

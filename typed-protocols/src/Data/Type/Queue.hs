@@ -36,7 +36,6 @@ data SingTrans tr where
     SingTr :: forall ps (st :: ps) (st' :: ps).
               SingTrans (Tr st st')
 
-
 -- | Queue kind.  The type level queue is used to push pipelined transitions
 -- and pop them from its other side when one is requesting to collect pipelined
 -- results.
@@ -96,6 +95,10 @@ deriving instance
 (|>) (SingConsF f q) !f' = SingConsF f (q |> f')
 
 
+queueFDepth :: SingQueueF f q -> Int
+queueFDepth  SingEmptyF      = 0
+queueFDepth (SingConsF _ q') = 1 + queueFDepth q'
+
 -- | A space efficient singleton for a non-empty 'Queue' type.  It has two
 -- public constructors 'SingSingleton' and 'SingCons'.
 --
@@ -110,6 +113,9 @@ deriving instance
 type SingQueue :: Queue ps -> Type
 newtype SingQueue q = UnsafeSingQueue Int
   deriving Show
+
+queueDepth :: SingQueue q -> Int
+queueDepth (UnsafeSingQueue depth) = depth
 
 type instance Sing = SingQueue
 instance SingI Empty            where sing = SingEmpty
@@ -192,3 +198,8 @@ snoc (UnsafeSingQueue n) _ = UnsafeSingQueue (succ n)
 uncons :: SingQueue (Tr st st <| q)
        -> SingQueue              q
 uncons (SingCons q) = q
+
+
+toSingQueue :: SingQueueF f q -> SingQueue q
+toSingQueue  SingEmptyF     = SingEmpty
+toSingQueue (SingConsF _ q) = SingCons (toSingQueue q)

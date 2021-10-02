@@ -1,13 +1,13 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 -- | The type of the local transaction monitoring protocol.
 --
@@ -44,6 +44,8 @@
 -- @
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
+import           Data.Singletons
+import           Data.Kind
 
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -107,6 +109,38 @@ data StBusyKind where
   -- | The server is busy looking for the current size and max capacity of the
   -- mempool
   GetSizes :: StBusyKind
+
+type SingBusyKind :: StBusyKind -> Type
+data SingBusyKind st where
+    SingNextTx   :: SingBusyKind NextTx
+    SingHasTx    :: SingBusyKind HasTx
+    SingGetSizes :: SingBusyKind GetSizes
+
+type instance Sing = SingBusyKind
+instance SingI NextTx   where sing = SingNextTx
+instance SingI HasTx    where sing = SingHasTx
+instance SingI GetSizes where sing = SingGetSizes
+
+deriving instance Show (SingBusyKind st)
+
+type SingLocalTxMonitor :: LocalTxMonitor txid tx slot -> Type
+data SingLocalTxMonitor st where
+    SingIdle      :: SingLocalTxMonitor StIdle
+    SingAcquiring :: SingLocalTxMonitor StAcquiring
+    SingAcquired  :: SingLocalTxMonitor StAcquired
+    SingBusy      :: SingBusyKind k
+                  -> SingLocalTxMonitor (StBusy k)
+    SingDone      :: SingLocalTxMonitor StDone
+
+type instance Sing = SingLocalTxMonitor
+instance SingI StIdle      where sing = SingIdle
+instance SingI StAcquiring where sing = SingAcquiring
+instance SingI StAcquired  where sing = SingAcquired
+instance SingI k =>
+         SingI (StBusy k)  where sing = SingBusy (sing :: Sing k)
+instance SingI StDone      where sing = SingDone
+
+deriving instance Show (SingLocalTxMonitor st)
 
 -- | Describes the MemPool sizes and capacity for a given snapshot.
 data MempoolSizeAndCapacity = MempoolSizeAndCapacity
@@ -209,39 +243,11 @@ instance Protocol (LocalTxMonitor txid tx slot) where
     MsgDone
       :: Message (LocalTxMonitor txid tx slot) StIdle StDone
 
-  data ClientHasAgency st where
-    TokIdle     :: ClientHasAgency StIdle
-    TokAcquired :: ClientHasAgency StAcquired
-
-  data ServerHasAgency st where
-    TokAcquiring :: ServerHasAgency StAcquiring
-    TokBusy      :: TokBusyKind k -> ServerHasAgency (StBusy k)
-
-  data NobodyHasAgency st where
-    TokDone  :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
-
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
-
-data TokBusyKind (k :: StBusyKind) where
-  TokNextTx   :: TokBusyKind NextTx
-  TokHasTx    :: TokBusyKind HasTx
-  TokGetSizes :: TokBusyKind GetSizes
+  type StateAgency StIdle      = ClientAgency
+  type StateAgency StAcquiring = ServerAgency
+  type StateAgency StAcquired  = ClientAgency
+  type StateAgency (StBusy _)  = ServerAgency
+  type StateAgency StDone      = NobodyAgency
 
 deriving instance (Show txid, Show tx, Show slot)
-  => Show (Message (LocalTxMonitor txid tx slot) from to)
-
-instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
-  show = \case
-    TokIdle     -> "TokIdle"
-    TokAcquired -> "TokAcquired"
-
-instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
-  show = \case
-    TokAcquiring        -> "TokAcquiring"
-    TokBusy TokNextTx   -> "TokBusy TokNextTx"
-    TokBusy TokHasTx    -> "TokBusy TokHasTx"
-    TokBusy TokGetSizes -> "TokBusy TokGetSizes"
+               => Show (Message (LocalTxMonitor txid tx slot) from to)

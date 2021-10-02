@@ -8,6 +8,7 @@ module Ouroboros.Network.Protocol.KeepAlive.Server
   ) where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 
@@ -21,16 +22,15 @@ data KeepAliveServer m a = KeepAliveServer {
 keepAliveServerPeer
     :: Functor m
     => KeepAliveServer m a
-    -> Peer KeepAlive AsServer StClient m a
+    -> Server KeepAlive 'NonPipelined Empty StClient m stm a
 keepAliveServerPeer KeepAliveServer { recvMsgKeepAlive, recvMsgDone } =
-    Await (ClientAgency TokClient) $ \msg ->
+    Await $ \msg ->
       case msg of
-        MsgDone -> Effect $ Done TokDone <$> recvMsgDone
+        MsgDone -> Effect $ Done <$> recvMsgDone
 
         MsgKeepAlive cookie ->
           Effect $
             fmap (\server ->
-                    Yield (ServerAgency TokServer)
-                          (MsgKeepAliveResponse cookie)
+                    Yield (MsgKeepAliveResponse cookie)
                           (keepAliveServerPeer server))
                  recvMsgKeepAlive

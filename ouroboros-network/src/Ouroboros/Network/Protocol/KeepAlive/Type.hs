@@ -1,9 +1,11 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE EmptyCase         #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE PolyKinds         #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 -- | The type of the keep alive protocol.
 --
@@ -24,6 +26,8 @@
 module Ouroboros.Network.Protocol.KeepAlive.Type where
 
 import           Control.Monad.Class.MonadThrow (Exception)
+import           Data.Kind (Type)
+import           Data.Singletons
 import           Data.Word (Word16)
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
@@ -56,6 +60,20 @@ data KeepAlive where
 instance ShowProxy KeepAlive where
     showProxy _ = "KeepAlive"
 
+-- | Singletons for 'KeepAlive' state types.
+--
+type SingKeepAlive :: KeepAlive -> Type
+data SingKeepAlive k where
+    SingClient :: SingKeepAlive StClient
+    SingServer :: SingKeepAlive StServer
+    SingDone   :: SingKeepAlive StDone
+
+type instance Sing = SingKeepAlive
+instance SingI StClient where sing = SingClient
+instance SingI StServer where sing = SingServer
+instance SingI StDone   where sing = SingDone
+deriving instance Show (SingKeepAlive st)
+
 instance Protocol KeepAlive where
     -- | The messages in the keep alive protocol.
     --
@@ -80,27 +98,12 @@ instance Protocol KeepAlive where
       MsgDone
         :: Message KeepAlive StClient StDone
 
-    data ClientHasAgency st where
-      TokClient :: ClientHasAgency StClient
-
-    data ServerHasAgency st where
-      TokServer :: ServerHasAgency StServer
-
-    data NobodyHasAgency st where
-      TokDone   :: NobodyHasAgency StDone
-
-    exclusionLemma_ClientAndServerHaveAgency TokClient tok = case tok of {}
-    exclusionLemma_NobodyAndClientHaveAgency TokDone   tok = case tok of {}
-    exclusionLemma_NobodyAndServerHaveAgency TokDone   tok = case tok of {}
+    type StateAgency StClient = ClientAgency
+    type StateAgency StServer = ServerAgency
+    type StateAgency StDone   = NobodyAgency
 
 
 instance Show (Message KeepAlive from to) where
     show (MsgKeepAlive cookie)         = "MsgKeepAlive " ++ show cookie
     show (MsgKeepAliveResponse cookie) = "MsgKeepAliveResponse " ++ show cookie
     show MsgDone                       = "MsgDone"
-
-instance Show (ClientHasAgency (st :: KeepAlive)) where
-    show TokClient = "TokClient"
-
-instance Show (ServerHasAgency (st :: KeepAlive)) where
-    show TokServer = "TokServer"

@@ -21,6 +21,7 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Server
   ) where
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Server
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
@@ -51,30 +52,27 @@ data LocalTxSubmissionServer tx reject m a =
 -- | A non-pipelined 'Peer' representing the 'LocalTxSubmissionServer'.
 --
 localTxSubmissionServerPeer
-  :: forall tx reject m a. Monad m
+  :: forall tx reject m stm a. Monad m
   => m (LocalTxSubmissionServer tx reject m a)
-  -> Peer (LocalTxSubmission tx reject) AsServer StIdle m a
+  -> Server (LocalTxSubmission tx reject) 'NonPipelined Empty StIdle m stm a
 localTxSubmissionServerPeer server =
     Effect $ go <$> server
   where
     go :: LocalTxSubmissionServer tx reject m a
-       -> Peer (LocalTxSubmission tx reject) AsServer StIdle m a
+       -> Server (LocalTxSubmission tx reject) 'NonPipelined Empty StIdle m stm a
     go LocalTxSubmissionServer{recvMsgSubmitTx, recvMsgDone} =
-      Await (ClientAgency TokIdle) $ \msg -> case msg of
+      Await $ \msg -> case msg of
         MsgSubmitTx tx -> Effect $ do
           (result, k) <- recvMsgSubmitTx tx
           return $
             case result of
               SubmitSuccess ->
                 Yield
-                  (ServerAgency TokBusy)
                   MsgAcceptTx
                   (go k)
               SubmitFail reject ->
                 Yield
-                  (ServerAgency TokBusy)
                   (MsgRejectTx reject)
                   (go k)
 
-        MsgDone -> Done TokDone recvMsgDone
-
+        MsgDone -> Done recvMsgDone

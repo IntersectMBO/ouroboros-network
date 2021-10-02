@@ -40,6 +40,7 @@ module Ouroboros.Network.Mux
   , ControlMessageSTM
   , continueForever
   , timeoutWithControlMessage
+  , timeoutWithControlMessageSTM
     -- * Re-exports
     -- | from "Network.Mux"
   , MuxError (..)
@@ -114,14 +115,19 @@ timeoutWithControlMessage :: MonadSTM m
                           -> STM m a
                           -> m (Maybe a)
 timeoutWithControlMessage controlMessageSTM stm =
-    atomically $
-      do
-        cntrlMsg <- controlMessageSTM
-        case cntrlMsg of
-          Terminate -> return Nothing
-          Continue  -> retry
-          Quiesce   -> retry
-      `orElse` (Just <$> stm)
+    atomically $ timeoutWithControlMessageSTM controlMessageSTM stm
+
+timeoutWithControlMessageSTM :: MonadSTM m
+                             => ControlMessageSTM m
+                             -> STM m a
+                             -> STM m (Maybe a)
+timeoutWithControlMessageSTM controlMessageSTM stm =
+  do cntrlMsg <- controlMessageSTM
+     case cntrlMsg of
+       Terminate -> return Nothing
+       Continue  -> retry
+       Quiesce   -> retry
+  `orElse` (Just <$> stm)
 
 
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw

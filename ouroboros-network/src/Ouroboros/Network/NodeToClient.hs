@@ -89,8 +89,10 @@ import           Data.Void (Void)
 
 import           Network.Mux (WithMuxBearer (..))
 import           Network.Mux.Types (MuxRuntimeError (..))
-import           Network.TypedProtocol (Peer)
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
+import qualified Network.TypedProtocol.Stateful.Peer.Client as Stateful
+import           Network.TypedProtocol.Peer.Client (Client)
 
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
@@ -437,34 +439,38 @@ type LocalConnectionId = ConnectionId LocalAddress
 --
 
 chainSyncPeerNull
-    :: forall (header :: Type) (point :: Type) (tip :: Type) m a. MonadTimer m
-    => Peer (ChainSync.ChainSync header point tip)
-            AsClient ChainSync.StIdle m a
+    :: forall (header :: Type) (point :: Type) (tip :: Type) m stm a.
+       MonadTimer m
+    => Client (ChainSync.ChainSync header point tip)
+              'NonPipelined Empty ChainSync.StIdle m stm a
 chainSyncPeerNull =
     ChainSync.chainSyncClientPeer
       (ChainSync.ChainSyncClient untilTheCowsComeHome )
 
 localStateQueryPeerNull
-    :: forall (block :: Type) (point :: Type) (query :: Type -> Type) m a.
+  :: forall (block :: Type) (point :: Type) (query :: Type -> Type) m stm a.
        MonadTimer m
-    => Peer (LocalStateQuery.LocalStateQuery block point query)
-            AsClient LocalStateQuery.StIdle m a
+    => Stateful.Client (LocalStateQuery.LocalStateQuery block point query)
+                       'NonPipelined Empty LocalStateQuery.StIdle
+                       LocalStateQuery.State m stm a
 localStateQueryPeerNull =
     LocalStateQuery.localStateQueryClientPeer
       (LocalStateQuery.LocalStateQueryClient untilTheCowsComeHome)
 
 localTxSubmissionPeerNull
-    :: forall (tx :: Type) (reject :: Type) m a. MonadTimer m
-    => Peer (LocalTxSubmission.LocalTxSubmission tx reject)
-            AsClient LocalTxSubmission.StIdle m a
+    :: forall (tx :: Type) (reject :: Type) m stm a.
+       MonadTimer m
+    => Client (LocalTxSubmission.LocalTxSubmission tx reject)
+              'NonPipelined Empty LocalTxSubmission.StIdle m stm a
 localTxSubmissionPeerNull =
     LocalTxSubmission.localTxSubmissionClientPeer
       (LocalTxSubmission.LocalTxSubmissionClient untilTheCowsComeHome)
 
 localTxMonitorPeerNull
-    :: forall (txid :: Type) (tx :: Type) (slot :: Type) m a. MonadTimer m
-    => Peer (LocalTxMonitor.LocalTxMonitor txid tx slot)
-            AsClient LocalTxMonitor.StIdle m a
+    :: forall (txid :: Type) (tx :: Type) (slot :: Type) m stm a.
+       MonadTimer m
+    => Client (LocalTxMonitor.LocalTxMonitor txid tx slot)
+              'NonPipelined Empty LocalTxMonitor.StIdle m stm a
 localTxMonitorPeerNull =
     LocalTxMonitor.localTxMonitorClientPeer
       (LocalTxMonitor.LocalTxMonitorClient untilTheCowsComeHome)

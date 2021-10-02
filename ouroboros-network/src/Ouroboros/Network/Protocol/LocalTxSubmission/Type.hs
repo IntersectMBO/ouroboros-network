@@ -1,12 +1,13 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveFunctor            #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 
 -- | The type of the local transaction submission protocol.
@@ -16,6 +17,8 @@
 --
 module Ouroboros.Network.Protocol.LocalTxSubmission.Type where
 
+import           Data.Kind (Type)
+import           Data.Singletons
 
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Util.ShowProxy
@@ -60,6 +63,20 @@ instance ( ShowProxy tx
       , ")"
       ]
 
+
+type SingLocalTxSubmission :: LocalTxSubmission tx rejct
+                           -> Type
+data SingLocalTxSubmission k where
+    SingIdle :: SingLocalTxSubmission StIdle
+    SingBusy :: SingLocalTxSubmission StBusy
+    SingDone :: SingLocalTxSubmission StDone
+
+type instance Sing = SingLocalTxSubmission
+instance SingI StIdle where sing = SingIdle
+instance SingI StBusy where sing = SingBusy
+instance SingI StDone where sing = SingDone
+
+deriving instance Show (SingLocalTxSubmission k)
 
 -- | Isomorphic with Maybe but with a name that better describes its purpose and
 -- usage.
@@ -108,20 +125,9 @@ instance Protocol (LocalTxSubmission tx reject) where
       :: Message (LocalTxSubmission tx reject) StIdle StDone
 
 
-  data ClientHasAgency st where
-    TokIdle  :: ClientHasAgency StIdle
-
-  data ServerHasAgency st where
-    TokBusy  :: ServerHasAgency StBusy
-
-  data NobodyHasAgency st where
-    TokDone  :: NobodyHasAgency StDone
-
-  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
-
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
-
-  exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
+  type StateAgency StIdle = ClientAgency
+  type StateAgency StBusy = ServerAgency
+  type StateAgency StDone = NobodyAgency
 
 
 deriving instance (Eq tx, Eq reject) =>
@@ -129,9 +135,3 @@ deriving instance (Eq tx, Eq reject) =>
 
 deriving instance (Show tx, Show reject) =>
                    Show (Message (LocalTxSubmission tx reject) from to)
-
-instance Show (ClientHasAgency (st :: LocalTxSubmission tx reject)) where
-  show TokIdle = "TokIdle"
-
-instance Show (ServerHasAgency (st :: LocalTxSubmission tx reject)) where
-  show TokBusy = "TokBusy"

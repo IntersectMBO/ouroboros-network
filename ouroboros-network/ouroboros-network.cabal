@@ -50,7 +50,8 @@ library
 
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
-  exposed-modules:     Ouroboros.Network.AnchoredFragment
+  exposed-modules:     Data.Type.Nat
+                       Ouroboros.Network.AnchoredFragment
                        Ouroboros.Network.AnchoredSeq
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch
@@ -171,6 +172,7 @@ library
                        pretty-simple,
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2   && <0.3,
+                       singletons,
                        random,
                        strict-containers,
 
@@ -187,6 +189,10 @@ library
                        strict-stm        >=0.1 && <0.2,
                        typed-protocols   >=0.1 && <1.0,
                        typed-protocols-cborg
+                                         >=0.1 && <1.0,
+                       typed-protocols-stateful
+                                         >=0.1 && <1.0,
+                       typed-protocols-stateful-cborg
                                          >=0.1 && <1.0
   if !os(windows)
     build-depends:     unix
@@ -266,7 +272,8 @@ library protocol-tests
                        ouroboros-network-framework,
                        ouroboros-network-testing,
                        strict-stm,
-                       typed-protocols
+                       typed-protocols,
+                       typed-protocols-stateful
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

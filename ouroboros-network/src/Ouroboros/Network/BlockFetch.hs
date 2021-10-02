@@ -94,6 +94,8 @@ module Ouroboros.Network.BlockFetch
   , bracketFetchClient
   , bracketSyncWithFetchClient
   , bracketKeepAliveClient
+    -- * The 'FetchClientContext'
+  , FetchClientContext
     -- * Re-export types used by 'BlockFetchConsensusInterface'
   , FetchMode (..)
   , FromConsensus (..)
@@ -121,8 +123,8 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
                      bracketSyncWithFetchClient, newFetchClientRegistry,
                      readFetchClientsStateVars, readFetchClientsStatus,
                      readPeerGSVs, setFetchClientContext)
-import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus (..),
-                     WhetherReceivingTentativeBlocks (..))
+import           Ouroboros.Network.BlockFetch.ClientState (FetchClientContext,
+                     FromConsensus (..), WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.BlockFetch.State
 
 
