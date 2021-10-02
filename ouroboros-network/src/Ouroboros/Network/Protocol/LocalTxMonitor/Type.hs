@@ -2,6 +2,7 @@
 {-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -24,31 +25,42 @@ import           Ouroboros.Network.Util.ShowProxy
 --
 -- It is parametrised over the type of transactions.
 --
-data LocalTxMonitor tx where
+data LocalTxMonitor txid tx slot where
 
   -- | The client has agency; it can request a transaction or terminate.
   --
   -- There is no timeout in this state.
   --
-  StIdle   :: LocalTxMonitor tx
+  StIdle   :: LocalTxMonitor txid tx slot
 
-  -- | The server has agency; it must (eventually) return the next transaction
-  -- that has not yet been sent to the client.
+  -- | The server has agency; it is capturing the latest mempool snapshot.
   --
-  -- There is no timeout in this state.
+  StAcquiring :: LocalTxMonitor txid tx slot
+
+  -- | The client has agency; The server is locked on a particular mempool
+  -- snapshot. The client can now perform various requests on that snapshot,
+  -- or acquire a new one, more recent.
   --
-  StBusy   :: LocalTxMonitor tx
+  StAcquired  :: LocalTxMonitor txid tx slot
+
+  -- | The server has agency; It must respond, there's no timeout.
+  --
+  StBusy :: LocalTxMonitor txid tx slot
 
   -- | Nobody has agency. The terminal state.
   --
-  StDone   :: LocalTxMonitor tx
+  StDone   :: LocalTxMonitor txid tx slot
 
 
-instance ShowProxy tx => ShowProxy (ShowProxy (LocalTxMonitor tx)) where
-    showProxy _ = "LocalTxMonitor " ++ showProxy (Proxy :: Proxy tx)
+instance (ShowProxy txid, ShowProxy tx, ShowProxy slot) => ShowProxy (LocalTxMonitor txid tx slot) where
+    showProxy _ = unwords
+      [ "LocalTxMonitor"
+      , showProxy (Proxy :: Proxy txid)
+      , showProxy (Proxy :: Proxy tx)
+      , showProxy (Proxy :: Proxy slot)
+      ]
 
-
-instance Protocol (LocalTxMonitor tx) where
+instance Protocol (LocalTxMonitor txid tx slot) where
 
   -- | The messages in the transaction monitoring protocol.
   --
@@ -63,34 +75,72 @@ instance Protocol (LocalTxMonitor tx) where
   -- node's mempool (since it can be removed from the mempool of a peer and
   -- then not forwarded).
   --
-  data Message (LocalTxMonitor tx) from to where
+  data Message (LocalTxMonitor txid tx slot) from to where
 
-    -- | The client requests a single transaction and waits a reply.
+    -- | Acquire the latest snapshot. This enables subsequent queries to be
+    -- made against a consistent view of the mempool.
     --
     -- There is no timeout.
     --
-    MsgRequestTx
-      :: Message (LocalTxMonitor tx) StIdle StBusy
+    MsgAcquire
+      :: Message (LocalTxMonitor txid tx slot) StIdle StAcquiring
+
+    -- | The server is now locked to a particular snapshot. It returns the
+    -- slot number of the 'virtual block' under construction.
+    --
+    MsgAcquired
+      :: slot
+      -> Message (LocalTxMonitor txid tx slot) StAcquiring StAcquired
+
+    -- | Like 'MsgAcquire', but when one is already acquired. Allows to renew the
+    -- snapshot's state.
+    --
+    MsgReAcquire
+      :: Message (LocalTxMonitor txid tx slot) StAcquired StAcquiring
+
+    -- | The client requests a single transaction and waits a reply.
+    --
+    MsgNextTx
+      :: Message (LocalTxMonitor txid tx slot) StAcquired StBusy
 
     -- | The server responds with a single transaction. This must be a
-    -- transaction that was not previously sent to the client.
+    -- transaction that was not previously sent to the client for this
+    -- particular snapshot.
     --
-    -- There is no timeout. This can take an arbitrarily long time.
-    --
-    MsgReplyTx
+    MsgReplyNextTx
       :: tx
-      -> Message (LocalTxMonitor tx) StBusy StIdle
+      -> Message (LocalTxMonitor txid tx slot) StBusy StAcquired
+
+    -- | The client checks whether the server knows of a particular transaction
+    -- identified by its id.
+    --
+    MsgHasTx
+      :: txid
+      -> Message (LocalTxMonitor txid tx slot) StAcquired StBusy
+
+    -- | The server responds 'True' when the given tx is present in the snapshot,
+    -- False otherwise.
+    --
+    MsgReplyHasTx
+      :: Bool
+      -> Message (LocalTxMonitor txid tx slot) StBusy StAcquired
+
+    -- | Release the acquired snapshot, in order to loop back to the idle state.
+    --
+    MsgRelease
+      :: Message (LocalTxMonitor txid tx slot) StAcquired StIdle
 
     -- | The client can terminate the protocol.
     --
     MsgDone
-      :: Message (LocalTxMonitor tx) StIdle StDone
-
+      :: Message (LocalTxMonitor txid tx slot) StIdle StDone
 
   data ClientHasAgency st where
     TokIdle  :: ClientHasAgency StIdle
+    TokAcquired :: ClientHasAgency StAcquired
 
   data ServerHasAgency st where
+    TokAcquiring :: ServerHasAgency StAcquiring
     TokBusy  :: ServerHasAgency StBusy
 
   data NobodyHasAgency st where
@@ -103,10 +153,14 @@ instance Protocol (LocalTxMonitor tx) where
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
 
-deriving instance Show tx => Show (Message (LocalTxMonitor tx) from to)
+deriving instance (Show txid, Show tx, Show slot) => Show (Message (LocalTxMonitor txid tx slot) from to)
 
-instance Show (ClientHasAgency (st :: LocalTxMonitor tx)) where
-  show TokIdle = "TokIdle"
+instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
+  show = \case
+    TokIdle -> "TokIdle"
+    TokAcquired -> "TokAcquired"
 
-instance Show (ServerHasAgency (st :: LocalTxMonitor tx)) where
-  show TokBusy = "TokBusy"
+instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
+  show = \case
+    TokAcquiring -> "TokAcquiring"
+    TokBusy -> "TokBusy"
