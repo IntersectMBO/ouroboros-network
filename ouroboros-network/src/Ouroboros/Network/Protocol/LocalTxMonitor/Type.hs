@@ -45,7 +45,7 @@ data LocalTxMonitor txid tx slot where
 
   -- | The server has agency; It must respond, there's no timeout.
   --
-  StBusy :: LocalTxMonitor txid tx slot
+  StBusy :: StBusyKind -> LocalTxMonitor txid tx slot
 
   -- | Nobody has agency. The terminal state.
   --
@@ -59,6 +59,12 @@ instance (ShowProxy txid, ShowProxy tx, ShowProxy slot) => ShowProxy (LocalTxMon
       , showProxy (Proxy :: Proxy tx)
       , showProxy (Proxy :: Proxy slot)
       ]
+
+data StBusyKind where
+  -- | The server is busy fetching the next transaction from the mempool
+  StBusyNext :: StBusyKind
+  -- | The server is busy looking for the presence of a specific transaction in the mempool
+  StBusyHas :: StBusyKind
 
 instance Protocol (LocalTxMonitor txid tx slot) where
 
@@ -101,29 +107,29 @@ instance Protocol (LocalTxMonitor txid tx slot) where
     -- | The client requests a single transaction and waits a reply.
     --
     MsgNextTx
-      :: Message (LocalTxMonitor txid tx slot) StAcquired StBusy
+      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy StBusyNext)
 
     -- | The server responds with a single transaction. This must be a
     -- transaction that was not previously sent to the client for this
     -- particular snapshot.
     --
     MsgReplyNextTx
-      :: tx
-      -> Message (LocalTxMonitor txid tx slot) StBusy StAcquired
+      :: Maybe tx
+      -> Message (LocalTxMonitor txid tx slot) (StBusy StBusyNext) StAcquired
 
     -- | The client checks whether the server knows of a particular transaction
     -- identified by its id.
     --
     MsgHasTx
       :: txid
-      -> Message (LocalTxMonitor txid tx slot) StAcquired StBusy
+      -> Message (LocalTxMonitor txid tx slot) StAcquired (StBusy StBusyHas)
 
     -- | The server responds 'True' when the given tx is present in the snapshot,
     -- False otherwise.
     --
     MsgReplyHasTx
       :: Bool
-      -> Message (LocalTxMonitor txid tx slot) StBusy StAcquired
+      -> Message (LocalTxMonitor txid tx slot) (StBusy StBusyHas) StAcquired
 
     -- | Release the acquired snapshot, in order to loop back to the idle state.
     --
@@ -141,7 +147,7 @@ instance Protocol (LocalTxMonitor txid tx slot) where
 
   data ServerHasAgency st where
     TokAcquiring :: ServerHasAgency StAcquiring
-    TokBusy  :: ServerHasAgency StBusy
+    TokBusy  :: TokBusyKind k -> ServerHasAgency (StBusy k)
 
   data NobodyHasAgency st where
     TokDone  :: NobodyHasAgency StDone
@@ -152,8 +158,12 @@ instance Protocol (LocalTxMonitor txid tx slot) where
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
+data TokBusyKind (k :: StBusyKind) where
+  TokBusyNext :: TokBusyKind StBusyNext
+  TokBusyHas :: TokBusyKind StBusyHas
 
-deriving instance (Show txid, Show tx, Show slot) => Show (Message (LocalTxMonitor txid tx slot) from to)
+deriving instance (Show txid, Show tx, Show slot)
+  => Show (Message (LocalTxMonitor txid tx slot) from to)
 
 instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
   show = \case
@@ -163,4 +173,5 @@ instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
 instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
   show = \case
     TokAcquiring -> "TokAcquiring"
-    TokBusy -> "TokBusy"
+    TokBusy TokBusyNext -> "TokBusy TokBusyNext"
+    TokBusy TokBusyHas -> "TokBusy TokBusyHas"
