@@ -87,6 +87,12 @@ test-suite test
                    , QuickCheck
                    , tasty
                    , tasty-quickcheck
+
+  if !os(windows)
+      build-depends: directory
+                   , network
+                   , unix
+
   default-language:  Haskell2010
   ghc-options:       -rtsopts
                      -Wall

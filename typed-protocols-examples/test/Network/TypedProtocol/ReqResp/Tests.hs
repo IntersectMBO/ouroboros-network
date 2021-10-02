@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
@@ -28,17 +29,26 @@ import           Network.TypedProtocol.ReqResp.Examples
 import           Network.TypedProtocol.ReqResp.Server
 import           Network.TypedProtocol.ReqResp.Type
 
+import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
 
 import           Data.Functor.Identity (Identity (..))
 import           Data.Kind (Type)
-import           Data.List (mapAccumL)
+import           Data.List (intercalate, mapAccumL)
 import           Data.Tuple (swap)
+#if !defined(mingw32_HOST_OS)
+import qualified Network.Socket as Socket
+import           System.Directory (removeFile)
+import           System.IO
+import qualified System.Posix.Files as Posix
+#endif
 
 import           Network.TypedProtocol.PingPong.Tests (splits2, splits2BS,
                      splits3, splits3BS)
@@ -61,6 +71,12 @@ tests = testGroup "Network.TypedProtocol.ReqResp"
   , testProperty "connectPipelined"    prop_connectPipelined
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
+  , testProperty "channelPipelined ST" prop_channelPipelined_ST
+  , testProperty "channelPipelined IO" prop_channelPipelined_IO
+#if !defined(mingw32_HOST_OS)
+  , testProperty "namedPipePipelined"  prop_namedPipePipelined_IO
+  , testProperty "socketPipelined"     prop_socketPipelined_IO
+#endif
   , testGroup "Codec"
     [ testProperty "codec"             prop_codec_ReqResp
     , testProperty "codec 2-splits"    prop_codec_splits2_ReqResp
@@ -191,6 +207,7 @@ prop_channel f xs = do
     server = reqRespServerPeer (reqRespServerMapAccumL
                                  (\a -> pure . f a) 0)
 
+
 prop_channel_IO :: (Int -> Int -> (Int, Int)) -> [Int] -> Property
 prop_channel_IO f xs =
     ioProperty (prop_channel f xs)
@@ -199,6 +216,91 @@ prop_channel_ST :: (Int -> Int -> (Int, Int)) -> [Int] -> Bool
 prop_channel_ST f xs =
     runSimOrThrow (prop_channel f xs)
 
+
+prop_channelPipelined :: ( MonadLabelledSTM m, MonadAsync m, MonadCatch m
+                         , MonadDelay m, MonadST m)
+                      => (Int -> Int -> (Int, Int)) -> [Int]
+                      -> m Bool
+prop_channelPipelined f xs = do
+    (c, s) <- runConnectedPeers (createPipelineTestChannels 100)
+                                nullTracer
+                                CBOR.codecReqResp client server
+    return ((s, c) == mapAccumL f 0 xs)
+  where
+    client = reqRespClientPeerPipelined (reqRespClientMapPipelined xs)
+    server = reqRespServerPeer          (reqRespServerMapAccumL
+                                            (\a -> pure . f a) 0)
+
+prop_channelPipelined_IO :: (Int -> Int -> (Int, Int)) -> [Int] -> Property
+prop_channelPipelined_IO f xs =
+    ioProperty (prop_channelPipelined f xs)
+
+prop_channelPipelined_ST :: (Int -> Int -> (Int, Int)) -> [Int] -> Property
+prop_channelPipelined_ST f xs =
+    let tr = runSimTrace (prop_channelPipelined f xs) in
+    counterexample (intercalate "\n" $ map show $ traceEvents tr)
+                 $ case traceResult True tr of
+                     Left  err -> throw err
+                     Right res -> res
+
+
+#if !defined(mingw32_HOST_OS)
+prop_namedPipePipelined_IO :: (Int -> Int -> (Int, Int)) -> [Int]
+                           -> Property
+prop_namedPipePipelined_IO f xs = ioProperty $ do
+    let client = reqRespClientPeerPipelined (reqRespClientMapPipelined xs)
+        server = reqRespServerPeer          (reqRespServerMapAccumL
+                                                (\a -> pure . f a) 0)
+    let cliPath = "client.sock"
+        srvPath = "server.sock"
+        mode = Posix.ownerModes
+
+    Posix.createNamedPipe cliPath mode
+    Posix.createNamedPipe srvPath mode
+
+    bracket   (openFile cliPath ReadWriteMode)
+              (\_ -> removeFile cliPath)
+           $ \cliHandle ->
+      bracket (openFile srvPath ReadWriteMode)
+              (\_ -> removeFile srvPath)
+           $ \srvHandle -> do
+              (c, s) <- runConnectedPeers (return ( handlesAsChannel cliHandle srvHandle
+                                                  , handlesAsChannel srvHandle cliHandle
+                                                  ))
+                                          nullTracer
+                                          CBOR.codecReqResp client server
+              return ((s, c) == mapAccumL f 0 xs)
+#endif
+
+
+#if !defined(mingw32_HOST_OS)
+prop_socketPipelined_IO :: (Int -> Int -> (Int, Int)) -> [Int]
+                        -> Property
+prop_socketPipelined_IO f xs = ioProperty $ do
+    ai : _ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") Nothing
+    bracket
+      ((,) <$> Socket.openSocket ai
+           <*> Socket.openSocket ai)
+      ( \ (sock, sock') -> Socket.close sock
+                        >> Socket.close sock')
+      $ \ (sock, sock') -> do
+          Socket.bind sock (Socket.addrAddress ai)
+          addr <- Socket.getSocketName sock
+          Socket.listen sock 1
+          Socket.connect sock' addr
+          bracket (fst <$> Socket.accept sock) Socket.close
+                $ \sock'' -> do
+            let client = reqRespClientPeerPipelined (reqRespClientMapPipelined xs)
+                server = reqRespServerPeer          (reqRespServerMapAccumL
+                                                        (\a -> pure . f a) 0)
+
+            (c, s) <- runConnectedPeers (return ( socketAsChannel sock'
+                                                , socketAsChannel sock''
+                                                ))
+                                        nullTracer
+                                        CBOR.codecReqResp client server
+            return ((s, c) == mapAccumL f 0 xs)
+#endif
 
 --
 -- Codec properties

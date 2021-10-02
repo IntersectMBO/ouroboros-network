@@ -219,7 +219,8 @@ createPipelineTestChannels sz = do
 --
 -- The Handles should be open in the appropriate read or write mode, and in
 -- binary mode. Writes are flushed after each write, so it is safe to use
--- a buffering mode.
+-- a buffering mode.  On unix named pipes can be used, see
+-- 'Network.TypedProtocol.ReqResp.Test.prop_namedPipePipelined_IO'
 --
 -- For bidirectional handles it is safe to pass the same handle for both.
 --
