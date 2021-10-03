@@ -39,6 +39,7 @@ import           Ouroboros.Network.MockChain.Chain (Chain (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Network.Util.ShowProxy
 
 {-------------------------------------------------------------------------------
   Condense
@@ -66,6 +67,12 @@ instance Serialise (Hash h a) where
 instance Serialise (VerKeyDSIGN MockDSIGN) where
   encode = encodeVerKeyDSIGN
   decode = decodeVerKeyDSIGN
+
+{-------------------------------------------------------------------------------
+  ShowProxy
+-------------------------------------------------------------------------------}
+
+instance ShowProxy SlotNo where
 
 {-------------------------------------------------------------------------------
   NoThunks

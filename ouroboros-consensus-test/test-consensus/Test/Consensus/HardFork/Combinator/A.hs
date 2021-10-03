@@ -567,6 +567,8 @@ instance Serialise (SerialisedHeader BlockA) where
 instance SerialiseNodeToClient BlockA BlockA
 instance SerialiseNodeToClient BlockA (Serialised BlockA)
 instance SerialiseNodeToClient BlockA (GenTx BlockA)
+instance SerialiseNodeToClient BlockA (GenTxId BlockA)
+instance SerialiseNodeToClient BlockA SlotNo
 
 instance SerialiseNodeToClient BlockA Void where
   encodeNodeToClient _ _ = absurd

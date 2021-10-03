@@ -107,7 +107,9 @@ instance Serialise ext => SerialiseNodeToClient (MockBlock ext) (MockBlock ext) 
 
 instance SerialiseNodeToClient (MockBlock ext) (Serialised (MockBlock ext))
 instance SerialiseNodeToClient (MockBlock ext) (GenTx (MockBlock ext))
+instance SerialiseNodeToClient (MockBlock ext) (GenTxId (MockBlock ext))
 instance SerialiseNodeToClient (MockBlock ext) (MockError (MockBlock ext))
+instance SerialiseNodeToClient (MockBlock ext) SlotNo
 
 instance SerialiseNodeToClient (MockBlock ext) (SomeSecond BlockQuery (MockBlock ext)) where
   encodeNodeToClient _ _ (SomeSecond QueryLedgerTip) = encode ()

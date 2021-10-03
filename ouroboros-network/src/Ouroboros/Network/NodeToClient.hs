@@ -135,7 +135,11 @@ data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
 
     -- | local state-query mini-protocol
     --
-    localStateQueryProtocol   :: RunMiniProtocol appType bytes m a b
+    localStateQueryProtocol   :: RunMiniProtocol appType bytes m a b,
+
+    -- | local tx-monitor mini-protocol
+    --
+    localTxMonitorProtocol    :: RunMiniProtocol appType bytes m a b
   }
 
 

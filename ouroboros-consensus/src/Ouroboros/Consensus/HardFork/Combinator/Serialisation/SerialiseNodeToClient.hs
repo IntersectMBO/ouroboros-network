@@ -31,6 +31,7 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -161,6 +162,16 @@ instance SerialiseHFC xs
       => SerialiseNodeToClient (HardForkBlock xs) (GenTx (HardForkBlock xs)) where
   encodeNodeToClient = dispatchEncoder `after` (getOneEraGenTx . getHardForkGenTx)
   decodeNodeToClient = fmap (HardForkGenTx . OneEraGenTx) .: dispatchDecoder
+
+instance SerialiseHFC xs
+      => SerialiseNodeToClient (HardForkBlock xs) (GenTxId (HardForkBlock xs)) where
+  encodeNodeToClient = dispatchEncoder `after` (getOneEraGenTxId . getHardForkGenTxId)
+  decodeNodeToClient = fmap (HardForkGenTxId . OneEraGenTxId) .: dispatchDecoder
+
+instance SerialiseHFC xs
+      => SerialiseNodeToClient (HardForkBlock xs) SlotNo where
+  encodeNodeToClient _ _ = Serialise.encode
+  decodeNodeToClient _ _ = Serialise.decode
 
 instance SerialiseHFC xs
       => SerialiseNodeToClient (HardForkBlock xs) (HardForkApplyTxErr xs) where

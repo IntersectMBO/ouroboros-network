@@ -71,6 +71,8 @@ class ( Typeable blk
       , SerialiseNodeToClient blk blk
       , SerialiseNodeToClient blk (Serialised blk)
       , SerialiseNodeToClient blk (GenTx blk)
+      , SerialiseNodeToClient blk (GenTxId blk)
+      , SerialiseNodeToClient blk SlotNo
       , SerialiseNodeToClient blk (ApplyTxErr blk)
       , SerialiseNodeToClient blk (SomeSecond BlockQuery blk)
       , SerialiseResult       blk (BlockQuery blk)

@@ -376,6 +376,12 @@ instance SerialiseNodeToClient ByronToCardano (GenTx ByronToCardano) where
   encodeNodeToClient = encodeNodeToClientB2C (Proxy @GenTx) unGenTxB2C
   decodeNodeToClient = decodeNodeToClientB2C (Proxy @GenTx) (\(GenTxByron tx) -> GenTxB2C tx)
 
+instance SerialiseNodeToClient ByronToCardano (GenTxId ByronToCardano) where
+  encodeNodeToClient = encodeNodeToClientB2C (Proxy @WrapGenTxId) unGenTxIdB2C
+  decodeNodeToClient = decodeNodeToClientB2C (Proxy @WrapGenTxId) (\(GenTxIdByron txid) -> GenTxIdB2C txid)
+
+instance SerialiseNodeToClient ByronToCardano SlotNo
+
 -- | @'ApplyTxErr' 'ByronToCardano'@
 instance SerialiseNodeToClient ByronToCardano CC.ApplyMempoolPayloadErr where
   encodeNodeToClient = encodeNodeToClientB2C (Proxy @WrapApplyTxErr) id
@@ -659,6 +665,12 @@ instance SerialiseNodeToClient CardanoToByron (Serialised CardanoToByron) where
 instance SerialiseNodeToClient CardanoToByron (GenTx CardanoToByron) where
   encodeNodeToClient = encodeNodeToClientC2B (Proxy @GenTx) (GenTxByron . unGenTxC2B)
   decodeNodeToClient = decodeNodeToClientC2B (Proxy @GenTx) GenTxC2B
+
+instance SerialiseNodeToClient CardanoToByron (GenTxId CardanoToByron) where
+  encodeNodeToClient = encodeNodeToClientC2B (Proxy @WrapGenTxId) (GenTxIdByron . unGenTxIdC2B)
+  decodeNodeToClient = decodeNodeToClientC2B (Proxy @WrapGenTxId) GenTxIdC2B
+
+instance SerialiseNodeToClient CardanoToByron SlotNo
 
 -- | @'ApplyTxErr' 'CardanoToByron'@
 instance SerialiseNodeToClient CardanoToByron CC.ApplyMempoolPayloadErr where
