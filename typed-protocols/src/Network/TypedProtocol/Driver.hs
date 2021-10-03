@@ -34,7 +34,7 @@ import           Control.Monad.Class.MonadSTM
 -- $intro
 --
 -- A 'Peer' is a particular implementation of an agent that engages in a
--- typed protocol. To actualy run one we need a source and sink for the typed
+-- typed protocol. To actually run one we need a source and sink for the typed
 -- protocol messages. These are provided by a 'Channel' and a 'Codec'. The
 -- 'Channel' represents one end of an untyped duplex message transport, and
 -- the 'Codec' handles conversion between the typed protocol messages and
