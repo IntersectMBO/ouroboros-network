@@ -197,7 +197,7 @@ prop_Mempool_getCapacity mcts =
       actualCapacity <- atomically $ getCapacity mempool
       pure (actualCapacity === testCapacity)
   where
-    MempoolCapacityBytesOverride testCapacity = testMempoolCapOverride testSetup
+    MempoolCapacityBytesOverride () testCapacity = testMempoolCapOverride testSetup
     MempoolCapTestSetup (TestSetupWithTxs testSetup _txsToAdd) = mcts
 
 -- | Test the correctness of 'tryAddTxs' when the Mempool is (or will be) at
@@ -399,7 +399,7 @@ genTestSetupWithExtraCapacity maxInitialTxs extraCapacity = do
         testSetup = TestSetup
           { testLedgerState        = ledger1
           , testInitialTxs         = txs2
-          , testMempoolCapOverride = MempoolCapacityBytesOverride mpCap
+          , testMempoolCapOverride = MempoolCapacityBytesOverride () mpCap
           }
     return (testSetup, ledger2)
 
@@ -422,13 +422,13 @@ instance Arbitrary TestSetup where
 
   shrink TestSetup { testLedgerState
                    , testInitialTxs
-                   , testMempoolCapOverride = MempoolCapacityBytesOverride
+                   , testMempoolCapOverride = MempoolCapacityBytesOverride ()
                        (MempoolCapacityBytes mpCap)
                    } =
     -- TODO we could shrink @testLedgerState@ too
     [ TestSetup { testLedgerState
                 , testInitialTxs = testInitialTxs'
-                , testMempoolCapOverride = MempoolCapacityBytesOverride
+                , testMempoolCapOverride = MempoolCapacityBytesOverride ()
                     (MempoolCapacityBytes mpCap')
                 }
     | let extraCap = mpCap - txSizesInBytes testInitialTxs
@@ -632,13 +632,13 @@ instance Arbitrary TestSetupWithTxs where
     (txs,      _ledger') <- genTxs nbTxs ledger
     testSetup' <- case testMempoolCapOverride testSetup of
       NoMempoolCapacityBytesOverride -> return testSetup
-      MempoolCapacityBytesOverride (MempoolCapacityBytes mpCap) -> do
+      MempoolCapacityBytesOverride () (MempoolCapacityBytes mpCap) -> do
         noOverride <- arbitrary
         return testSetup {
               testMempoolCapOverride =
                 if noOverride
                 then NoMempoolCapacityBytesOverride
-                else MempoolCapacityBytesOverride $ MempoolCapacityBytes $
+                else MempoolCapacityBytesOverride () $ MempoolCapacityBytes $
                        mpCap + txSizesInBytes (map fst txs)
             }
     return TestSetupWithTxs { testSetup = testSetup', txs }
@@ -746,8 +746,8 @@ withTestMempool setup@TestSetup {..} prop =
     $ classify (not (null testInitialTxs)) "non-empty Mempool"
     $ runSimOrThrow setUpAndRun
   where
-    isOverride (MempoolCapacityBytesOverride _) = True
-    isOverride NoMempoolCapacityBytesOverride   = False
+    isOverride (MempoolCapacityBytesOverride () _) = True
+    isOverride NoMempoolCapacityBytesOverride      = False
 
     setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
@@ -865,7 +865,7 @@ instance Arbitrary MempoolCapTestSetup where
       , capacityMaxBound
       )
     let testSetup' = testSetup {
-            testMempoolCapOverride = MempoolCapacityBytesOverride $
+            testMempoolCapOverride = MempoolCapacityBytesOverride () $
               MempoolCapacityBytes capacity
           }
     return $ MempoolCapTestSetup testSetupWithTxs { testSetup = testSetup' }
@@ -1044,7 +1044,7 @@ prop_Mempool_idx_consistency (Actions actions) =
       { testLedgerState        = testInitLedger
       , testInitialTxs         = []
       , testMempoolCapOverride =
-          MempoolCapacityBytesOverride $ MempoolCapacityBytes maxBound
+          MempoolCapacityBytesOverride () $ MempoolCapacityBytes maxBound
       }
 
     lastOfMempoolRemoved txsInMempool = \case

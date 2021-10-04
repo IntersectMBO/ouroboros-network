@@ -329,7 +329,7 @@ data MempoolCapacityBytesOverride
   = NoMempoolCapacityBytesOverride
     -- ^ Use 2x the maximum transaction capacity of a block. This will change
     -- dynamically with the protocol parameters adopted in the current ledger.
-  | MempoolCapacityBytesOverride !MempoolCapacityBytes
+  | MempoolCapacityBytesOverride () !MempoolCapacityBytes
     -- ^ Use the following 'MempoolCapacityBytes'.
   deriving (Eq, Show)
 
@@ -337,15 +337,14 @@ data MempoolCapacityBytesOverride
 -- | If no override is provided, calculate the default mempool capacity as 2x
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
-  :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
+  :: TickedLedgerState blk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity st = \case
-    NoMempoolCapacityBytesOverride        -> noOverride
-    MempoolCapacityBytesOverride override -> override
+    NoMempoolCapacityBytesOverride            -> noOverride
+    MempoolCapacityBytesOverride () override  -> override
   where
-    noOverride = MempoolCapacityBytes (txsMaxBytes st * 2)
+    noOverride = MempoolCapacityBytes 1000
 
 {-------------------------------------------------------------------------------
   Snapshot of the mempool
