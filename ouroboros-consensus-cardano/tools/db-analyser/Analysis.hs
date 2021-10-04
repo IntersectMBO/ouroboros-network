@@ -107,7 +107,7 @@ countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
 countTxOutputs AnalysisEnv { db, registry, limit } = do
     void $ processAll db registry GetBlock limit 0 process
   where
-    process :: Int -> blk -> IO (NextStep, Int)
+    process :: Int -> blk -> IO Int
     process cumulative blk = do
         let cumulative' = cumulative + count
         putStrLn $ intercalate "\t" [
@@ -115,7 +115,7 @@ countTxOutputs AnalysisEnv { db, registry, limit } = do
           , show count
           , show cumulative'
           ]
-        return (Continue, cumulative')
+        return cumulative'
       where
         count = HasAnalysis.countTxOutputs blk
         slotNo = blockSlot blk
@@ -130,13 +130,13 @@ showHeaderSize AnalysisEnv { db, registry, limit } = do
       processAll db registry ((,) <$> GetSlot <*> GetHeaderSize) limit 0 process
     putStrLn ("Maximum encountered header size = " <> show maxHeaderSize)
   where
-    process :: Word16 -> (SlotNo, Word16) -> IO (NextStep, Word16)
+    process :: Word16 -> (SlotNo, Word16) -> IO Word16
     process maxHeaderSize (slotNo, headerSize) = do
         putStrLn $ intercalate "\t" [
             show slotNo
           , "Header size = " <> show headerSize
           ]
-        return $ (Continue, maxHeaderSize `max` headerSize)
+        return $ maxHeaderSize `max` headerSize
 
 {-------------------------------------------------------------------------------
   Analysis: show the total transaction sizes in bytes per block
@@ -202,7 +202,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
     putStrLn $ "About to store snapshot of a ledger at " <>
                show slotNo <> " " <>
                "this might take a while..."
-    void $ processAll db registry GetBlock limit initLedger process
+    void $ processAllUntil db registry GetBlock limit initLedger process
   where
     process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
     process oldLedger blk = do
@@ -253,7 +253,8 @@ decreaseLimit (Limit n) = Just . Limit $ n - 1
 
 data NextStep = Continue | Stop
 
-processAll ::
+
+processAllUntil ::
      forall blk b st. HasHeader blk
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
@@ -262,7 +263,21 @@ processAll ::
   -> st
   -> (st -> b -> IO (NextStep, st))
   -> IO st
-processAll = either processAllImmutableDB processAllChainDB
+processAllUntil = either processAllImmutableDB processAllChainDB
+
+processAll ::
+     forall blk b st. HasHeader blk
+  => Either (ImmutableDB IO blk) (ChainDB IO blk)
+  -> ResourceRegistry IO
+  -> BlockComponent blk b
+  -> Limit
+  -> st
+  -> (st -> b -> IO st)
+  -> IO st
+processAll db rr blockComponent limit initSt cb =
+  processAllUntil db rr blockComponent limit initSt callback
+    where
+      callback st b = (Continue, ) <$> cb st b
 
 processAll_ ::
      forall blk b. HasHeader blk
@@ -273,7 +288,7 @@ processAll_ ::
   -> (b -> IO ())
   -> IO ()
 processAll_ db rr blockComponent limit callback =
-    processAll db rr blockComponent limit () (const $ (pure . (Continue, )) <=< callback)
+    processAll db rr blockComponent limit () (const callback)
 
 processAllChainDB ::
      forall st blk b. HasHeader blk
