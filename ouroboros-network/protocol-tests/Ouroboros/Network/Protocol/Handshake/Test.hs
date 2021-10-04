@@ -90,9 +90,9 @@ tests =
 --
 -- Test Versions
 --
--- Notes: Associated data are choosen in such a way that a decoder will fail
+-- Notes: Associated data are chosen in such a way that a decoder will fail
 -- interpreting one of them as the other.  This is done on purpose for testing
--- missencoded data (protocol version & associated version data mismatch)
+-- wrongly encoded data (protocol version & associated version data mismatch)
 --
 
 -- |
@@ -419,7 +419,7 @@ prop_channel createChannels clientVersions serverVersions =
           serverVersions)
     pure $
       case (clientRes', serverRes') of
-        -- buth succeeded, we just check that the application (which is
+        -- both succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
         (Right (c,_,_), Right (s,_,_)) -> Just c === clientRes
                                      .&&. Just s === serverRes

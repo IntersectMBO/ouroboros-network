@@ -97,7 +97,7 @@ data VersionMismatch vNum where
   InconsistentVersion :: vNum -> VersionMismatch vNum
 
 --
--- Simple version negotation
+-- Simple version negotiation
 --
 
 -- | Singleton smart constructor for 'Versions'.
