@@ -130,14 +130,14 @@ berkeleyAccept :: IOManager
                -> Accept IO Socket SockAddr
 berkeleyAccept ioManager sock = go 0
     where
-      go cnt = Accept (acceptOne cnt `catch` handleException cnt)
+      go !cnt = Accept (acceptOne cnt `catch` handleException cnt)
 
       acceptOne
         :: Word64
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      acceptOne !cnt =
+      acceptOne cnt =
         bracketOnError
 #if !defined(mingw32_HOST_OS)
           (Socket.accept sock)
@@ -170,7 +170,7 @@ berkeleyAccept ioManager sock = go 0
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      handleException !cnt err =
+      handleException cnt err =
         case fromException err of
           Just (SomeAsyncException _) -> throwIO err
           Nothing                     -> pure (AcceptFailure err, go cnt)
