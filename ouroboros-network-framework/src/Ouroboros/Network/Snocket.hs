@@ -127,17 +127,19 @@ instance Bifoldable Accepted where
 --
 berkeleyAccept :: IOManager
                -> Socket
-               -> Accept IO Socket SockAddr
-berkeleyAccept ioManager sock = go 0
+               -> IO (Accept IO Socket SockAddr)
+berkeleyAccept ioManager sock =
+      go 0 <$> Socket.getSocketName sock
     where
-      go !cnt = Accept (acceptOne cnt `catch` handleException cnt)
+      go !cnt !addr = Accept (acceptOne addr cnt `catch` handleException addr cnt)
 
       acceptOne
-        :: Word64
+        :: SockAddr
+        -> Word64
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      acceptOne cnt =
+      acceptOne addr cnt =
         bracketOnError
 #if !defined(mingw32_HOST_OS)
           (Socket.accept sock)
@@ -154,26 +156,26 @@ berkeleyAccept ioManager sock = go 0
             -- So to differentiate clients we use a simple counter as the
             -- remote end's address.
             --
-            addr'' <- case addr' of
-                           Socket.SockAddrUnix _ ->
-                               return $ Socket.SockAddrUnix $
-                                   "temp-" ++ show cnt
-                           _                     -> return addr'
+            addr'' <- case addr of
+                           Socket.SockAddrUnix path
+                             -> return (Socket.SockAddrUnix $ path ++ "@" ++ show cnt)
+                           _ -> return addr'
 
-            return (Accepted sock' addr'', go $ succ cnt)
+            return (Accepted sock' addr'', go (succ cnt) addr)
 
       -- Only non-async exceptions will be caught and put into the
       -- AcceptFailure variant.
       handleException
-        :: Word64
+        :: SockAddr
+        -> Word64
         -> SomeException
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      handleException cnt err =
+      handleException addr cnt err =
         case fromException err of
           Just (SomeAsyncException _) -> throwIO err
-          Nothing                     -> pure (AcceptFailure err, go cnt)
+          Nothing                     -> pure (AcceptFailure err, go cnt addr)
 
 -- | Local address, on Unix is associated with `Socket.AF_UNIX` family, on
 --
@@ -235,7 +237,7 @@ data Snocket m fd addr = Snocket {
   -- SomeException is chosen here to avoid having to include it in the Snocket
   -- type, and therefore refactoring a bunch of stuff.
   -- FIXME probably a good idea to abstract it.
-  , accept        :: fd -> Accept m fd addr
+  , accept        :: fd -> m (Accept m fd addr)
 
   , close         :: fd -> m ()
 
@@ -420,7 +422,7 @@ localSnocket ioManager = Snocket {
     , bind     = \_ _ -> pure ()
     , listen   = \_ -> pure ()
 
-    , accept   = \sock@(LocalSocket hpipe addr _) -> Accept $ do
+    , accept   = \sock@(LocalSocket hpipe addr _) -> pure $ Accept $ do
           Win32.Async.connectNamedPipe hpipe
           return (Accepted sock addr, acceptNext 0 addr)
 
@@ -467,7 +469,7 @@ localSnocket ioManager = Snocket {
               -- So to differentiate clients we use a simple counter as the
               -- remote end's address.
               --
-              let addr' = LocalAddress $ "\\\\.\\pipe\\ouroboros-network-temp-" ++ show cnt
+              let addr' = LocalAddress $ getFilePath addr ++ "@" ++ show cnt
               return (Accepted (LocalSocket hpipe addr addr') addr', acceptNext (succ cnt) addr)
 
 -- local snocket on unix
@@ -482,7 +484,7 @@ localSnocket ioManager =
           Socket.connect s (fromLocalAddress addr)
       , bind          = \(LocalSocket fd) addr -> Socket.bind fd (fromLocalAddress addr)
       , listen        = flip Socket.listen 8 . getLocalHandle
-      , accept        = bimap LocalSocket toLocalAddress
+      , accept        = fmap (bimap LocalSocket toLocalAddress)
                       . berkeleyAccept ioManager
                       . getLocalHandle
       , open          = openSocket
