@@ -46,7 +46,8 @@ instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
   type ValidateView  (WithLeaderSchedule p) = ()
   type CanBeLeader   (WithLeaderSchedule p) = ()
 
-  protocolSecurityParam = protocolSecurityParam . wlsConfigP
+  protocolSecurityParam       = protocolSecurityParam       . wlsConfigP
+  protocolGenesisWindowLength = protocolGenesisWindowLength . wlsConfigP
 
   checkIsLeader WLSConfig{..} () slot _ =
     case Map.lookup slot $ getLeaderSchedule wlsConfigSchedule of

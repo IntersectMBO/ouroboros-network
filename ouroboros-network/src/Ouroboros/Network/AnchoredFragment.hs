@@ -74,6 +74,7 @@ module Ouroboros.Network.AnchoredFragment (
   successorBlock,
   selectPoints,
   isPrefixOf,
+  isPrefixOfByPoints,
   splitAfterPoint,
   splitBeforePoint,
   sliceRange,
@@ -709,3 +710,12 @@ mapAnchoredFragment ::
   -> AnchoredFragment block1
   -> AnchoredFragment block2
 mapAnchoredFragment = bimap castAnchor
+
+-- | See 'AS.isPrefixOfByInjectiveFuns'.
+isPrefixOfByPoints ::
+     forall a. HasHeader a =>
+     AnchoredFragment a
+  -> AnchoredFragment a
+  -> Bool
+s1 `isPrefixOfByPoints` s2 =
+  AS.isPrefixOfByInjectiveFuns anchorToPoint blockPoint s1 s2

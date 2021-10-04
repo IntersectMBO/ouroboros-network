@@ -12,6 +12,7 @@ module Ouroboros.Network.BlockFetch.Decision (
     PeerInfo,
     FetchDecision,
     FetchDecline(..),
+    SyncingMode(..),
 
     -- ** Components of the decision-making process
     filterPlausibleCandidates,
@@ -71,6 +72,10 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        blockFetchSize          :: header -> SizeInBytes
      }
 
+-- | The current syncing mode that we are in
+data SyncingMode =
+    Syncing
+  | CaughtUp
 
 data FetchMode =
        -- | Use this mode when we are catching up on the chain but are stil

@@ -42,7 +42,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import           Ouroboros.Network.AnchoredFragment.Completeness
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      decodeTip, encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
@@ -109,7 +109,7 @@ data Handlers m peer blk = Handlers {
         :: peer
         -> NodeToNodeVersion
         -> ControlMessageSTM m
-        -> StrictTVar m (AnchoredFragment (Header blk))
+        -> StrictTVar m (AnnotatedAnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
         -- into a record, or extending the protocol handler representation

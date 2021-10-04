@@ -52,6 +52,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:     Ouroboros.Network.AnchoredFragment
+                       Ouroboros.Network.AnchoredFragment.Completeness
                        Ouroboros.Network.AnchoredSeq
                        Ouroboros.Network.Block
                        Ouroboros.Network.BlockFetch

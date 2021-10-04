@@ -4,6 +4,7 @@
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.BlockFetch.Examples (
@@ -37,6 +38,7 @@ import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
+import           Ouroboros.Network.AnchoredFragment.Completeness
 import           Ouroboros.Network.Block
 
 import           Network.TypedProtocol.Core
@@ -269,16 +271,26 @@ sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
                         -> BlockFetchConsensusInterface peer header block m
 sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
     BlockFetchConsensusInterface {
-      readCandidateChains    = return candidateChains,
-      readCurrentChain       = return currentChain,
-      readFetchMode          = return FetchModeBulkSync,
-      readFetchedBlocks      = flip Set.member <$>
-                                 getTestFetchedBlocks blockHeap,
-      readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
-                               map (maxSlotNoFromWithOrigin . pointSlot) .
-                               Set.elems <$>
-                               getTestFetchedBlocks blockHeap,
-      addFetchedBlock        = addTestFetchedBlock blockHeap,
+      consensusRefinementPreBlockFetch =
+          return,
+      readCandidateChains =
+          return $
+            -- TODO @js: is this okay?
+            Map.map (flip AnnotatedAnchoredFragment FragmentComplete) candidateChains,
+      readCurrentChain =
+          return currentChain,
+      readFetchMode =
+          return FetchModeBulkSync,
+      readFetchedBlocks =
+          flip Set.member <$>
+            getTestFetchedBlocks blockHeap,
+      readFetchedMaxSlotNo =
+          foldl' max NoMaxSlotNo .
+          map (maxSlotNoFromWithOrigin . pointSlot) .
+          Set.elems <$>
+          getTestFetchedBlocks blockHeap,
+      addFetchedBlock =
+          addTestFetchedBlock blockHeap,
 
       plausibleCandidateChain,
       compareCandidateChains,

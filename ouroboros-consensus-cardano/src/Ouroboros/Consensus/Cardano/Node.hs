@@ -55,6 +55,7 @@ import           Cardano.Prelude (cborError)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -528,7 +529,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           triggerHardForkAllegra
 
     kShelley :: SecurityParam
-    kShelley = SecurityParam $ sgSecurityParam genesisShelley
+    kShelley = tpraosSecurityParam tpraosParams
+
+    sShelley :: GenesisWindowLength
+    sShelley = tpraosGenesisWindowLength tpraosParams
 
     -- Allegra
 
@@ -607,6 +611,15 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     k :: SecurityParam
     k = assert (kByron == kShelley) kByron
 
+    -- While the GenesisWindowLength is not defined for pre-Shelley eras due to
+    -- them not having an active-slot coefficient, the length that will be set
+    -- for the HardForkConsensusConfig.hardForkGenesisWindowLength will be the
+    -- one computed from the Shelley TPraosParams.
+    --
+    -- TODO @js: Is this okay?
+    s :: GenesisWindowLength
+    s = sShelley
+
     shape :: History.Shape (CardanoEras c)
     shape = History.Shape $ Exactly $
            K (Byron.byronEraParams     genesisByron)
@@ -620,6 +633,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     cfg = TopLevelConfig {
         topLevelConfigProtocol = HardForkConsensusConfig {
             hardForkConsensusConfigK      = k
+          , hardForkGenesisWindowLength   = s
           , hardForkConsensusConfigShape  = shape
           , hardForkConsensusConfigPerEra = PerEraConsensusConfig
               (  WrapPartialConsensusConfig partialConsensusConfigByron

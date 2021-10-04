@@ -110,6 +110,8 @@ instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
   -- Security parameter must be equal across /all/ eras
   protocolSecurityParam = hardForkConsensusConfigK
 
+  protocolGenesisWindowLength = hardForkGenesisWindowLength
+
 {-------------------------------------------------------------------------------
   BlockSupportsProtocol
 -------------------------------------------------------------------------------}

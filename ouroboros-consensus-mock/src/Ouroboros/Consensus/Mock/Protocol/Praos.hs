@@ -73,6 +73,7 @@ import           Cardano.Slotting.EpochInfo
 
 import           Data.Maybe (fromMaybe)
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -444,6 +445,13 @@ data instance Ticked (PraosChainDepState c) = TickedPraosChainDepState {
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
 
   protocolSecurityParam = praosSecurityParam . praosParams
+  protocolGenesisWindowLength p =
+    -- See the haddock of GenesisWindowLength. As this is a mock protocol, it is
+    -- set to the "default" value, 3k/f.
+      GenesisWindowLength
+    $ floor
+    $ 3 * (fromIntegral $ maxRollbacks $ protocolSecurityParam p)
+      / praosLeaderF (praosParams p)
 
   type LedgerView    (Praos c) = ()
   type IsLeader      (Praos c) = PraosProof           c

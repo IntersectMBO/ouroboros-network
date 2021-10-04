@@ -6,6 +6,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -38,6 +39,7 @@ import           System.Random
 import qualified Codec.Serialise as CBOR
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Network.AnchoredFragment.Completeness as AF
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Mux
@@ -302,27 +304,36 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                              LocalConnectionId BlockHeader Block IO
         blockFetchPolicy =
             BlockFetchConsensusInterface {
-              readCandidateChains    = readTVar candidateChainsVar
-                                       >>= traverse readTVar,
-              readCurrentChain       = readTVar currentChainVar,
-              readFetchMode          = return FetchModeBulkSync,
-              readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
-                                         getTestFetchedBlocks blockHeap,
-              readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
-                                       map (maxSlotNoFromWithOrigin . pointSlot) .
-                                       Set.elems <$>
-                                       getTestFetchedBlocks blockHeap,
-              addFetchedBlock        = \p b -> addTestFetchedBlock blockHeap
-                                         (castPoint p) (blockHeader b),
+              consensusRefinementPreBlockFetch =
+                  return,
+              readCandidateChains = do
+                  m <- readTVar candidateChainsVar >>= traverse readTVar
+                  -- TODO @js: is this okay?
+                  return $ Map.map (flip AF.AnnotatedAnchoredFragment AF.FragmentComplete) m,
+              readCurrentChain =
+                  readTVar currentChainVar,
+              readFetchMode =
+                  return FetchModeBulkSync,
+              readFetchedBlocks =
+                  (\h p -> castPoint p `Set.member` h) <$>
+                  getTestFetchedBlocks blockHeap,
+              readFetchedMaxSlotNo =
+                  foldl' max NoMaxSlotNo .
+                  map (maxSlotNoFromWithOrigin . pointSlot) .
+                  Set.elems <$>
+                  getTestFetchedBlocks blockHeap,
+              addFetchedBlock =
+                  \p b -> addTestFetchedBlock blockHeap
+                          (castPoint p) (blockHeader b),
 
               plausibleCandidateChain,
               compareCandidateChains,
 
-              blockFetchSize         = \_ -> 1000,
-              blockMatchesHeader     = \_ _ -> True,
+              blockFetchSize = \_ -> 1000,
+              blockMatchesHeader = \_ _ -> True,
 
               headerForgeUTCTime,
-              blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+              blockForgeUTCTime = headerForgeUTCTime . fmap blockHeader
             }
           where
             plausibleCandidateChain cur candidate =

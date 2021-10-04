@@ -84,6 +84,7 @@ module Ouroboros.Network.BlockFetch (
     blockFetchLogic,
     BlockFetchConfiguration(..),
     BlockFetchConsensusInterface(..),
+    ConsensusRefinementPreBlockFetch,
     -- ** Tracer types
     FetchDecision,
     TraceFetchClientState(..),
@@ -100,6 +101,7 @@ module Ouroboros.Network.BlockFetch (
     FetchMode (..),
     FromConsensus (..),
     SizeInBytes,
+    SyncingMode (..),
   ) where
 
 import           Data.Hashable (Hashable)
@@ -113,6 +115,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import           Ouroboros.Network.AnchoredFragment.Completeness
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.DeltaQ ( SizeInBytes )
 
@@ -125,7 +128,11 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
                    , readPeerGSVs
                    , bracketFetchClient, bracketKeepAliveClient
                    , bracketSyncWithFetchClient, setFetchClientContext )
+import           Ouroboros.Network.BlockFetch.Decision (SyncingMode(..))
 
+type ConsensusRefinementPreBlockFetch peer header m =
+            Map peer (AnnotatedAnchoredFragment header)
+  -> STM m (Map peer (AnnotatedAnchoredFragment header))
 
 -- | The consensus layer functionality that the block fetch logic requires.
 --
@@ -140,7 +147,18 @@ data BlockFetchConsensusInterface peer header block m =
        -- * They must be already validated.
        -- * They may contain /fewer/ than @K@ blocks.
        -- * Their anchor does not have to intersect with the current chain.
-       readCandidateChains    :: STM m (Map peer (AnchoredFragment header)),
+       readCandidateChains    :: STM m (Map peer (AnnotatedAnchoredFragment header)),
+
+       -- | Hook for refining the map returned by ChainSync before providing it
+       -- to BlockFetch. It will be invoked just after 'readCandidateChains' and
+       -- before doing any BlockFetch logic.
+       --
+       -- In particular, this will be used to run prefix selection on the
+       -- candidates which will filter out specific candidates based on the
+       -- algorithm described in the consensus report. See also
+       -- 'Ouroboros.Consensus.NodeKernel.Genesis'.
+       consensusRefinementPreBlockFetch ::
+           ConsensusRefinementPreBlockFetch peer header m,
 
        -- | Read the K-suffix of the current chain.
        --
@@ -289,6 +307,7 @@ blockFetchLogic decisionTracer clientStateTracer
       fetchDecisionPolicy
       fetchTriggerVariables
       fetchNonTriggerVariables
+      consensusRefinement
   where
     fetchClientPolicy :: FetchClientPolicy header block m
     fetchClientPolicy = FetchClientPolicy {
@@ -329,3 +348,17 @@ blockFetchLogic decisionTracer clientStateTracer
         readStateFetchMode        = readFetchMode,
         readStateFetchedMaxSlotNo = readFetchedMaxSlotNo
       }
+
+    -- Currently we need to refine the candidates if we are in Syncing mode, due
+    -- to Ouroboros Genesis and prefix selection filtering imposing a
+    -- requirement on knowing the density of all the candidates and choosing
+    -- only one of them.
+    consensusRefinement ::
+      ConsensusFetchStateRefinementPreBlockFetch peer header block m
+    consensusRefinement FetchStateSnapshot{..} = do
+          fetchStatePeerChains' <-
+              consensusRefinementPreBlockFetch fetchStatePeerChains
+          return FetchStateSnapshot{
+              fetchStatePeerChains = fetchStatePeerChains'
+            , ..
+            }

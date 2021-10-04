@@ -28,7 +28,8 @@ import           Control.Monad.Except
 import           Data.Bifunctor (second)
 import           Data.Hashable (Hashable)
 import           Data.List.NonEmpty (NonEmpty)
-import           Data.Map.Strict (Map)
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy
 import qualified Data.Text as Text
@@ -41,6 +42,7 @@ import           Control.Tracer
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.AnchoredFragment.Completeness
 import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
@@ -55,6 +57,7 @@ import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
 import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import qualified Ouroboros.Consensus.Config.SupportsNode as SupportsNode
 import           Ouroboros.Consensus.Forecast
 import qualified Ouroboros.Consensus.HardFork.Abstract as History
@@ -68,6 +71,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
+import qualified Ouroboros.Consensus.NodeKernel.Genesis as Genesis
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
@@ -100,7 +104,7 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     , getFetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
 
       -- | Read the current candidates
-    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , getNodeCandidates      :: StrictTVar m (Map remotePeer (StrictTVar m (AnnotatedAnchoredFragment (Header blk))))
 
       -- | The node's tracers
     , getTracers             :: Tracers m remotePeer localPeer blk
@@ -177,7 +181,7 @@ data InternalState m remotePeer localPeer blk = IS {
     , chainDB             :: ChainDB m blk
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
-    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
+    , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnnotatedAnchoredFragment (Header blk))))
     , mempool             :: Mempool m blk TicketNo
     }
 
@@ -205,7 +209,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
 
     fetchClientRegistry <- newFetchClientRegistry
 
-    let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
+    let getCandidates :: STM m (Map remotePeer (AnnotatedAnchoredFragment (Header blk)))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
     blockFetchInterface <-
@@ -226,10 +230,11 @@ initBlockFetchConsensusInterface
        , SupportsNode.ConfigSupportsNode blk
        , History.HasHardForkHistory blk
        , IsLedger (LedgerState blk)
+       , Ord peer
        )
     => TopLevelConfig blk
     -> ChainDB m blk
-    -> STM m (Map peer (AnchoredFragment (Header blk)))
+    -> STM m (Map peer (AnnotatedAnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> BlockchainTime m
     -> m (BlockFetchConsensusInterface peer (Header blk) blk m)
@@ -293,7 +298,10 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     blockMatchesHeader :: Header blk -> blk -> Bool
     blockMatchesHeader = Block.blockMatchesHeader
 
-    readCandidateChains :: STM m (Map peer (AnchoredFragment (Header blk)))
+    s :: GenesisWindowLength
+    s = protocolGenesisWindowLength (configConsensus cfg)
+
+    readCandidateChains :: STM m (Map peer (AnnotatedAnchoredFragment (Header blk)))
     readCandidateChains = getCandidates
 
     readCurrentChain :: STM m (AnchoredFragment (Header blk))
@@ -384,10 +392,29 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
       | otherwise
       = preferAnchoredCandidate bcfg ours cand
 
+    consensusRefinementPreBlockFetch ::
+          ConsensusRefinementPreBlockFetch peer (Header blk) m
+    consensusRefinementPreBlockFetch fragments
+     | Map.null fragments
+     = return fragments
+     | otherwise = do
+       syncMode <- readSyncingMode
+       currChain <- readCurrentChain
+       return $ case syncMode of
+         Syncing ->
+           Genesis.processWithPrefixSelection (AF.anchorPoint currChain) s fragments
+         CaughtUp ->
+           -- TODO @js: is this okay?
+           fragments
+
     compareCandidateChains :: AnchoredFragment (Header blk)
                            -> AnchoredFragment (Header blk)
                            -> Ordering
     compareCandidateChains = compareAnchoredFragments bcfg
+
+    -- TODO @js: fill this
+    readSyncingMode :: STM m SyncingMode
+    readSyncingMode = undefined
 
 forkBlockForging
     :: forall m remotePeer localPeer blk.

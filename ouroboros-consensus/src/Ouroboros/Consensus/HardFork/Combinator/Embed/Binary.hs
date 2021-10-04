@@ -16,11 +16,14 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node
-import           Ouroboros.Consensus.Protocol.Abstract (protocolSecurityParam)
+import           Ouroboros.Consensus.Protocol.Abstract
+                     (ConsensusProtocol (protocolGenesisWindowLength),
+                     protocolSecurityParam)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
 import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.History as History
 
@@ -48,6 +51,7 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = HardForkConsensusConfig {
                 hardForkConsensusConfigK      = k
+              , hardForkGenesisWindowLength   = s
               , hardForkConsensusConfigShape  = shape
               , hardForkConsensusConfigPerEra = PerEraConsensusConfig
                   (  WrapPartialConsensusConfig (toPartialConsensusConfig1 consensusConfig1)
@@ -120,6 +124,11 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
     k1 = protocolSecurityParam consensusConfig1
     k2 = protocolSecurityParam consensusConfig2
     k = assert (k1 == k2) k1
+
+    s1, s2, s :: GenesisWindowLength
+    s1 = protocolGenesisWindowLength consensusConfig1
+    s2 = protocolGenesisWindowLength consensusConfig2
+    s = assert (s1 == s2) s1
 
     shape :: History.Shape '[blk1, blk2]
     shape = History.Shape $ exactlyTwo eraParams1 eraParams2

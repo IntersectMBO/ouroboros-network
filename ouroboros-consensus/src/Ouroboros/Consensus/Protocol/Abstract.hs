@@ -18,6 +18,7 @@ import           GHC.Stack
 import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ticked
 
@@ -170,6 +171,9 @@ class ( Show (ChainDepState   p)
 
   -- | We require that protocols support a @k@ security parameter
   protocolSecurityParam :: ConsensusConfig p -> SecurityParam
+
+  -- | We require that protocols support a @s@ genesis window length
+  protocolGenesisWindowLength :: ConsensusConfig p -> GenesisWindowLength
 
 -- | Compare a candidate chain to our own
 --

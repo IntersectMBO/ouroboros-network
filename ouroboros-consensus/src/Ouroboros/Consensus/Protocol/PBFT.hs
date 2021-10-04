@@ -61,6 +61,7 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Crypto.DSIGN.Class
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -298,6 +299,9 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   type CanBeLeader   (PBft c) = PBftCanBeLeader c
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
+
+  protocolGenesisWindowLength =
+    GenesisWindowLength . (3 *) . maxRollbacks . protocolSecurityParam
 
   checkIsLeader PBftConfig{pbftParams}
                 PBftCanBeLeader{..}

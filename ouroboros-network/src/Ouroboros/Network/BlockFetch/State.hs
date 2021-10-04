@@ -12,8 +12,10 @@ module Ouroboros.Network.BlockFetch.State (
     FetchDecision,
     FetchDecline(..),
     FetchMode(..),
+    FetchStateSnapshot(..),
     TraceLabelPeer(..),
     TraceFetchClientState(..),
+    ConsensusFetchStateRefinementPreBlockFetch,
   ) where
 
 import           Data.Functor.Contravariant (contramap)
@@ -32,6 +34,7 @@ import           Control.Tracer (Tracer, traceWith)
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.AnchoredFragment.Completeness as AF
 
 import           Ouroboros.Network.BlockFetch.ClientState
                    ( FetchRequest(..)
@@ -54,6 +57,9 @@ import           Ouroboros.Network.BlockFetch.Decision
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..) )
 
+type ConsensusFetchStateRefinementPreBlockFetch peer header block m =
+                FetchStateSnapshot peer header block m
+      -> STM m (FetchStateSnapshot peer header block m)
 
 fetchLogicIterations
   :: ( HasHeader header
@@ -70,11 +76,13 @@ fetchLogicIterations
   -> FetchDecisionPolicy header
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
+  -> ConsensusFetchStateRefinementPreBlockFetch peer header block m
   -> m Void
 fetchLogicIterations decisionTracer clientStateTracer
                      fetchDecisionPolicy
                      fetchTriggerVariables
-                     fetchNonTriggerVariables =
+                     fetchNonTriggerVariables
+                     consensusRefinement =
 
     iterateForever initialFetchStateFingerprint $ \stateFingerprint -> do
 
@@ -89,6 +97,7 @@ fetchLogicIterations decisionTracer clientStateTracer
         fetchTriggerVariables
         fetchNonTriggerVariables
         stateFingerprint
+        consensusRefinement
       end <- getMonotonicTime
       let delta = diffTime end start
       -- Limit descision making to once every decisionLoopInterval.
@@ -118,20 +127,25 @@ fetchLogicIteration
   -> FetchTriggerVariables peer header m
   -> FetchNonTriggerVariables peer header block m
   -> FetchStateFingerprint peer header block
+  -> ConsensusFetchStateRefinementPreBlockFetch peer header block m
   -> m (FetchStateFingerprint peer header block)
 fetchLogicIteration decisionTracer clientStateTracer
                     fetchDecisionPolicy
                     fetchTriggerVariables
                     fetchNonTriggerVariables
-                    stateFingerprint = do
+                    stateFingerprint
+                    consensusRefinement = do
 
     -- Gather a snapshot of all the state we need.
     (stateSnapshot, stateFingerprint') <-
-      atomically $
-        readStateVariables
+      atomically $ do
+        (state, fingerprint) <- readStateVariables
           fetchTriggerVariables
           fetchNonTriggerVariables
           stateFingerprint
+        state' <- consensusRefinement state
+        return (state', fingerprint)
+
 
     -- TODO: allow for boring PeerFetchStatusBusy transitions where we go round
     -- again rather than re-evaluating everything.
@@ -216,7 +230,7 @@ fetchDecisionsForStateSnapshot
         fetchStatePeerGSVs
 
     swizzle (peer, ((chain, (status, inflight, vars)), gsvs)) =
-      (chain, (status, inflight, gsvs, peer, (vars, peer)))
+      (fragment chain, (status, inflight, gsvs, peer, (vars, peer)))
 
 
 -- | Act on decisions to send new requests. In fact all we do here is update
@@ -254,7 +268,7 @@ fetchLogicIterationAct clientStateTracer FetchDecisionPolicy{blockFetchSize}
 --
 data FetchTriggerVariables peer header m = FetchTriggerVariables {
        readStateCurrentChain    :: STM m (AnchoredFragment header),
-       readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
+       readStateCandidateChains :: STM m (Map peer (AnnotatedAnchoredFragment header)),
        readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header))
      }
 
@@ -303,7 +317,7 @@ updateFetchStateFingerprintPeerStatus statuses'
 --
 data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateCurrentChain     :: AnchoredFragment header,
-       fetchStatePeerChains       :: Map peer (AnchoredFragment header),
+       fetchStatePeerChains       :: Map peer (AnnotatedAnchoredFragment header),
        fetchStatePeerStates       :: Map peer (PeerFetchStatus   header,
                                                PeerFetchInFlight header,
                                                FetchClientStateVars m header),
@@ -334,7 +348,7 @@ readStateVariables FetchTriggerVariables{..}
     let !fetchStateFingerprint' =
           FetchStateFingerprint
             (Just (castPoint (AF.headPoint fetchStateCurrentChain)))
-            (Map.map AF.headPoint fetchStatePeerChains)
+            (Map.map (AF.headPoint . fragment) fetchStatePeerChains)
             fetchStatePeerStatus
 
     -- Check the fingerprint changed, or block and wait until it does

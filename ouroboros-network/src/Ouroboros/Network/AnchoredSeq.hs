@@ -12,11 +12,11 @@
 {-# LANGUAGE ViewPatterns           #-}
 module Ouroboros.Network.AnchoredSeq (
     -- * 'AnchoredSeq' type
-    AnchoredSeq(Empty, (:>), (:<))
+    AnchoredSeq(Empty, (:>), (:<), unanchorSeq)
 
     -- * 'Anchorable'
   , Anchorable(..)
-
+  , unMeasuredWith
     -- * Basic operations
   , anchor
   , head
@@ -44,6 +44,7 @@ module Ouroboros.Network.AnchoredSeq (
   , rollback
   , isPrefixOf
   , isPrefixOfByMeasure
+  , isPrefixOfByInjectiveFuns
   , lookupByMeasure
   , splitAfterMeasure
   , splitBeforeMeasure
@@ -537,6 +538,30 @@ s1 `isPrefixOfByMeasure` s2 =
     toMeasures :: AnchoredSeq v a b -> [v]
     toMeasures = L.map getElementMeasure . Foldable.toList . unanchorSeq
 
+-- | \( O(\max(n_1, n_2)) \). Check whether the first anchored sequence is a
+-- prefix of the second. Comparisons are done based on the result of the
+-- transformation through injective functions into @Eq@ types.
+--
+-- The first function will transform an @a@, the second function will transform
+-- a @b@ and they both have to be injective, this is: for two different
+-- elements, the result of the function must be different.
+--
+-- The two 'AnchoredSeq's must have the same anchor, otherwise the first cannot
+-- be a prefix of the second.
+isPrefixOfByInjectiveFuns ::
+      forall v a b c d . (Eq c, Eq d)
+   => (a -> c) -- ^ transform the anchor
+   -> (b -> d) -- ^ transform the elements
+   -> AnchoredSeq v a b
+   -> AnchoredSeq v a b
+   -> Bool
+isPrefixOfByInjectiveFuns f g s1 s2 =
+       f (anchor s1) == f (anchor s2)
+    && toPoints s1 `L.isPrefixOf` toPoints s2
+  where
+    toPoints :: AnchoredSeq v a b -> [d]
+    toPoints = L.map (g . unMeasuredWith) . Foldable.toList . unanchorSeq
+
 -- | \( O(\log(\min(i,n-i)) \). Split the 'AnchoredSeq' after an element or
 -- anchor with the given measure that satisfies the predicate. Return 'Nothing'
 -- if there is no element or anchor with the given measure that satisfies the
@@ -669,7 +694,7 @@ selectOffsets offsets = go relativeOffsets
       | otherwise
       = []
 
--- | \( O\(n\) \). Variation on 'filterWithStop' without a stop condition.
+-- | \( O(n) \). Variation on 'filterWithStop' without a stop condition.
 filter ::
      forall v a b. Anchorable v a b
   => (b -> Bool)  -- ^ Filtering predicate

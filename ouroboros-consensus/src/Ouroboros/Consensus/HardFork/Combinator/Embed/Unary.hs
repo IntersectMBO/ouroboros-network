@@ -315,6 +315,7 @@ instance Isomorphic TopLevelConfig where
                    -> ConsensusConfig (BlockProtocol (HardForkBlock '[blk]))
       auxConsensus cfg = HardForkConsensusConfig {
             hardForkConsensusConfigK      = protocolSecurityParam cfg
+          , hardForkGenesisWindowLength   = protocolGenesisWindowLength cfg
           , hardForkConsensusConfigShape  = History.singletonShape eraParams
           , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
                  WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @blk) cfg)

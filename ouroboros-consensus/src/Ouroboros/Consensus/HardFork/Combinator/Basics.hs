@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
 
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
@@ -90,7 +91,11 @@ deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock
 
 data instance ConsensusConfig (HardForkProtocol xs) = HardForkConsensusConfig {
       -- | The value of @k@ cannot change at hard fork boundaries
-      hardForkConsensusConfigK :: !(SecurityParam)
+      hardForkConsensusConfigK :: !SecurityParam
+
+      -- | The length of the genesis window @s@ cannot change. See
+      -- 'Ouroboros.Consensus.Config.GenesisWindowLength'.
+    , hardForkGenesisWindowLength :: !GenesisWindowLength
 
       -- | The shape of the hard fork
       --

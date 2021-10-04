@@ -66,12 +66,14 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Versioned
 
-import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
+import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed,
+                     activeSlotVal, unboundRational)
 import           Cardano.Ledger.Crypto (StandardCrypto, VRF)
 import qualified Cardano.Protocol.TPraos.BHeader as SL (mkSeed, seedEta, seedL)
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.API as SL
 
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 import           Ouroboros.Consensus.Shelley.Protocol.Util
@@ -158,7 +160,7 @@ type TPraosValidateView c = SL.BHeader c
 -- | The maximum major protocol version.
 --
 -- Must be at least the current major protocol version. For Cardano mainnet, the
--- Shelley era has major protocol verison __2__.
+-- Shelley era has major protocol version __2__.
 newtype MaxMajorProtVer = MaxMajorProtVer {
       getMaxMajorProtVer :: Natural
     }
@@ -169,27 +171,29 @@ data TPraos c
 -- | TPraos parameters that are node independent
 data TPraosParams = TPraosParams {
       -- | See 'Globals.slotsPerKESPeriod'.
-      tpraosSlotsPerKESPeriod :: !Word64
+      tpraosSlotsPerKESPeriod   :: !Word64
       -- | Active slots coefficient. This parameter represents the proportion
       -- of slots in which blocks should be issued. This can be interpreted as
       -- the probability that a party holding all the stake will be elected as
       -- leader for a given slot.
-    , tpraosLeaderF           :: !SL.ActiveSlotCoeff
+    , tpraosLeaderF             :: !SL.ActiveSlotCoeff
       -- | See 'Globals.securityParameter'.
-    , tpraosSecurityParam     :: !SecurityParam
+    , tpraosSecurityParam       :: !SecurityParam
+      -- | See 'Ouroboros.Consensus.Config.GenesisWindowLength'.
+    , tpraosGenesisWindowLength :: !GenesisWindowLength
       -- | Maximum number of KES iterations, see 'Globals.maxKESEvo'.
-    , tpraosMaxKESEvo         :: !Word64
+    , tpraosMaxKESEvo           :: !Word64
       -- | Quorum for update system votes and MIR certificates, see
       -- 'Globals.quorum'.
-    , tpraosQuorum            :: !Word64
+    , tpraosQuorum              :: !Word64
       -- | All blocks invalid after this protocol version, see
       -- 'Globals.maxMajorPV'.
-    , tpraosMaxMajorPV        :: !MaxMajorProtVer
+    , tpraosMaxMajorPV          :: !MaxMajorProtVer
       -- | Maximum number of lovelace in the system, see
       -- 'Globals.maxLovelaceSupply'.
-    , tpraosMaxLovelaceSupply :: !Word64
+    , tpraosMaxLovelaceSupply   :: !Word64
       -- | Testnet or mainnet?
-    , tpraosNetworkId         :: !SL.Network
+    , tpraosNetworkId           :: !SL.Network
       -- | Initial nonce used for the TPraos protocol state. Typically this is
       -- derived from the hash of the Shelley genesis config JSON file, but
       -- different values may be used for testing purposes.
@@ -197,9 +201,9 @@ data TPraosParams = TPraosParams {
       -- NOTE: this is only used when translating the Byron 'ChainDepState' to
       -- the Shelley 'ChainDepState', at which point we'll need access to the
       -- initial nonce at runtime. TODO #2326.
-    , tpraosInitialNonce      :: !SL.Nonce
+    , tpraosInitialNonce        :: !SL.Nonce
       -- | The system start, as projected from the chain's genesis block.
-    , tpraosSystemStart       :: !SystemStart
+    , tpraosSystemStart         :: !SystemStart
     }
   deriving (Generic, NoThunks)
 
@@ -209,20 +213,30 @@ mkTPraosParams
   -> SL.ShelleyGenesis era
   -> TPraosParams
 mkTPraosParams maxMajorPV initialNonce genesis = TPraosParams {
-      tpraosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
-    , tpraosLeaderF           = SL.sgActiveSlotCoeff   genesis
-    , tpraosMaxKESEvo         = SL.sgMaxKESEvolutions  genesis
-    , tpraosQuorum            = SL.sgUpdateQuorum      genesis
-    , tpraosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesis
-    , tpraosNetworkId         = SL.sgNetworkId         genesis
-    , tpraosSecurityParam     = securityParam
-    , tpraosMaxMajorPV        = maxMajorPV
-    , tpraosInitialNonce      = initialNonce
-    , tpraosSystemStart       = systemStart
+      tpraosSlotsPerKESPeriod   = SL.sgSlotsPerKESPeriod genesis
+    , tpraosLeaderF             = activeSlotCoeff
+    , tpraosMaxKESEvo           = SL.sgMaxKESEvolutions  genesis
+    , tpraosQuorum              = SL.sgUpdateQuorum      genesis
+    , tpraosMaxLovelaceSupply   = SL.sgMaxLovelaceSupply genesis
+    , tpraosNetworkId           = SL.sgNetworkId         genesis
+    , tpraosSecurityParam       = securityParam
+    , tpraosGenesisWindowLength = genesisWindowLength
+    , tpraosMaxMajorPV          = maxMajorPV
+    , tpraosInitialNonce        = initialNonce
+    , tpraosSystemStart         = systemStart
     }
   where
-    securityParam = SecurityParam $ SL.sgSecurityParam genesis
-    systemStart   = SystemStart   $ SL.sgSystemStart   genesis
+    rawSecurityParam    =               SL.sgSecurityParam   genesis
+    activeSlotCoeff     =               SL.sgActiveSlotCoeff genesis
+    systemStart         = SystemStart $ SL.sgSystemStart     genesis
+    securityParam       = SecurityParam rawSecurityParam
+    genesisWindowLength =
+        GenesisWindowLength
+      $ floor @Double
+      $ 3 * fromIntegral rawSecurityParam
+        / fromRational (  SL.unboundRational
+                        $ SL.activeSlotVal
+                        $ activeSlotCoeff)
 
 data TPraosCanBeLeader c = TPraosCanBeLeader {
       -- | Certificate delegating rights from the stake pool cold key (or
@@ -371,7 +385,8 @@ instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
   type ValidationErr (TPraos c) = SL.ChainTransitionError c
   type ValidateView  (TPraos c) = TPraosValidateView c
 
-  protocolSecurityParam = tpraosSecurityParam . tpraosParams
+  protocolSecurityParam       = tpraosSecurityParam       . tpraosParams
+  protocolGenesisWindowLength = tpraosGenesisWindowLength . tpraosParams
 
   checkIsLeader cfg TPraosCanBeLeader{..} slot cs = do
       -- First, check whether we're in the overlay schedule
