@@ -690,7 +690,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           -- with using a `threadDelay` or waiting for the connection to be
           -- accepted.
           FDUninitialised mbLocalAddr -> mask $ \unmask -> do
-            (efd, connId, bearerInfo) <- atomically $ do
+            (connId, bearerInfo, simOpen) <- atomically $ do
               bearerInfo <- stepScriptSTM (nsBearerInfo state)
               localAddress <-
                 case mbLocalAddr of
@@ -698,8 +698,8 @@ mkSnocket state tr = Snocket { getLocalAddr
                   Nothing   -> nsNextEphemeralAddr state (getAddressType remoteAddress)
               let connId = ConnectionId { localAddress, remoteAddress }
 
-              conMap <- readTVar (nsConnections state)
-              case Map.lookup (normaliseId connId) conMap of
+              connMap <- readTVar (nsConnections state)
+              case Map.lookup (normaliseId connId) connMap of
                 Just      Connection { connState = ESTABLISHED } ->
                   throwSTM (connectedIOError fd_)
 
@@ -710,10 +710,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   modifyTVar (nsConnections state)
                              (Map.adjust (const conn')
                                          (normaliseId connId))
-                  return ( Left $ FDConnected connId conn'
-                         , connId
-                         , bearerInfo
-                         )
+                  return (connId, bearerInfo, SimOpen)
 
                 Just Connection { connState = FIN } ->
                   throwSTM (connectedIOError fd_)
@@ -724,12 +721,10 @@ mkSnocket state tr = Snocket { getLocalAddr
                   modifyTVar (nsConnections state)
                              (Map.insert (normaliseId connId)
                                          (dualConnection conn))
-                  return ( Right ( FDConnected connId conn
-                                 , conn
-                                 )
-                         , connId
-                         , bearerInfo
-                         )
+                  -- so far it looks like normal open, it still might turn up
+                  -- a simultaneous open if the other side will open the
+                  -- connection before it would be put on its accept loop
+                  return (connId, bearerInfo, NormalOpen)
 
             traceWith tr (WithAddr (Just (localAddress connId))
                                    (Just remoteAddress)
@@ -747,51 +742,60 @@ mkSnocket state tr = Snocket { getLocalAddr
                                       (Map.delete (normaliseId connId))
               throwIO (connectIOError connId "connect timeout: when connecting")
 
-            efd' <- atomically $ do
+            efd <- atomically $ do
               lstMap <- readTVar (nsListeningFDs state)
               lstFd  <- traverse (readTVar . fdVar)
                                  (Map.lookup remoteAddress lstMap)
-              case (efd, lstFd) of
+              mConn  <- Map.lookup (normaliseId connId)
+                    <$> readTVar (nsConnections state)
+              case lstFd of
                 -- error cases
-                (_, Nothing) ->
+                (Nothing) ->
                   return (Left (connectIOError connId "no such listening socket"))
-                (_, Just FDUninitialised {}) ->
+                (Just FDUninitialised {}) ->
                   return (Left (connectIOError connId "unitialised listening socket"))
-                (_, Just FDConnecting {}) ->
+                (Just FDConnecting {}) ->
                   return (Left (invalidError fd_))
-                (_, Just FDConnected {}) ->
+                (Just FDConnected {}) ->
                   return (Left (connectIOError connId "not a listening socket"))
-                (_, Just FDClosed {}) ->
+                (Just FDClosed {}) ->
                   return (Left notConnectedIOError)
 
-                -- successful simultaneous open
-                (Left  fd_', Just FDListening {}) -> do
-                  writeTVar fdVarLocal fd_'
-                  return (Right (fd_', SimOpen))
-
-                (Right (fd_', Connection { connChannelLocal, connChannelRemote })
-                  , Just (FDListening _ queue)) -> do
-                  writeTVar fdVarLocal fd_'
-                  mConn <- Map.lookup (normaliseId connId) <$> readTVar (nsConnections state)
+                (Just (FDListening _ queue)) -> do
                   case mConn of
-                    Just Connection { connState = ESTABLISHED } ->
-                      -- successful simultaneous open
-                      return (Right (fd_', NormalOpen))
-                    Just Connection { connState = SYN_SENT } -> do
+                    -- simultaneous open: this handles both cases: either we or
+                    -- the remote side opened it late but before being able to
+                    -- accept it.  In the later case we need to use
+                    -- 'dualConnection'.
+                    Just conn@Connection { connState = ESTABLISHED } -> do
+                      let fd_' = FDConnected connId
+                               $ case simOpen of
+                                   SimOpen    -> dualConnection conn
+                                   NormalOpen ->                conn
+                      writeTVar fdVarLocal fd_'
+                      return (Right (fd_', SimOpen))
+
+                    -- normal open: at this stage the other side did not open
+                    -- a connection, we add 'ChannelWithInfo' into accept loop.
+                    Just conn@Connection { connState = SYN_SENT } -> do
+                      let fd_' = FDConnected connId conn
+                      writeTVar fdVarLocal fd_'
                       writeTBQueue queue
                                    ChannelWithInfo
                                      { cwiAddress       = localAddress connId
                                      , cwiSDUSize       = biSDUSize bearerInfo
-                                     , cwiChannelLocal  = connChannelRemote
-                                     , cwiChannelRemote = connChannelLocal
+                                     , cwiChannelLocal  = connChannelRemote conn
+                                     , cwiChannelRemote = connChannelLocal conn
                                      }
                       return (Right (fd_', NormalOpen))
+
                     Just Connection { connState = FIN } -> do
                       return (Left (connectIOError connId "connect error (FIN)"))
+
                     Nothing ->
                       return (Left (connectIOError connId "connect error"))
 
-            case efd' of
+            case efd of
               Left e          -> do
                 traceWith' fd (STConnectError fd_ remoteAddress e)
                 atomically $ modifyTVar (nsConnections state)
