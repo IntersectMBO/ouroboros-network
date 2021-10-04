@@ -15,6 +15,7 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.List (nub)
 import           Data.Maybe (fromMaybe)
+import           Data.Map (Map)
 import qualified Data.Map as Map
 import           GHC.Generics
 
@@ -66,6 +67,7 @@ tests =
         , testProperty "pipe IO"               prop_pipe_IO
         , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
         , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
+        , testProperty "acceptOrRefuse"        prop_acceptOrRefuse_symmetric_VersionData
         , testProperty "simultaneous open ST"  prop_channel_simultaneous_open_ST
         , testProperty "simultaneous open IO"  prop_channel_simultaneous_open_IO
         , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
@@ -543,6 +545,69 @@ prop_channel_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
 prop_pipe_asymmetric_IO :: ArbitraryVersions -> Property
 prop_pipe_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
     ioProperty (prop_channel_asymmetric createPipeConnectedChannels clientVersions)
+
+
+-- | 'acceptOrRefuse' is symmetric in the following sense:
+--
+-- Either both sides:
+-- * accept the same version and version data; or
+-- * refuse
+--
+-- The refuse reason might differ, although if one side refuses it with
+-- `Refused` the other side must refuse the same version.
+--
+prop_acceptOrRefuse_symmetric
+  :: forall vNumber vData r.
+     ( Acceptable vData
+     , Eq   vData
+     , Show vData
+     , Ord  vNumber
+     , Show vNumber
+     , Eq   r
+     , Show r
+     )
+  => Versions vNumber vData r
+  -> Versions vNumber vData r
+  -> Property
+prop_acceptOrRefuse_symmetric clientVersions serverVersions =
+    case ( acceptOrRefuse codec acceptableVersion clientVersions serverMap
+         , acceptOrRefuse codec acceptableVersion serverVersions clientMap
+         ) of
+      (Right (_, vNumber, vData), Right (_, vNumber', vData')) ->
+             vNumber === vNumber'
+        .&&. vData   === vData'
+      (Left (VersionMismatch vNumbers _), Left (VersionMismatch vNumbers' _)) ->
+             vNumbers  === Map.keys clientMap
+        .&&. vNumbers' === Map.keys serverMap
+      (Left HandshakeDecodeError {}, Left _) ->
+        property True
+      (Left _, Left HandshakeDecodeError {}) ->
+        property True
+      (Left (Refused vNumber _), Left (Refused vNumber' _)) ->
+        vNumber === vNumber'
+      (_      , _      ) ->
+        property False
+
+  where
+    codec :: VersionDataCodec vData vNumber vData
+    codec = VersionDataCodec {
+        encodeData = \_ vData -> vData,
+        decodeData = \_ vData -> Right vData
+      }
+
+    toMap :: Versions vNumber vData r
+          -> Map vNumber vData
+    toMap (Versions m) = versionData `Map.map` m
+
+    clientMap = toMap clientVersions
+    serverMap = toMap serverVersions
+  
+
+prop_acceptOrRefuse_symmetric_VersionData
+  :: ArbitraryVersions
+  -> Property
+prop_acceptOrRefuse_symmetric_VersionData (ArbitraryVersions a b) =
+    prop_acceptOrRefuse_symmetric a b
 
 
 -- | Run two handshake clients against each other, which simulates a TCP
