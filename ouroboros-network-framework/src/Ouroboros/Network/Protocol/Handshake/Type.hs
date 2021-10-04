@@ -83,12 +83,12 @@ instance Protocol (Handshake vNumber vParams) where
         -> Message (Handshake vNumber vParams) StPropose StConfirm
 
       -- |
-      -- `MsgProposeVersions'` received as a response to 'MsgProposeVersions'.
-      -- It is not supported to explicitly send this message. It can only be
-      -- received as a copy of 'MsgProposeVersions' in a simultanous open
+      -- `MsgReplyVersions` received as a response to 'MsgProposeVersions'.  It
+      -- is not supported to explicitly send this message. It can only be
+      -- received as a copy of 'MsgProposeVersions' in a simultaneous open
       -- scenario.
       --
-      MsgProposeVersions'
+      MsgReplyVersions
         :: Map vNumber vParams
         -> Message (Handshake vNumber vParams) StConfirm StDone
 
@@ -123,13 +123,13 @@ instance Protocol (Handshake vNumber vParams) where
 
 -- $simultanous-open
 --
--- On simultanous open both sides will send `MsgProposeVersions`, which will be
--- decoded as `MsgProposeVersions'` which is a terminal message of the
--- protocol.  It is important to stress that in this case both sides will make
--- the choice which version and parameters to pick.  Our algorithm for picking
--- version is symmetric, which ensures that both sides will endup with the same
--- choice.  If one side decides to refuse the version it will close the
--- connection, without sending the reason to the other side.
+-- On simultaneous open both sides will send `MsgProposeVersions`, which will be
+-- decoded as `MsgReplyVersions`.  It is a terminal message of the protocol.  It
+-- is important to stress that in this case both sides will make the choice
+-- which version and parameters to pick.  Our algorithm for picking version is
+-- symmetric, which ensures that both sides will end up with the same choice.
+-- If one side decides to refuse the version it will close the connection,
+-- without sending the reason to the other side.
 
 deriving instance (Show vNumber, Show vParams)
     => Show (Message (Handshake vNumber vParams) from to)

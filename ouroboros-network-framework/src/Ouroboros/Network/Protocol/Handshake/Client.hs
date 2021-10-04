@@ -44,8 +44,8 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
     Await (ServerAgency TokConfirm) $ \msg -> case msg of
-      MsgProposeVersions' vMap -> 
-        -- simultanous open; 'accept' will choose version (the greatest common
+      MsgReplyVersions vMap -> 
+        -- simultaneous open; 'accept' will choose version (the greatest common
         -- version), and check if we can accept received version data.
         Done TokDone $ case acceptOrRefuse codec acceptVersion versions vMap of
           Right r -> Right r
@@ -96,7 +96,7 @@ acceptOrRefuse
   -> Versions vNumber vData r
   -> Map vNumber vParams
   -- ^ proposed versions received either with `MsgProposeVersions` or
-  -- `MsgProposeVersions'`
+  -- `MsgReplyVersions`
   -> Either (RefuseReason vNumber) (r, vNumber, vData)
 acceptOrRefuse VersionDataCodec {decodeData}
                acceptVersion versions versionMap =

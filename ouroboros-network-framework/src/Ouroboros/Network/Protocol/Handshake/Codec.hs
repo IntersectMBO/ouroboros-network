@@ -50,7 +50,7 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 -- protocol.
 --
 -- Note: 'extra' type param is instantiated to 'DictVersion'; 'agreedOptions'
--- is instatiated to 'NodeToNodeVersionData' in "Ouroboros.Network.NodeToNode"
+-- is instantiated to 'NodeToNodeVersionData' in "Ouroboros.Network.NodeToNode"
 -- or to '()' in "Ouroboros.Network.NodeToClient".
 --
 data VersionDataCodec bytes vNumber vData = VersionDataCodec {
@@ -135,10 +135,10 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
         <> CBOR.encodeWord 0
         <> encodeVersions versionNumberCodec vs
 
-      -- Although `MsgProposeVersions'` shall not be sent, for testing purposes
-      -- it is useful to have an encoder for it.
-      encodeMsg (ServerAgency TokConfirm) (MsgProposeVersions' vs) =
-           CBOR.encodeListLen 2
+      -- Although `MsgReplyVersions` shall not be sent, for testing purposes it
+      -- is useful to have an encoder for it.
+      encodeMsg (ServerAgency TokConfirm) (MsgReplyVersions vs)
+        = CBOR.encodeListLen 2
         <> CBOR.encodeWord 0
         <> encodeVersions versionNumberCodec vs
 
@@ -167,7 +167,7 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
           (ServerAgency TokConfirm, 0, 2) -> do
             l  <- CBOR.decodeMapLen
             vMap <- decodeVersions versionNumberCodec l
-            pure $ SomeMessage $ MsgProposeVersions' vMap
+            pure $ SomeMessage $ MsgReplyVersions vMap
           (ServerAgency TokConfirm, 1, 3) -> do
             v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
             case v of
