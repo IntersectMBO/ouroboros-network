@@ -189,7 +189,7 @@ instance Hashable LocalAddress where
 -- | We support either sockets or named pipes.
 --
 -- 'LocalFamily' requires 'LocalAddress', this is needed to provide path of the
--- openned Win32 'HANDLE'.
+-- opened Win32 'HANDLE'.
 --
 data AddressFamily addr where
 
@@ -309,7 +309,7 @@ socketSnocket ioManager = Snocket {
     , accept   = berkeleyAccept ioManager
       -- TODO: 'Socket.close' is interruptible by asynchronous exceptions; it
       -- should be fixed upstream, once that's done we can remove
-      -- `unitnerruptibleMask_'
+      -- `uninterruptibleMask_'
     , close    = uninterruptibleMask_ . Socket.close
     , toBearer = pureBearer Mx.socketAsMuxBearer
     }
@@ -319,7 +319,7 @@ socketSnocket ioManager = Snocket {
       sd <- Socket.socket family_ Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
-        -- async exceptions masked.  The 'associteWithIOCP' is a blocking
+        -- async exceptions masked.  The 'associateWithIOCP' is a blocking
         -- operation and thus it may throw.
         `catch` \(e :: IOException) -> do
           Socket.close sd
@@ -424,7 +424,7 @@ localSnocket ioManager = Snocket {
           Win32.Async.connectNamedPipe hpipe
           return (Accepted sock addr, acceptNext 0 addr)
 
-      -- Win32.closeHandle is not interrupible
+      -- Win32.closeHandle is not interruptible
     , close    = Win32.closeHandle . getLocalHandle
 
     , toBearer = \_sduTimeout tr -> pure . namedPipeAsBearer tr . getLocalHandle
@@ -503,7 +503,7 @@ localSnocket ioManager =
       sd <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
-        -- async exceptions masked.  The 'associteWithIOManager' is a blocking
+        -- async exceptions masked.  The 'associateWithIOManager' is a blocking
         -- operation and thus it may throw.
         `catch` \(e :: IOException) -> do
           Socket.close sd
