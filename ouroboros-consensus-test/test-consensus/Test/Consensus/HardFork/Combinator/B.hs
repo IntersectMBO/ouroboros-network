@@ -53,6 +53,8 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.GenesisWindowLength
+                     (GenesisWindowLength)
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -85,6 +87,7 @@ data ProtocolB
 
 data instance ConsensusConfig ProtocolB = CfgB {
       cfgB_k           :: SecurityParam
+    , cfgB_s           :: GenesisWindowLength
     , cfgB_leadInSlots :: Set SlotNo
     }
   deriving NoThunks via OnlyCheckWhnfNamed "CfgB" (ConsensusConfig ProtocolB)
@@ -102,7 +105,8 @@ instance ConsensusProtocol ProtocolB where
       then Just ()
       else Nothing
 
-  protocolSecurityParam = cfgB_k
+  protocolSecurityParam       = cfgB_k
+  protocolGenesisWindowLength = cfgB_s
 
   tickChainDepState     _ _ _ _ = TickedTrivial
   updateChainDepState   _ _ _ _ = return ()

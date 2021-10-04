@@ -3,6 +3,8 @@ module Main (main) where
 import           Test.Tasty
 
 import qualified Test.Consensus.BlockchainTime.Simple (tests)
+import qualified Test.Consensus.Genesis.Framework (tests)
+import qualified Test.Consensus.Genesis.Paper (tests)
 import qualified Test.Consensus.HardFork.Combinator (tests)
 import qualified Test.Consensus.HardFork.Forecast (tests)
 import qualified Test.Consensus.HardFork.History (tests)
@@ -38,5 +40,9 @@ tests =
             Test.Consensus.HardFork.Forecast.tests
           , Test.Consensus.HardFork.Combinator.tests
           ]
+      ]
+  , testGroup "Genesis" [
+        Test.Consensus.Genesis.Framework.tests
+      , Test.Consensus.Genesis.Paper.tests
       ]
   ]

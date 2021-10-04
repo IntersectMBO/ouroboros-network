@@ -27,6 +27,7 @@ import           Cardano.Crypto.DSIGN.Mock
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Network.AnchoredFragment.Completeness as AF
 import           Ouroboros.Network.Block (getTipPoint)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
@@ -285,7 +286,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
               WithFingerprint (const Nothing) (Fingerprint 0)
           }
 
-        client :: StrictTVar m (AnchoredFragment (Header TestBlock))
+        client :: StrictTVar m (AF.AnnotatedAnchoredFragment (Header TestBlock))
                -> Consensus ChainSyncClientPipelined
                     TestBlock
                     m
@@ -381,11 +382,11 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     atomically $ do
       finalClientChain       <- readTVar varClientState
       finalServerChain       <- chainState <$> readTVar varChainProducerState
-      candidateFragment <- readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
+      candidateFragment      <- readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
       mbResult      <- readTVar varClientResult
       return ChainSyncOutcome {
           finalServerChain = testHeader <$> finalServerChain
-        , syncedFragment   = AF.mapAnchoredFragment testHeader candidateFragment
+        , syncedFragment   = AF.mapAnchoredFragment testHeader (AF.fragment candidateFragment)
         , ..
         }
   where

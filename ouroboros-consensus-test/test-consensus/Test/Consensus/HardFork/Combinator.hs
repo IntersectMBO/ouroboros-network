@@ -37,6 +37,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Mock
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.GenesisWindowLength
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -97,6 +98,7 @@ data TestSetup = TestSetup {
       testSetupEpochSize  :: AB EpochSize
       -- ^ INVARIANT: @> 0@
     , testSetupK          :: SecurityParam
+    , testSetupS          :: GenesisWindowLength
     , testSetupSeed       :: Seed
     , testSetupSlotLength :: AB SlotLength
     , testSetupTxSlot     :: SlotNo
@@ -108,6 +110,9 @@ instance Arbitrary TestSetup where
       testSetupEpochSize <- abM $ EpochSize <$> choose (1, 10)
       testSetupK         <- SecurityParam   <$> choose (2, 10)
       -- TODO why does k=1 cause the nodes to only forge in the first epoch?
+
+      -- TODO @js: think about what value should be used here.
+      let testSetupS     = GenesisWindowLength $ 2 * maxRollbacks testSetupK -- TODO
       testSetupTxSlot    <- SlotNo          <$> choose (0, 9)
 
       testSetupSeed       <- arbitrary
@@ -150,6 +155,9 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
   where
     k :: SecurityParam
     k = testSetupK
+
+    s :: GenesisWindowLength
+    s = testSetupS
 
     eraParamsA, eraParamsB :: EraParams
     AB eraParamsA eraParamsB =
@@ -257,6 +265,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
     topLevelConfig nid = TopLevelConfig {
           topLevelConfigProtocol = HardForkConsensusConfig {
               hardForkConsensusConfigK      = k
+            , hardForkGenesisWindowLength   = s
             , hardForkConsensusConfigShape  = shape
             , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
                    (WrapPartialConsensusConfig $ consensusConfigA nid)
@@ -293,12 +302,14 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
     consensusConfigA :: CoreNodeId -> ConsensusConfig ProtocolA
     consensusConfigA nid = CfgA {
           cfgA_k           = k
+        , cfgA_s           = s
         , cfgA_leadInSlots = leaderScheduleFor nid leaderSchedule
         }
 
     consensusConfigB :: CoreNodeId -> ConsensusConfig ProtocolB
     consensusConfigB nid = CfgB {
           cfgB_k           = k
+        , cfgB_s           = s
         , cfgB_leadInSlots = leaderScheduleFor nid leaderSchedule
         }
 
