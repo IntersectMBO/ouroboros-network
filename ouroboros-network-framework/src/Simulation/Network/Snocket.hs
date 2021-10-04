@@ -731,11 +731,10 @@ mkSnocket state tr = Snocket { getLocalAddr
                                    (STBearerInfo bearerInfo))
             -- connection delay
             unmask (threadDelay (biConnectionDelay bearerInfo `min` connectTimeout))
-              -- Can receive not only AsyncException but also MuxError here!
-              `catch` \(e :: SomeException) -> do
-                atomically $ modifyTVar (nsConnections state)
-                                        (Map.delete (normaliseId connId))
-                throwIO e
+                   `onException`
+                   atomically (modifyTVar (nsConnections state)
+                                          (Map.delete $ normaliseId connId))
+
             when (biConnectionDelay bearerInfo >= connectTimeout) $ do
               traceWith' fd (STConnectTimeout WaitingToConnect)
               atomically $ modifyTVar (nsConnections state)
@@ -804,37 +803,47 @@ mkSnocket state tr = Snocket { getLocalAddr
               Right (fd_', o) -> do
                 -- successful open
 
-                -- wait for a connection to be accepted
+                -- wait for a connection to be accepted; we can also be
+                -- interrupted by an asynchronous exception in which case we
+                -- just forget about the connection.
                 timeoutVar <-
                   registerDelay (connectTimeout - biConnectionDelay bearerInfo)
-                r <- unmask (atomically $ runFirstToFinish $
-                  (FirstToFinish $ do
-                    LazySTM.readTVar timeoutVar >>= check
-                    return Nothing
-                  )
-                  <>
-                  (FirstToFinish $ do
-                    mbConn <- Map.lookup (normaliseId connId)
-                          <$> readTVar (nsConnections state)
-                    case mbConn of
-                      -- it could happen that the 'accept' removes the
-                      -- connection from the state; we treat this as an io
-                      -- exception.
-                      Nothing -> throwSTM $ connectIOError connId
-                                          $ "unknown connection: "
-                                         ++ show (normaliseId connId)
-                      Just Connection { connState } ->
-                        Just <$> check (connState == ESTABLISHED))
-                     )
-                  `onException`
-                     atomically (modifyTVar (nsConnections state)
-                                            (Map.delete (normaliseId connId)))
+                r <-
+                  handleJust
+                    (\e -> case fromException e of
+                             Just SomeAsyncException {} -> Just e
+                             Nothing                    -> Nothing)
+                    (\e -> atomically $ modifyTVar (nsConnections state)
+                                                   (Map.delete (normaliseId connId))
+                        >> throwIO e)
+                    $ unmask (atomically $ runFirstToFinish $
+                        (FirstToFinish $ do
+                          LazySTM.readTVar timeoutVar >>= check
+                          modifyTVar (nsConnections state)
+                                     (Map.delete (normaliseId connId))
+                          return Nothing
+                        )
+                        <>
+                        (FirstToFinish $ do
+                          mbConn <- Map.lookup (normaliseId connId)
+                                <$> readTVar (nsConnections state)
+                          case mbConn of
+                            -- it could happen that the 'accept' removes the
+                            -- connection from the state; we treat this as an io
+                            -- exception.
+                            Nothing -> do
+                              modifyTVar (nsConnections state)
+                                         (Map.delete (normaliseId connId))
+                              throwSTM $ connectIOError connId
+                                       $ "unknown connection: "
+                                      ++ show (normaliseId connId)
+                            Just Connection { connState } ->
+                              Just <$> check (connState == ESTABLISHED))
+                       )
 
                 case r of
                   Nothing -> do
                     traceWith' fd (STConnectTimeout WaitingToBeAccepted)
-                    atomically $ modifyTVar (nsConnections state)
-                                            (Map.delete (normaliseId connId))
                     throwIO (connectIOError connId "connect timeout: when waiting for being accepted")
                   Just _  -> traceWith' fd (STConnected fd_' o)
 
@@ -960,16 +969,15 @@ mkSnocket state tr = Snocket { getLocalAddr
     accept FD { fdVar } = pure accept_
       where
         -- non-blocking; return 'True' if a connection is in 'SYN_SENT' state
-        -- or if it was removed from simulation state.
-        synSentOrUnknown :: TestAddress addr
-                  -> ChannelWithInfo m (TestAddress addr)
-                  -> STM m Bool
-        synSentOrUnknown localAddress cwi = do
+        synSent :: TestAddress addr
+                -> ChannelWithInfo m (TestAddress addr)
+                -> STM m Bool
+        synSent localAddress cwi = do
           connMap <- readTVar (nsConnections state)
           let connId = ConnectionId localAddress (cwiAddress cwi)
 
           case Map.lookup (normaliseId connId) connMap of
-             Nothing                          -> return True
+             Nothing                          -> return False
              Just (Connection _ _ _ SYN_SENT) -> return True
              _                                -> return False
 
@@ -998,14 +1006,11 @@ mkSnocket state tr = Snocket { getLocalAddr
                                   )
 
                   FDListening localAddress queue -> do
-                    -- We should not accept nor fail the 'accept' call
-                    -- in the presence of a connection that is in
-                    -- SYN_SENT state. So we take from the TBQueue
-                    -- until we have found one that is __not__ in SYN_SENT
-                    -- state.
-                    cwi <- readTBQueueUntil
-                            (synSentOrUnknown localAddress)
-                            queue
+                    -- We should not accept nor fail the 'accept' call in the
+                    -- presence of a connection that is __not__ in SYN_SENT
+                    -- state. So we take from the TBQueue until we have found
+                    -- one that is SYN_SENT state.
+                    cwi <- readTBQueueUntil (synSent localAddress) queue
 
                     let connId = ConnectionId localAddress (cwiAddress cwi)
 
