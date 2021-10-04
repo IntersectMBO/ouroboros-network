@@ -1337,6 +1337,141 @@ tiny fork that it itself created. Moreover, blocks that we produce while we are
 not up to date may in fact be helpful for an adversary. We should therefore
 disable block production while the node is not up to date.
 
+\section{Dynamic genesis window length}
+
+The genesis window length is defined to be equal to $3k/f$. However this
+definition only makes sense in Praos and beyond as such protocols actually have
+a $f$ active slot coefficient. There is no equivalent $f$ for (P)BFT.
+
+It is important to consider several things here:
+
+\begin{itemize}
+\item The $f = 0.05$ factor is actually present in (P)BFT already as slots are 20
+  seconds long.
+\item The genesis window length is bounded from the top by the forecast
+  range. It wouldn't be practical to define a genesis window length that
+  involved blocks that we possibly could not verify. Currently the forecast
+  range is $3k/f$ slots in Praos and $2k$ slots in (P)BFT.
+\item The genesis window length is bounded from the bottom by the honest chain
+  growth rate. Currently we require that the window always has at least $k$
+  blocks inside the window and this is achieved in Praos in $3k/f$ slots and in
+  $2k$ slots in (P)BFT.
+\end{itemize}
+
+Because of the reasons above, we could have the following bounds:
+\begin{itemize}
+\item In PBFT: $2k \le s \le 2k$
+\item In Praos: $3k/f \le s \le 3k/f$
+\end{itemize}
+
+\subsection{The current decision}
+
+However one can argue that in reality and with the use cases that are envisioned
+for this consensus layer, it doesn't currently provide much benefits
+implementing the machinery to be able to achieve this change in the genesis
+window length.
+
+In (P)BFT, the chain was produced by a set of core nodes that were extending the
+chain in a round-robin like fashion, and when one is to bootstrap from genesis,
+only one chain will be served as only one existed. There will be no choice to
+make and therefore the genesis window will never ever be invoked. Therefore
+whatever value we use for (P)BFT is irrelevant.
+
+Furthermore, if someone uses this consensus layer to run something different
+that the actual Cardano network, either it doesn't make sense to use (P)BFT
+because they want a decentralized network (so $s$ can be set to $3k/f$) or they
+are only going to run (P)BFT and there block production is controlled by the
+core nodes and there will be no choices to make.
+
+We then decided to use $3k/f$ with the values those variables have in Praos to
+define the genesis window length as up to the current protocol choices ((P)BFT -
+TPraos - Praos). The genesis window length will then be just a parameter in a
+way similar to $k$ and will be fixed during the execution.
+
+\subsection{Future approaches}
+
+There is however a subtlety that has to be made precise here. This choice is
+correct for now and as long as $f$ doesn't change. Currently, the active slots
+coefficient is not a votable parameter so there is no current way to change it.
+However, if it was made votable or even era-dependent, further development will
+be required.
+
+This would lead to the following situation, where the chains transition from era
+$E_1$ to era $E_2$ at the dot:
+
+\begin{center}
+\begin{tikzpicture}[yscale=0.75]
+\draw (0, 0) -- (4, 0) coordinate(i);
+\draw (i) -- ++(1,  1) -- ++(1,0) node{$\bullet$} -- ++(5,0) node[right]{$A$};
+\draw (i) -- ++(1, -1) -- ++(1,0) node{$\bullet$} -- ++(5,0) node[right]{$B$};
+\draw [dashed]
+     (i)
+  -- ++( 0,  2)
+  -- ++( 4,  0) node[pos=0.5,above]{$\overbrace{\hspace{4cm}}^{s_1}$}
+  -- ++( 0, -3.4)
+  -- ++(-4,  0)
+  -- cycle;
+  \draw [dotted]
+     (i)
+  -- ++( 0,  3)
+  -- ++( 5,  0) node[pos=0.5,above]{$\overbrace{\hspace{5cm}}^{s_2}$}
+  -- ++( 0, -5)
+  -- ++(-5,  0)
+  -- cycle;
+\end{tikzpicture}
+\end{center}
+
+In this picture, imagine we are moving from $E_1$ that uses $f_1$ to $E_2$
+that uses $f_2$ where $f_1 > f_2$. The length of the second window would be
+bigger. However, it doesn't make sense to compare the part of the chain after
+the transition point using the genesis window from before the transition point
+and conversely it doesn't make sense to compare the part of the chain before the
+transition point using the genesis window from after the transition point.
+
+It would therefore only be sensible to provide a specific transition function
+that can decide in such situations which chain has to be preferred. Very much
+like other combination functions that are relevant for era transitions, it would
+be required to introduce a new field probably in \lstinline!CanHardFork!:
+
+\begin{lstlisting}
+class (...) => CanHardFork xs where
+  ...
+  hardForkDensitiesComparisons :: InPairs AcrossEraDensities xs
+\end{lstlisting}
+
+where \lstinline!AcrossEraDensities! would be defined in a similar way to
+\lstinline!AcrossEraSelection!:
+
+\begin{lstlisting}
+data AcrossEraDensities :: Type -> Type -> Type where
+  -- Example of a default function that does no combination
+  CompareNumberOfBlocks :: AcrossEraDensities x y
+
+  -- In case we are running the same protocol in two eras (for example Shelley - Allegra)
+  CompareSameProtocol ::
+       BlockProtocol x ~ BlockProtocol y
+    => AcrossEraDensities x y
+
+  -- Rest of the cases, custom overriding function.
+  CustomDensityComparison ::
+     (    AnchoredFragment (BlockProtocol x)
+       -> AnchoredFragment (BlockProtocol y)
+       -> Ordering
+     )
+     -> AcrossEraDensities x y
+\end{lstlisting}
+
+It will then be a matter of defining the variant
+\lstinline!CustomDensityComparison! for each of the conflictive era
+transitions. Notice that even if this was to be implemented, the algorithm for
+prefix selection would just need to receive such a function and use it if there
+is an era transition, otherwise just comparing by density of the genesis window
+length as defined for the era in the given chain fragment.
+
+Currently it is unknown what mechanism would such a function use to combine two
+different genesis window lengths, and solving this would probably require some
+discussions with the researchers.
+
 \section{Implementation concerns}
 
 \subsection{Chain selection in the chain database}
