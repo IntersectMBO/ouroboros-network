@@ -42,6 +42,7 @@ launch-*
 stack.yaml.local.lock
 stack.yaml.local
 .envrc
+.dir-locals.el
 
 # latex files
 doc/*.fdb_latexmk
