@@ -68,6 +68,7 @@ tests =
         , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
         , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
         , testProperty "acceptOrRefuse"        prop_acceptOrRefuse_symmetric_VersionData
+        , testProperty "acceptable_symmetric"  prop_acceptable_symmetric_VersionData
         , testProperty "simultaneous open ST"  prop_channel_simultaneous_open_ST
         , testProperty "simultaneous open IO"  prop_channel_simultaneous_open_IO
         , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
@@ -547,6 +548,27 @@ prop_pipe_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
     ioProperty (prop_channel_asymmetric createPipeConnectedChannels clientVersions)
 
 
+
+
+prop_acceptable_symmetric
+  :: ( Acceptable vData
+     , Eq vData
+     )
+  => vData
+  -> vData
+  -> Bool
+prop_acceptable_symmetric vData vData' =
+    case (acceptableVersion vData vData', acceptableVersion vData' vData) of
+      (Accept a, Accept b) -> a == b
+      (Refuse _, Refuse _) -> True
+      (_       , _       ) -> False
+
+prop_acceptable_symmetric_VersionData
+  :: VersionData
+  -> VersionData
+  -> Bool
+prop_acceptable_symmetric_VersionData a b =
+    prop_acceptable_symmetric a b
 -- | 'acceptOrRefuse' is symmetric in the following sense:
 --
 -- Either both sides:
