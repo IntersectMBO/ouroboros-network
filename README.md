@@ -36,7 +36,7 @@ the Cardano Shelley implementation:
 
 - [Official Cardano Documentation](https://docs.cardano.org/en/latest/)
 
-  Specifically the section "Explore Cardano" is helpful, since it talks about the [Cardano Architecture](https://docs.cardano.org/en/latest/explore-cardano/cardano-architecture-overview/index.html), [Cardano Design Rationale](https://docs.cardano.org/en/latest/explore-cardano/design-rationale.html), the [Cardano Network](https://docs.cardano.org/en/latest/explore-cardano/cardano-network.html), etc.
+  Specifically the section "Explore Cardano" is helpful, since it talks about the [Cardano Architecture](https://docs.cardano.org/explore-cardano/cardano-architecture/overview), [Cardano Design Rationale](https://docs.cardano.org/explore-cardano/cardano-design-rationale), the [Cardano Network](https://docs.cardano.org/explore-cardano/cardano-network/about-the-cardano-network), etc.
   Although the Cardano documentation is less detailed, it is a good place to start and refresh some more basic concepts about Cardano.
 
 ## Ouroboros-Network API
