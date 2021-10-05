@@ -22,6 +22,17 @@ import qualified Test.Ouroboros.Network.KeepAlive (tests)
 import qualified Test.Ouroboros.Network.MockNode (tests)
 import qualified Test.Ouroboros.Network.NodeToClient.Version (tests)
 import qualified Test.Ouroboros.Network.NodeToNode.Version (tests)
+import qualified Test.Ouroboros.Network.TxSubmission (tests)
+import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
+import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
+import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
+import qualified Ouroboros.Network.Protocol.TxSubmission.Test (tests)
+import qualified Ouroboros.Network.Protocol.TxSubmission2.Test (tests)
+import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test (tests)
+import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests)
+import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
+import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
+import qualified Ouroboros.Network.Protocol.TipSample.Test (tests)
 import qualified Test.Ouroboros.Network.PeerSelection (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.Json (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
@@ -50,6 +61,7 @@ tests =
   , Ouroboros.Network.Protocol.ChainSync.Test.tests
   , Ouroboros.Network.Protocol.BlockFetch.Test.tests
   , Ouroboros.Network.Protocol.LocalStateQuery.Test.tests
+  , Ouroboros.Network.Protocol.LocalTxMonitor.Test.tests
   , Ouroboros.Network.Protocol.LocalTxSubmission.Test.tests
   , Ouroboros.Network.Protocol.TxSubmission.Test.tests
   , Ouroboros.Network.Protocol.TxSubmission2.Test.tests
