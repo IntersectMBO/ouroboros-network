@@ -1,8 +1,10 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 module Analysis (
     AnalysisEnv (..)
@@ -200,15 +202,26 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
     putStrLn $ "About to store snapshot of a ledger at " <>
                show slotNo <> " " <>
                "this might take a while..."
-    void $ processAll db registry GetBlock limit initLedger process
+    void $ processAllUntil db registry GetBlock limit initLedger process
   where
-    process :: ExtLedgerState blk -> blk -> IO (ExtLedgerState blk)
+    process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
     process oldLedger blk = do
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
           newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
-      when (slotNo == blockSlot blk) $ storeLedgerState blk newLedger
-      return newLedger
+      when (blockSlot blk >= slotNo) $ storeLedgerState blk newLedger
+      when (blockSlot blk > slotNo) $ issueWarning blk
+      return (continue blk, newLedger)
+
+    continue :: blk -> NextStep
+    continue blk
+      | blockSlot blk >= slotNo = Stop
+      | otherwise               = Continue
+
+    issueWarning blk = putStrLn $ "Snapshot was created at " <>
+                         show (blockSlot blk) <> " " <>
+                         "because there was no block forged at requested " <>
+                         show slotNo <> ". "
 
     storeLedgerState ::
          blk
@@ -244,6 +257,20 @@ decreaseLimit Unlimited = Just Unlimited
 decreaseLimit (Limit 0) = Nothing
 decreaseLimit (Limit n) = Just . Limit $ n - 1
 
+data NextStep = Continue | Stop
+
+
+processAllUntil ::
+     forall blk b st. HasHeader blk
+  => Either (ImmutableDB IO blk) (ChainDB IO blk)
+  -> ResourceRegistry IO
+  -> BlockComponent blk b
+  -> Limit
+  -> st
+  -> (st -> b -> IO (NextStep, st))
+  -> IO st
+processAllUntil = either processAllImmutableDB processAllChainDB
+
 processAll ::
      forall blk b st. HasHeader blk
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
@@ -253,7 +280,10 @@ processAll ::
   -> st
   -> (st -> b -> IO st)
   -> IO st
-processAll = either processAllImmutableDB processAllChainDB
+processAll db rr blockComponent limit initSt cb =
+  processAllUntil db rr blockComponent limit initSt callback
+    where
+      callback st b = (Continue, ) <$> cb st b
 
 processAll_ ::
      forall blk b. HasHeader blk
@@ -273,7 +303,7 @@ processAllChainDB ::
   -> BlockComponent blk b
   -> Limit
   -> st
-  -> (st -> b -> IO st)
+  -> (st -> b -> IO (NextStep, st))
   -> IO st
 processAllChainDB chainDB rr blockComponent limit initState callback = do
     itr <- ChainDB.streamAll chainDB rr blockComponent
@@ -286,7 +316,9 @@ processAllChainDB chainDB rr blockComponent limit initState callback = do
         itrResult <- ChainDB.iteratorNext itr
         case itrResult of
           ChainDB.IteratorExhausted    -> return st
-          ChainDB.IteratorResult b     -> callback st b >>= go itr decreasedLimit
+          ChainDB.IteratorResult b     -> callback st b >>= \case
+            (Continue, nst) -> go itr decreasedLimit nst
+            (Stop, nst)     -> return nst
           ChainDB.IteratorBlockGCed pt -> error $ "block GC'ed " <> show pt
 
 processAllImmutableDB ::
@@ -296,7 +328,7 @@ processAllImmutableDB ::
   -> BlockComponent blk b
   -> Limit
   -> st
-  -> (st -> b -> IO st)
+  -> (st -> b -> IO (NextStep, st))
   -> IO st
 processAllImmutableDB immutableDB rr blockComponent limit initState callback = do
     itr <- ImmutableDB.streamAll immutableDB rr blockComponent
@@ -309,4 +341,6 @@ processAllImmutableDB immutableDB rr blockComponent limit initState callback = d
         itrResult <- ImmutableDB.iteratorNext itr
         case itrResult of
           ImmutableDB.IteratorExhausted -> return st
-          ImmutableDB.IteratorResult b  -> callback st b >>= go itr decreasedLimit
+          ImmutableDB.IteratorResult b  -> callback st b >>= \case
+            (Continue, nst) -> go itr decreasedLimit nst
+            (Stop, nst)     -> return nst
