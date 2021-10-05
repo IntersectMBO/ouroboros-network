@@ -12,6 +12,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE LambdaCase #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -21,6 +24,7 @@ import           Prelude hiding (lookup)
 
 import           Data.Kind
 import           Data.Functor.Identity
+import           Data.Foldable
 
 --import qualified Data.Hashable as H
 import qualified Data.Map.Strict as Map
@@ -34,7 +38,6 @@ import           Data.Word (Word64)
 import           Control.Monad
 import qualified Control.Monad.ST.Strict as ST
 import           Control.Monad.ST.Strict (ST)
-import           Control.Monad.Trans.State as State
 import           Control.Concurrent.STM (STM, TVar)
 import qualified Control.Concurrent.STM as STM
 import           Control.Exception
@@ -187,6 +190,7 @@ instance Semigroup a => Semigroup (MapRWUDiffElem a) where
   _                  <> MapRWUElemDelete   = MapRWUElemDelete
   _                  <> MapRWUElemInsert y = MapRWUElemInsert  y
 
+  -- TODO check whether this should insert the element. Tim Sheard argues not.
   MapRWUElemDelete   <> MapRWUElemUpdate y = MapRWUElemInsert  y
   MapRWUElemInsert x <> MapRWUElemUpdate y = MapRWUElemInsert (x <> y)
   MapRWUElemUpdate x <> MapRWUElemUpdate y = MapRWUElemUpdate (x <> y)
@@ -194,6 +198,7 @@ instance Semigroup a => Semigroup (MapRWUDiffElem a) where
 instance (Ord k, Semigroup v) => Changes (MapRWU k v) where
   newtype Diff (MapRWU k v) = MapRWUDiff (Map.Map k (MapRWUDiffElem v))
     deriving (Eq, Show)
+
 
   applyDiff :: MapRWU k v -> Diff (MapRWU k v) -> MapRWU k v
   applyDiff (MapRWU m) (MapRWUDiff md) =
@@ -318,11 +323,32 @@ newtype ConstTable a (t :: TableType) k v where
        ConstTable :: a -> ConstTable a t k v
   deriving Show
 
+data RangeQuery k = RangeQuery
+  { rqStartKey :: !(Maybe k)
+  , rqOffset :: !Int
+  , rqLimit :: !Int
+  } deriving (Eq, Show)
+
+normaliseRangeQueries :: (Foldable f, Ord k) => f (RangeQuery k) -> [RangeQuery k]
+normaliseRangeQueries rqs =
+  [ RangeQuery{rqStartKey, rqOffset, rqLimit}
+  | (rqStartKey, offset_limit_map) <- Map.toList $ m
+  , (rqOffset, rqLimit) <- Map.toList offset_limit_map
+  ] where
+  m = foldl' do_one Map.empty rqs where
+    do_one !acc RangeQuery{rqStartKey, rqOffset, rqLimit} =
+      Map.insertWith (Map.unionWith max) rqStartKey (Map.singleton rqOffset rqLimit) acc
 
 data TableKeySet (t :: TableType) k v where
        TableKeySet :: Set.Set k -> TableKeySet t k v
-  deriving Show
+       TableQuery ::
+         { tqKeySet :: !(Set.Set k)
+         , tqCountRows :: !Bool
+         , tqRangeQueries :: [RangeQuery k]
+         } -> TableKeySet 'TableTypeRO k v
 
+deriving stock instance Eq k => Eq (TableKeySet t k v)
+deriving stock instance Show k => Show (TableKeySet t k v)
 
 -- | A table with an annotation: some extra data carried with it.
 --
@@ -331,7 +357,11 @@ data AnnTable table a (t :: TableType) k v =
 
 
 data TableReadSet (t :: TableType) k v where
-     TableRO  :: PMapRO  k v -> TableReadSet TableTypeRO  k v
+     TableRO  ::
+       { troPTMap :: PMapRO k v
+       , troRowCount ::  Maybe Int
+       , troRangeQueryResults :: Map.Map (Maybe k) (Map.Map Int [(k, v)])
+       } -> TableReadSet TableTypeRO  k v
      TableRW  :: PMapRW  k v -> TableReadSet TableTypeRW  k v
      TableRWU :: PMapRWU k v -> TableReadSet TableTypeRWU k v
 
@@ -347,13 +377,29 @@ data TableDiff (t :: TableType) k v where
      TableDiffRW  :: DiffMapRW  k v -> TableDiff TableTypeRW  k v
      TableDiffRWU :: DiffMapRWU k v -> TableDiff TableTypeRWU k v
 
+-- TODO integrate range queries here
 mkTableReadSet :: Ord k => TableTag t v -> TableKeySet t k v -> Map.Map k v -> TableReadSet t k v
-mkTableReadSet TableTagRO  (TableKeySet ks) m = TableRO  (PMapRO  (mkPMapRep m ks))
+mkTableReadSet TableTagRO  (TableKeySet ks) m = TableRO
+  { troPTMap = PMapRO  (mkPMapRep m ks), troRowCount = Nothing, troRangeQueryResults = Map.empty
+  }
 mkTableReadSet TableTagRW  (TableKeySet ks) m = TableRW  (PMapRW  (mkPMapRep m ks))
 mkTableReadSet TableTagRWU (TableKeySet ks) m = TableRWU (PMapRWU (mkPMapRep m ks))
+mkTableReadSet TableTagRO  (TableQuery {tqKeySet, tqCountRows, tqRangeQueries}) m = TableRO
+  { troPTMap = PMapRO  (mkPMapRep m tqKeySet)
+  , troRowCount = if tqCountRows then Just (length m) else Nothing
+  , troRangeQueryResults = range_query_results
+  } where
+  range_query_results = fmap (fmap Map.toAscList) . foldl' one_query Map.empty $ tqRangeQueries where
+    one_query !acc RangeQuery{rqStartKey, rqOffset, rqLimit} =
+      Map.insertWith combine rqStartKey (Map.singleton rqOffset (Map.take rqLimit . Map.drop rqOffset $ m' )) acc where
+        m' = case rqStartKey of
+                Nothing -> m
+                Just k -> let (_, r) = Map.split k m in r
+        combine = Map.unionWith $ \x y -> if length x > length y then x else y
 
+-- TODO integrate range queries here
 mkTrackingTable :: TableReadSet t k v -> TrackingTable t k v
-mkTrackingTable (TableRO  m) = TrackingTableRO  m
+mkTrackingTable (TableRO  {troPTMap}) = TrackingTableRO troPTMap
 mkTrackingTable (TableRW  m) = TrackingTableRW  (mkPTMapRW  m)
 mkTrackingTable (TableRWU m) = TrackingTableRWU (mkPTMapRWU m)
 
@@ -361,7 +407,6 @@ getTableDiff :: TrackingTable t k v -> TableDiff t k v
 getTableDiff (TrackingTableRO _)  = TableDiffRO
 getTableDiff (TrackingTableRW  m) = TableDiffRW  (getDiffMapRW  m)
 getTableDiff (TrackingTableRWU m) = TableDiffRWU (getDiffMapRWU m)
-
 
 
 type TableKind = TableType -> * -> * -> *
@@ -448,11 +493,10 @@ class (HasTables state, HasOnlyTables (Tables state), HasSeqNo state)
   injectTables  :: Tables state table -> state any -> state table
 
 class HasSeqNo (state :: StateKind) where
-
   stateSeqNo :: state table -> SeqNo state
 
 newtype SeqNo (state :: StateKind) = SeqNo { seqnoToWord :: Word64 }
-  deriving (Eq, Ord, Bounded, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show)
 
 
 class MonoidalTable table where
@@ -462,6 +506,13 @@ class MonoidalTable table where
 instance MonoidalTable TableKeySet where
     emptyTable   _ = TableKeySet Set.empty
     appendTables _ (TableKeySet a) (TableKeySet b) = TableKeySet (Set.union a b)
+    appendTables _ (TableKeySet a) (tq@TableQuery{tqKeySet} ) = tq { tqKeySet = Set.union a tqKeySet }
+    appendTables _ (tq@TableQuery{tqKeySet} ) (TableKeySet b) = tq { tqKeySet = Set.union tqKeySet b}
+    appendTables _ (a@TableQuery{} ) (b@TableQuery{}) = TableQuery
+      { tqKeySet = Set.union (tqKeySet a) (tqKeySet b)
+      , tqCountRows = tqCountRows a || tqCountRows b
+      , tqRangeQueries = normaliseRangeQueries $ tqRangeQueries a ++ tqRangeQueries b
+      }
 
 instance MonoidalTable TableDiff where
     emptyTable   TableTagRO  = TableDiffRO
@@ -507,6 +558,10 @@ data SnapshotOfTable (table :: TableType -> * -> * -> *) (t :: TableType) k v wh
        KeepTable       ::                SnapshotOfTable table t           k v
        SnapshotOfTable :: table t k v -> SnapshotOfTable table TableTypeRO k v
 
+
+mkTableSnapshots :: (forall table1 table2. Tables state table1 -> Tables state table2) -> TableSnapshots state
+mkTableSnapshots f = TableSnapshots f
+
 -- | An variant of 'SnapshotOfTable' where we keep the original table too.
 -- This is more expressive than 'SnapshotOfTable' because in principle it
 -- would allow renaming tables of RW and RWU types.
@@ -543,53 +598,21 @@ instance HasOnDiskTables state => Semigroup (TableSnapshots state) where
       fixup_g _ (SnapshotOfTable (KeepTable'       t)) _ = SnapshotOfTable t
       fixup_g _ (SnapshotOfTable (SnapshotOfTable' t)) _ = SnapshotOfTable t
 
-{-
-data TableId (t :: TableType) k v where
-     TableId :: TableTag t v -> Int -> TableId t k v
-  deriving Show
-
-data AnyTableId where
-     AnyTableId :: TableId t k v -> AnyTableId
-
-deriving instance Show AnyTableId
-
-
-enumerateTables :: forall state. HasOnlyTables state => state TableId
-enumerateTables =
-    evalState enumerate 0
-  where
-    enumerate :: State Int (state TableId)
-    enumerate =
-      traverse0Tables $ \t -> do
-        i <- State.get
-        State.modify' (+1)
-        pure $! TableId t i
-
-listTables :: forall state. HasOnlyTables state => state TableId -> [AnyTableId]
-listTables s =
-    reverse (execState (collect s) [])
-  where
-    collect :: state TableId -> State [AnyTableId] ()
-    collect =
-      traverseTables_ $ \_t i -> State.modify (AnyTableId i :)
-
-takeSnapshotTableId :: TableId t k v -> TableId TableTypeRO k v
-takeSnapshotTableId (TableId _t i) = TableId TableTagRO i
--}
 
 interpretTableSnapshots
-  :: forall state map.
-     HasOnlyTables (Tables state)
-  => (forall t k v. map t k v -> map TableTypeRO k v)
+  :: forall state map1 map2 m.
+     (HasOnlyTables (Tables state), Applicative m)
+  => (forall t k v. map1 t k v -> m (map2 TableTypeRO k v))
+  -> (forall t k v. m (map2 t k v))
   -> TableSnapshots state
-  -> Tables state map
-  -> Tables state map
-interpretTableSnapshots snapshot (TableSnapshots f) s =
-    zipTables combine (f s) s
+  -> Tables state map1
+  -> m (Tables state map2)
+interpretTableSnapshots snapshot keep (TableSnapshots f) s =
+    traverseTables combine (f s)
   where
-    combine :: TableTag t v -> SnapshotOfTable map t k v -> map t k v -> map t k v
-    combine _  KeepTable          m = m
-    combine _ (SnapshotOfTable m) _ = snapshot m
+    combine :: TableTag t v -> SnapshotOfTable map1 t k v -> m (map2 t k v)
+    combine _  KeepTable          = keep
+    combine _ (SnapshotOfTable m) = snapshot m
 
 
 applyTableSnapshotsInverse :: forall state.
@@ -641,38 +664,10 @@ applyTableSnapshotsInverse (TableSnapshots f) ts =
 newtype STRefKeySet s (t :: TableType) k v = STRefKeySet (STRef s (Set.Set k))
 
 
--- Disk state and disk operations
----------------------------------
-
-
--- The disk db has a single available value at once. To help keep track of the
--- changing value of the database it records a sequence number.
---
--- It is permitted for reads and writes to be raced against each other.
--- The read returns the SeqNo that the read was against. This can be used
--- to resolve write/read races.
---
--- Writes cannot race other writes.
---
-class DiskDb dbhandle state {- | dbhandle -> state -} where
-  readDb  :: dbhandle
-          -> AnnTableKeySets state a
-          -> IO (AnnTableReadSets state (a, SeqNo state))
-
-  writeDb :: dbhandle
-          -> [Either (TableDiffs state) (TableSnapshots state)]
-          -> SeqNo state -- ^ The old sequence number, as a sanity check
-          -> SeqNo state -- ^ The new sequence number, must be strictly greater
-          -> IO ()
-
---  snapshotDB :: dbhandle
---             -> SeqNo state -- ^ The old sequence number, as a sanity check
---             -> IO ()
 
 
 -- In-memory changes
 --------------------
-{-
 -- | A sequence of changes to a data store.
 --
 -- It is intended to be used to /extend in-memory/ beyond the state of an
@@ -692,14 +687,14 @@ class DiskDb dbhandle state {- | dbhandle -> state -} where
 data DbChangelog (state :: (TableType -> * -> * -> *) -> *) =
        DbChangelog {
          -- The changes to the content of the tables
-         dbChangelogContent :: !(Tables state (SumSeqTable TableDiff)),
+         dbChangelogContent :: !(Tables state (SeqTable TableDiff)),
 
          -- The changes involving table snapshots
          -- this is sparse, often empty, in practice never more than one element
-         dbChangelogSnapshots :: !(SumSeq (TableSnapshots state)),
+         dbChangelogSnapshots :: !(SeqTableSnapshots state),
 
          -- The derived changes to apply to reads
-         dbChangelogForward :: !(Tables state (SumSeqTable TableDiff))
+         dbChangelogForward :: () -- !(Tables state (SumSeqTable TableDiff))
        }
 
 
@@ -713,7 +708,6 @@ instance HasOnDiskTables state => Semigroup (DbChangelog state) where
 
 instance HasOnDiskTables state => Monoid (DbChangelog state) where
     mempty = emptyDbChangelog
-
 
 -- |
 --
@@ -754,21 +748,20 @@ rewindTableKeySets :: HasOnDiskTables state
                    => DbChangelog state
                    -> TableKeySets state
                    -> AnnTableKeySets state (KeySetSanityInfo state)
-rewindTableKeySets (DbChangelog _ snapshots _) tks =
-    case FT.measure snapshots of
-      SumSeqMeasure _ _ _     Nothing   ->
-        mapTables (\_ x -> AnnTable x Nothing) tks
+rewindTableKeySets (DbChangelog _ snapshots _) tks = undefined
+    -- case FT.measure snapshots of
+    --   SumSeqMeasure _ _ _     Nothing   ->
+    --     mapTables (\_ x -> AnnTable x Nothing) tks
 
-      SumSeqMeasure _ _ seqno (Just sn) ->
-        mapTables (\_ x -> AnnTable x (Just (toEnum seqno)))
-                  (applyTableSnapshotsInverse sn tks)
+    --   SumSeqMeasure _ _ seqno (Just sn) ->
+    --     mapTables (\_ x -> AnnTable x (Just (toEnum seqno)))
+    --               (applyTableSnapshotsInverse sn tks)
 
 
 forwardTableReadSets :: DbChangelog state
                      -> AnnTableReadSets state (ReadSetSanityInfo state)
                      -> TableReadSets state
 forwardTableReadSets = undefined
--}
 
 
 
@@ -844,41 +837,77 @@ instance HasOnDiskTables state
     SeqTableSnapshotsMeasure seqno seqno (Just snapshot)
 
 
+-- Disk state and disk operations
+---------------------------------
+
+
+-- The disk db has a single available value at once. To help keep track of the
+-- changing value of the database it records a sequence number.
+--
+-- It is permitted for reads and writes to be raced against each other.
+-- The read returns the SeqNo that the read was against. This can be used
+-- to resolve write/read races.
+--
+-- Writes cannot race other writes.
+--
+class DiskDb dbhandle state {- | dbhandle -> state -} where
+  readDb  :: dbhandle
+          -> AnnTableKeySets state a
+          -> IO (AnnTableReadSets state (a, SeqNo state))
+
+  writeDb :: dbhandle
+          -> [Either (TableDiffs state) (TableSnapshots state)]
+          -> SeqNo state -- ^ The old sequence number, as a sanity check
+          -> SeqNo state -- ^ The new sequence number, must be strictly greater
+          -> IO ()
+
+--  snapshotDB :: dbhandle
+--             -> SeqNo state -- ^ The old sequence number, as a sanity check
+--             -> IO ()
 
 
 -- In-mem mock of disk operations
 ---------------------------------
-{-
 data TVarDb state = TVarDb !(Tables state TVarDbTable)
                            !(TVar (SeqNo state))
 
 newtype TVarDbTable (t :: TableType) k v = TVarDbTable (TVar (Map.Map k v))
 
-instance HasOnDiskTables state => DiskDb (TVarDb state) state where
-  readDb (TVarDb tables seqnovar) keysets =
-      STM.atomically $
-        (,) <$> traverse2Tables readTVarDbTable tables keysets
-            <*> STM.readTVar seqnovar
+-- data ProductTable table1 table2 (t :: TableType) k v = ProductTable (table1 t k v) (table2 t k v)
+
+newtype ComposeTable f table (t :: TableType) k v = ComposeTable { runComposeTable :: f (table t k v) }
+
+newtype WrappedMap (t :: TableType) k v = WrappedMap (Map.Map k v)
+
+instance (HasOnDiskTables state, HasSeqNo state) => DiskDb (TVarDb state) state where
+  readDb (TVarDb tables seqnovar) keysets = STM.atomically $ do
+    seqno <- STM.readTVar seqnovar
+    traverse2Tables (readTVarDbTable seqno) tables keysets
     where
       readTVarDbTable :: Ord k
-                      => TableTag t v
+                      => SeqNo state
+                      -> TableTag t v
                       -> TVarDbTable t k v
-                      -> TableKeySet t k v
-                      -> STM (TableReadSet t k v)
-      readTVarDbTable t (TVarDbTable tv) ks = do
+                      -> AnnTable TableKeySet a t k v
+                      -> STM (AnnTable TableReadSet (a, SeqNo state) t k v)
+      readTVarDbTable seqno t (TVarDbTable tv) (AnnTable ks a) = do
           tbl <- STM.readTVar tv
           let !pmap = mkTableReadSet t ks tbl
-          return pmap
+          return $ AnnTable pmap (a, seqno)
 
-  writeDb (TVarDb tables seqnovar) diffs oldseqno newseqno =
+  writeDb (TVarDb tables seqnovar) diffs_and_snapshots oldseqno newseqno =
       STM.atomically $ do
-        traverse2Tables_ writeTVarDbTable tables diffs
         oldseqno' <- STM.readTVar seqnovar
         unless (oldseqno' == oldseqno) $
           STM.throwSTM (DbSeqNoIncorrect (fromEnum oldseqno') (fromEnum oldseqno))
         unless (newseqno > oldseqno) $
           STM.throwSTM (DbSeqNoNotMonotonic (fromEnum oldseqno) (fromEnum newseqno))
         STM.writeTVar seqnovar newseqno
+        for_ diffs_and_snapshots $ \case
+          Left diffs -> traverse2Tables_ writeTVarDbTable tables diffs
+          Right ss -> do
+            swizzled_mb_tables <- interpretTableSnapshots take_snapshot (pure $ ComposeTable Nothing) ss tables
+            traverse2Tables_ combine_swizzle swizzled_mb_tables tables
     where
       writeTVarDbTable :: Ord k
                        => TableTag t v
@@ -890,7 +919,6 @@ instance HasOnDiskTables state => DiskDb (TVarDb state) state where
 
       writeTVarDbTable TableTagRW (TVarDbTable tv) (TableDiffRW (DiffMapRW d)) = do
         m <- STM.readTVar tv
-        --TODO: we should use a Map not PMap here
         let (MapRW m') = applyDiff (MapRW m) d
         STM.writeTVar tv m'
 
@@ -898,7 +926,13 @@ instance HasOnDiskTables state => DiskDb (TVarDb state) state where
         m <- STM.readTVar tv
         let (MapRWU m') = applyDiff (MapRWU m) d
         STM.writeTVar tv m'
--}
+
+      take_snapshot (TVarDbTable tv) = (ComposeTable . Just . WrappedMap) <$> STM.readTVar tv
+
+      combine_swizzle _ (ComposeTable mb_m) (TVarDbTable tv) = case mb_m of
+        Nothing -> pure ()
+        Just (WrappedMap m) -> STM.writeTVar tv m
+        
 data DbSeqNoException =
        DbSeqNoIncorrect    Int Int -- ^ Expected and given sequence number
      | DbSeqNoNotMonotonic Int Int -- ^ Current and given sequence number
@@ -906,290 +940,4 @@ data DbSeqNoException =
 
 instance Exception DbSeqNoException
 
-
-
-
-
--- Example
-------------
-
--- | An example of a top level state consisting of a few parts. This
--- demonstrates a top level state type with multiple tables, and other
--- in-memory state that are not tables, and is not kept on disk.
---
-data LedgerState map =
-     LedgerState {
-
-       -- | An example of some nested state
-       utxos   :: UTxOState map,
-
-       -- | More nested state for snapshots
-       snapshots :: UTxOSnapshots map,
-
-       -- | Something standing in for other state, like protocol parameters.
-       pparams :: PParams,
-
-       -- | The current slot number, used to identify states within evolving
-       -- sequences of states.
-       --
-       curslot :: SlotNo
-     }
-
--- | The content of this doesn't actually matter. It's just a place-holder.
---
-data PParams = PParams
-  deriving Show
-
--- | An example sub-part of the state, to demonstrate \"vertical\" composition:
--- that the state and operations can work over components of the overall state.
---
--- In particular this one demonstrates two tables. The second of the two
--- tables can benefit from monoidal updates, since it incrementally maintains
--- an aggregation of the first table.
---
-data UTxOState map =
-     UTxOState {
-       -- | A simple UTxO structure.
-       utxo    :: map TableTypeRW TxIn TxOut,
-
-       -- | An aggregation of the UTxO's coins by address.
-       utxoagg :: map TableTypeRWU Addr Coin
-     }
-
-
--- | A demonstration of snapshoting functionality: we keep three recent copies
--- of the UTxO aggregation. These are 
---
-data UTxOSnapshots map =
-     UTxOSnapshots {
-       utxoagg1 :: map TableTypeRO Addr Coin,
-       utxoagg2 :: map TableTypeRO Addr Coin,
-       utxoagg3 :: map TableTypeRO Addr Coin
-     }
-
-data    Tx     = Tx [TxIn] [TxOut]  deriving (Eq, Show)
-data    TxIn   = TxIn !TxId !TxIx   deriving (Eq, Ord, Show)
-newtype TxId   = TxId Int           deriving (Eq, Ord, Show)
-newtype TxIx   = TxIx Int           deriving (Eq, Ord, Show)
-data    TxOut  = TxOut !Addr !Coin  deriving (Eq, Show)
-newtype Addr   = Addr Int           deriving (Eq, Ord, Show)
-newtype Coin   = Coin Int           deriving (Eq, Num, Show)
-
-instance Semigroup Coin  where a <> b = a + b
-
-data    Block  = Block !SlotNo [Tx] deriving (Eq, Show)
-newtype SlotNo = SlotNo Int         deriving (Eq, Ord, Bounded, Enum, Show)
-
-
--- | This is a place-holder for serialisation constraints
-class Example a
-instance Example TxIn
-instance Example TxOut
-instance Example Addr
-instance Example Coin
-
-
-instance HasTables LedgerState where
-  type StateTableKeyConstraint   LedgerState = Example
-  type StateTableValueConstraint LedgerState = Example
-
-  traverseTables f LedgerState { utxos, snapshots, pparams, curslot } =
-    LedgerState <$> traverseTables f utxos
-                <*> traverseTables f snapshots
-                <*> pure pparams
-                <*> pure curslot
-
-  traverseTables_ f LedgerState { utxos, snapshots } =
-    () <$ traverseTables_ f utxos
-       <* traverseTables_ f snapshots
-
-instance HasTables UTxOState where
-  type StateTableKeyConstraint   UTxOState = Example
-  type StateTableValueConstraint UTxOState = Example
-
-  traverseTables f UTxOState { utxo, utxoagg } =
-    UTxOState <$> f TableTagRW  utxo
-              <*> f TableTagRWU utxoagg
-
-  traverseTables_ f UTxOState { utxo, utxoagg } =
-    () <$ f TableTagRW  utxo
-       <* f TableTagRWU utxoagg
-
-instance HasTables UTxOSnapshots where
-  type StateTableKeyConstraint   UTxOSnapshots = Example
-  type StateTableValueConstraint UTxOSnapshots = Example
-
-  traverseTables f UTxOSnapshots { utxoagg1, utxoagg2, utxoagg3 } =
-    UTxOSnapshots <$> f TableTagRO utxoagg1
-                  <*> f TableTagRO utxoagg2
-                  <*> f TableTagRO utxoagg3
-
-  traverseTables_ f UTxOSnapshots { utxoagg1, utxoagg2, utxoagg3 } =
-    () <$ f TableTagRO utxoagg1
-       <* f TableTagRO utxoagg2
-       <* f TableTagRO utxoagg3
-
-
-instance HasTables (Tables LedgerState) where
-  type StateTableKeyConstraint   (Tables LedgerState) = Example
-  type StateTableValueConstraint (Tables LedgerState) = Example
-
-  traverseTables f LedgerStateTables {
-                       utxoTable,
-                       utxoaggTable,
-                       utxoagg1Table,
-                       utxoagg2Table,
-                       utxoagg3Table
-                     } =
-    LedgerStateTables <$> f TableTagRW  utxoTable
-                        <*> f TableTagRWU utxoaggTable
-                        <*> f TableTagRO  utxoagg1Table
-                        <*> f TableTagRO  utxoagg2Table
-                        <*> f TableTagRO  utxoagg3Table
-
-  traverseTables_ f LedgerStateTables {
-                       utxoTable,
-                       utxoaggTable,
-                       utxoagg1Table,
-                       utxoagg2Table,
-                       utxoagg3Table
-                     } =
-    () <$ f TableTagRW  utxoTable
-       <* f TableTagRWU utxoaggTable
-       <* f TableTagRO  utxoagg1Table
-       <* f TableTagRO  utxoagg2Table
-       <* f TableTagRO  utxoagg3Table
-
-
-instance HasOnlyTables (Tables LedgerState) where
-  traverse0Tables f =
-    LedgerStateTables <$> f TableTagRW
-                        <*> f TableTagRWU
-                        <*> f TableTagRO
-                        <*> f TableTagRO
-                        <*> f TableTagRO
-
-  traverse2Tables f st1 st2 =
-    LedgerStateTables
-      <$> f TableTagRW  (utxoTable st1) (utxoTable st2)
-      <*> f TableTagRWU (utxoaggTable st1) (utxoaggTable st2)
-      <*> f TableTagRO  (utxoagg1Table st1) (utxoagg1Table st2)
-      <*> f TableTagRO  (utxoagg2Table st1) (utxoagg2Table st2)
-      <*> f TableTagRO  (utxoagg3Table st1) (utxoagg3Table st2)
-
-  traverse2Tables_ f st1 st2 =
-     () <$ f TableTagRW  (utxoTable    st1) (utxoTable    st2)
-        <* f TableTagRWU (utxoaggTable st1) (utxoaggTable st2)
-        <* f TableTagRO  (utxoagg1Table st1) (utxoagg1Table st2)
-        <* f TableTagRO  (utxoagg2Table st1) (utxoagg2Table st2)
-        <* f TableTagRO  (utxoagg3Table st1) (utxoagg3Table st2)
-
-
-instance HasOnDiskTables LedgerState where
-
-  data Tables LedgerState table =
-         LedgerStateTables {
-           utxoTable     :: table TableTypeRW  TxIn TxOut,
-           utxoaggTable  :: table TableTypeRWU Addr Coin,
-           utxoagg1Table :: table TableTypeRO  Addr Coin,
-           utxoagg2Table :: table TableTypeRO  Addr Coin,
-           utxoagg3Table :: table TableTypeRO  Addr Coin
-         }
-
-  projectTables LedgerState {
-                  utxos     = UTxOState {
-                                utxo,
-                                utxoagg
-                              },
-                  snapshots = UTxOSnapshots {
-                                utxoagg1,
-                                utxoagg2,
-                                utxoagg3
-                              }
-                } =
-    LedgerStateTables {
-      utxoTable     = utxo,
-      utxoaggTable  = utxoagg,
-      utxoagg1Table = utxoagg1,
-      utxoagg2Table = utxoagg2,
-      utxoagg3Table = utxoagg3
-    }
-
-  injectTables
-    LedgerStateTables {
-      utxoTable,
-      utxoaggTable,
-      utxoagg1Table,
-      utxoagg2Table,
-      utxoagg3Table
-    }
-    LedgerState { pparams, curslot } =
-
-    LedgerState {
-      utxos     = UTxOState {
-                    utxo    = utxoTable,
-                    utxoagg = utxoaggTable
-                  },
-      snapshots = UTxOSnapshots {
-                    utxoagg1 = utxoagg1Table,
-                    utxoagg2 = utxoagg2Table,
-                    utxoagg3 = utxoagg3Table
-                  },
-      pparams,
-      curslot
-    }
-
-instance HasSeqNo LedgerState where
-  stateSeqNo LedgerState {curslot = SlotNo s} = SeqNo (fromIntegral s)
-
-class ShowTable (table :: TableType -> * -> * -> *) where
-    showsTable :: (Show k, Show v) => table t k v -> ShowS
-
-instance ShowTable EmptyTable where
-    showsTable = shows
-
-instance ShowTable TableKeySet where
-    showsTable = shows
-
---instance ShowTable TableId where
---    showsTable = shows
-
-instance ShowTable table => Show (Tables LedgerState table) where
-  showsPrec _ LedgerStateTables{..} =
-      showString "LedgerStateTables {\n"
-    . showString "  utxoTable     = " . showsTable utxoTable     . showString ",\n"
-    . showString "  utxoaggTable  = " . showsTable utxoaggTable  . showString ",\n"
-    . showString "  utxoagg1Table = " . showsTable utxoagg1Table . showString ",\n"
-    . showString "  utxoagg2Table = " . showsTable utxoagg2Table . showString ",\n"
-    . showString "  utxoagg3Table = " . showsTable utxoagg3Table . showString ",\n"
-    . showString "}"
-
--- | Simulate taking snapshots at epoch boundaries
---
-epochSnapshotSwizzle :: Tables LedgerState table
-                     -> Tables LedgerState (SnapshotOfTable table)
-epochSnapshotSwizzle LedgerStateTables {
-                       utxoaggTable,
-                       utxoagg1Table,
-                       utxoagg2Table
-                     } =
-    -- Take a snapshot of the current utxo aggregate.
-    -- Shuffle all the older snapshots down by one.
-    LedgerStateTables {
-      utxoTable     = KeepTable,
-      utxoaggTable  = KeepTable,
-      utxoagg1Table = SnapshotOfTable utxoaggTable,
-      utxoagg2Table = SnapshotOfTable utxoagg1Table,
-      utxoagg3Table = SnapshotOfTable utxoagg2Table
-    }
-
-exampleKeySets :: TableKeySets LedgerState
-exampleKeySets =
-    LedgerStateTables {
-      utxoTable     = TableKeySet (Set.singleton (TxIn (TxId 0) (TxIx 0))),
-      utxoaggTable  = TableKeySet (Set.singleton (Addr 1)),
-      utxoagg1Table = TableKeySet (Set.singleton (Addr 2)),
-      utxoagg2Table = TableKeySet (Set.singleton (Addr 3)),
-      utxoagg3Table = TableKeySet (Set.singleton (Addr 4))
-    }
 
