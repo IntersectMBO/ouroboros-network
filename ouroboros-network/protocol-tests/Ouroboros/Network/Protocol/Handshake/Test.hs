@@ -71,8 +71,6 @@ tests =
         , testProperty "pipe IO"               prop_pipe_IO
         , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
         , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
-        , testProperty "simultaneous open ST"  prop_channel_simultaneous_open_ST
-        , testProperty "simultaneous open IO"  prop_channel_simultaneous_open_IO
         , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
 
         , testGroup "VersionData"
@@ -80,6 +78,10 @@ tests =
               prop_acceptable_symmetric_VersionData
           , testProperty "acceptOrRefuse"
               prop_acceptOrRefuse_symmetric_VersionData
+          , testProperty "simultaneous open ST"
+              prop_channel_simultaneous_open_ST
+          , testProperty "simultaneous open IO"
+              prop_channel_simultaneous_open_IO
           ]
 
         , testGroup "NodeToNode"
@@ -87,6 +89,10 @@ tests =
               prop_acceptable_symmetric_NodeToNode
           , testProperty "acceptOrRefuse"
               prop_acceptOrRefuse_symmetric_NodeToNode
+          , testProperty "simultaneous open ST"
+              prop_channel_simultaneous_open_NodeToNode_ST
+          , testProperty "simultaneous open IO" 
+              prop_channel_simultaneous_open_NodeToNode_IO
 
           ]
 
@@ -95,6 +101,10 @@ tests =
               prop_acceptable_symmetric_NodeToClient
           , testProperty "acceptOrRefuse"
               prop_acceptOrRefuse_symmetric_NodeToClient
+          , testProperty "simultaneous open ST"
+              prop_channel_simultaneous_open_NodeToClient_ST
+          , testProperty "simultaneous open IO" 
+              prop_channel_simultaneous_open_NodeToClient_IO
           ]
 
         , testProperty "codec RefuseReason"    prop_codec_RefuseReason
@@ -816,12 +826,17 @@ prop_channel_simultaneous_open
     :: ( MonadAsync m
        , MonadCatch m
        , MonadST m
+       , Acceptable vData
+       , Ord vNumber
        )
     => m (Channel m ByteString, Channel m ByteString)
-    -> Versions VersionNumber VersionData Bool
-    -> Versions VersionNumber VersionData Bool
+    -> Codec (Handshake vNumber CBOR.Term)
+              CBOR.DeserialiseFailure m ByteString
+    -> VersionDataCodec CBOR.Term vNumber vData
+    -> Versions vNumber vData Bool
+    -> Versions vNumber vData Bool
     -> m Property
-prop_channel_simultaneous_open createChannels clientVersions serverVersions =
+prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersions serverVersions =
   let (serverRes, clientRes) =
         pureHandshake
           ((maybeAccept .) . acceptableVersion)
@@ -830,17 +845,17 @@ prop_channel_simultaneous_open createChannels clientVersions serverVersions =
   in do
     (clientChannel, serverChannel) <- createChannels
     let client  = handshakeClientPeer
-                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    versionDataCodec
                     acceptableVersion
                     clientVersions
         client' = handshakeClientPeer
-                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    versionDataCodec
                     acceptableVersion
                     serverVersions
     (clientRes', serverRes') <-
-      (fst <$> runPeer nullTracer versionNumberHandshakeCodec clientChannel client)
+      (fst <$> runPeer nullTracer codec clientChannel client)
         `concurrently`
-      (fst <$> runPeer nullTracer versionNumberHandshakeCodec serverChannel client')
+      (fst <$> runPeer nullTracer codec {-versionNumberHandshakeCodec-} serverChannel client')
     pure $
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
@@ -863,6 +878,8 @@ prop_channel_simultaneous_open_ST :: ArbitraryVersions -> Property
 prop_channel_simultaneous_open_ST (ArbitraryVersions clientVersions serverVersions) =
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
+                    versionNumberHandshakeCodec
+                    (cborTermVersionDataCodec dataCodecCBORTerm)
                     clientVersions
                     serverVersions
 
@@ -872,8 +889,66 @@ prop_channel_simultaneous_open_IO :: ArbitraryVersions -> Property
 prop_channel_simultaneous_open_IO (ArbitraryVersions clientVersions serverVersions) =
   ioProperty $ prop_channel_simultaneous_open
                  createConnectedChannels
+                 versionNumberHandshakeCodec
+                 (cborTermVersionDataCodec dataCodecCBORTerm)
                  clientVersions
                  serverVersions
+
+
+prop_channel_simultaneous_open_NodeToNode_ST :: ArbitraryNodeToNodeVersions
+                                             -> ArbitraryNodeToNodeVersions
+                                             -> Property
+prop_channel_simultaneous_open_NodeToNode_ST
+    (ArbitraryNodeToNodeVersions clientVersions)
+    (ArbitraryNodeToNodeVersions serverVersions) =
+  runSimOrThrow $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+
+
+prop_channel_simultaneous_open_NodeToNode_IO :: ArbitraryNodeToNodeVersions
+                                             -> ArbitraryNodeToNodeVersions
+                                             -> Property
+prop_channel_simultaneous_open_NodeToNode_IO
+    (ArbitraryNodeToNodeVersions clientVersions)
+    (ArbitraryNodeToNodeVersions serverVersions) =
+  ioProperty $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+
+
+prop_channel_simultaneous_open_NodeToClient_ST :: ArbitraryNodeToClientVersions
+                                               -> ArbitraryNodeToClientVersions
+                                               -> Property
+prop_channel_simultaneous_open_NodeToClient_ST
+    (ArbitraryNodeToClientVersions clientVersions)
+    (ArbitraryNodeToClientVersions serverVersions) =
+  runSimOrThrow $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToClientVersionCodec)
+                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+
+
+prop_channel_simultaneous_open_NodeToClient_IO :: ArbitraryNodeToClientVersions
+                                               -> ArbitraryNodeToClientVersions
+                                               -> Property
+prop_channel_simultaneous_open_NodeToClient_IO
+    (ArbitraryNodeToClientVersions clientVersions)
+    (ArbitraryNodeToClientVersions serverVersions) =
+  ioProperty $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToClientVersionCodec)
+                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    clientVersions
+                    serverVersions
 
 --
 -- Codec tests
