@@ -1005,6 +1005,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- node
                   nullDebugProtocolTracers
                   (customNodeToNodeCodecs pInfoConfig)
+                  NTN.noByteLimits
                   -- see #1882, tests that can't cope with timeouts.
                   (pure $ NTN.ChainSyncTimeout
                      { canAwaitTimeout  = waitForever
