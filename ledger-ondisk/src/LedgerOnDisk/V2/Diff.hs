@@ -36,10 +36,13 @@ data DBDiff t k v
 
 data MapFlavour = MK_RO | MK_RW | MK_RWU
 
-data MapTag t where
-  MapTagRO :: MapTag 'MK_RO
-  MapTagRW :: MapTag 'MK_RW
-  MapTagRWU :: MapTag 'MK_RWU
+data TableTag t k v where
+  TableTagRO :: Ord k => TableTag 'MK_RO k v
+  TableTagRW :: Ord k => TableTag 'MK_RW k v
+  TableTagRWU :: (Ord k, Semigroup v) => TableTag 'MK_RWU k v
+
+deriving stock instance Show (TableTag t k v)
+deriving stock instance Eq (TableTag t k v)
 
 data Diff v = DNoChange | DRemove | DChangeTo !v
   deriving stock (Eq, Show, Generic)

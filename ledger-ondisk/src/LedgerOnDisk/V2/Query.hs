@@ -256,7 +256,7 @@ queryMap q m0 = runIdentity $ runQuery doLookup doRangeQuery (pure . fromIntegra
 --   shrink (RWUQuery x) = NoQuery : (RWUQuery <$> shrink x)
 --   shrink NoQuery = []
 
-instance (Arbitrary k, Arbitrary v, Ord k) => Arbitrary (Query k v) where
+instance (Arbitrary k, Ord k) => Arbitrary (Query k v) where
   arbitrary = Query <$> arbitrary <*> arbitrary <*> arbitrary
   shrink Query{..} = mempty
     : mempty { qCountRows    = qCountRows }

@@ -28,6 +28,7 @@ module LedgerOnDisk.V2.DumbDb where
 
 import LedgerOnDisk.V2.OnDiskMappings
 import LedgerOnDisk.V2.Diff
+import LedgerOnDisk.V2.Example
 import Data.IORef
 import Data.Map (Map)
 import Control.Concurrent.STM
@@ -45,13 +46,17 @@ import Control.Monad.State.Strict
 import Data.Coerce
 import Test.QuickCheck
 import qualified Data.Map as Map
+import Data.SOP (And)
 
 -- data RealDb = RealDb { DumbDb, Map SlotId OdmConstMap state Int }
 
-instance (AllMap KeysOrd state, AllMap (MapIs Semigroup DiffMap) state) => Db (DumbDb (state :: StateKind MapFlavour)) where
+instance
+  ( AllMap KeysOrd state
+  , AllMap (MapIs Semigroup DiffMap) state
+  , TableTypeTag state ~ TableTag
+  ) => Db (DumbDb (state :: StateKind MapFlavour)) where
   type DbState (DumbDb state) = state
   type DbSeqId (DumbDb state) = OdmConstMap state Int
-
 
   readDb DumbDb {backingStore} odmq = odmProductMapToTuple <$> zipAcOnDiskMappings (Proxy :: Proxy KeysOrd) go backingStore odmq
     where
@@ -111,30 +116,30 @@ data BadSeqIdException = BadSeqIdException
   } deriving stock (Show, Eq)
   deriving anyclass (Exception)
 
-newBStore :: Ord k => MapTag t -> Map k v -> BStore t k v
+newBStore :: TableTag t k v -> Map k v -> BStore t k v
 newBStore t m = case t of
-  MapTagRO -> ROStore (-1) Map.empty
-  MapTagRW -> RWStore m
-  -- MapTagRWU  -> RWUStore m
+  TableTagRO -> ROStore (-1) Map.empty
+  TableTagRW -> RWStore m
+  TableTagRWU  -> RWUStore m
 
-class Coercible (TableTag MapFlavour t k v) (MapTag t) => TableTagCoercible t k v
-instance Coercible (TableTag MapFlavour t k v) (MapTag t) => TableTagCoercible t k v
+-- class (KeysOrd t k v, Coercible (TableTag MapFlavour t k v) (MapTag t)) => TableTagCoercible t k v
+-- instance (KeysOrd t k v, Coercible (TableTag MapFlavour t k v) (MapTag t)) => TableTagCoercible t k v
 
-newDumbDb :: ( HasOnDiskMappings state, AllMap TableTagCoercible state, AllMap KeysOrd state)
+newDumbDb :: ( HasOnDiskMappings state, TableTypeTag state ~ TableTag, AllMap KeysOrd state)
   => OnDiskMappings state DataMap -- ^
   -> IO (DumbDb state)
-newDumbDb initial_map = DumbDb <$> zipAcOnDiskMappings (Proxy :: Proxy TableTagCoercible) go tableTags initial_map where
+newDumbDb initial_map = DumbDb <$> zipAcOnDiskMappings (Proxy :: Proxy KeysOrd) go tableTags initial_map where
   mk_backing_store bstore = do
     bsId <- newTMVarIO 0
     bsRef <- newIORef bstore
     pure BackingStore {..}
 
-  go :: forall t k v. (Coercible (MapTag t) (TableTag MapFlavour t k v), Ord k) => TableTag MapFlavour t k v -> DataMap t k v -> IO (BackingStore t k v)
-  go t (DataMap m) = mk_backing_store (newBStore (coerce t :: MapTag t) m)
+  go :: forall t k v. TableTag t k v -> DataMap t k v -> IO (BackingStore t k v)
+  go t (DataMap m) = mk_backing_store (newBStore t m)
 
-resetDumbDb :: (HasOnDiskMappings state, AllMap TableTagCoercible state) => OnDiskMappings state DataMap -> DumbDb state -> IO ()
-resetDumbDb odm_m DumbDb{backingStore} = zip3AcOnDiskMappings_ (Proxy :: Proxy TableTagCoercible) go tableTags odm_m backingStore where
-  go :: Coercible (MapTag t) (TableTag MapFlavour t k v) => TableTag MapFlavour t k v -> DataMap t k v -> BackingStore t k v -> IO ()
+resetDumbDb :: (HasOnDiskMappings state, TableTypeTag state ~ TableTag) => OnDiskMappings state DataMap -> DumbDb state -> IO ()
+resetDumbDb odm_m DumbDb{backingStore} = zip3AOnDiskMappings_  go tableTags odm_m backingStore where
+  go :: TableTag t k v -> DataMap t k v -> BackingStore t k v -> IO ()
   go t (DataMap m) BackingStore{bsRef, bsId} = do
     atomically . void . tryTakeTMVar $ bsId
     writeIORef bsRef (newBStore (coerce t) m)
@@ -259,19 +264,22 @@ handleSnapshot si seqids bstores =  pure $ applySwizzle si seqids bstores
 handleDiff :: (HasOnDiskMappings state, Applicative m) => OnDiskMappings state DiffMap -> OnDiskMappings state BStore -> m (OnDiskMappings state BStore)
 handleDiff diffs bstores = pure $ zipOnDiskMappings applyDiffMapToBStore diffs bstores
 
-prop_dumb_db_reconcile_read ::
-  ( HasOnDiskMappings state
-  , AllMap (MapIs Semigroup DiffMap) state
-  , AllMap (MapIs Eq DbQueryResult) state
-  , AllMap (MapIs Show DbQueryResult) state
-  , AllMap TableTagCoercible state
-  , AllMap KeysOrd state
-
-  ) => OnDiskMappings state DataMap -> DbDiff state -> DbDiff state -> OdmQuery state -> Property
-prop_dumb_db_reconcile_read initial_map d1 d2 q = ioProperty $ do
+prop_dumb_db_reconcile_read :: (Arbitrary (OdmQuery ExampleState)) => OnDiskMappings ExampleState DataMap -> Blind (DbDiff ExampleState) -> Blind (DbDiff ExampleState) -> OdmQuery ExampleState -> Property
+prop_dumb_db_reconcile_read initial_map (Blind d1) (Blind d2) q = ioProperty $ do
   ddb <- newDumbDb initial_map
   pure $ prop_reconcile_read ddb (resetDumbDb initial_map)
     (pureOnDiskMappings $ ConstMap 0)
     (pureOnDiskMappings $ ConstMap 1)
     (pureOnDiskMappings $ ConstMap 2)
     d1 d2 q
+
+
+{-
+
+
+"hello"
+"hello"
+"hello"
+No instance for (Arbitrary (SnapshotInstructions ExampleState))
+  arising from a use of ‘propEvaluation’
+-}

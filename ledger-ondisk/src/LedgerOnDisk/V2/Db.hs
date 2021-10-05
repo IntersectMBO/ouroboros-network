@@ -10,6 +10,8 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module LedgerOnDisk.V2.Db where
 
@@ -32,10 +34,13 @@ import Data.Functor.Identity
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
 import Data.Either
+import Data.Coerce
 
 newtype DbQuery t k v = DbQuery (Query k v)
   deriving stock (Eq, Show)
   deriving newtype (Semigroup, Monoid)
+
+deriving newtype instance (Ord k, Arbitrary k) => Arbitrary (DbQuery t k v)
 
 newtype DbQueryResult t k v = DbQueryResult (QueryResult k v)
   deriving stock (Eq, Show)
@@ -49,9 +54,21 @@ type OdmQueryResult state = OnDiskMappings state DbQueryResult
 newtype DbDiff state = DbDiff (Endo [Either (SnapshotInstructions state) (OdmDiffMap state)])
   deriving newtype (Semigroup, Monoid)
 
-newtype DbTableTag t k v = DbTableTag (MapTag t)
+instance
+  ( AllMap (MapIs Arbitrary DiffMap) state
+  , Arbitrary (SnapshotInstructions state)
+  ) => Arbitrary (DbDiff state) where
+  arbitrary = do
+    l <- arbitrary
+    pure . DbDiff . Endo $ \s -> l <> s
+  shrink = fmap (\x -> DbDiff $ Endo (x <>)) . shrink . flip appEndo [] . coerce
 
-class HasOnDiskMappings (DbState dbhandle) => Db dbhandle where
+-- newtype DbTableTag t k v = DbTableTag (MapTag t)
+
+class
+  ( HasOnDiskMappings (DbState dbhandle)
+  , TableTypeTag (DbState dbhandle) ~ TableTag
+  )=> Db dbhandle where
 
   type DbState dbhandle :: StateKind MapFlavour
   type DbSeqId dbhandle :: Type

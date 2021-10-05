@@ -29,6 +29,8 @@ import Control.Monad.State.Strict
 
 import LedgerOnDisk.V2.OnDiskMappings
 import LedgerOnDisk.V2.Diff
+import LedgerOnDisk.V2.Example
+
 import Data.STRef.Strict
 import Data.Coerce
 import Data.Monoid
@@ -107,47 +109,10 @@ instance HasOnDiskMappings state => Semigroup (SnapshotInstructions state) where
 instance HasOnDiskMappings state => Monoid (SnapshotInstructions state) where
   mempty = SnapshotInstructions $ const $ pureOnDiskMappings KeepTable
 
-data ExampleState (map :: TableKind MapFlavour) = ExampleState
-  { normal1 :: map 'MK_RW Int Int
-  , normal2 :: map 'MK_RW Int Int
-  , snapshot1 ::  map 'MK_RO Int Int
-  , snapshot2 ::  map 'MK_RO Int Int
-  } deriving stock (Generic)
 
-instance HasOnDiskMappings ExampleState where
-  -- newtype TableTag MapFlavour t k v = ExampleStateTag (MapTag t)
-  -- tableTags = ExampleOdm (ExampleStateTag MapTagRW) (ExampleStateTag MapTagRW) (ExampleStateTag MapTagRO) (ExampleStateTag MapTagRO)
 
-  type OnDiskMappingsTypes ExampleState =
-    '[ '( 'MK_RW, Int, Int)
-     , '( 'MK_RW, Int, Int)
-     , '( 'MK_RO, Int, Int)
-     , '( 'MK_RO, Int, Int)
-     ]
 
-  onDiskMappingsLens  = lens get_odm set_odm where
-    get_odm ExampleState{..} = ExampleOdm normal1 normal2 snapshot1 snapshot2
-    set_odm :: ExampleState map1 -> OnDiskMappings ExampleState map2 -> ExampleState map2
-    set_odm ExampleState{} (ExampleOdm normal1 normal2 snapshot1 snapshot2) = ExampleState{..}
 
-pattern ExampleOdm ::
-  forall map. (HasOnDiskMappings ExampleState)
-  => (HasOnDiskMappings ExampleState)
-  => map 'MK_RW Int Int
-  -> map 'MK_RW Int Int
-  -> map 'MK_RO Int Int
-  -> map 'MK_RO Int Int
-  -> OnDiskMappings ExampleState map
-pattern ExampleOdm n1 n2 s1 s2 = OnDiskMappings (CurryMap n1 :* CurryMap n2 :* CurryMap s1 :* CurryMap s2 :* Nil)
-
-{-# COMPLETE ExampleOdm #-}
-
-deriving stock instance Eq (ExampleState DataMap)
-deriving stock instance Show (ExampleState DataMap)
-
-instance Arbitrary (ExampleState DataMap) where
-  arbitrary = ExampleState <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
-  shrink = genericShrink
 
 -- class CoArbitrary (map k t v) => CoArbitraryMap (map :: MapFlavour -> Type -> Type -> Type) k t v
 -- instance CoArbitrary (map k t v) => CoArbitraryMap (map :: MapFlavour -> Type -> Type -> Type) k t v
