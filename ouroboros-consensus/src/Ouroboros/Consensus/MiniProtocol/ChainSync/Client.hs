@@ -162,7 +162,9 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
 -- The block fetch logic will use the (maybe preprocessed) candidate chains to
 -- download blocks from, prioritising certain candidate chains over others using
 -- the consensus protocol. Whenever such a block has been downloaded and added
--- to the local 'ChainDB', the 'ChainDB' will perform binary chain selection.
+-- to the local 'ChainDB', the 'ChainDB' will perform binary chain selection
+-- (when we say "binary chain comparison" we mean the fact that ChainDB just
+-- compares chains by length).
 --
 -- We also validate the headers of a candidate chain by advancing the
 -- 'ChainDepState' with the headers, which returns an error when validation
@@ -250,12 +252,12 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
 -- 6480 = 8640@ headers. The header state history will have the same length.
 --
 -- This worst case can happen when:
--- - We are more than 6480 or respectively 8640 blocks behind, bulk syncing, and
+-- * We are more than 6480 or respectively 8640 blocks behind, bulk syncing, and
 --   the BlockFetch client and/or the ChainDB can't keep up with the ChainSync
 --   client.
--- - When our clock is running behind such that we are not adopting the
+-- * When our clock is running behind such that we are not adopting the
 --   corresponding blocks because we think they are from the future.
--- - When an attacker is serving us headers from the future.
+-- * When an attacker is serving us headers from the future.
 --
 -- When we are in sync with the network, the fragment will typically be @k@ to
 -- @k + 1@ headers long.
@@ -520,10 +522,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                        -> m ()
     updateCandidateVar theirTip theirFrag =
       case AF.isFragmentComplete (castTip $ unTheir theirTip) theirFrag of
-         Nothing -> disconnect $
+         ServerIsLying -> disconnect $
            InvalidTip
             (AF.headPoint theirFrag)
-         Just completeness ->
+         IsFragmentComplete completeness ->
            atomically $ writeTVar varCandidate $ AF.AnnotatedAnchoredFragment theirFrag completeness
 
     -- | One of the points we sent intersected our chain. This intersection
@@ -819,9 +821,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                       t <- readTVar varCandidate
                       if completeness t == FragmentComplete
                         then
-                          -- as the value is already updated, we retry and let
-                          -- STM wake up this thread when something interesting
-                          -- happens.
+                          -- as we already stored the fact that we are checking
+                          -- a header outside of the genesis window (therefore a
+                          -- complete fragment from our point of view), we retry
+                          -- and let STM wake up this thread when any of the
+                          -- variables that were read changes its value.
                           retry
                         else do
                           writeTVar varCandidate $ AF.AnnotatedAnchoredFragment (theirFrag kis) FragmentComplete
@@ -829,8 +833,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                     Right ledgerView ->
                       return . Right $ Intersects kis' ledgerView
 
-            -- this will essentially `retry` but still we get to execute the
-            -- update on the varCandidate in the OutsideForecastRange case.
+            -- If the result is a Left, this will essentially `retry` but still
+            -- we get to execute the update on the varCandidate in the
+            -- OutsideForecastRange case. If the result is a Right, this will
+            -- just return.
             either intersectCheck return result
 
 

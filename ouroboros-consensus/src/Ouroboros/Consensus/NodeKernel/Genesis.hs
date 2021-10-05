@@ -9,6 +9,7 @@ module Ouroboros.Consensus.NodeKernel.Genesis (
   , density
   , findCommonPrefix
   , findSuffixes
+  , hasKnownDensityAt
   , prefixSelection
   ) where
 
@@ -49,8 +50,8 @@ processWithPrefixSelection ::
 processWithPrefixSelection immTip s m =
     Map.fromList result
   where
-    theList        = Map.toList m
-    selectedPrefix = prefixSelection immTip s $ map snd theList
+    candidatesList = Map.toList m
+    selectedPrefix = prefixSelection immTip s $ map snd candidatesList
     headAsPoint    = headPoint selectedPrefix
     result         =
       catMaybes
@@ -60,7 +61,7 @@ processWithPrefixSelection immTip s m =
           return (peer, AnnotatedAnchoredFragment candidate' (case rest of
                             Empty _ -> completeness candidate
                             _       -> FragmentIncomplete))
-      | (peer, candidate) <- theList ]
+      | (peer, candidate) <- candidatesList ]
 
 {-------------------------------------------------------------------------------
  Internal implementation
@@ -127,22 +128,22 @@ prefixSelection currentImmTip s originalCandidates =
           findSuffixes thisIterationPrefix initialCandidates
 
         -- | The boundaries of the genesis window
-        thisWindow :: (WithOrigin SlotNo, SlotNo)
+        thisWindow :: GenesisWindow
         thisWindow = genesisWindowBounds (headSlot thisIterationPrefix) s
 
         -- | The best candidate in the window
         iterationBestCandidate :: PrefixSelection (AnchoredFragment (Header blk))
         iterationBestCandidate =
-          if all (hasKnownDensityAt (snd thisWindow)) thisIterationSuffixes
+          if all (hasKnownDensityAt (gwTo thisWindow)) thisIterationSuffixes
           then
             -- Find the densest candidate and continue
               MoreDecisions
             $ maximumBy (compare `on` density thisWindow) (map fragment thisIterationSuffixes)
           else
-            case filter (not . hasKnownDensityAt (snd thisWindow)) thisIterationSuffixes of
+            case filter (not . hasKnownDensityAt (gwTo thisWindow)) thisIterationSuffixes of
               [one] ->
                 if density thisWindow (fragment one)
-                   >= maximum (map (density thisWindow) (map fragment thisIterationSuffixes))
+                   >= maximum (map (density thisWindow . fragment) thisIterationSuffixes)
                 -- there is only one candidate with unknown density and it is
                 -- already the densest in the window.
                 then LastDecision $ fragment one
@@ -156,7 +157,7 @@ prefixSelection currentImmTip s originalCandidates =
             MoreDecisions bestCandidate ->
               let nextIterationFragments =
                     [ candidate | candidate <- thisIterationSuffixes
-                                , case intersect bestCandidate (fragment candidate) of
+                                , case bestCandidate `intersect` fragment candidate of
                                     -- discard non-intersecting
                                     Nothing                    -> False
                                     -- include iterationBestCandidate itself
@@ -174,7 +175,7 @@ prefixSelection currentImmTip s originalCandidates =
                   _   -> MoreDecisions $ findCommonPrefix (map fragment nextIterationFragments)
             l@(LastDecision ld) ->
               let nextIterationFragments = [ candidate | candidate <- thisIterationSuffixes
-                                , case intersect ld (fragment candidate) of
+                                , case ld `intersect` fragment candidate of
                                     -- discard non-intersecting
                                     Nothing                    -> False
                                     -- include iterationBestCandidate itself
@@ -230,20 +231,20 @@ hasKnownDensityAt to f                                              =
 -- | Compute the density of the fragment in the given window
 density ::
      HasHeader blk
-  => (WithOrigin SlotNo, SlotNo)
+  => GenesisWindow
   -> AnchoredFragment blk
   -> Int
-density (a, b) f =
+density gw f =
     length
     -- To be completely precise, the density would sometimes require a +1 but as
     -- all fragments will go through the same function, they will all be scaled.
-  . takeWhileOldest (\blk -> blockSlot blk <= b)
+  . takeWhileOldest (\blk -> blockSlot blk <= gwTo gw)
   . maybe f snd
     -- If the fragment is already anchored at the beginning of the window, split
     -- will return nothing. This assumes that we are going to apply this
     -- function only on fragments which actually have a block at the anchor of
     -- the genesis window.
-  . splitBeforeMeasure a (const True)
+  . splitBeforeMeasure (At $ gwFrom gw) (const True)
   $ f
 
 {-------------------------------------------------------------------------------
@@ -252,7 +253,38 @@ density (a, b) f =
 
 -- | Given a list of chains, find the prefix that is common to all of them.
 --
--- PRECONDITION: all candidates must be anchored at the same anchor.
+-- PRECONDITION: all candidates must be anchored at the same point.
+--
+-- Example:
+--
+-- >    ┆ A ┆     ┆ A ┆     ┆ A ┆
+-- >    ├───┤     ├───┤     ├───┤
+-- >    │ B │     │ B │     │ B │
+-- >    ├───┤     ├───┤     ├───┤
+-- >    │ C │     │ C │     │ C │
+-- >    ├───┤     ├───┤     ├───┤
+-- >    │ D │     │ G │     │ J │
+-- >    ├───┤     ├───┤     ├───┤
+-- >    │ E │     │ H │     │ K │
+-- >    ├───┤     ├───┤     └───┘
+-- >    │ F │     │ I │
+-- >    └───┘     └───┘
+-- >      C1        C2        C3
+-- >
+-- >           candidates
+--
+-- Will result in the prefix shared by every candidate (could be just the anchor
+-- point):
+--
+-- >    ┆ A ┆
+-- >    ├───┤
+-- >    │ B │
+-- >    ├───┤
+-- >    │ C │
+-- >    └───┘
+--
+-- Note that this will always exist because of the precondition that candidates
+-- are all anchored at the same point.
 findCommonPrefix ::
      HasHeader (Header blk)
   => [AnchoredFragment (Header blk)]
@@ -261,19 +293,58 @@ findCommonPrefix []     = error "findCommonPrefix called with empty list"
 findCommonPrefix (f:fs) =
   case result of
     Just frag -> frag
-    Nothing   -> error "Precondition violated: fragments must be anchored at the same anchor."
+    Nothing   -> error "Precondition violated: fragments must be anchored at the same point."
   where
     result =
       foldl'
         (\acc candidate -> do
             acc' <- acc
-            (acc'', _, _, _) <- intersect acc' candidate
+            (acc'', _, _, _) <-  acc' `intersect` candidate
             return acc'')
         (Just f)
         fs
 
--- | Move the anchor point of each fragment in the list to the head of the
--- common prefix provided.
+-- | Move the anchor point of each fragment to the head of the common prefix
+-- provided.
+--
+-- Example:
+--
+-- >                                                  commonPrefix
+-- >
+-- >    ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆               ┆   ┆
+-- >    ├───┤     ├───┤     ├───┤     ├───┤               ├───┤
+-- >    │ A │     │ A │     │ A │     │ A │               │ A │
+-- >    ├───┤     ├───┤     ├───┤     ├───┤               ├───┤
+-- >    │ B │     │ B │     │ B │     │ B │               │ B │
+-- >    ├───┤     ├───┤     ├───┤     ├───┤               ├───┤
+-- >    │ X │     │ C │     │ C │     │ C │               │ C │
+-- >    ├───┤     ├───┤     ├───┤     ├───┤               └───┘
+-- >    │ Y │     │ D │     │ G │     │ J │
+-- >    └───┘     ├───┤     ├───┤     ├───┤
+-- >              │ E │     │ H │     │ K │
+-- >              ├───┤     ├───┤     └───┘
+-- >              │ F │     │ I │
+-- >              └───┘     └───┘
+-- >      C1        C2        C3        C4
+-- >
+-- >                 candidates
+--
+-- Will result in:
+--
+-- >
+-- >              ┆ C ┆     ┆ C ┆     ┆ C ┆
+-- >              ├───┤     ├───┤     ├───┤
+-- >              │ D │     │ G │     │ J │
+-- >              ├───┤     ├───┤     ├───┤
+-- >              │ E │     │ H │     │ K │
+-- >              ├───┤     ├───┤     └───┘
+-- >              │ F │     │ I │
+-- >              └───┘     └───┘
+-- >                C2        C3        C4
+-- >
+-- >                     candidates'
+--
+-- Note that as C1 couldn't be split after C, it was discarded.
 findSuffixes ::
      forall hblk. HasHeader hblk
   => AnchoredFragment hblk

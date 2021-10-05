@@ -1358,7 +1358,7 @@ It is important to consider several things here:
   $2k$ slots in (P)BFT.
 \end{itemize}
 
-Because of the reasons above, we could have the following bounds:
+Because of the reasons above, we have the following bounds:
 \begin{itemize}
 \item In PBFT: $2k \le s \le 2k$
 \item In Praos: $3k/f \le s \le 3k/f$
@@ -1367,15 +1367,15 @@ Because of the reasons above, we could have the following bounds:
 \subsection{The current decision}
 
 However one can argue that in reality and with the use cases that are envisioned
-for this consensus layer, it doesn't currently provide much benefits
+for this consensus layer, it doesn't currently provide many benefits
 implementing the machinery to be able to achieve this change in the genesis
 window length.
 
 In (P)BFT, the chain was produced by a set of core nodes that were extending the
 chain in a round-robin like fashion, and when one is to bootstrap from genesis,
 only one chain will be served as only one existed. There will be no choice to
-make and therefore the genesis window will never ever be invoked. Therefore
-whatever value we use for (P)BFT is irrelevant.
+make and therefore the genesis window will never be invoked. Therefore whatever
+value we use for (P)BFT is irrelevant.
 
 Furthermore, if someone uses this consensus layer to run something different
 that the actual Cardano network, either it doesn't make sense to use (P)BFT
@@ -1386,15 +1386,16 @@ core nodes and there will be no choices to make.
 We then decided to use $3k/f$ with the values those variables have in Praos to
 define the genesis window length as up to the current protocol choices ((P)BFT -
 TPraos - Praos). The genesis window length will then be just a parameter in a
-way similar to $k$ and will be fixed during the execution.
+way similar to $k$ and will be fixed until the node is restarted with a
+different set of configuration parameters.
 
 \subsection{Future approaches}
 
 There is however a subtlety that has to be made precise here. This choice is
 correct for now and as long as $f$ doesn't change. Currently, the active slots
 coefficient is not a votable parameter so there is no current way to change it.
-However, if it was made votable or even era-dependent, further development will
-be required.
+However, if it was made votable or even era-dependent, further investigation
+will be required.
 
 This would lead to the following situation, where the chains transition from era
 $E_1$ to era $E_2$ at the dot:
@@ -1421,12 +1422,12 @@ $E_1$ to era $E_2$ at the dot:
 \end{tikzpicture}
 \end{center}
 
-In this picture, imagine we are moving from $E_1$ that uses $f_1$ to $E_2$
-that uses $f_2$ where $f_1 > f_2$. The length of the second window would be
-bigger. However, it doesn't make sense to compare the part of the chain after
+In this picture, imagine we are moving from $E_1$ that uses $f_1$ to $E_2$ that
+uses $f_2$ where $f_1 > f_2$. The length of the second window would be
+bigger. However, it does not make sense to compare the part of the chain after
 the transition point using the genesis window from before the transition point
-and conversely it doesn't make sense to compare the part of the chain before the
-transition point using the genesis window from after the transition point.
+and conversely it does not make sense to compare the part of the chain before
+the transition point using the genesis window from after the transition point.
 
 It would therefore only be sensible to provide a specific transition function
 that can decide in such situations which chain has to be preferred. Very much

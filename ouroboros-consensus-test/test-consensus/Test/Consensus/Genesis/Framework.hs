@@ -3,10 +3,14 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# OPTIONS_GHC -Wno-orphans            #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Test.Consensus.Genesis.Framework (
     AnnotatedBlockTree (..)
   , BlockTree (..)
+  , Dominated
+  , NonDominated
   , SlotDelta (..)
   , isDominated
   , pathsThroughTree
@@ -53,13 +57,13 @@ instance Arbitrary GenesisWindowLength where
 
 -- | A BlockTree captures a random tree, which is then turned into a Dominated
 -- tree over the associated GenesisWindowLength.
-data BlockTree = BlockTree {
-    tree     :: Tree SlotDelta
-  , original :: Tree SlotDelta
-  , gwl      :: GenesisWindowLength
+data BlockTree d = BlockTree {
+    tree     :: !(Tree SlotDelta)
+  , original :: !(Tree SlotDelta)
+  , gwl      :: !GenesisWindowLength
   }
 
-instance Show BlockTree where
+instance Show (BlockTree d) where
   show BlockTree{..} =
     "Original: \n" <>  (drawTree . fmap show $ original) <>
     "Modified: \n" <>  (drawTree . fmap show $ tree) <>
@@ -67,12 +71,12 @@ instance Show BlockTree where
 
 -- | An AnnotatedBlockTree is a BlockTree that also has a FragmentCompleteness
 -- tag for each one of the paths in the resulting tree.
-data AnnotatedBlockTree = AnnotatedBlockTree {
-  bt          :: BlockTree,
-  annotations :: [FragmentCompleteness]
+data AnnotatedBlockTree d = AnnotatedBlockTree {
+  bt          :: !(BlockTree d),
+  annotations :: ![FragmentCompleteness]
   }
 
-instance Show AnnotatedBlockTree where
+instance Show (AnnotatedBlockTree d) where
   show AnnotatedBlockTree{..} =
     "Original Tree:\n" <> drawTree (show <$> original bt) <>
     "Tree:\n" <> drawTree (show <$> tree bt) <>
@@ -87,7 +91,7 @@ instance Arbitrary FragmentCompleteness where
     ]
   shrink _ = [] -- no shrinking
 
-instance Arbitrary AnnotatedBlockTree where
+instance Arbitrary (BlockTree d) => Arbitrary (AnnotatedBlockTree d) where
   arbitrary = do
     bt <- arbitrary
     annotations <- replicateM (Prelude.length (pathsThroughTree bt)) arbitrary
@@ -105,16 +109,31 @@ data DecidedTree =
     DLeaf SlotDelta
   deriving Show
 
+data Dominated
+data NonDominated
+
 {-------------------------------------------------------------------------------
  Dominated tree generation
 -------------------------------------------------------------------------------}
 
-instance Arbitrary BlockTree where
+instance Arbitrary (BlockTree Dominated) where
   arbitrary = do
     s <- arbitrary
     t <- arbitrary
-    let t' = makeDominated s t
+    t' <- makeDominated s t
     return (BlockTree t' t s)
+
+  shrink BlockTree{..} = [ BlockTree tree' original gwl'
+                         | tree' <- shrinkTree tree
+                         , gwl' <- shrink gwl
+                         , isDominated gwl' tree'
+                         ]
+
+instance Arbitrary (BlockTree NonDominated) where
+  arbitrary = do
+    s <- arbitrary
+    t <- arbitrary
+    return (BlockTree t t s)
 
   shrink BlockTree{..} = [ BlockTree tree' original gwl'
                          | tree' <- shrinkTree tree
@@ -166,7 +185,7 @@ density (GenesisWindowLength g) = density' g
           _   -> 1 + maximum (map (density' (gl - s')) ts)
 
 -- | Extract all the paths through a tree as anchored fragments.
-pathsThroughTree :: BlockTree -> [AnchoredFragment (Header TestBlock)]
+pathsThroughTree :: BlockTree d -> [AnchoredFragment (Header TestBlock)]
 pathsThroughTree =
       paths (Empty AnchorGenesis :>
              getHeader (TestBlock (TestHash (0 NE.:| [])) 0 True))
@@ -241,30 +260,31 @@ isDominated s (Node _ ts)  =
 -- intersection point, elect a candidate from the ones with highest density and
 -- for the other candidates, find the chain that is as dense as the elected one
 -- and remove a block on that one. Repeat recursively on the elected candidate.
-makeDominated :: GenesisWindowLength -> Tree SlotDelta -> Tree SlotDelta
-makeDominated _  tr@(Node _ [])  = tr
-makeDominated genLen tr@(Node _ [t]) = tr { subForest = [makeDominated genLen t] }
+makeDominated :: GenesisWindowLength -> Tree SlotDelta -> Gen (Tree SlotDelta)
+makeDominated _  tr@(Node _ [])  = return tr
+makeDominated genLen tr@(Node _ [t]) = do
+  t' <- makeDominated genLen t
+  return $ tr { subForest = [t'] }
 makeDominated genLen tr =
-    makeItWin [genLen] $ decideByDensityOnWindow genLen tr
+    makeItWin [genLen] =<< decideByDensityOnWindow genLen tr
   where
     -- | Process a DecidedTree into a normal tree by removing blocks from the
     -- competitor branches that were not elected.
-    makeItWin :: [GenesisWindowLength] -> DecidedTree -> Tree SlotDelta
-    makeItWin _         (DLeaf s)          = Node s []
+    makeItWin :: [GenesisWindowLength] -> DecidedTree -> Gen (Tree SlotDelta)
+    makeItWin _         (DLeaf s)          = return $ Node s []
     makeItWin _         (DUndecided n)     = makeDominated genLen n
-    makeItWin mustWinAt (DNode s d others) =
+    makeItWin mustWinAt (DNode s d others) = do
          let
            mustWinAtWindows = genLen: map (`consumeWindow` s) mustWinAt
-           d' = makeItWin mustWinAtWindows d
-         in
-           case others of
-             [] -> Node s [d']
+         d' <- makeItWin mustWinAtWindows d
+         case others of
+             [] -> return $ Node s [d']
              (t:ts) ->
                let densityWinningAtEachWindow = map (\x -> (x, x `density` d')) mustWinAtWindows
                    (okays, wrongs) =
                      NE.partition (\x -> all (\(y, z) -> density y x < z) densityWinningAtEachWindow) (t NE.:| ts)
                in
-                 Node s $ d' : okays ++ concatMap (removeUntilUnder densityWinningAtEachWindow) wrongs
+                 return $ Node s $ d' : okays ++ concatMap (removeUntilUnder densityWinningAtEachWindow) wrongs
 
     -- | Remove blocks from this branch until it is under the given target
     -- density.
@@ -283,14 +303,14 @@ makeDominated genLen tr =
 
     -- | Create a DecidedTree on this GenesisWindow. This will elect one branch
     -- if there are multiple competitors with highest density.
-    decideByDensityOnWindow :: GenesisWindowLength -> Tree SlotDelta -> DecidedTree
-    decideByDensityOnWindow _                    (Node s []) = DLeaf s
+    decideByDensityOnWindow :: GenesisWindowLength -> Tree SlotDelta -> Gen DecidedTree
+    decideByDensityOnWindow _                    (Node s []) = return $ DLeaf s
     decideByDensityOnWindow remainingWindowAfter n@(Node s [t]) =
       if nodeDelta t > genesisWindowLength remainingWindowAfter
       then
-        DUndecided n
+        return $ DUndecided n
       else
-        DNode s (decideByDensityOnWindow (consumeWindow remainingWindowAfter (rootLabel t)) t) []
+        (flip (DNode s) []) <$> (decideByDensityOnWindow (consumeWindow remainingWindowAfter (rootLabel t)) t)
     decideByDensityOnWindow remainingWindowAfter n@(Node s ts) =
       case   L.groupBy ((==) `on` fst)
            $ L.sortBy (flip compare `on` fst)
@@ -299,30 +319,30 @@ makeDominated genLen tr =
           [] -> error "can't happen because ts /= []"
           [(0,_):_] ->
             -- all with density 0, we are at the end of the window
-            DUndecided n
+            return $ DUndecided n
           [(_,o)]:r ->
             -- one with max and some others with less
             -- (r can't be empty because ts /= [t])
             let
               remainingWindow = consumeWindow remainingWindowAfter (rootLabel o)
             in
-              DNode s (decideByDensityOnWindow remainingWindow o) (concatMap (map snd) r)
-          best:r ->
+              flip (DNode s) (concatMap (map snd) r) <$> decideByDensityOnWindow remainingWindow o
+          best:r -> do
+
             -- multiple with same density >0
+            electedIdx <- choose(0, length best - 1)
             let
-              electedIdx = 0
               electedBranch = snd $ best !! electedIdx
               others = map (snd . (best !!)) ([0..electedIdx - 1] ++ [electedIdx + 1..length best - 1])
               remainingWindow = consumeWindow remainingWindowAfter (rootLabel electedBranch)
-              electedBranch' = decideByDensityOnWindow remainingWindow electedBranch
-            in
-              DNode s electedBranch' (others ++ concatMap (map snd) r)
+            electedBranch' <- decideByDensityOnWindow remainingWindow electedBranch
+            return $ DNode s electedBranch' (others ++ concatMap (map snd) r)
 
 {-------------------------------------------------------------------------------
  Tests
 -------------------------------------------------------------------------------}
 
-prop_generator :: BlockTree -> Bool
+prop_generator :: BlockTree Dominated -> Bool
 prop_generator BlockTree{..} = isDominated gwl tree
 
 tests :: TestTree

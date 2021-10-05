@@ -143,6 +143,8 @@ fetchLogicIteration decisionTracer clientStateTracer
           fetchTriggerVariables
           fetchNonTriggerVariables
           stateFingerprint
+        -- The retrieved peer chains might require some refinement such as
+        -- `prefixSelection` when running on Genesis mode.
         state' <- consensusRefinement state
         return (state', fingerprint)
 

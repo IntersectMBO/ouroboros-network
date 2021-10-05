@@ -504,7 +504,7 @@ anchorNewest n c
     linearDrop !0 c'        = c'
     linearDrop !m (_ :< c') = linearDrop (m - 1) c'
 
--- | \( O(\max(n_1, n_2)) \). Check whether the first anchored sequence is a
+-- | \( O(\min(n_1, n_2)) \). Check whether the first anchored sequence is a
 -- prefix of the second. Comparisons are done based on the 'Eq' instances.
 --
 -- The two 'AnchoredSeq's must have the same anchor, otherwise the first cannot
@@ -521,7 +521,7 @@ s1 `isPrefixOf` s2 =
     toElements :: AnchoredSeq v a b -> [b]
     toElements = L.map unMeasuredWith . Foldable.toList . unanchorSeq
 
--- | \( O(\max(n_1, n_2)) \). Check whether the first anchored sequence is a
+-- | \( O(\min(n_1, n_2)) \). Check whether the first anchored sequence is a
 -- prefix of the second. Comparisons are done based on the measure.
 --
 -- The two 'AnchoredSeq's must have the same anchor, otherwise the first cannot
@@ -538,13 +538,18 @@ s1 `isPrefixOfByMeasure` s2 =
     toMeasures :: AnchoredSeq v a b -> [v]
     toMeasures = L.map getElementMeasure . Foldable.toList . unanchorSeq
 
--- | \( O(\max(n_1, n_2)) \). Check whether the first anchored sequence is a
+-- | \( O(\min(n_1, n_2)) \). Check whether the first anchored sequence is a
 -- prefix of the second. Comparisons are done based on the result of the
 -- transformation through injective functions into @Eq@ types.
 --
 -- The first function will transform an @a@, the second function will transform
 -- a @b@ and they both have to be injective, this is: for two different
--- elements, the result of the function must be different.
+-- elements, the result of the function must be different. If the functions
+-- provided are not injective, then elements with the same image are
+-- indistinguishable and the purpose of this function is defeated.
+--
+-- This is intended to be used with some identifier of elements like the hash of
+-- a block or maybe its Point.
 --
 -- The two 'AnchoredSeq's must have the same anchor, otherwise the first cannot
 -- be a prefix of the second.

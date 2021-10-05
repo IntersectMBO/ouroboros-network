@@ -300,8 +300,10 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 
+  -- See the comments on Ouroboros.Consensus.Config.GenesisWindowLength for an
+  -- explanation on why this is set to a constant (2k)
   protocolGenesisWindowLength =
-    GenesisWindowLength . (3 *) . maxRollbacks . protocolSecurityParam
+    GenesisWindowLength . (2 *) . maxRollbacks . protocolSecurityParam
 
   checkIsLeader PBftConfig{pbftParams}
                 PBftCanBeLeader{..}

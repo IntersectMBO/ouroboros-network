@@ -19,7 +19,7 @@ import           Ouroboros.Network.AnchoredFragment hiding (HasHeader,
 import           Ouroboros.Network.AnchoredFragment.Completeness
 import           Ouroboros.Network.Block
 
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (catMaybes, fromMaybe)
 import           Test.Consensus.Genesis.Framework
 import           Test.Util.TestBlock (TestBlock)
 
@@ -51,8 +51,8 @@ maxvalidBg s (f:fs) = res
 -- | If we run prefix selection claiming that some of the fragments are
 -- incomplete, the returned fragment must be a prefix of what prefix selection
 -- returns if we claim that every fragment is complete.
-prop_contained :: AnnotatedBlockTree -> Property
-prop_contained AnnotatedBlockTree{..} =
+prop_contained_dominated :: AnnotatedBlockTree Dominated -> Property
+prop_contained_dominated AnnotatedBlockTree{..} =
   let paths = pathsThroughTree bt
       known = map (`AnnotatedAnchoredFragment` FragmentComplete) paths
       a1 = prefixSelection GenesisPoint (gwl bt) known
@@ -60,26 +60,77 @@ prop_contained AnnotatedBlockTree{..} =
       a2 = prefixSelection GenesisPoint (gwl bt) maybeKnown
   in
      counterexample (show a1 <> " /= " <> show a2) $
-     isDominated (gwl bt) (tree bt) && (Prelude.length paths > 1) ==>
-     cover 99 (Prelude.length paths > 1) "non-trivial" $
+     isDominated (gwl bt) (tree bt) ==>
+     label (if Prelude.length paths > 1 then "non-trivial" else "trivial") $
      isPrefixOf a2 a1
 
 -- | Maxvalid_bg and prefix selection must return the same result when we claim
 -- that every fragment is complete.
-prop_all_complete :: BlockTree -> Property
-prop_all_complete b =
+prop_all_complete_dominated :: BlockTree Dominated -> Property
+prop_all_complete_dominated b =
   let pathsForMaxvalid = pathsThroughTree b
       pathsForPrefixSelection =
         map (`AnnotatedAnchoredFragment` FragmentComplete)  (pathsThroughTree b)
   in
-    isDominated (gwl b) (tree b) && (Prelude.length pathsForMaxvalid > 1) ==>
-    cover 99 (Prelude.length pathsForMaxvalid > 1) "non-trivial" $
-        maxvalidBg                  (gwl b) pathsForMaxvalid
+    isDominated (gwl b) (tree b) ==>
+     label (if Prelude.length pathsForMaxvalid > 1 then "non-trivial" else "trivial") $
+        maxvalidBg                   (gwl b) pathsForMaxvalid
     === prefixSelection GenesisPoint (gwl b) pathsForPrefixSelection
+
+-- | If we run prefix selection claiming that some of the fragments are
+-- incomplete, the returned fragment must be a prefix of what prefix selection
+-- returns if we claim that every fragment is complete.
+prop_contained :: AnnotatedBlockTree NonDominated -> Property
+prop_contained AnnotatedBlockTree{..} =
+  let paths = pathsThroughTree bt
+      known = map (`AnnotatedAnchoredFragment` FragmentComplete) paths
+      a1 = prefixSelection GenesisPoint (gwl bt) known
+      maybeKnown = zipWith AnnotatedAnchoredFragment paths annotations
+      a2 = prefixSelection GenesisPoint (gwl bt) maybeKnown
+      alongA2 = case intersect a1 a2 of
+          Nothing -> error "can't happen"
+          Just (_, _, _, a2') ->
+              catMaybes [ (\(_,_,p',_) -> AnnotatedAnchoredFragment p' a) <$> intersect p a2' | AnnotatedAnchoredFragment p a <- maybeKnown ]
+  in
+     counterexample (show a1 <> " /= " <> show a2) $
+     label ((if isDominated (gwl bt) (tree bt) then "Dominated" else "NonDominated") <>
+            "_" <>
+            (if Prelude.length paths > 1 then "non-trivial" else "trivial")) $
+     (property $ isPrefixOf a2 a1) .||. case intersect a1 a2 of
+                                          Nothing -> property False
+                                          Just (_, x, _, _) -> property $ any (not . hasKnownDensityAt (gwTo $ (genesisWindowBounds (headSlot x) (gwl bt)))) alongA2
+
+-- -- | Maxvalid_bg and prefix selection must return the same result when we claim
+-- -- that every fragment is complete.
+-- prop_all_complete :: BlockTree NonDominated -> Property
+-- prop_all_complete b =
+--   let pathsForMaxvalid = pathsThroughTree b
+--       pathsForPrefixSelection =
+--         map (`AnnotatedAnchoredFragment` FragmentComplete)  (pathsThroughTree b)
+--   in
+--     isDominated (gwl b) (tree b) && (Prelude.length pathsForMaxvalid > 1) ==>
+--     label (if isDominated (gwl b) (tree b) then "Dominated" else "NonDominated") $
+--         if isDominated (gwl b) (tree b)
+--         then
+--                 maxvalidBg                  (gwl b) pathsForMaxvalid
+--             === prefixSelection GenesisPoint (gwl b) pathsForPrefixSelection
+--         else
+--             let a1 = maxvalidBg                  (gwl b) pathsForMaxvalid
+--                 a2 = prefixSelection GenesisPoint (gwl b) pathsForPrefixSelection
+--             in
+--               case intersect a1 a2 of
+--                 Nothing -> property False
+--                 Just (_, x, a1', a2') -> density (genesisWindowBounds (headSlot x) (gwl b)) a1'
+--                                      === density (genesisWindowBounds (headSlot x) (gwl b)) a2'
 
 tests :: TestTree
 tests = testGroup "Prefix Selection"
-      [ testProperty "Prefix Selection vs Maxvalid_bg" prop_all_complete
-      , testProperty "Unknown is always prefix of known" prop_contained
+      [ testGroup "Dominated"
+        [ testProperty "Prefix Selection vs Maxvalid_bg" prop_all_complete_dominated
+        , testProperty "Unknown is always prefix of known" prop_contained_dominated
+        ]
+      , testGroup "Random"
+      --   [ testProperty "Prefix Selection vs Maxvalid_bg" prop_all_complete
+         [testProperty "Unknown is prefix of known OR there are incompletes in the window" prop_contained]
+      --   ]
       ]
-

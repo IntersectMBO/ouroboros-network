@@ -4,6 +4,7 @@
 module Ouroboros.Network.AnchoredFragment.Completeness (
     AnnotatedAnchoredFragment (..)
   , FragmentCompleteness (..)
+  , IsFragmentComplete (..)
   , emptyAnnotatedAnchoredFragment
   , isFragmentComplete
   ) where
@@ -31,28 +32,32 @@ import           Cardano.Slotting.Slot
 data FragmentCompleteness = FragmentComplete | FragmentIncomplete
   deriving (Show, Generic, Eq, NoThunks)
 
+data IsFragmentComplete =
+  ServerIsLying
+  | IsFragmentComplete !FragmentCompleteness
+
 -- | Return a 'FragmentCompleteness' for the given fragment assuming the
 -- provided tip is the one announced by the remote peer.
 --
--- This function will return 'Nothing' when the slot of the announced tip is
--- smaller than the slot of the most recent block on the fragment. This should
--- be interpreted in the ChainSync protocol as a misbehave of the server.
+-- This function will return 'ServerIsLying' when the slot of the announced tip
+-- is smaller than the slot of the most recent block on the fragment. This
+-- should be interpreted in the ChainSync protocol as a misbehave of the server.
 isFragmentComplete ::
   ( StandardHash blk
   , HasHeader blk)
   => Tip blk
   -> AnchoredFragment blk
-  -> Maybe FragmentCompleteness
+  -> IsFragmentComplete
 isFragmentComplete TipGenesis theirFrag =
   if pointHash (anchorPoint theirFrag) == GenesisHash
-  then Just FragmentComplete
-  else Nothing
+  then IsFragmentComplete FragmentComplete
+  else ServerIsLying
 isFragmentComplete (Tip s tipHash _) theirFrag =
   if headSlot theirFrag > At s
   then
-    Nothing
+    ServerIsLying
   else
-  Just $ case headHash theirFrag of
+  IsFragmentComplete $ case headHash theirFrag of
     GenesisHash -> FragmentIncomplete
     BlockHash theHeadHash
       | theHeadHash == tipHash -> FragmentComplete

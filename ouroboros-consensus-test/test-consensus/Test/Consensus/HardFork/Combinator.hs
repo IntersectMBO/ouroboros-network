@@ -111,8 +111,7 @@ instance Arbitrary TestSetup where
       testSetupK         <- SecurityParam   <$> choose (2, 10)
       -- TODO why does k=1 cause the nodes to only forge in the first epoch?
 
-      -- TODO @js: think about what value should be used here.
-      let testSetupS     = GenesisWindowLength $ 2 * maxRollbacks testSetupK -- TODO
+      let testSetupS     = GenesisWindowLength $ 2 * maxRollbacks testSetupK
       testSetupTxSlot    <- SlotNo          <$> choose (0, 9)
 
       testSetupSeed       <- arbitrary

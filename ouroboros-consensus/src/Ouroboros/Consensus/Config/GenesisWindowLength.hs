@@ -3,7 +3,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Ouroboros.Consensus.Config.GenesisWindowLength (
-    GenesisWindowLength (..)
+    GenesisWindow (..)
+  , GenesisWindowLength (..)
   , genesisWindowBounds
   ) where
 
@@ -36,11 +37,41 @@ newtype GenesisWindowLength = GenesisWindowLength { genesisWindowLength :: Word6
   deriving (Eq, Generic, NoThunks)
   deriving Show via Quiet GenesisWindowLength
 
--- | Given the slot of the window's anchor and the length of the window return
--- the bounds of the window.
+-- | A genesis window starts at a given SlotNo (maybe Origin) and always ends
+-- necessarily on a SlotNo.
+--
+-- The lower bound is irrelevant whether or not it is inclusive or exclusive as
+-- every candidate will have a block at said point. The upper bound is
+-- inclusive.
+data GenesisWindow = GenesisWindow {
+  gwFrom :: !SlotNo,
+  gwTo   :: !SlotNo
+  }
+-- TODO: Split dominated and non-dominated
+
+-- | Smart constructor for GenesisWindow.
+--
+-- > > genesisWindowBounds (At 1) (GenesisWindowLength 3)
+-- > GenesisWindow 1 4
+-- >
+-- > > genesisWindowBounds Origin (GenesisWindowLength 3)
+-- > GenesisWindow 0 3
+--
+-- There will always be some point in time known as slot 0, and no blocks can
+-- exist before that one. This function will be invoked when there is a fork so
+-- if the fork is on a regular block, it won't be called with @Origin@. If
+-- there is a fork at Genesis, then we have the following situation:
+--
+-- > G -- A -- B ......
+-- >  \--   -- C
+--
+-- Then the slot 0 will be somewhere in @(G,A]@, and the window should be
+-- anchored at slot 0.
 genesisWindowBounds
   :: WithOrigin SlotNo
   -> GenesisWindowLength
-  -> (WithOrigin SlotNo, SlotNo)
-genesisWindowBounds w (GenesisWindowLength s) =
-  (w, withOrigin (SlotNo s) (SlotNo s +) w)
+  -> GenesisWindow
+genesisWindowBounds Origin (GenesisWindowLength s) =
+  GenesisWindow 0 (SlotNo s)
+genesisWindowBounds (At x) (GenesisWindowLength s) =
+  GenesisWindow x $ SlotNo s + x
