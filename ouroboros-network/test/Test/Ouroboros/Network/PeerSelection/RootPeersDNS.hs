@@ -17,6 +17,7 @@ import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Data.Dynamic (fromDynamic, Typeable)
 import           Data.Foldable (toList, foldl')
 import           Data.Functor (void)
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Sequence as Seq
@@ -470,6 +471,47 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _)
 -- Public Root Peers Provider Tests
 --
 
+-- | Delay and timeout script which make sure that eventually the dns lookup
+-- will not timeout.
+--
+data DelayAndTimeoutScripts = DelayAndTimeoutScripts
+       (Script DNSLookupDelay)
+       (Script DNSTimeout)
+    deriving Show
+
+fixupDelayAndTimeoutScripts :: DelayAndTimeoutScripts
+                            -> DelayAndTimeoutScripts
+fixupDelayAndTimeoutScripts (DelayAndTimeoutScripts lookupScript@(Script delays)
+                                                    timeoutScript@(Script timeouts)) =
+      let lastTimeout :: DiffTime
+          lastTimeout = getDNSTimeout $ NonEmpty.last timeouts
+
+          lookupScript' =
+            if getDNSLookupDelay (NonEmpty.last delays) >= lastTimeout
+              then Script (delays <> (DNSLookupDelay (lastTimeout / 2) :| []))
+              else lookupScript
+
+      in (DelayAndTimeoutScripts lookupScript' timeoutScript)
+
+instance Arbitrary DelayAndTimeoutScripts where
+    arbitrary = fmap fixupDelayAndTimeoutScripts
+              $ DelayAndTimeoutScripts
+                  <$> arbitrary
+                  <*> arbitrary
+
+    shrink (DelayAndTimeoutScripts lookupScript timeoutScript) =
+      [ fixupDelayAndTimeoutScripts
+          (DelayAndTimeoutScripts lookupScript timeoutScript')
+      | timeoutScript' <- shrink timeoutScript
+      ]
+      ++
+      [ fixupDelayAndTimeoutScripts
+          (DelayAndTimeoutScripts lookupScript' timeoutScript)
+      | lookupScript' <- shrink lookupScript
+      ]
+
+
+
 -- | The 'publicRootPeersProvider' should be able to resolve DNS domains
 -- correctly, assuming the domain maps to any IP address. This property
 -- tests whether 'publicRootPeersProvider' is capable of eventually resolving domain
@@ -477,37 +519,32 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _)
 -- a bounded amount of time.
 --
 prop_public_resolvesDomainsCorrectly :: MockRoots
-                                     -> Script DNSTimeout
-                                     -> Script DNSLookupDelay
+                                     -> DelayAndTimeoutScripts
                                      -> Int
                                      -> Property
 prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap)
-                                     dnsTimeoutScript
-                                     dnsLookupDelayScript
+                                     (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
                                      n =
-    within 1_000_000 $
-      lookupLoop mockRoots dnsMap === dnsMap
+    lookupLoop mockRoots dnsMap === dnsMap
   where
     -- Perform public root DNS lookup until no failures
     lookupLoop :: MockRoots -> Map Domain [IPv4] -> Map Domain [IPv4]
     lookupLoop mr res =
-      let successes = selectPublicRootResultEvents
-                        $ selectPublicRootPeersEvents
-                        $ selectRootPeerDNSTraceEvents
-                        $ runSimTrace
-                        $ mockPublicRootPeersProvider mr
-                                                      dnsTimeoutScript
-                                                      dnsLookupDelayScript
-                                                      n
+      let tr = runSimTrace
+             $ mockPublicRootPeersProvider mr
+                                           dnsTimeoutScript
+                                           dnsLookupDelayScript
+                                           n
+
+          successes = selectPublicRootResultEvents
+                    $ selectPublicRootPeersEvents
+                    $ selectRootPeerDNSTraceEvents
+                    $ tr
 
           failures = selectPublicRootFailureEvents
-                      $ selectPublicRootPeersEvents
-                      $ selectRootPeerDNSTraceEvents
-                      $ runSimTrace
-                      $ mockPublicRootPeersProvider mr
-                                                    dnsTimeoutScript
-                                                    dnsLookupDelayScript
-                                                    n
+                   $ selectPublicRootPeersEvents
+                   $ selectRootPeerDNSTraceEvents
+                   $ tr
 
           successesMap = Map.fromList $ map snd successes
 
@@ -524,6 +561,6 @@ prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap)
             ]
           newMR = mr { mockLocalRootPeers = failuresMap }
 
-       in if null failures
+        in if null failures || res == dnsMap
             then res
             else lookupLoop newMR (res <> successesMap)
