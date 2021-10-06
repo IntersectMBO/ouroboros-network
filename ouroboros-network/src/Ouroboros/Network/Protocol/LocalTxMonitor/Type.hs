@@ -84,7 +84,13 @@ data LocalTxMonitor txid tx slot where
   StDone   :: LocalTxMonitor txid tx slot
 
 
-instance (ShowProxy txid, ShowProxy tx, ShowProxy slot) => ShowProxy (LocalTxMonitor txid tx slot) where
+instance
+    ( ShowProxy txid
+    , ShowProxy tx
+    , ShowProxy slot
+    ) =>
+    ShowProxy (LocalTxMonitor txid tx slot)
+  where
     showProxy _ = unwords
       [ "LocalTxMonitor"
       , showProxy (Proxy :: Proxy txid)
@@ -95,16 +101,18 @@ instance (ShowProxy txid, ShowProxy tx, ShowProxy slot) => ShowProxy (LocalTxMon
 data StBusyKind where
   -- | The server is busy fetching the next transaction from the mempool
   StBusyNext :: StBusyKind
-  -- | The server is busy looking for the presence of a specific transaction in the mempool
+  -- | The server is busy looking for the presence of a specific transaction in
+  -- the mempool
   StBusyHas :: StBusyKind
-  -- | The server is busy looking for the current size and max capacity of the mempool
+  -- | The server is busy looking for the current size and max capacity of the
+  -- mempool
   StBusySizes :: StBusyKind
 
 -- | Describes the MemPool sizes and capacity for a given snapshot.
 data MempoolSizeAndCapacity = MempoolSizeAndCapacity
   { capacityInBytes :: !Word32
-    -- ^ The maximum capacity of the mempool. Note that this may dynamically change when
-    -- the ledger state is updated.
+    -- ^ The maximum capacity of the mempool. Note that this may dynamically
+    -- change when the ledger state is updated.
   , sizeInBytes     :: !Word32
     -- ^ The summed byte size of all the transactions in the mempool.
   , numberOfTxs     :: !Word32
@@ -143,8 +151,8 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: slot
       -> Message (LocalTxMonitor txid tx slot) StAcquiring StAcquired
 
-    -- | Like 'MsgAcquire', but when one is already acquired. Allows to renew the
-    -- snapshot's state.
+    -- | Like 'MsgAcquire', but when one is already acquired. Allows to renew
+    -- the snapshot's state.
     --
     MsgReAcquire
       :: Message (LocalTxMonitor txid tx slot) StAcquired StAcquiring
@@ -176,7 +184,8 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: Bool
       -> Message (LocalTxMonitor txid tx slot) (StBusy StBusyHas) StAcquired
 
-    -- | The client asks the server about the mempool current size and max capacity.
+    -- | The client asks the server about the mempool current size and max
+    -- capacity.
     --
     MsgGetSizes
       :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy StBusySizes)
@@ -198,12 +207,12 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: Message (LocalTxMonitor txid tx slot) StIdle StDone
 
   data ClientHasAgency st where
-    TokIdle  :: ClientHasAgency StIdle
+    TokIdle     :: ClientHasAgency StIdle
     TokAcquired :: ClientHasAgency StAcquired
 
   data ServerHasAgency st where
     TokAcquiring :: ServerHasAgency StAcquiring
-    TokBusy  :: TokBusyKind k -> ServerHasAgency (StBusy k)
+    TokBusy      :: TokBusyKind k -> ServerHasAgency (StBusy k)
 
   data NobodyHasAgency st where
     TokDone  :: NobodyHasAgency StDone
@@ -215,8 +224,8 @@ instance Protocol (LocalTxMonitor txid tx slot) where
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
 data TokBusyKind (k :: StBusyKind) where
-  TokBusyNext :: TokBusyKind StBusyNext
-  TokBusyHas :: TokBusyKind StBusyHas
+  TokBusyNext  :: TokBusyKind StBusyNext
+  TokBusyHas   :: TokBusyKind StBusyHas
   TokBusySizes :: TokBusyKind StBusySizes
 
 deriving instance (Show txid, Show tx, Show slot)
@@ -224,12 +233,12 @@ deriving instance (Show txid, Show tx, Show slot)
 
 instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
   show = \case
-    TokIdle -> "TokIdle"
+    TokIdle     -> "TokIdle"
     TokAcquired -> "TokAcquired"
 
 instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
   show = \case
-    TokAcquiring -> "TokAcquiring"
-    TokBusy TokBusyNext -> "TokBusy TokBusyNext"
-    TokBusy TokBusyHas -> "TokBusy TokBusyHas"
+    TokAcquiring         -> "TokAcquiring"
+    TokBusy TokBusyNext  -> "TokBusy TokBusyNext"
+    TokBusy TokBusyHas   -> "TokBusy TokBusyHas"
     TokBusy TokBusySizes -> "TokBusy TokBusySizes"

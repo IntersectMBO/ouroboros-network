@@ -35,19 +35,19 @@ newtype LocalTxMonitorClient txid tx slot m a = LocalTxMonitorClient {
       runLocalTxMonitorClient :: m (ClientStIdle txid tx slot m a)
     }
 
--- | In the 'StIdle' protocol state, the client has agency and can proceed to acquire
--- a mempool snapshot, or end the protocol.
+-- | In the 'StIdle' protocol state, the client has agency and can proceed to
+-- acquire a mempool snapshot, or end the protocol.
 --
 data ClientStIdle txid tx slot m a where
 
   -- | Send the 'MsgAcquire', with handlers for the replies.
   --
-  -- This request cannot timeout and cannot fail, it'll acquire the latest mempool snapshot
-  -- available on the server and hang on to it. This allows to run any subsequent queries
-  -- against the same view of the mempool.
+  -- This request cannot timeout and cannot fail, it'll acquire the latest
+  -- mempool snapshot available on the server and hang on to it. This allows to
+  -- run any subsequent queries against the same view of the mempool.
   --
-  -- The snapshot is acquired for a particular slot number which materializes the 'virtual block'
-  -- under construction.
+  -- The snapshot is acquired for a particular slot number which materializes
+  -- the 'virtual block' under construction.
   --
   SendMsgAcquire
     :: (slot -> m (ClientStAcquired txid tx slot m a))
@@ -59,31 +59,34 @@ data ClientStIdle txid tx slot m a where
     :: a
     -> ClientStIdle txid tx slot m a
 
--- | In the 'StAcquired' protocol state, the client has agency and can query the server against
--- the acquired snapshot. Alternatively, it can also (re)acquire a more recent snapshot.
+-- | In the 'StAcquired' protocol state, the client has agency and can query the
+-- server against the acquired snapshot. Alternatively, it can also (re)acquire
+-- a more recent snapshot.
 --
 data ClientStAcquired txid tx slot m a where
-  -- | The mempool is modeled as an ordered list of transactions and thus, can be traversed
-  -- linearly. 'MsgNextTx' requests the next transaction from the current list. This must be
-  -- a transaction that was not previously sent to the client for this particular snapshot.
+  -- | The mempool is modeled as an ordered list of transactions and thus, can
+  -- be traversed linearly. 'MsgNextTx' requests the next transaction from the
+  -- current list. This must be a transaction that was not previously sent to
+  -- the client for this particular snapshot.
   --
   SendMsgNextTx
     :: (Maybe tx -> m (ClientStAcquired txid tx slot m a))
     -> ClientStAcquired txid tx slot m a
 
-  -- | For some cases where clients do not wish to traverse the entire mempool but look for a
-  -- specific transaction, they can assess the presence of such transaction directly.
-  -- Note that, the absence of a transaction does not imply anything about how the transaction
-  -- was processed: it may have been dropped, or inserted in a block. 'False' simply means that
-  -- it is no longer in the mempool.
+  -- | For some cases where clients do not wish to traverse the entire mempool
+  -- but look for a specific transaction, they can assess the presence of such
+  -- transaction directly. Note that, the absence of a transaction does not
+  -- imply anything about how the transaction was processed: it may have been
+  -- dropped, or inserted in a block. 'False' simply means that it is no longer
+  -- in the mempool.
   --
   SendMsgHasTx
     :: txid
     -> (Bool -> m (ClientStAcquired txid tx slot m a))
     -> ClientStAcquired txid tx slot m a
 
-  -- | Ask the server about the current mempool's capacity and sizes. This is fixed in a given
-  -- snapshot.
+  -- | Ask the server about the current mempool's capacity and sizes. This is
+  -- fixed in a given snapshot.
   SendMsgGetSizes
     :: (MempoolSizeAndCapacity -> m (ClientStAcquired txid tx slot m a))
     -> ClientStAcquired txid tx slot m a
@@ -100,19 +103,20 @@ data ClientStAcquired txid tx slot m a where
     :: m (ClientStIdle txid tx slot m a)
     -> ClientStAcquired txid tx slot m a
 
--- | Interpret a 'LocalTxMonitorClient' action sequence as a 'Peer' on the client
--- side of the 'LocalTxMonitor' protocol.
+-- | Interpret a 'LocalTxMonitorClient' action sequence as a 'Peer' on the
+-- client-side of the 'LocalTxMonitor' protocol.
 --
-localTxMonitorClientPeer
-  :: forall txid tx slot m a.
-     Monad m
+localTxMonitorClientPeer ::
+     forall txid tx slot m a.
+     ( Monad m
+     )
   => LocalTxMonitorClient txid tx slot m a
   -> Peer (LocalTxMonitor txid tx slot) AsClient StIdle m a
 localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
     Effect $ handleStIdle <$> mClient
   where
-    handleStIdle
-      :: ClientStIdle txid tx slot m a
+    handleStIdle ::
+         ClientStIdle txid tx slot m a
       -> Peer (LocalTxMonitor txid tx slot) AsClient StIdle m a
     handleStIdle = \case
       SendMsgAcquire stAcquired ->
@@ -122,26 +126,30 @@ localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
       SendMsgDone a ->
         Yield (ClientAgency TokIdle) MsgDone (Done TokDone a)
 
-    handleStAcquired
-      :: ClientStAcquired txid tx slot m a
+    handleStAcquired ::
+         ClientStAcquired txid tx slot m a
       -> Peer (LocalTxMonitor txid tx slot) AsClient StAcquired m a
     handleStAcquired = \case
       SendMsgNextTx stAcquired ->
         Yield (ClientAgency TokAcquired) MsgNextTx $
           Await (ServerAgency (TokBusy TokBusyNext)) $ \case
-            MsgReplyNextTx tx -> Effect $ handleStAcquired <$> stAcquired tx
+            MsgReplyNextTx tx ->
+              Effect $ handleStAcquired <$> stAcquired tx
       SendMsgHasTx txid stAcquired ->
         Yield (ClientAgency TokAcquired) (MsgHasTx txid) $
           Await (ServerAgency (TokBusy TokBusyHas)) $ \case
-            MsgReplyHasTx res -> Effect $ handleStAcquired <$> stAcquired res
+            MsgReplyHasTx res ->
+              Effect $ handleStAcquired <$> stAcquired res
       SendMsgGetSizes stAcquired ->
         Yield (ClientAgency TokAcquired) MsgGetSizes $
           Await (ServerAgency (TokBusy TokBusySizes)) $ \case
-            MsgReplyGetSizes sizes -> Effect $ handleStAcquired <$> stAcquired sizes
+            MsgReplyGetSizes sizes ->
+              Effect $ handleStAcquired <$> stAcquired sizes
       SendMsgReAcquire stAcquired ->
         Yield (ClientAgency TokAcquired) MsgReAcquire $
           Await (ServerAgency TokAcquiring) $ \case
-            MsgAcquired slot -> Effect $ handleStAcquired <$> stAcquired slot
+            MsgAcquired slot ->
+              Effect $ handleStAcquired <$> stAcquired slot
       SendMsgRelease stIdle ->
         Yield (ClientAgency TokAcquired) MsgRelease $
           Effect $ handleStIdle <$> stIdle

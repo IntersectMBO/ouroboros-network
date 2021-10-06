@@ -23,8 +23,11 @@ import           Text.Printf
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
-codecLocalTxMonitor
-  :: forall txid tx slot m ptcl. ( MonadST m, ptcl ~ LocalTxMonitor txid tx slot )
+codecLocalTxMonitor ::
+     forall txid tx slot m ptcl.
+     ( MonadST m
+     , ptcl ~ LocalTxMonitor txid tx slot
+     )
   => (txid -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s txid)
   -> (tx -> CBOR.Encoding)
@@ -37,10 +40,8 @@ codecLocalTxMonitor encodeTxId decodeTxId
                     encodeSlot decodeSlot =
     mkCodecCborLazyBS encode decode
   where
-    encode
-      :: forall (pr  :: PeerRole)
-                (st  :: ptcl)
-                (st' :: ptcl). ()
+    encode ::
+         forall (pr  :: PeerRole) (st  :: ptcl) (st' :: ptcl). ()
       => PeerHasAgency pr st
       -> Message ptcl st st'
       -> CBOR.Encoding
@@ -78,16 +79,15 @@ codecLocalTxMonitor encodeTxId decodeTxId
 
     encode (ServerAgency (TokBusy TokBusySizes)) = \case
       MsgReplyGetSizes sz ->
-        CBOR.encodeListLen 2 <> CBOR.encodeWord 10 <> mconcat
-          [ CBOR.encodeListLen 3
-          , CBOR.encodeWord32 (capacityInBytes sz)
-          , CBOR.encodeWord32 (sizeInBytes sz)
-          , CBOR.encodeWord32 (numberOfTxs sz)
-          ]
-    decode
-      :: forall s
-                (pr :: PeerRole)
-                (st :: ptcl). ()
+           CBOR.encodeListLen 2
+        <> CBOR.encodeWord 10
+        <> CBOR.encodeListLen 3
+        <> CBOR.encodeWord32 (capacityInBytes sz)
+        <> CBOR.encodeWord32 (sizeInBytes sz)
+        <> CBOR.encodeWord32 (numberOfTxs sz)
+
+    decode ::
+         forall s (pr :: PeerRole) (st :: ptcl). ()
       => PeerHasAgency pr st
       -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
@@ -145,22 +145,25 @@ codecLocalTxMonitor encodeTxId decodeTxId
 -- | An identity 'Codec' for the 'LocalTxMonitor' protocol. It does not do
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
-codecLocalTxMonitorId
-  :: forall txid tx slot m ptcl. ( Monad m, ptcl ~ LocalTxMonitor txid tx slot )
+codecLocalTxMonitorId ::
+     forall txid tx slot m ptcl.
+     ( Monad m
+     , ptcl ~ LocalTxMonitor txid tx slot
+     )
   => Codec ptcl CodecFailure m (AnyMessage ptcl)
 codecLocalTxMonitorId =
     Codec encode decode
   where
-    encode
-      :: forall (pr :: PeerRole) st st'. ()
+    encode ::
+         forall (pr :: PeerRole) st st'. ()
       => PeerHasAgency pr st
       -> Message ptcl st st'
       -> AnyMessage ptcl
     encode _ =
       AnyMessage
 
-    decode
-      :: forall (pr :: PeerRole) (st :: ptcl). ()
+    decode ::
+         forall (pr :: PeerRole) (st :: ptcl). ()
       => PeerHasAgency pr st
       -> m (DecodeStep (AnyMessage ptcl) CodecFailure m (SomeMessage st))
     decode stok =

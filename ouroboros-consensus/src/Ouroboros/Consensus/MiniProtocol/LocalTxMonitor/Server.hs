@@ -13,11 +13,13 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util.IOLike
 
-
 -- | Local transaction monitoring server, for inspecting the mempool.
 --
-localTxMonitorServer
-  :: forall blk idx m. (MonadSTM m, LedgerSupportsMempool blk)
+localTxMonitorServer ::
+     forall blk idx m.
+     ( MonadSTM m
+     , LedgerSupportsMempool blk
+     )
   => Mempool m blk idx
   -> LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
 localTxMonitorServer mempool =
@@ -52,8 +54,8 @@ localTxMonitorServer mempool =
           let MempoolSize{msNumTxs,msNumBytes} = snapshotMempoolSize snapshot
           let sizes = MempoolSizeAndCapacity
                 { capacityInBytes = getMempoolCapacityBytes capacity
-                , sizeInBytes = msNumBytes
-                , numberOfTxs = msNumTxs
+                , sizeInBytes     = msNumBytes
+                , numberOfTxs     = msNumTxs
                 }
           pure $ SendMsgReplyGetSizes sizes (serverStAcquired s txs)
       , recvMsgReAcquire =

@@ -45,8 +45,8 @@ tests = testGroup "Ouroboros.Network.Protocol"
 -- Codec
 --
 
-codec
-  :: ( MonadST m
+codec ::
+     ( MonadST m
      )
   => Codec (LocalTxMonitor TxId Tx SlotNo) S.DeserialiseFailure m ByteString
 codec = codecLocalTxMonitor
@@ -58,27 +58,27 @@ codec = codecLocalTxMonitor
 -- Properties
 --
 
-prop_codecM_LocalTxMonitor
-  :: AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+prop_codecM_LocalTxMonitor ::
+     AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
   -> Bool
 prop_codecM_LocalTxMonitor msg =
     ST.runST $ prop_codecM codec msg
 
-prop_codec_cborM_LocalTxMonitor
-  :: AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+prop_codec_cborM_LocalTxMonitor ::
+     AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
   -> Bool
 prop_codec_cborM_LocalTxMonitor msg =
   ST.runST $ prop_codec_cborM codec msg
 
-prop_codec_splitsM_LocalTxMonitor
-  :: (ByteString -> [[ByteString]])
+prop_codec_splitsM_LocalTxMonitor ::
+     (ByteString -> [[ByteString]])
   -> AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
   -> Bool
 prop_codec_splitsM_LocalTxMonitor splitN msg =
   ST.runST $ prop_codec_splitsM splitN codec msg
 
-prop_codec_valid_cbor_encoding_LocalTxMonitor
-  :: AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+prop_codec_valid_cbor_encoding_LocalTxMonitor ::
+     AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
   -> Property
 prop_codec_valid_cbor_encoding_LocalTxMonitor =
   prop_codec_valid_cbor_encoding codec
