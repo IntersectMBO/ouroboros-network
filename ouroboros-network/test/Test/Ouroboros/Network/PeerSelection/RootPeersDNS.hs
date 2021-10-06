@@ -16,11 +16,11 @@ import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 
 import           Data.Dynamic (fromDynamic, Typeable)
 import           Data.Foldable (toList, foldl')
+import           Data.Functor (void)
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
 import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq)
-import           Data.Void (Void)
 import           Data.IP (IPv4, toIPv4w, fromHostAddress)
 import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.ByteString.Char8 (pack)
@@ -229,7 +229,7 @@ mockLocalRootPeersProvider :: forall s.
                               MockRoots
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
-                           -> IOSim s Void
+                           -> IOSim s ()
 mockLocalRootPeersProvider (MockRoots localRootPeers dnsMap)
                            dnsTimeoutScript dnsLookupDelayScript = do
       dnsTimeoutScriptVar <- initScript dnsTimeoutScript
@@ -237,13 +237,14 @@ mockLocalRootPeersProvider (MockRoots localRootPeers dnsMap)
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
 
-      localRootPeersProvider tracerTraceLocalRoots
-                             DNSResolver.defaultResolvConf
-                             (mockDNSActions dnsMap
-                                             dnsTimeoutScriptVar
-                                             dnsLookupDelayScriptVar)
-                             (readTVar localRootPeersVar)
-                             resultVar
+      void $ MonadTimer.timeout 3600 $
+        localRootPeersProvider tracerTraceLocalRoots
+                               DNSResolver.defaultResolvConf
+                               (mockDNSActions dnsMap
+                                               dnsTimeoutScriptVar
+                                               dnsLookupDelayScriptVar)
+                               (readTVar localRootPeersVar)
+                               resultVar
 
 -- | 'publicRootPeersProvider' running with a given MockRoots env
 --
@@ -360,12 +361,11 @@ prop_local_preservesGroupNumberAndTargets :: MockRoots
 prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _)
                                           dnsTimeoutScript
                                           dnsLookupDelayScript =
-    let tr = take 1000
-              $ selectLocalRootGroupsEvents
-              $ selectLocalRootPeersEvents
-              $ selectRootPeerDNSTraceEvents
-              $ runSimTrace
-              $ mockLocalRootPeersProvider mockRoots
+    let tr = selectLocalRootGroupsEvents
+           $ selectLocalRootPeersEvents
+           $ selectRootPeerDNSTraceEvents
+           $ runSimTrace
+           $ mockLocalRootPeersProvider mockRoots
                                            dnsTimeoutScript
                                            dnsLookupDelayScript
 
@@ -380,7 +380,8 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _)
         preservesTargets     = all (all (\(a, b) -> fst a == fst b))
                                    [ zip lrp (toList r) | r <- map snd tr ]
 
-     in preservesGroupNumber .&&. preservesTargets
+     in label (show $ length tr `div` 100 * 100) $
+        preservesGroupNumber .&&. preservesTargets
 
 -- | The 'localRootPeersProvider' should be able to resolve DNS domains
 -- correctly, assuming the domain maps to any IP address. This property
@@ -394,14 +395,13 @@ prop_local_resolvesDomainsCorrectly :: MockRoots
 prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap)
                                     dnsTimeoutScript
                                     dnsLookupDelayScript =
-    let tr = take 1000
-              $ selectLocalRootResultEvents
-              $ selectLocalRootPeersEvents
-              $ selectRootPeerDNSTraceEvents
-              $ runSimTrace
-              $ mockLocalRootPeersProvider mockRoots
-                                           dnsTimeoutScript
-                                           dnsLookupDelayScript
+    let tr = selectLocalRootResultEvents
+           $ selectLocalRootPeersEvents
+           $ selectRootPeerDNSTraceEvents
+           $ runSimTrace
+           $ mockLocalRootPeersProvider mockRoots
+                                        dnsTimeoutScript
+                                        dnsLookupDelayScript
 
         finalResultMap = Map.fromList $ map snd tr
 
@@ -419,13 +419,12 @@ prop_local_updatesDomainsCorrectly :: MockRoots
 prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _)
                                    dnsTimeoutScript
                                    dnsLookupDelayScript =
-    let tr = take 1000
-              $ selectLocalRootPeersEvents
-              $ selectRootPeerDNSTraceEvents
-              $ runSimTrace
-              $ mockLocalRootPeersProvider mockRoots
-                                           dnsTimeoutScript
-                                           dnsLookupDelayScript
+    let tr = selectLocalRootPeersEvents
+           $ selectRootPeerDNSTraceEvents
+           $ runSimTrace
+           $ mockLocalRootPeersProvider mockRoots
+                                        dnsTimeoutScript
+                                        dnsLookupDelayScript
 
         r = foldl' (\(b, (t, x)) (t', y) ->
                     case (x, y) of
