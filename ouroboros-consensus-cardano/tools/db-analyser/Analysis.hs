@@ -215,6 +215,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
           newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
       when (blockSlot blk >= slotNo) $ storeLedgerState blk newLedger
       when (blockSlot blk > slotNo) $ issueWarning blk
+      when ((unBlockNo $ blockNo blk) `mod` 1000 == 0) $ reportProgress blk
       return (continue blk, newLedger)
 
     continue :: blk -> NextStep
@@ -222,10 +223,12 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
       | blockSlot blk >= slotNo = Stop
       | otherwise               = Continue
 
-    issueWarning blk = putStrLn $ "Snapshot was created at " <>
-                         show (blockSlot blk) <> " " <>
-                         "because there was no block forged at requested " <>
-                         show slotNo <> ". "
+    issueWarning blk   = putStrLn $ "Snapshot was created at " <>
+                           show (blockSlot blk) <> " " <>
+                           "because there was no block forged at requested " <>
+                           show slotNo <> ". "
+    reportProgress blk = putStrLn $ "... reached slot " <>
+                           show (blockSlot blk)
 
     storeLedgerState ::
          blk
