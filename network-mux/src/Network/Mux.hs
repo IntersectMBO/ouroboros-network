@@ -673,7 +673,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
     -- It is a programmer error to get the wrong protocol, but this is also
     -- very easy to avoid.
   | otherwise
-  = throwIO (UnknownProtocol ptclNum ptclDir')
+  = throwIO (UnknownProtocolInternalError ptclNum ptclDir')
   where
     ptclDir' = protocolDirEnum ptclDir
 

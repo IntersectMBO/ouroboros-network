@@ -585,9 +585,9 @@ remoteNetworkErrorPolicy = ErrorPolicies {
         , ErrorPolicy
             $ \(e :: MuxRuntimeError)
                   -> case e of
-                       ProtocolAlreadyRunning {}    -> Just (SuspendPeer shortDelay shortDelay)
-                       UnknownProtocol {}           -> Just Throw
-                       MuxBlockedOnCompletionVar {} -> Just (SuspendPeer shortDelay shortDelay)
+                       ProtocolAlreadyRunning       {} -> Just (SuspendPeer shortDelay shortDelay)
+                       UnknownProtocolInternalError {} -> Just Throw
+                       MuxBlockedOnCompletionVar    {} -> Just (SuspendPeer shortDelay shortDelay)
 
           -- Error policy for TxSubmission protocol: outbound side (client role)
         , ErrorPolicy
