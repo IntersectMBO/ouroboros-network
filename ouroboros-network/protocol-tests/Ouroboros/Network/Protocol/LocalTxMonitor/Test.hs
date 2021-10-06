@@ -114,20 +114,31 @@ instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
       , AnyMessageAndAgency (ServerAgency (TokBusy TokBusyNext)) . MsgReplyNextTx <$> arbitrary
       , AnyMessageAndAgency (ClientAgency TokAcquired) . MsgHasTx <$> arbitrary
       , AnyMessageAndAgency (ServerAgency (TokBusy TokBusyHas)) . MsgReplyHasTx <$> arbitrary
+      , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgGetSizes
+      , AnyMessageAndAgency (ServerAgency (TokBusy TokBusySizes)) . MsgReplyGetSizes <$> arbitrary
       , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgRelease
       , pure $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
       ]
 
+instance Arbitrary MempoolSizeAndCapacity where
+  arbitrary =
+    MempoolSizeAndCapacity
+      <$> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+
 instance (Eq txid, Eq tx, Eq slot)
     => Eq (AnyMessage (LocalTxMonitor txid tx slot))
   where
-    AnyMessage MsgAcquire         == AnyMessage MsgAcquire         = True
-    AnyMessage (MsgAcquired a)    == AnyMessage (MsgAcquired b)    = a == b
-    AnyMessage MsgReAcquire       == AnyMessage MsgReAcquire       = True
-    AnyMessage MsgNextTx          == AnyMessage MsgNextTx          = True
-    AnyMessage (MsgReplyNextTx a) == AnyMessage (MsgReplyNextTx b) = a == b
-    AnyMessage (MsgHasTx a)       == AnyMessage (MsgHasTx b)       = a == b
-    AnyMessage (MsgReplyHasTx a)  == AnyMessage (MsgReplyHasTx b)  = a == b
-    AnyMessage MsgRelease         == AnyMessage MsgRelease         = True
-    AnyMessage MsgDone            == AnyMessage MsgDone            = True
-    AnyMessage _                  == AnyMessage _                  = False
+    AnyMessage MsgAcquire           == AnyMessage MsgAcquire           = True
+    AnyMessage (MsgAcquired a)      == AnyMessage (MsgAcquired b)      = a == b
+    AnyMessage MsgReAcquire         == AnyMessage MsgReAcquire         = True
+    AnyMessage MsgNextTx            == AnyMessage MsgNextTx            = True
+    AnyMessage (MsgReplyNextTx a)   == AnyMessage (MsgReplyNextTx b)   = a == b
+    AnyMessage (MsgHasTx a)         == AnyMessage (MsgHasTx b)         = a == b
+    AnyMessage (MsgReplyHasTx a)    == AnyMessage (MsgReplyHasTx b)    = a == b
+    AnyMessage MsgGetSizes          == AnyMessage MsgGetSizes          = True
+    AnyMessage (MsgReplyGetSizes a) == AnyMessage (MsgReplyGetSizes b) = a == b
+    AnyMessage MsgRelease           == AnyMessage MsgRelease           = True
+    AnyMessage MsgDone              == AnyMessage MsgDone              = True
+    AnyMessage _                    == AnyMessage _                    = False

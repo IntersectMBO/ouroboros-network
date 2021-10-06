@@ -59,6 +59,8 @@ codecLocalTxMonitor encodeTxId decodeTxId
         CBOR.encodeListLen 1 <> CBOR.encodeWord 5
       MsgHasTx txid ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 7 <> encodeTxId txid
+      MsgGetSizes ->
+        CBOR.encodeListLen 1 <> CBOR.encodeWord 9
 
     encode (ServerAgency TokAcquiring) = \case
       MsgAcquired slot ->
@@ -74,6 +76,14 @@ codecLocalTxMonitor encodeTxId decodeTxId
       MsgReplyHasTx has ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 8 <> CBOR.encodeBool has
 
+    encode (ServerAgency (TokBusy TokBusySizes)) = \case
+      MsgReplyGetSizes sz ->
+        CBOR.encodeListLen 2 <> CBOR.encodeWord 10 <> mconcat
+          [ CBOR.encodeListLen 3
+          , CBOR.encodeWord32 (capacityInBytes sz)
+          , CBOR.encodeWord32 (sizeInBytes sz)
+          , CBOR.encodeWord32 (numberOfTxs sz)
+          ]
     decode
       :: forall s
                 (pr :: PeerRole)
@@ -98,6 +108,8 @@ codecLocalTxMonitor encodeTxId decodeTxId
         (ClientAgency TokAcquired, 2, 7) -> do
           txid <- decodeTxId
           return (SomeMessage (MsgHasTx txid))
+        (ClientAgency TokAcquired, 1, 9) ->
+          return (SomeMessage MsgGetSizes)
 
         (ServerAgency TokAcquiring, 2, 2) -> do
           slot <- decodeSlot
@@ -112,6 +124,14 @@ codecLocalTxMonitor encodeTxId decodeTxId
         (ServerAgency (TokBusy TokBusyHas), 2, 8) -> do
           has <- CBOR.decodeBool
           return (SomeMessage (MsgReplyHasTx has))
+
+        (ServerAgency (TokBusy TokBusySizes), 2, 10) -> do
+          _len <- CBOR.decodeListLen
+          capacityInBytes <- CBOR.decodeWord32
+          sizeInBytes <- CBOR.decodeWord32
+          numberOfTxs <- CBOR.decodeWord32
+          let sizes = MempoolSizeAndCapacity { capacityInBytes, sizeInBytes, numberOfTxs }
+          return (SomeMessage (MsgReplyGetSizes sizes))
 
         (ClientAgency TokIdle, _, _) ->
           fail (printf "codecLocalTxMonitor (%s) unexpected key (%d, %d)" (show stok) key len)

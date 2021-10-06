@@ -82,6 +82,12 @@ data ClientStAcquired txid tx slot m a where
     -> (Bool -> m (ClientStAcquired txid tx slot m a))
     -> ClientStAcquired txid tx slot m a
 
+  -- | Ask the server about the current mempool's capacity and sizes. This is fixed in a given
+  -- snapshot.
+  SendMsgGetSizes
+    :: (MempoolSizeAndCapacity -> m (ClientStAcquired txid tx slot m a))
+    -> ClientStAcquired txid tx slot m a
+
   -- | Re-acquire a more recent snapshot, or the same one if nothing has changed.
   --
   SendMsgReAcquire
@@ -128,6 +134,10 @@ localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
         Yield (ClientAgency TokAcquired) (MsgHasTx txid) $
           Await (ServerAgency (TokBusy TokBusyHas)) $ \case
             MsgReplyHasTx res -> Effect $ handleStAcquired <$> stAcquired res
+      SendMsgGetSizes stAcquired ->
+        Yield (ClientAgency TokAcquired) MsgGetSizes $
+          Await (ServerAgency (TokBusy TokBusySizes)) $ \case
+            MsgReplyGetSizes sizes -> Effect $ handleStAcquired <$> stAcquired sizes
       SendMsgReAcquire stAcquired ->
         Yield (ClientAgency TokAcquired) MsgReAcquire $
           Await (ServerAgency TokAcquiring) $ \case

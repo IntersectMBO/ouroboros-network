@@ -6,6 +6,7 @@
 module Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server (localTxMonitorServer) where
 
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -28,16 +29,16 @@ localTxMonitorServer mempool =
       ServerStIdle { recvMsgDone, recvMsgAcquire }
 
     serverStAcquiring
-      :: MempoolSnapshot blk idx
+      :: (MempoolCapacityBytes, MempoolSnapshot blk idx)
       -> ServerStAcquiring (GenTxId blk) (GenTx blk) SlotNo m ()
-    serverStAcquiring s =
-      SendMsgAcquired (snapshotSlotNo s) (serverStAcquired s (snapshotTxs s))
+    serverStAcquiring s@(_, snapshot) =
+      SendMsgAcquired (snapshotSlotNo snapshot) (serverStAcquired s (snapshotTxs snapshot))
 
     serverStAcquired
-      :: MempoolSnapshot blk idx
+      :: (MempoolCapacityBytes, MempoolSnapshot blk idx)
       -> [(Validated (GenTx blk), idx)]
       -> ServerStAcquired (GenTxId blk) (GenTx blk) SlotNo m ()
-    serverStAcquired s txs =
+    serverStAcquired s@(capacity, snapshot) txs =
       ServerStAcquired
       { recvMsgNextTx =
           case txs of
@@ -46,7 +47,15 @@ localTxMonitorServer mempool =
             (txForgetValidated -> h, _):q ->
               pure $ SendMsgReplyNextTx (Just h) (serverStAcquired s q)
       , recvMsgHasTx = \txid ->
-          pure $ SendMsgReplyHasTx (snapshotHasTx s txid) (serverStAcquired s txs)
+          pure $ SendMsgReplyHasTx (snapshotHasTx snapshot txid) (serverStAcquired s txs)
+      , recvMsgGetSizes = do
+          let MempoolSize{msNumTxs,msNumBytes} = snapshotMempoolSize snapshot
+          let sizes = MempoolSizeAndCapacity
+                { capacityInBytes = getMempoolCapacityBytes capacity
+                , sizeInBytes = msNumBytes
+                , numberOfTxs = msNumTxs
+                }
+          pure $ SendMsgReplyGetSizes sizes (serverStAcquired s txs)
       , recvMsgReAcquire =
           recvMsgAcquire
       , recvMsgRelease =
@@ -56,7 +65,7 @@ localTxMonitorServer mempool =
     recvMsgAcquire
       :: m (ServerStAcquiring (GenTxId blk) (GenTx blk) SlotNo m ())
     recvMsgAcquire = do
-        s <- atomically (getSnapshot mempool)
+        s <- atomically $ (,) <$> getCapacity mempool <*> getSnapshot mempool
         pure $ serverStAcquiring s
 
     recvMsgDone

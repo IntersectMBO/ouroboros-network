@@ -68,6 +68,7 @@ data ServerStAcquiring txid tx slot m a where
 data ServerStAcquired txid tx slot m a = ServerStAcquired
     { recvMsgNextTx :: m (ServerStBusy StBusyNext txid tx slot m a)
     , recvMsgHasTx :: txid -> m (ServerStBusy StBusyHas txid tx slot m a)
+    , recvMsgGetSizes :: m (ServerStBusy StBusySizes txid tx slot m a)
     , recvMsgReAcquire :: m (ServerStAcquiring txid tx slot m a)
     , recvMsgRelease :: m (ServerStIdle txid tx slot m a)
     }
@@ -87,6 +88,11 @@ data ServerStBusy (kind :: StBusyKind) txid tx slot m a where
     :: Bool
     -> ServerStAcquired txid tx slot m a
     -> ServerStBusy StBusyHas txid tx slot m a
+
+  SendMsgReplyGetSizes
+    :: MempoolSizeAndCapacity
+    -> ServerStAcquired txid tx slot m a
+    -> ServerStBusy StBusySizes txid tx slot m a
 
 -- | Interpret a 'LocalTxMonitorServer' action sequence as a 'Peer' on the client
 -- side of the 'LocalTxMonitor' protocol.
@@ -122,12 +128,19 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
       :: ServerStAcquired txid tx slot m a
       -> Peer (LocalTxMonitor txid tx slot) AsServer StAcquired m a
     handleStAcquired = \case
-      ServerStAcquired{recvMsgNextTx, recvMsgHasTx, recvMsgReAcquire, recvMsgRelease} ->
-        Await (ClientAgency TokAcquired) $ \case
+      ServerStAcquired
+        { recvMsgNextTx
+        , recvMsgHasTx
+        , recvMsgGetSizes
+        , recvMsgReAcquire
+        , recvMsgRelease
+        } -> Await (ClientAgency TokAcquired) $ \case
           MsgNextTx ->
             Effect $ handleStBusyNext <$> recvMsgNextTx
           MsgHasTx txid ->
             Effect $ handleStBusyHas <$> recvMsgHasTx txid
+          MsgGetSizes ->
+            Effect $ handleStBusySizes <$> recvMsgGetSizes
           MsgReAcquire ->
             Effect $ handleStAcquiring <$> recvMsgReAcquire
           MsgRelease ->
@@ -147,4 +160,12 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
     handleStBusyHas = \case
       SendMsgReplyHasTx res serverStAcquired ->
         Yield (ServerAgency (TokBusy TokBusyHas)) (MsgReplyHasTx res) $
+          handleStAcquired serverStAcquired
+
+    handleStBusySizes
+      :: ServerStBusy StBusySizes txid tx slot m a
+      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy StBusySizes) m a
+    handleStBusySizes = \case
+      SendMsgReplyGetSizes sizes serverStAcquired ->
+        Yield (ServerAgency (TokBusy TokBusySizes)) (MsgReplyGetSizes sizes) $
           handleStAcquired serverStAcquired

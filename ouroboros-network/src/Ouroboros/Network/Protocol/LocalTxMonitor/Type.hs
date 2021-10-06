@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -35,7 +36,7 @@
 --             └───────┤   Acquired    │
 --                     └───┬───────────┘
 --                         │       ▲
---            HasTx/NextTx │       │ Reply (HasTx/NextTx)
+--   HasTx/NextTx/GetSizes │       │ Reply (HasTx/NextTx/GetSizes)
 --                         ▼       │
 --                     ┌───────────┴───┐
 --                     │      Busy     │
@@ -43,6 +44,9 @@
 --
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
+
+import           Data.Word
+import           GHC.Generics (Generic)
 
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Util.ShowProxy
@@ -93,6 +97,19 @@ data StBusyKind where
   StBusyNext :: StBusyKind
   -- | The server is busy looking for the presence of a specific transaction in the mempool
   StBusyHas :: StBusyKind
+  -- | The server is busy looking for the current size and max capacity of the mempool
+  StBusySizes :: StBusyKind
+
+-- | Describes the MemPool sizes and capacity for a given snapshot.
+data MempoolSizeAndCapacity = MempoolSizeAndCapacity
+  { capacityInBytes :: !Word32
+    -- ^ The maximum capacity of the mempool. Note that this may dynamically change when
+    -- the ledger state is updated.
+  , sizeInBytes     :: !Word32
+    -- ^ The summed byte size of all the transactions in the mempool.
+  , numberOfTxs     :: !Word32
+    -- ^ The number of transactions in the mempool
+  } deriving (Generic, Eq, Show)
 
 instance Protocol (LocalTxMonitor txid tx slot) where
 
@@ -159,6 +176,17 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: Bool
       -> Message (LocalTxMonitor txid tx slot) (StBusy StBusyHas) StAcquired
 
+    -- | The client asks the server about the mempool current size and max capacity.
+    --
+    MsgGetSizes
+      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy StBusySizes)
+
+    -- | The server responds with the mempool size and max capacity.
+    --
+    MsgReplyGetSizes
+      :: MempoolSizeAndCapacity
+      -> Message (LocalTxMonitor txid tx slot) (StBusy StBusySizes) StAcquired
+
     -- | Release the acquired snapshot, in order to loop back to the idle state.
     --
     MsgRelease
@@ -189,6 +217,7 @@ instance Protocol (LocalTxMonitor txid tx slot) where
 data TokBusyKind (k :: StBusyKind) where
   TokBusyNext :: TokBusyKind StBusyNext
   TokBusyHas :: TokBusyKind StBusyHas
+  TokBusySizes :: TokBusyKind StBusySizes
 
 deriving instance (Show txid, Show tx, Show slot)
   => Show (Message (LocalTxMonitor txid tx slot) from to)
@@ -203,3 +232,4 @@ instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
     TokAcquiring -> "TokAcquiring"
     TokBusy TokBusyNext -> "TokBusy TokBusyNext"
     TokBusy TokBusyHas -> "TokBusy TokBusyHas"
+    TokBusy TokBusySizes -> "TokBusy TokBusySizes"
