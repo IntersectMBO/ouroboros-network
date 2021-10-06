@@ -47,19 +47,21 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.PeerSelection.RootPeersDNS"
-  [ testGroup "localRootPeersProvider"
-     [ testProperty "preserves groups and targets"
-                    prop_local_preservesGroupNumberAndTargets
-     , testProperty "resolves domains correctly"
-                    prop_local_resolvesDomainsCorrectly
-     , testProperty "updates domains correctly"
-                    prop_local_updatesDomainsCorrectly
-     ]
-  , testGroup "publicRootPeersProvider"
-     [ testProperty "resolves domains correctly"
-                    prop_public_resolvesDomainsCorrectly
-     ]
+  testGroup "Ouroboros.Network.PeerSelection"
+  [ testGroup "RootPeersDNS"
+    [ testGroup "localRootPeersProvider"
+       [ testProperty "preserves groups and targets"
+                      prop_local_preservesGroupNumberAndTargets
+       , testProperty "resolves domains correctly"
+                      prop_local_resolvesDomainsCorrectly
+       , testProperty "updates domains correctly"
+                      prop_local_updatesDomainsCorrectly
+       ]
+    , testGroup "publicRootPeersProvider"
+       [ testProperty "resolves domains correctly"
+                      prop_public_resolvesDomainsCorrectly
+       ]
+    ]
   ]
 
 --

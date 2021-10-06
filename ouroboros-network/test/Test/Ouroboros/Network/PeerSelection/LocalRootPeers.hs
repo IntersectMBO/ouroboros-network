@@ -30,12 +30,14 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "LocalRootPeers"
-  [ testProperty "arbitrary"    prop_arbitrary_LocalRootPeers
-  , testProperty "fromToGroups" prop_fromToGroups
-  , testProperty "fromGroups"   prop_fromGroups
-  , testProperty "shrink"       prop_shrink_LocalRootPeers
-  , testProperty "clampToLimit" prop_clampToLimit
+  testGroup "Ouroboros.Network.PeerSelection"
+  [ testGroup "LocalRootPeers"
+    [ testProperty "arbitrary"    prop_arbitrary_LocalRootPeers
+    , testProperty "fromToGroups" prop_fromToGroups
+    , testProperty "fromGroups"   prop_fromGroups
+    , testProperty "shrink"       prop_shrink_LocalRootPeers
+    , testProperty "clampToLimit" prop_clampToLimit
+    ]
   ]
 
 

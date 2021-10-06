@@ -69,17 +69,19 @@ import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "Mock environment"
-    [ testProperty "shrink for Script"                     prop_shrink_Script
-    , testProperty "shrink for GovernorScripts"            prop_shrink_GovernorScripts
-    , testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
-    , testProperty "shrink for PeerSelectionTargets"       prop_shrink_PeerSelectionTargets
-    , testProperty "arbitrary for PeerGraph"               prop_arbitrary_PeerGraph
-    , localOption (QuickCheckMaxSize 30) $
-      testProperty "shrink for PeerGraph"                  prop_shrink_PeerGraph
-    , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
-    , localOption (QuickCheckMaxSize 30) $
-      testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
+  testGroup "Ouroboros.Network.PeerSelection"
+    [ testGroup "MockEnvironment"
+      [ testProperty "shrink for Script"                     prop_shrink_Script
+      , testProperty "shrink for GovernorScripts"            prop_shrink_GovernorScripts
+      , testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
+      , testProperty "shrink for PeerSelectionTargets"       prop_shrink_PeerSelectionTargets
+      , testProperty "arbitrary for PeerGraph"               prop_arbitrary_PeerGraph
+      , localOption (QuickCheckMaxSize 30) $
+        testProperty "shrink for PeerGraph"                  prop_shrink_PeerGraph
+      , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
+      , localOption (QuickCheckMaxSize 30) $
+        testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
+      ]
     ]
 
 

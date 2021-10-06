@@ -46,11 +46,7 @@ import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as Established
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
-import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
-import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-import qualified Test.Ouroboros.Network.PeerSelection.Json
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
-import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
@@ -62,10 +58,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
-  [ Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
-  , Test.Ouroboros.Network.PeerSelection.RootPeersDNS.tests
-  , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
-  , testGroup "basic"
+  [ testGroup "basic"
     [ testProperty "has output"         prop_governor_hasoutput
     , testProperty "no failure"         prop_governor_nofail
     , testProperty "no livelock"        prop_governor_nolivelock
@@ -109,7 +102,6 @@ tests =
     , testProperty "progresses towards active local root peers target (from above)"
                    prop_governor_target_active_local_above
     ]
-  , Test.Ouroboros.Network.PeerSelection.Json.tests
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock

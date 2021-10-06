@@ -13,7 +13,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =
-  testGroup "PeerSelection Types JSON instances"
+  testGroup "Ouroboros.Network.PeerSelection.Json"
   [ testProperty "DomainAccessPoint roundtrip" prop_roundtrip_DomainAccessPoint_JSON
   , testProperty "RelayAccessPoint roundtrip"  prop_roundtrip_RelayAccessPoint_JSON
   , testProperty "PeerAdvertise roundtrip"     prop_roundtrip_PeerAdvertise_JSON
