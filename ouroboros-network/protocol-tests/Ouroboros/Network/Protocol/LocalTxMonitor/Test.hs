@@ -11,16 +11,19 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests) where
 
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
-import qualified Control.Monad.ST as ST
 import           Data.ByteString.Lazy (ByteString)
 
 import           Control.Monad.Class.MonadST
+import           Control.Monad.IOSim
+import qualified Control.Monad.ST as ST
 
 import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Util.ShowProxy
 import           Ouroboros.Network.Block (SlotNo)
 
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Codec
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Direct
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Examples
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 import           Test.ChainGenerators ()
@@ -38,6 +41,8 @@ tests = testGroup "Ouroboros.Network.Protocol"
     , testProperty "codec 3-splits" (prop_codec_splitsM_LocalTxMonitor splits3)
     , testProperty "codec cborM" prop_codec_cborM_LocalTxMonitor
     , testProperty "codec valid cbor encoding" prop_codec_valid_cbor_encoding_LocalTxMonitor
+
+    , testProperty "direct" prop_direct
     ]
   ]
 
@@ -82,6 +87,30 @@ prop_codec_valid_cbor_encoding_LocalTxMonitor ::
   -> Property
 prop_codec_valid_cbor_encoding_LocalTxMonitor =
   prop_codec_valid_cbor_encoding codec
+
+--
+-- Protocol Executions
+--
+
+-- | Run a simple local tx monitor client and server, directly on the wrappers,
+-- without going via the 'Peer'.
+--
+prop_direct ::
+     (SlotNo, [Tx])
+  -> Property
+prop_direct (slot, txs) =
+  let ((txs', sz), ()) = runSimOrThrow (direct
+                                         (localTxMonitorClient txId)
+                                         (localTxMonitorServer txId (slot, txs))
+                                       )
+   in
+    ( txs'
+    , numberOfTxs sz
+    )
+   ===
+    ( [ (tx, True) | tx <- txs ]
+    , fromIntegral $ length txs
+    )
 
 --
 -- Mock Types
