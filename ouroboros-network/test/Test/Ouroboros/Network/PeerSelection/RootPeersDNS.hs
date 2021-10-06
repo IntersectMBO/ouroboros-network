@@ -69,9 +69,10 @@ tests =
 --
 
 data MockRoots = MockRoots {
-  mockLocalRootPeers :: [(Int, Map RelayAccessPoint PeerAdvertise)],
-  mockDNSMap :: Map Domain [IPv4]
-} deriving Show
+    mockLocalRootPeers :: [(Int, Map RelayAccessPoint PeerAdvertise)]
+  , mockDNSMap :: Map Domain [IPv4]
+  }
+  deriving Show
 
 -- | Generates MockRoots environments
 --
@@ -120,6 +121,14 @@ genMockRoots = sized $ \relaysNumber -> do
 
 instance Arbitrary MockRoots where
     arbitrary = genMockRoots
+    shrink roots@MockRoots { mockLocalRootPeers, mockDNSMap } =
+      [ roots { mockLocalRootPeers = peers} 
+      | peers <- shrinkList (const []) mockLocalRootPeers
+      ]
+      ++
+      [ roots { mockDNSMap = Map.fromList dnsMap }
+      | dnsMap <- shrinkList (const []) (Map.assocs mockDNSMap)
+      ]
 
 -- | Used for debugging in GHCI
 --
