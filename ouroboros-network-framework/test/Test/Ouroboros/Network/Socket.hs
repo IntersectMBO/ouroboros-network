@@ -335,7 +335,7 @@ prop_socket_recv_error f rerr =
           (
               -- accept a connection and start mux on it
               bracket
-                (runAccept $ accept snocket sd)
+                (accept snocket sd >>= runAccept)
                 (bitraverse_ Socket.close pure . fst)
                 $ \(accepted, _acceptNext) -> case accepted of
                   AcceptFailure err -> throwIO err
@@ -416,7 +416,7 @@ prop_socket_send_error rerr =
           (
               -- accept a connection and start mux on it
               bracket
-                (runAccept $ accept snocket sd)
+                (accept snocket sd >>= runAccept)
                 (bitraverse_ Socket.close pure . fst)
                 $ \(accepted, _acceptNext) -> case accepted of
                   AcceptFailure err -> throwIO err

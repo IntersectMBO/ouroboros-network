@@ -98,7 +98,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic  :: !NetworkMagic
   , diffusionMode :: !DiffusionMode
   }
-  deriving (Show, Typeable)
+  deriving (Show, Typeable, Eq)
   -- 'Eq' instance is not provided, it is not what we need in version
   -- negotiation (see 'Acceptable' instance below).
 

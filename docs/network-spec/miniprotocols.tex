@@ -233,7 +233,7 @@ following pieces of information:
     {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
 
 \section{CBOR and CDDL}
-All mini-protocols are encoded using coincise binary object representation
+All mini-protocols are encoded using concise binary object representation
 (CBOR), see~\url{https://cbor.io}.  Each codec comes along with a specification
 written in CDDL,
 see~\url{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}.
@@ -359,7 +359,7 @@ The protocol uses the following messages.
 \newcommand{\StPropose}{\state{StPropose}}
 \newcommand{\StConfirm}{\state{StConfirm}}
 \newcommand{\MsgProposeVersions}{\msg{MsgProposeVersions}}
-\newcommand{\MsgProposeVersionsX}{\msg{MsgProposeVersions'}}
+\newcommand{\MsgReplyVersions}{\msg{MsgReplyVersion}}
 \newcommand{\MsgAcceptVersion}{\msg{MsgAcceptVersion}}
 \newcommand{\MsgRefuse}{\msg{MsgRefuse}}
 
@@ -381,7 +381,7 @@ A node, that runs the handshake protocol, must instantiate it with the set of
 supported protocol versions and callback functions for handling the protocol parameters.
 These callback functions are specific for the supported protocol versions.
 
-The handshake mini protocol is designed to handle simultantous TCP open.
+The handshake mini protocol is designed to handle simultaneous TCP open.
 
 \subsection{State machine}
 
@@ -402,9 +402,9 @@ The handshake mini protocol is designed to handle simultantous TCP open.
     \node[state, right of=Confirm] (StDone)    at (7,  0) {\StDone};
 
     \draw (StPropose) --node[above=1em]{\MsgProposeVersions} (StConfirm);
-    \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion}     (StDone.170);
-    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}            (StDone.190);
-    \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em] {\MsgProposeVersionsX} (StDone.west);
+    \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion}   (StDone.170);
+    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}          (StDone.190);
+    \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em] {\MsgReplayVersions} (StDone.west);
   \end{tikzpicture}
 \end{figure}
 
@@ -412,11 +412,11 @@ Messages of the protocol:
 \begin{description}
 \item [\MsgProposeVersions{} {\boldmath $(versionTable)$}]
       The client proposes a number of possible versions and protocol parameters.
-\item [\MsgProposeVersionsX{} {\boldmath $(versionTable)$}]
-      In TCP simultanous open the client will receive \MsgProposeVersionsX{}
+\item [\MsgReplayVersions{} {\boldmath $(versionTable)$}]
+      In TCP simultaneous open the client will receive \MsgReplayVersions{}
       (which was sent as \MsgProposeVersions{}) as a reply to its own
       \MsgProposeVersions{}; thus both \MsgProposeVersions{} and
-      \MsgProposeVersionsX{} have to have the same CBOR encoding.
+      \MsgReplayVersions{} have to have the same CBOR encoding.
 \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
 \item [\MsgRefuse{} {\boldmath $(reason)$}]
@@ -429,7 +429,7 @@ Messages of the protocol:
   \multicolumn{4}{|c|}{Transition table} \\ \hline
     from       & message/event         & parameters                        & to \\ \hline\hline
     \StPropose & \MsgProposeVersions   & $versionTable$                    & \StConfirm \\ \hline
-    \StConfirm & \MsgProposeVersionsX  & $versionTable$                    & \StDone \\ \hline
+    \StConfirm & \MsgReplayVersions    & $versionTable$                    & \StDone \\ \hline
     \StConfirm & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
     \StConfirm & \MsgRefuse            & $reason$                          & \StDone \\ \hline
   \end{tabular}
@@ -474,7 +474,7 @@ compute the response:
   Otherwise: Test the proposed protocol parameters of the selected protocol version
 \item
   If the test refuses the parameters:
-  Reply with \MsgRefuse(\Refused), the selected version number and an error message.
+    Reply with \MsgRefuse(\Refused), the selected version number and an error message.
 \item
   Otherwise:
   Encode the extra parameters and
@@ -487,12 +487,63 @@ such that a server can always handle requests for protocol versions that it does
 The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
 version.
 
-In case of simultaneous open TCP connection, both handshake clients will send
-their \MsgProposeVersions{}, both will interpet the incoming message as
-\MsgProposeVersionsX{} (thus both must have the same encoding, the
-implementation can disntiguish them by the protocol state).  Both clients
-should choose the highest version of the protocol available.  If any side does
-not accept any version (or its parameters) it can reset the connection.
+In case of simultaneous open of a TCP connection, both handshake clients will
+send their \MsgProposeVersions{}, both will interpret the incoming message as
+\MsgReplayVersions{} (thus both must have the same encoding, the implementation
+can distinguish them by the protocol state).  Both clients should choose the
+highest version of the protocol available.  If any side does not accept any
+version (or its parameters) it can reset the connection.
+
+The protocol does not forbid, nor could it detect a usage of
+\MsgReplyVersions{} outside of TCP simultaneous open.  The process of
+choosing between proposed and received version must be symmetric, in the
+following sense.
+
+\begin{description}
+    We use \texttt{acceptable :: vData -> vData -> Accept vData}
+    function to compute accepted version data from proposed and received data,
+    where
+\begin{code}
+\begin{verbatim}
+  data Accept vData = Accept vData
+                    | Refuse Text
+                    deriving Eq
+\end{verbatim}
+\end{code}
+    See
+    \href{https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
+    Both \texttt{acceptable proposed received} and \texttt{acceptable received
+    proposed} must satisfy the following condition:
+    \begin{itemize}
+      \item if either of them accepts a version by returning \texttt{Accept},
+        the other one must accept the same value, i.e. in this case
+        \texttt{acceptable proposed received == acceptable received proposed}
+      \item if either of them refuses to accept (returns \textt{Refuse reason})
+        the other one shall return \texttt{Refuse} as well.
+    \end{itemize}
+\end{description}
+Note that the above condition guarantees that if either side returns
+\texttt{Accept} then the connection will not be closed by the remote end.
+A weaker condition, in which the returns values are equal if they both return
+\texttt{Accept}, does not guarantee this property.  We also verify that the
+whole Handshake protocol, not just the \texttt{acceptable} satisfies the above
+property, see
+\href{https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
+test suite}.
+
+The fact that we are using non-injective encoding in the handshake protocol
+side steps typed-protocols strong typed-checked properties.  For injective
+codecs (i.e. codecs for which each message has a distinguished encoding), both
+sides of typed-protocols are always at the same state (once all in-flight
+message arrived).  This is no longer true in general, however this is still
+true for the handshake protocol.  Event though the opening message
+\texttt{MsgProposeVersions} of a simultaneous open, will materialise on the
+other side as termination message \texttt{MsgReplyVersions}, the same will
+happen to the \texttt{MsgProposeVersion} transmitted in the other direction.
+We include a special test case
+(\href{https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs\#L551}{\texttt{prop\_channel\_simultaneous\_open}})
+to verify that simultaneous open well behaves and does not lead to protocol
+errors.
 
 The handshake mini protocol runs before the MUX/DEMUX itself is initialised.
 Each message is transmitted within a single MUX segment, i.e. with a proper
@@ -502,7 +553,7 @@ protocol id $0$ (\texttt{Muxcontrol}).
 
 \subsection{CDDL encoding specification}\label{handshake-cddl}
 There are two flavours of the mini-protocol which only differ with type
-instatiations, e.g. different protocol versions and version data carried in
+instantiations, e.g. different protocol versions and version data carried in
 messages.  First one is used by the node to node protocol the other by node to
 client protocol.
 

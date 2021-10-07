@@ -127,17 +127,19 @@ instance Bifoldable Accepted where
 --
 berkeleyAccept :: IOManager
                -> Socket
-               -> Accept IO Socket SockAddr
-berkeleyAccept ioManager sock = go 0
+               -> IO (Accept IO Socket SockAddr)
+berkeleyAccept ioManager sock =
+      go 0 <$> Socket.getSocketName sock
     where
-      go cnt = Accept (acceptOne cnt `catch` handleException cnt)
+      go !cnt !addr = Accept (acceptOne addr cnt `catch` handleException addr cnt)
 
       acceptOne
-        :: Word64
+        :: SockAddr
+        -> Word64
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      acceptOne !cnt =
+      acceptOne addr cnt =
         bracketOnError
 #if !defined(mingw32_HOST_OS)
           (Socket.accept sock)
@@ -154,26 +156,26 @@ berkeleyAccept ioManager sock = go 0
             -- So to differentiate clients we use a simple counter as the
             -- remote end's address.
             --
-            addr'' <- case addr' of
-                           Socket.SockAddrUnix _ ->
-                               return $ Socket.SockAddrUnix $
-                                   "temp-" ++ show cnt
-                           _                     -> return addr'
+            addr'' <- case addr of
+                           Socket.SockAddrUnix path
+                             -> return (Socket.SockAddrUnix $ path ++ "@" ++ show cnt)
+                           _ -> return addr'
 
-            return (Accepted sock' addr'', go $ succ cnt)
+            return (Accepted sock' addr'', go (succ cnt) addr)
 
       -- Only non-async exceptions will be caught and put into the
       -- AcceptFailure variant.
       handleException
-        :: Word64
+        :: SockAddr
+        -> Word64
         -> SomeException
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      handleException !cnt err =
+      handleException addr cnt err =
         case fromException err of
           Just (SomeAsyncException _) -> throwIO err
-          Nothing                     -> pure (AcceptFailure err, go cnt)
+          Nothing                     -> pure (AcceptFailure err, go cnt addr)
 
 -- | Local address, on Unix is associated with `Socket.AF_UNIX` family, on
 --
@@ -189,7 +191,7 @@ instance Hashable LocalAddress where
 -- | We support either sockets or named pipes.
 --
 -- 'LocalFamily' requires 'LocalAddress', this is needed to provide path of the
--- openned Win32 'HANDLE'.
+-- opened Win32 'HANDLE'.
 --
 data AddressFamily addr where
 
@@ -235,7 +237,7 @@ data Snocket m fd addr = Snocket {
   -- SomeException is chosen here to avoid having to include it in the Snocket
   -- type, and therefore refactoring a bunch of stuff.
   -- FIXME probably a good idea to abstract it.
-  , accept        :: fd -> Accept m fd addr
+  , accept        :: fd -> m (Accept m fd addr)
 
   , close         :: fd -> m ()
 
@@ -309,7 +311,7 @@ socketSnocket ioManager = Snocket {
     , accept   = berkeleyAccept ioManager
       -- TODO: 'Socket.close' is interruptible by asynchronous exceptions; it
       -- should be fixed upstream, once that's done we can remove
-      -- `unitnerruptibleMask_'
+      -- `uninterruptibleMask_'
     , close    = uninterruptibleMask_ . Socket.close
     , toBearer = pureBearer Mx.socketAsMuxBearer
     }
@@ -319,7 +321,7 @@ socketSnocket ioManager = Snocket {
       sd <- Socket.socket family_ Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
-        -- async exceptions masked.  The 'associteWithIOCP' is a blocking
+        -- async exceptions masked.  The 'associateWithIOCP' is a blocking
         -- operation and thus it may throw.
         `catch` \(e :: IOException) -> do
           Socket.close sd
@@ -420,11 +422,11 @@ localSnocket ioManager = Snocket {
     , bind     = \_ _ -> pure ()
     , listen   = \_ -> pure ()
 
-    , accept   = \sock@(LocalSocket hpipe addr _) -> Accept $ do
+    , accept   = \sock@(LocalSocket hpipe addr _) -> pure $ Accept $ do
           Win32.Async.connectNamedPipe hpipe
           return (Accepted sock addr, acceptNext 0 addr)
 
-      -- Win32.closeHandle is not interrupible
+      -- Win32.closeHandle is not interruptible
     , close    = Win32.closeHandle . getLocalHandle
 
     , toBearer = \_sduTimeout tr -> pure . namedPipeAsBearer tr . getLocalHandle
@@ -467,7 +469,7 @@ localSnocket ioManager = Snocket {
               -- So to differentiate clients we use a simple counter as the
               -- remote end's address.
               --
-              let addr' = LocalAddress $ "\\\\.\\pipe\\ouroboros-network-temp-" ++ show cnt
+              let addr' = LocalAddress $ getFilePath addr ++ "@" ++ show cnt
               return (Accepted (LocalSocket hpipe addr addr') addr', acceptNext (succ cnt) addr)
 
 -- local snocket on unix
@@ -482,7 +484,7 @@ localSnocket ioManager =
           Socket.connect s (fromLocalAddress addr)
       , bind          = \(LocalSocket fd) addr -> Socket.bind fd (fromLocalAddress addr)
       , listen        = flip Socket.listen 8 . getLocalHandle
-      , accept        = bimap LocalSocket toLocalAddress
+      , accept        = fmap (bimap LocalSocket toLocalAddress)
                       . berkeleyAccept ioManager
                       . getLocalHandle
       , open          = openSocket
@@ -503,7 +505,7 @@ localSnocket ioManager =
       sd <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
-        -- async exceptions masked.  The 'associteWithIOManager' is a blocking
+        -- async exceptions masked.  The 'associateWithIOManager' is a blocking
         -- operation and thus it may throw.
         `catch` \(e :: IOException) -> do
           Socket.close sd

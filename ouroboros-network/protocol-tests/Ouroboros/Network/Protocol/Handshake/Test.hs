@@ -15,6 +15,7 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.List (nub)
 import           Data.Maybe (fromMaybe)
+import           Data.Map (Map)
 import qualified Data.Map as Map
 import           GHC.Generics
 
@@ -52,6 +53,10 @@ import           Ouroboros.Network.Protocol.Handshake.Direct
 
 import qualified Codec.CBOR.Write    as CBOR
 
+import           Ouroboros.Network.Magic
+import           Ouroboros.Network.NodeToClient.Version
+import           Ouroboros.Network.NodeToNode.Version
+
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -66,9 +71,42 @@ tests =
         , testProperty "pipe IO"               prop_pipe_IO
         , testProperty "channel asymmetric ST" prop_channel_asymmetric_ST
         , testProperty "channel asymmetric IO" prop_channel_asymmetric_IO
-        , testProperty "simultaneous open ST"  prop_channel_simultaneous_open_ST
-        , testProperty "simultaneous open IO"  prop_channel_simultaneous_open_IO
         , testProperty "pipe asymmetric IO"    prop_pipe_asymmetric_IO
+
+        , testGroup "VersionData"
+          [ testProperty "acceptable_symmetric"
+              prop_acceptable_symmetric_VersionData
+          , testProperty "acceptOrRefuse"
+              prop_acceptOrRefuse_symmetric_VersionData
+          , testProperty "simultaneous open ST"
+              prop_channel_simultaneous_open_ST
+          , testProperty "simultaneous open IO"
+              prop_channel_simultaneous_open_IO
+          ]
+
+        , testGroup "NodeToNode"
+          [ testProperty "acceptable_symmetric"
+              prop_acceptable_symmetric_NodeToNode
+          , testProperty "acceptOrRefuse"
+              prop_acceptOrRefuse_symmetric_NodeToNode
+          , testProperty "simultaneous open ST"
+              prop_channel_simultaneous_open_NodeToNode_ST
+          , testProperty "simultaneous open IO" 
+              prop_channel_simultaneous_open_NodeToNode_IO
+
+          ]
+
+        , testGroup "NodeToClient"
+          [ testProperty "acceptable_symmetric"
+              prop_acceptable_symmetric_NodeToClient
+          , testProperty "acceptOrRefuse"
+              prop_acceptOrRefuse_symmetric_NodeToClient
+          , testProperty "simultaneous open ST"
+              prop_channel_simultaneous_open_NodeToClient_ST
+          , testProperty "simultaneous open IO" 
+              prop_channel_simultaneous_open_NodeToClient_IO
+          ]
+
         , testProperty "codec RefuseReason"    prop_codec_RefuseReason
         , testProperty "codec"                 prop_codec_Handshake
         , testProperty "codec 2-splits"        prop_codec_splits2_Handshake
@@ -90,9 +128,9 @@ tests =
 --
 -- Test Versions
 --
--- Notes: Associated data are choosen in such a way that a decoder will fail
+-- Notes: Associated data are chosen in such a way that a decoder will fail
 -- interpreting one of them as the other.  This is done on purpose for testing
--- missencoded data (protocol version & associated version data mismatch)
+-- wrongly encoded data (protocol version & associated version data mismatch)
 --
 
 -- |
@@ -279,7 +317,7 @@ instance Show ArbitraryValidVersions where
 
 instance Arbitrary ArbitraryValidVersions where
     arbitrary = ArbitraryValidVersions <$> genValidVersions
-    -- TODO: shrink
+    -- TODO: shrink (issue #3407)
 
 prop_arbitrary_ArbitraryValidVersions
   :: ArbitraryValidVersions
@@ -419,7 +457,7 @@ prop_channel createChannels clientVersions serverVersions =
           serverVersions)
     pure $
       case (clientRes', serverRes') of
-        -- buth succeeded, we just check that the application (which is
+        -- both succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
         (Right (c,_,_), Right (s,_,_)) -> Just c === clientRes
                                      .&&. Just s === serverRes
@@ -545,6 +583,242 @@ prop_pipe_asymmetric_IO (ArbitraryVersions clientVersions _serverVersions) =
     ioProperty (prop_channel_asymmetric createPipeConnectedChannels clientVersions)
 
 
+
+--
+-- NodeToNode generators
+--
+
+newtype ArbitraryNodeToNodeVersion =
+        ArbitraryNodeToNodeVersion { getNodeToNodeVersion :: NodeToNodeVersion }
+  deriving Show
+
+instance Arbitrary ArbitraryNodeToNodeVersion where
+    arbitrary = elements (ArbitraryNodeToNodeVersion <$> [minBound .. maxBound])
+
+
+newtype ArbitraryNodeToNodeVersionData =
+        ArbitraryNodeToNodeVersionData
+          { getNodeToNodeVersionData :: NodeToNodeVersionData }
+    deriving Show
+
+instance Arbitrary ArbitraryNodeToNodeVersionData where
+    arbitrary = ( fmap ArbitraryNodeToNodeVersionData
+                . NodeToNodeVersionData
+                )
+            <$> (NetworkMagic <$> arbitrary)
+            <*> elements [ InitiatorOnlyDiffusionMode
+                         , InitiatorAndResponderDiffusionMode
+                         ]
+    shrink (ArbitraryNodeToNodeVersionData
+             (NodeToNodeVersionData magic mode)) =
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode)
+        | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
+        ]
+        ++
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode')
+        | mode' <- shrinkMode mode
+        ]
+      where
+        shrinkMode :: DiffusionMode -> [DiffusionMode]
+        shrinkMode InitiatorOnlyDiffusionMode = []
+        shrinkMode InitiatorAndResponderDiffusionMode = [InitiatorOnlyDiffusionMode]
+
+newtype ArbitraryNodeToNodeVersions =
+        ArbitraryNodeToNodeVersions
+          { getArbitraryNodeToNodeVersiosn :: Versions NodeToNodeVersion
+                                                       NodeToNodeVersionData Bool } 
+
+instance Show ArbitraryNodeToNodeVersions where
+    show (ArbitraryNodeToNodeVersions (Versions vs))
+      = "ArbitraryNodeToNodeVersions " ++ show (Map.map versionData vs)
+
+instance Arbitrary ArbitraryNodeToNodeVersions where
+    arbitrary = do
+      vs <- listOf (getNodeToNodeVersion <$> arbitrary)
+      ds <- vectorOf (length vs) (getNodeToNodeVersionData <$> arbitrary)
+      r  <- arbitrary
+      return $ ArbitraryNodeToNodeVersions
+             $ Versions
+             $ Map.fromList
+                [ (v, Version (const r) d)
+                | (v, d) <- zip vs ds
+                ]
+    -- TODO: shrink (issue #3407)
+
+
+--
+-- NodeToClient generators
+--
+
+newtype ArbitraryNodeToClientVersion =
+        ArbitraryNodeToClientVersion { getNodeToClientVersion :: NodeToClientVersion }
+    deriving Show
+
+instance Arbitrary ArbitraryNodeToClientVersion where
+    arbitrary = elements (ArbitraryNodeToClientVersion <$> [minBound .. maxBound])
+
+newtype ArbitraryNodeToClientVersionData =
+        ArbitraryNodeToClientVersionData
+          { getNodeToClientVersionData :: NodeToClientVersionData }
+    deriving Show
+
+instance Arbitrary ArbitraryNodeToClientVersionData where
+    arbitrary = ( ArbitraryNodeToClientVersionData
+                . NodeToClientVersionData
+                )
+            <$> (NetworkMagic <$> arbitrary)
+    shrink (ArbitraryNodeToClientVersionData
+             (NodeToClientVersionData magic)) =
+        [ ArbitraryNodeToClientVersionData (NodeToClientVersionData magic')
+        | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
+        ]
+
+newtype ArbitraryNodeToClientVersions =
+        ArbitraryNodeToClientVersions
+          { getArbitraryNodeToClientVersiosn :: Versions NodeToClientVersion
+                                                       NodeToClientVersionData Bool } 
+
+instance Show ArbitraryNodeToClientVersions where
+    show (ArbitraryNodeToClientVersions (Versions vs))
+      = "ArbitraryNodeToClientVersions " ++ show (Map.map versionData vs)
+
+instance Arbitrary ArbitraryNodeToClientVersions where
+    arbitrary = do
+      vs <- listOf (getNodeToClientVersion <$> arbitrary)
+      ds <- vectorOf (length vs) (getNodeToClientVersionData <$> arbitrary)
+      r  <- arbitrary
+      return $ ArbitraryNodeToClientVersions
+             $ Versions
+             $ Map.fromList
+                [ (v, Version (const r) d)
+                | (v, d) <- zip vs ds
+                ]
+    -- TODO: shrink (issue #3407)
+
+
+prop_acceptable_symmetric
+  :: ( Acceptable vData
+     , Eq vData
+     )
+  => vData
+  -> vData
+  -> Bool
+prop_acceptable_symmetric vData vData' =
+    case (acceptableVersion vData vData', acceptableVersion vData' vData) of
+      (Accept a, Accept b) -> a == b
+      (Refuse _, Refuse _) -> True
+      (_       , _       ) -> False
+
+prop_acceptable_symmetric_VersionData
+  :: VersionData
+  -> VersionData
+  -> Bool
+prop_acceptable_symmetric_VersionData a b =
+    prop_acceptable_symmetric a b
+
+
+prop_acceptable_symmetric_NodeToNode
+  :: ArbitraryNodeToNodeVersionData
+  -> ArbitraryNodeToNodeVersionData
+  -> Bool
+prop_acceptable_symmetric_NodeToNode (ArbitraryNodeToNodeVersionData a)
+                                     (ArbitraryNodeToNodeVersionData b) =
+    prop_acceptable_symmetric a b
+
+
+prop_acceptable_symmetric_NodeToClient
+  :: ArbitraryNodeToClientVersionData
+  -> ArbitraryNodeToClientVersionData
+  -> Bool
+prop_acceptable_symmetric_NodeToClient (ArbitraryNodeToClientVersionData a)
+                                       (ArbitraryNodeToClientVersionData b) =
+    prop_acceptable_symmetric a b
+
+
+
+-- | 'acceptOrRefuse' is symmetric in the following sense:
+--
+-- Either both sides:
+-- * accept the same version and version data; or
+-- * refuse
+--
+-- The refuse reason might differ, although if one side refuses it with
+-- `Refused` the other side must refuse the same version.
+--
+prop_acceptOrRefuse_symmetric
+  :: forall vNumber vData r.
+     ( Acceptable vData
+     , Eq   vData
+     , Show vData
+     , Ord  vNumber
+     , Show vNumber
+     , Eq   r
+     , Show r
+     )
+  => Versions vNumber vData r
+  -> Versions vNumber vData r
+  -> Property
+prop_acceptOrRefuse_symmetric clientVersions serverVersions =
+    case ( acceptOrRefuse codec acceptableVersion clientVersions serverMap
+         , acceptOrRefuse codec acceptableVersion serverVersions clientMap
+         ) of
+      (Right (_, vNumber, vData), Right (_, vNumber', vData')) ->
+             vNumber === vNumber'
+        .&&. vData   === vData'
+      (Left (VersionMismatch vNumbers _), Left (VersionMismatch vNumbers' _)) ->
+             vNumbers  === Map.keys clientMap
+        .&&. vNumbers' === Map.keys serverMap
+      (Left HandshakeDecodeError {}, Left _) ->
+        property True
+      (Left _, Left HandshakeDecodeError {}) ->
+        property True
+      (Left (Refused vNumber _), Left (Refused vNumber' _)) ->
+        vNumber === vNumber'
+      (_      , _      ) ->
+        property False
+
+  where
+    codec :: VersionDataCodec vData vNumber vData
+    codec = VersionDataCodec {
+        encodeData = \_ vData -> vData,
+        decodeData = \_ vData -> Right vData
+      }
+
+    toMap :: Versions vNumber vData r
+          -> Map vNumber vData
+    toMap (Versions m) = versionData `Map.map` m
+
+    clientMap = toMap clientVersions
+    serverMap = toMap serverVersions
+  
+
+prop_acceptOrRefuse_symmetric_VersionData
+  :: ArbitraryVersions
+  -> Property
+prop_acceptOrRefuse_symmetric_VersionData (ArbitraryVersions a b) =
+    prop_acceptOrRefuse_symmetric a b
+
+
+prop_acceptOrRefuse_symmetric_NodeToNode
+  :: ArbitraryNodeToNodeVersions
+  -> ArbitraryNodeToNodeVersions
+  -> Property
+prop_acceptOrRefuse_symmetric_NodeToNode (ArbitraryNodeToNodeVersions a)
+                                         (ArbitraryNodeToNodeVersions b) =
+
+  prop_acceptOrRefuse_symmetric a b
+
+
+prop_acceptOrRefuse_symmetric_NodeToClient
+  :: ArbitraryNodeToClientVersions
+  -> ArbitraryNodeToClientVersions
+  -> Property
+prop_acceptOrRefuse_symmetric_NodeToClient (ArbitraryNodeToClientVersions a)
+                                           (ArbitraryNodeToClientVersions b) =
+
+  prop_acceptOrRefuse_symmetric a b
+
+
 -- | Run two handshake clients against each other, which simulates a TCP
 -- simultaneous open.
 --
@@ -552,12 +826,17 @@ prop_channel_simultaneous_open
     :: ( MonadAsync m
        , MonadCatch m
        , MonadST m
+       , Acceptable vData
+       , Ord vNumber
        )
     => m (Channel m ByteString, Channel m ByteString)
-    -> Versions VersionNumber VersionData Bool
-    -> Versions VersionNumber VersionData Bool
+    -> Codec (Handshake vNumber CBOR.Term)
+              CBOR.DeserialiseFailure m ByteString
+    -> VersionDataCodec CBOR.Term vNumber vData
+    -> Versions vNumber vData Bool
+    -> Versions vNumber vData Bool
     -> m Property
-prop_channel_simultaneous_open createChannels clientVersions serverVersions =
+prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersions serverVersions =
   let (serverRes, clientRes) =
         pureHandshake
           ((maybeAccept .) . acceptableVersion)
@@ -566,17 +845,17 @@ prop_channel_simultaneous_open createChannels clientVersions serverVersions =
   in do
     (clientChannel, serverChannel) <- createChannels
     let client  = handshakeClientPeer
-                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    versionDataCodec
                     acceptableVersion
                     clientVersions
         client' = handshakeClientPeer
-                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    versionDataCodec
                     acceptableVersion
                     serverVersions
     (clientRes', serverRes') <-
-      (fst <$> runPeer nullTracer versionNumberHandshakeCodec clientChannel client)
+      (fst <$> runPeer nullTracer codec clientChannel client)
         `concurrently`
-      (fst <$> runPeer nullTracer versionNumberHandshakeCodec serverChannel client')
+      (fst <$> runPeer nullTracer codec {-versionNumberHandshakeCodec-} serverChannel client')
     pure $
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
@@ -599,6 +878,8 @@ prop_channel_simultaneous_open_ST :: ArbitraryVersions -> Property
 prop_channel_simultaneous_open_ST (ArbitraryVersions clientVersions serverVersions) =
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
+                    versionNumberHandshakeCodec
+                    (cborTermVersionDataCodec dataCodecCBORTerm)
                     clientVersions
                     serverVersions
 
@@ -608,8 +889,66 @@ prop_channel_simultaneous_open_IO :: ArbitraryVersions -> Property
 prop_channel_simultaneous_open_IO (ArbitraryVersions clientVersions serverVersions) =
   ioProperty $ prop_channel_simultaneous_open
                  createConnectedChannels
+                 versionNumberHandshakeCodec
+                 (cborTermVersionDataCodec dataCodecCBORTerm)
                  clientVersions
                  serverVersions
+
+
+prop_channel_simultaneous_open_NodeToNode_ST :: ArbitraryNodeToNodeVersions
+                                             -> ArbitraryNodeToNodeVersions
+                                             -> Property
+prop_channel_simultaneous_open_NodeToNode_ST
+    (ArbitraryNodeToNodeVersions clientVersions)
+    (ArbitraryNodeToNodeVersions serverVersions) =
+  runSimOrThrow $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+
+
+prop_channel_simultaneous_open_NodeToNode_IO :: ArbitraryNodeToNodeVersions
+                                             -> ArbitraryNodeToNodeVersions
+                                             -> Property
+prop_channel_simultaneous_open_NodeToNode_IO
+    (ArbitraryNodeToNodeVersions clientVersions)
+    (ArbitraryNodeToNodeVersions serverVersions) =
+  ioProperty $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+
+
+prop_channel_simultaneous_open_NodeToClient_ST :: ArbitraryNodeToClientVersions
+                                               -> ArbitraryNodeToClientVersions
+                                               -> Property
+prop_channel_simultaneous_open_NodeToClient_ST
+    (ArbitraryNodeToClientVersions clientVersions)
+    (ArbitraryNodeToClientVersions serverVersions) =
+  runSimOrThrow $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToClientVersionCodec)
+                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+
+
+prop_channel_simultaneous_open_NodeToClient_IO :: ArbitraryNodeToClientVersions
+                                               -> ArbitraryNodeToClientVersions
+                                               -> Property
+prop_channel_simultaneous_open_NodeToClient_IO
+    (ArbitraryNodeToClientVersions clientVersions)
+    (ArbitraryNodeToClientVersions serverVersions) =
+  ioProperty $ prop_channel_simultaneous_open
+                    createConnectedChannels
+                    (codecHandshake nodeToClientVersionCodec)
+                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    clientVersions
+                    serverVersions
 
 --
 -- Codec tests
@@ -619,7 +958,7 @@ instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
   AnyMessage (MsgProposeVersions vs) == AnyMessage (MsgProposeVersions vs')
     = vs == vs'
 
-  AnyMessage (MsgProposeVersions' vs) == AnyMessage (MsgProposeVersions' vs')
+  AnyMessage (MsgReplyVersions vs) == AnyMessage (MsgReplyVersions vs')
     = vs == vs'
 
   AnyMessage (MsgAcceptVersion vNumber vParams) == AnyMessage (MsgAcceptVersion vNumber' vParams')
@@ -639,7 +978,7 @@ instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) whe
       <$> genVersions
 
     ,     AnyMessageAndAgency (ServerAgency TokConfirm)
-        . MsgProposeVersions'
+        . MsgReplyVersions
         . Map.mapWithKey (\v -> encodeTerm (dataCodecCBORTerm v) . versionData)
         . getVersions
       <$> genVersions

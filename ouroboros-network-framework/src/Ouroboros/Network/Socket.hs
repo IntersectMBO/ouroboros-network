@@ -433,8 +433,8 @@ fromSnocket
     => ConnectionTable IO addr
     -> Snocket IO fd addr
     -> fd -- ^ socket or handle
-    -> Server.Socket addr fd
-fromSnocket tblVar sn sd = go (Snocket.accept sn sd)
+    -> IO (Server.Socket addr fd)
+fromSnocket tblVar sn sd = go <$> Snocket.accept sn sd
   where
     go :: Snocket.Accept IO fd addr -> Server.Socket addr fd
     go (Snocket.Accept accept) = Server.Socket $ do
@@ -555,10 +555,11 @@ runServerThread NetworkServerTracers { nstMuxTracer
                 versions
                 errorPolicies = do
     sockAddr <- Snocket.getLocalAddr sn sd
+    serverSocket <- fromSnocket nmsConnectionTable sn sd
     Server.run
         nstErrorPolicyTracer
         nstAcceptPolicyTracer
-        (fromSnocket nmsConnectionTable sn sd)
+        serverSocket
         acceptedConnectionsLimit
         (acceptException sockAddr)
         (beginConnection sn nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
