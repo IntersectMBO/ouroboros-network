@@ -12,6 +12,7 @@
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TupleSections              #-}
@@ -79,8 +80,6 @@ import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChan
 
 import           Ouroboros.Network.Testing.Utils (Delay (..),
                    genDelayWithPrecision)
--- import qualified Debug.Trace as Debug
-
 
 tests :: TestTree
 tests =
@@ -1578,8 +1577,9 @@ mkSnocket scheduleMap = do
     accept (FD fd) = pure $ Accept $ go (inboundSchedule scheduleMap)
       where
         go :: [(Time, Addr, RefinedScheduleEntry)]
+           -> (forall x. m x -> m x)
            -> m (Accepted (FD m) Addr, Accept m (FD m) Addr)
-        go [] = pure (AcceptFailure (toException ioe), Accept $ go [])
+        go [] _unmask = pure (AcceptFailure (toException ioe), Accept $ go [])
           where
             ioe = IOError { ioe_handle      = Nothing
                           , ioe_type        = OtherError
@@ -1590,9 +1590,9 @@ mkSnocket scheduleMap = do
                           }
 
 
-        go ((blockUntil, remoteAddr, se) : as) = do
+        go ((blockUntil, remoteAddr, se) : as) unmask = do
           t <- getMonotonicTime
-          threadDelay (blockUntil `diffTime` t)
+          unmask $ threadDelay (blockUntil `diffTime` t)
           fd' <- atomically $ do
             FDState { fdLocalAddress = localAddr } <- readTVar fd
             newTVar FDState {
@@ -2030,7 +2030,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                       go (thread : threads) (Accept acceptOne) conns'
 
                     ScheduleInbound {} -> do
-                      r <- acceptOne
+                      r <- mask acceptOne
                       time' <- getMonotonicTime
                       when (time /= time')
                            (throwIO (EventTimingError
