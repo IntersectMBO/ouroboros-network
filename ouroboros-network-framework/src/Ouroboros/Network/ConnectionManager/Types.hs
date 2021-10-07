@@ -162,6 +162,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Word (Word32)
 import           GHC.Stack (CallStack, prettyCallStack)
 
 import           Network.Mux.Types ( MuxBearer
@@ -469,9 +470,13 @@ data Connected peerAddr handle handleError =
 
 
 type RequestOutboundConnection peerAddr handle handleError m
-    =           peerAddr -> m (Connected peerAddr handle handleError)
+    =            peerAddr -> m (Connected peerAddr handle handleError)
 type IncludeInboundConnection socket peerAddr handle handleError m
-    = socket -> peerAddr -> m (Connected peerAddr handle handleError)
+    = Word32
+    -- ^ inbound connections hard limit.
+    -- NOTE: Check TODO over at includeInboundConnectionImpl
+    -- definition.
+    -> socket -> peerAddr -> m (Connected peerAddr handle handleError)
 
 
 -- | Outbound connection manager API.
