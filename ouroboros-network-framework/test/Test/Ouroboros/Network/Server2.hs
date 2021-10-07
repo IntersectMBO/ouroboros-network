@@ -97,7 +97,7 @@ import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket
 
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
-import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), toBearerInfo)
+import           Test.Simulation.Network.Snocket (NonFailingBearerInfoScript(..), AbsBearerInfo, toBearerInfo)
 import           Test.Ouroboros.Network.ConnectionManager (verifyAbstractTransition)
 
 tests :: TestTree
@@ -233,7 +233,7 @@ oneshotNextRequests ClientAndServerData {
 data Timeouts = Timeouts {
     tProtocolIdleTimeout :: DiffTime,
     tOutboundIdleTimeout :: DiffTime,
-    tTimeWaitTimeout     :: DiffTime 
+    tTimeWaitTimeout     :: DiffTime
   }
 
 -- | Timeouts for 'IO' tests.
@@ -767,12 +767,11 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
 
-prop_unidirectional_Sim :: ClientAndServerData Int -> Property
-prop_unidirectional_Sim clientAndServerData =
+prop_unidirectional_Sim :: AbsBearerInfo -> ClientAndServerData Int -> Property
+prop_unidirectional_Sim absBi clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
-                (singletonScript noAttenuation)
-            $ \ snock ->
+                (Script (toBearerInfo absBi :| [noAttenuation])) $ \snock ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
         Snocket.bind   snock fd serverAddr
@@ -1459,7 +1458,7 @@ data TestProperty = TestProperty {
 
     tpNumberOfConnections :: !(Sum Int),
     -- ^ number of all connections
-   
+
     --
     -- classifcation of connections
     --
@@ -1657,8 +1656,8 @@ data Three a b c
 -- regression of this test.  This suggest we should:
 --
 -- TODO: split this test into two.
-prop_multinode_Sim :: Int -> ArbDataFlow -> MultiNodeScript Int TestAddr -> Property
-prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
+prop_multinode_Sim :: Int -> ArbDataFlow -> AbsBearerInfo -> MultiNodeScript Int TestAddr -> Property
+prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script =
   let evs :: Octopus (Value ())
                      (Three (RemoteTransitionTrace SimAddr)
                             (AbstractTransitionTrace SimAddr)
@@ -1689,8 +1688,18 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) script =
           sim :: IOSim s ()
           sim = do
             mb <- timeout 7200
-                    ( withSnocket debugTracer
-                                  (singletonScript noAttenuation)
+                    ( withSnocket
+                        debugTracer
+                        -- We do this instead of generating a list of
+                        -- 'BearerInfo' where the last element is
+                        -- 'noAttenuation' because we need the last element
+                        -- to run to be 'noAttenuation' and not the last element
+                        -- of the list. The test is designed in this way so we
+                        -- can not do much about it. This is okay because the
+                        -- diffusion simulation will not need to relay on such
+                        -- an invariant; the outbound governor is the component
+                        -- which makes sure that a progress is made.
+                        (Script (toBearerInfo absBi :| [noAttenuation]))
                     $ \snocket ->
                        multinodeExperiment (Tracer traceM)
                                            (Tracer traceM)
@@ -1888,7 +1897,7 @@ splitConns =
                 Just trs -> ( Map.delete ttPeerAddr s
                             , Just (reverse $ ttTransition : trs)
                             )
-            _ ->            ( Map.alter ( \ case 
+            _ ->            ( Map.alter ( \ case
                                               Nothing -> Just [ttTransition]
                                               Just as -> Just (ttTransition : as)
                                         ) ttPeerAddr s
