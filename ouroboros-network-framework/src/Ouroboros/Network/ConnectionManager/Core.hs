@@ -33,7 +33,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSTM.Strict
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Tracer (Tracer, traceWith, contramap)
-import           Data.Foldable (traverse_)
+import           Data.Foldable (traverse_, foldMap')
 import           Data.Functor (($>))
 import           Data.Function (on)
 import           Data.Maybe (maybeToList)
@@ -43,9 +43,11 @@ import           GHC.Stack (CallStack, HasCallStack, callStack)
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import           Data.Monoid.Synchronisation
 import           Data.Wedge
+import           Data.Word (Word32)
 
 import           Network.Mux.Types (MuxMode)
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
@@ -191,7 +193,7 @@ connectionManagerStateToCounters
   :: Map peerAddr (ConnectionState peerAddr handle handleError version m)
   -> ConnectionManagerCounters
 connectionManagerStateToCounters =
-    Map.foldMapWithKey (const connectionStateToCounters)
+    foldMap' connectionStateToCounters
 
 -- | State of a connection.
 --
@@ -439,8 +441,12 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
     --
     = DemotedToColdLocal      (ConnectionId peerAddr)
                               (Async m ())
-                              (StrictTVar m (ConnectionState peerAddr handle handleError version m))
-                             !(Transition (ConnectionState peerAddr handle handleError version m))
+                              (StrictTVar m (ConnectionState
+                                              peerAddr handle
+                                              handleError version m))
+                             !(Transition (ConnectionState
+                                            peerAddr handle
+                                            handleError version m))
 
     -- | Any @DemoteToCold@ transition which does not terminate the connection, i.e.
     -- @
@@ -450,14 +456,30 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
     -- or the case where the connection is already in 'TerminatingState' or
     -- 'TerminatedState'.
     --
-    | DemoteToColdLocalNoop !(Maybe (Transition (ConnectionState peerAddr handle handleError version m)))
+    | DemoteToColdLocalNoop !(Maybe (Transition (ConnectionState
+                                                  peerAddr handle
+                                                  handleError version m)))
                             !AbstractState
 
     -- | Duplex connection was demoted, prune connections.
     --
     | PruneConnections        (ConnectionId peerAddr)
                               (Map peerAddr (Async m ()))
-                             !(Transition (ConnectionState peerAddr handle handleError version m))
+                              -- Left case is for when pruning tries to prune
+                              -- the connection which triggered pruning, in this
+                              -- case we do not want to trace a new transition.
+                              --
+                              -- Right case is for when the connection which
+                              -- triggered pruning isn't pruned. In this case
+                              -- we do want to trace a new transition.
+                             !(Either
+                                (ConnectionState
+                                  peerAddr handle
+                                  handleError version m)
+                                (Transition (ConnectionState
+                                              peerAddr handle
+                                              handleError version m))
+                              )
 
     -- | Demote error.
     | DemoteToColdLocalError  (ConnectionManagerTrace peerAddr handlerTrace)
@@ -577,7 +599,7 @@ withConnectionManager ConnectionManagerArguments {
                         icmDemotedToColdRemote =
                           demotedToColdRemoteImpl stateVar,
                         icmNumberOfConnections =
-                          readTMVar stateVar >>= countPrunableConnections
+                          readTMVar stateVar >>= countIncomingConnections
                       },
                 readState
               }
@@ -604,7 +626,7 @@ withConnectionManager ConnectionManagerArguments {
                         icmDemotedToColdRemote =
                           demotedToColdRemoteImpl stateVar,
                         icmNumberOfConnections =
-                          readTMVar stateVar >>= countPrunableConnections
+                          readTMVar stateVar >>= countIncomingConnections
                       },
                 readState
               }
@@ -632,11 +654,11 @@ withConnectionManager ConnectionManagerArguments {
       mState <- atomically $ readTMVar stateVar >>= traverse (readTVar . connVar)
       traceWith tracer (TrConnectionManagerCounters (connectionManagerStateToCounters mState))
 
-    countPrunableConnections
+    countIncomingConnections
         :: ConnectionManagerState peerAddr handle handleError version m
         -> STM m Int
-    countPrunableConnections st =
-          prunableConns
+    countIncomingConnections st =
+          incomingConns
         . connectionManagerStateToCounters
       <$> traverse (readTVar . connVar) st
 
@@ -756,6 +778,7 @@ withConnectionManager ConnectionManagerArguments {
                 traceCounters stateVar
               -- This case is impossible to reach since the previous atomically block
               -- does not return the 'Race' constructor.
+              -- TODO: Make this pattern match impossible.
               Left _ -> error "connection cleanup handler: impossible happened"
               Right (mutableConnState@MutableConnState { connVar }, transition) ->
                 do traceWith tracer (TrConnectionTimeWait connId)
@@ -814,6 +837,13 @@ withConnectionManager ConnectionManagerArguments {
         => FreshIdSupply m
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
+        -> Word32
+        -- ^ inbound connections hard limit
+        -- TODO: This is needed because the accept loop can not guarantee that
+        -- includeInboundConnection can run safely without going above the
+        -- hardlimit.  We have to check if we are not above the hard limit
+        -- after locking the connection manager state `TMVar` and  then decide
+        -- whether we can include the connection or not.
         -> socket
         -- ^ resource to include in the state
         -> peerAddr
@@ -822,143 +852,164 @@ withConnectionManager ConnectionManagerArguments {
     includeInboundConnectionImpl freshIdSupply 
                                  stateVar
                                  handler
+                                 hardLimit
                                  socket
                                  peerAddr = do
-        let provenance = Inbound
-        traceWith tracer (TrIncludeConnection provenance peerAddr)
-        (MutableConnState { connVar }, connId, connThread, reader)
-          <- modifyTMVar stateVar $ \state -> do
-              (reader, writer) <- newEmptyPromiseIO
-              localAddress <- getLocalAddr cmSnocket socket
-              let connId = ConnectionId { localAddress, remoteAddress = peerAddr }
-              connThread <-
-                forkConnectionHandler
-                  stateVar socket connId writer handler
+        (r, connId) <- modifyTMVar stateVar $ \state -> do
+          localAddress <- getLocalAddr cmSnocket socket
+          numberOfCons <- atomically $ countIncomingConnections state
 
-              -- Either
-              -- @
-              --   Accepted    : ● → UnnegotiatedState Inbound
-              --   Overwritten : ● → UnnegotiatedState Inbound
-              -- @
-              --
-              -- This is subtle part, which needs to handle a near simultaneous
-              -- open.  We cannot relay on 'ReservedOutboundState' state as
-              -- a lock.  It may happen that the `requestOutboundConnection`
-              -- will put 'ReservedOutboundState', but before it will call `connect`
-              -- the `accept` call will return.  We overwrite the state and
-              -- replace the connection state 'TVar' with a fresh one.  Nothing
-              -- is blocked on the replaced 'TVar'.
-              let connState' = UnnegotiatedState provenance connId connThread
-              (connVar, connState) <-
+          let connId = ConnectionId { localAddress, remoteAddress = peerAddr }
+
+              -- Check if after accepting this connection we get above the
+              -- hard limit
+              canAccept = numberOfCons + 1 <= fromIntegral hardLimit
+
+          if canAccept
+          then do
+            let provenance = Inbound
+            traceWith tracer (TrIncludeConnection provenance peerAddr)
+            (reader, writer) <- newEmptyPromiseIO
+            connThread <-
+              forkConnectionHandler
+                stateVar socket connId writer handler
+
+            -- Either
+            -- @
+            --   Accepted    : ● → UnnegotiatedState Inbound
+            --   Overwritten : ● → UnnegotiatedState Inbound
+            -- @
+            --
+            -- This is subtle part, which needs to handle a near simultaneous
+            -- open.  We cannot rely on 'ReservedOutboundState' state as
+            -- a lock.  It may happen that the `requestOutboundConnection`
+            -- will put 'ReservedOutboundState', but before it will call `connect`
+            -- the `accept` call will return.  We overwrite the state and
+            -- replace the connection state 'TVar' with a fresh one.  Nothing
+            -- is blocked on the replaced 'TVar'.
+            let connState' = UnnegotiatedState provenance connId connThread
+            (connVar, connState) <-
+              atomically $ do
+                v <- newMutableConnState freshIdSupply connState'
+                labelTVar (connVar v) ("conn-state-" ++ show connId)
+                connState <- traverse (readTVar . connVar)
+                                      (Map.lookup peerAddr state)
+                return ( v
+                       , maybe Unknown Known connState
+                       )
+            traceWith trTracer (TransitionTrace peerAddr
+                                 Transition { fromState = connState
+                                            , toState   = Known connState'
+                                            })
+            return ( Map.insert peerAddr connVar state
+                   , (Just (connVar, connThread, reader), connId)
+                   )
+          else
+            return ( state
+                   , (Nothing, connId)
+                   )
+
+        case r of
+          Nothing ->
+            return (Disconnected connId Nothing)
+
+          Just (MutableConnState { connVar }, connThread, reader) -> do
+            traceCounters stateVar
+
+            res <- atomically $ readPromise reader
+            case res of
+              Left handleError -> do
                 atomically $ do
-                  v <- newMutableConnState freshIdSupply connState'
-                  labelTVar (connVar v) ("conn-state-" ++ show connId)
-                  connState <- traverse (readTVar . connVar)
-                                        (Map.lookup peerAddr state)
-                  return ( v
-                         , maybe Unknown Known connState
-                         )
-              traceWith trTracer (TransitionTrace peerAddr
-                                   Transition { fromState = connState
-                                              , toState   = Known connState'
-                                              })
-              return ( Map.insert peerAddr connVar state
-                     , (connVar, connId, connThread, reader)
-                     )
+                  writeTVar connVar $
+                    case classifyHandleError handleError of
+                      HandshakeFailure           ->
+                        TerminatingState connId connThread
+                                                (Just handleError)
+                      HandshakeProtocolViolation ->
+                        TerminatedState  (Just handleError)
+                  modifyTMVarPure_ stateVar (Map.delete peerAddr)
+                traceCounters stateVar
+                return (Disconnected connId (Just handleError))
 
-        traceCounters stateVar
+              Right (handle, version) -> do
+                let dataFlow = connectionDataFlow version
+                mbTransition <- atomically $ do
+                  connState <- readTVar connVar
+                  case connState of
+                    -- Inbound connections cannot be found in this state at this
+                    -- stage.
+                    ReservedOutboundState ->
+                      throwSTM (withCallStack (ImpossibleState peerAddr))
 
-        res <- atomically $ readPromise reader
-        case res of
-          Left handleError -> do
-            atomically $ do
-              writeTVar connVar $
-                case classifyHandleError handleError of
-                  HandshakeFailure           -> TerminatingState connId connThread
-                                                                 (Just handleError)
-                  HandshakeProtocolViolation -> TerminatedState  (Just handleError)
-              modifyTMVarPure_ stateVar (Map.delete peerAddr)
-            traceCounters stateVar
-            return (Disconnected connId (Just handleError))
+                    --
+                    -- The common case.
+                    --
+                    -- Note: we don't set an explicit timeout here.  The
+                    -- server will set a timeout and call
+                    -- 'unregisterInboundConnection' when it expires.
+                    --
+                    UnnegotiatedState {} -> do
+                      let connState' = InboundIdleState
+                                         connId connThread handle
+                                         (connectionDataFlow version)
+                      writeTVar connVar connState'
+                      return (Just $ mkTransition connState connState')
 
-          Right (handle, version) -> do
-            let dataFlow = connectionDataFlow version
-            mbTransition <- atomically $ do
-              connState <- readTVar connVar
-              case connState of
-                -- Inbound connections cannot be found in this state at this
-                -- stage.
-                ReservedOutboundState ->
-                  throwSTM (withCallStack (ImpossibleState peerAddr))
+                    -- It is impossible to find a connection in 'OutboundUniState'
+                    -- or 'OutboundDupState', since 'includeInboundConnection'
+                    -- blocks until 'InboundState'.  This guarantees that this
+                    -- transactions runs first in case of race between
+                    -- 'requestOutboundConnection' and 'includeInboundConnection'.
+                    OutboundUniState _connId _connThread _handle ->
+                      throwSTM (withCallStack (ImpossibleState peerAddr))
+                    OutboundDupState _connId _connThread _handle _expired ->
+                      throwSTM (withCallStack (ImpossibleState peerAddr))
 
-                --
-                -- The common case.
-                --
-                -- Note: we don't set an explicit timeout here.  The
-                -- server will set a timeout and call
-                -- 'unregisterInboundConnection' when it expires.
-                --
-                UnnegotiatedState {} -> do
-                  let connState' = InboundIdleState
-                                     connId connThread handle
-                                     (connectionDataFlow version)
-                  writeTVar connVar connState'
-                  return (Just $ mkTransition connState connState')
+                    OutboundIdleState _ _ _ dataFlow' -> do
+                      let connState' = InboundIdleState
+                                         connId connThread handle
+                                         dataFlow'
+                      writeTVar connVar connState'
+                      return (Just $ mkTransition connState connState')
 
-                -- It is impossible to find a connection in 'OutboundUniState'
-                -- or 'OutboundDupState', since 'includeInboundConnection'
-                -- blocks until 'InboundState'.  This guarantees that this
-                -- transactions runs first in case of race between
-                -- 'requestOutboundConnection' and 'includeInboundConnection'.
-                OutboundUniState _connId _connThread _handle ->
-                  throwSTM (withCallStack (ImpossibleState peerAddr))
-                OutboundDupState _connId _connThread _handle _expired ->
-                  throwSTM (withCallStack (ImpossibleState peerAddr))
+                    InboundIdleState {} ->
+                      throwSTM (withCallStack (ImpossibleState peerAddr))
 
-                OutboundIdleState _ _ _ dataFlow' -> do
-                  let connState' = InboundIdleState
-                                     connId connThread handle
-                                     dataFlow'
-                  writeTVar connVar connState'
-                  return (Just $ mkTransition connState connState')
+                    -- At this stage the inbound connection cannot be in
+                    -- 'InboundState', it would mean that there was another thread
+                    -- that included that connection, but this would violate @TCP@
+                    -- constraints.
+                    InboundState {} ->
+                      throwSTM (withCallStack (ImpossibleState peerAddr))
 
-                InboundIdleState {} ->
-                  throwSTM (withCallStack (ImpossibleState peerAddr))
+                    DuplexState {} ->
+                      throwSTM (withCallStack (ImpossibleState peerAddr))
 
-                -- At this stage the inbound connection cannot be in
-                -- 'InboundState', it would mean that there was another thread
-                -- that included that connection, but this would violate @TCP@
-                -- constraints.
-                InboundState {} ->
-                  throwSTM (withCallStack (ImpossibleState peerAddr))
+                    TerminatingState {} -> return Nothing
 
-                DuplexState {} ->
-                  throwSTM (withCallStack (ImpossibleState peerAddr))
+                    TerminatedState {} -> return Nothing
 
-                TerminatingState {} -> return Nothing
+                traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
+                traceCounters stateVar
 
-                TerminatedState {} -> return Nothing
+                -- Note that we don't set a timeout thread here which would
+                -- perform:
+                -- @
+                --   Commit^{dataFlow}
+                --     : InboundIdleState dataFlow
+                --     → TerminatingState
+                -- @
+                -- This is not needed!  When we return from this call, the inbound
+                -- protocol governor will monitor the connection.  Once it becomes
+                -- idle, it will call 'unregisterInboundConnection' which will
+                -- perform the aforementioned @Commit@ transition.
 
-            traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
-            traceCounters stateVar
-
-            -- Note that we don't set a timeout thread here which would perform
-            -- @
-            --   Commit^{dataFlow}
-            --     : InboundIdleState dataFlow
-            --     → TerminatingState
-            -- @
-            -- This is not needed!  When we return from this call, the inbound
-            -- protocol governor will monitor the connection.  Once it becomes
-            -- idle, it will call 'unregisterInboundConnection' which will
-            -- perform the aforementioned @Commit@ transition.
-
-            -- If mbTransition is Nothing, it means that the connVar was read
-            -- either in Terminating or TerminatedState. Either case we should
-            -- return Disconnected instead of Connected.
-            return (maybe (Disconnected connId Nothing)
-                          (const $ Connected connId dataFlow handle)
-                          mbTransition)
+                -- If mbTransition is Nothing, it means that the connVar was read
+                -- either in Terminating or TerminatedState. Either case we should
+                -- return Disconnected instead of Connected.
+                return (maybe (Disconnected connId Nothing)
+                              (const $ Connected connId dataFlow handle)
+                              mbTransition)
 
 
     unregisterInboundConnectionImpl
@@ -976,7 +1027,7 @@ withConnectionManager ConnectionManagerArguments {
             -- at this point.
             pure ( Nothing
                  , Nothing
-                 , UnsupportedState UnknownConnectionSt )
+                 , OperationSuccess CommitTr )
           Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
             case connState of
@@ -1070,8 +1121,9 @@ withConnectionManager ConnectionManagerArguments {
                        , UnsupportedState TerminatedSt )
 
       traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
-      traverse_ cancel mbThread
       traceCounters stateVar
+
+      traverse_ cancel mbThread
       return result
 
 
@@ -1560,16 +1612,54 @@ withConnectionManager ConnectionManagerArguments {
                          (mkTransition connState connState'))
 
               OutboundDupState connId connThread handle Ticking -> do
-                -- @
-                --   DemotedToCold^{Duplex}_{Local}
-                --     : OutboundState^\tau Duplex
-                --     → InboundIdleState^\tau Duplex
-                -- @
                 let connState' = InboundIdleState connId connThread handle Duplex
-                writeTVar connVar connState'
-                return (DemoteToColdLocalNoop
-                         (Just $ mkTransition connState connState')
-                         (abstractState $ Known connState'))
+                    tr = mkTransition connState connState'
+
+                numberOfConns <- countIncomingConnections state
+
+                -- use 'numberOfConns + 1' because we want to know if we
+                -- actually let this connection evolve if we need to make
+                -- room for them by pruning.
+                let numberToPrune =
+                      numberOfConns + 1
+                      - fromIntegral
+                          (acceptedConnectionsHardLimit cmConnectionsLimits)
+                if numberToPrune > 0
+                then do
+                  -- traverse the state and get only the connection which
+                  -- have 'ConnectionType' and are running (have a thread).
+                  -- This excludes connections in 'ReservedOutboundState',
+                  -- 'TerminatingState' and 'TerminatedState'.
+                  (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
+                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
+                         (\cs -> -- this expression returns @Maybe (connType, connThread)@;
+                                 -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                             (,) <$> getConnType cs
+                                 <*> getConnThread cs)
+                     <$> readTVar connVar'
+
+                  pruneSet <-
+                    cmPrunePolicy
+                      (fst <$> choiseMap)
+                      numberToPrune
+
+                  return $
+                    PruneConnections connId
+                      (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                      (Left connState)
+
+                else do
+                  -- @
+                  --   DemotedToCold^{Duplex}_{Local}
+                  --     : OutboundState^\tau Duplex
+                  --     → InboundIdleState^\tau Duplex
+                  -- @
+                  -- does not require to perform any additional io action (we
+                  -- already updated 'connVar').
+                  writeTVar connVar connState'
+                  return (DemoteToColdLocalNoop
+                           (Just tr)
+                           (abstractState $ Known connState'))
 
               OutboundIdleState _connId _connThread _handleError _dataFlow ->
                 return (DemoteToColdLocalNoop Nothing
@@ -1597,13 +1687,13 @@ withConnectionManager ConnectionManagerArguments {
                 --
                 let connState' = InboundState connId connThread handle Duplex
                     tr = mkTransition connState connState'
-                writeTVar connVar connState'
 
-                numberOfConns <- countPrunableConnections state
+                numberOfConns <- countIncomingConnections state
                 let numberToPrune =
-                        numberOfConns
+                      numberOfConns
                       - fromIntegral
                           (acceptedConnectionsHardLimit cmConnectionsLimits)
+
                 if numberToPrune > 0
                 then do
                   -- traverse the state and get only the connection which
@@ -1622,17 +1712,30 @@ withConnectionManager ConnectionManagerArguments {
                     cmPrunePolicy
                       (fst <$> choiseMap)
                       numberToPrune
-                  return $
-                    PruneConnections connId
-                      (snd <$> choiseMap `Map.restrictKeys` pruneSet)
-                      tr
-                else
+
+                  -- If this connection is in the to-prune set we do not let it
+                  -- evolve to a new state. Otherwise we do.
+                  if Set.member peerAddr pruneSet
+                  then
+                    return $
+                      PruneConnections connId
+                        (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                        (Left connState)
+                  else do
+                    writeTVar connVar connState'
+                    return $
+                      PruneConnections connId
+                        (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                        (Right tr)
+
+                else do
                   -- @
                   -- DemotedToCold^{Duplex}_{Local} : DuplexState
                   --                                → InboundState Duplex
                   -- @
                   -- does not require to perform any additional io action (we
                   -- already updated 'connVar').
+                  writeTVar connVar connState'
                   return (DemoteToColdLocalNoop
                            (Just tr)
                            (abstractState $ Known connState'))
@@ -1666,7 +1769,7 @@ withConnectionManager ConnectionManagerArguments {
               traceWith trTracer (TransitionTrace peerAddr
                                    (mkTransition connState connState'))
               traceCounters stateVar
-              -- We relay on the `finally` handler of connection thread to:
+              -- We rely on the `finally` handler of connection thread to:
               --
               -- - close the socket,
               -- - set the state to 'TerminatedState'
@@ -1679,14 +1782,14 @@ withConnectionManager ConnectionManagerArguments {
             Left connState ->
               return (UnsupportedState (abstractState $ Known connState))
 
-        PruneConnections _connId pruneMap tr -> do
-          traceWith trTracer (TransitionTrace peerAddr tr)
+        PruneConnections _connId pruneMap eTr -> do
+          traverse_ (traceWith trTracer . TransitionTrace peerAddr) eTr
+          traceCounters stateVar
           traceWith tracer (TrPruneConnections (Map.keys pruneMap))
           -- previous comment applies here as well.
           traverse_ cancel pruneMap
 
-          traceCounters stateVar
-          return (OperationSuccess (abstractState (fromState tr)))
+          return (OperationSuccess (abstractState (either Known fromState eTr)))
 
         DemoteToColdLocalError trace st -> do
           traceWith tracer trace
@@ -1704,44 +1807,129 @@ withConnectionManager ConnectionManagerArguments {
         -> m (OperationResult AbstractState)
     promotedToWarmRemoteImpl stateVar peerAddr = do
       result <- atomically $ do
-        mbConnVar <- Map.lookup peerAddr <$> readTMVar stateVar
+        state <- readTMVar stateVar
+        let mbConnVar = Map.lookup peerAddr state
         case mbConnVar of
-          Nothing -> return (UnsupportedState UnknownConnectionSt)
+          Nothing -> return (UnsupportedState UnknownConnectionSt, Nothing)
           Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
             case connState of
               ReservedOutboundState {} ->
                 assert False $
-                return (UnsupportedState ReservedOutboundSt)
+                return (UnsupportedState ReservedOutboundSt, Nothing)
               UnnegotiatedState provenance _ _ ->
                 assert False $
-                return (UnsupportedState (UnnegotiatedSt provenance))
+                return (UnsupportedState (UnnegotiatedSt provenance), Nothing)
               OutboundUniState _connId _connThread _handle ->
                 assert False $
-                return (UnsupportedState OutboundUniSt)
+                return (UnsupportedState OutboundUniSt, Nothing)
               OutboundDupState connId connThread handle _expired -> do
                 -- @
                 --   PromotedToWarm^{Duplex}_{Remote} : OutboundState Duplex
                 --                                    → DuplexState
                 -- @
+                --
+                -- For connections that reach DuplexState we are not sure if
+                -- this was due a connection that was established due to TCP
+                -- simultaneous open or normal connect/accept. If it was
+                -- established due to TCP simultaneous open a DuplexState can
+                -- make us go above the Server number of connections hard limit,
+                -- hence we need to prune connections.
+                --
                 let connState' = DuplexState connId connThread handle
-                writeTVar connVar connState'
-                return (OperationSuccess (mkTransition connState connState'))
-              -- @
-              --   Awake^{Duplex}_{Remote} : OutboundIdleState Duplex
-              --                           → InboundState Duplex
-              -- @
+                    tr = mkTransition connState connState'
+
+                numberOfConns <- countIncomingConnections state
+
+                -- use 'numberOfConns + 1' because we want to know if we
+                -- actually let this connection evolve if we need to make
+                -- room for them by pruning.
+                let numberToPrune =
+                      numberOfConns + 1
+                      - fromIntegral
+                          (acceptedConnectionsHardLimit cmConnectionsLimits)
+
+                -- Are we above the hard limit?
+                if numberToPrune > 0
+                then do
+                  -- traverse the state and get only the connection which
+                  -- have 'ConnectionType' and are running (have a thread).
+                  -- This excludes connections in 'ReservedOutboundState',
+                  -- 'TerminatingState' and 'TerminatedState'.
+                  (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
+                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
+                         (\cs -> -- this expression returns @Maybe (connType, connThread)@;
+                                 -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                             (,) <$> getConnType cs
+                                 <*> getConnThread cs)
+                     <$> readTVar connVar'
+
+                  pruneSet <-
+                    cmPrunePolicy
+                      (fst <$> choiseMap)
+                      numberToPrune
+
+                  return
+                    ( OperationSuccess tr
+                    , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
+                           , Nothing
+                           )
+                    )
+
+                else do
+                  writeTVar connVar connState'
+                  return (OperationSuccess tr, Nothing)
               OutboundIdleState connId connThread handle dataFlow@Duplex -> do
                 -- @
                 --   Awake^{Duplex}_{Remote} : OutboundIdleState Duplex
                 --                           → InboundState Duplex
                 -- @
                 let connState' = InboundState connId connThread handle dataFlow
-                writeTVar connVar connState
-                return (OperationSuccess (mkTransition connState connState'))
+                    tr = mkTransition connState connState'
+
+                numberOfConns <- countIncomingConnections state
+
+                -- use 'numberOfConns + 1' because we want to know if we
+                -- actually let this connection evolve if we need to make
+                -- room for them by pruning.
+                let numberToPrune =
+                      numberOfConns + 1
+                      - fromIntegral
+                          (acceptedConnectionsHardLimit cmConnectionsLimits)
+
+                -- Are we above the hard limit?
+                if numberToPrune > 0
+                then do
+                  -- traverse the state and get only the connection which
+                  -- have 'ConnectionType' and are running (have a thread).
+                  -- This excludes connections in 'ReservedOutboundState',
+                  -- 'TerminatingState' and 'TerminatedState'.
+                  (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
+                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
+                         (\cs -> -- this expression returns @Maybe (connType, connThread)@;
+                                 -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                             (,) <$> getConnType cs
+                                 <*> getConnThread cs)
+                     <$> readTVar connVar'
+
+                  pruneSet <-
+                    cmPrunePolicy
+                      (fst <$> choiseMap)
+                      numberToPrune
+
+                  return
+                    ( OperationSuccess tr
+                    , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
+                           , Nothing
+                           )
+                    )
+
+                else do
+                  writeTVar connVar connState'
+                  return (OperationSuccess tr, Nothing)
               OutboundIdleState _connId _connThread _handle
                                                       dataFlow@Unidirectional ->
-                return (UnsupportedState (OutboundIdleSt dataFlow))
+                return (UnsupportedState (OutboundIdleSt dataFlow), Nothing)
               InboundIdleState connId connThread handle dataFlow -> do
                 -- @
                 --   Awake^{dataFlow}_{Remote} : InboundIdleState Duplex
@@ -1749,25 +1937,40 @@ withConnectionManager ConnectionManagerArguments {
                 -- @
                 let connState' = InboundState connId connThread handle dataFlow
                 writeTVar connVar connState'
-                return (OperationSuccess (mkTransition connState connState'))
+                return ( OperationSuccess (mkTransition connState connState')
+                       , Nothing)
               InboundState {} ->
                 -- already in 'InboundState'?
                 assert False $
-                return (OperationSuccess (mkTransition connState connState))
+                return ( OperationSuccess (mkTransition connState connState)
+                       , Nothing)
               DuplexState {} ->
-                return (OperationSuccess (mkTransition connState connState))
+                return ( OperationSuccess (mkTransition connState connState)
+                       , Nothing)
               TerminatingState {} ->
-                return (UnsupportedState TerminatingSt)
+                return (UnsupportedState TerminatingSt, Nothing)
               TerminatedState {} ->
-                return (UnsupportedState TerminatedSt)
+                return (UnsupportedState TerminatedSt, Nothing)
 
       -- trace transition
       case result of
-        OperationSuccess tr -> do
+        (OperationSuccess tr, Nothing) -> do
           traceWith trTracer (TransitionTrace peerAddr tr)
           traceCounters stateVar
+
+        (OperationSuccess _, Just (pruneMap, mbTr)) -> do
+          traceWith tracer (TrPruneConnections (Map.keys pruneMap))
+          traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTr
+          traceCounters stateVar
+
+          -- We relay on the `finally` handler of connection thread to:
+          --
+          -- - close the socket,
+          -- - set the state to 'TerminatedState'
+          traverse_ cancel pruneMap
+
         _ -> return ()
-      return (abstractState . fromState <$> result)
+      return (abstractState . fromState <$> fst result)
 
 
     demotedToColdRemoteImpl
