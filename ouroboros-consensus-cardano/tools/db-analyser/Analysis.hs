@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -21,11 +22,14 @@ import           Data.Word (Word16)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
+                     HeaderState (..), annTipPoint)
 import           Ouroboros.Consensus.Ledger.Abstract (tickThenApplyLedgerResult)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
+import           Ouroboros.Consensus.Storage.Common (StreamFrom (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -90,8 +94,8 @@ data AnalysisEnv blk = AnalysisEnv {
 -------------------------------------------------------------------------------}
 
 showSlotBlockNo :: forall blk. HasAnalysis blk => Analysis blk
-showSlotBlockNo AnalysisEnv { db, registry, limit } =
-    processAll_ db registry GetHeader limit process
+showSlotBlockNo AnalysisEnv { db, registry, initLedger, limit } =
+    processAll_ db registry GetHeader initLedger limit process
   where
     process :: Header blk -> IO ()
     process hdr = putStrLn $ intercalate "\t" [
@@ -104,8 +108,8 @@ showSlotBlockNo AnalysisEnv { db, registry, limit } =
 -------------------------------------------------------------------------------}
 
 countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
-countTxOutputs AnalysisEnv { db, registry, limit } = do
-    void $ processAll db registry GetBlock limit 0 process
+countTxOutputs AnalysisEnv { db, registry, initLedger, limit } = do
+    void $ processAll db registry GetBlock initLedger limit 0 process
   where
     process :: Int -> blk -> IO Int
     process cumulative blk = do
@@ -125,9 +129,9 @@ countTxOutputs AnalysisEnv { db, registry, limit } = do
 -------------------------------------------------------------------------------}
 
 showHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
-showHeaderSize AnalysisEnv { db, registry, limit } = do
+showHeaderSize AnalysisEnv { db, registry, initLedger, limit } = do
     maxHeaderSize <-
-      processAll db registry ((,) <$> GetSlot <*> GetHeaderSize) limit 0 process
+      processAll db registry ((,) <$> GetSlot <*> GetHeaderSize) initLedger limit 0 process
     putStrLn ("Maximum encountered header size = " <> show maxHeaderSize)
   where
     process :: Word16 -> (SlotNo, Word16) -> IO Word16
@@ -143,8 +147,8 @@ showHeaderSize AnalysisEnv { db, registry, limit } = do
 -------------------------------------------------------------------------------}
 
 showBlockTxsSize :: forall blk. HasAnalysis blk => Analysis blk
-showBlockTxsSize AnalysisEnv { db, registry, limit } =
-    processAll_ db registry GetBlock limit process
+showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit } =
+    processAll_ db registry GetBlock initLedger limit process
   where
     process :: blk -> IO ()
     process blk = putStrLn $ intercalate "\t" [
@@ -167,9 +171,9 @@ showBlockTxsSize AnalysisEnv { db, registry, limit } =
 -------------------------------------------------------------------------------}
 
 showEBBs :: forall blk. HasAnalysis blk => Analysis blk
-showEBBs AnalysisEnv { db, registry, limit } = do
+showEBBs AnalysisEnv { db, registry, initLedger, limit } = do
     putStrLn "EBB\tPrev\tKnown"
-    processAll_ db registry GetBlock limit process
+    processAll_ db registry GetBlock initLedger limit process
   where
     process :: blk -> IO ()
     process blk =
@@ -202,7 +206,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
     putStrLn $ "About to store snapshot of a ledger at " <>
                show slotNo <> " " <>
                "this might take a while..."
-    void $ processAllUntil db registry GetBlock limit initLedger process
+    void $ processAllUntil db registry GetBlock initLedger limit initLedger process
   where
     process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
     process oldLedger blk = do
@@ -261,10 +265,11 @@ data NextStep = Continue | Stop
 
 
 processAllUntil ::
-     forall blk b st. HasHeader blk
+     forall blk b st. (HasHeader blk, HasAnnTip blk)
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
+  -> ExtLedgerState blk
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))
@@ -272,41 +277,53 @@ processAllUntil ::
 processAllUntil = either processAllImmutableDB processAllChainDB
 
 processAll ::
-     forall blk b st. HasHeader blk
+     forall blk b st. (HasHeader blk, HasAnnTip blk)
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
+  -> ExtLedgerState blk
   -> Limit
   -> st
   -> (st -> b -> IO st)
   -> IO st
-processAll db rr blockComponent limit initSt cb =
-  processAllUntil db rr blockComponent limit initSt callback
+processAll db rr blockComponent initLedger limit initSt cb =
+  processAllUntil db rr blockComponent initLedger limit initSt callback
     where
       callback st b = (Continue, ) <$> cb st b
 
 processAll_ ::
-     forall blk b. HasHeader blk
+     forall blk b. (HasHeader blk, HasAnnTip blk)
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
+  -> ExtLedgerState blk
   -> Limit
   -> (b -> IO ())
   -> IO ()
-processAll_ db rr blockComponent limit callback =
-    processAll db rr blockComponent limit () (const callback)
+processAll_ db registry blockComponent initLedger limit callback =
+    processAll db registry blockComponent initLedger limit () (const callback)
 
 processAllChainDB ::
-     forall st blk b. HasHeader blk
+     forall st blk b. (HasHeader blk, HasAnnTip blk)
   => ChainDB IO blk
   -> ResourceRegistry IO
   -> BlockComponent blk b
+  -> ExtLedgerState blk
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))
   -> IO st
-processAllChainDB chainDB rr blockComponent limit initState callback = do
-    itr <- ChainDB.streamAll chainDB rr blockComponent
+processAllChainDB chainDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
+    itr <- case headerStateTip headerState of
+      Origin           -> ChainDB.streamAll
+                             chainDB
+                             registry
+                             blockComponent
+      NotOrigin annTip -> ChainDB.streamFrom
+                             (StreamFromExclusive $ annTipPoint annTip)
+                             chainDB
+                             registry
+                             blockComponent
     go itr limit initState
   where
     go :: ChainDB.Iterator IO blk b -> Limit -> st -> IO st
@@ -322,22 +339,32 @@ processAllChainDB chainDB rr blockComponent limit initState callback = do
           ChainDB.IteratorBlockGCed pt -> error $ "block GC'ed " <> show pt
 
 processAllImmutableDB ::
-     forall st blk b. HasHeader blk
+     forall st blk b. (HasHeader blk, HasAnnTip blk)
   => ImmutableDB IO blk
   -> ResourceRegistry IO
   -> BlockComponent blk b
+  -> ExtLedgerState blk
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))
   -> IO st
-processAllImmutableDB immutableDB rr blockComponent limit initState callback = do
-    itr <- ImmutableDB.streamAll immutableDB rr blockComponent
+processAllImmutableDB immutableDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
+    itr <- case headerStateTip headerState of
+      Origin           -> ImmutableDB.streamAll
+                             immutableDB
+                             registry
+                             blockComponent
+      NotOrigin annTip -> ImmutableDB.streamAfterKnownPoint
+                             immutableDB
+                             registry
+                             blockComponent
+                            (annTipPoint annTip)
     go itr limit initState
   where
     go :: ImmutableDB.Iterator IO blk b -> Limit -> st -> IO st
     go itr lt !st = case decreaseLimit lt of
       Nothing               -> return st
-      Just decreasedLimit -> do
+      Just decreasedLimit   -> do
         itrResult <- ImmutableDB.iteratorNext itr
         case itrResult of
           ImmutableDB.IteratorExhausted -> return st

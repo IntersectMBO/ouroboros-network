@@ -23,6 +23,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- ** Abstraction over the stream API
   , NextBlock (..)
   , StreamAPI (..)
+    -- * Read from disk
+  , readSnapshot
     -- * Write to disk
   , takeSnapshot
   , trimSnapshots
