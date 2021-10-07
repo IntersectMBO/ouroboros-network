@@ -248,20 +248,25 @@ run ServerArguments {
                  Nothing -> throwIO err
 
             (Accepted socket peerAddr, acceptNext) ->
-              (do traceWith tracer (TrAcceptConnection peerAddr)
+              (do
+                  let hardLimit =
+                        acceptedConnectionsHardLimit serverConnectionLimits
+
+                  traceWith tracer (TrAcceptConnection peerAddr)
                   async $
                     do a <-
                          unmask
                            (includeInboundConnection
                              serverConnectionManager
-                             socket peerAddr)
+                             hardLimit socket peerAddr)
                        case a of
                          Connected connId dataFlow handle ->
                            atomically $
                              ControlChannel.writeMessage
                                serverControlChannel
                                (ControlChannel.NewConnection Inbound connId dataFlow handle)
-                         Disconnected {} ->
+                         Disconnected {} -> do
+                           close serverSnocket socket
                            pure ()
                     `onException`
                       close serverSnocket socket

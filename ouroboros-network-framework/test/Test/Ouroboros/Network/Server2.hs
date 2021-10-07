@@ -27,7 +27,7 @@ module Test.Ouroboros.Network.Server2
 
 
 import           Control.Applicative ((<|>))
-import           Control.Exception (AssertionFailed, SomeAsyncException (SomeAsyncException))
+import           Control.Exception (AssertionFailed, SomeAsyncException (..))
 import           Control.Monad (replicateM, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
@@ -118,12 +118,10 @@ tests =
   , testProperty "unidirectional_Sim" prop_unidirectional_Sim
   , testProperty "bidirectional_IO"   prop_bidirectional_IO
   , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
-  -- Test disabled because there are upcoming commits that fix certain issues
-  -- that make this test suite unreliable. This test will be enabled once
-  -- everything is fixed.
-  --
-  -- , testProperty "multinode_pruning_Sim"
-  --                prop_multinode_pruning_Sim
+  , testProperty "multinode_pruning_Sim"
+                 prop_multinode_pruning_Sim
+  , testProperty "hardlimit_Sim"
+                 prop_hardlimit_Sim
   , testProperty "multinode_Sim"      prop_multinode_Sim
   , testProperty "unit_connection_terminated_when_negotiating"
                  unit_connection_terminated_when_negotiating
@@ -1251,6 +1249,9 @@ instance Arbitrary req =>
          Arbitrary (MultiNodePruningScript req) where
   arbitrary = do
     Positive len <- scale ((* 2) . (`div` 3)) arbitrary
+    -- NOTE: Although we still do not enforce the configured hardlimit to be
+    -- strictly positive. We assume that the hard limit is always bigger than
+    -- 0.
     Small hardLimit <- (`div` 10) <$> arbitrary
     softLimit <- chooseBoundedIntegral (hardLimit `div` 2, hardLimit)
     MultiNodePruningScript (AcceptedConnectionsLimit hardLimit softLimit 0)
@@ -1258,7 +1259,7 @@ instance Arbitrary req =>
    where
      -- Divide delays by 100 to avoid running in to protocol and SDU timeouts
      -- if waiting too long between connections and mini protocols.
-     delay = frequency [ (1, pure 0)
+     delay = frequency [ (1,  pure 0)
                        , (16, (/ 10) <$> genDelayWithPrecision 2)
                        , (32, (/ 100) <$> genDelayWithPrecision 2)
                        , (16, (/ 1000) <$> genDelayWithPrecision 2)
@@ -1764,13 +1765,11 @@ mkProperty TestProperty { tpProperty
    . tabulate "Transitions"         (map ppTransition tpTransitions)
    $ tpProperty
 
--- See test suite above
---
--- mkPropertyPruning :: TestProperty -> Property
--- mkPropertyPruning tp@TestProperty { tpNumberOfPrunings = Sum numberOfPrunings_ } =
---      cover 35 (numberOfPrunings_ > 0) "Prunings"
---    . mkProperty
---    $ tp
+mkPropertyPruning :: TestProperty -> Property
+mkPropertyPruning tp@TestProperty { tpNumberOfPrunings = Sum numberOfPrunings_ } =
+     cover 35 (numberOfPrunings_ > 0) "Prunings"
+   . mkProperty
+   $ tp
 
 newtype AllProperty = AllProperty { getAllProperty :: Property }
 
@@ -2075,157 +2074,272 @@ prop_multinode_Sim serverAcc (ArbDataFlow dataFlow) absBi script@(MultiNodeScrip
 -- This test tests if with a higher chance of pruning happening and a smaller number of
 -- connections hard limit we do not end up triggering any illegal transition.
 --
--- See test suite above
---
--- prop_multinode_pruning_Sim :: Int -> MultiNodePruningScript Int -> Property
--- prop_multinode_pruning_Sim serverAcc (MultiNodePruningScript acceptedConnLimit l) =
---   let evs :: Trace (SimResult ())
---                     (Three (RemoteTransitionTrace SimAddr)
---                            (AbstractTransitionTrace SimAddr)
---                            (InboundGovernorTrace SimAddr))
---       evs = fmap wnEvent
---           . Trace.filter ((MainServer ==) . wnName)
---           . traceSelectTraceEvents
---               (\ev ->
---                 case ev of
---                   EventLog dyn ->
---                         fmap First
---                         <$> fromDynamic
---                               @(WithName (Name SimAddr) (RemoteTransitionTrace   SimAddr))
---                               dyn
---                     <|> fmap Second
---                         <$> fromDynamic
---                               @(WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
---                               dyn
---                     <|> fmap Third
---                         <$> fromDynamic
---                               @(WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
---                               dyn
---                   _ ->
---                        Nothing
---               )
---           $ runSimTrace sim
---       evs' :: [ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)]
---       evs' = fmap wnEvent
---            . filter ((MainServer ==) . wnName)
---            . selectTraceEventsDynamic
---                @()
---                @(WithName (Name SimAddr) (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
---            $ runSimTrace sim
---   in tabulate "ConnectionEvents" (map showCEvs l)
---     . counterexample (ppScript (MultiNodeScript l))
---     . counterexample (Trace.ppTrace show show evs)
---     . (\ ( tr1 :: Trace (SimResult ()) (RemoteTransitionTrace   SimAddr)
---          , tr2 :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
---          , tr3 :: Trace (SimResult ()) (InboundGovernorTrace    SimAddr)
---          )
---        ->
---         ( getAllProperty
---         . bifoldMap
---             ( \ _ -> AllProperty (property True))
---             ( \ tr -> case tr of
---                 -- verify that 'unregisterInboundConnection' does not return
---                 -- 'UnsupportedState'.
---                 TrDemotedToColdRemote _ res ->
---                   case res of
---                     UnsupportedState {}
---                       -> AllProperty (counterexample (show tr) False)
---                     _ -> AllProperty (property True)
---
---                 -- verify that 'demotedToColdRemote' does not return
---                 -- 'UnsupportedState'
---                 TrWaitIdleRemote _ res ->
---                   case res of
---                     UnsupportedState {}
---                       -> AllProperty (counterexample (show tr) False)
---                     _ -> AllProperty (property True)
---
---                 _     -> AllProperty (property True)
---             )
---
---         $ tr3
---         )
---         .&&.
---         ( mkPropertyPruning
---         . bifoldMap
---            ( \ case
---                MainReturn {} -> mempty
---                v             -> mempty { tpProperty = counterexample (show v) False }
---            )
---            ( \ trs
---             -> TestProperty {
---                  tpProperty =
---                      (counterexample $!
---                        (  "\nconnection:\n"
---                        ++ intercalate "\n" (map ppTransition trs))
---                        )
---                    . getAllProperty
---                    . foldMap ( \ tr
---                               -> AllProperty
---                                . (counterexample $!
---                                    (  "\nUnexpected transition: "
---                                    ++ show tr)
---                                    )
---                                . verifyAbstractTransition
---                                $ tr
---                              )
---                    $ trs,
---                  tpNumberOfTransitions = Sum (length trs),
---                  tpNumberOfConnections = Sum 1,
---                  tpNumberOfPrunings    = classifyPrunings evs',
---                  tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
---                  tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
---                  tpTerminationTypes    = [classifyTermination        trs],
---                  tpActivityTypes       = [classifyActivityType       trs],
---                  tpTransitions         = trs
---               }
---            )
---          . splitConns
---          $ tr2
---          )
---          .&&.
---          ( getAllProperty
---          . bifoldMap
---             ( \ _ -> AllProperty (property True) )
---             ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
---                   AllProperty
---                 . counterexample (concat [ "Unexpected transition: "
---                                          , show peerAddr
---                                          , " "
---                                          , show tr
---                                          ])
---                 . verifyRemoteTransition
---                 $ tr
---             )
---          $ tr1
---          )
---
---      )
---    . traceSplit
---    $ evs
---   where
---     sim :: IOSim s ()
---     sim = do
---       mb <- timeout 7200
---                     ( withSnocket sayTracer
---                                   (singletonScript noAttenuation)
---               $ \snocket ->
---                  multinodeExperiment (Tracer traceM)
---                                      (Tracer traceM)
---                                      (Tracer traceM)
---                                      (Tracer traceM)
---                                      snocket
---                                      Snocket.TestFamily
---                                      (Snocket.TestAddress 0)
---                                      serverAcc
---                                      Duplex
---                                      acceptedConnLimit
---                                      (unTestAddr <$> MultiNodeScript l)
---               )
---       case mb of
---         Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
---         Just a  -> return a
+prop_multinode_pruning_Sim :: Int -> MultiNodePruningScript Int -> Property
+prop_multinode_pruning_Sim serverAcc (MultiNodePruningScript acceptedConnLimit l) =
+  let evs :: Trace (SimResult ())
+                    (Three (RemoteTransitionTrace SimAddr)
+                           (AbstractTransitionTrace SimAddr)
+                           (InboundGovernorTrace SimAddr))
+      evs = fmap wnEvent
+          . Trace.filter ((MainServer ==) . wnName)
+          . traceSelectTraceEvents
+              (\ev ->
+                case ev of
+                  EventLog dyn ->
+                        fmap First
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr)
+                                         (RemoteTransitionTrace   SimAddr))
+                              dyn
+                    <|> fmap Second
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr)
+                                         (AbstractTransitionTrace SimAddr))
+                              dyn
+                    <|> fmap Third
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr)
+                                         (InboundGovernorTrace SimAddr))
+                              dyn
+                  _ ->
+                       Nothing
+              )
+          $ runSimTrace sim
+      evs' :: [ConnectionManagerTrace SimAddr
+                (ConnectionHandlerTrace UnversionedProtocol
+                                        DataFlowProtocolData)]
+      evs' = fmap wnEvent
+           . filter ((MainServer ==) . wnName)
+           . selectTraceEventsDynamic
+               @()
+               @(WithName (Name SimAddr)
+                          (ConnectionManagerTrace SimAddr
+                            (ConnectionHandlerTrace UnversionedProtocol
+                                                    DataFlowProtocolData)))
+           $ runSimTrace sim
+  in tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (ppScript (MultiNodeScript l))
+    . counterexample (Trace.ppTrace show show evs)
+    . (\ ( tr1 :: Trace (SimResult ()) (RemoteTransitionTrace   SimAddr)
+         , tr2 :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+         , tr3 :: Trace (SimResult ()) (InboundGovernorTrace    SimAddr)
+         )
+       ->
+        ( getAllProperty
+        . bifoldMap
+            ( \ _ -> AllProperty (property True))
+            ( \ tr -> case tr of
+                -- verify that 'unregisterInboundConnection' does not return
+                -- 'UnsupportedState'.
+                TrDemotedToColdRemote _ res ->
+                  case res of
+                    UnsupportedState {}
+                      -> AllProperty
+                          $ counterexample
+                              ("Unexpected UnsupportedState "
+                              ++ "in unregisterInboundConnection "
+                              ++ show tr)
+                              False
+                    _ -> AllProperty (property True)
 
+                -- verify that 'demotedToColdRemote' does not return
+                -- 'UnsupportedState'
+                TrWaitIdleRemote _ res ->
+                  case res of
+                    UnsupportedState {}
+                      -> AllProperty
+                          $ counterexample
+                              ("Unexpected UnsupportedState "
+                              ++ "in demotedToColdRemote "
+                              ++ show tr)
+                              False
+                    _ -> AllProperty (property True)
+
+                _     -> AllProperty (property True)
+            )
+
+        $ tr3
+        )
+        .&&.
+        ( mkPropertyPruning
+        . bifoldMap
+           ( \ case
+               MainReturn {} -> mempty
+               v             -> mempty { tpProperty = counterexample (show v) False }
+           )
+           ( \ trs
+            -> TestProperty {
+                 tpProperty =
+                     (counterexample $!
+                       (  "\nconnection:\n"
+                       ++ intercalate "\n" (map ppTransition trs))
+                       )
+                   . getAllProperty
+                   . foldMap ( \ tr
+                              -> AllProperty
+                               . (counterexample $!
+                                   (  "\nUnexpected transition: "
+                                   ++ show tr)
+                                   )
+                               . verifyAbstractTransition
+                               $ tr
+                             )
+                   $ trs,
+                 tpNumberOfTransitions = Sum (length trs),
+                 tpNumberOfConnections = Sum 1,
+                 tpNumberOfPrunings    = classifyPrunings evs',
+                 tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
+                 tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
+                 tpTerminationTypes    = [classifyTermination        trs],
+                 tpActivityTypes       = [classifyActivityType       trs],
+                 tpTransitions         = trs
+              }
+           )
+         . splitConns
+         $ tr2
+         )
+         .&&.
+         ( getAllProperty
+         . bifoldMap
+            ( \ _ -> AllProperty (property True) )
+            ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
+                  AllProperty
+                . counterexample (concat [ "Unexpected transition: "
+                                         , show peerAddr
+                                         , " "
+                                         , show tr
+                                         ])
+                . verifyRemoteTransition
+                $ tr
+            )
+         $ tr1
+         )
+
+     )
+   . traceSplit
+   $ evs
+  where
+    sim :: IOSim s ()
+    sim = do
+      mb <- timeout 7200
+                    ( withSnocket sayTracer
+                                  (singletonScript noAttenuation)
+              $ \snocket ->
+                 multinodeExperiment (Tracer traceM)
+                                     (Tracer traceM)
+                                     (Tracer traceM)
+                                     (Tracer traceM)
+                                     snocket
+                                     Snocket.TestFamily
+                                     (Snocket.TestAddress 0)
+                                     serverAcc
+                                     Duplex
+                                     acceptedConnLimit
+                                     (unTestAddr <$> MultiNodeScript l)
+              )
+      case mb of
+        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Just a  -> return a
+
+-- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
+-- pruning, and random generated number of connections hard limit.
+--
+-- We test that we never go above hard limit of incoming connections.
+--
+prop_hardlimit_Sim :: Int -> MultiNodePruningScript Int -> Property
+prop_hardlimit_Sim serverAcc
+                   (MultiNodePruningScript
+                     acceptedConnLimit@AcceptedConnectionsLimit
+                       { acceptedConnectionsHardLimit = hardlimit }
+                       l
+                   ) =
+  let evs :: Trace (SimResult ())
+                   (Three (ConnectionManagerTrace SimAddr
+                            (ConnectionHandlerTrace UnversionedProtocol
+                                                    DataFlowProtocolData))
+                          (AbstractTransitionTrace SimAddr)
+                          (InboundGovernorTrace SimAddr)
+                   )
+      evs = fmap wnEvent
+          . Trace.filter ((MainServer ==) . wnName)
+          . traceSelectTraceEvents
+              (\ev ->
+                case ev of
+                  EventLog dyn ->
+                        fmap First
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr)
+                                         (ConnectionManagerTrace SimAddr
+                                            (ConnectionHandlerTrace
+                                              UnversionedProtocol
+                                              DataFlowProtocolData)))
+                              dyn
+                    <|> fmap Second
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr)
+                                         (AbstractTransitionTrace SimAddr))
+                              dyn
+                    <|> fmap Third
+                        <$> fromDynamic
+                              @(WithName (Name SimAddr)
+                                         (InboundGovernorTrace SimAddr))
+                              dyn
+                  _ ->
+                       Nothing
+              )
+          $ runSimTrace sim
+  in  tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (ppScript (MultiNodeScript l))
+    . counterexample (Trace.ppTrace show show evs)
+    . (\ ( tr1
+         , _
+         , _
+         )
+       -> getAllProperty
+       . bifoldMap
+           ( \ case
+               MainReturn {} -> mempty
+               _             -> AllProperty (property False)
+           )
+           ( \ trs ->
+             case trs of
+               TrConnectionManagerCounters cmc ->
+                 AllProperty
+                  . counterexample ("HardLimit: " ++ show hardlimit ++
+                                    ", but got: " ++ show (incomingConns cmc) ++
+                                    " incoming connections!\n" ++
+                                    show cmc
+                                   )
+                  . property
+                  $ incomingConns cmc <= fromIntegral hardlimit
+               _ -> mempty
+           )
+        $ tr1
+      )
+   . traceSplit
+   $ evs
+  where
+    sim :: IOSim s ()
+    sim = do
+      mb <- timeout 7200
+                    ( withSnocket sayTracer
+                                  (singletonScript noAttenuation)
+              $ \snocket ->
+                 multinodeExperiment (Tracer traceM)
+                                     (Tracer traceM)
+                                     (Tracer traceM)
+                                     (Tracer traceM)
+                                     snocket
+                                     Snocket.TestFamily
+                                     (Snocket.TestAddress 0)
+                                     serverAcc
+                                     Duplex
+                                     acceptedConnLimit
+                                     (unTestAddr <$> MultiNodeScript l)
+              )
+      case mb of
+        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Just a  -> return a
 
 -- Right fold of the 'Trace' which splits its results.
 --
