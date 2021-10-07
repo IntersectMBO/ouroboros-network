@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
@@ -25,7 +27,7 @@ module Test.Ouroboros.Network.Server2
 
 import           Control.Applicative ((<|>))
 import           Control.Exception (AssertionFailed)
-import           Control.Monad (replicateM, (>=>))
+import           Control.Monad (replicateM, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadFork
@@ -1053,6 +1055,10 @@ newtype MultiNodeScript req peerAddr = MultiNodeScript [ConnectionEvent req peer
 
 -- | To generate well-formed scripts we need to keep track of what nodes are started and what
 --   connections they've made.
+--
+--   Note: this does not track failures, e.g. `requestOutboundConnection` when there's
+--   already a `Unidirectional` inbound connection (i.e. a `ForbiddenOperation`).
+--
 data ScriptState peerAddr = ScriptState { startedClients      :: [peerAddr]
                                         , startedServers      :: [peerAddr]
                                         , clientConnections   :: [peerAddr]
@@ -1449,7 +1455,8 @@ multinodeExperiment inboundTrTracer cmTrTracer inboundTracer
       where
 
     connectionLoop
-         :: (HasInitiator muxMode ~ True)
+         :: forall muxMode a.
+            (HasInitiator muxMode ~ True)
          => SingMuxMode muxMode
          -> peerAddr
          -> TQueue m (ConnectionHandlerMessage peerAddr req)                          -- control channel
@@ -1457,53 +1464,62 @@ multinodeExperiment inboundTrTracer cmTrTracer inboundTracer
          -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a)          -- active connections
          -> StrictTVar m (Map.Map (ConnectionId peerAddr) (Bundle (TQueue m [req])))  -- mini protocol queues
          -> m ()
-    connectionLoop muxMode localAddr cc cm connMap connVar = atomically (readTQueue cc) >>= \ case
-      NewConnection remoteAddr -> do
-        let mkQueue :: forall pt. TokProtocolTemperature pt -> STM m (TQueue m [req])
-            mkQueue tok = do
-              q <- newTQueue
-              let temp = case tok of
-                    TokHot         -> "hot"
-                    TokWarm        -> "warm"
-                    TokEstablished -> "cold"
-              q <$ labelTQueue q ("protoVar." ++ temp ++ "@" ++ show localAddr)
-        connHandle <- try @_ @SomeException
-                      $ requestOutboundConnection cm remoteAddr
-        case connHandle of
-          Left _ -> connectionLoop muxMode localAddr cc cm connMap connVar
-          Right (Connected _ _ h) -> do
-            qs <- atomically $ traverse id $ makeBundle mkQueue
-            atomically $ modifyTVar connVar $ Map.insert (connId remoteAddr) qs
-            connectionLoop muxMode localAddr cc cm (Map.insert remoteAddr h connMap) connVar
-          Right Disconnected {} -> return ()
-      Disconnect remoteAddr -> do
-        atomically $ modifyTVar connVar $ Map.delete (connId remoteAddr)
-        _ <- unregisterOutboundConnection cm remoteAddr
-        connectionLoop muxMode localAddr cc cm (Map.delete remoteAddr connMap) connVar
-      RunMiniProtocols remoteAddr reqs -> do
-        atomically $ do
-          mqs <- (Map.lookup $ connId remoteAddr) <$> readTVar connVar
-          case mqs of
-            Nothing ->
+    connectionLoop muxMode localAddr cc cm connMap0 connVar = go True connMap0
+      where
+        go :: Bool -- if false do not run 'unregisterOutboundConnection'
+           -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a) -- active connections
+           -> m ()
+        go !unregister !connMap = atomically (readTQueue cc) >>= \ case
+          NewConnection remoteAddr -> do
+            let mkQueue :: forall pt. TokProtocolTemperature pt
+                        -> STM m (TQueue m [req])
+                mkQueue tok = do
+                  q <- newTQueue
+                  let temp = case tok of
+                        TokHot         -> "hot"
+                        TokWarm        -> "warm"
+                        TokEstablished -> "cold"
+                  q <$ labelTQueue q ("protoVar." ++ temp ++ "@" ++ show localAddr)
+            connHandle <- try @_ @SomeException
+                          $ requestOutboundConnection cm remoteAddr
+            case connHandle of
+              Left _ ->
+                go False connMap
+              Right (Connected _ _ h) -> do
+                qs <- atomically $ traverse id $ makeBundle mkQueue
+                atomically $ modifyTVar connVar
+                           $ Map.insert (connId remoteAddr) qs
+                go True (Map.insert remoteAddr h connMap)
+              Right Disconnected {} -> return ()
+          Disconnect remoteAddr -> do
+            atomically $ modifyTVar connVar $ Map.delete (connId remoteAddr)
+            when unregister $
+              void (unregisterOutboundConnection cm remoteAddr)
+            go False (Map.delete remoteAddr connMap)
+          RunMiniProtocols remoteAddr reqs -> do
+            atomically $ do
+              mqs <- Map.lookup (connId remoteAddr) <$> readTVar connVar
+              case mqs of
+                Nothing ->
+                  -- We want to throw because the generator invariant should never put us in
+                  -- this case
+                  throwIO (NoActiveConnection localAddr remoteAddr)
+                Just qs -> do
+                  sequence_ $ writeTQueue <$> qs <*> reqs
+            case Map.lookup remoteAddr connMap of
               -- We want to throw because the generator invariant should never put us in
               -- this case
-              throwIO (NoActiveConnection localAddr remoteAddr)
-            Just qs -> do
-              sequence_ $ writeTQueue <$> qs <*> reqs
-        case Map.lookup remoteAddr connMap of
-          -- We want to throw because the generator invariant should never put us in
-          -- this case
-          Nothing -> throwIO (NoActiveConnection localAddr remoteAddr)
-          Just (Handle mux muxBundle _)  ->
-            -- TODO:
-            -- At times this throws 'ProtocolAlreadyRunning'.
-            void $ try @_ @SomeException
-                 $ runInitiatorProtocols muxMode mux muxBundle
-        connectionLoop muxMode localAddr cc cm connMap connVar
-      Shutdown -> return ()
-      where
-        connId remoteAddr = ConnectionId { localAddress  = localAddr
-                                         , remoteAddress = remoteAddr }
+              Nothing -> throwIO (NoActiveConnection localAddr remoteAddr)
+              Just (Handle mux muxBundle _) ->
+                -- TODO:
+                -- At times this throws 'ProtocolAlreadyRunning'.
+                void $ try @_ @SomeException
+                     $ runInitiatorProtocols muxMode mux muxBundle
+            go unregister connMap
+          Shutdown -> return ()
+          where
+            connId remoteAddr = ConnectionId { localAddress  = localAddr
+                                             , remoteAddress = remoteAddr }
 
 
 -- | Test property together with classification.
