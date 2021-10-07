@@ -723,9 +723,12 @@ mkSnocket state tr = Snocket { getLocalAddr
                                    (STBearerInfo bearerInfo))
             -- connection delay
             unmask (threadDelay (biConnectionDelay bearerInfo `min` connectTimeout))
-              `catch` \(_ :: SomeException) ->
+              -- Can receive not only AsyncException but also MuxError here!
+              `catch` \(e :: SomeException) -> do
                 atomically $ modifyTVar (nsConnections state)
                                         (Map.delete (normaliseId connId))
+                throwIO e
+
             traceWith tr (WithAddr (Just (localAddress connId))
                                    (Just remoteAddress)
                                    (STDebug "delay:done"))
@@ -742,7 +745,7 @@ mkSnocket state tr = Snocket { getLocalAddr
               case (efd, lstFd) of
                 -- error cases
                 (_, Nothing) ->
-                  return (Left (connectIOError connId "no suh listening socket"))
+                  return (Left (connectIOError connId "no such listening socket"))
                 (_, Just FDUninitialised {}) ->
                   return (Left (connectIOError connId "unitialised listening socket"))
                 (_, Just FDConnecting {}) ->
@@ -792,7 +795,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                 -- wait for a connection to be accepted
                 timeoutVar <-
                   registerDelay (connectTimeout - biConnectionDelay bearerInfo)
-                r <- unmask $ atomically $ runFirstToFinish $
+                r <- unmask (atomically $ runFirstToFinish $
                   (FirstToFinish $ do
                     LazySTM.readTVar timeoutVar >>= check
                     return Nothing
@@ -810,6 +813,10 @@ mkSnocket state tr = Snocket { getLocalAddr
                                          ++ show (normaliseId connId)
                       Just Connection { connState } ->
                         Just <$> check (connState == Established))
+                     )
+                  `onException`
+                     atomically (modifyTVar (nsConnections state)
+                                            (Map.delete (normaliseId connId)))
 
                 case r of
                   Nothing -> do
