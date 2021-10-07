@@ -19,6 +19,7 @@ origin          = []
 blockHeaderHash = [slotNo, int]
 slotNo          = word64
 
+txId         = int
 transaction  = int
 rejectReason = int
 
