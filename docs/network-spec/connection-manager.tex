@@ -933,6 +933,7 @@ initiated by either side (Outbound or Inbound). This means that even though a no
 accepted any connection, it could end up serving peers and possibly go beyond
 server hard limit, thus exceeding the number of file descriptors. This is
 possible via the following path:
+
 \begin{itemize}
   \item[] \Connected{},
   \item[] \NegotiatedDupOut{},
@@ -945,16 +946,44 @@ same state in which accepted duplex connections end up. Even though the server
 rate limits connections based on how many connections are in this state, we
 could end up exceeding server hard limit.
 
+These are all transitions that potentially could lead to exceeding server hard limit,
+all of them are transitions from some outbound / duplex state into an inbound / duplex state:
+\begin{itemize}
+  \item \DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{})
+  \item \OutboundStateDupTau{} to \InboundStateDup{} (via \DemotedToColdDupLoc{})
+  \item \OutboundIdleStateDup{} to \InboundStateDup{} (via \AwakeDupRem{})
+  \item \OutboundStateDupTau{} to \DuplexState{} (via \PromotedToWarmDupRem{})
+  \item \OutboundStateDup{} to \DuplexState{} (via \PromotedToWarmDupRem{})
+\end{itemize}
+
 To solve this problem, when a connection is transitioned from
-\DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{}) the
-\connmngr{} will check if the server hard limit was exceeded. If that
+\DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{}), for example,
+the \connmngr{} will check if the server hard limit was exceeded. If that
 happened, the \connmngr{} will reset an arbitrary connection (with some preference).
 
-We prefer to reset an inbound connection rather than close an outbound
+The reason why going from \OutboundStateDupTau{} (or \OutboundStateDup{}, or
+\OutboundIdleStateDup{}) to \InboundStateDup{} might exceed the server hard limit
+is exacty the same as the \DuplexState{} to \InboundStateDup{} one.
+However, the reason why going from \OutboundStateDupTau{} to \DuplexState{} might
+exceed the limit is more tricky.  To reach a \DuplexState{} one assumes there must
+have been an incoming \textit{accepted} connection, but there's another way that two
+end-points can establish a connection without a node accepting it. If two nodes try
+to request an outbound connection simultaneously, it is possible, for two applications
+to both perform an active open to each other at the same time.  This is called a
+\href{https://flylib.com/books/en/3.223.1.190/1/}{\textit{simultaneous open}}.
+In a simultaneous TCP open, we can have 2 nodes establishing a connection without any of
+them having explicitly accepted a connection, which can make a server violate its file
+descriptor limit.
+
+Given this, we prefer to reset an inbound connection rather than close an outbound
 connection because from a systemic point of view, outbound connections are more
 valuable than inbound ones. If we keep the number of \established{} peers to
 be smaller than the server hard limit, with a right policy we should never need
-to reset a connection in \DuplexState{}.
+to reset a connection in \DuplexState{}. However, when dealing with a connection that
+transitions from \OutboundStateDupTau{} to \DuplexState{}, we actually need to
+make sure this connection is closed, because we have no way to know for sure
+if this connection is the result of a TCP simultaneous open and there might
+not be any other connection available to prune that can make space for this one.
 
 The \textit{inbound protocol governor} is in position to make an educated
 decision about which connection to reset. Initially, we aim for a decision driven by
@@ -1229,7 +1258,10 @@ to \OutboundStateDup{}.  At this point we need to start responder protocols.
 This means that the \connmngr{} needs a way to inform server (which
 accepts and monitors inbound connections), to start the protocols and monitor
 that connection.  This connection will transition to \DuplexState{} only once
-we notice incoming traffic on any of \established{} protocols.
+we notice incoming traffic on any of \established{} protocols. Since this connection might
+have been established via TCP simultaneous open, this transition to \DuplexState{} can
+also trigger \Prune{} transitions if the number of inbound connections becomes above
+the limit.
 
 \begin{detail}
   The implementation is using a \texttt{TBQueue}. Server is using this channel
@@ -1313,7 +1345,7 @@ respectively.
     \UnnegotiatedStateOut{}  & error \texttt{ForbiddenOperation} \\[8pt]
     \UnnegotiatedStateIn{}   & error \texttt{ForbiddenOperation} \\[8pt]
     \OutboundStateAny{}      & \DemotedToColdAnyLoc{} \\[8pt]
-    \OutboundStateDupTau{}   & \DemotedToColdDupLoc{} \\[8pt]
+    \OutboundStateDupTau{}   & \Prune{} or \DemotedToColdDupLoc{} \\[8pt]
     \OutboundIdleStateAny{}  & \texttt{no-op} \\[8pt]
     \InboundIdleStateUni{}   & assertion error \\[8pt]
     \InboundIdleStateDup{}   & \texttt{no-op} \\[8pt]
@@ -1423,7 +1455,7 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
     \ReservedOutboundState{} & - & \\[8pt]
     \UnnegotiatedStateAny{}  & - & \\[8pt]
     \OutboundStateUni{}      & - & \\[8pt]
-    \OutboundStateDup{}      & \DuplexState{} & \PromotedToWarmDupRem{} \\[8pt]
+    \OutboundStateDup{}      & \Prune{} or (\DuplexState{} & \PromotedToWarmDupRem{}) \\[8pt]
     \InboundIdleStateUni{}   & \InboundStateUni{} & \AwakeUniRem{} \\[8pt]
     \InboundIdleStateDup{}   & \InboundStateDup{} & \AwakeDupRem{} \\[8pt]
     \InboundStateUni{}       & - & \\[8pt]
