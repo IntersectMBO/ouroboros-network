@@ -264,9 +264,9 @@ muxBearerAsChannel bearer ptclNum ptclDir =
 --
 
 data MuxRuntimeError =
-    ProtocolAlreadyRunning    !MiniProtocolNum !MiniProtocolDir !MiniProtocolStatus
-  | UnknownProtocol           !MiniProtocolNum !MiniProtocolDir
-  | MuxBlockedOnCompletionVar !MiniProtocolNum
+    ProtocolAlreadyRunning       !MiniProtocolNum !MiniProtocolDir !MiniProtocolStatus
+  | UnknownProtocolInternalError !MiniProtocolNum !MiniProtocolDir
+  | MuxBlockedOnCompletionVar    !MiniProtocolNum
   deriving Show
 
 instance Exception MuxRuntimeError

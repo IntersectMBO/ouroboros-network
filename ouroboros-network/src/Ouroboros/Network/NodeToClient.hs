@@ -380,9 +380,9 @@ networkErrorPolicies = ErrorPolicies
       , ErrorPolicy
           $ \(e :: MuxRuntimeError)
                 -> case e of
-                     ProtocolAlreadyRunning {}    -> Just ourBug
-                     UnknownProtocol {}           -> Just ourBug
-                     MuxBlockedOnCompletionVar {} -> Just ourBug
+                     ProtocolAlreadyRunning       {} -> Just ourBug
+                     UnknownProtocolInternalError {} -> Just ourBug
+                     MuxBlockedOnCompletionVar    {} -> Just ourBug
 
         -- Error thrown by 'IOManager', this is fatal on Windows, and it will
         -- never fire on other platofrms.
