@@ -18,7 +18,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 
--- just to use 'debugTracer'
+-- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Test.Ouroboros.Network.Server2
@@ -330,9 +330,9 @@ withInitiatorOnlyConnectionManager name timeouts cmTrTracer snocket localAddr
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
           cmTracer    = WithName name
-                        `contramap` nullTracer,
+                        `contramap` debugTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
-                        `contramap` cmTrTracer,
+                        `contramap` (cmTrTracer <> debugTracer),
          -- MuxTracer
           cmMuxTracer = muxTracer,
           cmIPv4Address = localAddr,
@@ -517,9 +517,9 @@ withBidirectionalConnectionManager name timeouts
       ConnectionManagerArguments {
           -- ConnectionManagerTrace
           cmTracer    = WithName name
-                        `contramap` nullTracer,
+                        `contramap` debugTracer,
           cmTrTracer  = (WithName name . fmap abstractState)
-                        `contramap` cmTrTracer,
+                        `contramap` (cmTrTracer <> debugTracer),
           -- MuxTracer
           cmMuxTracer    = muxTracer,
           cmIPv4Address  = localAddress,
@@ -566,7 +566,7 @@ withBidirectionalConnectionManager name timeouts
                     serverTrTracer =
                       WithName name `contramap` inboundTrTracer,
                     serverTracer =
-                      WithName name `contramap` nullTracer, -- ServerTrace
+                      WithName name `contramap` debugTracer, -- ServerTrace
                     serverInboundGovernorTracer =
                       WithName name `contramap` inboundTracer, -- InboundGovernorTrace
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
@@ -980,9 +980,9 @@ bidirectionalExperiment
 prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int -> ClientAndServerData Int -> Property
 prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
-    withSnocket debugTracer
+    withSnocket sayTracer
                 script'
-            $ \ snock ->
+                $ \snock ->
       bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                    <*> Snocket.open snock Snocket.TestFamily)
               (\ (socket0, socket1) -> Snocket.close snock socket0 >>
@@ -2082,6 +2082,18 @@ data WithName name event = WithName {
 
 type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
 
+sayTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
+sayTracer = Tracer $
+  \msg -> (,msg) <$> getCurrentTime >>= say . show
+
+
+-- | Redefine this tracer to get valuable tracing information from various
+-- components:
+--
+-- * connection-manager
+-- * inbound governor
+-- * server
+--
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 debugTracer = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
            -- <> Tracer Debug.traceShowM
