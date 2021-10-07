@@ -821,6 +821,8 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionManagerCounters  !ConnectionManagerCounters
   | TrState                      !(Map peerAddr AbstractState)
   -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
+  | TrUnexpectedlyMissingConnectionState !(ConnectionId peerAddr)
+  -- ^ This case is unexpected at call site.
   deriving Show
 
 
