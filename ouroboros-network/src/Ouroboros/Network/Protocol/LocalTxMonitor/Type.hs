@@ -100,13 +100,13 @@ instance
 
 data StBusyKind where
   -- | The server is busy fetching the next transaction from the mempool
-  StBusyNext :: StBusyKind
+  NextTx :: StBusyKind
   -- | The server is busy looking for the presence of a specific transaction in
   -- the mempool
-  StBusyHas :: StBusyKind
+  HasTx :: StBusyKind
   -- | The server is busy looking for the current size and max capacity of the
   -- mempool
-  StBusySizes :: StBusyKind
+  GetSizes :: StBusyKind
 
 -- | Describes the MemPool sizes and capacity for a given snapshot.
 data MempoolSizeAndCapacity = MempoolSizeAndCapacity
@@ -160,7 +160,7 @@ instance Protocol (LocalTxMonitor txid tx slot) where
     -- | The client requests a single transaction and waits a reply.
     --
     MsgNextTx
-      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy StBusyNext)
+      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy NextTx)
 
     -- | The server responds with a single transaction. This must be a
     -- transaction that was not previously sent to the client for this
@@ -168,33 +168,33 @@ instance Protocol (LocalTxMonitor txid tx slot) where
     --
     MsgReplyNextTx
       :: Maybe tx
-      -> Message (LocalTxMonitor txid tx slot) (StBusy StBusyNext) StAcquired
+      -> Message (LocalTxMonitor txid tx slot) (StBusy NextTx) StAcquired
 
     -- | The client checks whether the server knows of a particular transaction
     -- identified by its id.
     --
     MsgHasTx
       :: txid
-      -> Message (LocalTxMonitor txid tx slot) StAcquired (StBusy StBusyHas)
+      -> Message (LocalTxMonitor txid tx slot) StAcquired (StBusy HasTx)
 
     -- | The server responds 'True' when the given tx is present in the snapshot,
     -- False otherwise.
     --
     MsgReplyHasTx
       :: Bool
-      -> Message (LocalTxMonitor txid tx slot) (StBusy StBusyHas) StAcquired
+      -> Message (LocalTxMonitor txid tx slot) (StBusy HasTx) StAcquired
 
     -- | The client asks the server about the mempool current size and max
     -- capacity.
     --
     MsgGetSizes
-      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy StBusySizes)
+      :: Message (LocalTxMonitor txid tx slot) StAcquired (StBusy GetSizes)
 
     -- | The server responds with the mempool size and max capacity.
     --
     MsgReplyGetSizes
       :: MempoolSizeAndCapacity
-      -> Message (LocalTxMonitor txid tx slot) (StBusy StBusySizes) StAcquired
+      -> Message (LocalTxMonitor txid tx slot) (StBusy GetSizes) StAcquired
 
     -- | Release the acquired snapshot, in order to loop back to the idle state.
     --
@@ -224,9 +224,9 @@ instance Protocol (LocalTxMonitor txid tx slot) where
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
 data TokBusyKind (k :: StBusyKind) where
-  TokBusyNext  :: TokBusyKind StBusyNext
-  TokBusyHas   :: TokBusyKind StBusyHas
-  TokBusySizes :: TokBusyKind StBusySizes
+  TokNextTx   :: TokBusyKind NextTx
+  TokHasTx    :: TokBusyKind HasTx
+  TokGetSizes :: TokBusyKind GetSizes
 
 deriving instance (Show txid, Show tx, Show slot)
   => Show (Message (LocalTxMonitor txid tx slot) from to)
@@ -238,7 +238,7 @@ instance Show (ClientHasAgency (st :: LocalTxMonitor txid tx slot)) where
 
 instance Show (ServerHasAgency (st :: LocalTxMonitor txid tx slot)) where
   show = \case
-    TokAcquiring         -> "TokAcquiring"
-    TokBusy TokBusyNext  -> "TokBusy TokBusyNext"
-    TokBusy TokBusyHas   -> "TokBusy TokBusyHas"
-    TokBusy TokBusySizes -> "TokBusy TokBusySizes"
+    TokAcquiring        -> "TokAcquiring"
+    TokBusy TokNextTx   -> "TokBusy TokNextTx"
+    TokBusy TokHasTx    -> "TokBusy TokHasTx"
+    TokBusy TokGetSizes -> "TokBusy TokGetSizes"

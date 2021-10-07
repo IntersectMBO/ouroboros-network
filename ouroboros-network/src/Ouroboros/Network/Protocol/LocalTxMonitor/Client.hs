@@ -132,17 +132,17 @@ localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
     handleStAcquired = \case
       SendMsgNextTx stAcquired ->
         Yield (ClientAgency TokAcquired) MsgNextTx $
-          Await (ServerAgency (TokBusy TokBusyNext)) $ \case
+          Await (ServerAgency (TokBusy TokNextTx)) $ \case
             MsgReplyNextTx tx ->
               Effect $ handleStAcquired <$> stAcquired tx
       SendMsgHasTx txid stAcquired ->
         Yield (ClientAgency TokAcquired) (MsgHasTx txid) $
-          Await (ServerAgency (TokBusy TokBusyHas)) $ \case
+          Await (ServerAgency (TokBusy TokHasTx)) $ \case
             MsgReplyHasTx res ->
               Effect $ handleStAcquired <$> stAcquired res
       SendMsgGetSizes stAcquired ->
         Yield (ClientAgency TokAcquired) MsgGetSizes $
-          Await (ServerAgency (TokBusy TokBusySizes)) $ \case
+          Await (ServerAgency (TokBusy TokGetSizes)) $ \case
             MsgReplyGetSizes sizes ->
               Effect $ handleStAcquired <$> stAcquired sizes
       SendMsgReAcquire stAcquired ->

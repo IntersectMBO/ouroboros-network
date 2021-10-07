@@ -140,11 +140,11 @@ instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
       , AnyMessageAndAgency (ServerAgency TokAcquiring) . MsgAcquired <$> arbitrary
       , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgReAcquire
       , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgNextTx
-      , AnyMessageAndAgency (ServerAgency (TokBusy TokBusyNext)) . MsgReplyNextTx <$> arbitrary
+      , AnyMessageAndAgency (ServerAgency (TokBusy TokNextTx)) . MsgReplyNextTx <$> arbitrary
       , AnyMessageAndAgency (ClientAgency TokAcquired) . MsgHasTx <$> arbitrary
-      , AnyMessageAndAgency (ServerAgency (TokBusy TokBusyHas)) . MsgReplyHasTx <$> arbitrary
+      , AnyMessageAndAgency (ServerAgency (TokBusy TokHasTx)) . MsgReplyHasTx <$> arbitrary
       , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgGetSizes
-      , AnyMessageAndAgency (ServerAgency (TokBusy TokBusySizes)) . MsgReplyGetSizes <$> arbitrary
+      , AnyMessageAndAgency (ServerAgency (TokBusy TokGetSizes)) . MsgReplyGetSizes <$> arbitrary
       , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgRelease
       , pure $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
       ]

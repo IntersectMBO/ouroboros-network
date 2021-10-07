@@ -67,17 +67,17 @@ codecLocalTxMonitor encodeTxId decodeTxId
       MsgAcquired slot ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> encodeSlot slot
 
-    encode (ServerAgency (TokBusy TokBusyNext)) = \case
+    encode (ServerAgency (TokBusy TokNextTx)) = \case
       MsgReplyNextTx Nothing ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 6
       MsgReplyNextTx (Just tx) ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 6 <> encodeTx tx
 
-    encode (ServerAgency (TokBusy TokBusyHas)) = \case
+    encode (ServerAgency (TokBusy TokHasTx)) = \case
       MsgReplyHasTx has ->
         CBOR.encodeListLen 2 <> CBOR.encodeWord 8 <> CBOR.encodeBool has
 
-    encode (ServerAgency (TokBusy TokBusySizes)) = \case
+    encode (ServerAgency (TokBusy TokGetSizes)) = \case
       MsgReplyGetSizes sz ->
            CBOR.encodeListLen 2
         <> CBOR.encodeWord 10
@@ -115,17 +115,17 @@ codecLocalTxMonitor encodeTxId decodeTxId
           slot <- decodeSlot
           return (SomeMessage (MsgAcquired slot))
 
-        (ServerAgency (TokBusy TokBusyNext), 1, 6) ->
+        (ServerAgency (TokBusy TokNextTx), 1, 6) ->
           return (SomeMessage (MsgReplyNextTx Nothing))
-        (ServerAgency (TokBusy TokBusyNext), 2, 6) -> do
+        (ServerAgency (TokBusy TokNextTx), 2, 6) -> do
           tx <- decodeTx
           return (SomeMessage (MsgReplyNextTx (Just tx)))
 
-        (ServerAgency (TokBusy TokBusyHas), 2, 8) -> do
+        (ServerAgency (TokBusy TokHasTx), 2, 8) -> do
           has <- CBOR.decodeBool
           return (SomeMessage (MsgReplyHasTx has))
 
-        (ServerAgency (TokBusy TokBusySizes), 2, 10) -> do
+        (ServerAgency (TokBusy TokGetSizes), 2, 10) -> do
           _len <- CBOR.decodeListLen
           capacityInBytes <- CBOR.decodeWord32
           sizeInBytes <- CBOR.decodeWord32
@@ -178,8 +178,8 @@ codecLocalTxMonitorId =
         (ClientAgency TokAcquired, Just (AnyMessage msg@MsgRelease{}))   -> res msg
 
         (ServerAgency TokAcquiring,          Just (AnyMessage msg@MsgAcquired{}))    -> res msg
-        (ServerAgency (TokBusy TokBusyNext), Just (AnyMessage msg@MsgReplyNextTx{})) -> res msg
-        (ServerAgency (TokBusy TokBusyHas),  Just (AnyMessage msg@MsgReplyHasTx{}))  -> res msg
+        (ServerAgency (TokBusy TokNextTx), Just (AnyMessage msg@MsgReplyNextTx{})) -> res msg
+        (ServerAgency (TokBusy TokHasTx),  Just (AnyMessage msg@MsgReplyHasTx{}))  -> res msg
 
         (_, Nothing) ->
           return (DecodeFail CodecFailureOutOfInput)

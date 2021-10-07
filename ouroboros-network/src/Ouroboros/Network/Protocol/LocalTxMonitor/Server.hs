@@ -66,9 +66,9 @@ data ServerStAcquiring txid tx slot m a where
 -- * release and go back to the 'StIdle' state;
 --
 data ServerStAcquired txid tx slot m a = ServerStAcquired
-    { recvMsgNextTx     :: m (ServerStBusy StBusyNext txid tx slot m a)
-    , recvMsgHasTx      :: txid -> m (ServerStBusy StBusyHas txid tx slot m a)
-    , recvMsgGetSizes   :: m (ServerStBusy StBusySizes txid tx slot m a)
+    { recvMsgNextTx     :: m (ServerStBusy NextTx txid tx slot m a)
+    , recvMsgHasTx      :: txid -> m (ServerStBusy HasTx txid tx slot m a)
+    , recvMsgGetSizes   :: m (ServerStBusy GetSizes txid tx slot m a)
     , recvMsgReAcquire  :: m (ServerStAcquiring txid tx slot m a)
     , recvMsgRelease    :: m (ServerStIdle txid tx slot m a)
     }
@@ -83,17 +83,17 @@ data ServerStBusy (kind :: StBusyKind) txid tx slot m a where
   SendMsgReplyNextTx
     :: Maybe tx
     -> ServerStAcquired txid tx slot m a
-    -> ServerStBusy StBusyNext txid tx slot m a
+    -> ServerStBusy NextTx txid tx slot m a
 
   SendMsgReplyHasTx
     :: Bool
     -> ServerStAcquired txid tx slot m a
-    -> ServerStBusy StBusyHas txid tx slot m a
+    -> ServerStBusy HasTx txid tx slot m a
 
   SendMsgReplyGetSizes
     :: MempoolSizeAndCapacity
     -> ServerStAcquired txid tx slot m a
-    -> ServerStBusy StBusySizes txid tx slot m a
+    -> ServerStBusy GetSizes txid tx slot m a
 
 -- | Interpret a 'LocalTxMonitorServer' action sequence as a 'Peer' on the
 -- client-side of the 'LocalTxMonitor' protocol.
@@ -138,36 +138,36 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
         , recvMsgRelease
         } -> Await (ClientAgency TokAcquired) $ \case
           MsgNextTx ->
-            Effect $ handleStBusyNext <$> recvMsgNextTx
+            Effect $ handleNextTx <$> recvMsgNextTx
           MsgHasTx txid ->
-            Effect $ handleStBusyHas <$> recvMsgHasTx txid
+            Effect $ handleHasTx <$> recvMsgHasTx txid
           MsgGetSizes ->
-            Effect $ handleStBusySizes <$> recvMsgGetSizes
+            Effect $ handleGetSizes <$> recvMsgGetSizes
           MsgReAcquire ->
             Effect $ handleStAcquiring <$> recvMsgReAcquire
           MsgRelease ->
             Effect $ handleStIdle <$> recvMsgRelease
 
-    handleStBusyNext ::
-         ServerStBusy StBusyNext txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy StBusyNext) m a
-    handleStBusyNext = \case
+    handleNextTx ::
+         ServerStBusy NextTx txid tx slot m a
+      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy NextTx) m a
+    handleNextTx = \case
       SendMsgReplyNextTx tx serverStAcquired ->
-        Yield (ServerAgency (TokBusy TokBusyNext)) (MsgReplyNextTx tx) $
+        Yield (ServerAgency (TokBusy TokNextTx)) (MsgReplyNextTx tx) $
           handleStAcquired serverStAcquired
 
-    handleStBusyHas ::
-         ServerStBusy StBusyHas txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy StBusyHas) m a
-    handleStBusyHas = \case
+    handleHasTx ::
+         ServerStBusy HasTx txid tx slot m a
+      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy HasTx) m a
+    handleHasTx = \case
       SendMsgReplyHasTx res serverStAcquired ->
-        Yield (ServerAgency (TokBusy TokBusyHas)) (MsgReplyHasTx res) $
+        Yield (ServerAgency (TokBusy TokHasTx)) (MsgReplyHasTx res) $
           handleStAcquired serverStAcquired
 
-    handleStBusySizes ::
-         ServerStBusy StBusySizes txid tx slot m a
-      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy StBusySizes) m a
-    handleStBusySizes = \case
+    handleGetSizes ::
+         ServerStBusy GetSizes txid tx slot m a
+      -> Peer (LocalTxMonitor txid tx slot) AsServer (StBusy GetSizes) m a
+    handleGetSizes = \case
       SendMsgReplyGetSizes sizes serverStAcquired ->
-        Yield (ServerAgency (TokBusy TokBusySizes)) (MsgReplyGetSizes sizes) $
+        Yield (ServerAgency (TokBusy TokGetSizes)) (MsgReplyGetSizes sizes) $
           handleStAcquired serverStAcquired
