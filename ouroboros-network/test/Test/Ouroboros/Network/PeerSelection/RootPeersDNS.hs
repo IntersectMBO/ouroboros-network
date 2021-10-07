@@ -20,12 +20,14 @@ import           Data.Functor (void)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import           Data.Maybe (catMaybes)
 import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq)
 import           Data.IP (IPv4, toIPv4w, fromHostAddress)
 import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.ByteString.Char8 (pack)
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Time (DiffTime)
 import qualified Network.DNS.Resolver as DNSResolver
 import           Network.DNS (DNSError(NameError, TimeoutExpired))
@@ -367,8 +369,8 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _)
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
            $ mockLocalRootPeersProvider mockRoots
-                                           dnsTimeoutScript
-                                           dnsLookupDelayScript
+                                        dnsTimeoutScript
+                                        dnsLookupDelayScript
 
         -- For all LocalRootGroup results, the number of groups should be
         -- preserved, i.e. no new groups are added nor deleted along the
@@ -393,20 +395,58 @@ prop_local_resolvesDomainsCorrectly :: MockRoots
                                     -> Script DNSTimeout
                                     -> Script DNSLookupDelay
                                     -> Property
-prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap)
+prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots dnsMap)
                                     dnsTimeoutScript
                                     dnsLookupDelayScript =
-    let tr = selectLocalRootResultEvents
-           $ selectLocalRootPeersEvents
+    let tr = selectLocalRootPeersEvents
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
            $ mockLocalRootPeersProvider mockRoots
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
 
-        finalResultMap = Map.fromList $ map snd tr
+        -- local root domains
+        localRootDomains :: Set Domain
+        localRootDomains =
+          Set.fromList
+          [ domain
+          | (_, m) <- localRoots
+          , RelayAccessDomain domain _ <- Map.keys m
+          ]
 
-     in finalResultMap === dnsMap
+        -- domains that were resolved during simulation
+        resultMap :: Map Domain [IPv4]
+        resultMap = Map.fromList
+                  $ map snd
+                  $ selectLocalRootResultEvents
+                  $ tr
+
+        -- all domains that could have been resolved
+        maxResultMap :: Map Domain [IPv4]
+        maxResultMap = dnsMap `Map.restrictKeys` localRootDomains
+
+        -- all domains that were tried to resolve during the simulation
+        allTriedDomains :: Set Domain
+        allTriedDomains
+          = Set.fromList
+          $ catMaybes
+          [ mbDomain
+          | (_, ev) <- tr
+          , let mbDomain = case ev of
+                  TraceLocalRootResult  (DomainAccessPoint domain _)  _ -> Just domain
+                  TraceLocalRootFailure (DomainAccessPoint domain _)  _ -> Just domain
+                  TraceLocalRootError   (DomainAccessPoint _domain _) _ -> Nothing
+                  _                                                     -> Nothing
+
+          ]
+
+
+    in
+      -- we verify that we tried to resolve all local root domains, and that the
+      -- resolved ones are a subset of `maxResultMap`
+           localRootDomains === allTriedDomains
+      .&&. property (resultMap `Map.isSubmapOf` maxResultMap)
+
 
 -- | The 'localRootPeersProvider' after resolving a DNS domain address
 -- should update the local result group list correctly, i.e. add the
