@@ -104,11 +104,12 @@ import           Ouroboros.Network.Linger (StructLinger (..))
 -- descriptor by `createNamedPipe`, see 'namedPipeSnocket'.
 --
 newtype Accept m fd addr = Accept
-  { runAccept :: m (Accepted fd addr, Accept m fd addr)
+  { runAccept :: (forall a. m a -> m a) -- ^ unmask exceptions
+              -> m (Accepted fd addr, Accept m fd addr)
   }
 
 instance Functor m => Bifunctor (Accept m) where
-    bimap f g (Accept ac) = Accept (h <$> ac)
+    bimap f g (Accept ac) = Accept (\unmask -> h <$> ac unmask)
       where
         h (accepted, next) = (bimap f g accepted, bimap f g next)
 
@@ -133,23 +134,24 @@ berkeleyAccept :: IOManager
                -> Accept IO Socket SockAddr
 berkeleyAccept ioManager sock = go 0
     where
-      go cnt = Accept (acceptOne cnt `catch` handleException cnt)
+      go cnt = Accept (\unmask -> acceptOne unmask cnt `catch` handleException cnt)
 
       acceptOne
-        :: Word64
+        :: (forall a. IO a -> IO a)
+        -> Word64
         -> IO ( Accepted  Socket SockAddr
               , Accept IO Socket SockAddr
               )
-      acceptOne !cnt =
+      acceptOne unmask !cnt =
         bracketOnError
 #if !defined(mingw32_HOST_OS)
-          (Socket.accept sock)
+          (unmask $ Socket.accept sock)
 #else
-          (Win32.Async.accept sock)
+          (unmask $ Win32.Async.accept sock)
 #endif
           (Socket.close . fst)
           $ \(sock', addr') -> do
-            associateWithIOManager ioManager (Right sock')
+            unmask $ associateWithIOManager ioManager (Right sock')
 
             -- UNIX sockets don't provide a unique endpoint for the remote
             -- side, but the InboundGovernor/Server requires one in order to
@@ -157,11 +159,10 @@ berkeleyAccept ioManager sock = go 0
             -- So to differentiate clients we use a simple counter as the
             -- remote end's address.
             --
-            addr'' <- case addr' of
-                           Socket.SockAddrUnix _ ->
-                               return $ Socket.SockAddrUnix $
-                                   "temp-" ++ show cnt
-                           _                     -> return addr'
+            let addr'' = case addr' of
+                           Socket.SockAddrUnix _
+                             -> Socket.SockAddrUnix $ "temp-" ++ show cnt
+                           _ -> addr'
 
             return (Accepted sock' addr'', go $ succ cnt)
 
@@ -315,7 +316,7 @@ socketSnocket ioManager = Snocket {
           Socket.setSocketOption sd Socket.ReusePort 1
 #endif
           Socket.setSocketOption sd Socket.NoDelay 1
-          Socket.setSockOpt sd Socket.Linger 
+          Socket.setSockOpt sd Socket.Linger
                               (StructLinger { sl_onoff  = 1,
                                               sl_linger = 0 })
         when (fml == Socket.AF_INET6)
@@ -434,8 +435,8 @@ localSnocket ioManager = Snocket {
     , bind     = \_ _ -> pure ()
     , listen   = \_ -> pure ()
 
-    , accept   = \sock@(LocalSocket hpipe addr) -> Accept $ do
-          Win32.Async.connectNamedPipe hpipe
+    , accept   = \sock@(LocalSocket hpipe addr) -> Accept $ \unmask -> do
+          unmask $ Win32.Async.connectNamedPipe hpipe
           return (Accepted sock addr, acceptNext 0 addr)
 
       -- Win32.closeHandle is not interrupible
@@ -445,7 +446,7 @@ localSnocket ioManager = Snocket {
     }
   where
     acceptNext :: Word64 -> LocalAddress -> Accept IO LocalSocket LocalAddress
-    acceptNext !cnt addr = Accept (acceptOne `catch` handleIOException)
+    acceptNext !cnt addr = Accept (\unmask -> acceptOne unmask `catch` handleIOException)
       where
         handleIOException
           :: IOException
@@ -458,12 +459,13 @@ localSnocket ioManager = Snocket {
                )
 
         acceptOne
-          :: IO ( Accepted  LocalSocket LocalAddress
+          :: (forall a. IO a -> IO a)
+          -> IO ( Accepted  LocalSocket LocalAddress
                 , Accept IO LocalSocket LocalAddress
                 )
-        acceptOne =
+        acceptOne unmask =
           bracketOnError
-            (Win32.createNamedPipe
+            (unmask $ Win32.createNamedPipe
                  (getFilePath addr)
                  (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
                  (Win32.pIPE_TYPE_BYTE     .|. Win32.pIPE_READMODE_BYTE)
@@ -473,7 +475,7 @@ localSnocket ioManager = Snocket {
                  0        -- default timeout
                  Nothing) -- default security
              Win32.closeHandle
-             $ \hpipe -> do
+             $ \hpipe -> unmask $ do
               associateWithIOManager ioManager (Left hpipe)
               Win32.Async.connectNamedPipe hpipe
               -- InboundGovernor/Server requires a unique address for the
@@ -507,7 +509,7 @@ localSnocket ioManager =
   where
     toLocalAddress :: SockAddr -> LocalAddress
     toLocalAddress (SockAddrUnix path) = LocalAddress path
-    toLocalAddress _                   = error "localSnocket.toLocalAddr: impossible happend"
+    toLocalAddress _                   = error "localSnocket.toLocalAddr: impossible happened"
 
     fromLocalAddress :: LocalAddress -> SockAddr
     fromLocalAddress = SockAddrUnix . getFilePath
