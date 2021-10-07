@@ -18,7 +18,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 
--- just to use 'debugTracer'
+-- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Test.Ouroboros.Network.Server2
@@ -958,9 +958,9 @@ bidirectionalExperiment
 prop_bidirectional_Sim :: NonFailingBearerInfoScript -> ClientAndServerData Int -> ClientAndServerData Int -> Property
 prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
-    withSnocket debugTracer
+    withSnocket sayTracer
                 script'
-            $ \ snock ->
+                $ \snock ->
       bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                    <*> Snocket.open snock Snocket.TestFamily)
               (\ (socket0, socket1) -> Snocket.close snock socket0 >>
@@ -2057,6 +2057,18 @@ data WithName name event = WithName {
 
 type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
 
+sayTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
+sayTracer = Tracer $
+  \msg -> (,msg) <$> getCurrentTime >>= say . show
+
+
+-- | Redefine this tracer to get valuable tracing information from various
+-- components:
+--
+-- * connection-manager
+-- * inbound governor
+-- * server
+--
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 debugTracer = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
            -- <> Tracer Debug.traceShowM
