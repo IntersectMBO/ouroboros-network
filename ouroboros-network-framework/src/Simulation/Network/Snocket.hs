@@ -942,6 +942,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                      _                   -> Nothing
 
           writeTVar fdVar (FDClosed wConnId)
+          -- TODO: We should move this removal after closing the attenuated channel!
           bitraverse_
             -- close a connected socket
             (\connId -> modifyTVar (nsConnections state)
