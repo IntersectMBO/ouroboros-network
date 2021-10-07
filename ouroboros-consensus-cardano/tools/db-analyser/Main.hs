@@ -145,6 +145,10 @@ parseAnalysis = asum [
         , help "Show all EBBs and their predecessors"
         ]
     , storeLedgerParser
+    , flag' CountBlocks $ mconcat [
+          long "count-blocks"
+        , help "Count number of blocks processed"
+        ]
     , pure OnlyValidation
     ]
 
