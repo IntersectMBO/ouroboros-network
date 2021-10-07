@@ -2052,7 +2052,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                                                                  (addr', seIdx conn'))
                               _ <-
                                 includeInboundConnection
-                                  connectionManager fd' addr
+                                  connectionManager maxBound fd' addr
                               t <- getMonotonicTime
 
                               let activeDelay = either id id (seActiveDelay conn)
