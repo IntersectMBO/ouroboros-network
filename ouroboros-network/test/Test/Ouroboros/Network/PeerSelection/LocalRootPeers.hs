@@ -1,11 +1,9 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Ouroboros.Network.PeerSelection.LocalRootPeers (
   arbitraryLocalRootPeers,
-  toGroups',
   restrictKeys,
   tests,
   ) where
@@ -25,18 +23,21 @@ import           Test.Ouroboros.Network.PeerSelection.Instances
 
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree
 tests =
-  testGroup "LocalRootPeers"
-  [ testProperty "arbitrary"    prop_arbitrary_LocalRootPeers
-  , testProperty "fromToGroups" prop_fromToGroups
-  , testProperty "fromGroups"   prop_fromGroups
-  , testProperty "shrink"       prop_shrink_LocalRootPeers
-  , testProperty "clampToLimit" prop_clampToLimit
+  testGroup "Ouroboros.Network.PeerSelection"
+  [ testGroup "LocalRootPeers"
+    [ testProperty "arbitrary"    prop_arbitrary_LocalRootPeers
+    , testProperty "fromToGroups" prop_fromToGroups
+    , testProperty "fromGroups"   prop_fromGroups
+    , testProperty "shrink"       prop_shrink_LocalRootPeers
+    , testProperty "clampToLimit" prop_clampToLimit
+    ]
   ]
 
 
@@ -59,7 +60,8 @@ prop_clampToLimit localRootPeers targets =
                  (LocalRootPeers.size localRootPeers)
 
 
-arbitraryLocalRootPeers :: Set PeerAddr -> Gen (LocalRootPeers PeerAddr)
+arbitraryLocalRootPeers :: Ord peeraddr
+                        => Set peeraddr -> Gen (LocalRootPeers peeraddr)
 arbitraryLocalRootPeers peeraddrs = do
     -- divide into a few disjoint groups
     ngroups     <- choose (1, 5 :: Int)
@@ -77,22 +79,14 @@ arbitraryLocalRootPeers peeraddrs = do
     return (LocalRootPeers.fromGroups (zip targets groups))
 
 
-instance Arbitrary (LocalRootPeers PeerAddr) where
+instance (Arbitrary peeraddr, Ord peeraddr) =>
+         Arbitrary (LocalRootPeers peeraddr) where
     arbitrary = do
-        peeraddrs <- Set.map (PeerAddr . getNonNegative)
-                 <$> scale (`div` 4) arbitrary
+        peeraddrs <- scale (`div` 4) arbitrary
         arbitraryLocalRootPeers peeraddrs
 
     shrink lrps =
-        map LocalRootPeers.fromGroups (shrink (toGroups' lrps))
-
-toGroups' :: Ord peeraddr
-          => LocalRootPeers peeraddr
-          -> [(Int, Map peeraddr PeerAdvertise)]
-toGroups' lrps =
-    [ (t, Map.fromSet (m Map.!) g)
-    | let m = LocalRootPeers.toMap lrps
-    , (t, g) <- LocalRootPeers.toGroups lrps ]
+        map LocalRootPeers.fromGroups (shrink (LocalRootPeers.toGroups lrps))
 
 restrictKeys :: Ord peeraddr
              => LocalRootPeers peeraddr
@@ -101,7 +95,7 @@ restrictKeys :: Ord peeraddr
 restrictKeys lrps ks =
     LocalRootPeers.fromGroups
   . map (\(t,g) -> (t, Map.restrictKeys g ks))
-  . toGroups'
+  . LocalRootPeers.toGroups
   $ lrps
 
 prop_arbitrary_LocalRootPeers :: LocalRootPeers PeerAddr -> Property
@@ -115,22 +109,23 @@ prop_arbitrary_LocalRootPeers lrps =
   where
     size       = renderRanges 5 (LocalRootPeers.size lrps)
     numGroups  = show (length (LocalRootPeers.toGroups lrps))
-    sizeGroups = map (show . Set.size . snd) (LocalRootPeers.toGroups lrps)
+    sizeGroups = map (show . Set.size . snd) (LocalRootPeers.toGroupSets lrps)
     targets    = [ case () of
                     _ | t == 0          -> "none"
                       | t == Set.size g -> "all"
                       | otherwise       -> "some"
-                 | (t, g) <- LocalRootPeers.toGroups lrps ]
+                 | (t, g) <- LocalRootPeers.toGroupSets lrps ]
 
 
-prop_shrink_LocalRootPeers :: LocalRootPeers PeerAddr -> Bool
-prop_shrink_LocalRootPeers =
-    all LocalRootPeers.invariant . shrink
+prop_shrink_LocalRootPeers :: Fixed (LocalRootPeers PeerAddr) -> Property
+prop_shrink_LocalRootPeers x =
+      prop_shrink_valid LocalRootPeers.invariant x
+ .&&. prop_shrink_nonequal x
 
 prop_fromGroups :: [(Int, Map PeerAddr PeerAdvertise)] -> Bool
 prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
 
 prop_fromToGroups :: LocalRootPeers PeerAddr -> Bool
 prop_fromToGroups lrps =
-    LocalRootPeers.fromGroups (toGroups' lrps) == lrps
+    LocalRootPeers.fromGroups (LocalRootPeers.toGroups lrps) == lrps
 

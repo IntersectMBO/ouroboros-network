@@ -5,12 +5,14 @@ module Test.Ouroboros.Network.PeerSelection.Script (
 
     -- * Test scripts
     Script(..),
+    NonEmpty(..),
     scriptHead,
     singletonScript,
     initScript,
     stepScript,
     stepScriptSTM,
-    arbitraryShortScriptOf,
+    arbitraryScriptOf,
+    prop_shrink_Script,
 
     -- * Timed scripts
     ScriptDelay(..),
@@ -19,7 +21,9 @@ module Test.Ouroboros.Network.PeerSelection.Script (
 
     -- * Pick scripts
     PickScript,
-    interpretPickScript
+    PickMembers(..),
+    arbitraryPickScript,
+    interpretPickScript,
 
   ) where
 
@@ -31,10 +35,12 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
+import           Control.Tracer (Tracer, traceWith)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 
 
 --
@@ -43,7 +49,6 @@ import           Test.QuickCheck
 
 newtype Script a = Script (NonEmpty a)
   deriving (Eq, Show, Functor, Foldable, Traversable)
-  deriving Arbitrary via NonEmpty a
 
 singletonScript :: a -> Script a
 singletonScript x = (Script (x :| []))
@@ -51,10 +56,11 @@ singletonScript x = (Script (x :| []))
 scriptHead :: Script a -> a
 scriptHead (Script (x :| _)) = x
 
-arbitraryShortScriptOf :: Gen a -> Gen (Script a)
-arbitraryShortScriptOf a =
-    sized $ \sz ->
-      (Script . NonEmpty.fromList) <$> vectorOf (min 5 (sz+1)) a
+arbitraryScriptOf :: Int -> Gen a -> Gen (Script a)
+arbitraryScriptOf maxSz a =
+    sized $ \sz -> do
+      n <- choose (1, max 1 (min maxSz sz))
+      (Script . NonEmpty.fromList) <$> vectorOf n a
 
 initScript :: MonadSTM m => Script a -> m (TVar m (Script a))
 initScript = newTVarIO
@@ -69,6 +75,20 @@ stepScriptSTM scriptVar = do
       []     -> return ()
       x':xs' -> writeTVar scriptVar (Script (x' :| xs'))
     return x
+
+instance Arbitrary a => Arbitrary (Script a) where
+    arbitrary = sized $ \sz -> arbitraryScriptOf sz arbitrary
+
+    shrink (Script (x :| [])) = [ Script (x' :| []) | x' <- shrink x ]
+    shrink (Script (x :| xs)) =
+        Script (x :| [])                          -- drop whole tail
+      : Script (x :| take (length xs `div` 2) xs) -- drop half the tail
+      : Script (x :| init xs)                     -- drop only last
+
+        -- drop none, shrink only elements
+      : [ Script (x' :| xs) | x'  <- shrink x ]
+     ++ [ Script (x :| xs') | xs' <- shrinkListElems shrink xs ]
+
 
 --
 -- Timed scripts
@@ -89,12 +109,14 @@ instance Arbitrary ScriptDelay where
   shrink NoDelay    = []
 
 playTimedScript :: (MonadAsync m, MonadTimer m)
-                => TimedScript a -> m (TVar m a)
-playTimedScript (Script ((x0,d0) :| script)) = do
+                => Tracer m a -> TimedScript a -> m (TVar m a)
+playTimedScript tracer (Script ((x0,d0) :| script)) = do
     v <- newTVarIO x0
+    traceWith tracer x0
     _ <- async $ do
            threadDelay (interpretScriptDelay d0)
            sequence_ [ do atomically (writeTVar v x)
+                          traceWith tracer x
                           threadDelay (interpretScriptDelay d)
                      | (x,d) <- script ]
     return v
@@ -113,27 +135,39 @@ playTimedScript (Script ((x0,d0) :| script)) = do
 -- choices by their index (modulo the number of choices). This representation
 -- was chosen because it allows easy shrinking.
 --
-type PickScript = Script PickMembers
+type PickScript peeraddr = Script (PickMembers peeraddr)
 
-data PickMembers = PickFirst
-                 | PickAll
-                 | PickSome [Int]
+data PickMembers peeraddr = PickFirst
+                          | PickAll
+                          | PickSome (Set peeraddr)
   deriving (Eq, Show)
 
-instance Arbitrary PickMembers where
-    arbitrary = frequency [ (1, pure PickFirst)
-                          , (1, pure PickAll)
-                          , (2, PickSome <$> listOf1 arbitrarySizedNatural) ]
+instance (Arbitrary peeraddr, Ord peeraddr) =>
+         Arbitrary (PickMembers peeraddr) where
+    arbitrary = arbitraryPickMembers (Set.fromList <$> listOf1 arbitrary)
 
-    shrink (PickSome ixs) = PickAll
+    shrink (PickSome ixs) = PickFirst
+                          : PickAll
                           : [ PickSome ixs'
                             | ixs' <- shrink ixs
-                            , not (null ixs') ]
+                            , not (Set.null ixs') ]
     shrink PickAll        = [PickFirst]
     shrink PickFirst      = []
 
+arbitraryPickMembers :: Gen (Set peeraddr) -> Gen (PickMembers peeraddr)
+arbitraryPickMembers pickSome =
+    frequency [ (1, pure PickFirst)
+              , (1, pure PickAll)
+              , (2, PickSome <$> pickSome)
+              ]
+
+arbitraryPickScript :: Gen (Set peeraddr) -> Gen (PickScript peeraddr)
+arbitraryPickScript pickSome =
+    sized $ \sz ->
+      arbitraryScriptOf sz (arbitraryPickMembers pickSome)
+
 interpretPickScript :: (MonadSTMTx stm, Ord peeraddr)
-                    => TVar_ stm PickScript
+                    => TVar_ stm (PickScript peeraddr)
                     -> Set peeraddr
                     -> Int
                     -> stm (Set peeraddr)
@@ -143,22 +177,26 @@ interpretPickScript scriptVar available pickNum
   | pickNum <= 0
   = error "interpretPickScript: given invalid pickNum"
 
-  | Set.size available <= pickNum
-  = return available
-
   | otherwise
   = do pickmembers <- stepScriptSTM scriptVar
        return (interpretPickMembers pickmembers available pickNum)
 
 interpretPickMembers :: Ord peeraddr
-                     => PickMembers -> Set peeraddr -> Int -> Set peeraddr
-interpretPickMembers PickFirst      ps _ = Set.singleton (Set.elemAt 0 ps)
-interpretPickMembers PickAll        ps n = Set.take n ps
-interpretPickMembers (PickSome ixs) ps n = pickMapKeys ps (take n ixs)
-
-pickMapKeys :: Ord a => Set a -> [Int] -> Set a
-pickMapKeys m ns =
-    Set.fromList (map pick ns)
+                     => PickMembers peeraddr
+                     -> Set peeraddr -> Int -> Set peeraddr
+interpretPickMembers PickFirst     ps _ = Set.singleton (Set.elemAt 0 ps)
+interpretPickMembers PickAll       ps n = Set.take n ps
+interpretPickMembers (PickSome as) ps n
+  | Set.null ps' = Set.singleton (Set.elemAt 0 ps)
+  | otherwise    = Set.take n ps'
   where
-    pick n = Set.elemAt i m where i = n `mod` Set.size m
+    ps' = Set.intersection ps as
+
+
+--
+-- Tests for the QC Arbitrary instances
+--
+
+prop_shrink_Script :: Fixed (Script Int) -> Property
+prop_shrink_Script = prop_shrink_nonequal
 

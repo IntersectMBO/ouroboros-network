@@ -26,6 +26,10 @@ import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
 import qualified Ouroboros.Network.Protocol.TipSample.Test (tests)
 import qualified Test.Ouroboros.Network.PeerSelection (tests)
+import qualified Test.Ouroboros.Network.PeerSelection.Json (tests)
+import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
+import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import qualified Test.Socket (tests)
 
 main :: IO ()
@@ -59,6 +63,10 @@ tests =
   , Test.PeerState.tests
   , Test.Ouroboros.Network.BlockFetch.tests
   , Test.Ouroboros.Network.PeerSelection.tests
+  , Test.Ouroboros.Network.PeerSelection.Json.tests
+  , Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
+  , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
+  , Test.Ouroboros.Network.PeerSelection.RootPeersDNS.tests
   , Test.Ouroboros.Network.KeepAlive.tests
   , Test.Ouroboros.Network.TxSubmission.tests
   , Test.Ouroboros.Network.NodeToNode.Version.tests

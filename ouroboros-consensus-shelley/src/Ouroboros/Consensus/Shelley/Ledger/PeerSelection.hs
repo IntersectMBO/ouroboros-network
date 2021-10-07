@@ -7,6 +7,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.PeerSelection () where
 
+import           Control.DeepSeq (force)
 import           Data.Bifunctor (second)
 import           Data.Foldable (toList)
 import           Data.List (sortOn)
@@ -33,7 +34,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 instance c ~ EraCrypto era
       => LedgerSupportsPeerSelection (ShelleyBlock era) where
   getPeers ShelleyLedgerState { shelleyLedgerState } = catMaybes
-      [ (poolStake,) <$> Map.lookup stakePool poolRelayAddresses
+      [ (poolStake,) <$> Map.lookup stakePool poolRelayAccessPoints
       | (stakePool, poolStake) <- orderByStake poolDistr
       ]
     where
@@ -63,35 +64,38 @@ instance c ~ EraCrypto era
               . SL.nesEs
               $ shelleyLedgerState
 
-      relayToRelayAddress :: SL.StakePoolRelay -> Maybe RelayAddress
-      relayToRelayAddress (SL.SingleHostAddr (SJust (Port port)) (SJust ipv4) _) =
-          Just $ RelayAddressAddr (IPv4 ipv4) (fromIntegral port)
-      relayToRelayAddress (SL.SingleHostAddr (SJust (Port port)) SNothing (SJust ipv6)) =
-          Just $ RelayAddressAddr (IPv6 ipv6) (fromIntegral port)
-      relayToRelayAddress (SL.SingleHostName (SJust (Port port)) dnsName) =
-          Just $ RelayAddressDomain $ DomainAddress (encodeUtf8 $ dnsToText dnsName) (fromIntegral port)
-      relayToRelayAddress _ =
+      relayToRelayAccessPoint :: SL.StakePoolRelay -> Maybe RelayAccessPoint
+      relayToRelayAccessPoint (SL.SingleHostAddr (SJust (Port port)) (SJust ipv4) _) =
+          Just $ RelayAccessAddress (IPv4 ipv4) (fromIntegral port)
+      relayToRelayAccessPoint (SL.SingleHostAddr (SJust (Port port))
+                                                  SNothing
+                                                 (SJust ipv6)) =
+          Just $ RelayAccessAddress (IPv6 ipv6) (fromIntegral port)
+      relayToRelayAccessPoint (SL.SingleHostName (SJust (Port port)) dnsName) =
+          Just $ RelayAccessDomain (encodeUtf8 $ dnsToText dnsName) (fromIntegral port)
+      relayToRelayAccessPoint _ =
           -- This could be an unsupported relay (SRV records) or an unusable
           -- relay such as a relay with an IP address but without a port number.
           Nothing
 
       -- | Note that a stake pool can have multiple registered relays
-      pparamsRelayAddresses ::
-           (RelayAddress -> StakePoolRelay)
+      pparamsRelayAccessPoints ::
+           (RelayAccessPoint -> StakePoolRelay)
         -> SL.PoolParams c
         -> Maybe (NonEmpty StakePoolRelay)
-      pparamsRelayAddresses injStakePoolRelay =
+      pparamsRelayAccessPoints injStakePoolRelay =
             NE.nonEmpty
-          . mapMaybe (fmap injStakePoolRelay . relayToRelayAddress)
+          . force
+          . mapMaybe (fmap injStakePoolRelay . relayToRelayAccessPoint)
           . toList
           . SL._poolRelays
 
       -- | Combine the stake pools registered in the future and the current pool
       -- parameters, and remove duplicates.
-      poolRelayAddresses ::
+      poolRelayAccessPoints ::
            Map (SL.KeyHash 'SL.StakePool c) (NonEmpty StakePoolRelay)
-      poolRelayAddresses =
+      poolRelayAccessPoints =
           Map.unionWith
             (\futureRelays currentRelays -> NE.nub (futureRelays <> currentRelays))
-            (Map.mapMaybe (pparamsRelayAddresses FutureRelay)  futurePoolParams)
-            (Map.mapMaybe (pparamsRelayAddresses CurrentRelay) poolParams)
+            (Map.mapMaybe (pparamsRelayAccessPoints FutureRelay)  futurePoolParams)
+            (Map.mapMaybe (pparamsRelayAccessPoints CurrentRelay) poolParams)

@@ -20,28 +20,25 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment (
     selectPeerSelectionTraceEvents,
     firstGossipReachablePeers,
 
-    Script,
-    ScriptDelay(..),
-    TimedScript,
-    scriptHead,
-    singletonScript,
+    module Test.Ouroboros.Network.PeerSelection.Script,
+    module Ouroboros.Network.PeerSelection.Types,
 
     tests,
 
   ) where
 
 import           Data.Dynamic (fromDynamic)
-import           Data.Functor (($>))
 import           Data.List (nub)
-import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           System.Random (mkStdGen)
 
 import           Control.Exception (throw)
+import           Control.Monad (forM_)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
@@ -65,21 +62,26 @@ import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers
                    as LocalRootPeers hiding (tests)
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 import           Test.Tasty (TestTree, localOption, testGroup)
 import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 
 
 tests :: TestTree
 tests =
-  testGroup "Mock environment"
-    [ testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
-    , testProperty "shrink for PeerSelectionTargets"       prop_shrink_PeerSelectionTargets
-    , testProperty "arbitrary for PeerGraph"               prop_arbitrary_PeerGraph
-    , localOption (QuickCheckMaxSize 30) $
-      testProperty "shrink for PeerGraph"                  prop_shrink_PeerGraph
-    , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
-    , localOption (QuickCheckMaxSize 30) $
-      testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
+  testGroup "Ouroboros.Network.PeerSelection"
+    [ testGroup "MockEnvironment"
+      [ testProperty "shrink for Script"                     prop_shrink_Script
+      , testProperty "shrink for GovernorScripts"            prop_shrink_GovernorScripts
+      , testProperty "arbitrary for PeerSelectionTargets"    prop_arbitrary_PeerSelectionTargets
+      , testProperty "shrink for PeerSelectionTargets"       prop_shrink_PeerSelectionTargets
+      , testProperty "arbitrary for PeerGraph"               prop_arbitrary_PeerGraph
+      , localOption (QuickCheckMaxSize 30) $
+        testProperty "shrink for PeerGraph"                  prop_shrink_PeerGraph
+      , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
+      , localOption (QuickCheckMaxSize 30) $
+        testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
+      ]
     ]
 
 
@@ -99,14 +101,14 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        localRootPeers          :: LocalRootPeers PeerAddr,
        publicRootPeers         :: Set PeerAddr,
        targets                 :: TimedScript PeerSelectionTargets,
-       pickKnownPeersForGossip :: PickScript,
-       pickColdPeersToPromote  :: PickScript,
-       pickWarmPeersToPromote  :: PickScript,
-       pickHotPeersToDemote    :: PickScript,
-       pickWarmPeersToDemote   :: PickScript,
-       pickColdPeersToForget   :: PickScript
+       pickKnownPeersForGossip :: PickScript PeerAddr,
+       pickColdPeersToPromote  :: PickScript PeerAddr,
+       pickWarmPeersToPromote  :: PickScript PeerAddr,
+       pickHotPeersToDemote    :: PickScript PeerAddr,
+       pickWarmPeersToDemote   :: PickScript PeerAddr,
+       pickColdPeersToForget   :: PickScript PeerAddr
      }
-  deriving Show
+  deriving (Show, Eq)
 
 data PeerConn m = PeerConn !PeerAddr !(TVar m PeerStatus)
 
@@ -163,36 +165,64 @@ validGovernorMockEnvironment GovernorMockEnvironment {
 runGovernorInMockEnvironment :: GovernorMockEnvironment -> Trace Void
 runGovernorInMockEnvironment mockEnv =
     runSimTrace $ do
-      actions <- mockPeerSelectionActions tracerMockEnv mockEnv
       policy  <- mockPeerSelectionPolicy                mockEnv
+      actions <- mockPeerSelectionActions tracerMockEnv mockEnv policy
       peerSelectionGovernor
         tracerTracePeerSelection
         tracerDebugPeerSelection
+        tracerTracePeerSelectionCounters
+        (mkStdGen 42)
         actions
         policy
 
-data TraceMockEnv = TraceEnvPeersStatus (Map PeerAddr PeerStatus)
+data TraceMockEnv = TraceEnvAddPeers       PeerGraph
+                  | TraceEnvSetLocalRoots  (LocalRootPeers PeerAddr)
+                  | TraceEnvSetPublicRoots (Set PeerAddr)
+                  | TraceEnvPublicRootTTL
+                  | TraceEnvGossipTTL      PeerAddr
+                  | TraceEnvSetTargets     PeerSelectionTargets
+                  | TraceEnvPeersDemote    AsyncDemotion PeerAddr
+
+                  | TraceEnvRootsResult    [PeerAddr]
+                  | TraceEnvGossipRequest  PeerAddr (Maybe ([PeerAddr], GossipTime))
+                  | TraceEnvGossipResult   PeerAddr [PeerAddr]
+                  | TraceEnvPeersStatus    (Map PeerAddr PeerStatus)
   deriving Show
 
 mockPeerSelectionActions :: (MonadAsync m, MonadTimer m, Fail.MonadFail m,
                              MonadThrow (STM m))
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
+                         -> PeerSelectionPolicy PeerAddr m
                          -> m (PeerSelectionActions PeerAddr (PeerConn m) m)
 mockPeerSelectionActions tracer
                          env@GovernorMockEnvironment {
-                           peerGraph = PeerGraph adjacency,
+                           peerGraph,
+                           localRootPeers,
+                           publicRootPeers,
                            targets
-                         } = do
+                         }
+                         policy = do
     scripts <- Map.fromList <$>
-                       sequence [ (\a b -> (addr, (a, b)))
-                                  <$> initScript gossipScript
-                                  <*> initScript connectionScript
-                                | (addr, _, GovernorScripts { gossipScript, connectionScript }) <- adjacency ]
-    targetsVar <- playTimedScript targets
+                 sequence
+                   [ (\a b -> (addr, (a, b)))
+                     <$> initScript gossipScript
+                     <*> initScript connectionScript
+                   | let PeerGraph adjacency = peerGraph
+                   , (addr, _, GovernorScripts {
+                                 gossipScript,
+                                 connectionScript
+                               }) <- adjacency
+                   ]
+    targetsVar <- playTimedScript (contramap TraceEnvSetTargets tracer) targets
     peerConns  <- newTVarIO Map.empty
+    traceWith tracer (TraceEnvAddPeers peerGraph)
+    traceWith tracer (TraceEnvSetLocalRoots localRootPeers)   --TODO: make dynamic
+    traceWith tracer (TraceEnvSetPublicRoots publicRootPeers) --TODO: make dynamic
+    snapshot <- atomically (snapshotPeersStatus peerConns)
+    traceWith tracer (TraceEnvPeersStatus snapshot)
     return $ mockPeerSelectionActions'
-               tracer env
+               tracer env policy
                scripts targetsVar peerConns
 
 
@@ -209,6 +239,7 @@ mockPeerSelectionActions' :: forall m.
                               MonadThrow (STM m))
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment
+                          -> PeerSelectionPolicy PeerAddr m
                           -> Map PeerAddr (TVar m GossipScript, TVar m ConnectionScript)
                           -> TVar m PeerSelectionTargets
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
@@ -218,12 +249,15 @@ mockPeerSelectionActions' tracer
                             localRootPeers,
                             publicRootPeers
                           }
+                          PeerSelectionPolicy {
+                            policyGossipRetryTime
+                          }
                           scripts
                           targetsVar
                           connsVar =
     PeerSelectionActions {
-      readLocalRootPeers       = return (LocalRootPeers.toGroups' localRootPeers),
-      requestPublicRootPeers   = \_ -> return (publicRootPeers, 60),
+      readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
+      requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
       requestPeerGossip,
       peerStateActions         = PeerStateActions {
@@ -235,24 +269,43 @@ mockPeerSelectionActions' tracer
         }
     }
   where
+    -- TODO: make this dynamic
+    requestPublicRootPeers _n = do
+      let ttl :: Num n => n
+          ttl = 60
+      _ <- async $ do
+        threadDelay ttl
+        traceWith tracer TraceEnvPublicRootTTL
+      traceWith tracer (TraceEnvRootsResult (Set.toList publicRootPeers))
+      return (publicRootPeers, ttl)
+
     requestPeerGossip addr = do
       let Just (gossipScript, _) = Map.lookup addr scripts
       mgossip <- stepScript gossipScript
+      traceWith tracer (TraceEnvGossipRequest addr mgossip)
+      _ <- async $ do
+        threadDelay policyGossipRetryTime
+        traceWith tracer (TraceEnvGossipTTL addr)
       case mgossip of
-        Nothing                -> fail "no peers"
+        Nothing                -> do
+          threadDelay 1
+          traceWith tracer (TraceEnvGossipResult addr [])
+          fail "no peers"
         Just (peeraddrs, time) -> do
           threadDelay (interpretGossipTime time)
+          traceWith tracer (TraceEnvGossipResult addr peeraddrs)
           return peeraddrs
 
     establishPeerConnection :: PeerAddr -> m (PeerConn m)
     establishPeerConnection peeraddr = do
+      --TODO: add support for variable delays and synchronous failure
       threadDelay 1
       (conn@(PeerConn _ v), snapshot) <- atomically $ do
         conn  <- newTVar PeerWarm
         conns <- readTVar connsVar
         let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
-        snapshot <- traverse readTVar conns'
+        snapshot <- snapshotPeersStatus connsVar
         return (PeerConn peeraddr conn, snapshot)
       traceWith tracer (TraceEnvPeersStatus snapshot)
       let Just (_, connectScript) = Map.lookup peeraddr scripts
@@ -268,21 +321,32 @@ mockPeerSelectionActions' tracer
               let interpretScriptDelay NoDelay    = 1
                   interpretScriptDelay ShortDelay = 60
                   interpretScriptDelay LongDelay  = 600
-              done <-
+              (done, msnapshot) <-
                 case demotion of
-                  Noop   -> return True
+                  Noop   -> return (True, Nothing)
                   ToWarm -> do
                     threadDelay (interpretScriptDelay delay)
                     atomically $ do
                       s <- readTVar v
                       case s of
-                        PeerHot -> writeTVar v PeerWarm
-                                $> False
-                        _       -> return (PeerCold == s)
+                        PeerHot -> do writeTVar v PeerWarm
+                                      snapshot' <- snapshotPeersStatus connsVar
+                                      return (False, Just snapshot')
+                        PeerWarm -> return (False, Nothing)
+                        PeerCold -> return (True,  Nothing)
                   ToCold -> do
                     threadDelay (interpretScriptDelay delay)
-                    atomically $  writeTVar v PeerCold
-                               $> True
+                    atomically $ do
+                      s <- readTVar v
+                      case s of
+                        PeerCold -> return (True, Nothing)
+                        _        -> do writeTVar v PeerCold
+                                       snapshot' <- snapshotPeersStatus connsVar
+                                       return (True, Just snapshot')
+
+              traceWith tracer (TraceEnvPeersDemote demotion peeraddr)
+              forM_ msnapshot $ \snapshot' ->
+                traceWith tracer (TraceEnvPeersStatus snapshot')
 
               if done
                 then return ()
@@ -308,8 +372,7 @@ mockPeerSelectionActions' tracer
           -- state as if the transition went fine which will violate
           -- 'invariantPeerSelectionState'.
           PeerCold -> throwIO ActivationError
-        conns <- readTVar connsVar
-        traverse readTVar conns
+        snapshotPeersStatus connsVar
       traceWith tracer (TraceEnvPeersStatus snapshot)
 
     deactivatePeerConnection :: PeerConn m -> m ()
@@ -323,8 +386,7 @@ mockPeerSelectionActions' tracer
           -- See the note in 'activatePeerConnection' why we throw an exception
           -- here.
           PeerCold -> throwIO DeactivationError
-        conns <- readTVar connsVar
-        traverse readTVar conns
+        snapshotPeersStatus connsVar
       traceWith tracer (TraceEnvPeersStatus snapshot)
 
     closePeerConnection :: PeerConn m -> m ()
@@ -339,11 +401,19 @@ mockPeerSelectionActions' tracer
         conns <- readTVar connsVar
         let !conns' = Map.delete peeraddr conns
         writeTVar connsVar conns'
-        traverse readTVar conns'
+        snapshotPeersStatus connsVar
       traceWith tracer (TraceEnvPeersStatus snapshot)
 
     monitorPeerConnection :: PeerConn m -> STM m PeerStatus
     monitorPeerConnection (PeerConn _peeraddr conn) = readTVar conn
+
+
+snapshotPeersStatus :: MonadSTMTx stm
+                    => TVar_ stm (Map PeerAddr (TVar_ stm PeerStatus))
+                    -> stm (Map PeerAddr PeerStatus)
+snapshotPeersStatus connsVar = do
+    conns <- readTVar connsVar
+    traverse readTVar conns
 
 
 mockPeerSelectionPolicy  :: MonadSTM m
@@ -382,9 +452,17 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 -- Utils for properties
 --
 
-data TestTraceEvent = GovernorDebug (DebugPeerSelection PeerAddr ())
-                    | GovernorEvent (TracePeerSelection PeerAddr)
-                    | MockEnvEvent   TraceMockEnv
+data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr ())
+                    | GovernorEvent    (TracePeerSelection PeerAddr)
+                    | GovernorCounters PeerSelectionCounters
+                    | MockEnvEvent     TraceMockEnv
+                   -- Warning: be careful with writing properties that rely
+                   -- on trace events from both the governor and from the
+                   -- environment. These events typically occur in separate
+                   -- threads and so are not casually ordered. It is ok to use
+                   -- them for timeout/eventually properties, but not for
+                   -- properties that check conditions synchronously.
+                   -- The governor debug vs other events are fully ordered.
   deriving Show
 
 tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
@@ -393,6 +471,9 @@ tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr peerconn)
 tracerDebugPeerSelection = contramap (GovernorDebug . fmap (const ()))
                                      tracerTestTraceEvent
+
+tracerTracePeerSelectionCounters :: Tracer (IOSim s) PeerSelectionCounters
+tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent
 
 tracerMockEnv :: Tracer (IOSim s) TraceMockEnv
 tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
@@ -426,17 +507,20 @@ instance Arbitrary GovernorMockEnvironment where
   arbitrary = do
       -- Dependency of the root set on the graph
       peerGraph         <- arbitrary
+      let peersSet       = allPeers peerGraph
       (localRootPeers,
-       publicRootPeers) <- arbitraryRootPeers (allPeers peerGraph)
+       publicRootPeers) <- arbitraryRootPeers peersSet
 
       -- But the others are independent
       targets                 <- arbitrary
-      pickKnownPeersForGossip <- arbitrary
-      pickColdPeersToPromote  <- arbitrary
-      pickWarmPeersToPromote  <- arbitrary
-      pickHotPeersToDemote    <- arbitrary
-      pickWarmPeersToDemote   <- arbitrary
-      pickColdPeersToForget   <- arbitrary
+
+      let arbitrarySubsetOfPeers = arbitrarySubset peersSet
+      pickKnownPeersForGossip <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickColdPeersToPromote  <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickWarmPeersToPromote  <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickHotPeersToDemote    <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickWarmPeersToDemote   <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
       return GovernorMockEnvironment{..}
     where
       arbitraryRootPeers :: Set PeerAddr
@@ -545,7 +629,8 @@ prop_arbitrary_GovernorMockEnvironment env =
           (LocalRootPeers.keysSet (localRootPeers env))
           (publicRootPeers env)
 
-prop_shrink_GovernorMockEnvironment :: GovernorMockEnvironment -> Bool
-prop_shrink_GovernorMockEnvironment =
-    all validGovernorMockEnvironment . shrink
+prop_shrink_GovernorMockEnvironment :: Fixed GovernorMockEnvironment -> Property
+prop_shrink_GovernorMockEnvironment x =
+      prop_shrink_valid validGovernorMockEnvironment x
+ .&&. prop_shrink_nonequal x
 

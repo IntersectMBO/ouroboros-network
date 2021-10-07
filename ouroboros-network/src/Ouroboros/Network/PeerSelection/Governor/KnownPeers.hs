@@ -271,16 +271,24 @@ aboveTarget PeerSelectionPolicy {
   , let numRootPeersCanForget = LocalRootPeers.size localRootPeers
                               + Set.size publicRootPeers
                               - targetNumberOfRootPeers
-        protectedRootPeers    = LocalRootPeers.keysSet localRootPeers
-                             <> Set.drop numRootPeersCanForget publicRootPeers
         availableToForget     = KnownPeers.toSet knownPeers
                                   Set.\\ EstablishedPeers.toSet establishedPeers
-                                  Set.\\ protectedRootPeers
+                                  Set.\\ LocalRootPeers.keysSet localRootPeers
+                                  Set.\\ (if numRootPeersCanForget <= 0
+                                            then publicRootPeers else Set.empty)
                                   Set.\\ inProgressPromoteCold
 
   , not (Set.null availableToForget)
   = Guarded Nothing $ do
-      let numPeersToForget = numKnownPeers - targetNumberOfKnownPeers
+      let numOtherPeersToForget         = numKnownPeers
+                                        - targetNumberOfKnownPeers
+          numPeersToForget
+            | numRootPeersCanForget > 0 = min numRootPeersCanForget
+                                              numOtherPeersToForget
+            | otherwise                 = numOtherPeersToForget
+      -- If we /might/ pick a root peer, limit the number to forget so we do
+      -- not pick too many root peers. This may cause us to go round several
+      -- times but that is ok.
       selectedToForget <- pickPeers
                             policyPickColdPeersToForget
                             availableToForget

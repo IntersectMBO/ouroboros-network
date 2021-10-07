@@ -14,9 +14,10 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph (
     GossipScript,
     ConnectionScript,
     AsyncDemotion(..),
-    GossipTime,
+    GossipTime(..),
     interpretGossipTime,
 
+    prop_shrink_GovernorScripts,
     prop_arbitrary_PeerGraph,
     prop_shrink_PeerGraph,
 
@@ -24,7 +25,6 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph (
 
 import           Data.Graph (Graph)
 import qualified Data.Graph as Graph
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
@@ -37,6 +37,7 @@ import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.Script
 
 import           Test.QuickCheck
+import           Test.QuickCheck.Utils
 
 
 --
@@ -205,8 +206,11 @@ instance Arbitrary GovernorScripts where
       | gossipScript' <- shrink gossipScript
       ]
       ++
-      [ GovernorScripts gossipScript (fixConnectionScript connectionScript')
-      | connectionScript' <- shrink connectionScript
+      [ GovernorScripts gossipScript connectionScript'
+      | connectionScript' <- map fixConnectionScript (shrink connectionScript)
+        -- fixConnectionScript can result in re-creating the same script
+        -- which would cause shrinking to loop. Filter out such cases.
+      , connectionScript' /= connectionScript
       ]
 
 -- | We ensure that eventually the connection script will allow to connect to
@@ -251,7 +255,8 @@ instance Arbitrary PeerGraph where
 
 arbitraryGossipScript :: [PeerAddr] -> Gen GossipScript
 arbitraryGossipScript peers =
-    arbitraryShortScriptOf gossipResult
+    sized $ \sz ->
+      arbitraryScriptOf (isqrt sz) gossipResult
   where
     gossipResult :: Gen (Maybe ([PeerAddr], GossipTime))
     gossipResult =
@@ -263,6 +268,9 @@ arbitraryGossipScript peers =
     selectHalfRandomly xs = do
         picked <- vectorOf (length xs) arbitrary
         return [ x | (x, True) <- zip xs picked ]
+
+isqrt :: Int -> Int
+isqrt = floor . sqrt . (fromIntegral :: Int -> Double)
 
 -- | Remove dangling graph edges and gossip results.
 --
@@ -305,6 +313,10 @@ instance Arbitrary GossipTime where
 -- Tests for the QC Arbitrary instances
 --
 
+prop_shrink_GovernorScripts :: Fixed GovernorScripts -> Property
+prop_shrink_GovernorScripts =
+    prop_shrink_nonequal
+
 prop_arbitrary_PeerGraph :: PeerGraph -> Property
 prop_arbitrary_PeerGraph pg =
     -- We are interested in the distribution of the graph size (in nodes)
@@ -333,7 +345,8 @@ peerGraphNumStronglyConnectedComponents pg =
   where
     (g,_,_) = peerGraphAsGraph pg
 
-prop_shrink_PeerGraph :: PeerGraph -> Bool
-prop_shrink_PeerGraph =
-    all validPeerGraph . shrink
+prop_shrink_PeerGraph :: Fixed PeerGraph -> Property
+prop_shrink_PeerGraph x =
+      prop_shrink_valid validPeerGraph x
+ .&&. prop_shrink_nonequal x
 

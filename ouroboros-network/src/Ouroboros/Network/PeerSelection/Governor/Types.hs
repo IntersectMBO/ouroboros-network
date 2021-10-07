@@ -30,6 +30,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , TimedDecision
   , MkGuardedDecision
   , Completion (..)
+  , PeerSelectionCounters (..)
+  , peerStateToCounters
 
   -- * Traces
   , TracePeerSelection (..)
@@ -48,6 +50,7 @@ import           Control.Concurrent.JobPool (Job)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert, SomeException)
+import           System.Random (StdGen)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.EstablishedPeers (EstablishedPeers)
@@ -287,7 +290,10 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        inProgressPromoteCold    :: !(Set peeraddr),
        inProgressPromoteWarm    :: !(Set peeraddr),
        inProgressDemoteWarm     :: !(Set peeraddr),
-       inProgressDemoteHot      :: !(Set peeraddr)
+       inProgressDemoteHot      :: !(Set peeraddr),
+
+       -- | Rng for fuzzy delay
+       fuzzRng                  :: !StdGen
 
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
@@ -298,9 +304,23 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
      }
   deriving (Show, Functor)
 
+data PeerSelectionCounters = PeerSelectionCounters {
+      coldPeers :: !Int,
+      warmPeers :: !Int,
+      hotPeers  :: !Int
+    } deriving Show
 
-emptyPeerSelectionState :: PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState =
+peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
+peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers }
+  where
+    knownPeersSet = KnownPeers.toSet (knownPeers st)
+    establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
+    coldPeers = Set.size $ knownPeersSet Set.\\ establishedPeersSet
+    warmPeers = Set.size $ establishedPeersSet Set.\\ activePeers st
+    hotPeers  = Set.size $ activePeers st
+
+emptyPeerSelectionState :: StdGen -> PeerSelectionState peeraddr peerconn
+emptyPeerSelectionState rng =
     PeerSelectionState {
       targets              = nullPeerSelectionTargets,
       localRootPeers       = LocalRootPeers.empty,
@@ -315,7 +335,8 @@ emptyPeerSelectionState =
       inProgressPromoteCold    = Set.empty,
       inProgressPromoteWarm    = Set.empty,
       inProgressDemoteWarm     = Set.empty,
-      inProgressDemoteHot      = Set.empty
+      inProgressDemoteHot      = Set.empty,
+      fuzzRng                  = rng
     }
 
 
@@ -515,6 +536,8 @@ data TracePeerSelection peeraddr =
      | TraceForgetColdPeers    Int Int (Set peeraddr)
      -- | target established, actual established, selected peers
      | TracePromoteColdPeers   Int Int (Set peeraddr)
+     -- | target local established, actual local established, selected peers
+     | TracePromoteColdLocalPeers Int Int (Set peeraddr)
      -- | target established, actual established, peer, delay until next
      -- promotion, reason
      | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
@@ -522,6 +545,8 @@ data TracePeerSelection peeraddr =
      | TracePromoteColdDone    Int Int peeraddr
      -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
+     -- | local per-group (target active, actual active), selected peers
+     | TracePromoteWarmLocalPeers [(Int, Int)] (Set peeraddr)
      -- | target active, actual active, peer, reason
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
      -- | target active, actual active, peer
@@ -534,16 +559,19 @@ data TracePeerSelection peeraddr =
      | TraceDemoteWarmDone     Int Int peeraddr
      -- | target active, actual active, selected peers
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
+     -- | local per-group (target active, actual active), selected peers
+     | TraceDemoteLocalHotPeers [(Int, Int)] (Set peeraddr)
      -- | target active, actual active, peer, reason
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TraceDemoteHotDone      Int Int peeraddr
      | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
+     | TraceChurnWait          DiffTime
   deriving Show
 
 data DebugPeerSelection peeraddr peerconn =
-       TraceGovernorState Time
-                          (Maybe DiffTime)
+       TraceGovernorState Time              -- blocked time
+                          (Maybe DiffTime)  -- wait time
                           (PeerSelectionState peeraddr peerconn)
   deriving (Show, Functor)

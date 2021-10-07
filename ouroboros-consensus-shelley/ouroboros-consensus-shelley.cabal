@@ -54,10 +54,12 @@ library
                      , cardano-crypto-class
                      , cardano-ledger-core
                      , cardano-protocol-tpraos
+                     , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
                      , data-default-class
+                     , deepseq
                      , measures
                      , mtl               >=2.2   && <2.3
                      , nothunks

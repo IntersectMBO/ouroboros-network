@@ -77,8 +77,11 @@ library
                        Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.LocalRootPeers
+                       Ouroboros.Network.PeerSelection.RelayAccessPoint
+                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
+                       Ouroboros.Network.PeerSelection.Simple
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined
                        Ouroboros.Network.Protocol.ChainSync.Codec
@@ -153,11 +156,13 @@ library
                        TypeFamilies,
                        TypeInType
   build-depends:       base              >=4.9 && <4.15,
+                       aeson,
                        async             >=2.2 && <2.3,
                        base16-bytestring,
                        bytestring        >=0.10 && <0.11,
                        cborg             >=0.2.1 && <0.3,
                        containers,
+                       deepseq,
                        directory,
                        dns,
                        fingertree        >=0.1.4.2 && <0.2,
@@ -263,6 +268,7 @@ test-suite test
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
 
+                       Data.Signal
                        Test.AnchoredFragment
                        Test.Chain
                        Test.LedgerPeers
@@ -273,6 +279,8 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection
                        Test.Ouroboros.Network.PeerSelection.Instances
                        Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+                       Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+                       Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
                        Test.Ouroboros.Network.PeerSelection.Script
@@ -283,24 +291,32 @@ test-suite test
                        Test.Socket
                        Test.PeerState
                        Test.Version
+                       Test.QuickCheck.Signal
+                       Test.QuickCheck.Utils
   default-language:    Haskell2010
   build-depends:       base,
                        QuickCheck,
+                       aeson,
                        array,
                        async,
                        bytestring,
                        cborg,
                        containers,
                        dns,
+                       deque,
                        hashable,
+                       iproute,
                        mtl,
                        network,
                        process,
+                       psqueues,
                        random,
                        serialise,
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
+                       text,
+                       time,
 
                        cardano-prelude,
                        cardano-slotting,
