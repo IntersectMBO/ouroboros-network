@@ -36,3 +36,4 @@ nodeToClientVersionToQueryVersion x = case x of
   NodeToClientV_8  -> TopLevelQueryDisabled
   NodeToClientV_9  -> QueryVersion1
   NodeToClientV_10 -> QueryVersion2
+  NodeToClientV_11 -> QueryVersion2
