@@ -14,7 +14,7 @@ msgRefuse          = [2, refuseReason]
 versionTable = { * versionNumber => nodeToClientVersionData }
 
 ; from version 2 we set 15th bit to 1
-versionNumber = 1 / 32770 / 32771 / 32772 / 32773 / 32774 / 32775 / 32776 / 32777 / 32778 / 32779
+versionNumber = 1 / 32770 / 32771 / 32772 / 32773 / 32774 / 32775 / 32776 / 32777 / 32778 / 32779 / 32780
 
 nodeToClientVersionData = networkMagic
 
