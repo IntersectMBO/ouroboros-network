@@ -160,6 +160,9 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
                        -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
                        -> m ()
 
+      -- | Determine wether to use the system default mempool capacity or explicitly set
+      -- capacity of the mempool.
+    , rnMaybeMempoolCapacityOverride :: Maybe MempoolCapacityBytesOverride
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -650,7 +653,6 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
     -- versions to the latest " official " release (as chosen by Network and
     -- Consensus Team, with input from Node Team)
   , srnTraceChainDB                :: Tracer m (ChainDB.TraceEvent blk)
-    -- ^ ChainDB Tracer
   }
 
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
@@ -666,7 +668,7 @@ stdLowLevelRunNodeArgsIO ::
           NodeToNodeVersionData
           NodeToClientVersionData
           blk)
-stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnMaybeMempoolCapacityOverride } StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
     pure LowLevelRunNodeArgs
@@ -677,7 +679,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnChainDbArgsDefaults =
           updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy
       , llrnCustomiseChainDbArgs = id
-      , llrnCustomiseNodeKernelArgs
+      , llrnCustomiseNodeKernelArgs = llrnCustomiseNodeKernelArgs
       , llrnRunDataDiffusion =
           \_reg apps ->
             stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
@@ -728,6 +730,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
     llrnCustomiseNodeKernelArgs =
         overBlockFetchConfiguration modifyBlockFetchConfiguration
+      . modifyMempoolCapacityOverride
       where
         modifyBlockFetchConfiguration =
             maybe id
@@ -736,6 +739,10 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
           . maybe id
               (\mc bfc -> bfc { bfcMaxConcurrencyBulkSync = mc })
               srnBfcMaxConcurrencyBulkSync
+        modifyMempoolCapacityOverride =
+            maybe id
+              (\mc nka -> nka { mempoolCapacityOverride = mc })
+              rnMaybeMempoolCapacityOverride
 
     -- Limit the node version unless srnEnableInDevelopmentVersions is set
     limitToLatestReleasedVersion :: forall k v.
