@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | A one-to-one transcript of the maxvalid-bg rule described in the report.
-module Test.Consensus.Genesis.Paper (Test.Consensus.Genesis.Paper.tests) where
+module Test.Consensus.Genesis.Paper where
 
 import           Prelude hiding (length)
 import qualified Prelude (length)
@@ -22,6 +22,9 @@ import           Ouroboros.Network.Block
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Test.Consensus.Genesis.Framework
 import           Test.Util.TestBlock (TestBlock)
+
+import           Ouroboros.Consensus.NodeKernel.Genesis.Impl
+import           Ouroboros.Consensus.NodeKernel.Genesis.Spec
 
 {-------------------------------------------------------------------------------
  Maxvalid_bg. See Definition 21.2 in the Consensus report.
@@ -48,6 +51,16 @@ maxvalidBg s (f:fs) = res
   Tests
 -------------------------------------------------------------------------------}
 
+-- | Fold version == spec?
+prop_fold :: AnnotatedBlockTree Dominated -> Property
+prop_fold AnnotatedBlockTree{..} =
+  let paths = pathsThroughTree bt
+      maybeKnown = zipWith AnnotatedAnchoredFragment paths annotations
+      gb = GenesisBlockchain (gwl bt) (anchoredFragmentsToTree maybeKnown)
+  in
+        prefixSelection GenesisPoint (gwl bt) maybeKnown
+    === unitaryTreeToAnchoredFragment (genesisFoldPrefixSelection gb)
+
 -- | If we run prefix selection claiming that some of the fragments are
 -- incomplete, the returned fragment must be a prefix of what prefix selection
 -- returns if we claim that every fragment is complete.
@@ -60,7 +73,6 @@ prop_contained_dominated AnnotatedBlockTree{..} =
       a2 = prefixSelection GenesisPoint (gwl bt) maybeKnown
   in
      counterexample (show a1 <> " /= " <> show a2) $
-     isDominated (gwl bt) (tree bt) ==>
      label (if Prelude.length paths > 1 then "non-trivial" else "trivial") $
      isPrefixOf a2 a1
 
@@ -70,10 +82,9 @@ prop_all_complete_dominated :: BlockTree Dominated -> Property
 prop_all_complete_dominated b =
   let pathsForMaxvalid = pathsThroughTree b
       pathsForPrefixSelection =
-        map (`AnnotatedAnchoredFragment` FragmentComplete)  (pathsThroughTree b)
+        map (`AnnotatedAnchoredFragment` FragmentComplete) (pathsThroughTree b)
   in
-    isDominated (gwl b) (tree b) ==>
-     label (if Prelude.length pathsForMaxvalid > 1 then "non-trivial" else "trivial") $
+    label (if Prelude.length pathsForMaxvalid > 1 then "non-trivial" else "trivial") $
         maxvalidBg                   (gwl b) pathsForMaxvalid
     === prefixSelection GenesisPoint (gwl b) pathsForPrefixSelection
 
@@ -125,7 +136,8 @@ prop_contained AnnotatedBlockTree{..} =
 
 tests :: TestTree
 tests = testGroup "Prefix Selection"
-      [ testGroup "Dominated"
+      [ testProperty "Fold version == spec" prop_fold
+      , testGroup "Dominated"
         [ testProperty "Prefix Selection vs Maxvalid_bg" prop_all_complete_dominated
         , testProperty "Unknown is always prefix of known" prop_contained_dominated
         ]

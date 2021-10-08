@@ -402,7 +402,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
        currChain <- readCurrentChain
        return $ case syncMode of
          Syncing ->
-           Genesis.processWithPrefixSelection (AF.anchorPoint currChain) s fragments
+           Genesis.processWithPrefixSelectionImpl (AF.anchorPoint currChain) s fragments
          CaughtUp ->
            -- TODO @js: is this okay?
            fragments

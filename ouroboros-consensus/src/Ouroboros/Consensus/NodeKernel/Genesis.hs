@@ -1,42 +1,93 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | An implementation of the prefix selection algorithm.
 module Ouroboros.Consensus.NodeKernel.Genesis (
-    processWithPrefixSelection
-    -- * For testing
-  , density
-  , findCommonPrefix
-  , findSuffixes
-  , hasKnownDensityAt
-  , prefixSelection
+    processWithPrefixSelectionImpl
+  , processWithPrefixSelectionSpec
+    -- * Testing
+  , genesisFoldIsDominated
+  , genesisFoldPrefixSelection
   ) where
 
-import           Prelude hiding (length)
-
-import           Data.Function (on)
-import           Data.List (foldl', maximumBy)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
 
-import           Cardano.Slotting.Slot
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.GenesisWindowLength
-import           Ouroboros.Network.AnchoredFragment hiding (filter)
+import           Ouroboros.Network.AnchoredFragment
 import           Ouroboros.Network.AnchoredFragment.Completeness
-import           Ouroboros.Network.AnchoredSeq hiding (filter, join, map,
-                     prettyPrint)
+
+import           Ouroboros.Consensus.NodeKernel.Genesis.Impl
+import           Ouroboros.Consensus.NodeKernel.Genesis.Spec
 
 {-------------------------------------------------------------------------------
- The prefix selection algorithm
+ Instantiations
 -------------------------------------------------------------------------------}
+
+-- | Concrete instantiation of foldWithCommonPrefixStep for prefixSelection.
+genesisFoldPrefixSelection ::
+     HasHeader blk
+  => GenesisBlockchain blk
+  -> GenesisTree blk
+genesisFoldPrefixSelection gb =
+    foldWithCommonPrefixStep picker updater initiator (t gb)
+  where
+    initiator               = id
+
+    picker ([],         _ ) =
+      -- If there are no candidates, then finish here.
+      Nothing
+    picker (candidates, sl) =
+      case densestInWindow (s gb) sl candidates of
+        -- if no candidates were picked among the provided ones, end here.
+        []  -> Nothing
+        -- if some candidates were selected as best, pick the first one. Note
+        -- that the specification says that it is okay to "pick at random" among
+        -- the densest ones.
+        d:_ -> Just (d, ())
+
+    updater st (cp, ())     =
+      -- Continue going always, concat-ing the trees.
+      Right $ concatTrees st cp
+
+-- | Concrete instantiation of foldWithCommonPrefixStep for checking if a tree
+-- is dominated.
+genesisFoldIsDominated ::
+     HasHeader blk
+  => GenesisBlockchain blk
+  -> Bool
+genesisFoldIsDominated gb =
+    foldWithCommonPrefixStep picker updater initiator (t gb)
+  where
+    initiator               = const True
+
+    picker ([],         _ ) =
+      -- If there are no candidates just return.
+      Nothing
+    picker (candidates, sl) =
+      case densestInWindow (s gb) sl candidates of
+        -- if no candidates will be picked, return True as it is dominated up to
+        -- the known point.
+        []  -> Just (undefined, True)
+        -- If there is only one candidate, then return True
+        [_] -> Just (undefined, True)
+        -- If there are multiple candidates, then return false
+        _   -> Just (undefined, False)
+
+
+    -- When a False is returned, then short-circuit.
+    -- Note that this is not strict on the first component of the tuple.
+    updater _ (_, single)  = if single then Right True else Left False
 
 -- | Process a map of candidates as stated in the prefixSelection chapter of the
 -- report.
-processWithPrefixSelection ::
+processWithPrefixSelectionImpl ::
      ( BlockSupportsProtocol blk
      , Ord peer
      )
@@ -47,11 +98,18 @@ processWithPrefixSelection ::
   -> Map peer (AnnotatedAnchoredFragment (Header blk))
      -- ^ The list of candidates
   -> Map peer (AnnotatedAnchoredFragment (Header blk))
-processWithPrefixSelection immTip s m =
+processWithPrefixSelectionImpl immTip s m =
     Map.fromList result
   where
     candidatesList = Map.toList m
-    selectedPrefix = prefixSelection immTip s $ map snd candidatesList
+    initialCandidates =
+      catMaybes
+        [     flip AnnotatedAnchoredFragment (completeness candidate)
+          .   snd
+          <$> splitAfterPoint (fragment candidate) immTip
+        | candidate <- map snd candidatesList ]
+    selectedPrefix = unitaryTreeToAnchoredFragment $
+      genesisFoldPrefixSelection (GenesisBlockchain s (anchoredFragmentsToTree initialCandidates))
     headAsPoint    = headPoint selectedPrefix
     result         =
       catMaybes
@@ -62,297 +120,3 @@ processWithPrefixSelection immTip s m =
                             Empty _ -> completeness candidate
                             _       -> FragmentIncomplete))
       | (peer, candidate) <- candidatesList ]
-
-{-------------------------------------------------------------------------------
- Internal implementation
--------------------------------------------------------------------------------}
-
--- | Run the prefix selection algorithm on a list of candidates.
-prefixSelection :: forall blk.
-  ( HasHeader (Header blk)
-  , HasHeader blk
-  )
-  => Point (Header blk)
-     -- ^ The current immutable tip as point
-  -> GenesisWindowLength
-     -- ^ The length of the genesis window
-  -> [AnnotatedAnchoredFragment (Header blk)]
-     -- ^ The list of candidates
-  ->   AnchoredFragment (Header blk)
-prefixSelection currentImmTip s originalCandidates =
-    go initialPrefix
-  where
-    -- | Compute a usable list of candidates
-    --
-    -- Every candidate is anchored at the block that was the tip of the
-    -- immutable database when the sync was performed. The immutable tip might
-    -- have moved and candidates that fork before it can be safely discarded as
-    -- the ChainDB will never switch to them. Therefore we will continue only
-    -- with the candidates that contain the immutable tip and we will anchor
-    -- them there.
-    --
-    -- Note that after this, *all candidates are anchored at the same point*,
-    -- namely the tip of the immutable database.
-    initialCandidates :: [AnnotatedAnchoredFragment (Header blk)]
-    initialCandidates =
-      catMaybes
-        [     flip AnnotatedAnchoredFragment (completeness candidate)
-          .   snd
-          <$> splitAfterPoint (fragment candidate) currentImmTip
-        | candidate <- originalCandidates ]
-
-    -- | First common prefix
-    initialPrefix :: AnchoredFragment (Header blk)
-    initialPrefix = findCommonPrefix (map fragment initialCandidates)
-
-    -- | Recursive algorithm
-    --
-    -- Given an anchored fragment, the algorithm will run by:
-    -- - anchoring a genesis window at the end of the fragment
-    -- - making a decision based on densities of the fragments in the window
-    -- - find the common prefix of the set of candidates that share more than
-    --   just the anchor of the window with the best candidate.
-    -- - repeat if in the previous step, multiple candidates share the prefix.
-    go :: AnchoredFragment (Header blk) -> AnchoredFragment (Header blk)
-    go thisIterationPrefix =
-        case result of
-          Just result' -> result'
-          Nothing      -> error "Fragments that should be consecutive could not be joined"
-      where
-
-        -- | The suffixes of the candidates anchored at the head of
-        -- thisIterationPrefix
-        thisIterationSuffixes ::
-          [AnnotatedAnchoredFragment (Header blk)]
-        thisIterationSuffixes =
-          findSuffixes thisIterationPrefix initialCandidates
-
-        -- | The boundaries of the genesis window
-        thisWindow :: GenesisWindow
-        thisWindow = genesisWindowBounds (headSlot thisIterationPrefix) s
-
-        -- | The best candidate in the window
-        iterationBestCandidate :: PrefixSelection (AnchoredFragment (Header blk))
-        iterationBestCandidate =
-          if all (hasKnownDensityAt (gwTo thisWindow)) thisIterationSuffixes
-          then
-            -- Find the densest candidate and continue
-              MoreDecisions
-            $ maximumBy (compare `on` density thisWindow) (map fragment thisIterationSuffixes)
-          else
-            case filter (not . hasKnownDensityAt (gwTo thisWindow)) thisIterationSuffixes of
-              [one] ->
-                if density thisWindow (fragment one)
-                   >= maximum (map (density thisWindow . fragment) thisIterationSuffixes)
-                -- there is only one candidate with unknown density and it is
-                -- already the densest in the window.
-                then LastDecision $ fragment one
-                else Unknown
-              _ -> Unknown
-
-        -- | The common prefix for the next iteration
-        nextIterationPrefix :: PrefixSelection (AnchoredFragment (Header blk))
-        nextIterationPrefix =
-          case iterationBestCandidate of
-            MoreDecisions bestCandidate ->
-              let nextIterationFragments =
-                    [ candidate | candidate <- thisIterationSuffixes
-                                , case bestCandidate `intersect` fragment candidate of
-                                    -- discard non-intersecting
-                                    Nothing                    -> False
-                                    -- include iterationBestCandidate itself
-                                    Just (Empty _, Empty _, a, b) ->
-                                         headPoint a == headPoint b
-                                      && headPoint a == headPoint bestCandidate
-                                    -- discard those that only intersect on the
-                                    -- anchor
-                                    Just (_, Empty _, _, _) -> False
-                                    _                       -> True
-                                ]
-              in
-                case nextIterationFragments of
-                  [f] -> LastDecision $ fragment f
-                  _   -> MoreDecisions $ findCommonPrefix (map fragment nextIterationFragments)
-            l@(LastDecision ld) ->
-              let nextIterationFragments = [ candidate | candidate <- thisIterationSuffixes
-                                , case ld `intersect` fragment candidate of
-                                    -- discard non-intersecting
-                                    Nothing                    -> False
-                                    -- include iterationBestCandidate itself
-                                    Just (Empty _, Empty _, a, b) ->
-                                         headPoint a == headPoint b
-                                      && headPoint a == headPoint ld
-                                    -- discard those that only intersect on the
-                                    -- anchor
-                                    Just (_, Empty _, _, _) -> False
-                                    _                       -> True
-                                ]
-              in
-                case nextIterationFragments of
-                  [_] -> l
-                  _   -> MoreDecisions $ findCommonPrefix (map fragment nextIterationFragments)
-            _ -> iterationBestCandidate
-
-        -- | This iteration's result
-        result =
-            join thisIterationPrefix
-            $ case nextIterationPrefix of
-                LastDecision ld  -> ld
-                Unknown          -> Empty $ headAnchor thisIterationPrefix
-                MoreDecisions md -> go md
-
--- | A result of prefix selection
-data PrefixSelection a =
-    -- | A decision has been made at a known-density point. The next
-    -- intersection point has to be resolved.
-    MoreDecisions a
-  | -- | There are no more intersection points to resolve.
-    LastDecision a
-  | -- | There was no outcome from the decision process because densities are
-    -- unknown at the intersection point.
-    Unknown
- deriving (Show)
-
-{-------------------------------------------------------------------------------
- Density
--------------------------------------------------------------------------------}
-
--- | Whether the provided fragment has known density within a window that ends
--- at the given slot number.
-hasKnownDensityAt ::
-     HasHeader b
-  => SlotNo
-  -> AnnotatedAnchoredFragment b
-  -> Bool
-hasKnownDensityAt _  (AnnotatedAnchoredFragment _ FragmentComplete) = True
-hasKnownDensityAt to f                                              =
-  withOrigin False (>= to) (headSlot $ fragment f)
-
--- | Compute the density of the fragment in the given window
-density ::
-     HasHeader blk
-  => GenesisWindow
-  -> AnchoredFragment blk
-  -> Int
-density gw f =
-    length
-    -- To be completely precise, the density would sometimes require a +1 but as
-    -- all fragments will go through the same function, they will all be scaled.
-  . takeWhileOldest (\blk -> blockSlot blk <= gwTo gw)
-  . maybe f snd
-    -- If the fragment is already anchored at the beginning of the window, split
-    -- will return nothing. This assumes that we are going to apply this
-    -- function only on fragments which actually have a block at the anchor of
-    -- the genesis window.
-  . splitBeforeMeasure (At $ gwFrom gw) (const True)
-  $ f
-
-{-------------------------------------------------------------------------------
- Prefixes and suffixes operations
--------------------------------------------------------------------------------}
-
--- | Given a list of chains, find the prefix that is common to all of them.
---
--- PRECONDITION: all candidates must be anchored at the same point.
---
--- Example:
---
--- >    ┆ A ┆     ┆ A ┆     ┆ A ┆
--- >    ├───┤     ├───┤     ├───┤
--- >    │ B │     │ B │     │ B │
--- >    ├───┤     ├───┤     ├───┤
--- >    │ C │     │ C │     │ C │
--- >    ├───┤     ├───┤     ├───┤
--- >    │ D │     │ G │     │ J │
--- >    ├───┤     ├───┤     ├───┤
--- >    │ E │     │ H │     │ K │
--- >    ├───┤     ├───┤     └───┘
--- >    │ F │     │ I │
--- >    └───┘     └───┘
--- >      C1        C2        C3
--- >
--- >           candidates
---
--- Will result in the prefix shared by every candidate (could be just the anchor
--- point):
---
--- >    ┆ A ┆
--- >    ├───┤
--- >    │ B │
--- >    ├───┤
--- >    │ C │
--- >    └───┘
---
--- Note that this will always exist because of the precondition that candidates
--- are all anchored at the same point.
-findCommonPrefix ::
-     HasHeader (Header blk)
-  => [AnchoredFragment (Header blk)]
-  ->  AnchoredFragment          (Header blk)
-findCommonPrefix []     = error "findCommonPrefix called with empty list"
-findCommonPrefix (f:fs) =
-  case result of
-    Just frag -> frag
-    Nothing   -> error "Precondition violated: fragments must be anchored at the same point."
-  where
-    result =
-      foldl'
-        (\acc candidate -> do
-            acc' <- acc
-            (acc'', _, _, _) <-  acc' `intersect` candidate
-            return acc'')
-        (Just f)
-        fs
-
--- | Move the anchor point of each fragment to the head of the common prefix
--- provided.
---
--- Example:
---
--- >                                                  commonPrefix
--- >
--- >    ┆   ┆     ┆   ┆     ┆   ┆     ┆   ┆               ┆   ┆
--- >    ├───┤     ├───┤     ├───┤     ├───┤               ├───┤
--- >    │ A │     │ A │     │ A │     │ A │               │ A │
--- >    ├───┤     ├───┤     ├───┤     ├───┤               ├───┤
--- >    │ B │     │ B │     │ B │     │ B │               │ B │
--- >    ├───┤     ├───┤     ├───┤     ├───┤               ├───┤
--- >    │ X │     │ C │     │ C │     │ C │               │ C │
--- >    ├───┤     ├───┤     ├───┤     ├───┤               └───┘
--- >    │ Y │     │ D │     │ G │     │ J │
--- >    └───┘     ├───┤     ├───┤     ├───┤
--- >              │ E │     │ H │     │ K │
--- >              ├───┤     ├───┤     └───┘
--- >              │ F │     │ I │
--- >              └───┘     └───┘
--- >      C1        C2        C3        C4
--- >
--- >                 candidates
---
--- Will result in:
---
--- >
--- >              ┆ C ┆     ┆ C ┆     ┆ C ┆
--- >              ├───┤     ├───┤     ├───┤
--- >              │ D │     │ G │     │ J │
--- >              ├───┤     ├───┤     ├───┤
--- >              │ E │     │ H │     │ K │
--- >              ├───┤     ├───┤     └───┘
--- >              │ F │     │ I │
--- >              └───┘     └───┘
--- >                C2        C3        C4
--- >
--- >                     candidates'
---
--- Note that as C1 couldn't be split after C, it was discarded.
-findSuffixes ::
-     forall hblk. HasHeader hblk
-  => AnchoredFragment hblk
-  -> [AnnotatedAnchoredFragment hblk]
-  -> [AnnotatedAnchoredFragment hblk]
-findSuffixes commonPrefix l =
-   catMaybes
-     [     flip AnnotatedAnchoredFragment (completeness candidate)
-       .   snd
-       <$> splitAfterPoint (fragment candidate) (headPoint commonPrefix)
-     | candidate <- l ]

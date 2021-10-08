@@ -145,6 +145,8 @@ library
                        Ouroboros.Consensus.NodeId
                        Ouroboros.Consensus.NodeKernel
                        Ouroboros.Consensus.NodeKernel.Genesis
+                       Ouroboros.Consensus.NodeKernel.Genesis.Impl
+                       Ouroboros.Consensus.NodeKernel.Genesis.Spec                                              
                        Ouroboros.Consensus.Node.InitStorage
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
