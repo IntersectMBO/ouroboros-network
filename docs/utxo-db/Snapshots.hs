@@ -31,12 +31,12 @@ import qualified Data.STRef as ST
 import           Data.STRef (STRef)
 import           Data.Word (Word64)
 
-import           Control.Monad
+--import           Control.Monad
 import qualified Control.Monad.ST.Strict as ST
 import           Control.Monad.ST.Strict (ST)
-import           Control.Monad.Trans.State as State
-import           Control.Concurrent.STM (STM, TVar)
-import qualified Control.Concurrent.STM as STM
+--import           Control.Monad.Trans.State as State
+--import           Control.Concurrent.STM (STM, TVar)
+--import qualified Control.Concurrent.STM as STM
 import           Control.Exception
 
 
@@ -320,7 +320,9 @@ newtype ConstTable a (t :: TableType) k v where
 
 
 data TableKeySet (t :: TableType) k v where
-       TableKeySet :: Set.Set k -> TableKeySet t k v
+       TableKeySet :: Set.Set k
+                   {- range queries go here -}
+                   -> TableKeySet t k v
   deriving Show
 
 
@@ -531,7 +533,7 @@ instance HasOnDiskTables state => Semigroup (TableSnapshots state) where
               -> SnapshotOfTable table t k v
               -> table t k v
               -> SnapshotOfTable' table t k v
-      fixup_f _  KeepTable          t = KeepTable'     t
+      fixup_f _  KeepTable          t = KeepTable'       t
       fixup_f _ (SnapshotOfTable t) _ = SnapshotOfTable' t
 
       fixup_g :: TableTag t v
@@ -577,19 +579,29 @@ takeSnapshotTableId :: TableId t k v -> TableId TableTypeRO k v
 takeSnapshotTableId (TableId _t i) = TableId TableTagRO i
 -}
 
-interpretTableSnapshots
+applyTableSnapshots
+  :: forall state map.
+     TableSnapshots state
+  -> Tables state map
+  -> Tables state (SnapshotOfTable map)
+applyTableSnapshots (TableSnapshots f) s = f s
+
+
+applyTableSnapshots'
   :: forall state map.
      HasOnlyTables (Tables state)
-  => (forall t k v. map t k v -> map TableTypeRO k v)
-  -> TableSnapshots state
+  => TableSnapshots state
   -> Tables state map
-  -> Tables state map
-interpretTableSnapshots snapshot (TableSnapshots f) s =
+  -> Tables state (SnapshotOfTable' map)
+applyTableSnapshots' (TableSnapshots f) s =
     zipTables combine (f s) s
   where
-    combine :: TableTag t v -> SnapshotOfTable map t k v -> map t k v -> map t k v
-    combine _  KeepTable          m = m
-    combine _ (SnapshotOfTable m) _ = snapshot m
+    combine :: TableTag t v
+            -> SnapshotOfTable map t k v
+            -> map t k v
+            -> SnapshotOfTable' map t k v
+    combine _  KeepTable          t = KeepTable'       t
+    combine _ (SnapshotOfTable t) _ = SnapshotOfTable' t
 
 
 applyTableSnapshotsInverse :: forall state.
@@ -672,7 +684,7 @@ class DiskDb dbhandle state {- | dbhandle -> state -} where
 
 -- In-memory changes
 --------------------
-{-
+
 -- | A sequence of changes to a data store.
 --
 -- It is intended to be used to /extend in-memory/ beyond the state of an
@@ -691,44 +703,157 @@ class DiskDb dbhandle state {- | dbhandle -> state -} where
 
 data DbChangelog (state :: (TableType -> * -> * -> *) -> *) =
        DbChangelog {
-         -- The changes to the content of the tables
-         dbChangelogContent :: !(Tables state (SumSeqTable TableDiff)),
+         -- | The point that the change log applies from. This must match
+         -- the point at which reads are done from the disk Db.
+         dbChangelogAnchorSeqNo :: SeqNo state,
+
+-- Awkward: if the Tables are degenerate and have no tables at all then
+-- we have no sequences and cannot split etc.
+--         dbChangelogLastSeqNo :: Maybe (SeqNo state)
+
+         -- | The changes to the content of the tables
+         dbChangelogContent :: !(Tables state (SeqTableDiff state)),
 
          -- The changes involving table snapshots
          -- this is sparse, often empty, in practice never more than one element
-         dbChangelogSnapshots :: !(SumSeq (TableSnapshots state)),
+         dbChangelogSnapshots :: !(SSeq state (TableSnapshots state)),
 
-         -- The derived changes to apply to reads
-         dbChangelogForward :: !(Tables state (SumSeqTable TableDiff))
+         -- The derived changes to apply to reads for snapshotted tables.
+         dbChangelogForward :: !(Tables state (SeqSnapshotDiff state))
        }
 
 
-emptyDbChangelog :: HasOnDiskTables state => DbChangelog state
-emptyDbChangelog =
-    DbChangelog mempty mempty mempty
+emptyDbChangelog :: HasOnDiskTables state => SeqNo state -> DbChangelog state
+emptyDbChangelog anchor =
+    DbChangelog anchor mempty mempty mempty
 
+{-
 instance HasOnDiskTables state => Semigroup (DbChangelog state) where
     DbChangelog a1 b1 c1 <> DbChangelog a2 b2 c2 =
       DbChangelog (a1 <> a2) (b1 <> b2) (c1 <> c2)
 
 instance HasOnDiskTables state => Monoid (DbChangelog state) where
     mempty = emptyDbChangelog
+-}
+
+-- | The interpretation here is the table content changes followed by the
+-- optional table snapshots.
+data DbChange state = DbChange
+                        !(SeqNo state)
+                        !(Tables state TableDiff)
+                        !(Maybe (TableSnapshots state))
 
 
 -- |
 --
-extendDbChangelog :: HasOnDiskTables state
-                  => {- DbChange state -> -} DbChangelog state -> DbChangelog state
-extendDbChangelog = undefined
+extendDbChangelog :: forall state.
+                     HasOnDiskTables state
+                  => DbChange state -> DbChangelog state -> DbChangelog state
+extendDbChangelog (DbChange seqno diffs msnapshots)
+                  dbchangelog@DbChangelog{..} =
+    let dbChangelogContent' = zipTables snoc dbChangelogContent diffs
+     in case msnapshots of
+          Nothing -> 
+            dbchangelog {
+              dbChangelogContent = dbChangelogContent'
+            }
+
+          Just snapshots ->
+            dbchangelog {
+              dbChangelogContent = dbChangelogContent',
+
+              dbChangelogSnapshots =
+                dbChangelogSnapshots FT.|> SSeqElem seqno snapshots,
+
+              dbChangelogForward =
+                extendSnapshotDiffs
+                  snapshots
+                  dbChangelogContent'
+                  dbChangelogForward
+            }
+  where
+    snoc :: Ord k
+         => TableTag           t   v
+         -> SeqTableDiff state t k v
+         -> TableDiff          t k v
+         -> SeqTableDiff state t k v
+    snoc _ ds d = snocSeqTableDiff ds d seqno
+
+extendSnapshotDiffs :: HasOnlyTables (Tables state)
+                    => TableSnapshots state
+                    -> Tables state (SeqTableDiff    state)
+                    -> Tables state (SeqSnapshotDiff state)
+                    -> Tables state (SeqSnapshotDiff state)
+extendSnapshotDiffs snapshots tdiffs sdiffs =
+    zipTables combine (applyTableSnapshots  snapshots tdiffs)
+                      (applyTableSnapshots' snapshots sdiffs)
+  where
+    combine :: Ord k
+            => TableTag t v
+            -> SnapshotOfTable  (SeqTableDiff    state) t k v
+            -> SnapshotOfTable' (SeqSnapshotDiff state) t k v
+            -> SeqSnapshotDiff state t k v
+
+    -- The snapshot diffs are only for the RO tables. It is always a
+    -- nullary representation for the RW and RWU tables.
+    combine TableTagRW  _ _ = emptyTable TableTagRW
+    combine TableTagRWU _ _ = emptyTable TableTagRWU
+
+    -- This case is where we keep existing RO snapshots.
+    combine TableTagRO KeepTable (KeepTable' t) = t
+
+    -- This case is where we re-arrange existing RO snapshots.
+    combine TableTagRO (SnapshotOfTable SeqTableDiffRO)
+                       (SnapshotOfTable' t) =
+      -- Yes, this is a fancy identify function
+      case t of
+        SeqSnapshotDiffEmpty   -> SeqSnapshotDiffEmpty
+        SeqSnapshotOfDiffRW{}  -> t
+        SeqSnapshotOfDiffRWU{} -> t
+
+    -- These two cases are where we _actually_ take a snapshot of a RW or RWU
+    -- table, not just re-arranging existing RO snapshots. What we do in these
+    -- cases is just grab the whole current sequence of diffs for that table.
+    -- These _snapshots of the current diffs_ will be the diffs we apply to
+    -- fast-forward reads to this snapshot point.
+    combine TableTagRO (SnapshotOfTable (SeqTableDiffRW ds))
+                       (SnapshotOfTable' SeqSnapshotDiffEmpty) =
+            SeqSnapshotOfDiffRW ds
+
+    combine TableTagRO (SnapshotOfTable (SeqTableDiffRWU ds))
+                       (SnapshotOfTable' SeqSnapshotDiffEmpty) =
+            SeqSnapshotOfDiffRWU ds
+
+    -- These cases are impossible because both arguments are the result of
+    -- applying the same snapshotting rearrangement function.
+    combine TableTagRO (SnapshotOfTable SeqTableDiffRW{})
+                        SnapshotOfTable'{}            = impossible
+    combine TableTagRO (SnapshotOfTable SeqTableDiffRWU{})
+                        SnapshotOfTable'{}            = impossible
+    combine TableTagRO KeepTable SnapshotOfTable'{}   = impossible
+    combine TableTagRO SnapshotOfTable{} KeepTable'{} = impossible
+
+    impossible = error "extendSnapshotDiffs: impossible"
+
 
 -- | Get the first and last 'SeqNo' in the sequence of changes.
+-- TODO: or maybe we only need the anchor?
 --
-boundsDbChangelog :: DbChangelog state -> Maybe (SeqNo state, SeqNo state)
+boundsDbChangelog :: DbChangelog state -> (SeqNo state, Maybe (SeqNo state))
 boundsDbChangelog = undefined
+--boundsDbChangelog DbChangelog {dbChangelogAnchorSeqNo, dbChangelogContent} =
+--    (dbChangelogAnchorSeqNo, ...)
 
 rewindDbChangelog :: SeqNo state -> DbChangelog state -> Maybe (DbChangelog state)
 rewindDbChangelog = undefined
+{-
+cacheSnapshotDiffs :: Tables state (SSeq state TableDiff)
+                   -> SSeq state (TableSnapshots state)
+                   -> Tables state (SSeq state SnapshotDiff)
+cacheSnapshotDiffs = undefined
+-}
 
+-- TODO: document that we must pass the last block for the LHS
 splitDbChangelog :: SeqNo state -> DbChangelog state -> Maybe (DbChangelog state, DbChangelog state)
 splitDbChangelog = undefined
 
@@ -754,96 +879,147 @@ rewindTableKeySets :: HasOnDiskTables state
                    => DbChangelog state
                    -> TableKeySets state
                    -> AnnTableKeySets state (KeySetSanityInfo state)
-rewindTableKeySets (DbChangelog _ snapshots _) tks =
+rewindTableKeySets (DbChangelog _ _ snapshots _) tks =
     case FT.measure snapshots of
-      SumSeqMeasure _ _ _     Nothing   ->
+      SSeqSummaryEmpty ->
         mapTables (\_ x -> AnnTable x Nothing) tks
 
-      SumSeqMeasure _ _ seqno (Just sn) ->
-        mapTables (\_ x -> AnnTable x (Just (toEnum seqno)))
+      SSeqSummary _ maxseqno sn ->
+        mapTables (\_ x -> AnnTable x (Just maxseqno))
                   (applyTableSnapshotsInverse sn tks)
 
 
 forwardTableReadSets :: DbChangelog state
                      -> AnnTableReadSets state (ReadSetSanityInfo state)
-                     -> TableReadSets state
+                     -> Maybe (TableReadSets state)
 forwardTableReadSets = undefined
--}
 
 
+-- | A 'SeqTableDiff' is a sequence of 'TableDiff's.
+--
+-- It is represented slightly differently than literally a sequence of
+-- 'TableDiff'. We take advantage of the fact that within each sequence we know
+-- the whole lot are RO, RW or RWU. In particular the RO case is always empty
+-- so we don't need to represent it as a sequence of empties.
+--
+data SeqTableDiff state t k v where
+       SeqTableDiffRO  :: SeqTableDiff state TableTypeRO k v
 
-data SeqTable table (t :: TableType) k v =
-       SeqTable
-         !(FT.FingerTree (SeqTableMeasure table t k v)
-                         (SeqTableElem    table t k v))
+       SeqTableDiffRW  :: SSeq state (DiffMapRW k v)
+                       -> SeqTableDiff state TableTypeRW k v
 
-data SeqTableElem table (t :: TableType) k v =
-       SeqTableElem
-         !Int -- seq no
-         !(table t k v)
+       SeqTableDiffRWU :: Semigroup v
+                       => SSeq state (DiffMapRWU k v)
+                       -> SeqTableDiff state TableTypeRWU k v
 
-data SeqTableMeasure table (t :: TableType) k v =
-       SeqTableMeasure
-         !Int  -- min seq no
-         !Int  -- max seq no
-         !(table t k v)
+instance MonoidalTable (SeqTableDiff state) where
+    emptyTable TableTagRO  = SeqTableDiffRO
+    emptyTable TableTagRW  = SeqTableDiffRW  FT.empty
+    emptyTable TableTagRWU = SeqTableDiffRWU FT.empty
 
-instance (MonoidalTable table, HasTableTag t v, Ord k)
-      => Semigroup (SeqTableMeasure table t k v) where
-  SeqTableMeasure smin1 smax1 a1 <> SeqTableMeasure smin2 smax2 a2 =
-    SeqTableMeasure
-      (min smin1 smin2)
-      (max smax1 smax2)
-      (appendTables tableTag a1 a2)
+    appendTables TableTagRO  _ _ = SeqTableDiffRO
+    appendTables TableTagRW  (SeqTableDiffRW a) (SeqTableDiffRW b) =
+      SeqTableDiffRW (a <> b)
 
-instance (MonoidalTable table, HasTableTag t v, Ord k)
-      => Monoid (SeqTableMeasure table t k v) where
-  mempty = SeqTableMeasure maxBound minBound (emptyTable tableTag)
+    appendTables TableTagRWU (SeqTableDiffRWU a) (SeqTableDiffRWU b) =
+      SeqTableDiffRWU (a <> b)
 
-instance (MonoidalTable table, HasTableTag t v, Ord k)
-      => FT.Measured (SeqTableMeasure table t k v)
-                     (SeqTableElem    table t k v) where
-  measure (SeqTableElem seqno a) = SeqTableMeasure seqno seqno a
-
-instance MonoidalTable table => MonoidalTable (SeqTable table) where
-  emptyTable   t = withTableTag t (SeqTable FT.empty)
-  appendTables t (SeqTable a) (SeqTable b) =
-    withTableTag t (SeqTable (a <> b))
+snocSeqTableDiff :: Ord k
+                 => SeqTableDiff state t k v
+                 -> TableDiff t k v
+                 -> SeqNo state
+                 -> SeqTableDiff state t k v
+snocSeqTableDiff  SeqTableDiffRO      TableDiffRO    _     = SeqTableDiffRO
+snocSeqTableDiff (SeqTableDiffRW ds) (TableDiffRW d) seqno =
+    SeqTableDiffRW (ds FT.|> SSeqElem seqno d)
+snocSeqTableDiff (SeqTableDiffRWU ds) (TableDiffRWU d) seqno =
+    SeqTableDiffRWU (ds FT.|> SSeqElem seqno d)
 
 
-type SeqTableSnapshots state =
-       FT.FingerTree (SeqTableSnapshotsMeasure state)
-                     (SeqTableSnapshotsElem state)
+-- | The 'SeqSnapshotDiff' is used to forward reads through snapshots.
+--
+-- This is sort-of the dual of 'SeqTableDiff'. The 'SeqTableDiff' keeps
+-- differences for the updatable R\/W and R\/W\/U tables, and nothing for
+-- read-only tables.
+--
+-- In the presence of snapshots we have to do reads against updatable tables
+-- and then forward those reads through a prefix of the 'SeqTableDiff' up to
+-- the point at which the snapshot was taken.
+--
+-- So therefore the 'SeqSnapshotDiff' only keeps the copies of the prefixes of
+-- diffs that were originally from updatable tables and are now used for
+-- logical reads on read-only snapshots.
+--
+data SeqSnapshotDiff state t k v where
+       SeqSnapshotDiffEmpty  :: SeqSnapshotDiff state t k v
 
-data SeqTableSnapshotsElem state =
-       SeqTableSnapshotsElem
+       SeqSnapshotOfDiffRW   :: SSeq state (DiffMapRW k v)
+                             -> SeqSnapshotDiff state TableTypeRO k v
+
+       SeqSnapshotOfDiffRWU  :: Semigroup v
+                             => SSeq state (DiffMapRWU k v)
+                             -> SeqSnapshotDiff state TableTypeRO k v
+
+instance MonoidalTable (SeqSnapshotDiff state) where
+    emptyTable _ = SeqSnapshotDiffEmpty
+
+    appendTables TableTagRW  _ _ = SeqSnapshotDiffEmpty
+    appendTables TableTagRWU _ _ = SeqSnapshotDiffEmpty
+
+    appendTables TableTagRO  SeqSnapshotDiffEmpty m = m
+    appendTables TableTagRO  m SeqSnapshotDiffEmpty = m
+
+    appendTables TableTagRO  (SeqSnapshotOfDiffRW m1) (SeqSnapshotOfDiffRW m2) =
+                              SeqSnapshotOfDiffRW (m1 <> m2)
+
+    appendTables TableTagRO  (SeqSnapshotOfDiffRWU m1) (SeqSnapshotOfDiffRWU m2) =
+                              SeqSnapshotOfDiffRWU (m1 <> m2)
+
+    -- These two cases would be expensive to implement properly (by promoting
+    -- the RW to RWU) but in practice they should never happen. We don't
+    -- conditionally take snapshots of RW and RWU tables into the same RO slot.
+    --
+    appendTables TableTagRO  (SeqSnapshotOfDiffRW _) (SeqSnapshotOfDiffRWU _) =
+      error "SnapshotDiff.appendTables: you probably did not want to do this"
+
+    appendTables TableTagRO  (SeqSnapshotOfDiffRWU _) (SeqSnapshotOfDiffRW _) =
+      error "SnapshotDiff.appendTables: you probably did not want to do this"
+
+
+-- | A summarisable sequence. That is a sequence of elements (with sequence
+-- numbers) that can be summarised in a monoidal way.
+--
+type SSeq state a =
+       FT.FingerTree (SSeqSummary state a)
+                     (SSeqElem    state a)
+
+data SSeqElem state a =
+       SSeqElem
          !(SeqNo state) -- seq no
-         !(TableSnapshots state)
+         !a
 
-data SeqTableSnapshotsMeasure state =
-       SeqTableSnapshotsMeasure
+data SSeqSummary state a =
+       SSeqSummaryEmpty
+     | SSeqSummary
          !(SeqNo state)  -- min seq no
          !(SeqNo state)  -- max seq no
-         !(Maybe (TableSnapshots state))
+         !a
 
-instance HasOnDiskTables state => Semigroup (SeqTableSnapshotsMeasure state) where
-  SeqTableSnapshotsMeasure smin1 smax1 a1
-   <> SeqTableSnapshotsMeasure smin2 smax2 a2 =
+instance Semigroup a => Semigroup (SSeqSummary state a) where
+  SSeqSummaryEmpty <> b = b
+  a <> SSeqSummaryEmpty = a
+  SSeqSummary smina smaxa a <> SSeqSummary sminb smaxb b =
+    SSeqSummary
+      (min smina sminb)
+      (max smaxa smaxb)
+      (a <> b)
 
-    SeqTableSnapshotsMeasure (min smin1 smin2)
-                             (max smax1 smax2)
-                             (a1 <> a2)
+instance Semigroup a => Monoid (SSeqSummary state a) where
+  mempty = SSeqSummaryEmpty
 
-instance HasOnDiskTables state => Monoid (SeqTableSnapshotsMeasure state) where
-  mempty = SeqTableSnapshotsMeasure maxBound minBound Nothing
-
-instance HasOnDiskTables state
-     => FT.Measured (SeqTableSnapshotsMeasure state)
-                    (SeqTableSnapshotsElem    state) where
-  measure (SeqTableSnapshotsElem seqno snapshot) =
-    SeqTableSnapshotsMeasure seqno seqno (Just snapshot)
-
-
+instance Semigroup a
+      => FT.Measured (SSeqSummary state a) (SSeqElem state a) where
+  measure (SSeqElem seqno snapshot) = SSeqSummary seqno seqno snapshot
 
 
 -- In-mem mock of disk operations
