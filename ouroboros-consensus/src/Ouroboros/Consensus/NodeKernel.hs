@@ -81,6 +81,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
+import qualified Debug.Trace as DT
+
 {-------------------------------------------------------------------------------
   Relay node
 -------------------------------------------------------------------------------}
@@ -199,7 +201,7 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
     mempool       <- openMempool registry
                                  (chainDBLedgerInterface chainDB)
                                  (configLedger cfg)
-                                 mempoolCapacityOverride
+                                 (DT.trace (">>> mempoolCapacityOverride = " ++ show mempoolCapacityOverride) mempoolCapacityOverride)
                                  (mempoolTracer tracers)
                                  txInBlockSize
 
