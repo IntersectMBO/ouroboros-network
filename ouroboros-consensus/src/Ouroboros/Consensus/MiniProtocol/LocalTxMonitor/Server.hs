@@ -19,6 +19,7 @@ localTxMonitorServer ::
      forall blk idx m.
      ( MonadSTM m
      , LedgerSupportsMempool blk
+     , Eq idx
      )
   => Mempool m blk idx
   -> LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
@@ -28,7 +29,13 @@ localTxMonitorServer mempool =
     serverStIdle
       :: ServerStIdle (GenTxId blk) (GenTx blk) SlotNo m ()
     serverStIdle =
-      ServerStIdle { recvMsgDone, recvMsgAcquire }
+      ServerStIdle
+      { recvMsgDone = do
+          pure ()
+      , recvMsgAcquire = do
+          s <- atomically $ (,) <$> getCapacity mempool <*> getSnapshot mempool
+          pure $ serverStAcquiring s
+      }
 
     serverStAcquiring
       :: (MempoolCapacityBytes, MempoolSnapshot blk idx)
@@ -58,19 +65,21 @@ localTxMonitorServer mempool =
                 , numberOfTxs     = msNumTxs
                 }
           pure $ SendMsgReplyGetSizes sizes (serverStAcquired s txs)
-      , recvMsgReAcquire =
-          recvMsgAcquire
+      , recvMsgAwaitAcquire = do
+          s' <- atomically $ do
+            s'@(_, snapshot') <- (,) <$> getCapacity mempool <*> getSnapshot mempool
+            s' <$ check (not (snapshot `isSameSnapshot` snapshot'))
+          pure $ serverStAcquiring s'
       , recvMsgRelease =
           pure serverStIdle
       }
 
-    recvMsgAcquire
-      :: m (ServerStAcquiring (GenTxId blk) (GenTx blk) SlotNo m ())
-    recvMsgAcquire = do
-        s <- atomically $ (,) <$> getCapacity mempool <*> getSnapshot mempool
-        pure $ serverStAcquiring s
-
-    recvMsgDone
-      :: m ()
-    recvMsgDone =
-      pure ()
+    -- Are two snapshots equal? (from the perspective of this protocol)
+    isSameSnapshot
+      :: MempoolSnapshot blk idx
+      -> MempoolSnapshot blk idx
+      -> Bool
+    isSameSnapshot a b =
+      (snd <$> snapshotTxs a) == (snd <$> snapshotTxs b)
+      &&
+      snapshotSlotNo a == snapshotSlotNo b

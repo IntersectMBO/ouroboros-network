@@ -45,7 +45,7 @@ direct (LocalTxMonitorClient mClient) (LocalTxMonitorServer mServer) = do
       -> m (a, b)
     directAcquired ServerStAcquired
       { recvMsgRelease
-      , recvMsgReAcquire
+      , recvMsgAwaitAcquire
       , recvMsgNextTx
       , recvMsgHasTx
       , recvMsgGetSizes
@@ -54,8 +54,8 @@ direct (LocalTxMonitorClient mClient) (LocalTxMonitorServer mServer) = do
           serverStIdle <- recvMsgRelease
           clientStIdle <- mClientStIdle
           directIdle serverStIdle clientStIdle
-        SendMsgReAcquire mClientStAcquired -> do
-          SendMsgAcquired slot serverStAcquired <- recvMsgReAcquire
+        SendMsgAwaitAcquire mClientStAcquired -> do
+          SendMsgAcquired slot serverStAcquired <- recvMsgAwaitAcquire
           clientStAcquired <- mClientStAcquired slot
           directAcquired serverStAcquired clientStAcquired
         SendMsgNextTx mClientStAcquired -> do

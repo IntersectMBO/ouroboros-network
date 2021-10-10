@@ -62,15 +62,15 @@ data ServerStAcquiring txid tx slot m a where
 --
 -- * request the next transaction from the snapshot;
 -- * check the presence of a given transaction, by its id;
--- * re-acquire the latest snapshot;
+-- * await a change in the snapshot and acquire it;
 -- * release and go back to the 'StIdle' state;
 --
 data ServerStAcquired txid tx slot m a = ServerStAcquired
-    { recvMsgNextTx     :: m (ServerStBusy NextTx txid tx slot m a)
-    , recvMsgHasTx      :: txid -> m (ServerStBusy HasTx txid tx slot m a)
-    , recvMsgGetSizes   :: m (ServerStBusy GetSizes txid tx slot m a)
-    , recvMsgReAcquire  :: m (ServerStAcquiring txid tx slot m a)
-    , recvMsgRelease    :: m (ServerStIdle txid tx slot m a)
+    { recvMsgNextTx       :: m (ServerStBusy NextTx txid tx slot m a)
+    , recvMsgHasTx        :: txid -> m (ServerStBusy HasTx txid tx slot m a)
+    , recvMsgGetSizes     :: m (ServerStBusy GetSizes txid tx slot m a)
+    , recvMsgAwaitAcquire :: m (ServerStAcquiring txid tx slot m a)
+    , recvMsgRelease      :: m (ServerStIdle txid tx slot m a)
     }
 
 -- In the 'StBusy' protocol state, the server has agency and is responding to
@@ -134,7 +134,7 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
         { recvMsgNextTx
         , recvMsgHasTx
         , recvMsgGetSizes
-        , recvMsgReAcquire
+        , recvMsgAwaitAcquire
         , recvMsgRelease
         } -> Await (ClientAgency TokAcquired) $ \case
           MsgNextTx ->
@@ -143,8 +143,8 @@ localTxMonitorServerPeer (LocalTxMonitorServer mServer) =
             Effect $ handleHasTx <$> recvMsgHasTx txid
           MsgGetSizes ->
             Effect $ handleGetSizes <$> recvMsgGetSizes
-          MsgReAcquire ->
-            Effect $ handleStAcquiring <$> recvMsgReAcquire
+          MsgAwaitAcquire ->
+            Effect $ handleStAcquiring <$> recvMsgAwaitAcquire
           MsgRelease ->
             Effect $ handleStIdle <$> recvMsgRelease
 

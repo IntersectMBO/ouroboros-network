@@ -32,8 +32,7 @@ localTxMonitorClient txId =
       ClientStIdle txid tx slot m ([(tx, Bool)], MempoolSizeAndCapacity)
     clientStIdle =
       SendMsgAcquire $ \_slot ->
-        pure $ SendMsgReAcquire $ \_slot' ->
-            pure $ clientStAcquired []
+        pure $ clientStAcquired []
 
     clientStAcquired ::
          [(tx, Bool)]
@@ -82,7 +81,7 @@ localTxMonitorServer txId (slot, allTxs) =
       -> ServerStAcquired txid tx slot m ()
     serverStAcquired txs =
       ServerStAcquired
-      { recvMsgReAcquire =
+      { recvMsgAwaitAcquire =
           pure serverStAcquiring
       , recvMsgRelease =
           pure serverStIdle

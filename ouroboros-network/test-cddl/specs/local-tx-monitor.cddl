@@ -22,7 +22,7 @@ msgDone          = [0]
 msgAcquire       = [1]
 msgAcquired      = [2, slotNo]
 
-msgReAcquire     = msgAcquire
+msgAwaitAcquire  = msgAcquire
 msgRelease       = [3]
 msgNextTx        = [5]
 msgReplyNextTx   = [6] / [6, transaction]

@@ -91,9 +91,9 @@ data ClientStAcquired txid tx slot m a where
     :: (MempoolSizeAndCapacity -> m (ClientStAcquired txid tx slot m a))
     -> ClientStAcquired txid tx slot m a
 
-  -- | Re-acquire a more recent snapshot, or the same one if nothing has changed.
+  -- | Await for a new snapshot and acquire it.
   --
-  SendMsgReAcquire
+  SendMsgAwaitAcquire
     :: (slot ->  m (ClientStAcquired txid tx slot m a))
     -> ClientStAcquired txid tx slot m a
 
@@ -145,8 +145,8 @@ localTxMonitorClientPeer (LocalTxMonitorClient mClient) =
           Await (ServerAgency (TokBusy TokGetSizes)) $ \case
             MsgReplyGetSizes sizes ->
               Effect $ handleStAcquired <$> stAcquired sizes
-      SendMsgReAcquire stAcquired ->
-        Yield (ClientAgency TokAcquired) MsgReAcquire $
+      SendMsgAwaitAcquire stAcquired ->
+        Yield (ClientAgency TokAcquired) MsgAwaitAcquire $
           Await (ServerAgency TokAcquiring) $ \case
             MsgAcquired slot ->
               Effect $ handleStAcquired <$> stAcquired slot

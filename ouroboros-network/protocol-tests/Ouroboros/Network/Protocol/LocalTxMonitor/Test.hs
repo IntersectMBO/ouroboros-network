@@ -206,7 +206,7 @@ instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
     arbitrary = oneof
       [ pure $ AnyMessageAndAgency (ClientAgency TokIdle) MsgAcquire
       , AnyMessageAndAgency (ServerAgency TokAcquiring) . MsgAcquired <$> arbitrary
-      , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgReAcquire
+      , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgAwaitAcquire
       , pure $ AnyMessageAndAgency (ClientAgency TokAcquired) MsgNextTx
       , AnyMessageAndAgency (ServerAgency (TokBusy TokNextTx)) . MsgReplyNextTx <$> arbitrary
       , AnyMessageAndAgency (ClientAgency TokAcquired) . MsgHasTx <$> arbitrary
@@ -229,7 +229,7 @@ instance (Eq txid, Eq tx, Eq slot)
   where
     AnyMessage MsgAcquire           == AnyMessage MsgAcquire           = True
     AnyMessage (MsgAcquired a)      == AnyMessage (MsgAcquired b)      = a == b
-    AnyMessage MsgReAcquire         == AnyMessage MsgReAcquire         = True
+    AnyMessage MsgAwaitAcquire      == AnyMessage MsgAwaitAcquire      = True
     AnyMessage MsgNextTx            == AnyMessage MsgNextTx            = True
     AnyMessage (MsgReplyNextTx a)   == AnyMessage (MsgReplyNextTx b)   = a == b
     AnyMessage (MsgHasTx a)         == AnyMessage (MsgHasTx b)         = a == b

@@ -52,7 +52,7 @@ codecLocalTxMonitor encodeTxId decodeTxId
         CBOR.encodeListLen 1 <> CBOR.encodeWord 1
 
     encode (ClientAgency TokAcquired) = \case
-      MsgReAcquire ->
+      MsgAwaitAcquire ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 1
       MsgRelease ->
         CBOR.encodeListLen 1 <> CBOR.encodeWord 3
@@ -100,7 +100,7 @@ codecLocalTxMonitor encodeTxId decodeTxId
           return (SomeMessage MsgAcquire)
 
         (ClientAgency TokAcquired, 1, 1) ->
-          return (SomeMessage MsgReAcquire)
+          return (SomeMessage MsgAwaitAcquire)
         (ClientAgency TokAcquired, 1, 3) ->
           return (SomeMessage MsgRelease)
         (ClientAgency TokAcquired, 1, 5) ->
@@ -170,14 +170,14 @@ codecLocalTxMonitorId =
       let res :: Message ptcl st st' -> m (DecodeStep bytes failure m (SomeMessage st))
           res msg = return (DecodeDone (SomeMessage msg) Nothing)
        in return $ DecodePartial $ \bytes -> case (stok, bytes) of
-        (ClientAgency TokIdle,     Just (AnyMessage msg@MsgAcquire{}))   -> res msg
-        (ClientAgency TokIdle,     Just (AnyMessage msg@MsgDone{}))      -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgReAcquire{})) -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgNextTx{}))    -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgHasTx{}))     -> res msg
-        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgRelease{}))   -> res msg
+        (ClientAgency TokIdle,     Just (AnyMessage msg@MsgAcquire{}))      -> res msg
+        (ClientAgency TokIdle,     Just (AnyMessage msg@MsgDone{}))         -> res msg
+        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgAwaitAcquire{})) -> res msg
+        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgNextTx{}))       -> res msg
+        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgHasTx{}))        -> res msg
+        (ClientAgency TokAcquired, Just (AnyMessage msg@MsgRelease{}))      -> res msg
 
-        (ServerAgency TokAcquiring,          Just (AnyMessage msg@MsgAcquired{}))    -> res msg
+        (ServerAgency TokAcquiring,        Just (AnyMessage msg@MsgAcquired{}))    -> res msg
         (ServerAgency (TokBusy TokNextTx), Just (AnyMessage msg@MsgReplyNextTx{})) -> res msg
         (ServerAgency (TokBusy TokHasTx),  Just (AnyMessage msg@MsgReplyHasTx{}))  -> res msg
 

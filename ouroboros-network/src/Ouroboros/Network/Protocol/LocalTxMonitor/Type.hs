@@ -17,31 +17,31 @@
 -- The protocol is stateful such that the server keeps track of the transactions
 -- already sent to the client.
 --
---
---                     START
---                       ⇓
---                     ┌───────────────┐
---             ┌──────▶│     Idle      │⇒ DONE
---             │       └───┬───────────┘
---             │           │
---             │   Acquire │
---             │           ▼
---             │       ┌───────────────┐
---     Release │       │   Acquiring   │
---             │       └───┬───────────┘
---             │           │       ▲
---             │  Acquired │       │ ReAcquire
---             │           ▼       │
---             │       ┌───────────┴───┐
---             └───────┤   Acquired    │
---                     └───┬───────────┘
---                         │       ▲
---   HasTx/NextTx/GetSizes │       │ Reply (HasTx/NextTx/GetSizes)
---                         ▼       │
---                     ┌───────────┴───┐
---                     │      Busy     │
---                     └───────────────┘
---
+-- @
+--                    START
+--                      ⇓
+--                    ┌───────────────┐
+--            ┌──────▶│     Idle      │⇒ DONE
+--            │       └───┬───────────┘
+--            │           │
+--            │   Acquire │
+--            │           ▼
+--            │       ┌───────────────┐
+--    Release │       │   Acquiring   │
+--            │       └───┬───────────┘
+--            │           │       ▲
+--            │  Acquired │       │ AwaitAcquire
+--            │           ▼       │
+--            │       ┌───────────┴───┐
+--            └───────┤   Acquired    │
+--                    └───┬───────────┘
+--                        │       ▲
+--  HasTx|NextTx|GetSizes │       │ Reply (HasTx|NextTx|GetSizes)
+--                        ▼       │
+--                    ┌───────────┴───┐
+--                    │      Busy     │
+--                    └───────────────┘
+-- @
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
 
@@ -151,10 +151,13 @@ instance Protocol (LocalTxMonitor txid tx slot) where
       :: slot
       -> Message (LocalTxMonitor txid tx slot) StAcquiring StAcquired
 
-    -- | Like 'MsgAcquire', but when one is already acquired. Allows to renew
-    -- the snapshot's state.
+    -- | Like 'MsgAcquire' but await for a new snapshot different from the one
+    -- currently acquired.
     --
-    MsgReAcquire
+    -- There is no timeout; the caller will block until a new snapshot is
+    -- available.
+    --
+    MsgAwaitAcquire
       :: Message (LocalTxMonitor txid tx slot) StAcquired StAcquiring
 
     -- | The client requests a single transaction and waits a reply.
