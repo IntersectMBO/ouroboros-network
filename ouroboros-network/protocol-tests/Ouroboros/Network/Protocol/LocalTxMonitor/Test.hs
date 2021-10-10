@@ -13,17 +13,27 @@ import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Data.ByteString.Lazy (ByteString)
 
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim
+import           Control.Tracer (nullTracer)
 import qualified Control.Monad.ST as ST
 
-import           Ouroboros.Network.Codec
-import           Ouroboros.Network.Util.ShowProxy
-import           Ouroboros.Network.Block (SlotNo)
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Proofs
 
+import           Ouroboros.Network.Block (SlotNo)
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Codec
+import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Util.ShowProxy
+
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Client
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Codec
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Direct
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Examples
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 import           Test.ChainGenerators ()
@@ -43,6 +53,11 @@ tests = testGroup "Ouroboros.Network.Protocol"
     , testProperty "codec valid cbor encoding" prop_codec_valid_cbor_encoding_LocalTxMonitor
 
     , testProperty "direct" prop_direct
+    , testProperty "connect" prop_connect
+
+    , testProperty "channel ST" prop_channel_ST
+    , testProperty "channel IO" prop_channel_IO
+    , testProperty "pipe IO" prop_pipe_IO
     ]
   ]
 
@@ -112,6 +127,57 @@ prop_direct (slot, txs) =
     , fromIntegral $ length txs
     )
 
+-- | Run a simple tx-monitor client and server, going via the 'Peer'
+-- representation, but without going via a channel.
+--
+-- This test converts the pipelined server peer to a non-pipelined peer
+-- before connecting it with the client.
+--
+prop_connect :: (SlotNo, [Tx]) -> Bool
+prop_connect (slot, txs) =
+    case runSimOrThrow
+           (connect
+             (localTxMonitorClientPeer $
+                localTxMonitorClient txId)
+             (localTxMonitorServerPeer $
+                localTxMonitorServer txId (slot, txs))) of
+
+      ((txs', _), (), TerminalStates TokDone TokDone) ->
+        txs' == [ (tx, True) | tx <- txs ]
+
+-- | Run a local tx-monitor client and server using connected channels.
+--
+prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+             => m (Channel m ByteString, Channel m ByteString)
+             -> (SlotNo, [Tx])
+             -> m Bool
+prop_channel createChannels (slot, txs) = do
+  ((txs', _), ()) <- runConnectedPeers createChannels nullTracer codec
+                        (localTxMonitorClientPeer $
+                          localTxMonitorClient txId)
+                        (localTxMonitorServerPeer $
+                          localTxMonitorServer txId (slot, txs))
+  pure (txs' == [ (tx, True) | tx <- txs ])
+
+-- | Run 'prop_channel' in the simulation monad.
+--
+prop_channel_ST :: (SlotNo, [Tx]) -> Bool
+prop_channel_ST txs =
+    runSimOrThrow
+      (prop_channel createConnectedChannels txs)
+
+-- | Run 'prop_channel' in the IO monad.
+--
+prop_channel_IO :: (SlotNo, [Tx]) -> Property
+prop_channel_IO txs =
+    ioProperty (prop_channel createConnectedChannels txs)
+
+-- | Run 'prop_channel' in the IO monad using local pipes.
+--
+prop_pipe_IO :: (SlotNo, [Tx]) -> Property
+prop_pipe_IO txs =
+    ioProperty (prop_channel createPipeConnectedChannels txs)
+
 --
 -- Mock Types
 --
@@ -131,6 +197,8 @@ instance ShowProxy TxId where
 --
 -- Orphans Plumbing
 --
+
+instance ShowProxy SlotNo where
 
 instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
     => Arbitrary (AnyMessageAndAgency (LocalTxMonitor txid tx slot))
