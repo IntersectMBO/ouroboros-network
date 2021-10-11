@@ -110,7 +110,7 @@ selectTraceEventsDynamic = selectTraceEvents fn
     fn (EventLog dyn) = fromDynamic dyn
     fn _              = Nothing
 
--- | Like 'selectTraceEventsDynamic' but returns partial trace if an excpetion
+-- | Like 'selectTraceEventsDynamic' but returns partial trace if an exception
 -- is found in it.
 --
 selectTraceEventsDynamic' :: forall a b. Typeable b => SimTrace a -> [b]
