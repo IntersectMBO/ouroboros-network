@@ -16,8 +16,10 @@ module Analysis (
 
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
+import           Control.Tracer (Tracer (..), traceWith)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (maybeToList)
 import           Data.Word (Word16)
 
 import           Ouroboros.Consensus.Block
@@ -71,93 +73,126 @@ runAnalysis ::
      , LedgerSupportsProtocol blk
      )
   => AnalysisName -> Analysis blk
-runAnalysis ShowSlotBlockNo             = showSlotBlockNo
-runAnalysis CountTxOutputs              = countTxOutputs
-runAnalysis ShowBlockHeaderSize         = showHeaderSize
-runAnalysis ShowBlockTxsSize            = showBlockTxsSize
-runAnalysis ShowEBBs                    = showEBBs
-runAnalysis OnlyValidation              = \_ -> return ()
-runAnalysis (StoreLedgerStateAt slotNo) = storeLedgerStateAt slotNo
-runAnalysis CountBlocks                 = countBlocks
+runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
+  traceWith tracer (StartedEvent analysisName)
+  go analysisName
+  traceWith tracer DoneEvent
+  where
+    go ShowSlotBlockNo             = showSlotBlockNo env
+    go CountTxOutputs              = countTxOutputs env
+    go ShowBlockHeaderSize         = showHeaderSize env
+    go ShowBlockTxsSize            = showBlockTxsSize env
+    go ShowEBBs                    = showEBBs env
+    go OnlyValidation              = return ()
+    go (StoreLedgerStateAt slotNo) = (storeLedgerStateAt slotNo) env
+    go CountBlocks                 = countBlocks env
 
-type Analysis blk = AnalysisEnv blk -> IO ()
+type Analysis blk = AnalysisEnv IO blk -> IO ()
 
-data AnalysisEnv blk = AnalysisEnv {
+data AnalysisEnv m blk = AnalysisEnv {
       cfg        :: TopLevelConfig blk
     , initLedger :: ExtLedgerState blk
     , db         :: Either (ImmutableDB IO blk) (ChainDB IO blk)
     , registry   :: ResourceRegistry IO
     , ledgerDbFS :: SomeHasFS IO
     , limit      :: Limit
+    , tracer     :: Tracer m (TraceEvent blk)
     }
+
+data TraceEvent blk =
+    StartedEvent AnalysisName
+  | DoneEvent
+  | BlockSlotEvent BlockNo SlotNo (Maybe String)
+  | EbbEvent (HeaderHash blk) (ChainHash blk) Bool
+  | CountedBlocksEvent Int
+  | MaxHeaderSizeEvent Word16
+  | SnapshotWarning SlotNo SlotNo
+  | BlockTxSizeEvent SlotNo Int SizeInBytes
+
+instance HasAnalysis blk => Show (TraceEvent blk) where
+  show (StartedEvent analysisName)        = "Started " <> (show analysisName)
+  show DoneEvent                          = "Done"
+  show (BlockSlotEvent bn sn cmt)         = intercalate "\t" $ [
+      show bn
+    , show sn
+    ] <> (maybeToList cmt)
+  show (EbbEvent ebb previous known)      = intercalate "\t" [
+      "EBB: "   <> show ebb
+    , "Prev: "  <> show previous
+    , "Known: " <> show known
+    ]
+  show (CountedBlocksEvent counted)       = "Counted " <> show counted <> " blocks."
+  show (MaxHeaderSizeEvent size)          =
+    "Maximum encountered header size = " <> show size
+  show (SnapshotWarning requested actual) =
+    "Snapshot was created at " <> show actual <> " " <>
+    "because there was no block forged at requested " <> show requested
+  show (BlockTxSizeEvent slot numBlocks txsSize) = intercalate "\t" [
+      show slot
+    , "Num txs in block = " <> show numBlocks
+    , "Total size of txs in block = " <> show txsSize
+    ]
+
 
 {-------------------------------------------------------------------------------
   Analysis: show block and slot number for all blocks
 -------------------------------------------------------------------------------}
 
 showSlotBlockNo :: forall blk. HasAnalysis blk => Analysis blk
-showSlotBlockNo AnalysisEnv { db, registry, initLedger, limit } =
+showSlotBlockNo AnalysisEnv { db, registry, initLedger, limit, tracer } =
     processAll_ db registry GetHeader initLedger limit process
   where
     process :: Header blk -> IO ()
-    process hdr = putStrLn $ intercalate "\t" [
-        show (blockNo   hdr)
-      , show (blockSlot hdr)
-      ]
+    process hdr = traceWith tracer $ BlockSlotEvent (blockNo hdr) (blockSlot hdr) Nothing
 
 {-------------------------------------------------------------------------------
   Analysis: show total number of tx outputs per block
 -------------------------------------------------------------------------------}
 
 countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
-countTxOutputs AnalysisEnv { db, registry, initLedger, limit } = do
+countTxOutputs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     void $ processAll db registry GetBlock initLedger limit 0 process
   where
     process :: Int -> blk -> IO Int
     process cumulative blk = do
         let cumulative' = cumulative + count
-        putStrLn $ intercalate "\t" [
-            show slotNo
-          , show count
-          , show cumulative'
-          ]
+            event       = BlockSlotEvent (blockNo blk)
+                                         (blockSlot blk)
+                                         (Just $ "cumulative: " <> show cumulative')
+        traceWith tracer event
         return cumulative'
       where
         count = HasAnalysis.countTxOutputs blk
-        slotNo = blockSlot blk
 
 {-------------------------------------------------------------------------------
   Analysis: show the header size in bytes for all blocks
 -------------------------------------------------------------------------------}
 
 showHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
-showHeaderSize AnalysisEnv { db, registry, initLedger, limit } = do
+showHeaderSize AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     maxHeaderSize <-
-      processAll db registry ((,) <$> GetSlot <*> GetHeaderSize) initLedger limit 0 process
-    putStrLn ("Maximum encountered header size = " <> show maxHeaderSize)
+      processAll db registry ((,) <$> GetBlock <*> GetHeaderSize) initLedger limit 0 process
+    traceWith tracer $ MaxHeaderSizeEvent maxHeaderSize
   where
-    process :: Word16 -> (SlotNo, Word16) -> IO Word16
-    process maxHeaderSize (slotNo, headerSize) = do
-        putStrLn $ intercalate "\t" [
-            show slotNo
-          , "Header size = " <> show headerSize
-          ]
-        return $ maxHeaderSize `max` headerSize
+    process :: Word16 -> (blk, Word16) -> IO Word16
+    process maxHeaderSize (blk, headerSize) = do
+      let event = BlockSlotEvent (blockNo blk)
+                                 (blockSlot blk)
+                                 (Just $ "header size: " <> show headerSize)
+      traceWith tracer event
+      return $ maxHeaderSize `max` headerSize
 
 {-------------------------------------------------------------------------------
   Analysis: show the total transaction sizes in bytes per block
 -------------------------------------------------------------------------------}
 
 showBlockTxsSize :: forall blk. HasAnalysis blk => Analysis blk
-showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit } =
+showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit, tracer } =
     processAll_ db registry GetBlock initLedger limit process
   where
     process :: blk -> IO ()
-    process blk = putStrLn $ intercalate "\t" [
-          show (blockSlot blk)
-        , "Num txs in block = " <> show numBlockTxs
-        , "Total size of txs in block = " <> show blockTxsSize
-        ]
+    process blk =
+      traceWith tracer $ BlockTxSizeEvent (blockSlot blk) numBlockTxs blockTxsSize
       where
         txSizes :: [SizeInBytes]
         txSizes = HasAnalysis.blockTxSizes blk
@@ -173,25 +208,20 @@ showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit } =
 -------------------------------------------------------------------------------}
 
 showEBBs :: forall blk. HasAnalysis blk => Analysis blk
-showEBBs AnalysisEnv { db, registry, initLedger, limit } = do
-    putStrLn "EBB\tPrev\tKnown"
+showEBBs AnalysisEnv { db, registry, initLedger, limit, tracer } =
     processAll_ db registry GetBlock initLedger limit process
   where
     process :: blk -> IO ()
     process blk =
         case blockIsEBB blk of
-          Just _epoch ->
-            putStrLn $ intercalate "\t" [
-                show (blockHash blk)
-              , show (blockPrevHash blk)
-              , show (    Map.lookup
+          Just _epoch -> do
+            let known =  Map.lookup
                             (blockHash blk)
                             (HasAnalysis.knownEBBs (Proxy @blk))
                        == Just (blockPrevHash blk)
-                     )
-              ]
-          _otherwise ->
-            return () -- Skip regular blocks
+                event = EbbEvent (blockHash blk) (blockPrevHash blk) known
+            traceWith tracer event
+          _otherwise -> return () -- Skip regular blocks
 
 {-------------------------------------------------------------------------------
   Analysis: store a ledger at specific slot
@@ -204,10 +234,7 @@ storeLedgerStateAt ::
      , LedgerSupportsProtocol blk
      )
   => SlotNo -> Analysis blk
-storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, ledgerDbFS }) = do
-    putStrLn $ "About to store snapshot of a ledger at " <>
-               show slotNo <> " " <>
-               "this might take a while..."
+storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, ledgerDbFS, tracer }) =
     void $ processAllUntil db registry GetBlock initLedger limit initLedger process
   where
     process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
@@ -225,12 +252,10 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
       | blockSlot blk >= slotNo = Stop
       | otherwise               = Continue
 
-    issueWarning blk   = putStrLn $ "Snapshot was created at " <>
-                           show (blockSlot blk) <> " " <>
-                           "because there was no block forged at requested " <>
-                           show slotNo <> ". "
-    reportProgress blk = putStrLn $ "... reached slot " <>
-                           show (blockSlot blk)
+    issueWarning blk   = let event = SnapshotWarning slotNo (blockSlot blk)
+                         in traceWith tracer event
+    reportProgress blk = let event = BlockSlotEvent (blockNo blk) (blockSlot blk) (Just "reached")
+                         in traceWith tracer event
 
     storeLedgerState ::
          blk
@@ -241,11 +266,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
                       (unSlotNo $ blockSlot blk)
                       (Just $ "db-analyser")
       writeSnapshot ledgerDbFS encLedger snapshot ledgerState
-      putStrLn $ "storing state at " <> intercalate "\t" [
-          show (blockNo   blk)
-        , show (blockSlot blk)
-        , show (blockHash blk)
-        ]
+      traceWith tracer $ BlockSlotEvent (blockNo blk) (blockSlot blk) (Just "snapshot stored")
 
     encLedger :: ExtLedgerState blk -> Encoding
     encLedger =
@@ -260,10 +281,9 @@ countBlocks ::
      ( HasAnalysis blk
      )
   => Analysis blk
-countBlocks (AnalysisEnv { db, registry, initLedger, limit }) = do
-    putStrLn $ "About to count number of blocks ..."
+countBlocks (AnalysisEnv { db, registry, initLedger, limit, tracer }) = do
     counted <- processAll db registry (GetPure ()) initLedger limit 0 process
-    putStrLn $ "Counted: " <> show counted <> " blocks."
+    traceWith tracer $ CountedBlocksEvent counted
   where
     process :: Int -> () -> IO Int
     process count _ = pure $ count + 1
