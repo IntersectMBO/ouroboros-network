@@ -13,9 +13,11 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , openDB
   , withDB
     -- * Trace types
+  , Ignorable (..)
   , LgrDB.TraceLedgerReplayEvent
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
+  , TraceDoneAddingBlockEvent (..)
   , TraceCopyToImmutableDBEvent (..)
   , TraceEvent (..)
   , TraceFollowerEvent (..)
@@ -24,6 +26,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , TraceIteratorEvent (..)
   , TraceOpenEvent (..)
   , TraceValidationEvent (..)
+  , situateTraceDoneAddingBlockEvent
     -- * Re-exported for convenience
   , Args.RelativeMountPoint (..)
   , ImmutableDB.ImmutableDbSerialiseConstraints
@@ -44,6 +47,7 @@ import           GHC.Stack (HasCallStack)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
+import qualified Ouroboros.Consensus.Config.SupportsNode as SupportsNode
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
@@ -80,6 +84,7 @@ withDB
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
+     , SupportsNode.ConfigSupportsNode blk
      , SerialiseDiskConstraints blk
      )
   => ChainDbArgs Identity m blk
@@ -93,6 +98,7 @@ openDB
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
+     , SupportsNode.ConfigSupportsNode blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
@@ -106,6 +112,7 @@ openDBInternal
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
+     , SupportsNode.ConfigSupportsNode blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
      )
