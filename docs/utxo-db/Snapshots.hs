@@ -17,12 +17,16 @@
 
 module Snapshots where
 
-import           Prelude hiding (lookup)
+import           Prelude hiding (lookup, seq)
 
 import           Data.Kind
 import           Data.Functor.Identity
 
 --import qualified Data.Hashable as H
+import           Data.Monoid
+import qualified Data.List as List
+import           Data.Maybe (isJust)
+import qualified Data.Foldable as Foldable
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as Map
 import qualified Data.Set as Set
@@ -389,6 +393,14 @@ class HasTables (state :: StateKind) where
                             => TableTag t v -> table t k v -> f ())
                     -> state table -> f ()
 
+  foldMapTables :: Monoid a
+                => (forall (t :: TableType) k v.
+                   Ord k
+                => StateTableKeyConstraint   state k
+                => StateTableValueConstraint state v
+                => TableTag t v -> table t k v -> a)
+                -> state table -> a
+
   -- The common pure case, not needing Applicative
   mapTables :: (forall (t :: TableType) k v.
                         Ord k
@@ -441,7 +453,7 @@ class HasTables state => HasOnlyTables state where
   zipTables f a b = runIdentity (traverse2Tables (\t x y -> pure (f t x y)) a b)
 
 
-class (HasTables state, HasOnlyTables (Tables state), HasSeqNo state)
+class (HasTables state, HasOnlyTables (Tables state))
    => HasOnDiskTables state where
 
   data Tables state :: StateKind
@@ -449,12 +461,8 @@ class (HasTables state, HasOnlyTables (Tables state), HasSeqNo state)
   projectTables :: state table -> Tables state table
   injectTables  :: Tables state table -> state any -> state table
 
-class HasSeqNo (state :: StateKind) where
-
-  stateSeqNo :: state table -> SeqNo state
-
 newtype SeqNo (state :: StateKind) = SeqNo { seqnoToWord :: Word64 }
-  deriving (Eq, Ord, Bounded, Show)
+  deriving (Eq, Ord, Show)
 
 
 class MonoidalTable table where
@@ -685,7 +693,8 @@ class DiskDb dbhandle state {- | dbhandle -> state -} where
 -- In-memory changes
 --------------------
 
--- | A sequence of changes to a data store.
+-- | A sequence of states of a partitioned in-memory \/ on-disk data store. It
+-- includes both partitions: the in-memory and on-disk parts.
 --
 -- It is intended to be used to /extend in-memory/ beyond the state of an
 -- on-disk data store. It allows new changes to be added in memory, and old
@@ -693,39 +702,137 @@ class DiskDb dbhandle state {- | dbhandle -> state -} where
 -- like a FIFO queue with new changes added and one end and old changes removed
 -- at the other.
 --
--- It also allows rewinding to an earlier point in the sequence.
+-- Most of the operations rely on the db state being in the 'HasOnDiskTables'
+-- class. It is also designed to be used with a disk DB from the 'DiskDb' class.
 --
--- Most of the operations rely on the db state being in the
--- 'HasOnDiskTables' class.
+-- The in-memory part is represented as a sequence of values and relies on
+-- persistent data structures to achieve sharing between the many copies of the
+-- value.
 --
--- It is also designed to be used with a disk DB from the 'DiskDb' class.
+-- The on-disk part is represented (in-memory) as a sequence of /changes/ to the
+-- on-disk tables.
 --
-
+-- These two sequences match up, in the sense of the sequence numbers of one
+-- being a suffix of the other. The sequence of on-disk changes can extend
+-- somewhat further back. This is to enable flushing changes to disk in bigger
+-- batches.
+--
+-- There are two \"anchor points\":
+-- 1. the anchor of the logical sequence of states; and
+-- 2. the anchor of the on-disk data store.
+--
+-- The first is the limit of how far back we can rewind. This corresponds to
+-- the sequence number /preceding/ the sequence of in-memory changes. The
+-- second must correspond to the sequence number for the on-disk store. This
+-- second anchor point ensures that operations are consistent with the on-disk
+-- store.
+--
 data DbChangelog (state :: (TableType -> * -> * -> *) -> *) =
        DbChangelog {
-         -- | The point that the change log applies from. This must match
-         -- the point at which reads are done from the disk Db.
-         dbChangelogAnchorSeqNo :: SeqNo state,
 
--- Awkward: if the Tables are degenerate and have no tables at all then
--- we have no sequences and cannot split etc.
---         dbChangelogLastSeqNo :: Maybe (SeqNo state)
+         -- | The \"anchor\" point for the logical sequence of states.
+         -- This gives us the rollback limit.
+         dbChangelogStateAnchor :: SeqNo state,
 
-         -- | The changes to the content of the tables
-         dbChangelogContent :: !(Tables state (SeqTableDiff state)),
+         -- | The \"anchor\" point for the on-disk data store. This must match
+         -- the sequence number for the data store so that reads and writes
+         -- are consistent.
+         dbChangelogDiskAnchor  :: SeqNo state,
+
+         -- | The sequence of in-memory-only states. This /includes/ the anchor
+         -- point as its first (oldest) element, and is therefore non-empty.
+         dbChangelogStates      :: Seq state (state EmptyTable),
+
+         --TODO: upon integration the representation of dbChangelogStates and
+         -- dbChangelogStateAnchor could be changed to use
+         -- AnchoredSeq (SeqNo state) (SeqNo state) (state EmptyTable)
+
+         -- | The changes to the content of the on-disk tables. The sequence
+         -- numbers for these changes match the in-memory-only sequence:
+         -- the in-memory changes are a suffix. This /excludes/ the anchor
+         -- point and so the sequence can be empty.
+         dbChangelogTableDiffs :: !(Tables state (SeqTableDiff state)),
 
          -- The changes involving table snapshots
          -- this is sparse, often empty, in practice never more than one element
          dbChangelogSnapshots :: !(SSeq state (TableSnapshots state)),
 
          -- The derived changes to apply to reads for snapshotted tables.
-         dbChangelogForward :: !(Tables state (SeqSnapshotDiff state))
+         dbChangelogSnapshotDiffs :: !(Tables state (SeqSnapshotDiff state))
        }
 
+invariantDbChangelog :: forall state.
+                        HasOnDiskTables state => DbChangelog state -> Bool
+invariantDbChangelog DbChangelog{..} =
 
-emptyDbChangelog :: HasOnDiskTables state => SeqNo state -> DbChangelog state
-emptyDbChangelog anchor =
-    DbChangelog anchor mempty mempty mempty
+    -- The state anchor must be the first element in the states seq
+    (case FT.viewl dbChangelogStates of
+       FT.EmptyL               -> False  -- must be non-empty
+       SeqElem seqno _ FT.:< _ -> seqno == dbChangelogStateAnchor)
+
+    -- The state sequence numbers must be increasing
+ && increasing [ s | SeqElem  s _ <- Foldable.toList dbChangelogStates ]
+
+    -- The disk anchor can be earlier than or the same as the main state anchor
+ && dbChangelogDiskAnchor <= dbChangelogStateAnchor
+
+    -- The disk diff sequence numbers must either be empty or must include the
+    -- state sequence numbers as a suffix
+ && (let isEmptyOrSuffix :: TableTag t v -> SeqTableDiff state t k v -> All
+         isEmptyOrSuffix _  SeqTableDiffRO       = All True
+         isEmptyOrSuffix _ (SeqTableDiffRW  seq) = All $
+             FT.null seq
+          || seqSeqNos dbChangelogStates `List.isSuffixOf` sseqSeqNos seq
+         isEmptyOrSuffix _ (SeqTableDiffRWU seq) = All $
+             FT.null seq
+          || seqSeqNos dbChangelogStates `List.isSuffixOf` sseqSeqNos seq
+      in getAll (foldMapTables isEmptyOrSuffix dbChangelogTableDiffs))
+
+    -- The disk anchor must be earlier than the disk diff sequence numbers and
+    -- the disk diff sequence numbers must be increasing. (This is not already
+    -- implied by the previous conditions because the disk diff sequence can be
+    -- longer than the state sequence numbers.)
+ && (let increasingSeqNos :: TableTag t v -> SeqTableDiff state t k v -> All
+         increasingSeqNos _ SeqTableDiffRO       = All True
+         increasingSeqNos _ (SeqTableDiffRW  seq) = All $
+           increasing (dbChangelogDiskAnchor : sseqSeqNos seq)
+         increasingSeqNos _ (SeqTableDiffRWU seq) = All $
+           increasing (dbChangelogDiskAnchor : sseqSeqNos seq)
+      in getAll (foldMapTables increasingSeqNos dbChangelogTableDiffs))
+
+    -- The snapshots (if any) must be at sequence numbers from the disk diff
+    -- sequence(s).
+ && (let isSeqMember :: Ord k => SeqNo state
+                     -> TableTag t v -> SeqTableDiff state t k v -> All
+         isSeqMember _     _  SeqTableDiffRO       = All True
+         isSeqMember seqno _ (SeqTableDiffRW  seq) = All $
+           isJust (splitSSeq seqno seq)
+         isSeqMember seqno _ (SeqTableDiffRWU seq) = All $
+           isJust (splitSSeq seqno seq)
+      in and [ getAll (foldMapTables (isSeqMember seqno) dbChangelogTableDiffs)
+             | seqno <- sseqSeqNos dbChangelogSnapshots ])
+
+  where
+    -- TODO: increasing or strictly increasing: does this need to be relaxed to
+    -- use (<=) ? What about EBBs? Do they appear in the ledger state seq?
+    increasing :: Ord a => [a] -> Bool
+    increasing xs = and (zipWith (<) xs (drop 1 xs))
+
+    seqSeqNos :: Seq state a -> [SeqNo state]
+    seqSeqNos  seq = [ seqno | SeqElem  seqno _ <- Foldable.toList seq ]
+
+    sseqSeqNos :: SSeq state a -> [SeqNo state]
+    sseqSeqNos seq = [ seqno | SSeqElem seqno _ <- Foldable.toList seq ]
+
+
+initialDbChangelog :: HasOnDiskTables state
+                   => SeqNo state
+                   -> state EmptyTable
+                   -> DbChangelog state
+initialDbChangelog anchorSeqNo anchorState =
+    DbChangelog anchorSeqNo anchorSeqNo
+                (FT.singleton (SeqElem anchorSeqNo anchorState))
+                mempty mempty mempty
 
 {-
 instance HasOnDiskTables state => Semigroup (DbChangelog state) where
@@ -740,7 +847,7 @@ instance HasOnDiskTables state => Monoid (DbChangelog state) where
 -- optional table snapshots.
 data DbChange state = DbChange
                         !(SeqNo state)
-                        !(Tables state TableDiff)
+                        !(state TableDiff)
                         !(Maybe (TableSnapshots state))
 
 
@@ -748,29 +855,31 @@ data DbChange state = DbChange
 --
 extendDbChangelog :: forall state.
                      HasOnDiskTables state
-                  => DbChange state -> DbChangelog state -> DbChangelog state
-extendDbChangelog (DbChange seqno diffs msnapshots)
-                  dbchangelog@DbChangelog{..} =
-    let dbChangelogContent' = zipTables snoc dbChangelogContent diffs
-     in case msnapshots of
-          Nothing -> 
-            dbchangelog {
-              dbChangelogContent = dbChangelogContent'
-            }
+                  => SeqNo state
+                  -> state TableDiff
+                  -> Maybe (TableSnapshots state)
+                  -> DbChangelog state
+                  -> DbChangelog state
+extendDbChangelog !seqno !state Nothing =
+    extendDbChangelogDiffs seqno state
 
-          Just snapshots ->
-            dbchangelog {
-              dbChangelogContent = dbChangelogContent',
+extendDbChangelog !seqno !state (Just snapshots) =
+    extendDbChangelogSnapshots seqno snapshots
+  . extendDbChangelogDiffs     seqno state
 
-              dbChangelogSnapshots =
-                dbChangelogSnapshots FT.|> SSeqElem seqno snapshots,
-
-              dbChangelogForward =
-                extendSnapshotDiffs
-                  snapshots
-                  dbChangelogContent'
-                  dbChangelogForward
-            }
+extendDbChangelogDiffs :: forall state.
+                          HasOnDiskTables state
+                       => SeqNo state
+                       -> state TableDiff
+                       -> DbChangelog state
+                       -> DbChangelog state
+extendDbChangelogDiffs !seqno !state dbchangelog@DbChangelog{..} =
+    let !diffs  = projectTables state
+        !state' = mapTables (\_ _ -> EmptyTable) state
+     in dbchangelog {
+          dbChangelogStates     = dbChangelogStates FT.|> SeqElem seqno state',
+          dbChangelogTableDiffs = zipTables snoc dbChangelogTableDiffs diffs
+        }
   where
     snoc :: Ord k
          => TableTag           t   v
@@ -778,6 +887,23 @@ extendDbChangelog (DbChange seqno diffs msnapshots)
          -> TableDiff          t k v
          -> SeqTableDiff state t k v
     snoc _ ds d = snocSeqTableDiff ds d seqno
+
+extendDbChangelogSnapshots :: HasOnDiskTables state
+                           => SeqNo state
+                           -> TableSnapshots state
+                           -> DbChangelog state
+                           -> DbChangelog state
+extendDbChangelogSnapshots !seqno snapshots dbchangelog@DbChangelog{..} =
+    dbchangelog {
+      dbChangelogSnapshots =
+        dbChangelogSnapshots FT.|> SSeqElem seqno snapshots,
+
+      dbChangelogSnapshotDiffs =
+        extendSnapshotDiffs
+          snapshots
+          dbChangelogTableDiffs
+          dbChangelogSnapshotDiffs
+    }
 
 extendSnapshotDiffs :: HasOnlyTables (Tables state)
                     => TableSnapshots state
@@ -839,13 +965,32 @@ extendSnapshotDiffs snapshots tdiffs sdiffs =
 -- | Get the first and last 'SeqNo' in the sequence of changes.
 -- TODO: or maybe we only need the anchor?
 --
-boundsDbChangelog :: DbChangelog state -> (SeqNo state, Maybe (SeqNo state))
-boundsDbChangelog = undefined
---boundsDbChangelog DbChangelog {dbChangelogAnchorSeqNo, dbChangelogContent} =
---    (dbChangelogAnchorSeqNo, ...)
+stateAnchorDbChangelog :: DbChangelog state -> SeqNo state
+stateAnchorDbChangelog DbChangelog {dbChangelogStateAnchor} = dbChangelogStateAnchor
 
+diskAnchorDbChangelog :: DbChangelog state -> SeqNo state
+diskAnchorDbChangelog DbChangelog {dbChangelogDiskAnchor} = dbChangelogDiskAnchor
+
+endOfDbChangelog :: DbChangelog state -> SeqNo state
+endOfDbChangelog DbChangelog {dbChangelogStates}
+  | _ FT.:> SeqElem seqno _ <- FT.viewr dbChangelogStates
+  = seqno
+
+  | otherwise
+  = error "endOfDbChangelog: invariant violation: empty state seq"
+
+
+-- | Reset the \"leading edge\" of the sequence of states to the given 'SeqNo'.
+--
+-- The given 'SeqNo' must be an element of the sequence (or the result will be
+-- @Nothing@). The 
+--
 rewindDbChangelog :: SeqNo state -> DbChangelog state -> Maybe (DbChangelog state)
 rewindDbChangelog = undefined
+  --TODO: check the state seq has the element and drop to there
+  -- also drop the table diffs to the same point
+  -- and re-cache the snapshot diffs
+
 {-
 cacheSnapshotDiffs :: Tables state (SSeq state TableDiff)
                    -> SSeq state (TableSnapshots state)
@@ -853,13 +998,28 @@ cacheSnapshotDiffs :: Tables state (SSeq state TableDiff)
 cacheSnapshotDiffs = undefined
 -}
 
--- TODO: document that we must pass the last block for the LHS
-splitDbChangelog :: SeqNo state -> DbChangelog state -> Maybe (DbChangelog state, DbChangelog state)
-splitDbChangelog = undefined
+-- | Advance the \"trailing edge\" to the given 'SeqNo'. This does not affect
+-- the disk diffs which must be advanced separately using 'flushDbChangelog'.
+--
+-- The given 'SeqNo' must be an element of the sequence (or the result will be
+-- @Nothing@). This 'SeqNo' will be the new anchor element.
+--
+advanceDbChangelog :: SeqNo state -> DbChangelog state -> Maybe (DbChangelog state)
+advanceDbChangelog = undefined
+  --TODO: check the state seq has the element and drop to there
+  -- also drop the table diffs and snapshot diffs to the same point
 
-summariseDbChangelog :: DbChangelog state
-                     -> [Either (TableDiffs state) (TableSnapshots state)]
-summariseDbChangelog = undefined
+-- | Advance the disk diffs to the same 'SeqNo' as the states. This always
+-- succeeds but will be a no-op if the two anchor points are already the same.
+--
+-- The disk diffs are returned in the format required by 'writeDb'.
+--
+flushDbChangelog :: DbChangelog state
+                 -> ([Either (TableDiffs state) (TableSnapshots state)],
+                     DbChangelog state)
+flushDbChangelog = undefined
+  --TODO: split the table diffs at the state anchor point
+  -- return the summary of the bit split off
 
 
 -- | For sanity checking we want to track when each table was last snapshotted,
@@ -879,7 +1039,7 @@ rewindTableKeySets :: HasOnDiskTables state
                    => DbChangelog state
                    -> TableKeySets state
                    -> AnnTableKeySets state (KeySetSanityInfo state)
-rewindTableKeySets (DbChangelog _ _ snapshots _) tks =
+rewindTableKeySets (DbChangelog _ _ _ _ snapshots _) tks =
     case FT.measure snapshots of
       SSeqSummaryEmpty ->
         mapTables (\_ x -> AnnTable x Nothing) tks
@@ -1019,7 +1179,81 @@ instance Semigroup a => Monoid (SSeqSummary state a) where
 
 instance Semigroup a
       => FT.Measured (SSeqSummary state a) (SSeqElem state a) where
-  measure (SSeqElem seqno snapshot) = SSeqSummary seqno seqno snapshot
+  measure (SSeqElem seqno a) = SSeqSummary seqno seqno a
+
+splitSSeq :: Semigroup a => SeqNo state -> SSeq state a -> Maybe (SSeq state a, SSeq state a)
+splitSSeq seqno seq =
+    case FT.search predicate seq of
+      FT.Position before splitelem@(SSeqElem seqno' _) after | seqno == seqno' ->
+           Just (before, splitelem FT.<| after)
+      _ -> Nothing
+
+  where
+    predicate (SSeqSummary _ smaxLeft _) (SSeqSummary _ sminRight _) =
+      smaxLeft >= seqno && sminRight > seqno
+
+    predicate SSeqSummaryEmpty (SSeqSummary _ sminRight _) =
+      -- smaxLeft >= seqno is vacuously true as the "max" for empty is the top
+      -- element of the order
+      sminRight > seqno
+
+    predicate _ SSeqSummaryEmpty =
+      -- sminRight > seqno is vacuously false as the "min" for empty is the
+      -- bottom element of the order
+      False
+
+
+-- | A simple sequence, with sequence numbers.
+--
+type Seq state a =
+       FT.FingerTree (SeqSummary state)
+                     (SeqElem    state a)
+
+data SeqElem state a =
+       SeqElem
+         !(SeqNo state)
+         !a
+
+data SeqSummary state =
+       SeqSummaryEmpty
+     | SeqSummary
+         !(SeqNo state)  -- min seq no
+         !(SeqNo state)  -- max seq no
+
+instance Semigroup (SeqSummary state) where
+  SeqSummaryEmpty <> b = b
+  a <> SeqSummaryEmpty = a
+  SeqSummary smina smaxa <> SeqSummary sminb smaxb =
+    SeqSummary
+      (min smina sminb)
+      (max smaxa smaxb)
+
+instance Monoid (SeqSummary state) where
+  mempty = SeqSummaryEmpty
+
+instance FT.Measured (SeqSummary state) (SeqElem state a) where
+  measure (SeqElem seqno _) = SeqSummary seqno seqno
+
+splitSeq :: SeqNo state -> Seq state a -> Maybe (Seq state a, Seq state a)
+splitSeq seqno seq =
+    case FT.search predicate seq of
+      FT.Position before splitelem@(SeqElem seqno' _) after | seqno == seqno' ->
+           Just (before, splitelem FT.<| after)
+      _ -> Nothing
+  where
+    predicate (SeqSummary _ smaxLeft) (SeqSummary _ sminRight) =
+      smaxLeft >= seqno && sminRight > seqno
+
+    predicate SeqSummaryEmpty (SeqSummary _ sminRight) =
+      -- smaxLeft >= seqno is vacuously true as the "max" for empty is the top
+      -- element of the order
+      sminRight > seqno
+
+    predicate _ SeqSummaryEmpty =
+      -- sminRight > seqno is vacuously false as the "min" for empty is the
+      -- bottom element of the order
+      False
+
 
 
 -- In-mem mock of disk operations
@@ -1179,6 +1413,10 @@ instance HasTables LedgerState where
     () <$ traverseTables_ f utxos
        <* traverseTables_ f snapshots
 
+  foldMapTables f LedgerState { utxos, snapshots } =
+      foldMapTables f utxos
+   <> foldMapTables f snapshots
+
 instance HasTables UTxOState where
   type StateTableKeyConstraint   UTxOState = Example
   type StateTableValueConstraint UTxOState = Example
@@ -1190,6 +1428,10 @@ instance HasTables UTxOState where
   traverseTables_ f UTxOState { utxo, utxoagg } =
     () <$ f TableTagRW  utxo
        <* f TableTagRWU utxoagg
+
+  foldMapTables f UTxOState { utxo, utxoagg } =
+      f TableTagRW  utxo
+   <> f TableTagRWU utxoagg
 
 instance HasTables UTxOSnapshots where
   type StateTableKeyConstraint   UTxOSnapshots = Example
@@ -1204,6 +1446,11 @@ instance HasTables UTxOSnapshots where
     () <$ f TableTagRO utxoagg1
        <* f TableTagRO utxoagg2
        <* f TableTagRO utxoagg3
+
+  foldMapTables f UTxOSnapshots { utxoagg1, utxoagg2, utxoagg3 } =
+      f TableTagRO utxoagg1
+   <> f TableTagRO utxoagg2
+   <> f TableTagRO utxoagg3
 
 
 instance HasTables (Tables LedgerState) where
@@ -1235,6 +1482,19 @@ instance HasTables (Tables LedgerState) where
        <* f TableTagRO  utxoagg1Table
        <* f TableTagRO  utxoagg2Table
        <* f TableTagRO  utxoagg3Table
+
+  foldMapTables f LedgerStateTables {
+                       utxoTable,
+                       utxoaggTable,
+                       utxoagg1Table,
+                       utxoagg2Table,
+                       utxoagg3Table
+                     } =
+      f TableTagRW  utxoTable
+   <> f TableTagRWU utxoaggTable
+   <> f TableTagRO  utxoagg1Table
+   <> f TableTagRO  utxoagg2Table
+   <> f TableTagRO  utxoagg3Table
 
 
 instance HasOnlyTables (Tables LedgerState) where
@@ -1314,9 +1574,6 @@ instance HasOnDiskTables LedgerState where
       pparams,
       curslot
     }
-
-instance HasSeqNo LedgerState where
-  stateSeqNo LedgerState {curslot = SlotNo s} = SeqNo (fromIntegral s)
 
 class ShowTable (table :: TableType -> * -> * -> *) where
     showsTable :: (Show k, Show v) => table t k v -> ShowS
