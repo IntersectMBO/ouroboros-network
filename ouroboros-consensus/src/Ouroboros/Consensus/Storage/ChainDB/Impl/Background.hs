@@ -56,6 +56,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Config.SupportsNode as SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
@@ -89,6 +90,7 @@ launchBgTasks
      , InspectLedger blk
      , HasHardForkHistory blk
      , LgrDbSerialiseConstraints blk
+     , SupportsNode.ConfigSupportsNode blk
      )
   => ChainDbEnv m blk
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
@@ -527,6 +529,7 @@ addBlockRunner
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
+     , SupportsNode.ConfigSupportsNode blk
      , HasCallStack
      )
   => ChainDbEnv m blk
