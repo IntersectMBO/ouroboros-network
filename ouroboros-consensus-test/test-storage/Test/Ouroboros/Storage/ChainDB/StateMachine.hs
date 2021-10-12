@@ -68,6 +68,7 @@ import qualified Ouroboros.Network.MockChain.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HeaderValidation
@@ -263,6 +264,7 @@ type TestConstraints blk =
   , ConvertRawHash                    blk
   , HasHardForkHistory                blk
   , SerialiseDiskConstraints          blk
+  , ConfigSupportsNode                blk
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   flr)

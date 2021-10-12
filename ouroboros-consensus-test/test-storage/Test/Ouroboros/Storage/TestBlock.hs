@@ -73,6 +73,8 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
+import           Data.Time.Calendar (fromGregorian)
+import           Data.Time.Clock (UTCTime (..))
 import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -84,11 +86,14 @@ import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
 
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode
+                     (ConfigSupportsNode (..))
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
@@ -737,6 +742,18 @@ instance DecodeDiskDep   (NestedCtxt Header) TestBlock
 -- ChainDepState
 instance EncodeDisk TestBlock ()
 instance DecodeDisk TestBlock ()
+
+{-------------------------------------------------------------------------------
+  Test infrastructure: node
+-------------------------------------------------------------------------------}
+
+instance ConfigSupportsNode TestBlock where
+  getSystemStart = const (SystemStart dummyDate)
+    where
+      --  This doesn't matter much
+      dummyDate = UTCTime (fromGregorian 2019 8 13) 0
+
+  getNetworkMagic = const (NetworkMagic 42)
 
 {-------------------------------------------------------------------------------
   Corruption
