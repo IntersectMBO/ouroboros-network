@@ -11,6 +11,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 
     -- * DNSActions IO
     ioDNSActions,
+    LookupReqs (..),
 
     -- * Utils
     -- ** Resource
@@ -42,6 +43,11 @@ import           Data.IP (IP (..))
 import           Network.DNS (DNSError)
 import qualified Network.DNS as DNS
 
+
+data LookupReqs = LookupReqAOnly
+                | LookupReqAAAAOnly
+                | LookupReqAAndAAAA
+                deriving Show
 
 data DNSorIOError exception
     = DNSError !DNSError
@@ -315,14 +321,24 @@ lookupAAAAWithTTL resolvConf resolver domain = do
         } <- answer
       ]
 
-lookupWithTTL :: DNS.ResolvConf
+lookupWithTTL :: LookupReqs
+              -> DNS.ResolvConf
               -> DNS.Resolver
               -> DNS.Domain
               -> IO ([DNS.DNSError], [(IP, DNS.TTL)])
-lookupWithTTL resolvConf resolver domain = do
+lookupWithTTL LookupReqAOnly resolvConf resolver domain = do
+    res <- lookupAWithTTL resolvConf resolver domain
+    case res of
+         Left err -> return ([err], [])
+         Right r  -> return ([], r)
+lookupWithTTL LookupReqAAAAOnly resolvConf resolver domain = do
+    res <- lookupAAAAWithTTL resolvConf resolver domain
+    case res of
+         Left err -> return ([err], [])
+         Right r  -> return ([], r)
+lookupWithTTL LookupReqAAndAAAA resolvConf resolver domain = do
     (r_ipv6, r_ipv4) <- concurrently (lookupAAAAWithTTL resolvConf resolver domain)
                                      (lookupAWithTTL resolvConf resolver domain)
-
     case (r_ipv6, r_ipv4) of
          (Left  e6, Left  e4) -> return ([e6, e4], [])
          (Right r6, Left  e4) -> return ([e4], r6)
@@ -330,11 +346,15 @@ lookupWithTTL resolvConf resolver domain = do
          (Right r6, Right r4) -> return ([], r6 <> r4)
 
 -- | Bundle of DNS Actions that runs in IO
+-- The IPv4 and IPv6 addresses the node will be using should determine the
+-- LookupReqs so that we can avoid lookups for address types that wont be used.
 --
-ioDNSActions :: DNSActions DNS.Resolver IOException IO
-ioDNSActions = DNSActions {
+ioDNSActions :: LookupReqs
+             -> DNSActions DNS.Resolver IOException IO
+ioDNSActions reqs =
+  DNSActions {
     dnsResolverResource      = resolverResource,
     dnsAsyncResolverResource = asyncResolverResource,
-    dnsLookupWithTTL         = lookupWithTTL
+    dnsLookupWithTTL         = lookupWithTTL reqs
   }
 
