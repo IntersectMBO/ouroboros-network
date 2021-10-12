@@ -5,6 +5,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -47,9 +48,11 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , getBlockToAdd
   , newBlocksToAdd
     -- * Trace types
+  , Ignorable (..)
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
   , TraceCopyToImmutableDBEvent (..)
+  , TraceDoneAddingBlockEvent (..)
   , TraceEvent (..)
   , TraceFollowerEvent (..)
   , TraceGCEvent (..)
@@ -57,15 +60,21 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , TraceIteratorEvent (..)
   , TraceOpenEvent (..)
   , TraceValidationEvent (..)
+  , situateTraceDoneAddingBlockEvent
   ) where
 
+import qualified Control.Monad.Class.MonadTime as UTCTime
 import           Control.Tracer
 import           Data.Map.Strict (Map)
+import           Data.Time (UTCTime)
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
+
+import           Cardano.Slotting.Time (RelativeTime)
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
 
@@ -75,6 +84,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -437,6 +447,10 @@ data BlockToAdd m blk = BlockToAdd
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
   , varBlockProcessed     :: !(StrictTMVar m (Point blk))
     -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
+  , whenItWasEnqueued     :: !Time
+    -- ^ Used for the 'addedBlockReception' field of
+    -- 'TraceDoneAddingBlockEvent', which is used to collect important
+    -- statistics for the Networking Team.
   }
 
 -- | Create a new 'BlocksToAdd' with the given size.
@@ -454,10 +468,12 @@ addBlockToAdd
 addBlockToAdd tracer (BlocksToAdd queue) blk = do
     varBlockWrittenToDisk <- newEmptyTMVarIO
     varBlockProcessed     <- newEmptyTMVarIO
+    whenItWasEnqueued     <- getMonotonicTime
     let !toAdd = BlockToAdd
           { blockToAdd = blk
           , varBlockWrittenToDisk
           , varBlockProcessed
+          , whenItWasEnqueued
           }
     queueSize <- atomically $ do
       writeTBQueue  queue toAdd
@@ -627,6 +643,23 @@ data TraceAddBlockEvent blk =
     -- This is done for all blocks from the future each time a new block is
     -- added.
   | ChainSelectionForFutureBlock (RealPoint blk)
+
+    -- | The ChainDB has finished processing an instruction to add a block.
+    --
+    -- If the block was relevant, valid, new, and so on, then this instruction
+    -- incurred a corresponding chain selection that finished immediately prior
+    -- to this event firing. If the block is from the future (see
+    -- 'BlockInTheFuture'), then that particular chain selection invocation was
+    -- partially truncated and this block will be reconsidered again by some
+    -- later chain selection. This event will /not/ fire again for such deferred
+    -- chain selections (see 'ChainSelectionForFutureBlock', which notably does
+    -- not have the 'Time' field) -- this event only fires once per add-block
+    -- instruction. There may be zero (eg invalid block), one (eg usual case),
+    -- or many (eg future block) chain selections per instruction.
+    --
+    -- See 'TraceDoneAddingBlockEvent' and 'situateTraceDoneAddingBlockEvent'.
+  | DoneAddingBlock (TraceDoneAddingBlockEvent Time blk)
+
   deriving (Generic)
 
 deriving instance
@@ -641,6 +674,84 @@ deriving instance
   , LedgerSupportsProtocol blk
   , InspectLedger blk
   ) => Show (TraceAddBlockEvent blk)
+
+-- | See 'DoneAddingBlock' and 'situateTraceDoneAddingBlockEvent'.
+data TraceDoneAddingBlockEvent doneTime blk =
+    TraceDoneAddingBlockEvent {
+
+        -- | The point of the added block
+        addedBlockPoint        :: RealPoint blk
+
+        -- | The block itself
+        --
+        -- The 'Ignorable' wrapper lets us ignore this in the derived 'Eq'
+        -- instance. For valid blocks, comparing 'RealPoint' will suffice.
+      , addedBlock             :: Ignorable "addedBlock" blk
+
+        -- | When the block's labelled slot began
+        --
+        -- This is expressed both as a relative and absolute time. The 'Left'
+        -- case is the payload of a
+        -- 'Ouroboros.Consensus.HardFork.History.Qry.PastHorizonException'.
+      , addedBlockSlotStart    :: Either [History.EraSummary] (RelativeTime, UTCTime)
+
+        -- | When the instruction was added to the 'cdbBlocksToAdd' queue (ie
+        -- when we downloaded the block)
+      , addedBlockReception    :: Time
+
+        -- | When this node finished the chain selection resulting from the
+        -- addition of this block
+        --
+        -- See more details on the 'DoneAddingBlock' constructor.
+      , addedBlockDoneAdding   :: doneTime
+
+        -- | The possibly-new ChainDB tip that resulted from this block having
+        -- been added
+      , addedBlockNewSelection :: Point blk
+
+      }
+  deriving (Generic)
+
+deriving instance
+  ( Eq now
+  , HasHeader blk
+  , Eq (Header blk)
+  , LedgerSupportsProtocol blk
+  , InspectLedger blk
+  ) => Eq (TraceDoneAddingBlockEvent now blk)
+deriving instance
+  ( Show now
+  , HasHeader blk
+  , Show (Header blk)
+  , LedgerSupportsProtocol blk
+  , InspectLedger blk
+  ) => Show (TraceDoneAddingBlockEvent now blk)
+
+-- | Given a coordinate relating 'Time' and 'UTCTime', elaborate the event's
+-- internal 'Time' into a 'UTCTime'
+situateTraceDoneAddingBlockEvent ::
+     (Time, UTCTime)
+     -- ^ a single time point, as report by both the monotonic clock and by the
+     -- wallclock
+     --
+     -- For nearby times, this coordinate determines a sound translation between
+     -- monotonic times and wallclock times.
+  -> TraceDoneAddingBlockEvent Time blk
+     -- ^ the event carrying its own monotonic timestamp
+  -> TraceDoneAddingBlockEvent (Time, UTCTime) blk
+     -- ^ the event carrying the same monotonic timestamp as well as the
+     -- corresponding wallclock time
+situateTraceDoneAddingBlockEvent (tNow, wallNow) ev =
+    ev { addedBlockDoneAdding = (tDone, wallDone) }
+  where
+    tDone = addedBlockDoneAdding ev
+
+    cnv :: DiffTime -> UTCTime.NominalDiffTime
+    cnv = fromRational . toRational
+
+    -- NB wallDone <= wallNow, since we assume tDone <= tNow
+    wallDone :: UTCTime
+    !wallDone = cnv (tDone `diffTime` tNow) `UTCTime.addUTCTime` wallNow
 
 data TraceValidationEvent blk =
     -- | A point was found to be invalid.
@@ -784,3 +895,20 @@ data TraceIteratorEvent blk
     -- next block we're looking for.
   | SwitchBackToVolatileDB
   deriving (Generic, Eq, Show)
+
+{-------------------------------------------------------------------------------
+  Auxiliary types
+-------------------------------------------------------------------------------}
+
+-- | A wrapper for which '==' always returns 'True'
+--
+-- Use this in a field in a data type whose invariants ensure some other field
+-- effectively identifies this field.
+newtype Ignorable (sym :: Symbol) x = Ignorable {getIgnorable :: x}
+
+-- | This is the key property of 'Ignorable'.
+instance Eq (Ignorable sym x) where
+  (==) = \_ _ -> True
+
+instance KnownSymbol sym => Show (Ignorable sym x) where
+  show _ = "(Ignorable @\"" <> symbolVal (Proxy @sym) <> "\")"
