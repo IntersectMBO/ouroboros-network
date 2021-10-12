@@ -435,6 +435,7 @@ data BlockToAdd m blk = BlockToAdd
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
   , varBlockProcessed     :: !(StrictTMVar m (Point blk))
     -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
+  , whenItWasEnqueued     :: !Time
   }
 
 -- | Create a new 'BlocksToAdd' with the given size.
@@ -452,10 +453,12 @@ addBlockToAdd
 addBlockToAdd tracer (BlocksToAdd queue) blk = do
     varBlockWrittenToDisk <- newEmptyTMVarIO
     varBlockProcessed     <- newEmptyTMVarIO
+    whenItWasEnqueued     <- getMonotonicTime
     let !toAdd = BlockToAdd
           { blockToAdd = blk
           , varBlockWrittenToDisk
           , varBlockProcessed
+          , whenItWasEnqueued
           }
     queueSize <- atomically $ do
       writeTBQueue  queue toAdd
@@ -614,6 +617,24 @@ data TraceAddBlockEvent blk =
     -- This is done for all blocks from the future each time a new block is
     -- added.
   | ChainSelectionForFutureBlock (RealPoint blk)
+
+    -- | The ChainDB has finished processing an instruction to add this block.
+    -- The time argument is when the instruction was added to the
+    -- 'cdbBlocksToAdd' queue. The second point argument is the possibly-new
+    -- ChainDB tip that resulted from this block having been added.
+    --
+    -- If the block was relevant, valid, new, and so on, then this instruction
+    -- incurred a corresponding chain selection that finished immediately prior
+    -- to this event firing. If the block is from the future (see
+    -- 'BlockInTheFuture'), then that particular chain selection invocation was
+    -- partially truncated and this block will be reconsidered again by some
+    -- later chain selection. This event will /not/ fire again for such deferred
+    -- chain selections (see 'ChainSelectionForFutureBlock', which notably does
+    -- not have the 'Time' field) -- this event only fires once per add-block
+    -- instruction. There may be zero (eg invalid block), one (eg usual case),
+    -- or many (eg future block) chain selections per instruction.
+  | DoneAddingBlock (RealPoint blk) Time (Point blk)
+
   deriving (Generic)
 
 deriving instance
