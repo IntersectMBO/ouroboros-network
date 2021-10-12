@@ -68,7 +68,7 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers
                   (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAccessPoint (..),
-                   RelayAccessPoint (..))
+                   LookupReqs (..), RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
@@ -91,7 +91,7 @@ import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 data Interfaces m = Interfaces
     { iNtnSnocket        :: Snocket m (NtNFD m) NtNAddr
     , iAcceptVersion     :: NtNVersionData -> NtNVersionData -> Accept NtNVersionData
-    , iNtnDomainResolver :: [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
+    , iNtnDomainResolver :: LookupReqs -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
     , iNtcSnocket        :: Snocket m (NtCFD m) (NtCAddr)
     , iRng               :: StdGen
     , iDomainMap         :: Map Domain [IP]
@@ -189,10 +189,10 @@ run blockGeneratorArgs limits ni na =
               , Diff.P2P.diNtcGetFileDescriptor  = \_ -> pure (FileDescriptor (-1))
               , Diff.P2P.diRng                   = diffStgGen
               , Diff.P2P.diInstallSigUSR1Handler = \_ -> pure ()
-              , Diff.P2P.diDnsActions            = mockDNSActions
+              , Diff.P2P.diDnsActions            = (const (mockDNSActions
                                                      (iDomainMap ni)
                                                      dnsTimeoutScriptVar
-                                                     dnsLookupDelayScriptVar
+                                                     dnsLookupDelayScriptVar))
               }
 
             tracersExtra :: Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData

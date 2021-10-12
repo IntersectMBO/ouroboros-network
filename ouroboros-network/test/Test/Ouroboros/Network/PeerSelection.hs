@@ -1894,7 +1894,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
       (curry IP.toSockAddr)
       DNS.defaultResolvConf
       readDomains
-      ioDNSActions $ \requestPublicRootPeers ->
+      (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers ->
 
         peerSelectionGovernor
           tracer tracer tracer

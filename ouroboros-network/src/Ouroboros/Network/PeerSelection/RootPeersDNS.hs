@@ -14,6 +14,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS (
     constantResource,
     -- ** DNSActions IO
     ioDNSActions,
+    LookupReqs (..),
 
     -- * DNS based provider for local root peers
     localRootPeersProvider,
@@ -69,6 +70,7 @@ import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                  ( DNSorIOError (..)
                  , DNSActions (..)
+                 , LookupReqs (..)
                  , Resource (..)
                  , ioDNSActions
                  , constantResource

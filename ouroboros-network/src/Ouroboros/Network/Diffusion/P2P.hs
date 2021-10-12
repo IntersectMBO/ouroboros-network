@@ -100,6 +100,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
                   ( resolveDomainAccessPoint
                   , DNSActions
                   , ioDNSActions
+                  , LookupReqs (..)
                   , DomainAccessPoint
                   , RelayAccessPoint(..)
                   , TraceLocalRootPeers(..)
@@ -538,7 +539,7 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | node-to-node domain resolver
         --
         diNtnDomainResolver
-          :: [DomainAccessPoint] -> m (Map DomainAccessPoint (Set ntnAddr)),
+          :: LookupReqs -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set ntnAddr)),
 
         -- | node-to-client snocket
         --
@@ -571,7 +572,7 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: DNSActions resolver resolverError m
+          :: LookupReqs -> DNSActions resolver resolverError m
       }
 
 runM
@@ -713,6 +714,13 @@ runM Interfaces
                 -> throwIO (UnexpectedIPv6Address addr)
       Nothing   -> pure ()
 
+    lookupReqs <- case (cmIPv4Address, cmIPv6Address) of
+                         (Just _, Nothing) -> return LookupReqAOnly
+                         (Nothing, Just _) -> return LookupReqAAAAOnly
+                         (Just _, Just _)  -> return LookupReqAAndAAAA
+                         _                 ->
+                             throwIO (NoSocket :: Failure RemoteAddress)
+
     -- control channel for the server; only required in
     -- @'InitiatorResponderMode' :: 'MuxMode'@
     cmdInMode
@@ -836,7 +844,7 @@ runM Interfaces
             dtLedgerPeersTracer
             daReadUseLedgerAfter
             daLedgerPeersCtx
-            diNtnDomainResolver
+            (diNtnDomainResolver lookupReqs)
             $ \requestLedgerPeers ledgerPeerThread ->
             case cmdInMode of
               -- InitiatorOnlyMode
@@ -921,7 +929,7 @@ runM Interfaces
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       diNtnToPeerAddr
-                      diDnsActions
+                      (diDnsActions lookupReqs)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
@@ -1043,7 +1051,7 @@ runM Interfaces
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       diNtnToPeerAddr
-                      diDnsActions
+                      (diDnsActions lookupReqs)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
@@ -1299,13 +1307,14 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 #else
                  diInstallSigUSR1Handler = \_ -> pure ()
 #endif
-                 diNtnDomainResolver :: [DomainAccessPoint]
+
+             let diNtnDomainResolver :: LookupReqs -> [DomainAccessPoint]
                                      -> IO (Map DomainAccessPoint (Set Socket.SockAddr))
-                 diNtnDomainResolver =
+                 diNtnDomainResolver lr =
                    resolveDomainAccessPoint
                      (dtTracePublicRootPeersTracer tracersExtra)
                      DNS.defaultResolvConf
-                     ioDNSActions
+                     (ioDNSActions lr)
 
              diRng <- newStdGen
              runM
@@ -1326,6 +1335,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diDnsActions = ioDNSActions
                }
                tracers tracersExtra args argsExtra apps appsExtra
+
 
 --
 -- Data flow
