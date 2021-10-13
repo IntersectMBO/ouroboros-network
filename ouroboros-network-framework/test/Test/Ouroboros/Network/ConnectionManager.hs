@@ -102,9 +102,8 @@ tests =
     ]
     -- connection manager simulation property
   , testGroup "simulations"
-    -- The test fails with `PopScheduleOutboundError`, this is fixed in the next commit.
-    -- [ testProperty "simulation"                     prop_connectionManagerSimulation
-    [ testProperty "overwritten"                    unit_overwritten
+    [ testProperty "simulation"                     prop_connectionManagerSimulation
+    , testProperty "overwritten"                    unit_overwritten
     , testProperty "timeoutExpired"                 unit_timeoutExpired
     ]
   ]
