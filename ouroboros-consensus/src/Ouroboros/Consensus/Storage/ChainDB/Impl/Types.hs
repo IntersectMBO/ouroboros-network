@@ -61,11 +61,14 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
+import           Data.Time (UTCTime)
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
+
+import           Cardano.Slotting.Time (RelativeTime)
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
 
@@ -75,6 +78,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -619,7 +623,11 @@ data TraceAddBlockEvent blk =
   | ChainSelectionForFutureBlock (RealPoint blk)
 
     -- | The ChainDB has finished processing an instruction to add this block.
-    -- The time argument is when the instruction was added to the
+    -- The first time argument is when the block's labelled slot started
+    -- (expressed both as a relative and absolute time; the 'Left' case carries
+    -- the payload of a
+    -- 'Ouroboros.Consensus.HardFork.History.Qry.PastHorizonException'), and the
+    -- second time argument is when the instruction was added to the
     -- 'cdbBlocksToAdd' queue. The second point argument is the possibly-new
     -- ChainDB tip that resulted from this block having been added.
     --
@@ -633,7 +641,11 @@ data TraceAddBlockEvent blk =
     -- not have the 'Time' field) -- this event only fires once per add-block
     -- instruction. There may be zero (eg invalid block), one (eg usual case),
     -- or many (eg future block) chain selections per instruction.
-  | DoneAddingBlock (RealPoint blk) Time (Point blk)
+  | DoneAddingBlock
+      (RealPoint blk)
+      (Either [History.EraSummary] (RelativeTime, UTCTime))
+      Time
+      (Point blk)
 
   deriving (Generic)
 

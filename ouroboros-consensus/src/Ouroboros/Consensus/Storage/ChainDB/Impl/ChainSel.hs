@@ -25,6 +25,7 @@ import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
 import           Control.Tracer (Tracer, contramap, traceWith)
+import           Data.Bifunctor (bimap)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import           Data.List.NonEmpty (NonEmpty)
@@ -34,7 +35,10 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Time.Clock (UTCTime)
 import           GHC.Stack (HasCallStack)
+
+import           Cardano.Slotting.Time (RelativeTime, fromRelativeTime)
 
 import           Ouroboros.Network.AnchoredFragment (Anchor, AnchoredFragment,
                      AnchoredSeq (..))
@@ -42,6 +46,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Config.SupportsNode as SupportsNode
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
@@ -242,16 +247,20 @@ addBlockSync
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
+     , SupportsNode.ConfigSupportsNode blk
      , HasCallStack
      )
   => ChainDbEnv m blk
   -> BlockToAdd m blk
   -> m ()
 addBlockSync cdb@CDB {..} blkToAdd = do
-    (isMember, invalid, curChain) <- atomically $ (,,)
+    (isMember, invalid, curChain, hfSummary) <- atomically $ (,,,)
       <$> VolatileDB.getIsMember          cdbVolatileDB
       <*> (forgetFingerprint <$> readTVar cdbInvalid)
       <*> Query.getCurrentChain           cdb
+      <*> (    (hardForkSummary (configLedger cdbTopLevelConfig) . ledgerState . LgrDB.ledgerDbCurrent)
+           <$> LgrDB.getCurrent cdbLgrDB
+          )
 
     let immBlockNo = AF.anchorBlockNo curChain
 
@@ -294,7 +303,20 @@ addBlockSync cdb@CDB {..} blkToAdd = do
         void $ chainSelectionForFutureBlocks cdb blockCache
         chainSelectionForBlock cdb blockCache hdr
 
-    trace $ DoneAddingBlock (blockRealPoint b) whenItWasEnqueued newTip
+    -- There is a large comment in the body of
+    -- 'Ouroboros.Consensus.NodeKernel.initBlockFetchConsensusInterface' about
+    -- why this value should always be a 'Right'.
+    let whenItWasForged =
+              bimap History.pastHorizonSummary (\r -> (r, toAbsolute r))
+            $ History.runQuery
+                (fst <$> History.slotToWallclock (blockSlot b))
+                hfSummary
+    trace $
+      DoneAddingBlock
+        (blockRealPoint b)
+        whenItWasForged
+        whenItWasEnqueued
+        newTip
 
     deliverProcessed newTip
   where
@@ -325,6 +347,12 @@ addBlockSync cdb@CDB {..} blkToAdd = do
     deliverProcessed :: Point blk -> m ()
     deliverProcessed tip = atomically $
         putTMVar varBlockProcessed tip
+
+    toAbsolute :: RelativeTime -> UTCTime
+    toAbsolute =
+          fromRelativeTime
+        $ SupportsNode.getSystemStart
+        $ configBlock cdbTopLevelConfig
 
 -- | Return 'True' when the given header should be ignored when adding it
 -- because it is too old, i.e., we wouldn't be able to switch to a chain
