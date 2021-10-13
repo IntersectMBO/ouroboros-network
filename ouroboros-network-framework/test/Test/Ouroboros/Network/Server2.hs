@@ -11,8 +11,6 @@
 
 -- just to use 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
--- `ShowProxy (ReqResp req resp)` is an orphaned instance
-{-# OPTIONS_GHC -Wno-orphans               #-}
 
 module Test.Ouroboros.Network.Server2
   ( tests
