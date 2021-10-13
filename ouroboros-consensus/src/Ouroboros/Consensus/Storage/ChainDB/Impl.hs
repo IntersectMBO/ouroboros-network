@@ -35,6 +35,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   ) where
 
 import           Control.Monad (when)
+import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Tracer
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity)
@@ -83,6 +84,7 @@ withDB
      , ConvertRawHash blk
      , SupportsNode.ConfigSupportsNode blk
      , SerialiseDiskConstraints blk
+     , MonadTime m
      )
   => ChainDbArgs Identity m blk
   -> (ChainDB m blk -> m a)
@@ -98,6 +100,7 @@ openDB
      , SupportsNode.ConfigSupportsNode blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
+     , MonadTime m
      )
   => ChainDbArgs Identity m blk
   -> m (ChainDB m blk)
@@ -112,6 +115,7 @@ openDBInternal
      , SupportsNode.ConfigSupportsNode blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
+     , MonadTime m
      )
   => ChainDbArgs Identity m blk
   -> Bool -- ^ 'True' = Launch background tasks

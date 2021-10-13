@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
@@ -23,6 +24,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (
 
 import           Control.Exception (assert)
 import           Control.Monad.Except
+import           Control.Monad.Class.MonadTime (MonadTime, getCurrentTime, diffUTCTime)
 import           Control.Monad.Trans.State.Strict
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Bifunctor (bimap)
@@ -249,6 +251,7 @@ addBlockSync
      , HasHardForkHistory blk
      , SupportsNode.ConfigSupportsNode blk
      , HasCallStack
+     , MonadTime m
      )
   => ChainDbEnv m blk
   -> BlockToAdd m blk
@@ -306,17 +309,26 @@ addBlockSync cdb@CDB {..} blkToAdd = do
     -- There is a large comment in the body of
     -- 'Ouroboros.Consensus.NodeKernel.initBlockFetchConsensusInterface' about
     -- why this value should always be a 'Right'.
+    !now <- getCurrentTime
+    !nowMon <- getMonotonicTime
     let whenItWasForged =
               bimap History.pastHorizonSummary (\r -> (r, toAbsolute r))
             $ History.runQuery
                 (fst <$> History.slotToWallclock (blockSlot b))
                 hfSummary
-    trace $
-      DoneAddingBlock
-        (blockRealPoint b)
-        whenItWasForged
-        whenItWasEnqueued
-        newTip
+    case whenItWasForged of
+         Left e ->
+             trace $ DoneAddingBlock
+                 (blockRealPoint b)
+                 (Left e)
+                 (diffTime nowMon whenItWasEnqueued)
+                 newTip
+         Right (_relTime, forgeTime) ->
+             trace $ DoneAddingBlock
+                 (blockRealPoint b)
+                 (Right $ diffUTCTime now forgeTime)
+                 (diffTime nowMon whenItWasEnqueued)
+                 newTip
 
     deliverProcessed newTip
   where

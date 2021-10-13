@@ -61,14 +61,12 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
-import           Data.Time (UTCTime)
+import           Data.Time (NominalDiffTime)
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
-
-import           Cardano.Slotting.Time (RelativeTime)
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
 
@@ -643,8 +641,8 @@ data TraceAddBlockEvent blk =
     -- or many (eg future block) chain selections per instruction.
   | DoneAddingBlock
       (RealPoint blk)
-      (Either [History.EraSummary] (RelativeTime, UTCTime))
-      Time
+      (Either [History.EraSummary] NominalDiffTime)
+      DiffTime
       (Point blk)
 
   deriving (Generic)

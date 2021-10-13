@@ -424,7 +424,7 @@ stdWithCheckedDB pb databasePath networkMagic body = do
     hasFS      = ioHasFS mountPoint
 
 openChainDB
-  :: forall m blk. (RunNode blk, IOLike m)
+  :: forall m blk. (RunNode blk, IOLike m, MonadTime m)
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
