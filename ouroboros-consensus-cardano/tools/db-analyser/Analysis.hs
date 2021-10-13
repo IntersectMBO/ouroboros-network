@@ -61,6 +61,7 @@ data AnalysisName =
   | ShowEBBs
   | OnlyValidation
   | StoreLedgerStateAt SlotNo
+  | CountBlocks
   deriving Show
 
 runAnalysis ::
@@ -77,6 +78,7 @@ runAnalysis ShowBlockTxsSize            = showBlockTxsSize
 runAnalysis ShowEBBs                    = showEBBs
 runAnalysis OnlyValidation              = \_ -> return ()
 runAnalysis (StoreLedgerStateAt slotNo) = storeLedgerStateAt slotNo
+runAnalysis CountBlocks                 = countBlocks
 
 type Analysis blk = AnalysisEnv blk -> IO ()
 
@@ -253,6 +255,18 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
            (encodeDisk ccfg)
            (encodeDisk ccfg)
 
+countBlocks ::
+     forall blk .
+     ( HasAnalysis blk
+     )
+  => Analysis blk
+countBlocks (AnalysisEnv { db, registry, initLedger, limit }) = do
+    putStrLn $ "About to count number of blocks ..."
+    counted <- processAll db registry (GetPure ()) initLedger limit 0 process
+    putStrLn $ "Counted: " <> show counted <> " blocks."
+  where
+    process :: Int -> () -> IO Int
+    process count _ = pure $ count + 1
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB
 -------------------------------------------------------------------------------}
