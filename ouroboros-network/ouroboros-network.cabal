@@ -80,6 +80,7 @@ library
                        Ouroboros.Network.PeerSelection.LocalRootPeers
                        Ouroboros.Network.PeerSelection.PeerMetric
                        Ouroboros.Network.PeerSelection.PeerMetric.Type
+                       Ouroboros.Network.PeerSelection.PeerStateActions
                        Ouroboros.Network.PeerSelection.RelayAccessPoint
                        Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
