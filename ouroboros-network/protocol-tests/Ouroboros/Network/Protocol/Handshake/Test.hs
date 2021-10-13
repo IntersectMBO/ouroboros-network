@@ -107,7 +107,7 @@ tests =
               prop_acceptOrRefuse_symmetric_NodeToNode
           , testProperty "simultaneous open ST"
               prop_channel_simultaneous_open_NodeToNode_ST
-          , testProperty "simultaneous open IO" 
+          , testProperty "simultaneous open IO"
               prop_channel_simultaneous_open_NodeToNode_IO
           , testProperty "simultaneous open SimNet"
               prop_channel_simultaneous_open_NodeToNode_SimNet
@@ -120,7 +120,7 @@ tests =
               prop_acceptOrRefuse_symmetric_NodeToClient
           , testProperty "simultaneous open ST"
               prop_channel_simultaneous_open_NodeToClient_ST
-          , testProperty "simultaneous open IO" 
+          , testProperty "simultaneous open IO"
               prop_channel_simultaneous_open_NodeToClient_IO
           , testProperty "simultaneous open SimNet"
               prop_channel_simultaneous_open_NodeToClient_SimNet
@@ -254,7 +254,7 @@ dataCodecCBORTerm Version_2 = CodecCBORTerm {encodeTerm, decodeTerm}
 
 arbitraryVersionData :: VersionNumber -> Gen VersionData
 arbitraryVersionData Version_0 = (\a -> VersionData a False False)
-                              <$> arbitrary 
+                              <$> arbitrary
 arbitraryVersionData Version_1 = (\a b -> VersionData a b False)
                               <$> arbitrary
                               <*> arbitrary
@@ -369,7 +369,7 @@ instance Arbitrary ArbitraryVersions where
       [ (1, (\v -> ArbitraryVersions v v) <$> genVersions)
       , (2, ArbitraryVersions <$> genVersions <*> genVersions)
       ]
-    shrink (ArbitraryVersions (Versions vs) (Versions vs')) = 
+    shrink (ArbitraryVersions (Versions vs) (Versions vs')) =
       [ ArbitraryVersions (Versions $ Map.fromList vs'') (Versions vs')
       | vs'' <- shrinkList (const []) (Map.toList vs)
       ] ++
@@ -383,7 +383,7 @@ instance Arbitrary ArbitraryVersions where
 --
 validVersion :: VersionNumber -> Version VersionData Bool -> Bool
 validVersion Version_0 ((Version _ d)) = dataVersion1 d == False
-                                      && dataVersion2 d == False 
+                                      && dataVersion2 d == False
 validVersion Version_1 ((Version _ d)) = dataVersion2 d == False
 validVersion Version_2 ((Version _ _)) = True
 
@@ -560,7 +560,7 @@ prop_channel_asymmetric createChannels clientVersions = do
         $ Map.singleton
             Version_1
             (Version (application d) d)
-              
+
 
     -- This codec does not know how to decode 'Version_0' and 'Version_2'.
     versionNumberCodec' :: CodecCBORTerm (String, Maybe Int) VersionNumber
@@ -645,7 +645,7 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions
           { getArbitraryNodeToNodeVersiosn :: Versions NodeToNodeVersion
-                                                       NodeToNodeVersionData Bool } 
+                                                       NodeToNodeVersionData Bool }
 
 instance Show ArbitraryNodeToNodeVersions where
     show (ArbitraryNodeToNodeVersions (Versions vs))
@@ -695,7 +695,7 @@ instance Arbitrary ArbitraryNodeToClientVersionData where
 newtype ArbitraryNodeToClientVersions =
         ArbitraryNodeToClientVersions
           { getArbitraryNodeToClientVersiosn :: Versions NodeToClientVersion
-                                                       NodeToClientVersionData Bool } 
+                                                       NodeToClientVersionData Bool }
 
 instance Show ArbitraryNodeToClientVersions where
     show (ArbitraryNodeToClientVersions (Versions vs))
@@ -809,7 +809,7 @@ prop_acceptOrRefuse_symmetric clientVersions serverVersions =
 
     clientMap = toMap clientVersions
     serverMap = toMap serverVersions
-  
+
 
 prop_acceptOrRefuse_symmetric_VersionData
   :: ArbitraryVersions
@@ -1015,7 +1015,7 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
           bracket ((,) <$> Snocket.open sn Snocket.TestFamily
                        <*> Snocket.open sn Snocket.TestFamily
                   )
-                  (\(fdConn, fdConn') -> 
+                  (\(fdConn, fdConn') ->
                       -- we need concurrently close both sockets: they need to
                       -- communicate between each other while they close.
                       Snocket.close sn fdConn
@@ -1048,13 +1048,13 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
               clientVersions
               serverVersions
             return res
-          
+
 
 prop_channel_simultaneous_open_SimNet :: ArbitraryVersions
                                                         -> Property
 prop_channel_simultaneous_open_SimNet
   (ArbitraryVersions clientVersions serverVersions) =
-    runSimOrThrow $ prop_channel_simultaneous_open_sim 
+    runSimOrThrow $ prop_channel_simultaneous_open_sim
       versionNumberHandshakeCodec
       (cborTermVersionDataCodec dataCodecCBORTerm)
       clientVersions
@@ -1164,7 +1164,7 @@ instance Arbitrary ArbitraryRefuseReason where
 prop_codec_RefuseReason
   :: ArbitraryRefuseReason
   -> Bool
-prop_codec_RefuseReason (ArbitraryRefuseReason vReason) = 
+prop_codec_RefuseReason (ArbitraryRefuseReason vReason) =
   case CBOR.deserialiseFromBytes
         (decodeRefuseReason versionNumberCodec)
         (CBOR.toLazyByteString $ encodeRefuseReason versionNumberCodec vReason) of
