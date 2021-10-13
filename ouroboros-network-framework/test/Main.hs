@@ -8,6 +8,7 @@ import qualified Test.Ouroboros.Network.Server2 as Server2
 import qualified Test.Ouroboros.Network.Socket as Socket
 import qualified Test.Ouroboros.Network.Subscription as Subscription
 import qualified Test.Ouroboros.Network.RateLimiting as RateLimiting
+import qualified Test.Simulation.Network.Snocket as Snocket
 
 main :: IO ()
 main = defaultMain tests
@@ -21,6 +22,7 @@ tests =
   , Socket.tests
   , Subscription.tests
   , RateLimiting.tests
+  , Snocket.tests
   ]
 
 
