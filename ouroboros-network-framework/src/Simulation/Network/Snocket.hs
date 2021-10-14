@@ -935,6 +935,26 @@ mkSnocket state tr = Snocket { getLocalAddr
                                 (TestAddress addr))
     accept FD { fdVar } = pure accept_
       where
+        readTBQueueUntil :: (a -> STM m Bool) -> TBQueue m a -> STM m a
+        readTBQueueUntil p queue = do
+          a <- readTBQueue queue
+          shouldReturn <- p a
+          if shouldReturn
+             then return a
+             else readTBQueueUntil p queue
+
+        isHalfOpened :: TestAddress addr
+                     -> ChannelWithInfo m (TestAddress addr)
+                     -> STM m Bool
+        isHalfOpened localAddress cwi = do
+          connMap <- readTVar (nsConnections state)
+          let connId = ConnectionId localAddress (cwiAddress cwi)
+
+          case Map.lookup (normaliseId connId) connMap of
+             Nothing                            -> return True
+             Just (Connection _ _ _ HalfOpened) -> return True
+             _                                  -> return False
+
         accept_ = Accept $ do
             bracketOnError
               (atomically $ do
@@ -958,10 +978,21 @@ mkSnocket state tr = Snocket { getLocalAddr
                                   , Just (localAddress connId)
                                   , mkSockType fd
                                   )
+
                   FDListening localAddress queue -> do
-                    cwi <- readTBQueue queue
+                    -- We should not accept nor fail the 'accept' call
+                    -- in the presence of a connection that is in
+                    -- HalfOpened state. So we take from the TBQueue
+                    -- until we have found one that is __not__ in HalfOpened
+                    -- state.
+                    cwi <- readTBQueueUntil
+                            (isHalfOpened localAddress)
+                            queue
+
+                    let connId = ConnectionId localAddress (cwiAddress cwi)
+
                     return $ Right ( cwi
-                                   , localAddress
+                                   , connId
                                    )
 
                   FDClosed {} ->
@@ -993,28 +1024,31 @@ mkSnocket state tr = Snocket { getLocalAddr
                                            (STAcceptFailure fdType err))
                     return (AcceptFailure err, accept_)
 
-                  Right (chann, localAddress) -> do
+                  Right (chann, connId@ConnectionId { remoteAddress }) -> do
                     let ChannelWithInfo
-                          { cwiAddress       = remoteAddress
-                          , cwiSDUSize       = sduSize
+                          { cwiSDUSize       = sduSize
                           , cwiChannelLocal  = channelLocal
                           , cwiChannelRemote = channelRemote
                           } = chann
-                        connId = ConnectionId { localAddress, remoteAddress }
+
                     fdRemote <- atomically $ do
+
                       modifyTVar (nsConnections state)
                                  (Map.adjust (\s -> s { connState = Established })
                                              (normaliseId connId))
+
                       FD <$> newTVar (FDConnected
-                                        connId
-                                        Connection
-                                          { connChannelLocal  = channelLocal
-                                          , connChannelRemote = channelRemote
-                                          , connSDUSize       = sduSize
-                                          , connState         = Established
-                                          })
-                    traceWith tr (WithAddr (Just localAddress) Nothing
+                                          connId
+                                          Connection
+                                            { connChannelLocal  = channelLocal
+                                            , connChannelRemote = channelRemote
+                                            , connSDUSize       = sduSize
+                                            , connState         = Established
+                                            })
+
+                    traceWith tr (WithAddr (Just (localAddress connId)) Nothing
                                            (STAccepted remoteAddress))
+
                     return (Accepted fdRemote remoteAddress, accept_)
 
 
