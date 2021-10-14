@@ -320,12 +320,14 @@ addBlockSync cdb@CDB {..} blkToAdd = do
          Left e ->
              trace $ DoneAddingBlock
                  (blockRealPoint b)
+                 (Ignorable b)
                  (Left e)
                  (diffTime nowMon whenItWasEnqueued)
                  newTip
          Right (_relTime, forgeTime) ->
              trace $ DoneAddingBlock
                  (blockRealPoint b)
+                 (Ignorable b)
                  (Right $ diffUTCTime now forgeTime)
                  (diffTime nowMon whenItWasEnqueued)
                  newTip

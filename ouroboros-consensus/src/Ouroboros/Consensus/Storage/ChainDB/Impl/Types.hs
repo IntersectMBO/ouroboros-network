@@ -5,6 +5,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -57,6 +58,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , TraceIteratorEvent (..)
   , TraceOpenEvent (..)
   , TraceValidationEvent (..)
+  , Ignorable (..)
   ) where
 
 import           Control.Tracer
@@ -66,6 +68,7 @@ import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           GHC.TypeLits (KnownSymbol, Symbol, symbolVal)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
@@ -559,6 +562,11 @@ data NewTipInfo blk = NewTipInfo {
     }
   deriving (Eq, Show, Generic)
 
+newtype Ignorable (sym :: Symbol) x = Ignorable {getIgnorable :: x}
+
+instance Eq (Ignorable sym x) where (==) = \_ _ -> True
+instance KnownSymbol sym => Show (Ignorable sym x) where show _ = "(Ignorable @\"" <> symbolVal (Proxy @sym) <> "\")"
+
 -- | Trace type for the various events that occur when adding a block.
 data TraceAddBlockEvent blk =
     -- | A block with a 'BlockNo' more than @k@ back than the current tip was
@@ -641,6 +649,7 @@ data TraceAddBlockEvent blk =
     -- or many (eg future block) chain selections per instruction.
   | DoneAddingBlock
       (RealPoint blk)
+      (Ignorable "block" blk)
       (Either [History.EraSummary] NominalDiffTime)
       DiffTime
       (Point blk)
