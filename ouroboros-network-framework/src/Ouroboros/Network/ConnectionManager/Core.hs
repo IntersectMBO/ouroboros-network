@@ -928,7 +928,11 @@ withConnectionManager ConnectionManagerArguments {
                 TerminatingState {} -> return Nothing
 
                 TerminatedState {} -> return Nothing
+
+            traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
+
             traceCounters stateVar
+
             -- Note that we don't set a timeout thread here which would perform
             -- @
             --   Commit^{dataFlow}
@@ -939,8 +943,6 @@ withConnectionManager ConnectionManagerArguments {
             -- protocol governor will monitor the connection.  Once it becomes
             -- idle, it will call 'unregisterInboundConnection' which will
             -- perform the aforementioned @Commit@ transition.
-
-            traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
 
             -- If mbTransition is Nothing, it means that the connVar was read
             -- either in Terminating or TerminatedState. Either case we should
