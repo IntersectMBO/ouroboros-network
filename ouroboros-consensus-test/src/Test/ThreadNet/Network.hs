@@ -665,7 +665,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> STM m (ExtLedgerState blk)
+                   -> STM m (ExtLedgerState SmallL blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
@@ -676,14 +676,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
         -- we generate different transactions in each slot.
         let txs = runGen
                 (nodeSeed `combineWith` unSlotNo curSlotNo)
-                (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra ledger)
+                (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra ledger)     -- TODO
 
         void $ addTxs mempool txs
 
     mkArgs :: OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
-           -> ExtLedgerState blk
+           -> ExtLedgerState SmallL blk
            -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)

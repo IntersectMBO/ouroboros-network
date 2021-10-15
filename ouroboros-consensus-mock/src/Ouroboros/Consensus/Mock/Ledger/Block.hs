@@ -492,8 +492,8 @@ txSize = fromIntegral . Lazy.length . serialise
   Support for QueryLedger
 -------------------------------------------------------------------------------}
 
-data instance BlockQuery (SimpleBlock c ext) result where
-    QueryLedgerTip :: BlockQuery (SimpleBlock c ext) (Point (SimpleBlock c ext))
+data instance BlockQuery (SimpleBlock c ext) fp result where
+    QueryLedgerTip :: BlockQuery (SimpleBlock c ext) SmallL (Point (SimpleBlock c ext))
 
 instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   answerBlockQuery _cfg QueryLedgerTip =
@@ -501,10 +501,10 @@ instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
       . ledgerTipPoint (Proxy @(SimpleBlock c ext))
       . ledgerState
 
-instance SameDepIndex (BlockQuery (SimpleBlock c ext)) where
-  sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
+instance EqQuery (BlockQuery (SimpleBlock c ext)) where
+  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
 
-deriving instance Show (BlockQuery (SimpleBlock c ext) result)
+deriving instance Show (BlockQuery (SimpleBlock c ext) fp result)
 
 instance (Typeable c, Typeable ext)
     => ShowProxy (BlockQuery (SimpleBlock c ext)) where

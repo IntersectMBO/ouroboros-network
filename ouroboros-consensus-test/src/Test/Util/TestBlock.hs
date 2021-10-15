@@ -391,18 +391,17 @@ instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
   hardForkSummary = neverForksHardForkSummary id
 
-data instance BlockQuery TestBlock result where
-  QueryLedgerTip :: BlockQuery TestBlock (Point TestBlock)
+data instance BlockQuery TestBlock fp result where
+  QueryLedgerTip :: BlockQuery TestBlock SmallL (Point TestBlock)
 
 instance QueryLedger TestBlock where
   answerBlockQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
 
-instance SameDepIndex (BlockQuery TestBlock) where
-  sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
+instance EqQuery (BlockQuery TestBlock) where
+  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
 
-deriving instance Eq (BlockQuery TestBlock result)
-deriving instance Show (BlockQuery TestBlock result)
+deriving instance Show (BlockQuery TestBlock fp result)
 
 instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
@@ -410,7 +409,7 @@ instance ShowQuery (BlockQuery TestBlock) where
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint
 
-testInitExtLedger :: ExtLedgerState TestBlock
+testInitExtLedger :: ExtLedgerState SmallL TestBlock
 testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
@@ -617,7 +616,7 @@ instance Serialise (AnnTip TestBlock) where
   encode = defaultEncodeAnnTip encode
   decode = defaultDecodeAnnTip decode
 
-instance Serialise (ExtLedgerState TestBlock) where
+instance Serialise (ExtLedgerState SmallL TestBlock) where
   encode = encodeExtLedgerState encode encode encode
   decode = decodeExtLedgerState decode decode decode
 

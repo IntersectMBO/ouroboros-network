@@ -111,9 +111,9 @@ instance SerialiseNodeToClient (MockBlock ext) (GenTxId (MockBlock ext))
 instance SerialiseNodeToClient (MockBlock ext) (MockError (MockBlock ext))
 instance SerialiseNodeToClient (MockBlock ext) SlotNo
 
-instance SerialiseNodeToClient (MockBlock ext) (SomeSecond BlockQuery (MockBlock ext)) where
-  encodeNodeToClient _ _ (SomeSecond QueryLedgerTip) = encode ()
-  decodeNodeToClient _ _ = (\() -> SomeSecond QueryLedgerTip) <$> decode
+instance SerialiseNodeToClient (MockBlock ext) (SomeQuery (BlockQuery (MockBlock ext))) where
+  encodeNodeToClient _ _ (SomeQuery QueryLedgerTip) = encode ()
+  decodeNodeToClient _ _ = (\() -> SomeQuery QueryLedgerTip) <$> decode
 
 instance SerialiseResult (MockBlock ext) (BlockQuery (MockBlock ext)) where
   encodeResult _ _ QueryLedgerTip = encode

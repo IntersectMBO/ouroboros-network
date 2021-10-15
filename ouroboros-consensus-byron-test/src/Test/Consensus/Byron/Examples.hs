@@ -1,6 +1,9 @@
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings        #-}
+
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+
 module Test.Consensus.Byron.Examples (
     -- * Setup
     cfg
@@ -37,6 +40,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -118,7 +122,7 @@ examples = Golden.Examples {
     regularAndEBB :: a -> a -> Labelled a
     regularAndEBB regular ebb = labelled [("regular", regular), ("EBB", ebb)]
 
-    exampleQuery  = SomeSecond GetUpdateInterfaceState
+    exampleQuery  = SomeQuery GetUpdateInterfaceState
     exampleResult = SomeResult GetUpdateInterfaceState exampleUPIState
 
 exampleBlock :: ByronBlock
@@ -199,7 +203,7 @@ exampleLedgerState =
 exampleHeaderState :: HeaderState ByronBlock
 exampleHeaderState = HeaderState (NotOrigin exampleAnnTip) exampleChainDepState
 
-exampleExtLedgerState :: ExtLedgerState ByronBlock
+exampleExtLedgerState :: ExtLedgerState SmallL ByronBlock
 exampleExtLedgerState = ExtLedgerState {
       ledgerState = exampleLedgerState
     , headerState = exampleHeaderState
