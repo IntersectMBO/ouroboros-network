@@ -57,7 +57,6 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -237,10 +236,8 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
 copyAndSnapshotRunner
   :: forall m blk.
      ( IOLike m
-     , ConsensusProtocol (BlockProtocol blk)
-     , HasHeader blk
      , GetHeader blk
-     , IsLedger (LedgerState blk)
+     , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
@@ -270,7 +267,11 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
       --
       -- This is a synchronous operation: when it returns, the blocks have been
       -- copied to disk (though not flushed, necessarily).
-      copyToImmutableDB cdb >>= scheduleGC'
+      immSlotno <- copyToImmutableDB cdb
+      scheduleGC' immSlotno
+
+      -- Let the LedgerDB flush
+      LgrDB.withWriteLock cdbLgrDB $ LgrDB.flush cdbLgrDB
 
       now <- getMonotonicTime
       let distance' = distance + numToWrite
@@ -297,10 +298,9 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
 updateLedgerSnapshots ::
-    ( IOLike m
+     ( IOLike m
      , LgrDbSerialiseConstraints blk
-     , HasHeader blk
-     , IsLedger (LedgerState blk)
+     , LedgerSupportsProtocol blk
      )
   => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do

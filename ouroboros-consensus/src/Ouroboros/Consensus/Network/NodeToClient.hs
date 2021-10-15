@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -38,13 +39,17 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 
+import qualified Control.Exception as Exn
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.Map as Map
+import           Data.Monoid (Sum (..))
+import           Data.Semigroup (Max (..))
+import qualified Data.Set as Set
 import           Data.Void (Void)
 
 import           Network.TypedProtocol.Codec
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
                      encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
@@ -68,6 +73,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -81,7 +87,11 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
-import           Ouroboros.Consensus.Util (ShowProxy)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
+import           Ouroboros.Consensus.Util (ShowProxy, StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -102,7 +112,8 @@ data Handlers m peer blk = Handlers {
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 
     , hStateQueryServer
-        :: LocalStateQueryServer blk (Point blk) (Query blk) m ()
+        :: ResourceRegistry m
+        -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
 
     , hTxMonitorServer
         :: LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
@@ -129,17 +140,141 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
           localTxSubmissionServer
             (Node.localTxSubmissionServerTracer tracers)
             getMempool
-      , hStateQueryServer =
+      , hStateQueryServer = \rreg ->
           localStateQueryServer
             (ExtLedgerCfg cfg)
-            (ChainDB.getTipPoint getChainDB)
-            (ChainDB.getPastLedger getChainDB)
-            (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
-
+            (\seP -> do
+                let mkDLV (LedgerDB.LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
+                      DiskLedgerView
+                        (LedgerDB.ledgerDbCurrent ldb)
+                        (\ks -> do
+                           let chlog = LedgerDB.ledgerDbChangelog ldb
+                               rew   = LedgerDB.rewindTableKeySets chlog ks
+                           unfwd <-
+                             LedgerDB.readKeySetsVH
+                               (\ks' -> (,) seqNo <$> BackingStore.bsvhRead vh ks')
+                               rew
+                           case LedgerDB.forwardTableKeySets chlog unfwd of
+                             Left _err -> error "impossible!"
+                             Right vs  -> pure vs
+                        )
+                        (\rq -> do
+                            let chlog = LedgerDB.ledgerDbChangelog ldb
+                                diffs =
+                                    maybe
+                                      id
+                                      (zipLedgerTables doDropLTE)
+                                      (BackingStore.rqPrev rq)
+                                  $ mapLedgerTables prj
+                                  $ changelogDiffs chlog
+                            let -- (1) ensure that we never delete everything
+                                --     read from disk (ie if our result is
+                                --     non-empty then it contains something read
+                                --     from disk)
+                                -- (2) also, read one additional key, which we
+                                --     will not include in the result but need
+                                --     in order to know which in-memory
+                                --     insertions to include
+                                maxDeletes =
+                                    maybe 0 getMax
+                                  $ foldLedgerTables (Just . Max . numDeletesDiffMK) diffs
+                                nrequested = 1 + max (BackingStore.rqCount rq) (1 + maxDeletes)
+                                rq'        = rq{BackingStore.rqCount = nrequested}
+                            values <- BackingStore.bsvhRangeRead vh rq'
+                            pure $ zipLedgerTables (doFixupReadResult nrequested) diffs values
+                        )
+                        close
+                se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
+                case se of
+                  StaticRight (Left p)  -> pure $ StaticRight (Left p)
+                  StaticLeft         x  -> pure $ StaticLeft  $         mkDLV x
+                  StaticRight (Right x) -> pure $ StaticRight $ Right $ mkDLV x
+            )
       , hTxMonitorServer =
           localTxMonitorServer
             getMempool
       }
+  where
+    prj ::
+         Ord k
+      => ApplyMapKind SeqDiffMK k v
+      -> ApplyMapKind DiffMK k v
+    prj (ApplySeqDiffMK sq) = ApplyDiffMK (HD.cumulativeDiffSeqUtxoDiff sq)
+
+    numDeletesDiffMK :: ApplyMapKind DiffMK k v -> Int
+    numDeletesDiffMK (ApplyDiffMK (HD.UtxoDiff m)) =
+      getSum $ foldMap (Sum . oneIfDel) m
+
+    oneIfDel (HD.UtxoEntryDiff _v diffstate) = case diffstate of
+      HD.UedsDel       -> 1
+      HD.UedsIns       -> 0
+      HD.UedsInsAndDel -> 0
+
+    -- remove all diff elements that are <= to the greatest given key
+    doDropLTE ::
+         Ord k
+      => ApplyMapKind KeysMK k v
+      -> ApplyMapKind DiffMK k v
+      -> ApplyMapKind DiffMK k v
+    doDropLTE (ApplyKeysMK (HD.UtxoKeys ks)) (ApplyDiffMK (HD.UtxoDiff ds)) =
+        ApplyDiffMK
+      $ HD.UtxoDiff
+      $ case Set.lookupMax ks of
+          Nothing -> ds
+          Just k  -> Map.filterWithKey (\dk _dv -> dk > k) ds
+
+    -- INVARIANT: nrequested > 0
+    --
+    -- (1) if we reached the end of the store, then simply yield the given diff
+    --     applied to the given values
+    -- (2) otherwise, the readset must be non-empty, since 'rqCount' is positive
+    -- (3) remove the greatest read key
+    -- (4) remove all diff elements that are >= the greatest read key
+    -- (5) apply the remaining diff
+    -- (6) (the greatest read key will be the first fetched if the yield of this
+    --     result is next passed as 'rqPrev')
+    --
+    -- Note that if the in-memory changelog contains the greatest key, then
+    -- we'll return that in step (1) above, in which case the next passed
+    -- 'rqPrev' will contain it, which will cause 'doDropLTE' to result in an
+    -- empty diff, which will result in an entirely empty range query result,
+    -- which is the termination case.
+    --
+    -- TODO this @definitelyNoMoreToFetch@ logic leads to an extra roundtrip
+    -- when the changelog contains the greatest key. That'll be rare, and should
+    -- be in-expensive since the requisite pages would have been fetched by the
+    -- previous roundtrip (which was fruitful). But it seems sloppy. Switching
+    -- from 'rqPrev' to 'rqStart' would eliminate the extra rountrip and
+    -- simplify this code. However, it would also complicate the return type,
+    -- since the " next " range query wouldn't be defined by the keys of the "
+    -- previous " range query's results: we'd have to explicitly include the "
+    -- new next key " in the result of the range query. So maybe this should
+    -- stay as-is? Maybe some existing general wisdom out there about range
+    -- queries could guide us here.
+    doFixupReadResult ::
+         Ord k
+      => Int
+      -> ApplyMapKind DiffMK   k v
+      -> ApplyMapKind ValuesMK k v
+      -> ApplyMapKind ValuesMK k v
+    doFixupReadResult
+      nrequested
+      (ApplyDiffMK (HD.UtxoDiff ds))
+      (ApplyValuesMK (HD.UtxoValues vs)) =
+        let definitelyNoMoreToFetch = Map.size vs < nrequested
+            includingAllKeys        =
+              HD.forwardValues (HD.UtxoValues vs) (HD.UtxoDiff ds)
+        in
+        ApplyValuesMK
+      $ case Map.maxViewWithKey vs of
+          Nothing             ->
+              Exn.assert definitelyNoMoreToFetch
+            $ includingAllKeys
+          Just ((k, _v), vs') ->
+            if definitelyNoMoreToFetch then includingAllKeys else
+            HD.forwardValues
+              (HD.UtxoValues vs')
+              (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
 
 {-------------------------------------------------------------------------------
   Codecs
@@ -208,8 +343,8 @@ defaultCodecs ccfg version networkVersion = Codecs {
         codecLocalStateQuery
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
+          (queryEncodeNodeToClient ccfg queryVersion version . SomeQuery)
+          (queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
 
@@ -267,8 +402,8 @@ clientCodecs ccfg version networkVersion = Codecs {
         codecLocalStateQuery
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
-          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
+          (queryEncodeNodeToClient ccfg queryVersion version . SomeQuery)
+          (queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
 
@@ -301,7 +436,7 @@ identityCodecs :: (Monad m, QueryLedger blk)
 identityCodecs = Codecs {
       cChainSyncCodec    = codecChainSyncId
     , cTxSubmissionCodec = codecLocalTxSubmissionId
-    , cStateQueryCodec   = codecLocalStateQueryId sameDepIndex
+    , cStateQueryCodec   = codecLocalStateQueryId
     , cTxMonitorCodec    = codecLocalTxMonitorId
     }
 
@@ -434,13 +569,13 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
       :: localPeer
       -> Channel m bSQ
       -> m ((), Maybe bSQ)
-    aStateQueryServer them channel = do
+    aStateQueryServer them channel = withRegistry $ \reg -> do
       labelThisThread "LocalStateQueryServer"
       runPeer
         (contramap (TraceLabelPeer them) tStateQueryTracer)
         cStateQueryCodec
         channel
-        (localStateQueryServerPeer hStateQueryServer)
+        (localStateQueryServerPeer (hStateQueryServer reg))
 
     aTxMonitorServer
       :: localPeer

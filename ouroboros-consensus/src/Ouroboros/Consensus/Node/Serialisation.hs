@@ -1,11 +1,17 @@
-{-# LANGUAGE DefaultSignatures     #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Serialisation for sending things across the network.
 --
@@ -24,7 +30,7 @@ module Ouroboros.Consensus.Node.Serialisation (
   , defaultDecodeCBORinCBOR
   , defaultEncodeCBORinCBOR
     -- * Re-exported for convenience
-  , Some (..)
+  , SomeQuery (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -33,13 +39,14 @@ import           Codec.Serialise (Serialise (decode, encode))
 import           Data.SOP.BasicFunctors
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL,
+                     SomeQuery (..))
 
 {-------------------------------------------------------------------------------
   NodeToNode
@@ -87,6 +94,10 @@ class SerialiseNodeToClient blk a where
     => CodecConfig blk -> BlockNodeToClientVersion blk -> forall s. Decoder s a
   decodeNodeToClient _ccfg _version = decode
 
+deriving newtype instance
+     SerialiseNodeToClient blk ( SomeQuery     (query blk))
+  => SerialiseNodeToClient blk ((SomeQuery :.: query) blk)
+
 {-------------------------------------------------------------------------------
   NodeToClient - SerialiseResult
 -------------------------------------------------------------------------------}
@@ -97,16 +108,16 @@ class SerialiseNodeToClient blk a where
 -- 'NodeToClientVersion' argument.
 class SerialiseResult blk query where
   encodeResult
-    :: forall result.
+    :: forall (fp :: FootprintL) result.
        CodecConfig blk
     -> BlockNodeToClientVersion blk
-    -> query result
+    -> query fp result
     -> result -> Encoding
   decodeResult
-    :: forall result.
+    :: forall (fp :: FootprintL) result.
        CodecConfig blk
     -> BlockNodeToClientVersion blk
-    -> query result
+    -> query fp result
     -> forall s. Decoder s result
 
 {-------------------------------------------------------------------------------

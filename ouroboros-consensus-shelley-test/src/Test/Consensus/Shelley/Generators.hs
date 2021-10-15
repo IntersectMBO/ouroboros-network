@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -128,17 +129,17 @@ instance CanMock proto era => Arbitrary (GenTxId (ShelleyBlock proto era)) where
 
 instance CanMock proto era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock proto era)) where
   arbitrary = oneof
-    [ pure $ SomeSecond GetLedgerTip
-    , pure $ SomeSecond GetEpochNo
-    , SomeSecond . GetNonMyopicMemberRewards <$> arbitrary
-    , pure $ SomeSecond GetCurrentPParams
-    , pure $ SomeSecond GetProposedPParamsUpdates
-    , pure $ SomeSecond GetStakeDistribution
-    , pure $ SomeSecond DebugEpochState
-    , (\(SomeSecond q) -> SomeSecond (GetCBOR q)) <$> arbitrary
-    , SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
-    , pure $ SomeSecond GetGenesisConfig
-    , pure $ SomeSecond DebugNewEpochState
+    [ pure $ SomeQuery GetLedgerTip
+    , pure $ SomeQuery GetEpochNo
+    , SomeQuery . GetNonMyopicMemberRewards <$> arbitrary
+    , pure $ SomeQuery GetCurrentPParams
+    , pure $ SomeQuery GetProposedPParamsUpdates
+    , pure $ SomeQuery GetStakeDistribution
+    , pure $ SomeQuery DebugEpochState
+    , (\(SomeQuery q) -> SomeQuery (GetCBOR q)) <$> arbitrary
+    , SomeQuery . GetFilteredDelegationsAndRewardAccounts <$> arbitrary
+    , pure $ SomeQuery GetGenesisConfig
+    , pure $ SomeQuery DebugNewEpochState
     ]
 
 instance CanMock proto era => Arbitrary (SomeResult (ShelleyBlock proto era)) where
@@ -181,11 +182,12 @@ instance CanMock proto era=> Arbitrary (ShelleyTip proto era) where
 instance Arbitrary ShelleyTransition where
   arbitrary = ShelleyTransitionInfo <$> arbitrary
 
-instance CanMock proto era => Arbitrary (LedgerState (ShelleyBlock proto era)) where
+instance CanMock proto era => Arbitrary (LedgerState (ShelleyBlock proto era) EmptyMK) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
+    <*> pure (ShelleyLedgerTables ApplyEmptyMK)
 
 instance CanMock proto era => Arbitrary (AnnTip (ShelleyBlock proto era)) where
   arbitrary = AnnTip
@@ -225,6 +227,6 @@ instance PraosCrypto c => Arbitrary (SL.ChainDepState c) where
 instance CanMock proto era
       => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock proto era))) where
   arbitrary = do
-      query@(SomeSecond q) <- arbitrary
+      query@(SomeQuery q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q
       return $ WithVersion version query
