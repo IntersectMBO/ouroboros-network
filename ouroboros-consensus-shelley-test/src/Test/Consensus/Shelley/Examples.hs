@@ -20,7 +20,14 @@ module Test.Consensus.Shelley.Examples (
   , examplesShelley
   ) where
 
+import           Data.Foldable (toList)
+import qualified Data.Map as Map
 import qualified Data.Set as Set
+import           GHC.Records (HasField (getField))
+
+import qualified Cardano.Ledger.Core as LC
+import           Cardano.Ledger.Era (Crypto, getAllTxInputs)
+import           Cardano.Ledger.Shelley.Tx (TxIn)
 
 import           Ouroboros.Network.Block (Serialised (..))
 
@@ -30,7 +37,10 @@ import qualified Cardano.Protocol.TPraos.BHeader as SL
 import           Data.Coerce (coerce)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics
+                     (ApplyMapKind' (ApplyEmptyMK))
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import           Ouroboros.Consensus.Protocol.Praos.Header
@@ -41,11 +51,25 @@ import           Ouroboros.Consensus.Protocol.TPraos (TPraos,
                      TPraosState (TPraosState))
 import           Ouroboros.Consensus.Protocol.Translate (TranslateProto,
                      translateChainDepState)
+import           Ouroboros.Consensus.Storage.Serialisation
+
+import           Test.Cardano.Ledger.Shelley.Orphans ()
+
+import qualified Ouroboros.Consensus.Ledger.Basics as Basics
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.HFEras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Ouroboros.Consensus.Storage.Serialisation
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Serialisation.Golden (labelled, unlabelled)
+import qualified Test.Util.Serialisation.Golden as Golden
+import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
+
+import           Ouroboros.Consensus.Protocol.TPraos (TPraosState (TPraosState))
+
 import           Test.Cardano.Ledger.Allegra.Examples.Consensus
                      (ledgerExamplesAllegra)
 import           Test.Cardano.Ledger.Alonzo.Examples.Consensus
@@ -72,7 +96,7 @@ codecConfig :: CodecConfig StandardShelleyBlock
 codecConfig = ShelleyCodecConfig
 
 fromShelleyLedgerExamples
-  :: ShelleyCompatible (TPraos (EraCrypto era)) era
+  :: forall era. ShelleyCompatible (TPraos (EraCrypto era)) era
   => ShelleyLedgerExamples era
   -> Golden.Examples (ShelleyBlock (TPraos (EraCrypto era)) era)
 fromShelleyLedgerExamples ShelleyLedgerExamples {
@@ -94,6 +118,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
     , exampleSlotNo           = unlabelled slotNo
+    , examplesLedgerTables    = unlabelled ledgerTables
     }
   where
     blk = mkShelleyBlock sleBlock
@@ -104,13 +129,13 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     serialisedHeader =
       SerialisedHeaderFromDepPair $ GenDepPair (NestedCtxt CtxtShelley) (Serialised "<HEADER>")
     queries = labelled [
-          ("GetLedgerTip",              SomeSecond GetLedgerTip)
-        , ("GetEpochNo",                SomeSecond GetEpochNo)
-        , ("GetCurrentPParams",         SomeSecond GetCurrentPParams)
-        , ("GetProposedPParamsUpdates", SomeSecond GetProposedPParamsUpdates)
-        , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
-        , ("GetNonMyopicMemberRewards", SomeSecond $ GetNonMyopicMemberRewards sleRewardsCredentials)
-        , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
+          ("GetLedgerTip",              SomeQuery GetLedgerTip)
+        , ("GetEpochNo",                SomeQuery GetEpochNo)
+        , ("GetCurrentPParams",         SomeQuery GetCurrentPParams)
+        , ("GetProposedPParamsUpdates", SomeQuery GetProposedPParamsUpdates)
+        , ("GetStakeDistribution",      SomeQuery GetStakeDistribution)
+        , ("GetNonMyopicMemberRewards", SomeQuery $ GetNonMyopicMemberRewards sleRewardsCredentials)
+        , ("GetGenesisConfig",          SomeQuery GetGenesisConfig)
       ]
     results = labelled [
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
@@ -135,11 +160,33 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                                   }
     , shelleyLedgerState      = sleNewEpochState
     , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+    , shelleyLedgerTables     = ShelleyLedgerTables ApplyEmptyMK
     }
     chainDepState = TPraosState (NotOrigin 1) sleChainDepState
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
+    ledgerTables = ShelleyLedgerTables
+                 $ Basics.ApplyValuesMK
+                 $ HD.UtxoValues
+                 $ Map.fromList
+                 $ zip exampleTxIns exampleTxOuts
+      where
+        exampleTxIns :: [TxIn (Crypto era)]
+        exampleTxIns  =
+          case toList $ getAllTxInputs $ getField @"body" sleTx of
+            [] -> error "No transaction inputs were provided to construct the ledger tables"
+                  -- We require at least one transaction input (and one
+                  -- transaction output) in the example provided by
+                  -- cardano-ledger to make sure that we test the serialization
+                  -- of ledger tables with at least one non-trivial example.
+            xs -> xs
+
+        exampleTxOuts :: [LC.TxOut era]
+        exampleTxOuts =
+          case toList $ getField @"outputs" $ getField @"body" sleTx of
+            [] -> error "No transaction outputs were provided to construct the ledger tables"
+            xs -> xs
 
 -- | TODO Factor this out into something nicer.
 fromShelleyLedgerExamplesPraos ::

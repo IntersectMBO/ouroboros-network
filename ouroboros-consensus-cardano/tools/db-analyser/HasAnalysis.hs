@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds    #-}
 {-# LANGUAGE TypeFamilies #-}
 module HasAnalysis (
     HasAnalysis (..)
@@ -21,8 +22,8 @@ import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 
 data WithLedgerState blk = WithLedgerState
   { wlsBlk         :: blk
-  , wlsStateBefore :: LedgerState blk
-  , wlsStateAfter  :: LedgerState blk
+  , wlsStateBefore :: LedgerState blk ValuesMK
+  , wlsStateAfter  :: LedgerState blk ValuesMK
   }
 
 class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where

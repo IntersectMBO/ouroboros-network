@@ -31,10 +31,12 @@ module Test.Ouroboros.Storage.LedgerDB.OnDisk (
 
 import           Prelude hiding (elem)
 
+import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans as Trans
 import           Control.Tracer (nullTracer)
 import           Data.Bifunctor
 import           Data.Foldable (toList)
@@ -45,9 +47,13 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.TreeDiff.Class (genericToExpr)
+import           Data.TreeDiff.Expr (Expr (App))
 import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
@@ -68,6 +74,7 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 
@@ -79,7 +86,6 @@ import           Test.Util.TestBlock hiding (TestBlock, TestBlockCodecConfig,
                      TestBlockStorageConfig)
 
 -- For the Arbitrary instance of 'MemPolicy'
-import           Codec.Serialise (Serialise)
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
@@ -130,16 +136,6 @@ newtype TValue = TValue (WithOrigin SlotNo)
   A ledger semantics for TestBlock
 -------------------------------------------------------------------------------}
 
-data UTxTok = UTxTok { utxtok  :: Map Token TValue
-                     , -- | All the tokens that ever existed. We use this to
-                       -- make sure a token is not created more than once. See
-                       -- the definition of 'applyPayload' in the
-                       -- 'PayloadSemantics' of 'Tx'.
-                       utxhist :: Set Token
-                     }
-  deriving stock (Generic, Eq, Show)
-  deriving anyclass (NoThunks, Serialise, ToExpr)
-
 data TxErr
   = TokenWasAlreadyCreated Token
   | TokenDoesNotExist      Token
@@ -147,7 +143,15 @@ data TxErr
   deriving anyclass (NoThunks, Serialise, ToExpr)
 
 instance PayloadSemantics Tx where
-  type PayloadDependentState Tx = UTxTok
+  data PayloadDependentState Tx mk =
+    UTxTok { utxtoktables :: LedgerTables (LedgerState TestBlock) mk
+             -- | All the tokens that ever existed. We use this to
+             -- make sure a token is not created more than once. See
+             -- the definition of 'applyPayload' in the
+             -- 'PayloadSemantics' of 'Tx'.
+           , utxhist      :: Set Token
+           }
+    deriving stock    (Generic)
 
   type PayloadDependentError Tx = TxErr
 
@@ -158,21 +162,199 @@ instance PayloadSemantics Tx where
   -- * a key is inserted at most once
   --
   applyPayload st Tx{consumed, produced} =
-      delete consumed st >>= uncurry insert produced
+      fmap track $ delete consumed st >>= uncurry insert produced
     where
-      insert :: Token -> TValue -> UTxTok -> Either TxErr UTxTok
-      insert tok val UTxTok{utxtok, utxhist} =
-        if tok `Set.member` utxhist
-        then Left  $ TokenWasAlreadyCreated tok
-        else Right $ UTxTok { utxtok  = Map.insert tok val utxtok
-                            , utxhist = Set.insert tok utxhist
-                            }
+      insert ::
+           Token
+        -> TValue
+        -> PayloadDependentState Tx ValuesMK
+        -> Either TxErr (PayloadDependentState Tx ValuesMK)
+      insert tok val st'@UTxTok{utxtoktables, utxhist} =
+          if tok `Set.member` utxhist
+          then Left  $ TokenWasAlreadyCreated tok
+          else Right $ st' { utxtoktables = Map.insert tok val `onValues` utxtoktables
+                           , utxhist      = Set.insert tok utxhist
+                           }
+      delete ::
+           Token
+        -> PayloadDependentState Tx ValuesMK
+        -> Either TxErr (PayloadDependentState Tx ValuesMK)
+      delete tok st'@UTxTok{utxtoktables} =
+          if Map.member tok `queryKeys` utxtoktables
+          then Right $ st' { utxtoktables = Map.delete tok `onValues` utxtoktables
+                           }
+          else Left  $ TokenDoesNotExist tok
 
-      delete :: Token -> UTxTok -> Either TxErr UTxTok
-      delete tok st'@UTxTok{utxtok} =
-        if tok `Map.member` utxtok
-        then Right $ st' { utxtok = Map.delete tok utxtok }
-        else Left  $ TokenDoesNotExist tok
+      track :: PayloadDependentState Tx ValuesMK -> PayloadDependentState Tx TrackingMK
+      track stAfter =
+          stAfter { utxtoktables =
+                      TokenToTValue $ rawCalculateDifference utxtokBefore utxtokAfter
+                  }
+        where
+          utxtokBefore = testUtxtokTable $ utxtoktables st
+          utxtokAfter  = testUtxtokTable $ utxtoktables stAfter
+
+  getPayloadKeySets Tx{consumed} =
+    TokenToTValue $ ApplyKeysMK $ HD.UtxoKeys $ Set.singleton consumed
+
+deriving stock    instance (Eq        (PayloadDependentState Tx EmptyMK))
+deriving stock    instance (Eq        (PayloadDependentState Tx DiffMK))
+deriving stock    instance (Eq        (PayloadDependentState Tx ValuesMK))
+deriving stock    instance (Show      (PayloadDependentState Tx (ApplyMapKind' mk)))
+deriving anyclass instance (Serialise (PayloadDependentState Tx EmptyMK))
+deriving anyclass instance (ToExpr    (PayloadDependentState Tx ValuesMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx EmptyMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx DiffMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx ValuesMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx SeqDiffMK))
+
+onValues ::
+     (Map Token TValue -> Map Token TValue)
+  -> LedgerTables (LedgerState TestBlock) ValuesMK
+  -> LedgerTables (LedgerState TestBlock) ValuesMK
+onValues f TokenToTValue {testUtxtokTable} = TokenToTValue $ updateMap testUtxtokTable
+  where
+    updateMap :: ApplyMapKind ValuesMK Token TValue -> ApplyMapKind ValuesMK Token TValue
+    updateMap (ApplyValuesMK (HD.UtxoValues utxovals)) =
+      ApplyValuesMK $ HD.UtxoValues $ f utxovals
+
+queryKeys ::
+     (Map Token TValue -> a)
+  -> LedgerTables (LedgerState TestBlock) ValuesMK
+  -> a
+queryKeys f (TokenToTValue (ApplyValuesMK (HD.UtxoValues utxovals))) = f utxovals
+
+{-------------------------------------------------------------------------------
+  Instances required for HD storage of ledger state tables
+-------------------------------------------------------------------------------}
+
+instance TableStuff (LedgerState TestBlock) where
+  newtype LedgerTables (LedgerState TestBlock) mk =
+    TokenToTValue { testUtxtokTable :: ApplyMapKind mk Token TValue }
+    deriving stock (Generic)
+
+  projectLedgerTables st       = utxtoktables $ payloadDependentState st
+  withLedgerTables    st table = st { payloadDependentState =
+                                        (payloadDependentState st) {utxtoktables = table}
+                                    }
+
+  pureLedgerTables = TokenToTValue
+
+  mapLedgerTables      f                                     (TokenToTValue x) = TokenToTValue    (f x)
+  traverseLedgerTables f                                     (TokenToTValue x) = TokenToTValue <$> f x
+  zipLedgerTables      f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
+  zipLedgerTables2     f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue    (f x y z)
+  foldLedgerTables     f                                     (TokenToTValue x) =                   f x
+  foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
+
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) EmptyMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) DiffMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving newtype  instance Show     (LedgerTables (LedgerState TestBlock) (ApplyMapKind' mk))
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) EmptyMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) DiffMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) SeqDiffMK)
+
+instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
+  codecLedgerTables = TokenToTValue $ CodecMK toCBOR toCBOR fromCBOR fromCBOR
+
+instance Serialise (LedgerTables (LedgerState TestBlock) EmptyMK) where
+  encode TokenToTValue {testUtxtokTable} = toCBOR testUtxtokTable
+  decode = fmap TokenToTValue fromCBOR
+
+instance ToCBOR Token where
+  toCBOR (Token pt) = S.encode pt
+
+instance FromCBOR Token where
+  fromCBOR = fmap Token S.decode
+
+instance ToCBOR TValue where
+  toCBOR (TValue v) = S.encode v
+
+instance FromCBOR TValue where
+  fromCBOR = fmap TValue S.decode
+
+instance TickedTableStuff (LedgerState TestBlock) where
+  projectLedgerTablesTicked (TickedTestLedger st)        = projectLedgerTables st
+  withLedgerTablesTicked    (TickedTestLedger st) tables =
+    TickedTestLedger $ withLedgerTables st tables
+
+instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
+  showsLedgerState _sing = shows
+
+instance StowableLedgerTables (LedgerState TestBlock) where
+  stowLedgerTables     = stowErr "stowLedgerTables"
+  unstowLedgerTables   = stowErr "unstowLedgerTables"
+  isCandidateForUnstow = const False
+
+stowErr :: String -> a
+stowErr fname = error $ "Function " <> fname <> " should not be used in these tests."
+                      <> " The dual ledger should never be used."
+
+instance Show (ApplyMapKind' mk' Token TValue) where
+  show ap = showsApplyMapKind ap ""
+
+instance ToExpr (ApplyMapKind' mk' Token TValue) where
+  toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
+  toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
+  toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr keys]
+  toExpr (ApplySeqDiffMK (HD.SeqUtxoDiff seqdiff))
+                                      = App "ApplySeqDiffMK"   [genericToExpr $ toList seqdiff]
+  toExpr (ApplyTrackingMK vals diffs) = App "ApplyTrackingMK"  [ genericToExpr vals
+                                                               , genericToExpr diffs
+                                                               ]
+  toExpr (ApplyValuesMK vals)         = App "ApplyValuesMK"    [genericToExpr vals]
+  toExpr ApplyQueryAllMK              = App "ApplyQueryAllMK"  []
+  toExpr (ApplyQuerySomeMK keys)      = App "ApplyQuerySomeMK" [genericToExpr keys]
+
+-- About this instance: we have that the use of
+--
+-- > genericToExpr UtxoDiff
+--
+-- in instance ToExpr (ApplyMapKind mk Token TValue) requires
+--
+-- >  ToExpr Map k (UtxoEntryDiff v )
+--
+-- requires
+--
+-- > ToExpr (UtxoEntryDiff v )
+--
+-- requires
+--
+-- > ToExpr UtxoEntryDiffState
+--
+instance ToExpr HD.UtxoEntryDiffState where
+  toExpr = genericToExpr
+
+-- See instance ToExpr HD.UtxoEntryDiffState
+instance ToExpr (HD.UtxoEntryDiff TValue) where
+  toExpr = genericToExpr
+
+instance ToExpr (ExtLedgerState TestBlock ValuesMK) where
+  toExpr = genericToExpr
+
+instance ToExpr (LedgerState (TestBlockWith Tx) ValuesMK) where
+  toExpr = genericToExpr
+
+-- Required by the ToExpr (SeqUtxoDiff k v) instance
+instance ToExpr (HD.SudElement Token TValue) where
+  toExpr = genericToExpr
+
+-- Required by the ToExpr (HD.SudElement Token TValue) instance
+instance ToExpr (HD.UtxoDiff Token TValue) where
+  toExpr = genericToExpr
+
+instance ToExpr (LedgerTables (LedgerState TestBlock) ValuesMK) where
+  toExpr = genericToExpr
+
+-- Required by the genericToExpr application on RewoundKeys
+instance ToExpr (HD.UtxoKeys Token TValue) where
+  toExpr = genericToExpr
+
+-- Required by the genericToExpr application on RewoundKeys
+instance ToExpr (HD.UtxoValues Token TValue) where
+  toExpr = genericToExpr
 
 {-------------------------------------------------------------------------------
   TestBlock generation
@@ -203,10 +385,14 @@ instance PayloadSemantics Tx where
   coupled to the generator's semantics.
  -------------------------------------------------------------------------------}
 
-initialTestLedgerState :: UTxTok
+initialTestLedgerState :: PayloadDependentState Tx ValuesMK
 initialTestLedgerState = UTxTok {
-    utxtok = Map.singleton initialToken (pointTValue initialToken)
-  , utxhist = Set.singleton initialToken
+    utxtoktables =   TokenToTValue
+                   $ ApplyValuesMK
+                   $ HD.UtxoValues
+                   $ Map.singleton initialToken (pointTValue initialToken)
+  , utxhist      = Set.singleton initialToken
+
   }
   where
     initialToken = Token GenesisPoint
@@ -231,7 +417,7 @@ genBlock pt =
                     , produced = ( Token pt', TValue (pointSlot pt'))
                     }
   where
-    mkBlockFrom :: Point (TestBlockWith ptype) -> ptype -> (TestBlockWith ptype)
+    mkBlockFrom :: Point (TestBlockWith ptype) -> ptype -> TestBlockWith ptype
     mkBlockFrom GenesisPoint           = firstBlockWithPayload 0
     mkBlockFrom (BlockPoint slot hash) = successorBlockWithPayload hash slot
 
@@ -242,7 +428,7 @@ genBlock pt =
         dummyBlk :: TestBlockWith ()
         dummyBlk = mkBlockFrom (castPoint pt) ()
 
-genBlockFromLedgerState :: ExtLedgerState TestBlock -> Gen TestBlock
+genBlockFromLedgerState :: ExtLedgerState TestBlock mk -> Gen TestBlock
 genBlockFromLedgerState = pure . genBlock . lastAppliedPoint . ledgerState
 
 extLedgerDbConfig :: SecurityParam -> LedgerDbCfg (ExtLedgerState TestBlock)
@@ -287,6 +473,11 @@ data Cmd ss =
     -- | Take a snapshot (write to disk)
   | Snap
 
+    -- | Flush the DbChangelog in the model.
+    --
+    -- Note that as the Mock doesn't have the notion of "flushed differences", it is a no-op on the mock.
+  | Flush
+
     -- | Restore the DB from on-disk, then return it along with the init log
   | Restore
 
@@ -314,9 +505,10 @@ data Cmd ss =
 data Success ss =
     Unit ()
   | MaybeErr (Either (ExtValidationError TestBlock) ())
-  | Ledger (ExtLedgerState TestBlock)
+  | Ledger (ExtLedgerState TestBlock EmptyMK)
   | Snapped (Maybe (ss, RealPoint TestBlock))
-  | Restored (MockInitLog ss, ExtLedgerState TestBlock)
+  | Restored (MockInitLog ss, ExtLedgerState TestBlock EmptyMK)
+  | Flushed
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 -- | Currently we don't have any error responses
@@ -328,7 +520,10 @@ newtype Resp ss = Resp (Success ss)
 -------------------------------------------------------------------------------}
 
 -- | The mock ledger records the blocks and ledger values (new to old)
-type MockLedger = [(TestBlock, ExtLedgerState TestBlock)]
+--
+-- TODO: we need the values in the ledger state of the mock since we do not
+-- store the values anywhere else in the mock.
+type MockLedger = [(TestBlock, ExtLedgerState TestBlock ValuesMK)]
 
 -- | We use the slot number of the ledger state as the snapshot number
 --
@@ -376,12 +571,6 @@ data SnapState = SnapOk | SnapCorrupted
 
 mockInit :: SecurityParam -> Mock
 mockInit = Mock [] Map.empty GenesisPoint
-
-mockCurrent :: Mock -> ExtLedgerState TestBlock
-mockCurrent Mock{..} =
-    case mockLedger of
-      []       -> testInitExtLedgerWithState initialTestLedgerState
-      (_, l):_ -> l
 
 mockChainLength :: Mock -> Word64
 mockChainLength Mock{..} = fromIntegral (length mockLedger)
@@ -490,13 +679,16 @@ runMock cmd initMock =
     cfg = extLedgerDbConfig (mockSecParam initMock)
 
     go :: Cmd MockSnap -> Mock -> (Success MockSnap, Mock)
-    go Current       mock = (Ledger (cur (mockLedger mock)), mock)
+    go Current       mock = (Ledger (forgetLedgerTables $ cur (mockLedger mock)), mock)
     go (Push b)      mock = first MaybeErr $ mockUpdateLedger (push b)      mock
     go (Switch n bs) mock = first MaybeErr $ mockUpdateLedger (switch n bs) mock
-    go Restore       mock = (Restored (initLog, cur (mockLedger mock')), mock')
+    go Restore       mock = (Restored (initLog, forgetLedgerTables $ cur (mockLedger mock')), mock')
       where
         initLog = mockInitLog mock
         mock'   = applyMockLog initLog mock
+    go Flush         mock =
+      -- The mock doesn't have the notion of flushing, so therefore this is a no-op. However, after executing the Flush command on the model, the states must still agree.
+      (Flushed, mock)
     go Snap          mock = case mbSnapshot of
         Just pt
           | let mockSnap = MockSnap (unSlotNo (realPointSlot pt))
@@ -543,7 +735,7 @@ runMock cmd initMock =
             k = fromIntegral $ maxRollbacks $ mockSecParam mock
 
             -- The snapshots from new to old until 'mockRestore' (inclusive)
-            untilRestore :: [(TestBlock, ExtLedgerState TestBlock)]
+            untilRestore :: [(TestBlock, ExtLedgerState TestBlock ValuesMK)]
             untilRestore =
               takeWhile
                 ((/= (mockRestore mock)) . blockPoint . fst)
@@ -569,7 +761,7 @@ runMock cmd initMock =
     push b = do
         ls <- State.get
         l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (cur ls)
-        State.put ((b, l'):ls)
+        State.put ((b, applyLedgerTablesDiffs (cur ls) l'):ls)
 
     switch :: Word64
            -> [TestBlock]
@@ -578,7 +770,7 @@ runMock cmd initMock =
         State.modify $ drop (fromIntegral n)
         mapM_ push bs
 
-    cur :: MockLedger -> ExtLedgerState TestBlock
+    cur :: MockLedger -> ExtLedgerState TestBlock ValuesMK
     cur []         = testInitExtLedgerWithState initialTestLedgerState
     cur ((_, l):_) = l
 
@@ -620,13 +812,21 @@ data StandaloneDB m = DB {
 
       -- | LedgerDB config
     , dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState TestBlock)
+
+    , dbBackingStore :: StrictTVar m (LedgerBackingStore m (ExtLedgerState TestBlock))
     }
 
 initStandaloneDB :: forall m. IOLike m => DbEnv m -> m (StandaloneDB m)
 initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
-
+    dbBackingStore <- uncheckedNewTVarM
+                      =<< newBackingStore
+                            (error "New backing store doesn't use HasFS for now")
+                            (ExtLedgerStateTables
+                                TokenToTValue {
+                                -- TODO we could consider adapting the test generator to generate an initial ledger with non-empty tables.
+                                  testUtxtokTable = ApplyValuesMK (HD.UtxoValues mempty )})
     let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
 
@@ -639,7 +839,9 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain = []
 
     initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbWithAnchor (testInitExtLedgerWithState initialTestLedgerState)
+    initDB = ledgerDbWithAnchor
+               RunOnlyNew
+               (forgetLedgerTables $ testInitExtLedgerWithState initialTestLedgerState)
 
     getBlock ::
          RealPoint TestBlock
@@ -718,6 +920,11 @@ runDB standalone@DB{..} cmd =
       -> ExtValidationError TestBlock
     annLedgerErr' = annLedgerErr
 
+    reader :: TypeOf_readDB m (ExtLedgerState TestBlock)
+    reader rewoundTableKeySets = do
+      backingStore <- readTVarIO dbBackingStore
+      readKeySets backingStore rewoundTableKeySets
+
     go :: SomeHasFS m -> Cmd DiskSnapshot -> m (Success DiskSnapshot)
     go _ Current =
         atomically $ (Ledger . ledgerDbCurrent . snd) <$> readTVar dbState
@@ -726,6 +933,7 @@ runDB standalone@DB{..} cmd =
           uncurry Map.insert (refValPair b)
         upd (push b) $ \db ->
           fmap (first annLedgerErr') $
+            defaultReadKeySets reader $
             defaultThrowLedgerErrors $
               ledgerDbPush
                 dbLedgerDbCfg
@@ -736,23 +944,38 @@ runDB standalone@DB{..} cmd =
           repeatedly (uncurry Map.insert) (map refValPair bs)
         upd (switch n bs) $ \db ->
           fmap (bimap annLedgerErr' ignoreExceedRollback) $
-            defaultResolveWithErrors dbResolve $
+            defaultReadKeySets reader $
+            defaultResolveWithErrors (DbReader . Trans.lift . dbResolve) $
               ledgerDbSwitch
                 dbLedgerDbCfg
                 n
                 (const $ pure ())
                 (map ApplyVal bs)
                 db
+
+    go _ Flush = do
+        (toFlush, bs) <- atomically $ do
+          (_, db) <- readTVar dbState
+          bs <- readTVar dbBackingStore
+          let (toFlush, db') = ledgerDbFlush DbChangelogFlushAllImmutable db
+          modifyTVar dbState (\(rs, _) -> (rs, db'))
+          pure (toFlush, bs)
+        flush bs toFlush
+        pure Flushed
     go hasFS Snap = do
-        (_, db) <- atomically $ readTVar dbState
+        (bs, db) <- atomically $ do
+          bs <- readTVar dbBackingStore
+          (_, db) <- readTVar dbState
+          pure (bs, db)
         Snapped <$>
           takeSnapshot
             nullTracer
             hasFS
+            bs
             S.encode
             db
     go hasFS Restore = do
-        (initLog, db, _replayed) <-
+        (initLog, db, _replayed, backingStore) <-
           initLedgerDB
             nullTracer
             nullTracer
@@ -762,7 +985,10 @@ runDB standalone@DB{..} cmd =
             dbLedgerDbCfg
             (return (testInitExtLedgerWithState initialTestLedgerState))
             streamAPI
-        atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
+            RunOnlyNew
+        atomically $ do
+          modifyTVar dbState (\(rs, _) -> (rs, db))
+          writeTVar dbBackingStore backingStore
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
         catch
@@ -815,8 +1041,10 @@ runDB standalone@DB{..} cmd =
                           return $ MaybeErr (Right ())
 
     truncateSnapshot :: SomeHasFS m -> DiskSnapshot -> m ()
-    truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss =
-        withFile hasFS (snapshotToPath ss) (AppendMode AllowExisting) $ \h ->
+    truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss = do
+        withFile hasFS (snapshotToStatePath ss) (AppendMode AllowExisting) $ \h ->
+          hTruncate h 0
+        withFile hasFS (snapshotToTablesPath ss) (AppendMode AllowExisting) $ \h ->
           hTruncate h 0
 
     refValPair :: TestBlock -> (RealPoint TestBlock, TestBlock)
@@ -935,9 +1163,17 @@ generator secParam (Model mock hs) = Just $ QC.oneof $ concat [
                                 (lastAppliedPoint . ledgerState . mockCurrent $ afterRollback)
             return $ Switch numRollback blocks
         , fmap At $ return Snap
+        , fmap At $ return Flush
         , fmap At $ return Restore
         , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
         ]
+      where
+        mockCurrent :: Mock -> ExtLedgerState TestBlock ValuesMK
+        mockCurrent Mock{..} =
+          case mockLedger of
+            []       -> testInitExtLedgerWithState initialTestLedgerState
+            (_, l):_ -> l
+
 
     possibleCorruptions :: [(Corruption, Reference DiskSnapshot Symbolic)]
     possibleCorruptions = concatMap aux hs
@@ -962,6 +1198,7 @@ shrinker _ (At cmd) =
       Current      -> []
       Push _b      -> []
       Snap         -> []
+      Flush        -> []
       Restore      -> []
       Switch 0 [b] -> [At $ Push b]
       Switch n bs  -> if length bs > fromIntegral n
@@ -982,6 +1219,7 @@ instance CommandNames (At Cmd) where
   cmdName (At Push{})    = "Push"
   cmdName (At Switch{})  = "Switch"
   cmdName (At Snap{})    = "Snap"
+  cmdName (At Flush{})   = "Flush"
   cmdName (At Restore{}) = "Restore"
   cmdName (At Corrupt{}) = "Corrupt"
   cmdName (At Drop{})    = "Drop"
@@ -991,6 +1229,7 @@ instance CommandNames (At Cmd) where
     , "Push"
     , "Switch"
     , "Snap"
+    , "Flush"
     , "Restore"
     , "Corrupt"
     , "Drop"
@@ -1078,7 +1317,7 @@ sm secParam db = StateMachine {
     }
 
 prop_sequential :: SecurityParam -> QC.Property
-prop_sequential secParam =
+prop_sequential secParam = QC.withMaxSuccess 100000 $
     forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
       QC.monadicIO (propCmds secParam cmds)
 
