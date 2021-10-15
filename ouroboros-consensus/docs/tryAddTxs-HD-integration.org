@@ -1,0 +1,176 @@
+#+TITLE: tryAddTxs integration with HD API
+
+* When should reads be issued?
+
+Function =tryAddTxs= gets indirectly called in:
+- [[file:~/development/input-output-hk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/MiniProtocol/LocalTxSubmission/Server.hs::localTxSubmissionServer tracer mempool =][localTxSubmissionServer]]
+- [[file:~/development/input-output-hk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/NodeKernel.hs::getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter][getMempoolWriter]]
+  - [[file:~/development/input-output-hk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Network/NodeToNode.hs::, hTxSubmissionServer = \version peer ->][tTxSubmissionServer]]
+
+So I don't think we have much leeway to issue reads earlier than at =tryAddTxs=.
+Otherwise we'd have to modify the mini-protocols.
+
+* Modifications required to have tryAddTxs use the HD backend
+
+Assume we want to try to add a list =txs= of transactions to the mempool.
+
+#+begin_src haskell
+txs = [tx0, tx1, ..., txn]
+#+end_src
+
+*** Acquire a flush lock on the LedgerDB
+
+We need to acquire a *flush* lock on the =LedgerDB=. This might not be
+essential, however locking gives us a simple design to start with.
+
+*** TODO Revalidate the ledger state
+
+With the UTxO HD we need to be able to rewind and forward. These operations
+require a changelog. This means that we need to have a copy of the changelog,
+which we update everytime we validate and add a transaction to the mempool.
+
+The copy of the changelog contains a reference to the *disk anchor*. The global
+LedgerDB, which contains the global changelog might be flushed, which will
+change the disk anchor and *invalidate* our local copy of the changelog.
+Eventually we will call =syncWithLedger== and we will update the local
+changelog, in the same way we update the mempool intermediate ledger state at
+the moment, but what happens if before calling =syncWithLedger= we call
+=tryAddTxs=?
+
+Before the introduction of UTxO HD, there was no problem if we called
+=tryAddTxs= transaction using an outdated intermediate ledger state, since we
+could perform the validation and eventually all the transactions in the mempool
+would be revalidated once we called =syncWithLedger=. The problem with the
+introduction of UTxO HD is that we *cannot* perform the validation since the
+read operation will fail on a stale ledger state.
+
+Therefore, we must perform revalidation of all the transactions on the mempool
+using the new changelog before proceeding to validate all the transactions in
+=txs=.
+
+*** Get the keysets for =txs=
+
+We want to read from disk the values of the keys required to validate all
+transactions in =txs=, this means that we'll need a function with type:
+
+#+begin_src haskell
+getTxsKeySets :: [GenTx blk] -> TableKeySets (LedgerState blk)
+#+end_src
+
+Then we can use it as follows:
+#+begin_src haskell
+kss = getTxsKeySets txs :: TableKeySets (LedgerState blk)
+#+end_src
+
+Note that in =kss= we *lost the correspondence* between keysets and
+transactions. This means that the intermediate ledger state will be enriched by
+the values needed to process *all* the transactions in =txs=, *before* we start
+validating the first transaction in said list.
+
+*** Rewind the mempool's internal changelog
+
+Calling =rewindTableKeySets= requires having a changelog. This changelog should
+contain all the changes that resulted from applying the transactions in the
+mempool. So the internal state could have a variable of the form:
+
+#+begin_src haskell
+isChangelog :: DbChangelog' LedgerState
+#+end_src
+
+This =DbChangelog'= could be a structure that supports only the rewind, forward,
+and extension operations (so for instance we won't be able to do any flushing in
+the mempool).
+
+Using =isChangelog= we could obtain the rewound keysets:
+
+#+begin_src haskell
+rkss = rewindTableKeySets isChangelog kss :: RewoundTableKeySets (LedgerState blk)
+#+end_src
+
+... and readily get the unforwarded read sets.
+
+*** Read from the database, forward, and enrich an internal state
+
+#+begin_src haskell
+urss = readDb rkss :: UnforwardedReadSets (LedgerState blk)
+#+end_src
+
+Finally, we obtain the forwarded readsets and use it to *elaborate* the
+*starting state* from which we will start validating the transactions in =txs=.
+
+#+begin_src haskell
+case forwardTableReadSets isDbChangelog urss of
+  Nothing -> error "This should not happen, since the mempool is holding a lock."
+  Just rss ->
+    -- TODO this is the intermediate state we need to pass to the transaction
+    -- validation loop. We need to find how.
+    { ...
+      iStateForApplyTxs = withLedgerTables (changelogCurrentState isDbChangelog) rss
+    }
+#+end_src
+
+
+*** Validate individual transactions
+
+Unlike blocks, transactions are validated one-by-one. For each =txi= in =txs=,
+we'd apply this transaction and update the intermediate state, say
+=iStateForApplyTxs=.
+
+#+begin_src haskell
+{ ...
+    iStateForApplyTxs =  applyTx txi $ iStateForApplyTxs
+}
+ #+end_src
+
+*** Update the internal changelog after applying the valid transactions in =txs=
+After the valid transactions are applied we will have a state that will contain
+the result of applying the valid transactions of =txs= to the enriched ledger
+state at the tip of the internal changelog.
+
+#+begin_src haskell
+{ ...
+  isDbChangelog = extendDbChangelog (stateSeqNo iStateForApplyTxs)
+                                    (trackingTablesToDiffs iStateForApplyTxs)
+                                    isDbChangelog
+  ...
+}
+#+end_src
+
+*** Release the lock
+
+After we are done adding the transactions we can release the *flush* lock on the
+=LedgerDB=.
+
+* Required changes
+
+*** Alter the mempool's ledger interface to support LedgerDB flush lock
+
+*** Alter the mempool's ledger interface to support querying the current changelog
+
+*** Add a temporary intermediate changelog like structure to the internal state
+
+We'll need this to issue forward and rewinds. This structure should not support
+flushes.
+
+* Notes
+
+*** Why do we need to lock the changelog?
+We might not need the lock, but it help us to avoid complicated cases.
+
+Locking is needed while rewinding and reading:
+- Rewinding takes place against a given disk anchor.
+- If the disk anchor changes (due to flushing), then the read will be invalid,
+  forcing us to re-issue the read.
+
+It might not be a problem to retry when the changelog was flushed between a
+rewind and a read. Flushes won't occur frequently.
+
+Locking help us with the state queries, where we don't want to change the
+protocol to account for failures resulting from a stale changelog. But for the
+mempool we have more wiggle room. In the future, we might want to explore an alternative mempool design in which LedgerDB flush locks are not needed.
+
+*** Why do we hold a copy of the changelog?
+We could opt not to keep a copy of the changelog but we will need to implement
+additional machinery when rewinding and reading. For instance, when rewinding we
+would need to construct, on the fly, a changelog using the global changelog and
+the local diffs that resulted from applying the changes in the mempool.

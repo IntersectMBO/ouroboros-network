@@ -12,6 +12,12 @@
 module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) where
 
 import           Data.SOP.Strict hiding (All2)
+import           Data.SOP.Strict
+
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
+
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
@@ -23,30 +29,31 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
 -- | When the given ledger state corresponds to a Shelley-based era, apply the
 -- given function to it.
 overShelleyBasedLedgerState ::
-     forall c.
+     forall c mk.
      (TPraos.PraosCrypto c, Praos.PraosCrypto c)
   => (   forall era proto. (EraCrypto era ~ c, ShelleyCompatible proto era)
-      => LedgerState (ShelleyBlock proto era)
-      -> LedgerState (ShelleyBlock proto era)
+      => LedgerState (ShelleyBlock proto era) mk
+      -> LedgerState (ShelleyBlock proto era) mk
      )
-  -> LedgerState (CardanoBlock c)
-  -> LedgerState (CardanoBlock c)
+  -> LedgerState (CardanoBlock c) mk
+  -> LedgerState (CardanoBlock c) mk
 overShelleyBasedLedgerState f (HardForkLedgerState st) =
     HardForkLedgerState $ hap fs st
   where
-    fs :: NP (LedgerState -.-> LedgerState)
+    fs :: NP (Flip LedgerState mk -.-> Flip LedgerState mk)
              (CardanoEras c)
     fs = fn id
-        :* injectSingleEra
-        :* injectSingleEra
-        :* injectSingleEra
-        :* injectSingleEra
-        :* injectSingleEra
-        :* Nil
+        :* injectShelleyNP
+             reassoc
+             (hcpure
+               (Proxy @(And (HasCrypto c) ShelleyBasedEra))
+               (fn (Comp . Flip . f . unFlip . unComp)))
 
-    injectSingleEra ::
-      ( ShelleyCompatible proto era, EraCrypto era ~ c
-      , shelleyEra ~ ShelleyBlock proto era
-      )
-      => (LedgerState -.-> LedgerState) shelleyEra
-    injectSingleEra = fn f
+    reassoc ::
+         (     Flip LedgerState mk :.: ShelleyBlock
+          -.-> Flip LedgerState mk :.: ShelleyBlock
+         ) shelleyEra
+      -> (     Flip LedgerState mk
+          -.-> Flip LedgerState mk
+         ) (ShelleyBlock shelleyEra)
+    reassoc g = fn $ unComp . apFn g . Comp

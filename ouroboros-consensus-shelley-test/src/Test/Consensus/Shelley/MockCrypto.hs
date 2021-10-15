@@ -22,6 +22,7 @@ import           Cardano.Crypto.VRF (MockVRF)
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.LedgerState as SL (StashedAVVMAddresses)
 import qualified Cardano.Ledger.Shelley.Tx as SL (ValidateScript)
 import qualified Cardano.Protocol.TPraos.API as SL
 import           Control.State.Transition.Extended (PredicateFailure)
@@ -75,5 +76,5 @@ type CanMock proto era =
   , Arbitrary (Core.Value era)
   , Arbitrary (PredicateFailure (SL.UTXOW era))
   , Arbitrary (Core.Witnesses era)
-  , Arbitrary (StashedAVVMAddresses era)
+  , Arbitrary (SL.StashedAVVMAddresses era)
   )

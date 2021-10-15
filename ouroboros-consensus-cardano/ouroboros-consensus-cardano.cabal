@@ -53,6 +53,8 @@ library
                      , cardano-protocol-tpraos
                      , cardano-slotting
 
+                     , strict-containers
+
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
@@ -68,6 +70,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
@@ -116,6 +119,7 @@ executable db-analyser
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -threaded
                        -rtsopts
                        "-with-rtsopts=-T -I0 -N2 -A16m"
