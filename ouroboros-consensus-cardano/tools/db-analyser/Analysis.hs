@@ -101,13 +101,34 @@ data AnalysisEnv m blk = AnalysisEnv {
 
 data TraceEvent blk =
     StartedEvent AnalysisName
+    -- ^ triggered when given analysis has started
   | DoneEvent
+    -- ^ triggered when analysis has ended
   | BlockSlotEvent BlockNo SlotNo (Maybe String)
+    -- ^ triggered when block has been found, it holds:
+    --   * block's number
+    --   * slot number when the block was forged
   | EbbEvent (HeaderHash blk) (ChainHash blk) Bool
+    -- ^ triggered when EBB block has been found, it holds:
+    --   * its hash,
+    --   * hash of previous block
+    --   * flag whether the EBB is known
   | CountedBlocksEvent Int
+    -- ^ triggered once during CountBLocks analysis,
+    --   when blocks were counted
   | MaxHeaderSizeEvent Word16
+    -- ^ triggered once during ShowBlockTxsSize analysis,
+    --   holding maximum encountered header size
   | SnapshotWarning SlotNo SlotNo
+    -- ^ triggered once during  StoreLedgerStateAt analysis,
+    --   when snapshot was created in slot proceeding the
+    --   requested one
   | BlockTxSizeEvent SlotNo Int SizeInBytes
+    -- ^ triggered for all blocks during ShowBlockTxsSize analysis,
+    --   it holds:
+    --   * slot number when the block was forged
+    --   * number of transactions in the block
+    --   * total size of transactions in the block
 
 instance HasAnalysis blk => Show (TraceEvent blk) where
   show (StartedEvent analysisName)        = "Started " <> (show analysisName)
