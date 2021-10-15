@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -18,7 +19,7 @@ localStateQueryServer ::
   => ExtLedgerCfg blk
   -> STM m (Point blk)
      -- ^ Get tip point
-  -> (Point blk -> STM m (Maybe (ExtLedgerState blk)))
+  -> (Point blk -> STM m (Maybe (ExtLedgerState SmallL blk)))
      -- ^ Get a past ledger
   -> STM m (Point blk)
      -- ^ Get the immutable point
@@ -48,7 +49,7 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
             | otherwise
             -> SendMsgFailure AcquireFailurePointNotOnChain idle
 
-    acquired :: ExtLedgerState blk
+    acquired :: ExtLedgerState SmallL blk
              -> ServerStAcquired blk (Point blk) (Query blk) m ()
     acquired ledgerState = ServerStAcquired {
           recvMsgQuery     = handleQuery ledgerState
@@ -57,10 +58,10 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
         }
 
     handleQuery ::
-         ExtLedgerState blk
-      -> Query blk result
+         ExtLedgerState SmallL blk
+      -> Query          blk fp result
       -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
     handleQuery ledgerState query = return $
         SendMsgResult
-          (answerQuery cfg query ledgerState)
+          (answerQuery cfg query (error "cast" ledgerState))
           (acquired ledgerState)

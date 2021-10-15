@@ -33,8 +33,8 @@ import           Test.Cardano.Ledger.Alonzo.Serialisation.Generators ()
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Query (SomeQuery (..))
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
                      nonEmptyFromList, nonEmptyToList)
@@ -447,23 +447,23 @@ instance c ~ MockCryptoCompatByron
       aux (HardForkApplyTxErrWrongEra x) =
           HardForkApplyTxErrWrongEra <$> shrink x
 
-instance Arbitrary (Some QueryAnytime) where
-  arbitrary = return $ Some GetEraStart
+instance Arbitrary (SomeQuery QueryAnytime) where
+  arbitrary = return $ SomeQuery GetEraStart
 
 instance CardanoHardForkConstraints c
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
-                                (Some (QueryHardFork (CardanoEras c)))) where
+                                (SomeQuery (QueryHardFork (CardanoEras c)))) where
   arbitrary = frequency
       [ (1, do version <- getHardForkEnabledNodeToClientVersion <$> arbitrary
-               return $ WithVersion version (Some GetInterpreter))
+               return $ WithVersion version (SomeQuery GetInterpreter))
       , (1, do version <- genWithHardForkSpecificNodeToClientVersion
                             (>= HardForkSpecificNodeToClientVersion2)
-               return $ WithVersion version (Some GetCurrentEra))
+               return $ WithVersion version (SomeQuery GetCurrentEra))
       ]
 
 instance c ~ MockCryptoCompatByron
       => Arbitrary (WithVersion (HardForkNodeToClientVersion (CardanoEras c))
-                                (SomeSecond BlockQuery (CardanoBlock c))) where
+                                (SomeQuery (BlockQuery (CardanoBlock c)))) where
   arbitrary = frequency
       [ (1, arbitraryNodeToClient injByron injShelley injAllegra injMary injAlonzo)
       , (1, WithVersion
@@ -484,17 +484,17 @@ instance c ~ MockCryptoCompatByron
       , (1, fmap injHardFork <$> arbitrary)
       ]
     where
-      injByron          (SomeSecond query) = SomeSecond (QueryIfCurrentByron   query)
-      injShelley        (SomeSecond query) = SomeSecond (QueryIfCurrentShelley query)
-      injAllegra        (SomeSecond query) = SomeSecond (QueryIfCurrentAllegra query)
-      injMary           (SomeSecond query) = SomeSecond (QueryIfCurrentMary    query)
-      injAlonzo         (SomeSecond query) = SomeSecond (QueryIfCurrentAlonzo  query)
-      injAnytimeByron   (Some      query)  = SomeSecond (QueryAnytimeByron     query)
-      injAnytimeShelley (Some      query)  = SomeSecond (QueryAnytimeShelley   query)
-      injAnytimeAllegra (Some      query)  = SomeSecond (QueryAnytimeAllegra   query)
-      injAnytimeMary    (Some      query)  = SomeSecond (QueryAnytimeMary      query)
-      injAnytimeAlonzo  (Some      query)  = SomeSecond (QueryAnytimeAlonzo    query)
-      injHardFork       (Some      query)  = SomeSecond (QueryHardFork         query)
+      injByron          (SomeQuery query) = SomeQuery (QueryIfCurrentByron   query)
+      injShelley        (SomeQuery query) = SomeQuery (QueryIfCurrentShelley query)
+      injAllegra        (SomeQuery query) = SomeQuery (QueryIfCurrentAllegra query)
+      injMary           (SomeQuery query) = SomeQuery (QueryIfCurrentMary    query)
+      injAlonzo         (SomeQuery query) = SomeQuery (QueryIfCurrentAlonzo  query)
+      injAnytimeByron   (SomeQuery query)  = SomeQuery (QueryAnytimeByron     query)
+      injAnytimeShelley (SomeQuery query)  = SomeQuery (QueryAnytimeShelley   query)
+      injAnytimeAllegra (SomeQuery query)  = SomeQuery (QueryAnytimeAllegra   query)
+      injAnytimeMary    (SomeQuery query)  = SomeQuery (QueryAnytimeMary      query)
+      injAnytimeAlonzo  (SomeQuery query)  = SomeQuery (QueryAnytimeAlonzo    query)
+      injHardFork       (SomeQuery query)  = SomeQuery (QueryHardFork         query)
 
 instance Arbitrary History.EraEnd where
   arbitrary = oneof

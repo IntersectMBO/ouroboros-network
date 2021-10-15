@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -153,9 +154,9 @@ validateHeader cfg ledgerView hdr history = do
 --
 -- PRECONDITION: the blocks in the chain are valid.
 fromChain ::
-     ApplyBlock (ExtLedgerState blk) blk
+     ApplyBlock (ExtLedgerState fp blk) blk
   => TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState fp blk
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk

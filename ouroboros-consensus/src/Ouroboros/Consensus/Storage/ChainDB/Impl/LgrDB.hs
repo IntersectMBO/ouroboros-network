@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -142,7 +143,7 @@ type LgrDbSerialiseConstraints blk =
 
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk))
+    , lgrGenesis        :: HKD f (m (ExtLedgerState SmallL blk))
     , lgrHasFS          :: SomeHasFS m
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
@@ -258,7 +259,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
   where
     ccfg = configCodec lgrTopLevelConfig
 
-    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk)
+    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState SmallL blk)
     decodeExtLedgerState' = decodeExtLedgerState
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
@@ -316,7 +317,7 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
   where
     ccfg = configCodec cfg
 
-    encodeExtLedgerState' :: ExtLedgerState blk -> Encoding
+    encodeExtLedgerState' :: ExtLedgerState SmallL blk -> Encoding
     encodeExtLedgerState' = encodeExtLedgerState
                               (encodeDisk ccfg)
                               (encodeDisk ccfg)
@@ -370,7 +371,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
     rewrap (Right (Left  e)) = ValidateExceededRollBack e
     rewrap (Right (Right l)) = ValidateSuccessful       l
 
-    mkAps :: forall n l. l ~ ExtLedgerState blk
+    mkAps :: forall n l. l ~ ExtLedgerState SmallL blk
           => [Header blk]
           -> Set (RealPoint blk)
           -> [Ap n l blk ( LedgerDB.ResolvesBlocks    n   blk
@@ -466,7 +467,7 @@ wrapFailure _ k = catch k rethrow
 configLedgerDb ::
      ConsensusProtocol (BlockProtocol blk)
   => TopLevelConfig blk
-  -> LedgerDbCfg (ExtLedgerState blk)
+  -> LedgerDbCfg (ExtLedgerState SmallL blk)
 configLedgerDb cfg = LedgerDbCfg {
       ledgerDbCfgSecParam = configSecurityParam cfg
     , ledgerDbCfg         = ExtLedgerCfg cfg

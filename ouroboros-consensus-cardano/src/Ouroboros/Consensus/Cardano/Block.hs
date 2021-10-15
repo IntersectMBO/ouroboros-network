@@ -522,40 +522,40 @@ type CardanoQuery c = BlockQuery (CardanoBlock c)
 pattern QueryIfCurrentByron
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery ByronBlock result
-  -> CardanoQuery c a
+  => BlockQuery ByronBlock fp result
+  -> CardanoQuery c fp a
 
 -- | Shelley-specific query that can only be answered when the ledger is in the
 -- Shelley era.
 pattern QueryIfCurrentShelley
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (ShelleyEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (ShelleyEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- | Allegra-specific query that can only be answered when the ledger is in the
 -- Allegra era.
 pattern QueryIfCurrentAllegra
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (AllegraEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (AllegraEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- | Mary-specific query that can only be answered when the ledger is in the
 -- Mary era.
 pattern QueryIfCurrentMary
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (MaryEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (MaryEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- | Alonzo-specific query that can only be answered when the ledger is in the
 -- Alonzo era.
 pattern QueryIfCurrentAlonzo
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (AlonzoEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (AlonzoEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- Here we use layout and adjacency to make it obvious that we haven't
 -- miscounted.
@@ -575,8 +575,8 @@ pattern QueryIfCurrentAlonzo  q = QueryIfCurrent (QS (QS (QS (QS (QZ q)))))
 -- > QueryAnytimeByron EraStart
 --
 pattern QueryAnytimeByron
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeByron q = QueryAnytime q (EraIndex (TagByron (K ())))
 
 -- | Query about the Shelley era that can be answered anytime, i.e.,
@@ -588,8 +588,8 @@ pattern QueryAnytimeByron q = QueryAnytime q (EraIndex (TagByron (K ())))
 -- > QueryAnytimeShelley EraStart
 --
 pattern QueryAnytimeShelley
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (TagShelley (K ())))
 
 -- | Query about the Allegra era that can be answered anytime, i.e.,
@@ -601,8 +601,8 @@ pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (TagShelley (K ())))
 -- > QueryAnytimeAllegra EraStart
 --
 pattern QueryAnytimeAllegra
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeAllegra q = QueryAnytime q (EraIndex (TagAllegra (K ())))
 
 -- | Query about the Mary era that can be answered anytime, i.e.,
@@ -614,8 +614,8 @@ pattern QueryAnytimeAllegra q = QueryAnytime q (EraIndex (TagAllegra (K ())))
 -- > QueryAnytimeMary EraStart
 --
 pattern QueryAnytimeMary
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeMary q = QueryAnytime q (EraIndex (TagMary (K ())))
 
 -- | Query about the Alonzo era that can be answered anytime, i.e., independent
@@ -627,8 +627,8 @@ pattern QueryAnytimeMary q = QueryAnytime q (EraIndex (TagMary (K ())))
 -- > QueryAnytimeAlonzo EraStart
 --
 pattern QueryAnytimeAlonzo
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeAlonzo q = QueryAnytime q (EraIndex (TagAlonzo (K ())))
 
 {-# COMPLETE QueryIfCurrentByron
