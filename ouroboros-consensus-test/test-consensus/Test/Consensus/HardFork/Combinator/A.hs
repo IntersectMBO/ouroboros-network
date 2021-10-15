@@ -342,14 +342,14 @@ instance HasTxId (GenTx BlockA) where
 instance ShowQuery (BlockQuery BlockA) where
   showResult qry = case qry of {}
 
-data instance BlockQuery BlockA result
+data instance BlockQuery BlockA fp result
   deriving (Show)
 
 instance QueryLedger BlockA where
   answerBlockQuery _ qry = case qry of {}
 
-instance SameDepIndex (BlockQuery BlockA) where
-  sameDepIndex qry _qry' = case qry of {}
+instance EqQuery (BlockQuery BlockA) where
+  eqQuery qry _qry' = case qry of {}
 
 instance ConvertRawHash BlockA where
   toRawHash   _ = id
@@ -574,7 +574,7 @@ instance SerialiseNodeToClient BlockA Void where
   encodeNodeToClient _ _ = absurd
   decodeNodeToClient _ _ = fail "no ApplyTxErr to be decoded"
 
-instance SerialiseNodeToClient BlockA (SomeSecond BlockQuery BlockA) where
+instance SerialiseNodeToClient BlockA (SomeQuery (BlockQuery BlockA)) where
   encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = fail "there are no queries to be decoded"
 

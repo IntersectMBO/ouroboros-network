@@ -28,10 +28,14 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerError
   , LedgerState
   , TickedLedgerState
+    -- * Re-exported for convenience
+  , FootprintL (..)
   ) where
 
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks)
+
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked

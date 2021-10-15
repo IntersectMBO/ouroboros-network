@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -446,7 +447,7 @@ computePastLedger ::
      TopLevelConfig TestBlock
   -> Point TestBlock
   -> Chain TestBlock
-  -> Maybe (ExtLedgerState TestBlock)
+  -> Maybe (ExtLedgerState SmallL TestBlock)
 computePastLedger cfg pt chain
     | pt `elem` validPoints
     = Just $ go testInitExtLedger (Chain.toOldestFirst chain)
@@ -469,7 +470,7 @@ computePastLedger cfg pt chain
     -- matching @pt@, after which we return the resulting ledger.
     --
     -- PRECONDITION: @pt@ is in the list of blocks or genesis.
-    go :: ExtLedgerState TestBlock -> [TestBlock] -> ExtLedgerState TestBlock
+    go :: ExtLedgerState SmallL TestBlock -> [TestBlock] -> ExtLedgerState SmallL TestBlock
     go !st blks
         | castPoint (getTip st) == pt
         = st
