@@ -60,6 +60,7 @@ import           Ouroboros.Consensus.Shelley.Protocol.Abstract (pHeaderIssuer)
 
 
 protocolClientInfoShelley :: ProtocolClientInfo (ShelleyBlock proto era)
+
 protocolClientInfoShelley =
     ProtocolClientInfo {
       -- No particular codec configuration is needed for Shelley

@@ -21,6 +21,7 @@ Usage: db-analyser --db PATH [--verbose]
                 --checkThunks BLOCK_COUNT | --trace-ledger |
                 --repro-mempool-and-forge INT]
             [--num-blocks-to-process INT]
+            [--inmem-backingstore | --lmdb-backingstore [--mapsize NR_BYTES]]
   Simple framework used to analyse a Chain DB
 ```
 
@@ -105,6 +106,7 @@ Lastly the user must provide the analysis they want to run on the chain. They mu
 
 * `--count-blocks` Will print out the number of blocks it saw on the chain
 
+<<<<<<< HEAD:ouroboros-consensus-cardano-tools/Documentation.md
 
 # db-synthesizer
 
@@ -156,3 +158,12 @@ The tool expects the given ChainDB path (`--db` option) to *not* be present. Sho
 ### limiting synthesis
 
 A limit must be specified up to which the tool synthesizes a ChainDB. Possible limits are either the number of slots processed (`-s`), the number of epochs processed (`-e`) or the absolute number of blocks in the resulting ChainDB (`-b`).
+=======
+### --inmem-backingstore and --lmdb-backingstore MAP_SIZE
+
+```
+[--inmem-backingstore | --lmdb-backingstore [--mapsize NR_BYTES]]
+```
+
+UTxO HD introduces optional functionality to store parts of the ledger state, such as the UTxO, on disk. The user can choose whether to store these parts of the ledger state in memory by providing the `--inmem-backingstore` flag, or use the functionality to store the ledger state on disk using the `--lmdb-backingstore` flag. In case the latter flag is provided, the `--mapsize NR_BYTES` option defines the maxmimum size of the on-disk database in nr. of bytes `NR_BYTES`. Note that the `NR_BYTES` should be a multiple of the OS page size. The maximum database size defaults to ~`6_000_000` bytes if this option is not provided. By default, `db-analyser` uses the in-memory backing store.
+>>>>>>> 106ee892b (Integrate UTxO-HD):ouroboros-consensus-cardano/tools/db-analyser/Documentation.md

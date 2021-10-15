@@ -1,11 +1,15 @@
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Examples where
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (AcquireFailure (..))
 
 
 --
@@ -20,14 +24,14 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 localStateQueryClient
   :: forall block point query result m.
      Applicative m
-  => [(Maybe point, query result)]
+  => [(Maybe point, QueryWithSomeFootprintL query result)]
   -> LocalStateQueryClient block point query m
                            [(Maybe point, Either AcquireFailure result)]
 localStateQueryClient = LocalStateQueryClient . pure . goIdle []
   where
     goIdle
       :: [(Maybe point, Either AcquireFailure result)]  -- ^ Accumulator
-      -> [(Maybe point, query result)]                  -- ^ Remainder
+      -> [(Maybe point, QueryWithSomeFootprintL query result)]   -- ^ Remainder
       -> ClientStIdle block point query m
                       [(Maybe point, Either AcquireFailure result)]
     goIdle acc []              = SendMsgDone $ reverse acc
@@ -36,18 +40,18 @@ localStateQueryClient = LocalStateQueryClient . pure . goIdle []
     goAcquiring
       :: [(Maybe point, Either AcquireFailure result)]  -- ^ Accumulator
       -> Maybe point
-      -> query result
-      -> [(Maybe point, query result)]                  -- ^ Remainder
+      -> QueryWithSomeFootprintL query result
+      -> [(Maybe point, QueryWithSomeFootprintL query result)]                  -- ^ Remainder
       -> ClientStAcquiring block point query m
                            [(Maybe point, Either AcquireFailure result)]
-    goAcquiring acc pt q ptqss' = ClientStAcquiring {
+    goAcquiring acc pt (QueryWithSomeFootprintL q) ptqss' = ClientStAcquiring {
         recvMsgAcquired = pure $ goQuery q $ \r -> goAcquired ((pt, Right r):acc) ptqss'
       , recvMsgFailure  = \failure -> pure $ goIdle ((pt, Left failure):acc) ptqss'
       }
 
     goAcquired
       :: [(Maybe point, Either AcquireFailure result)]
-      -> [(Maybe point, query result)]   -- ^ Remainder
+      -> [(Maybe point, QueryWithSomeFootprintL query result)]   -- ^ Remainder
       -> ClientStAcquired block point query m
                           [(Maybe point, Either AcquireFailure result)]
     goAcquired acc [] = SendMsgRelease $ pure $ SendMsgDone $ reverse acc
@@ -55,8 +59,8 @@ localStateQueryClient = LocalStateQueryClient . pure . goIdle []
       goAcquiring acc pt qs ptqss'
 
     goQuery
-      :: forall a.
-         query result
+      :: forall fp a.
+         query fp result
       -> (result -> ClientStAcquired block point query m a)
          -- ^ Continuation
       -> ClientStAcquired block point query m a
@@ -72,7 +76,7 @@ localStateQueryClient = LocalStateQueryClient . pure . goIdle []
 localStateQueryServer
   :: forall block point query m state. Applicative m
   => (Maybe point -> Either AcquireFailure state)
-  -> (forall result. state -> query result -> result)
+  -> (forall fp result. state -> query fp result -> result)
   -> LocalStateQueryServer block point query m ()
 localStateQueryServer acquire answer =
     LocalStateQueryServer $ pure goIdle

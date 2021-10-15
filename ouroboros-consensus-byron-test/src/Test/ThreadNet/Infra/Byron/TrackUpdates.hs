@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -40,6 +41,7 @@ import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -94,7 +96,7 @@ mkUpdateLabels
   -> NodeJoinPlan
   -> NodeTopology
   -> Ref.Result
-  -> Byron.LedgerState ByronBlock
+  -> Byron.LedgerState ByronBlock EmptyMK
      -- ^ from 'nodeOutputFinalLedger'
   -> (ProtocolVersionUpdateLabel, SoftwareVersionUpdateLabel)
 mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result

@@ -54,9 +54,11 @@ simHasFS var = HasFS {
     , listDirectory            = sim  .  Mock.listDirectory
     , doesDirectoryExist       = sim  .  Mock.doesDirectoryExist
     , doesFileExist            = sim  .  Mock.doesFileExist
+    , removeDirectoryRecursive = sim  .  Mock.removeDirectoryRecursive
     , removeFile               = sim  .  Mock.removeFile
     , renameFile               = sim  .: Mock.renameFile
     , mkFsErrorPath            = fsToFsErrorPathUnmounted
+    , unsafeToFilePath         = \_ -> error "simHasFS:unsafeToFilePath"
     }
   where
     sim :: PureSimFS a -> m a

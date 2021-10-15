@@ -30,7 +30,8 @@ import           Ouroboros.Consensus.Config (SecurityParam (SecurityParam),
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
                      (HeaderState (HeaderState))
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, ValuesMK,
+                     polyEmptyLedgerTables)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Mempool.TxLimits
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
@@ -47,9 +48,11 @@ import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, EraCrypto,
                      ShelleyBasedEra (shelleyBasedEraName))
 import           Ouroboros.Consensus.Shelley.Ledger
                      (CodecConfig (ShelleyCodecConfig), LedgerState (..),
-                     ShelleyBlock, ShelleyCompatible, ShelleyTransition (..),
+                     LedgerTables (ShelleyLedgerTables), ShelleyBlock,
+                     ShelleyCompatible, ShelleyTransition (..),
                      StorageConfig (..), forgeShelleyBlock,
-                     mkShelleyBlockConfig, mkShelleyLedgerConfig)
+                     mkShelleyBlockConfig, mkShelleyLedgerConfig, projectUtxoSL,
+                     shelleyUTxOTable, withUtxoSL)
 import           Ouroboros.Consensus.Shelley.Node
                      (ProtocolParamsShelleyBased (..),
                      ShelleyLeaderCredentials (..), validateGenesis)
@@ -255,12 +258,15 @@ protocolInfoPraosShelleyBased
             shelleyStorageConfigSecurityParam = praosSecurityParam praosParams
           }
 
-      initLedgerState :: LedgerState (ShelleyBlock (Praos c) era)
+      initLedgerState :: LedgerState (ShelleyBlock (Praos c) era) ValuesMK
       initLedgerState =
+        let st = SL.initialState genesis additionalGenesisConfig
+        in
         ShelleyLedgerState
           { shelleyLedgerTip = Origin,
-            shelleyLedgerState = SL.initialState genesis additionalGenesisConfig,
-            shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+            shelleyLedgerState = st `withUtxoSL` shelleyUTxOTable polyEmptyLedgerTables,
+            shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0},
+            shelleyLedgerTables = ShelleyLedgerTables $ projectUtxoSL st
           }
 
       initChainDepState :: PraosState c
@@ -275,7 +281,7 @@ protocolInfoPraosShelleyBased
             praosStateLastEpochBlockNonce = initialNonce
           }
 
-      initExtLedgerState :: ExtLedgerState (ShelleyBlock (Praos c) era)
+      initExtLedgerState :: ExtLedgerState (ShelleyBlock (Praos c) era) ValuesMK
       initExtLedgerState =
         ExtLedgerState
           { ledgerState = initLedgerState,

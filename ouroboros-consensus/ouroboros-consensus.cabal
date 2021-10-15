@@ -171,6 +171,7 @@ library
                        Ouroboros.Consensus.Util.Assert
                        Ouroboros.Consensus.Util.CallStack
                        Ouroboros.Consensus.Util.CBOR
+                       Ouroboros.Consensus.Util.CBOR.Simple
                        Ouroboros.Consensus.Util.Condense
                        Ouroboros.Consensus.Util.Counting
                        Ouroboros.Consensus.Util.DepPair
@@ -234,6 +235,9 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                       Ouroboros.Consensus.Storage.LedgerDB.HD
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.LedgerDB.Types
@@ -336,6 +340,8 @@ library
                      , ouroboros-network ^>=0.2
                      , strict-stm       ^>=0.2
 
+                     , lmdb-simple       >=0.4.0.0 && <0.5
+                     , lmdb              >= 0.2.5
 
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0
@@ -351,6 +357,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts

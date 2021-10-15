@@ -53,6 +53,8 @@ library
                      , cardano-protocol-tpraos
                      , cardano-slotting
 
+                     , strict-containers
+
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
@@ -68,5 +70,34 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
+
+executable ledger-db-backends-checker
+  hs-source-dirs:      tools/ledger-db-backends-checker
+  main-is:             Main.hs
+  build-depends:       base
+                     , bytestring
+                     , cardano-binary
+                     , cardano-crypto-wrapper
+                     , cardano-ledger-core
+                     , cborg
+                     , containers
+                     , mtl
+                     , optparse-applicative
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-cardano
+                     , ouroboros-consensus-protocol
+                     , ouroboros-consensus-shelley
+                     , lmdb-simple
+                     , lmdb
+                     , cardano-slotting
+                     , io-classes
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -rtsopts
+                       "-with-rtsopts=-T -I0 -N2 -A16m"

@@ -50,6 +50,7 @@ library
                        Ouroboros.Consensus.Shelley.Protocol.Abstract
                        Ouroboros.Consensus.Shelley.Protocol.Praos
                        Ouroboros.Consensus.Shelley.Protocol.TPraos
+                       Ouroboros.Consensus.Shelley.ShelleyBased
                        Ouroboros.Consensus.Shelley.ShelleyHFC
 
   build-depends:       base              >=4.9   && <4.15
@@ -98,5 +99,6 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts

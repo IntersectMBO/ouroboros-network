@@ -66,7 +66,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShe
 
       | otherwise               = do
       n <- choose (0, 20)
-      go [] n $ applyChainTick lcfg curSlotNo lst
+      go [] n $ applyLedgerTablesDiffsTicked lst $ applyChainTick lcfg curSlotNo $ forgetLedgerTables lst
     where
       ShelleyTxGenExtra
         { stgeGenEnv
@@ -78,7 +78,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShe
 
       go :: [GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
-         -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
+         -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) ValuesMK
          -> Gen [GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
@@ -88,13 +88,13 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShe
           Just tx -> case runExcept $ fst <$> applyTx lcfg DoNotIntervene curSlotNo tx st of
               -- We don't mind generating invalid transactions
               Left  _   -> go (tx:acc) (n - 1) st
-              Right st' -> go (tx:acc) (n - 1) st'
+              Right st' -> go (tx:acc) (n - 1) (forgetLedgerTablesDiffsTicked st')
 
 genTx
   :: forall h. HashAlgorithm h
   => TopLevelConfig (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
   -> SlotNo
-  -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
+  -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) ValuesMK
   -> Gen.GenEnv (MockShelley h)
   -> Gen (Maybe (GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))))
 genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
