@@ -19,7 +19,6 @@ import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), traceWith)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (maybeToList)
 import           Data.Word (Word16)
 
 import           Ouroboros.Consensus.Block
@@ -104,10 +103,16 @@ data TraceEvent blk =
     -- ^ triggered when given analysis has started
   | DoneEvent
     -- ^ triggered when analysis has ended
-  | BlockSlotEvent BlockNo SlotNo (Maybe String)
+  | BlockSlotEvent BlockNo SlotNo
     -- ^ triggered when block has been found, it holds:
     --   * block's number
     --   * slot number when the block was forged
+  | CountTxOutputsEvent BlockNo SlotNo Int Int
+    -- ^ triggered when block has been found, it holds:
+    --   * block's number
+    --   * slot number when the block was forged
+    --   * cumulative tx output
+    --   * count tx output
   | EbbEvent (HeaderHash blk) (ChainHash blk) Bool
     -- ^ triggered when EBB block has been found, it holds:
     --   * its hash,
@@ -116,10 +121,17 @@ data TraceEvent blk =
   | CountedBlocksEvent Int
     -- ^ triggered once during CountBLocks analysis,
     --   when blocks were counted
+  | HeaderSizeEvent BlockNo SlotNo Word16
+    -- ^ triggered when header size has been measured
+    --   * block's number
+    --   * slot number when the block was forged
+    --   * block's header size
   | MaxHeaderSizeEvent Word16
     -- ^ triggered once during ShowBlockTxsSize analysis,
     --   holding maximum encountered header size
-  | SnapshotWarning SlotNo SlotNo
+  | SnapshotStoredEvent SlotNo
+    -- ^ triggered when snapshot of ledger has been stored for SlotNo
+  | SnapshotWarningEvent SlotNo SlotNo
     -- ^ triggered once during  StoreLedgerStateAt analysis,
     --   when snapshot was created in slot proceeding the
     --   requested one
@@ -133,19 +145,32 @@ data TraceEvent blk =
 instance HasAnalysis blk => Show (TraceEvent blk) where
   show (StartedEvent analysisName)        = "Started " <> (show analysisName)
   show DoneEvent                          = "Done"
-  show (BlockSlotEvent bn sn cmt)         = intercalate "\t" $ [
+  show (BlockSlotEvent bn sn)             = intercalate "\t" $ [
       show bn
     , show sn
-    ] <> (maybeToList cmt)
+    ]
+  show (CountTxOutputsEvent bn sn cumulative count) = intercalate "\t" $ [
+      show bn
+    , show sn
+    , "cumulative: " <> show cumulative
+    , "count: " <> show count
+    ]
   show (EbbEvent ebb previous known)      = intercalate "\t" [
       "EBB: "   <> show ebb
     , "Prev: "  <> show previous
     , "Known: " <> show known
     ]
   show (CountedBlocksEvent counted)       = "Counted " <> show counted <> " blocks."
+  show (HeaderSizeEvent bn sn headerSize) = intercalate "\t" $ [
+      show bn
+    , show sn
+    , "header size: " <> show headerSize
+    ]
   show (MaxHeaderSizeEvent size)          =
     "Maximum encountered header size = " <> show size
-  show (SnapshotWarning requested actual) =
+  show (SnapshotStoredEvent slot)         =
+    "Snapshot stored at " <> show slot
+  show (SnapshotWarningEvent requested actual) =
     "Snapshot was created at " <> show actual <> " " <>
     "because there was no block forged at requested " <> show requested
   show (BlockTxSizeEvent slot numBlocks txsSize) = intercalate "\t" [
@@ -164,7 +189,7 @@ showSlotBlockNo AnalysisEnv { db, registry, initLedger, limit, tracer } =
     processAll_ db registry GetHeader initLedger limit process
   where
     process :: Header blk -> IO ()
-    process hdr = traceWith tracer $ BlockSlotEvent (blockNo hdr) (blockSlot hdr) Nothing
+    process hdr = traceWith tracer $ BlockSlotEvent (blockNo hdr) (blockSlot hdr)
 
 {-------------------------------------------------------------------------------
   Analysis: show total number of tx outputs per block
@@ -177,9 +202,10 @@ countTxOutputs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     process :: Int -> blk -> IO Int
     process cumulative blk = do
         let cumulative' = cumulative + count
-            event       = BlockSlotEvent (blockNo blk)
-                                         (blockSlot blk)
-                                         (Just $ "cumulative: " <> show cumulative')
+            event       = CountTxOutputsEvent (blockNo blk)
+                                              (blockSlot blk)
+                                              cumulative'
+                                              count
         traceWith tracer event
         return cumulative'
       where
@@ -192,14 +218,14 @@ countTxOutputs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
 showHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
 showHeaderSize AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     maxHeaderSize <-
-      processAll db registry ((,) <$> GetBlock <*> GetHeaderSize) initLedger limit 0 process
+      processAll db registry ((,) <$> GetHeader <*> GetHeaderSize) initLedger limit 0 process
     traceWith tracer $ MaxHeaderSizeEvent maxHeaderSize
   where
-    process :: Word16 -> (blk, Word16) -> IO Word16
-    process maxHeaderSize (blk, headerSize) = do
-      let event = BlockSlotEvent (blockNo blk)
-                                 (blockSlot blk)
-                                 (Just $ "header size: " <> show headerSize)
+    process :: Word16 -> (Header blk, Word16) -> IO Word16
+    process maxHeaderSize (hdr, headerSize) = do
+      let event = HeaderSizeEvent (blockNo hdr)
+                                  (blockSlot hdr)
+                                   headerSize
       traceWith tracer event
       return $ maxHeaderSize `max` headerSize
 
@@ -273,9 +299,9 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
       | blockSlot blk >= slotNo = Stop
       | otherwise               = Continue
 
-    issueWarning blk   = let event = SnapshotWarning slotNo (blockSlot blk)
+    issueWarning blk   = let event = SnapshotWarningEvent slotNo (blockSlot blk)
                          in traceWith tracer event
-    reportProgress blk = let event = BlockSlotEvent (blockNo blk) (blockSlot blk) (Just "reached")
+    reportProgress blk = let event = BlockSlotEvent (blockNo blk) (blockSlot blk)
                          in traceWith tracer event
 
     storeLedgerState ::
@@ -287,7 +313,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
                       (unSlotNo $ blockSlot blk)
                       (Just $ "db-analyser")
       writeSnapshot ledgerDbFS encLedger snapshot ledgerState
-      traceWith tracer $ BlockSlotEvent (blockNo blk) (blockSlot blk) (Just "snapshot stored")
+      traceWith tracer $ SnapshotStoredEvent (blockSlot blk)
 
     encLedger :: ExtLedgerState blk -> Encoding
     encLedger =
