@@ -17,6 +17,7 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , attenuation
   , absNoAttenuation
   , AbsBearerInfo (..)
+  , toNonFailingBearerInfoScript
   ) where
 
 import           Control.Monad.Class.MonadTime
@@ -241,24 +242,16 @@ instance Arbitrary AbsBearerInfo where
       | a <- shrink (abiSDUSize abi)
       ]
 
-newtype BearerInfoScript = BearerInfoScript (Script AbsBearerInfo)
+newtype BearerInfoScript =
+  BearerInfoScript { unBIScript :: Script AbsBearerInfo }
   deriving       Show via (Script AbsBearerInfo)
   deriving stock Eq
 
 fixupAbsBearerInfos :: [AbsBearerInfo] -> [AbsBearerInfo]
 fixupAbsBearerInfos bis =
     if canFail (last bis)
-      then bis ++ [abiNoAttenuation]
+      then bis ++ [absNoAttenuation]
       else bis
-  where
-    abiNoAttenuation = AbsBearerInfo {
-        abiConnectionDelay      = NormalDelay,
-        abiInboundAttenuation   = NoAttenuation NormalSpeed,
-        abiOutboundAttenuation  = NoAttenuation NormalSpeed,
-        abiInboundWriteFailure  = Nothing,
-        abiOutboundWriteFailure = Nothing,
-        abiSDUSize              = NormalSDU
-      }
 
 instance Arbitrary BearerInfoScript where
   arbitrary = BearerInfoScript
@@ -270,7 +263,8 @@ instance Arbitrary BearerInfoScript where
   shrink (BearerInfoScript (Script script)) =
     [ BearerInfoScript (Script script')
     | script'
-        <- map (NonEmpty.fromList . fixupAbsBearerInfos) . filter (not . List.null)
+        <- map (NonEmpty.fromList . fixupAbsBearerInfos)
+        . filter (not . List.null)
          -- TODO: shrinking of 'AbsBearerInfo' needs to be more aggresive to use
          -- @shrinkList shrink@
          $ shrinkList (const []) (NonEmpty.toList script)
@@ -278,7 +272,7 @@ instance Arbitrary BearerInfoScript where
     ]
 
 newtype NonFailingBearerInfoScript =
-    NonFailingBearerInfoScript (Script AbsBearerInfo)
+  NonFailingBearerInfoScript { unNFBIScript :: Script AbsBearerInfo }
   deriving       Show via (Script AbsBearerInfo)
   deriving stock Eq
 
@@ -287,11 +281,12 @@ toNonFailingBearerInfoScript (BearerInfoScript script) =
     NonFailingBearerInfoScript $ fmap unfail script
   where
     unfail :: AbsBearerInfo -> AbsBearerInfo
-    unfail bi = bi { abiInboundWriteFailure  = Nothing
-                   , abiOutboundWriteFailure = Nothing
-                   , abiInboundAttenuation   = unfailAtt $ abiInboundAttenuation bi
-                   , abiOutboundAttenuation  = unfailAtt $ abiOutboundAttenuation bi
-                   }
+    unfail bi =
+      bi { abiInboundWriteFailure  = Nothing
+         , abiOutboundWriteFailure = Nothing
+         , abiInboundAttenuation   = unfailAtt $ abiInboundAttenuation bi
+         , abiOutboundAttenuation  = unfailAtt $ abiOutboundAttenuation bi
+         }
 
     unfailAtt (ErrorInterval    speed _ _) = NoAttenuation speed
     unfailAtt (SpeedAttenuation speed _ _) = NoAttenuation speed
@@ -299,4 +294,5 @@ toNonFailingBearerInfoScript (BearerInfoScript script) =
 
 instance Arbitrary NonFailingBearerInfoScript where
   arbitrary = toNonFailingBearerInfoScript <$> arbitrary
-  shrink (NonFailingBearerInfoScript script) = toNonFailingBearerInfoScript <$> shrink (BearerInfoScript script)
+  shrink (NonFailingBearerInfoScript script) =
+    toNonFailingBearerInfoScript <$> shrink (BearerInfoScript script)

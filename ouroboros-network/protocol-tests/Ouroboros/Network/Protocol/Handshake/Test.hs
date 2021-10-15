@@ -71,7 +71,6 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient.Version
 import           Ouroboros.Network.NodeToNode.Version
 
-import           Ouroboros.Network.Testing.Data.Script (singletonScript)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -998,7 +997,8 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
                                    clientVersions serverVersions =
     let attenuation = noAttenuation { biConnectionDelay = 1 } in
     withSnocket nullTracer
-                (singletonScript attenuation)
+                attenuation
+                Map.empty
               $ \sn _ -> do
       let addr, addr' :: TestAddress Int
           addr  = Snocket.TestAddress 1
