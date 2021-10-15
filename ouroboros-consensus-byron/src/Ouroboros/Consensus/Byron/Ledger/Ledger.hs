@@ -198,18 +198,17 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
 
-data instance BlockQuery ByronBlock :: Type -> Type where
-  GetUpdateInterfaceState :: BlockQuery ByronBlock UPI.State
+data instance BlockQuery ByronBlock :: FootprintL -> Type -> Type where
+  GetUpdateInterfaceState :: BlockQuery ByronBlock SmallL UPI.State
 
 instance QueryLedger ByronBlock where
   answerBlockQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
     CC.cvsUpdateState (byronLedgerState ledgerState)
 
-instance SameDepIndex (BlockQuery ByronBlock) where
-  sameDepIndex GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
+instance EqQuery (BlockQuery ByronBlock) where
+  eqQuery GetUpdateInterfaceState GetUpdateInterfaceState = Just Refl
 
-deriving instance Eq (BlockQuery ByronBlock result)
-deriving instance Show (BlockQuery ByronBlock result)
+deriving instance Show (BlockQuery ByronBlock fp result)
 
 instance ShowQuery (BlockQuery ByronBlock) where
   showResult GetUpdateInterfaceState = show
@@ -403,7 +402,7 @@ encodeByronAnnTip = encodeAnnTipIsEBB encodeByronHeaderHash
 decodeByronAnnTip :: Decoder s (AnnTip ByronBlock)
 decodeByronAnnTip = decodeAnnTipIsEBB decodeByronHeaderHash
 
-encodeByronExtLedgerState :: ExtLedgerState ByronBlock -> Encoding
+encodeByronExtLedgerState :: ExtLedgerState SmallL ByronBlock -> Encoding
 encodeByronExtLedgerState = encodeExtLedgerState
     encodeByronLedgerState
     encodeByronChainDepState
@@ -483,22 +482,22 @@ decodeByronLedgerState = do
       <*> decode
       <*> decodeByronTransition
 
-encodeByronQuery :: BlockQuery ByronBlock result -> Encoding
+encodeByronQuery :: BlockQuery ByronBlock fp result -> Encoding
 encodeByronQuery query = case query of
     GetUpdateInterfaceState -> CBOR.encodeWord8 0
 
-decodeByronQuery :: Decoder s (SomeSecond BlockQuery ByronBlock)
+decodeByronQuery :: Decoder s (SomeQuery (BlockQuery ByronBlock))
 decodeByronQuery = do
     tag <- CBOR.decodeWord8
     case tag of
-      0 -> return $ SomeSecond GetUpdateInterfaceState
+      0 -> return $ SomeQuery GetUpdateInterfaceState
       _ -> fail $ "decodeByronQuery: invalid tag " <> show tag
 
-encodeByronResult :: BlockQuery ByronBlock result -> result -> Encoding
+encodeByronResult :: BlockQuery ByronBlock fp result -> result -> Encoding
 encodeByronResult query = case query of
     GetUpdateInterfaceState -> toCBOR
 
-decodeByronResult :: BlockQuery ByronBlock result
+decodeByronResult :: BlockQuery ByronBlock fp result
                   -> forall s. Decoder s result
 decodeByronResult query = case query of
     GetUpdateInterfaceState -> fromCBOR

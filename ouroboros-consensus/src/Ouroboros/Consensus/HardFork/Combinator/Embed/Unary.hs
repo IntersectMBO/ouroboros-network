@@ -355,7 +355,7 @@ instance Isomorphic (Ticked :.: LedgerState) where
       . Telescope.TZ
       . State.Current History.initBound
 
-instance Isomorphic ExtLedgerState where
+instance Isomorphic (ExtLedgerState fp) where
   project ExtLedgerState{..} = ExtLedgerState {
         ledgerState = project ledgerState
       , headerState = project headerState
@@ -617,10 +617,10 @@ instance Isomorphic SerialisedHeader where
 -- | Project 'BlockQuery'
 --
 -- Not an instance of 'Isomorphic' because the types change.
-projQuery :: BlockQuery (HardForkBlock '[b]) result
+projQuery :: BlockQuery (HardForkBlock '[b]) fp result
           -> (forall result'.
                   (result :~: HardForkQueryResult '[b] result')
-               -> BlockQuery b result'
+               -> BlockQuery b fp result'
                -> a)
           -> a
 projQuery qry k =
@@ -630,24 +630,24 @@ projQuery qry k =
       (\Refl prfNonEmpty _ _ -> case prfNonEmpty of {})
       (\Refl prfNonEmpty _   -> case prfNonEmpty of {})
   where
-    aux :: QueryIfCurrent '[b] result -> BlockQuery b result
+    aux :: QueryIfCurrent '[b] fp result -> BlockQuery b fp result
     aux (QZ q) = q
     aux (QS q) = case q of {}
 
-projQuery' :: BlockQuery (HardForkBlock '[b]) result
-           -> ProjHardForkQuery b result
+projQuery' :: BlockQuery (HardForkBlock '[b]) fp result
+           -> ProjHardForkQuery b fp result
 projQuery' qry = projQuery qry $ \Refl -> ProjHardForkQuery
 
-data ProjHardForkQuery b :: Type -> Type where
+data ProjHardForkQuery b :: FootprintL -> Type -> Type where
   ProjHardForkQuery ::
-       BlockQuery b result'
-    -> ProjHardForkQuery b (HardForkQueryResult '[b] result')
+       BlockQuery b fp result'
+    -> ProjHardForkQuery b fp (HardForkQueryResult '[b] result')
 
 -- | Inject 'BlockQuery'
 --
 -- Not an instance of 'Isomorphic' because the types change.
-injQuery :: BlockQuery b result
-         -> BlockQuery (HardForkBlock '[b]) (HardForkQueryResult '[b] result)
+injQuery :: BlockQuery b fp result
+         -> BlockQuery (HardForkBlock '[b]) fp (HardForkQueryResult '[b] result)
 injQuery = QueryIfCurrent . QZ
 
 projQueryResult :: HardForkQueryResult '[b] result -> result

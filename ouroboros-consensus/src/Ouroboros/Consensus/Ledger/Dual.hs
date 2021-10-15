@@ -501,7 +501,7 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   Querying the ledger
 -------------------------------------------------------------------------------}
 
-data instance BlockQuery (DualBlock m a) result
+data instance BlockQuery (DualBlock m a) fp result
   deriving (Show)
 
 instance (Typeable m, Typeable a)
@@ -511,8 +511,8 @@ instance (Typeable m, Typeable a)
 instance Bridge m a => QueryLedger (DualBlock m a) where
   answerBlockQuery _ = \case {}
 
-instance SameDepIndex (BlockQuery (DualBlock m a)) where
-  sameDepIndex = \case {}
+instance EqQuery (BlockQuery (DualBlock m a)) where
+  eqQuery = \case {}
 
 instance ShowQuery (BlockQuery (DualBlock m a)) where
   showResult = \case {}

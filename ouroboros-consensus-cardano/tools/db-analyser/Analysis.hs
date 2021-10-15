@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -96,7 +97,7 @@ type Analysis blk = AnalysisEnv IO blk -> IO ()
 
 data AnalysisEnv m blk = AnalysisEnv {
       cfg        :: TopLevelConfig blk
-    , initLedger :: ExtLedgerState blk
+    , initLedger :: ExtLedgerState SmallL blk
     , db         :: Either (ImmutableDB IO blk) (ChainDB IO blk)
     , registry   :: ResourceRegistry IO
     , ledgerDbFS :: SomeHasFS IO
@@ -290,7 +291,7 @@ storeLedgerStateAt ::
 storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, ledgerDbFS, tracer }) =
     void $ processAllUntil db registry GetBlock initLedger limit initLedger process
   where
-    process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
+    process :: ExtLedgerState SmallL blk -> blk -> IO (NextStep, ExtLedgerState SmallL blk)
     process oldLedger blk = do
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
@@ -312,7 +313,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
 
     storeLedgerState ::
          blk
-      -> ExtLedgerState blk
+      -> ExtLedgerState SmallL blk
       -> IO ()
     storeLedgerState blk ledgerState = do
       let snapshot = DiskSnapshot
@@ -321,7 +322,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
       writeSnapshot ledgerDbFS encLedger snapshot ledgerState
       traceWith tracer $ SnapshotStoredEvent (blockSlot blk)
 
-    encLedger :: ExtLedgerState blk -> Encoding
+    encLedger :: ExtLedgerState SmallL blk -> Encoding
     encLedger =
       let ccfg = configCodec cfg
       in encodeExtLedgerState
@@ -423,7 +424,7 @@ processAllUntil ::
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState SmallL blk
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))
@@ -435,7 +436,7 @@ processAll ::
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState SmallL blk
   -> Limit
   -> st
   -> (st -> b -> IO st)
@@ -450,7 +451,7 @@ processAll_ ::
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState SmallL blk
   -> Limit
   -> (b -> IO ())
   -> IO ()
@@ -462,7 +463,7 @@ processAllChainDB ::
   => ChainDB IO blk
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState SmallL blk
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))
@@ -497,7 +498,7 @@ processAllImmutableDB ::
   => ImmutableDB IO blk
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState SmallL blk
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))

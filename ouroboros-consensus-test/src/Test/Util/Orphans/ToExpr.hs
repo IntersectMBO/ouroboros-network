@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -38,7 +40,7 @@ instance (ToExpr slot, ToExpr hash) => ToExpr (Block slot hash)
 instance ( ToExpr (LedgerState blk)
          , ToExpr (ChainDepState (BlockProtocol blk))
          , ToExpr (TipInfo blk)
-         ) => ToExpr (ExtLedgerState blk)
+         ) => ToExpr (ExtLedgerState SmallL blk)
 
 instance ( ToExpr (ChainDepState (BlockProtocol blk))
          , ToExpr (TipInfo blk)

@@ -30,6 +30,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
@@ -77,10 +78,10 @@ injectNestedCtxt_ idx nc = case idx of
     IS idx' -> NCS (injectNestedCtxt_ idx' nc)
 
 injectQuery ::
-     forall x xs result.
+     forall x xs fp result.
      Index xs x
-  -> BlockQuery x result
-  -> QueryIfCurrent xs result
+  -> BlockQuery x      fp result
+  -> QueryIfCurrent xs fp result
 injectQuery idx q = case idx of
     IZ      -> QZ q
     IS idx' -> QS (injectQuery idx' q)
@@ -142,8 +143,8 @@ instance Inject WrapApplyTxErr where
       (WrapApplyTxErr . HardForkApplyTxErrFromEra)
         .: injectNS' (Proxy @WrapApplyTxErr)
 
-instance Inject (SomeSecond BlockQuery) where
-  inject _ idx (SomeSecond q) = SomeSecond (QueryIfCurrent (injectQuery idx q))
+instance Inject (SomeQuery :.: BlockQuery) where
+  inject _ idx (Comp (SomeQuery q)) = Comp $ SomeQuery $ QueryIfCurrent (injectQuery idx q)
 
 instance Inject AnnTip where
   inject _ = undistribAnnTip .: injectNS' (Proxy @AnnTip)
@@ -164,7 +165,7 @@ instance Inject HeaderState where
                             $ WrapChainDepState headerStateChainDep
       }
 
-instance Inject ExtLedgerState where
+instance Inject (ExtLedgerState fp) where
   inject startBounds idx ExtLedgerState {..} = ExtLedgerState {
         ledgerState = inject startBounds idx ledgerState
       , headerState = inject startBounds idx headerState
@@ -187,8 +188,8 @@ instance Inject ExtLedgerState where
 injectInitialExtLedgerState ::
      forall x xs. CanHardFork (x ': xs)
   => TopLevelConfig (HardForkBlock (x ': xs))
-  -> ExtLedgerState x
-  -> ExtLedgerState (HardForkBlock (x ': xs))
+  -> ExtLedgerState SmallL x
+  -> ExtLedgerState SmallL (HardForkBlock (x ': xs))
 injectInitialExtLedgerState cfg extLedgerState0 =
     ExtLedgerState {
         ledgerState = targetEraLedgerState

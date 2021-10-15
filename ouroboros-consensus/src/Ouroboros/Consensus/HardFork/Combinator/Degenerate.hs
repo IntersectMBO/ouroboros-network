@@ -138,8 +138,8 @@ pattern DegenTipInfo x <- (project' (Proxy @(WrapTipInfo b)) -> x)
 pattern DegenQuery ::
      ()
   => HardForkQueryResult '[b] result ~ a
-  => BlockQuery b result
-  -> BlockQuery (HardForkBlock '[b]) a
+  => BlockQuery b fp result
+  -> BlockQuery (HardForkBlock '[b]) fp a
 pattern DegenQuery x <- (projQuery' -> ProjHardForkQuery x)
   where
     DegenQuery x = injQuery x

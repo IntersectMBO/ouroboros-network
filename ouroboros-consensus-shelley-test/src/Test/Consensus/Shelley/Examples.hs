@@ -26,6 +26,7 @@ import           Ouroboros.Network.Block (Serialised (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Storage.Serialisation
 
@@ -91,13 +92,13 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     serialisedHeader =
       SerialisedHeaderFromDepPair $ GenDepPair (NestedCtxt CtxtShelley) (Serialised "<HEADER>")
     queries = labelled [
-          ("GetLedgerTip",              SomeSecond GetLedgerTip)
-        , ("GetEpochNo",                SomeSecond GetEpochNo)
-        , ("GetCurrentPParams",         SomeSecond GetCurrentPParams)
-        , ("GetProposedPParamsUpdates", SomeSecond GetProposedPParamsUpdates)
-        , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
-        , ("GetNonMyopicMemberRewards", SomeSecond $ GetNonMyopicMemberRewards sleRewardsCredentials)
-        , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
+          ("GetLedgerTip",              SomeQuery GetLedgerTip)
+        , ("GetEpochNo",                SomeQuery GetEpochNo)
+        , ("GetCurrentPParams",         SomeQuery GetCurrentPParams)
+        , ("GetProposedPParamsUpdates", SomeQuery GetProposedPParamsUpdates)
+        , ("GetStakeDistribution",      SomeQuery GetStakeDistribution)
+        , ("GetNonMyopicMemberRewards", SomeQuery $ GetNonMyopicMemberRewards sleRewardsCredentials)
+        , ("GetGenesisConfig",          SomeQuery GetGenesisConfig)
       ]
     results = labelled [
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
