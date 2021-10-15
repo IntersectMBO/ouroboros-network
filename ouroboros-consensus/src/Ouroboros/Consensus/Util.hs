@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -16,6 +17,7 @@ module Ouroboros.Consensus.Util (
   , Some (..)
   , SomePair (..)
   , SomeSecond (..)
+  , StaticEither (..)
   , mustBeRight
     -- * Folding variations
   , foldlM'
@@ -406,3 +408,7 @@ fib n = round $ phi ** fromIntegral n / sq5
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Left _)  = Nothing
 eitherToMaybe (Right x) = Just x
+
+data StaticEither :: Bool -> Type -> Type -> Type where
+  StaticLeft  :: l -> StaticEither False l r
+  StaticRight :: r -> StaticEither True  l r

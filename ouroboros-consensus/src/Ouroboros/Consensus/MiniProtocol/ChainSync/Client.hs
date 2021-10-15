@@ -72,6 +72,7 @@ import           Ouroboros.Consensus.HeaderStateHistory
                      (HeaderStateHistory (..), validateHeader)
 import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -93,7 +94,7 @@ type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type
 data ChainDbView m blk = ChainDbView {
       getCurrentChain       :: STM m (AnchoredFragment (Header blk))
     , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
-    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk))
+    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk EmptyMK))
     , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
     }
 

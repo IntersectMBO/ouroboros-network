@@ -1,6 +1,9 @@
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -16,14 +19,20 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK,
+                     SufficientSerializationForAnyBackingStore)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
-instance SerialiseHFC xs => SerialiseDiskConstraints  (HardForkBlock xs)
+instance ( SerialiseHFC xs
+         , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs)))
+      => SerialiseDiskConstraints  (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
   'ReconstructNestedCtxt'
@@ -117,17 +126,17 @@ instance SerialiseHFC xs
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
 instance SerialiseHFC xs
-      => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) )where
+      => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) EmptyMK) where
   encodeDisk cfg =
-        encodeTelescope (hcmap pSHFC (fn . (K .: encodeDisk)) cfgs)
+        encodeTelescope (hcmap pSHFC (\cfg' -> fn (K . encodeDisk cfg' . unFlip)) cfgs)
       . hardForkLedgerStatePerEra
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
 instance SerialiseHFC xs
-      => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs)) where
+      => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) EmptyMK) where
   decodeDisk cfg =
         fmap HardForkLedgerState
-      $ decodeTelescope (hcmap pSHFC (Comp . decodeDisk) cfgs)
+      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip . decodeDisk) cfgs)
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)

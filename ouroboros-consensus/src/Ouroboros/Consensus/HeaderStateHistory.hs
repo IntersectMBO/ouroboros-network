@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -42,6 +43,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Network.Mock.Chain (Chain)
 import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 
 -- | Maintain a history of 'HeaderState's.
 newtype HeaderStateHistory blk = HeaderStateHistory {
@@ -116,6 +118,7 @@ rewind p (HeaderStateHistory history) = HeaderStateHistory <$>
       ((== p) . either headerStatePoint headerStatePoint)
       history
 
+
 {-------------------------------------------------------------------------------
   Validation
 -------------------------------------------------------------------------------}
@@ -153,9 +156,9 @@ validateHeader cfg ledgerView hdr history = do
 --
 -- PRECONDITION: the blocks in the chain are valid.
 fromChain ::
-     ApplyBlock (ExtLedgerState blk) blk
+     (ApplyBlock (ExtLedgerState blk) blk, TickedTableStuff (LedgerState blk), LedgerSupportsProtocol blk)
   => TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk
@@ -165,7 +168,7 @@ fromChain cfg initState chain =
     anchorSnapshot NE.:| snapshots =
           fmap headerState
         . NE.scanl
-            (flip (tickThenReapply (ExtLedgerCfg cfg)))
+            (\st blk -> applyLedgerTablesDiffs st $ tickThenReapply (ExtLedgerCfg cfg) blk st)
             initState
         . Chain.toOldestFirst
         $ chain

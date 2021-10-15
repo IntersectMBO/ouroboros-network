@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -11,10 +12,12 @@
 
 module Ouroboros.Consensus.Mempool.Impl.Pure (
     -- * Mempool
-    implTryAddTxs
-  , pureGetSnapshotFor
+    SyncWithLedger (..)
+  , TryAddTxs (..)
+  , pureGetSnapshotAndTickedFor
   , pureRemoveTxs
   , pureSyncWithLedger
+  , pureTryAddTxs
   , runRemoveTxs
   , runSyncWithLedger
     -- * MempoolSnapshot
@@ -22,11 +25,10 @@ module Ouroboros.Consensus.Mempool.Impl.Pure (
   ) where
 
 import           Control.Exception (assert)
+import           Data.Bifunctor (second)
 import           Data.Maybe (isJust, isNothing)
 import qualified Data.Set as Set
 
-import           Control.Monad (join)
-import           Control.Tracer
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -35,7 +37,6 @@ import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxTicket (..),
                      zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
-import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
@@ -56,59 +57,6 @@ data TryAddTxs blk =
       -- ^ The result of trying to add the transaction to the mempool.
       (TraceEventMempool blk)
       -- ^ The event emitted by the operation.
-
--- | Add a list of transactions (oldest to newest) by interpreting a 'TryAddTxs'
--- from 'pureTryAddTxs'.
---
--- This function returns two lists: the transactions that were added or
--- rejected, and the transactions that could not yet be added, because the
--- Mempool capacity was reached. See 'addTxs' for a function that blocks in
--- case the Mempool capacity is reached.
---
--- Transactions are added one by one, updating the Mempool each time one was
--- added successfully.
---
--- See the necessary invariants on the Haddock for 'API.tryAddTxs'.
---
--- This function does not sync the Mempool contents with the ledger state in
--- case the latter changes, it relies on the background thread to do that.
---
--- INVARIANT: The code needs that read and writes on the state are coupled
--- together or inconsistencies will arise. To ensure that STM transactions are
--- short, each iteration of the helper function is a separate STM transaction.
-implTryAddTxs
-  :: forall m blk.
-     ( MonadSTM m
-     , LedgerSupportsMempool blk
-     , HasTxId (GenTx blk)
-     )
-  => StrictTVar m (InternalState blk)
-     -- ^ The InternalState TVar.
-  -> LedgerConfig blk
-     -- ^ The configuration of the ledger.
-  -> (GenTx blk -> TxSizeInBytes)
-     -- ^ The function to calculate the size of a
-     -- transaction.
-  -> Tracer m (TraceEventMempool blk)
-     -- ^ The tracer.
-  -> WhetherToIntervene
-  -> [GenTx blk]
-     -- ^ The list of transactions to add to the mempool.
-  -> m ([MempoolAddTxResult blk], [GenTx blk])
-implTryAddTxs istate cfg txSize trcr wti =
-    go []
-  where
-    go acc = \case
-      []     -> pure (reverse acc, [])
-      tx:txs -> join $ atomically $ do
-        is <- readTVar istate
-        case pureTryAddTxs cfg txSize wti tx is of
-          NoSpaceLeft             -> pure $ pure (reverse acc, tx:txs)
-          TryAddTxs is' result ev -> do
-            whenJust is' (writeTVar istate)
-            pure $ do
-              traceWith trcr ev
-              go (result:acc) txs
 
 -- | Craft a 'TryAddTxs' value containing the resulting state if applicable, the
 -- tracing event and the result of adding this transaction. See the
@@ -171,11 +119,11 @@ data RemoveTxs blk =
 -- removing the transactions given to 'pureRemoveTxs' from the mempool.
 runRemoveTxs
   :: forall m blk. IOLike m
-  => StrictTVar m (InternalState blk)
+  => StrictTMVar m (InternalState blk)
   -> RemoveTxs blk
   -> STM m (Maybe (TraceEventMempool blk))
 runRemoveTxs stateVar (WriteRemoveTxs is t) = do
-    writeTVar stateVar is
+    putTMVar stateVar is
     return t
 
 -- | Craft a 'RemoveTxs' that manually removes the given transactions from the
@@ -189,7 +137,7 @@ pureRemoveTxs
   -> MempoolCapacityBytesOverride
   -> [GenTxId blk]
   -> InternalState blk
-  -> LedgerState blk
+  -> LedgerState blk ValuesMK
   -> RemoveTxs blk
 pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
     -- Filtering is O(n), but this function will rarely be used, as it is an
@@ -242,12 +190,16 @@ data SyncWithLedger blk =
 -- point changes.
 runSyncWithLedger
   :: forall m blk. IOLike m
-  => StrictTVar m (InternalState blk)
+  => StrictTMVar m (InternalState blk)
   -> SyncWithLedger blk
-  -> STM m (Maybe (TraceEventMempool blk), MempoolSnapshot blk TicketNo)
+  -> STM m
+       ( InternalState blk
+       , Maybe (TraceEventMempool blk)
+       , MempoolSnapshot blk TicketNo
+       )
 runSyncWithLedger stateVar (NewSyncedState is msp mTrace) = do
-    writeTVar stateVar is
-    return (mTrace, msp)
+    putTMVar stateVar is
+    return (is, mTrace, msp)
 
 -- | Create a 'SyncWithLedger' value representing the values that will need to
 -- be stored for committing this synchronization with the Ledger.
@@ -256,7 +208,7 @@ runSyncWithLedger stateVar (NewSyncedState is msp mTrace) = do
 pureSyncWithLedger
   :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => InternalState blk
-  -> LedgerState blk
+  -> LedgerState blk ValuesMK
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> SyncWithLedger blk
@@ -275,7 +227,7 @@ pureSyncWithLedger istate lstate lcfg capacityOverride =
 
 -- | Get a snapshot of the mempool state that is valid with respect to
 -- the given ledger state
-pureGetSnapshotFor
+pureGetSnapshotAndTickedFor
   :: forall blk.
      ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
@@ -285,10 +237,11 @@ pureGetSnapshotFor
   -> ForgeLedgerState blk
   -> MempoolCapacityBytesOverride
   -> InternalState blk
-  -> MempoolSnapshot blk TicketNo
-pureGetSnapshotFor cfg blockLedgerState capacityOverride =
-      implSnapshotFromIS
-    . internalStateFromVR
+  -> (TickedLedgerState blk TrackingMK, MempoolSnapshot blk TicketNo)
+pureGetSnapshotAndTickedFor cfg blockLedgerState capacityOverride =
+      second ( implSnapshotFromIS
+            . internalStateFromVR
+            )
     . validateStateFor capacityOverride cfg blockLedgerState
 
 {-------------------------------------------------------------------------------
@@ -307,7 +260,6 @@ implSnapshotFromIS is = MempoolSnapshot {
     , snapshotHasTx       = implSnapshotHasTx          is
     , snapshotMempoolSize = implSnapshotGetMempoolSize is
     , snapshotSlotNo      = isSlotNo                   is
-    , snapshotLedgerState = isLedgerState              is
     }
  where
   implSnapshotGetTxs :: InternalState blk

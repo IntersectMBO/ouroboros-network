@@ -63,6 +63,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -107,6 +108,8 @@ import           Cardano.Slotting.Time (SystemStart (SystemStart))
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.ShelleyBased
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (praosCanBeLeaderOpCert)
@@ -833,22 +836,23 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- When the initial ledger state is not in the Byron era, register the
     -- initial staking and initial funds (if provided in the genesis config) in
     -- the ledger state.
-    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c)
+    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c) ValuesMK
     initExtLedgerStateCardano = ExtLedgerState {
           headerState = initHeaderState
         , ledgerState = overShelleyBasedLedgerState register initLedgerState
         }
       where
         initHeaderState :: HeaderState (CardanoBlock c)
-        initLedgerState :: LedgerState (CardanoBlock c)
+        initLedgerState :: LedgerState (CardanoBlock c) ValuesMK
         ExtLedgerState initLedgerState initHeaderState =
-          injectInitialExtLedgerState cfg initExtLedgerStateByron
+            injectInitialExtLedgerState cfg
+          $ initExtLedgerStateByron
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
-          => LedgerState (ShelleyBlock proto era)
-          -> LedgerState (ShelleyBlock proto era)
-        register st = st {
+          => Flip LedgerState mk (ShelleyBlock proto era)
+          -> Flip LedgerState mk (ShelleyBlock proto era)
+        register (Flip st) = Flip st {
               Shelley.shelleyLedgerState =
                 -- We must first register the initial funds, because the stake
                 -- information depends on it.

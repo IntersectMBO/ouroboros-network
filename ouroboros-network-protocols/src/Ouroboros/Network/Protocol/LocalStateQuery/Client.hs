@@ -19,7 +19,6 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client
   , localStateQueryClientNull
     -- * Utilities
   , mapLocalStateQueryClient
-  , Some (..)
   ) where
 
 import           Control.Monad (forever)
@@ -28,11 +27,10 @@ import           Data.Kind (Type)
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
-newtype LocalStateQueryClient block point (query :: Type -> Type) m a =
+newtype LocalStateQueryClient block point (query :: FootprintL -> Type -> Type) m a =
     LocalStateQueryClient {
       runLocalStateQueryClient :: m (ClientStIdle block point query m a)
     }
@@ -78,7 +76,7 @@ data ClientStAcquiring block point query m a = ClientStAcquiring {
 --  * a release of the current state
 --
 data ClientStAcquired block point query m a where
-  SendMsgQuery     :: query result
+  SendMsgQuery     :: query (fp :: FootprintL) result
                    -> ClientStQuerying block point query m a result
                    -> ClientStAcquired block point query m a
 
@@ -107,10 +105,10 @@ data ClientStQuerying block point query m a result = ClientStQuerying {
 mapLocalStateQueryClient :: forall block block' point point' query query' m a.
                             Functor m
                          => (point -> point')
-                         -> (forall result. query result -> Some query')
-                         -> (forall result result'.
-                                    query result
-                                 -> query' result'
+                         -> (forall fp result. query fp result -> QueryWithSomeResult query' fp)
+                         -> (forall fp result result'.
+                                    query fp result
+                                 -> query' fp result'
                                  -> result' -> result)
                          -> LocalStateQueryClient block  point  query  m a
                          -> LocalStateQueryClient block' point' query' m a
@@ -135,13 +133,13 @@ mapLocalStateQueryClient fpoint fquery fresult =
     goAcquired :: ClientStAcquired block  point  query  m a
                -> ClientStAcquired block' point' query' m a
     goAcquired (SendMsgQuery     q  k) = case fquery q of
-                                           Some q' -> SendMsgQuery q' (goQuerying q q' k)
+      QueryWithSomeResult q' -> SendMsgQuery q' (goQuerying q q' k)
     goAcquired (SendMsgReAcquire pt k) = SendMsgReAcquire (fpoint <$> pt) (goAcquiring k)
     goAcquired (SendMsgRelease      k) = SendMsgRelease (fmap goIdle k)
 
-    goQuerying :: forall result result'.
-                  query  result
-               -> query' result'
+    goQuerying :: forall fp result result'.
+                  query  fp result
+               -> query' fp result'
                -> ClientStQuerying block  point  query  m a result
                -> ClientStQuerying block' point' query' m a result'
     goQuerying q q' ClientStQuerying {recvMsgResult} =
@@ -157,7 +155,7 @@ mapLocalStateQueryClient fpoint fquery fresult =
 -- client side of the 'LocalStateQuery' protocol.
 --
 localStateQueryClientPeer
-  :: forall block point (query :: Type -> Type) m a.
+  :: forall block point (query :: FootprintL -> Type -> Type) m a.
      Monad m
   => LocalStateQueryClient block point query m a
   -> Peer (LocalStateQuery block point query) AsClient StIdle m a
@@ -203,7 +201,7 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
               (Effect (handleStIdle <$> stIdle))
 
     handleStQuerying
-      :: query result
+      :: query fp result
       -> ClientStQuerying block point query m a result
       -> Peer (LocalStateQuery block point query) AsClient (StQuerying result) m a
     handleStQuerying query ClientStQuerying{recvMsgResult} =

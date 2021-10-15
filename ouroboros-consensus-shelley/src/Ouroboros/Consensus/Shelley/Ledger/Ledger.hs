@@ -10,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -19,11 +20,13 @@
 
 module Ouroboros.Consensus.Shelley.Ledger.Ledger (
     LedgerState (..)
+  , LedgerTables (..)
   , ShelleyBasedEra
   , ShelleyLedgerError (..)
   , ShelleyTip (..)
   , ShelleyTransition (..)
   , Ticked (..)
+  , Ticked1 (..)
   , castShelleyTip
   , shelleyLedgerTipPoint
   , shelleyTipToPoint
@@ -43,6 +46,11 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , encodeShelleyAnnTip
   , encodeShelleyHeaderState
   , encodeShelleyLedgerState
+    -- * TEMPORARY exports to unblock prototyping
+  , cnv
+  , projectUtxoSL
+  , vnc
+  , withUtxoSL
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -60,6 +68,7 @@ import qualified Data.Text as Text
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Records
+import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
@@ -75,13 +84,16 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BaseTypes as SL (epochInfoPure)
 import qualified Cardano.Ledger.BHeaderView as SL (BHeaderView)
+import qualified Cardano.Ledger.Block as Core
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Control.State.Transition.Extended as STS
@@ -192,16 +204,37 @@ castShelleyTip (ShelleyTip sn bn hh) = ShelleyTip {
     , shelleyTipHash    = coerce hh
     }
 
-data instance LedgerState (ShelleyBlock proto era) = ShelleyLedgerState {
+data instance LedgerState (ShelleyBlock proto era) mk = ShelleyLedgerState {
       shelleyLedgerTip        :: !(WithOrigin (ShelleyTip proto era))
     , shelleyLedgerState      :: !(SL.NewEpochState era)
     , shelleyLedgerTransition :: !ShelleyTransition
+    , shelleyLedgerTables     :: !(LedgerTables (LedgerState (ShelleyBlock proto era)) mk)
     }
   deriving (Generic)
 
-deriving instance ShelleyBasedEra era => Show     (LedgerState (ShelleyBlock proto era))
-deriving instance ShelleyBasedEra era => Eq       (LedgerState (ShelleyBlock proto era))
-deriving instance ShelleyBasedEra era => NoThunks (LedgerState (ShelleyBlock proto era))
+deriving instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerState (ShelleyBlock proto era) mk)
+deriving instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerState (ShelleyBlock proto era) mk)
+
+instance (ShelleyBasedEra era, SingI mk) => Show (LedgerState (ShelleyBlock proto era) (ApplyMapKind' mk)) where
+  showsPrec _prec = showsLedgerState sMapKind
+
+instance ShelleyBasedEra era => ShowLedgerState (LedgerState (ShelleyBlock proto era)) where
+  showsLedgerState mk st =
+        showParen True
+      $   showString "ShelleyLedgerState {"
+        . showSpace      . showString "shelleyLedgerTip = " . shows shelleyLedgerTip
+        . showCommaSpace . showString "shelleyLedgerState = " . shows shelleyLedgerState
+        . showCommaSpace . showString "shelleyLedgerTransition = " . shows shelleyLedgerTransition
+        . showCommaSpace . showString "shelleyLedgerTables = " . showsLedgerState mk shelleyLedgerTables
+        . showString " }"
+    where
+      ShelleyLedgerState _dummy _ _ _ = st
+      ShelleyLedgerState {
+          shelleyLedgerState
+        , shelleyLedgerTables
+        , shelleyLedgerTip
+        , shelleyLedgerTransition
+        } = st
 
 -- | Information required to determine the hard fork point from Shelley to the
 -- next ledger
@@ -227,19 +260,164 @@ newtype ShelleyTransition = ShelleyTransitionInfo {
   deriving stock   (Eq, Show, Generic)
   deriving newtype (NoThunks)
 
-shelleyLedgerTipPoint :: LedgerState (ShelleyBlock proto era) -> Point (ShelleyBlock proto era)
+shelleyLedgerTipPoint :: LedgerState (ShelleyBlock proto era) mk -> Point (ShelleyBlock proto era)
 shelleyLedgerTipPoint = shelleyTipToPoint . shelleyLedgerTip
 
 instance ShelleyCompatible proto era => UpdateLedger (ShelleyBlock proto era)
+
+instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock proto era)) where
+  newtype LedgerTables (LedgerState (ShelleyBlock proto era)) mk = ShelleyLedgerTables {
+        shelleyUTxOTable :: ApplyMapKind mk (SL.TxIn (EraCrypto era)) (Core.TxOut era)
+      }
+    deriving (Generic)
+
+  projectLedgerTables        = shelleyLedgerTables
+  withLedgerTables st tables =
+      ShelleyLedgerState {
+          shelleyLedgerTip
+        , shelleyLedgerState
+        , shelleyLedgerTransition
+        , shelleyLedgerTables     = tables
+        }
+    where
+      ShelleyLedgerState {
+          shelleyLedgerTip
+        , shelleyLedgerState
+        , shelleyLedgerTransition
+        } = st
+
+  pureLedgerTables f = ShelleyLedgerTables f
+
+  mapLedgerTables f (ShelleyLedgerTables utxo) = ShelleyLedgerTables (f utxo)
+
+  traverseLedgerTables f (ShelleyLedgerTables utxo) = ShelleyLedgerTables <$> f utxo
+
+  zipLedgerTables f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
+      ShelleyLedgerTables (f utxoL utxoR)
+
+  zipLedgerTables2
+    f
+    (ShelleyLedgerTables utxoL)
+    (ShelleyLedgerTables utxoC)
+    (ShelleyLedgerTables utxoR) =
+      ShelleyLedgerTables (f utxoL utxoC utxoR)
+
+  zipLedgerTablesA f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
+      ShelleyLedgerTables <$> f utxoL utxoR
+
+  zipLedgerTables2A
+    f
+    (ShelleyLedgerTables utxoL)
+    (ShelleyLedgerTables utxoC)
+    (ShelleyLedgerTables utxoR) =
+      ShelleyLedgerTables <$> f utxoL utxoC utxoR
+
+  foldLedgerTables f (ShelleyLedgerTables utxo) = f utxo
+
+  foldLedgerTables2 f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) = f utxoL utxoR
+
+  namesLedgerTables = ShelleyLedgerTables (NameMK "utxo")
+
+instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock proto era)) where
+  projectLedgerTablesTicked        = tickedShelleyLedgerTables
+  withLedgerTablesTicked st tables =
+      TickedShelleyLedgerState {
+          untickedShelleyLedgerTip
+        , tickedShelleyLedgerTransition
+        , tickedShelleyLedgerState
+        , tickedShelleyLedgerTables     = tables
+        }
+    where
+      TickedShelleyLedgerState {
+          untickedShelleyLedgerTip
+        , tickedShelleyLedgerTransition
+        , tickedShelleyLedgerState
+        } = st
+
+deriving newtype  instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerTables (LedgerState (ShelleyBlock proto era)) mk)
+deriving anyclass instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerTables (LedgerState (ShelleyBlock proto era)) mk)
+
+instance ShelleyBasedEra era => SufficientSerializationForAnyBackingStore (LedgerState (ShelleyBlock proto era)) where
+    codecLedgerTables = ShelleyLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
+
+instance ShelleyBasedEra era => ShowLedgerState (LedgerTables (LedgerState (ShelleyBlock proto era))) where
+  showsLedgerState _mk (ShelleyLedgerTables utxo) =
+        showParen True
+      $ showString "ShelleyLedgerTables " . showsApplyMapKind utxo
+
+instance
+     ShelleyBasedEra era
+  => StowableLedgerTables (LedgerState (ShelleyBlock proto era)) where
+  stowLedgerTables st =
+      ShelleyLedgerState {
+          shelleyLedgerTip        = shelleyLedgerTip
+        , shelleyLedgerState      =
+            shelleyLedgerState `withUtxoSL` shelleyUTxOTable shelleyLedgerTables
+        , shelleyLedgerTransition = shelleyLedgerTransition
+        , shelleyLedgerTables     = emptyLedgerTables
+        }
+    where
+      ShelleyLedgerState {
+          shelleyLedgerTip
+        , shelleyLedgerState
+        , shelleyLedgerTransition
+        , shelleyLedgerTables
+        } = st
+  unstowLedgerTables st =
+      ShelleyLedgerState {
+          shelleyLedgerTip        = shelleyLedgerTip
+        , shelleyLedgerState      =
+            shelleyLedgerState `withUtxoSL` shelleyUTxOTable polyEmptyLedgerTables
+        , shelleyLedgerTransition = shelleyLedgerTransition
+        , shelleyLedgerTables     =
+            ShelleyLedgerTables $ projectUtxoSL shelleyLedgerState
+        }
+    where
+      ShelleyLedgerState {
+          shelleyLedgerTip
+        , shelleyLedgerState
+        , shelleyLedgerTransition
+        } = st
+
+projectUtxoSL ::
+     SL.NewEpochState era
+  -> ApplyMapKind ValuesMK (SL.TxIn (EraCrypto era)) (Core.TxOut era)
+projectUtxoSL =
+      ApplyValuesMK
+    . HD.UtxoValues
+    . SL.unUTxO
+    . SL._utxo
+    . SL.lsUTxOState
+    . SL.esLState
+    . SL.nesEs
+
+withUtxoSL ::
+     SL.NewEpochState era
+  -> ApplyMapKind ValuesMK (SL.TxIn (EraCrypto era)) (Core.TxOut era)
+  -> SL.NewEpochState era
+withUtxoSL nes (ApplyValuesMK (HD.UtxoValues m)) =
+    nes {
+        SL.nesEs = es {
+            SL.esLState = us {
+                SL.lsUTxOState = utxo {
+                    SL._utxo = SL.UTxO m
+                  }
+              }
+          }
+      }
+  where
+    es   = SL.nesEs nes
+    us   = SL.esLState es
+    utxo = SL.lsUTxOState us
 
 {-------------------------------------------------------------------------------
   GetTip
 -------------------------------------------------------------------------------}
 
-instance GetTip (LedgerState (ShelleyBlock proto era)) where
+instance GetTip (LedgerState (ShelleyBlock proto era) mk) where
   getTip = castPoint . shelleyLedgerTipPoint
 
-instance GetTip (Ticked (LedgerState (ShelleyBlock proto era))) where
+instance GetTip (Ticked1 (LedgerState (ShelleyBlock proto era)) mk) where
   getTip = castPoint . untickedShelleyLedgerTipPoint
 
 {-------------------------------------------------------------------------------
@@ -247,7 +425,7 @@ instance GetTip (Ticked (LedgerState (ShelleyBlock proto era))) where
 -------------------------------------------------------------------------------}
 
 -- | Ticking only affects the state itself
-data instance Ticked (LedgerState (ShelleyBlock proto era)) = TickedShelleyLedgerState {
+data instance Ticked1 (LedgerState (ShelleyBlock proto era)) mk = TickedShelleyLedgerState {
       untickedShelleyLedgerTip      :: !(WithOrigin (ShelleyTip proto era))
       -- | We are counting blocks within an epoch, this means:
       --
@@ -256,14 +434,16 @@ data instance Ticked (LedgerState (ShelleyBlock proto era)) = TickedShelleyLedge
       --    must be reset when /ticking/, not when applying a block.
     , tickedShelleyLedgerTransition :: !ShelleyTransition
     , tickedShelleyLedgerState      :: !(SL.NewEpochState era)
+    , tickedShelleyLedgerTables     ::
+        !(LedgerTables (LedgerState (ShelleyBlock proto era)) mk)
     }
   deriving (Generic)
 
-deriving instance ShelleyBasedEra era
-               => NoThunks (Ticked (LedgerState (ShelleyBlock proto era)))
+deriving instance (ShelleyBasedEra era
+                  , NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (Ticked1 (LedgerState (ShelleyBlock proto era)) mk)
 
 untickedShelleyLedgerTipPoint ::
-     Ticked (LedgerState (ShelleyBlock proto era))
+     TickedLedgerState (ShelleyBlock proto era) mk
   -> Point (ShelleyBlock proto era)
 untickedShelleyLedgerTipPoint = shelleyTipToPoint . untickedShelleyLedgerTip
 
@@ -277,17 +457,17 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock proto era)) 
                               , shelleyLedgerState
                               , shelleyLedgerTransition
                               } =
-      swizzle appTick <&> \l' ->
+    swizzle appTick <&> \l' ->
       TickedShelleyLedgerState {
-          untickedShelleyLedgerTip =
-            shelleyLedgerTip
+          untickedShelleyLedgerTip      = shelleyLedgerTip
         , tickedShelleyLedgerTransition =
             -- The voting resets each epoch
             if isNewEpoch ei (shelleyTipSlotNo <$> shelleyLedgerTip) slotNo then
               ShelleyTransitionInfo { shelleyAfterVoting = 0 }
             else
               shelleyLedgerTransition
-        , tickedShelleyLedgerState = l'
+        , tickedShelleyLedgerState      = l'
+        , tickedShelleyLedgerTables     = polyEmptyLedgerTables
         }
     where
       globals = shelleyLedgerGlobals cfg
@@ -371,6 +551,13 @@ instance ShelleyCompatible proto era
                 , asoEvents     = STS.EPReturn
                 }
 
+  getBlockKeySets =
+        ShelleyLedgerTables
+      . ApplyKeysMK
+      . HD.UtxoKeys
+      . Core.neededTxInsForBlock
+      . shelleyBlockRaw
+
 data ShelleyReapplyException =
   forall era. Show (SL.BlockTransitionError era)
   => ShelleyReapplyException (SL.BlockTransitionError era)
@@ -380,7 +567,26 @@ instance Show ShelleyReapplyException where
 
 instance Exception.Exception ShelleyReapplyException where
 
-applyHelper ::
+-- TODO float the stow/unstow logic out of the StowLedgerTables ShelleyBlock
+-- instance and reuse it here instead of jumping through this confusing vnc/cnv
+-- hoop (or instantiate the class for TickedLedgerState too)
+cnv :: LedgerState (ShelleyBlock proto era) mk -> TickedLedgerState (ShelleyBlock proto era) mk
+cnv ShelleyLedgerState{..} = TickedShelleyLedgerState {
+      untickedShelleyLedgerTip      = shelleyLedgerTip
+    , tickedShelleyLedgerTransition = shelleyLedgerTransition
+    , tickedShelleyLedgerState      = shelleyLedgerState
+    , tickedShelleyLedgerTables     = shelleyLedgerTables
+    }
+
+vnc :: TickedLedgerState (ShelleyBlock proto era) mk -> LedgerState (ShelleyBlock proto era) mk
+vnc TickedShelleyLedgerState{..} = ShelleyLedgerState {
+      shelleyLedgerTip        = untickedShelleyLedgerTip
+    , shelleyLedgerTransition = tickedShelleyLedgerTransition
+    , shelleyLedgerState      = tickedShelleyLedgerState
+    , shelleyLedgerTables     = tickedShelleyLedgerTables
+    }
+
+applyHelper :: forall proto m era.
      (ShelleyCompatible proto era, Monad m)
   => (   SL.Globals
       -> SL.NewEpochState era
@@ -392,14 +598,16 @@ applyHelper ::
      )
   -> LedgerConfig (ShelleyBlock proto era)
   -> ShelleyBlock proto era
-  -> Ticked (LedgerState (ShelleyBlock proto era))
+  -> TickedLedgerState (ShelleyBlock proto era) ValuesMK
   -> m (LedgerResult
           (LedgerState (ShelleyBlock proto era))
-          (LedgerState (ShelleyBlock proto era)))
-applyHelper f cfg blk TickedShelleyLedgerState{
-                          tickedShelleyLedgerTransition
-                        , tickedShelleyLedgerState
-                        } = do
+          (LedgerState (ShelleyBlock proto era) DiffMK))
+applyHelper f cfg blk stBefore = do
+    let TickedShelleyLedgerState{
+            tickedShelleyLedgerTransition
+          , tickedShelleyLedgerState
+          } = cnv $ stowLedgerTables $ vnc stBefore
+
     ledgerResult <-
       f
         globals
@@ -413,7 +621,13 @@ applyHelper f cfg blk TickedShelleyLedgerState{
           in SL.UnsafeUnserialisedBlock h' (SL.bbody b)
         )
 
-    return $ ledgerResult <&> \newNewEpochState -> ShelleyLedgerState {
+    let track ::
+             LedgerState (ShelleyBlock proto era) ValuesMK
+          -> LedgerState (ShelleyBlock proto era) TrackingMK
+        track = calculateDifference stBefore
+
+
+    return $ ledgerResult <&> \newNewEpochState -> forgetLedgerTablesValues $ track $ unstowLedgerTables $ ShelleyLedgerState {
         shelleyLedgerTip = NotOrigin ShelleyTip {
             shelleyTipBlockNo = blockNo   blk
           , shelleyTipSlotNo  = blockSlot blk
@@ -428,6 +642,7 @@ applyHelper f cfg blk TickedShelleyLedgerState{
               (if blockSlot blk >= votingDeadline then succ else id) $
                 shelleyAfterVoting tickedShelleyLedgerTransition
           }
+      , shelleyLedgerTables = emptyLedgerTables
       }
   where
     globals = shelleyLedgerGlobals cfg
@@ -549,7 +764,7 @@ decodeShelleyTransition = do
 
 encodeShelleyLedgerState ::
      ShelleyCompatible proto era
-  => LedgerState (ShelleyBlock proto era)
+  => LedgerState (ShelleyBlock proto era) EmptyMK
   -> Encoding
 encodeShelleyLedgerState
     ShelleyLedgerState { shelleyLedgerTip
@@ -565,12 +780,12 @@ encodeShelleyLedgerState
 
 decodeShelleyLedgerState ::
      forall era proto s. ShelleyCompatible proto era
-  => Decoder s (LedgerState (ShelleyBlock proto era))
+  => Decoder s (LedgerState (ShelleyBlock proto era) EmptyMK)
 decodeShelleyLedgerState = decodeVersion [
       (serialisationFormatVersion2, Decode decodeShelleyLedgerState2)
     ]
   where
-    decodeShelleyLedgerState2 :: Decoder s' (LedgerState (ShelleyBlock proto era))
+    decodeShelleyLedgerState2 :: Decoder s' (LedgerState (ShelleyBlock proto era) EmptyMK)
     decodeShelleyLedgerState2 = do
       enforceSize "LedgerState ShelleyBlock" 3
       shelleyLedgerTip        <- decodeWithOrigin decodeShelleyTip
@@ -580,4 +795,5 @@ decodeShelleyLedgerState = decodeVersion [
           shelleyLedgerTip
         , shelleyLedgerState
         , shelleyLedgerTransition
+        , shelleyLedgerTables = ShelleyLedgerTables ApplyEmptyMK
         }

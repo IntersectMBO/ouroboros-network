@@ -72,6 +72,7 @@ library
                        Test.Util.Slots
                        Test.Util.Split
                        Test.Util.Stream
+                       Test.Util.Tasty.Traceable
                        Test.Util.TestBlock
                        Test.Util.TestEnv
                        Test.Util.Time
@@ -115,6 +116,7 @@ library
                      , transformers
                      , tree-diff
                      , utf8-string
+                     , tagged
 
                      , io-classes
                      , io-sim
@@ -136,6 +138,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
 test-suite test-consensus
@@ -210,6 +213,7 @@ test-suite test-consensus
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
@@ -229,6 +233,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ChainDB.Paths
                        Test.Ouroboros.Storage.ChainDB.StateMachine
                        Test.Ouroboros.Storage.FS
+                       Test.Ouroboros.Storage.FsTree
                        Test.Ouroboros.Storage.FS.StateMachine
                        Test.Ouroboros.Storage.ImmutableDB
                        Test.Ouroboros.Storage.ImmutableDB.Mock
@@ -237,6 +242,8 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ImmutableDB.StateMachine
                        Test.Ouroboros.Storage.LedgerDB
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
+                       Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.LMDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk
                        Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
@@ -251,6 +258,7 @@ test-suite test-storage
                      , bifunctors
                      , binary
                      , bytestring
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-slotting
                      , cborg
@@ -294,7 +302,9 @@ test-suite test-storage
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+                       -threaded
 
 test-suite test-infra
   type:                exitcode-stdio-1.0
@@ -324,4 +334,5 @@ test-suite test-infra
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts

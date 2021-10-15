@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 -- | The type of the local ledger state query protocol.
@@ -17,12 +19,45 @@
 module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
 import           Data.Kind (Type)
+import           Data.Maybe (isJust)
 import           Data.Proxy (Proxy (..))
+import           Data.Type.Equality ((:~:))
 
 import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
+data FootprintL = SmallL | LargeL | WholeL
+
+class EqQuery (query :: FootprintL -> Type -> Type) where
+  eqQuery :: query fp1 result1 -> query fp2 result2 -> Maybe ( '(fp1, result1) :~: '(fp2, result2) )
+
+data SomeQuery (query :: FootprintL -> Type -> Type) where
+  SomeQuery :: !(query fp result) -> SomeQuery query
+
+data QueryWithSomeFootprintL :: (FootprintL -> Type -> Type) -> Type -> Type where
+  QueryWithSomeFootprintL :: !(query fp result) -> QueryWithSomeFootprintL query result
+
+data QueryWithSomeResult :: (FootprintL -> Type -> Type) -> FootprintL -> Type where
+  QueryWithSomeResult :: !(query fp result) -> QueryWithSomeResult query fp
+
+instance EqQuery query => Eq (SomeQuery query) where
+  SomeQuery l == SomeQuery r = isJust $ eqQuery l r
+
+instance EqQuery query => Eq (QueryWithSomeResult query fp) where
+  QueryWithSomeResult l == QueryWithSomeResult r = SomeQuery l == SomeQuery r
+
+instance EqQuery query => Eq (QueryWithSomeFootprintL query result) where
+  QueryWithSomeFootprintL l == QueryWithSomeFootprintL r = SomeQuery l == SomeQuery r
+
+instance (forall fp result. Show (query fp result)) => Show (SomeQuery query) where
+  showsPrec p (SomeQuery q) = showParen (p >= 11) $ showString "SomeQuery " . showsPrec p q
+
+instance (forall result. Show (query fp result)) => Show (QueryWithSomeResult query fp) where
+  showsPrec p (QueryWithSomeResult q) = showParen (p >= 11) $ showString "QueryWithSomeResult " . showsPrec p q
+
+instance (forall fp. Show (query fp result)) => Show (QueryWithSomeFootprintL query result) where
+  showsPrec p (QueryWithSomeFootprintL q) = showParen (p >= 11) $ showString "QueryWithSomeFootprintL " . showsPrec p q
 
 -- | The kind of the local state query protocol, and the types of
 -- the states in the protocol state machine.
@@ -30,7 +65,7 @@ import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 -- It is parametrised over the type of block (for points), the type of queries
 -- and query results.
 --
-data LocalStateQuery block point (query :: Type -> Type) where
+data LocalStateQuery block point (query :: FootprintL -> Type -> Type) where
 
   -- | The client has agency. It can ask to acquire a state or terminate.
   --
@@ -103,13 +138,13 @@ instance Protocol (LocalStateQuery block point query) where
     -- | The client can perform queries on the current acquired state.
     --
     MsgQuery
-      :: query result
+      :: query fp result
       -> Message (LocalStateQuery block point query) StAcquired (StQuerying result)
 
     -- | The server must reply with the queries.
     --
     MsgResult
-      :: query result
+      :: query fp result
          -- ^ The query will not be sent across the network, it is solely used
          -- as evidence that @result@ is a valid type index of @query@.
       -> result
@@ -149,7 +184,7 @@ instance Protocol (LocalStateQuery block point query) where
 
   data ServerHasAgency st where
     TokAcquiring  :: ServerHasAgency StAcquiring
-    TokQuerying   :: query result
+    TokQuerying   :: query fp result
                   -> ServerHasAgency (StQuerying result :: LocalStateQuery block point query)
 
   data NobodyHasAgency st where
@@ -171,7 +206,7 @@ instance Show (ClientHasAgency (st :: LocalStateQuery block point query)) where
   show TokIdle     = "TokIdle"
   show TokAcquired = "TokAcquired"
 
-instance (forall result. Show (query result))
+instance (forall fp result. Show (query fp result))
     => Show (ServerHasAgency (st :: LocalStateQuery block point query)) where
   show TokAcquiring        = "TokAcquiring"
   show (TokQuerying query) = "TokQuerying " ++ show query
@@ -185,8 +220,8 @@ instance (forall result. Show (query result))
 --
 -- We use a type class for this, as this 'Show' constraint propagates to a lot
 -- of places.
-class (forall result. Show (query result)) => ShowQuery query where
-    showResult :: forall result. query result -> result -> String
+class (forall fp result. Show (query fp result)) => ShowQuery query where
+    showResult :: forall fp result. query fp result -> result -> String
 
 instance (ShowQuery query, Show point)
       => Show (Message (LocalStateQuery block point query) st st') where

@@ -57,7 +57,6 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -237,10 +236,8 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
 copyAndSnapshotRunner
   :: forall m blk.
      ( IOLike m
-     , ConsensusProtocol (BlockProtocol blk)
-     , HasHeader blk
      , GetHeader blk
-     , IsLedger (LedgerState blk)
+     , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
@@ -251,15 +248,15 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
     if onDiskShouldTakeSnapshot NoSnapshotTakenYet replayed then do
       updateLedgerSnapshots cdb
       now <- getMonotonicTime
-      loop (TimeSinceLast now) 0
+      loop (TimeSinceLast now) 0 0
     else
-      loop NoSnapshotTakenYet replayed
+      loop NoSnapshotTakenYet replayed replayed
   where
     SecurityParam k      = configSecurityParam cdbTopLevelConfig
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
 
-    loop :: TimeSinceLast Time -> Word64 -> m Void
-    loop mPrevSnapshot distance = do
+    loop :: TimeSinceLast Time -> Word64 -> Word64 -> m Void
+    loop mPrevSnapshot distance flushCtr = do
       -- Wait for the chain to grow larger than @k@
       numToWrite <- atomically $ do
         curChain <- readTVar cdbChain
@@ -270,7 +267,14 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
       --
       -- This is a synchronous operation: when it returns, the blocks have been
       -- copied to disk (though not flushed, necessarily).
-      copyToImmutableDB cdb >>= scheduleGC'
+      immSlotno <- copyToImmutableDB cdb
+      scheduleGC' immSlotno
+
+      -- Let the LedgerDB flush
+      flushCtr' <- if flushCtr + numToWrite > 100 then do
+        LgrDB.withWriteLock cdbLgrDB $ LgrDB.flush cdbLgrDB
+        return 0
+      else return (flushCtr + numToWrite)
 
       now <- getMonotonicTime
       let distance' = distance + numToWrite
@@ -278,9 +282,9 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 
       if onDiskShouldTakeSnapshot elapsed distance' then do
         updateLedgerSnapshots cdb
-        loop (TimeSinceLast now) 0
+        loop (TimeSinceLast now) 0 flushCtr'
       else
-        loop mPrevSnapshot distance'
+        loop mPrevSnapshot distance' flushCtr'
 
     scheduleGC' :: WithOrigin SlotNo -> m ()
     scheduleGC' Origin             = return ()
@@ -297,10 +301,9 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
 updateLedgerSnapshots ::
-    ( IOLike m
+     ( IOLike m
      , LgrDbSerialiseConstraints blk
-     , HasHeader blk
-     , IsLedger (LedgerState blk)
+     , LedgerSupportsProtocol blk
      )
   => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do

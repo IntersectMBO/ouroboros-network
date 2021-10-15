@@ -45,6 +45,7 @@ module Ouroboros.Network.AnchoredSeq
   , splitAfterMeasure
   , splitBeforeMeasure
   , join
+  , unsafeJoin
   , anchorNewest
   , selectOffsets
   , filter
@@ -630,6 +631,14 @@ join f s1@(AnchoredSeq a1 ft1) (AnchoredSeq a2 ft2)
     = Just $ AnchoredSeq a1 (ft1 FT.>< ft2)
     | otherwise
     = Nothing
+
+unsafeJoin ::
+     forall v a b. Anchorable v a b
+  => AnchoredSeq v a b
+  -> AnchoredSeq v a b
+  -> AnchoredSeq v a b
+unsafeJoin (AnchoredSeq a1 ft1) (AnchoredSeq _a2 ft2) =
+    AnchoredSeq a1 (ft1 FT.>< ft2)
 
 -- | \( O(o \log(\min(i,n-i))) \). Select the elements and optionally the anchor
 -- based on the given offsets, starting from the head of the 'AnchoredSeq'.

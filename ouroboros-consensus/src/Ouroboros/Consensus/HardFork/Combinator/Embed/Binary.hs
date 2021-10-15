@@ -12,6 +12,8 @@ import           Data.These (These (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.Extended
@@ -79,7 +81,7 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
       , pInfoInitLedger = ExtLedgerState {
             ledgerState =
               HardForkLedgerState $
-                initHardForkState initLedgerState1
+                initHardForkState (Flip initLedgerState1)
           , headerState =
               genesisHeaderState $
                 initHardForkState $
