@@ -13,8 +13,8 @@
 module Test.Ouroboros.Network.Driver (tests) where
 
 import Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec
 
-import Ouroboros.Network.Codec
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Driver.Limits

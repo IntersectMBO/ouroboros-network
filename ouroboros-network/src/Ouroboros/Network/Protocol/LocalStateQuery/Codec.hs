@@ -22,8 +22,9 @@ import           Data.Kind (Type)
 import           Data.Type.Equality ((:~:) (..))
 import           Text.Printf
 
+import           Network.TypedProtocol.Codec.CBOR
+
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-import           Ouroboros.Network.Codec
 
 
 data Some (f :: k -> Type) where

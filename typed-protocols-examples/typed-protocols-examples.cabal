@@ -19,19 +19,20 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:   Network.TypedProtocol.Channel
-                   , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver.Simple
 
                    , Network.TypedProtocol.PingPong.Type
                    , Network.TypedProtocol.PingPong.Client
                    , Network.TypedProtocol.PingPong.Server
                    , Network.TypedProtocol.PingPong.Codec
+                   , Network.TypedProtocol.PingPong.Codec.CBOR
                    , Network.TypedProtocol.PingPong.Examples
 
                    , Network.TypedProtocol.ReqResp.Type
                    , Network.TypedProtocol.ReqResp.Client
                    , Network.TypedProtocol.ReqResp.Server
                    , Network.TypedProtocol.ReqResp.Codec
+                   , Network.TypedProtocol.ReqResp.Codec.CBOR
                    , Network.TypedProtocol.ReqResp.Examples
 
   other-extensions:  GADTs
@@ -44,10 +45,13 @@ library
                    , BangPatterns
   build-depends:     base,
                      bytestring,
+                     cborg,
+                     serialise,
                      contra-tracer,
                      io-classes,
                      time,
-                     typed-protocols
+                     typed-protocols,
+                     typed-protocols-cborg
 
   hs-source-dirs:    src
   default-language:  Haskell2010
@@ -67,8 +71,10 @@ test-suite test
   other-modules:     Network.TypedProtocol.PingPong.Tests
                    , Network.TypedProtocol.ReqResp.Tests
   build-depends:     base
+                   , bytestring
                    , contra-tracer
                    , typed-protocols
+                   , typed-protocols-cborg
                    , typed-protocols-examples
                    , io-classes
                    , io-sim

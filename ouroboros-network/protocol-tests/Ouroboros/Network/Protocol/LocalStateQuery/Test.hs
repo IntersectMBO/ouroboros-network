@@ -27,11 +27,12 @@ import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
 
+import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as Serialise (decode, encode)
 
 import           Network.TypedProtocol.Proofs
+import           Network.TypedProtocol.Codec hiding (prop_codec)
 
-import           Ouroboros.Network.Codec hiding (prop_codec)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy

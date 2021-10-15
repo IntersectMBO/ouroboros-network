@@ -34,12 +34,13 @@ import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
 import           Text.Printf
 
+import           Network.TypedProtocol.Codec.CBOR
+
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Term     as CBOR
 
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
 
