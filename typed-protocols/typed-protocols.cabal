@@ -26,6 +26,7 @@ library
                    , Network.TypedProtocol.Codec
                    , Network.TypedProtocol.Driver
                    , Network.TypedProtocol.Proofs
+                   , Data.Type.Queue
 
   other-extensions:  GADTs
                    , RankNTypes

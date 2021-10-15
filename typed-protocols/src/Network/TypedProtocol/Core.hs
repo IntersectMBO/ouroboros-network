@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveFunctor            #-}
 {-# LANGUAGE EmptyCase                #-}
@@ -10,10 +9,8 @@
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeFamilyDependencies   #-}
 {-# LANGUAGE TypeInType               #-}
-{-# LANGUAGE TypeOperators            #-}
 -- need for 'Show' instance of 'ProtocolState'
 {-# LANGUAGE UndecidableInstances     #-}
 
@@ -66,6 +63,7 @@ module Network.TypedProtocol.Core
   ) where
 
 import           Data.Kind (Type)
+import           Data.Type.Queue
 
 import           Data.Singletons
 
@@ -578,64 +576,6 @@ terminationLemma_2 singPeerRole refl refl' =
     lemma_flip' SingAsServer ReflClientAgency = ReflClientAgency
     lemma_flip' SingAsServer ReflServerAgency = ReflServerAgency
     lemma_flip' SingAsServer ReflNobodyAgency = ReflNobodyAgency
-
-
--- | Transition kind.
---
-data Trans ps where
-    Tr :: forall ps. ps -> ps -> Trans ps
-
-
--- | Singleton for @'Trans' ps@ kind.
---
-type SingTrans :: Trans ps -> Type
-data SingTrans tr where
-    SingTr :: forall ps (st :: ps) (st' :: ps).
-              SingTrans (Tr st st')
-
--- | Queue kind.  The type level queue is used to push pipelined transitions
--- and pop them from its other side when one is requesting to collect pipelined
--- results.
---
-data Queue ps where
-  Empty :: Queue ps
-  Cons  :: Trans ps -> Queue ps -> Queue ps
-
--- | Cons type alias
---
-type  (<|) :: Trans ps -> Queue ps -> Queue ps
-type a <| as = Cons a as
-infixr 5 <|
-
--- | Snoc operator
---
-type (|>) :: Queue ps -> Trans ps -> Queue ps
-type family as |> b where
-     Empty     |> b = Cons b Empty
-     (a <| as) |> b = a <| (as |> b)
-infixr 5 |>
-
--- | Singleton data type which allows to track the types of kind
--- @'Queue' ps@ and store a value which depends on a queued transition.
---
--- TODO: an optimised version of 'SingQueueF' which does not recurse.
---
-type SingQueueF :: (ps -> ps -> Type) -> Queue ps -> Type
-data SingQueueF f q where
-    SingEmptyF :: SingQueueF f Empty
-    SingConsF  :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
-                  !(f st st')
-               -> !(SingQueueF f q)
-               -> SingQueueF f (Tr st st' <| q)
-
--- | Term level '|>' (snoc).
---
-(|>) :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
-        SingQueueF f q
-     -> f st st'
-     -> SingQueueF f (q |> Tr st st')
-(|>)  SingEmptyF     !f  = SingConsF f SingEmptyF
-(|>) (SingConsF f q) !f' = SingConsF f (q |> f')
 
 -- | Promoted data type which indicates if 'Peer' is used in
 -- pipelined mode or not.
