@@ -86,9 +86,11 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Basics
+                     (SufficientSerializationForAnyBackingStore)
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.SOP
 
@@ -272,6 +274,10 @@ class ( CanHardFork xs
       , All (DecodeDiskDepIx (NestedCtxt Header)) xs
         -- Required for 'getHfcBinaryBlockInfo'
       , All HasBinaryBlockInfo xs
+        -- Tables on the HardForkCombinator are not compositionally defined,
+        -- therefore this constraint is needed and will have to be satisfied by
+        -- each instantiation of 'HardForkBlock'.
+      , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs))
       ) => SerialiseHFC xs where
 
   encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)
@@ -645,26 +651,26 @@ undistribSerialisedHeader =
         depPairFirst (mapNestedCtxt NCS) $ go bs
 
 distribQueryIfCurrent ::
-     Some (QueryIfCurrent xs)
-  -> NS (SomeSecond BlockQuery) xs
-distribQueryIfCurrent = \(Some qry) -> go qry
+     SomeQuery (QueryIfCurrent xs)
+  -> NS (SomeQuery :.: BlockQuery) xs
+distribQueryIfCurrent = go
   where
-    go :: QueryIfCurrent xs result -> NS (SomeSecond BlockQuery) xs
-    go (QZ qry) = Z (SomeSecond qry)
-    go (QS qry) = S (go qry)
+    go :: SomeQuery (QueryIfCurrent xs) -> NS (SomeQuery :.: BlockQuery) xs
+    go (SomeQuery (QZ qry)) = Z (Comp (SomeQuery qry))
+    go (SomeQuery (QS qry)) = S (go (SomeQuery qry))
 
 undistribQueryIfCurrent ::
-     NS (SomeSecond BlockQuery) xs
-  -> Some (QueryIfCurrent xs)
+     NS (SomeQuery :.: BlockQuery) xs
+  -> SomeQuery (QueryIfCurrent xs)
 undistribQueryIfCurrent = go
   where
-    go :: NS (SomeSecond BlockQuery) xs -> Some (QueryIfCurrent xs)
+    go :: NS (SomeQuery :.: BlockQuery) xs -> SomeQuery (QueryIfCurrent xs)
     go (Z qry) = case qry of
-                   SomeSecond qry' ->
-                     Some (QZ qry')
+                   Comp (SomeQuery qry') ->
+                     SomeQuery (QZ qry')
     go (S qry) = case go qry of
-                   Some qry' ->
-                     Some (QS qry')
+                   SomeQuery qry' ->
+                     SomeQuery (QS qry')
 
 {-------------------------------------------------------------------------------
   Deriving-via support

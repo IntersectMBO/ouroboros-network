@@ -43,7 +43,7 @@ data ValidatedFragment b l = UnsafeValidatedFragment {
 {-# COMPLETE ValidatedFragment #-}
 
 pattern ValidatedFragment ::
-     (IsLedger l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
+     (GetTip l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
   => AnchoredFragment b -> l -> ValidatedFragment b l
 pattern ValidatedFragment f l <- UnsafeValidatedFragment f l
   where
@@ -54,7 +54,7 @@ validatedTip = AF.headPoint . validatedFragment
 
 invariant ::
      forall l b.
-     (IsLedger l, HasHeader b, HeaderHash b ~ HeaderHash l)
+     (GetTip l, HasHeader b, HeaderHash b ~ HeaderHash l)
   => ValidatedFragment b l
   -> Either String ()
 invariant (ValidatedFragment fragment ledger)
@@ -75,7 +75,7 @@ invariant (ValidatedFragment fragment ledger)
 -- | Constructor for 'ValidatedFragment' that checks the invariant
 new ::
      forall l b.
-     (IsLedger l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
+     (GetTip l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
   => AnchoredFragment b
   -> l
   -> ValidatedFragment b l

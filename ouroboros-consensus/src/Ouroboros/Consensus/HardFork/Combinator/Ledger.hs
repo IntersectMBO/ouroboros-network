@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -23,18 +25,24 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger (
   , HardForkLedgerUpdate (..)
   , HardForkLedgerWarning (..)
     -- * Type family instances
-  , Ticked (..)
+  , FlipTickedLedgerState (..)
+  , Ticked1 (..)
     -- * Low-level API (exported for the benefit of testing)
   , AnnForecast (..)
   , mkHardForkForecast
+    -- * Misc
+  , CanHardFork'
   ) where
 
 import           Control.Monad.Except
+import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.Functor.Product
 import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           GHC.Show (showSpace)
 import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Block
@@ -48,6 +56,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Counting (getExactly)
@@ -64,6 +73,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
@@ -88,37 +99,61 @@ data HardForkLedgerError xs =
   GetTip
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs => GetTip (LedgerState (HardForkBlock xs)) where
+instance CanHardFork xs => GetTip (LedgerState (HardForkBlock xs) mk) where
   getTip = castPoint
-         . State.getTip (castPoint . getTip)
+         . State.getTip (castPoint . getTip . unFlip)
          . hardForkLedgerStatePerEra
 
-instance CanHardFork xs => GetTip (Ticked (LedgerState (HardForkBlock xs))) where
+instance CanHardFork xs => GetTip (Ticked1 (LedgerState (HardForkBlock xs)) mk) where
   getTip = castPoint
-         . State.getTip (castPoint . getTip . unComp)
+         . State.getTip (castPoint . getTip . getFlipTickedLedgerState)
          . tickedHardForkLedgerStatePerEra
 
 {-------------------------------------------------------------------------------
   Ticking
 -------------------------------------------------------------------------------}
 
-data instance Ticked (LedgerState (HardForkBlock xs)) =
+newtype FlipTickedLedgerState mk blk = FlipTickedLedgerState {getFlipTickedLedgerState :: (Ticked1 (LedgerState blk) mk)}
+
+deriving newtype instance NoThunks (Ticked1 (LedgerState blk) mk) => NoThunks (FlipTickedLedgerState mk blk)
+
+data instance Ticked1 (LedgerState (HardForkBlock xs)) mk =
     TickedHardForkLedgerState {
         tickedHardForkLedgerStateTransition :: !TransitionInfo
       , tickedHardForkLedgerStatePerEra     ::
-          !(HardForkState (Ticked :.: LedgerState) xs)
+          !(HardForkState (FlipTickedLedgerState mk) xs)
       }
   deriving (Generic)
 
 deriving anyclass instance
      CanHardFork xs
-  => NoThunks (Ticked (LedgerState (HardForkBlock xs)))
+  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) EmptyMK)
 
-instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
+deriving anyclass instance
+     CanHardFork xs
+  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) ValuesMK)
+
+deriving anyclass instance
+     CanHardFork xs
+  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) SeqDiffMK)
+
+instance ( CanHardFork xs
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , LedgerTablesCanHardFork xs
+         , TickedTableStuff (LedgerState (HardForkBlock xs))
+         )
+  => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
 
   type AuxLedgerEvent (LedgerState (HardForkBlock xs)) = OneEraLedgerEvent xs
 
+  applyChainTickLedgerResult :: LedgerCfg (LedgerState (HardForkBlock xs))
+                             -> SlotNo
+                             -> LedgerState (HardForkBlock xs) EmptyMK
+                             -> LedgerResult
+                                  (LedgerState (HardForkBlock xs))
+                                  (Ticked1 (LedgerState (HardForkBlock xs)) DiffMK)
   applyChainTickLedgerResult cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
       sequenceHardForkState
         (hcizipWith proxySingle (tickOne ei slot) cfgs extended) <&> \l' ->
@@ -151,27 +186,117 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger cfg st
 
-      extended :: HardForkState LedgerState xs
+      extended :: HardForkState (Flip LedgerState DiffMK) xs
       extended = State.extendToSlot cfg slot st
 
 tickOne :: SingleEraBlock blk
         => EpochInfo (Except PastHorizonException)
         -> SlotNo
-        -> Index xs                                           blk
-        -> WrapPartialLedgerConfig                            blk
-        -> LedgerState                                        blk
-        -> (    LedgerResult (LedgerState (HardForkBlock xs))
-            :.: (Ticked :.: LedgerState)
-           )                                                  blk
-tickOne ei slot index pcfg st = Comp $ fmap Comp $
-      embedLedgerResult (injectLedgerEvent index)
-    $ applyChainTickLedgerResult (completeLedgerConfig' ei pcfg) slot st
+        -> Index                                          xs   blk
+        -> WrapPartialLedgerConfig                             blk
+        -> (Flip LedgerState DiffMK)                           blk
+        -> (     LedgerResult (LedgerState (HardForkBlock xs))
+             :.: FlipTickedLedgerState DiffMK
+           )                                                   blk
+tickOne ei slot sopIdx partialCfg st =
+      Comp
+    . fmap ( FlipTickedLedgerState
+           . prependLedgerTablesDiffsTicked (unFlip st)
+           )
+    . embedLedgerResult (injectLedgerEvent sopIdx)
+    . applyChainTickLedgerResult (completeLedgerConfig' ei partialCfg) slot
+    . forgetLedgerTables
+    . unFlip
+    $ st
+
+instance LedgerTablesCanHardFork '[x] where
+  hardForkInjectLedgerTablesKeysMK = InjectLedgerTables LedgerTablesOne :* Nil
+
+instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerState (HardForkBlock '[x])) where
+  newtype LedgerTables (LedgerState (HardForkBlock '[x])) mk = LedgerTablesOne (LedgerTables (LedgerState x) mk)
+    deriving (Generic)
+
+  projectLedgerTables = LedgerTablesOne . projectLedgerTables . projectOneState
+
+  withLedgerTables st (LedgerTablesOne tables) =
+      withOneState st $ projectOneState st `withLedgerTables` tables
+
+  traverseLedgerTables f (LedgerTablesOne tables) =
+      LedgerTablesOne <$> traverseLedgerTables f tables
+
+  pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState x) f
+  mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState x) f
+  zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState x) f
+  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState x) f
+  foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState x) f
+  foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState x) f
+  namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState x)
+  zipLedgerTablesA   f (LedgerTablesOne l) (LedgerTablesOne r) =
+      LedgerTablesOne <$> zipLedgerTablesA f l r
+  zipLedgerTables2A  f (LedgerTablesOne l) (LedgerTablesOne c) (LedgerTablesOne r) =
+      LedgerTablesOne <$> zipLedgerTables2A f l c r
+
+deriving instance Eq (LedgerTables (LedgerState x) mk) => Eq (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
+
+instance ( SingleEraBlock x
+         , SufficientSerializationForAnyBackingStore (LedgerState x)
+         )
+      => SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock '[x])) where
+    codecLedgerTables = LedgerTablesOne codecLedgerTables
+
+projectOneState :: LedgerState (HardForkBlock '[x]) mk -> LedgerState x mk
+projectOneState (HardForkLedgerState (HardForkState (TZ current))) =
+    unFlip $ currentState $ current
+
+withOneState ::
+     LedgerState (HardForkBlock '[x]) any
+  -> LedgerState x mk
+  -> LedgerState (HardForkBlock '[x]) mk
+withOneState
+  (HardForkLedgerState (HardForkState (TZ current)))
+  st'
+    = HardForkLedgerState $ HardForkState $ TZ current{currentState = Flip st'}
+
+instance (SingleEraBlock x) => TickedTableStuff (LedgerState (HardForkBlock '[x])) where
+
+  projectLedgerTablesTicked st =
+      LedgerTablesOne $ projectLedgerTablesTicked x
+    where
+      HardForkState (TZ current) = tickedHardForkLedgerStatePerEra st
+      FlipTickedLedgerState x    = currentState current
+
+  withLedgerTablesTicked st (LedgerTablesOne tables) =
+      st{tickedHardForkLedgerStatePerEra = HardForkState $ TZ current'}
+    where
+      HardForkState (TZ current) = tickedHardForkLedgerStatePerEra st
+      FlipTickedLedgerState x    = currentState current
+
+      x'       = withLedgerTablesTicked x tables
+      current' = current{currentState = FlipTickedLedgerState x'}
+
+instance TableStuff (LedgerState x) => ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[x]))) where
+  showsLedgerState sing (LedgerTablesOne x) =
+        showString "LedgerTablesOne"
+      . showSpace
+      . showParen True (showsLedgerState sing x)
+
+instance
+     ( TableStuff (LedgerState x)
+     , Typeable mk
+     , NoThunks (LedgerTables (LedgerState x) mk)
+     )
+  => NoThunks (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
 
 {-------------------------------------------------------------------------------
   ApplyBlock
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs
+instance ( CanHardFork xs
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , TickedTableStuff (LedgerState (HardForkBlock xs))
+         , LedgerTablesCanHardFork xs
+         )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
 
   applyBlockLedgerResult cfg
@@ -214,29 +339,41 @@ instance CanHardFork xs
                transition
                st
 
+  getBlockKeySets (HardForkBlock (OneEraBlock ns)) =
+        hcollapse
+      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
+    where
+      f ::
+           SingleEraBlock                                           x
+        => InjectLedgerTables xs                                    x
+        -> I                                                        x
+        -> K (LedgerTables (LedgerState (HardForkBlock xs)) KeysMK) x
+      f inj (I blk) = K $ applyInjectLedgerTables inj $ getBlockKeySets blk
+
 apply :: SingleEraBlock blk
       => Index xs                                           blk
       -> WrapLedgerConfig                                   blk
-      -> Product I (Ticked :.: LedgerState)                 blk
+      -> Product I (FlipTickedLedgerState ValuesMK)         blk
       -> (    Except (HardForkLedgerError xs)
           :.: LedgerResult (LedgerState (HardForkBlock xs))
-          :.: LedgerState
+          :.: Flip LedgerState DiffMK
          )                                                  blk
-apply index (WrapLedgerConfig cfg) (Pair (I block) (Comp st)) =
+apply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st)) =
       Comp
     $ withExcept (injectLedgerError index)
-    $ fmap (Comp . embedLedgerResult (injectLedgerEvent index))
+    $ fmap (Comp . fmap Flip . embedLedgerResult (injectLedgerEvent index))
     $ applyBlockLedgerResult cfg block st
 
 reapply :: SingleEraBlock blk
         => Index xs                                           blk
         -> WrapLedgerConfig                                   blk
-        -> Product I (Ticked :.: LedgerState)                 blk
+        -> Product I (FlipTickedLedgerState ValuesMK)         blk
         -> (    LedgerResult (LedgerState (HardForkBlock xs))
-            :.: LedgerState
+            :.: Flip LedgerState DiffMK
            )                                                  blk
-reapply index (WrapLedgerConfig cfg) (Pair (I block) (Comp st)) =
+reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st)) =
       Comp
+    $ fmap Flip
     $ embedLedgerResult (injectLedgerEvent index)
     $ reapplyBlockLedgerResult cfg block st
 
@@ -244,7 +381,12 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (Comp st)) =
   UpdateLedger
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs => UpdateLedger (HardForkBlock xs)
+instance ( CanHardFork xs
+         , TickedTableStuff (LedgerState (HardForkBlock xs))
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , LedgerTablesCanHardFork xs
+         ) => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
   HasHardForkHistory
@@ -313,7 +455,15 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
   LedgerSupportsProtocol
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
+type CanHardFork' xs =
+  ( CanHardFork xs
+  , TickedTableStuff (LedgerState (HardForkBlock xs))
+  , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+  , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+  , LedgerTablesCanHardFork xs
+  )
+
+instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
   protocolLedgerView HardForkLedgerConfig{..}
                      (TickedHardForkLedgerState transition ticked) =
       TickedHardForkLedgerView {
@@ -330,9 +480,9 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
 
       tickedViewOne :: SingleEraBlock              blk
                     => WrapPartialLedgerConfig     blk
-                    -> (Ticked :.: LedgerState)    blk
+                    -> FlipTickedLedgerState mk    blk
                     -> (Ticked :.: WrapLedgerView) blk
-      tickedViewOne cfg (Comp st) = Comp $
+      tickedViewOne cfg (FlipTickedLedgerState st) = Comp $
           WrapTickedLedgerView $
             protocolLedgerView (completeLedgerConfig' ei cfg) st
 
@@ -356,17 +506,17 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
             (getHardForkState ledgerSt)
 
       forecastOne ::
-             forall blk. SingleEraBlock blk
+             forall blk mk. SingleEraBlock blk
           => WrapPartialLedgerConfig blk
           -> K EraParams blk
-          -> Current LedgerState blk
+          -> Current (Flip LedgerState mk) blk
           -> Current (AnnForecast LedgerState WrapLedgerView) blk
-      forecastOne cfg (K params) (Current start st) = Current {
+      forecastOne cfg (K params) (Current start (Flip st)) = Current {
             currentStart = start
           , currentState = AnnForecast {
                 annForecast      = mapForecast WrapTickedLedgerView $
                                      ledgerViewForecastAt cfg' st
-              , annForecastState = st
+              , annForecastState = forgetLedgerTables st
               , annForecastTip   = ledgerTipSlot st
               , annForecastEnd   = History.mkUpperBound params start <$>
                                      singleEraTransition' cfg params start st
@@ -376,6 +526,22 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
           cfg' :: LedgerConfig blk
           cfg' = completeLedgerConfig' ei cfg
 
+instance
+     CanHardFork' xs
+  => StowableLedgerTables (LedgerState (HardForkBlock xs)) where
+  stowLedgerTables =
+        HardForkLedgerState
+      . hcmap
+          proxySingle
+          (Flip . stowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
+  unstowLedgerTables =
+        HardForkLedgerState
+      . hcmap
+          proxySingle
+          (Flip . unstowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
+
 {-------------------------------------------------------------------------------
   Annotated forecasts
 -------------------------------------------------------------------------------}
@@ -383,7 +549,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
 -- | Forecast annotated with details about the ledger it was derived from
 data AnnForecast state view blk = AnnForecast {
       annForecast      :: Forecast (view blk)
-    , annForecastState :: state blk
+    , annForecastState :: state blk EmptyMK
     , annForecastTip   :: WithOrigin SlotNo
     , annForecastEnd   :: Maybe Bound
     }
@@ -567,8 +733,8 @@ inspectHardForkLedger ::
   => NP WrapPartialLedgerConfig xs
   -> NP (K EraParams) xs
   -> NP TopLevelConfig xs
-  -> NS (Current LedgerState) xs
-  -> NS (Current LedgerState) xs
+  -> NS (Current (Flip LedgerState mk1)) xs
+  -> NS (Current (Flip LedgerState mk2)) xs
   -> [LedgerEvent (HardForkBlock xs)]
 inspectHardForkLedger = go
   where
@@ -576,13 +742,16 @@ inspectHardForkLedger = go
        => NP WrapPartialLedgerConfig xs
        -> NP (K EraParams) xs
        -> NP TopLevelConfig xs
-       -> NS (Current LedgerState) xs
-       -> NS (Current LedgerState) xs
+       -> NS (Current (Flip LedgerState mk1)) xs
+       -> NS (Current (Flip LedgerState mk2)) xs
        -> [LedgerEvent (HardForkBlock xs)]
 
     go (pc :* _) (K ps :* pss) (c :* _) (Z before) (Z after) = concat [
           map liftEvent $
-            inspectLedger c (currentState before) (currentState after)
+            inspectLedger
+              c
+              (unFlip $ currentState before)
+              (unFlip $ currentState after)
 
         , case (pss, confirmedBefore, confirmedAfter) of
             (_, Nothing, Nothing) ->
@@ -629,12 +798,12 @@ inspectHardForkLedger = go
                             (unwrapPartialLedgerConfig pc)
                             ps
                             (currentStart before)
-                            (currentState before)
+                            (unFlip $ currentState before)
         confirmedAfter  = singleEraTransition
                             (unwrapPartialLedgerConfig pc)
                             ps
                             (currentStart after)
-                            (currentState after)
+                            (unFlip $ currentState after)
 
     go Nil _ _ before _ =
         case before of {}
@@ -737,8 +906,8 @@ shiftUpdate = go
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk. SingleEraBlock blk
-           => Current (Ticked :.: LedgerState) blk -> LedgerEraInfo blk
+ledgerInfo :: forall blk mk. SingleEraBlock blk
+           => Current (FlipTickedLedgerState mk) blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 ledgerViewInfo :: forall blk f. SingleEraBlock blk

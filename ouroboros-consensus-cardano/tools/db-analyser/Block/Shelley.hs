@@ -31,6 +31,7 @@ import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (StandardCrypto,
                      StandardShelley)
@@ -48,6 +49,7 @@ import           HasAnalysis
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyCompatible proto era
+         , LedgerSupportsProtocol (ShelleyBlock proto era)
          , HasField "outputs" (Core.TxBody era) (StrictSeq (Core.TxOut era))
          ) => HasAnalysis (ShelleyBlock proto era) where
 

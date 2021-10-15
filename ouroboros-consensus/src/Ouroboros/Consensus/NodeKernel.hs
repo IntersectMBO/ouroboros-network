@@ -269,10 +269,18 @@ forkBlockForging IS{..} blockForging =
         -- 'getPastLedger', we switched to a fork where 'bcPrevPoint' is no longer
         -- on our chain. When that happens, we simply give up on the chance to
         -- produce a block.
-        unticked <- do
-          mExtLedger <- lift $ atomically $ ChainDB.getPastLedger chainDB bcPrevPoint
-          case mExtLedger of
-            Just l  -> return l
+        --
+        -- Also get a snapshot of the mempool that is consistent with that ledger
+        --
+        -- NOTE: It is possible that due to adoption of new blocks the
+        -- /current/ ledger will have changed. This doesn't matter: we will
+        -- produce a block that fits onto the ledger we got above; if the
+        -- ledger in the meantime changes, the block we produce here may or
+        -- may not be adopted, but it won't be invalid.
+        (unticked, tickedLedgerState, mempoolSnapshot) <- do
+          mb <- lift $ getLedgerAndSnapshotFor mempool bcPrevPoint currentSlot
+          case mb of
+            Just x  -> return x
             Nothing -> do
               trace $ TraceNoLedgerState currentSlot bcPrevPoint
               exitEarly
@@ -337,42 +345,12 @@ forkBlockForging IS{..} blockForging =
         -- At this point we have established that we are indeed slot leader
         trace $ TraceNodeIsLeader currentSlot
 
-        -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: Ticked (LedgerState blk)
-            tickedLedgerState =
-              applyChainTick
-                (configLedger cfg)
-                currentSlot
-                (ledgerState unticked)
-
-        _ <- evaluate tickedLedgerState
-        trace $ TraceForgeTickedLedgerState currentSlot bcPrevPoint
-
-        -- Get a snapshot of the mempool that is consistent with the ledger
-        --
-        -- NOTE: It is possible that due to adoption of new blocks the
-        -- /current/ ledger will have changed. This doesn't matter: we will
-        -- produce a block that fits onto the ledger we got above; if the
-        -- ledger in the meantime changes, the block we produce here may or
-        -- may not be adopted, but it won't be invalid.
-        (mempoolHash, mempoolSlotNo, mempoolSnapshot) <- lift $ atomically $ do
-            (mempoolHash, mempoolSlotNo) <- do
-              snap <- getSnapshot mempool   -- only used for its tip-like information
-              let h :: ChainHash blk
-                  h = castHash $ getTipHash $ snapshotLedgerState snap
-              pure (h, snapshotSlotNo snap)
-
-            snap <- getSnapshotFor
-                      mempool
-                      (ForgeInKnownSlot currentSlot tickedLedgerState)
-            pure (mempoolHash, mempoolSlotNo, snap)
-
         let txs = map fst $ snapshotTxs mempoolSnapshot
 
         -- force the mempool's computation before the tracer event
         _ <- evaluate (length txs)
-        _ <- evaluate (snapshotLedgerState mempoolSnapshot)
-        trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
+        _ <- evaluate tickedLedgerState -- TODO: worth?
+        -- trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
 
         -- Actually produce the block
         newBlock <- lift $
@@ -587,7 +565,7 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
-  -> (LedgerState blk -> Bool)
+  -> (LedgerState blk EmptyMK -> Bool)
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedger kernel p = do
     immutableLedger <-
@@ -613,7 +591,7 @@ getPeersFromCurrentLedgerAfterSlot ::
 getPeersFromCurrentLedgerAfterSlot kernel slotNo =
     getPeersFromCurrentLedger kernel afterSlotNo
   where
-    afterSlotNo :: LedgerState blk -> Bool
+    afterSlotNo :: LedgerState blk mk -> Bool
     afterSlotNo st =
       case ledgerTipSlot st of
         Origin        -> False

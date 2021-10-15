@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -148,8 +149,8 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
         configGenesisData  = Impl.configGenesisData translated
         protocolParameters = Impl.gdProtocolParameters configGenesisData
 
-    initAbstractState :: LedgerState ByronSpecBlock
-    initConcreteState :: LedgerState ByronBlock
+    initAbstractState :: LedgerState ByronSpecBlock ValuesMK
+    initConcreteState :: LedgerState ByronBlock     ValuesMK
 
     initAbstractState = initByronSpecLedgerState abstractGenesis
     initConcreteState = initByronLedgerState     concreteGenesis (Just initUtxo)

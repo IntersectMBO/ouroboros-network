@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
@@ -454,7 +455,11 @@ chainSelectionForBlock
   -> Header blk
   -> InvalidBlockPunishment m
   -> m (Point blk)
-chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
+chainSelectionForBlock cdb@CDB{..} blockCache hdr punish =
+  LgrDB.withReadLock cdbLgrDB $ do
+    -- We will read a copy of the ledger DB on the next line, so we have to make
+    -- sure the changelog it contains is not flushed during chain selection.
+
     (invalid, succsOf, lookupBlockInfo, curChain, tipPoint, ledgerDB)
       <- atomically $ (,,,,,)
           <$> (forgetFingerprint <$> readTVar cdbInvalid)
@@ -688,7 +693,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
         cfg :: TopLevelConfig blk
         cfg = cdbTopLevelConfig
 
-        ledger :: LedgerState blk
+        ledger :: LedgerState blk EmptyMK
         ledger = ledgerState (LgrDB.ledgerDbCurrent newLedgerDB)
 
         summary :: History.Summary (HardForkIndices blk)
@@ -1198,7 +1203,7 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
 
     ValidatedChainDiff chainDiff@(ChainDiff _ suffix) _ = validatedChainDiff
 
-    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk)
+    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk EmptyMK)
     validatedSuffix =
       ledgerState . LgrDB.ledgerDbCurrent <$>
       ValidatedDiff.toValidatedFragment validatedChainDiff

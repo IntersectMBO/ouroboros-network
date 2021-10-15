@@ -3,13 +3,17 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE Rank2Types            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | This module is the Shelley Hard Fork Combinator
@@ -17,22 +21,29 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC (
     ProtocolShelley
   , ShelleyBlockHFC
   , ShelleyPartialLedgerConfig (..)
+  , ShelleyTxOut (..)
   , forecastAcrossShelley
   , translateChainDepStateAcrossShelley
   , translateLedgerViewAcrossShelley
   ) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Monad (guard)
 import           Control.Monad.Except (runExcept, throwError, withExceptT)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
+import qualified Data.Monoid as Monoid
 import           Data.SOP.Strict
+import qualified Data.SOP.Strict as SOP
 import qualified Data.Text as T (pack)
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks)
+import           NoThunks.Class (NoThunks (..))
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.EpochInfo (hoistEpochInfo)
 
 import           Ouroboros.Consensus.Block
@@ -41,6 +52,8 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
@@ -48,6 +61,7 @@ import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import qualified Ouroboros.Consensus.Util.SOP as SOP
 
 import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -131,10 +145,10 @@ type ProtocolShelley = HardForkProtocol '[ ShelleyBlock (TPraos StandardCrypto) 
 -------------------------------------------------------------------------------}
 
 shelleyTransition ::
-     forall era proto. ShelleyCompatible proto era
+     forall era proto mk. ShelleyCompatible proto era
   => PartialLedgerConfig (ShelleyBlock proto era)
   -> Word16   -- ^ Next era's major protocol version
-  -> LedgerState (ShelleyBlock proto era)
+  -> LedgerState (ShelleyBlock proto era) mk
   -> Maybe EpochNo
 shelleyTransition ShelleyPartialLedgerConfig{..}
                   transitionMajorVersion
@@ -240,7 +254,7 @@ instance ShelleyCompatible proto era => HasPartialLedgerConfig (ShelleyBlock pro
 
 -- | Forecast from a Shelley-based era to the next Shelley-based era.
 forecastAcrossShelley ::
-     forall protoFrom protoTo eraFrom eraTo.
+     forall protoFrom protoTo eraFrom eraTo mk.
      ( TranslateProto protoFrom protoTo
      , LedgerSupportsProtocol (ShelleyBlock protoFrom eraFrom)
      )
@@ -248,7 +262,7 @@ forecastAcrossShelley ::
   -> ShelleyLedgerConfig eraTo
   -> Bound  -- ^ Transition between the two eras
   -> SlotNo -- ^ Forecast for this slot
-  -> LedgerState (ShelleyBlock protoFrom eraFrom)
+  -> LedgerState (ShelleyBlock protoFrom eraFrom) mk
   -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock protoTo eraTo)))
 forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
     | forecastFor < maxFor
@@ -323,18 +337,37 @@ instance ( ShelleyBasedEra era
       return $ ShelleyTip sno bno (ShelleyHash hash)
 
 instance ( ShelleyBasedEra era
+         , ShelleyBasedEra (SL.PreviousEra era)
          , SL.TranslateEra era (ShelleyTip proto)
          , SL.TranslateEra era SL.NewEpochState
+         , SL.TranslateEra era TxOutWrapper
          , SL.TranslationError era SL.NewEpochState ~ Void
-         ) => SL.TranslateEra era (LedgerState :.: ShelleyBlock proto) where
-  translateEra ctxt (Comp (ShelleyLedgerState tip state _transition)) = do
+         , SL.TranslationError era TxOutWrapper ~ Void
+         , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+         ) => SL.TranslateEra era (Flip LedgerState (ApplyMapKind' mk) :.: ShelleyBlock proto) where
+  translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition tables))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state
-      return $ Comp $ ShelleyLedgerState {
+      return $ Comp $ Flip $ ShelleyLedgerState {
           shelleyLedgerTip        = tip'
         , shelleyLedgerState      = state'
         , shelleyLedgerTransition = ShelleyTransitionInfo 0
+        , shelleyLedgerTables     = translateShelleyTables ctxt tables
         }
+
+translateShelleyTables ::
+     ( SL.TranslateEra     era TxOutWrapper
+     , SL.TranslationError era TxOutWrapper ~ Void
+     , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+     )
+  => SL.TranslationContext era
+  -> LedgerTables (LedgerState (ShelleyBlock proto (SL.PreviousEra era))) (ApplyMapKind' mk)
+  -> LedgerTables (LedgerState (ShelleyBlock proto                 era))  (ApplyMapKind' mk)
+translateShelleyTables ctxt (ShelleyLedgerTables utxoTable) =
+      ShelleyLedgerTables
+    $ mapValuesAppliedMK
+        (unTxOutWrapper . SL.translateEra' ctxt . TxOutWrapper)
+        utxoTable
 
 instance ( ShelleyBasedEra era
          , SL.TranslateEra era WrapTx
@@ -352,3 +385,88 @@ instance ( ShelleyBasedEra era
         Comp . WrapValidatedGenTx
       . mkShelleyValidatedTx . SL.coerceValidated
     <$> SL.translateValidated @era @WrapTx ctxt (SL.coerceValidated vtx)
+
+{-------------------------------------------------------------------------------
+  A wrapper helpful for Ledger HD
+-------------------------------------------------------------------------------}
+
+-- | We use this type for clarity, and because we don't want to declare
+-- 'FromCBOR' and 'ToCBOR' for 'NS'; serializations of sum involves design
+-- decisions that cannot be captured by an all-purpose 'NS' instance
+newtype ShelleyTxOut eras =
+    ShelleyTxOut {unShelleyTxOut :: NS TxOutWrapper eras}
+  deriving (Generic)
+
+-- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
+-- inlined it
+instance SOP.All ShelleyBasedEra eras => Eq       (ShelleyTxOut eras) where
+  ShelleyTxOut (SOP.Z l) == ShelleyTxOut (SOP.Z r) = l == r
+  ShelleyTxOut (SOP.S l) == ShelleyTxOut (SOP.S r) = ShelleyTxOut l == ShelleyTxOut r
+  _                      == _                      = False
+
+-- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
+-- inlined it
+instance SOP.All ShelleyBasedEra eras => NoThunks (ShelleyTxOut eras) where
+  wNoThunks ctxt = (. unShelleyTxOut) $ \case
+      Z l -> noThunks ("Z" : ctxt) l
+      S r -> noThunks ("S" : ctxt) (ShelleyTxOut r)
+
+-- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
+-- inlined it
+instance SOP.All ShelleyBasedEra eras => Show (ShelleyTxOut eras) where
+  showsPrec =
+      \p (ShelleyTxOut ns) -> showParen (p > 10) $ showString "ShelleyTxOut " . go ns
+    where
+      go :: SOP.All ShelleyBasedEra eras' => NS TxOutWrapper eras' -> ShowS
+      go = showParen True . \case
+        Z l -> showString "Z " . shows l
+        S r -> showString "S " . go r
+
+-- unline SOP.nsToIndex, this is not restricted to the interval [0, 24)
+idxLength :: SOP.Index xs x -> Int
+idxLength = \case
+    SOP.IZ     -> 0
+    SOP.IS idx -> 1 + idxLength idx
+
+instance (SOP.All ShelleyBasedEra eras, Typeable eras) => ToCBOR (ShelleyTxOut eras) where
+  toCBOR (ShelleyTxOut x) =
+        SOP.hcollapse
+      $ SOP.hcimap (Proxy @ShelleyBasedEra) each x
+    where
+      each ::
+           ShelleyBasedEra era
+        => SOP.Index eras era
+        -> TxOutWrapper era
+        -> SOP.K CBOR.Encoding era
+      each idx (TxOutWrapper txout) = SOP.K $
+           CBOR.encodeListLen 2
+        <> CBOR.encodeWord (toEnum (idxLength idx))
+        <> toCBOR txout
+
+instance (SOP.All ShelleyBasedEra eras, Typeable eras) => FromCBOR (ShelleyTxOut eras) where
+  fromCBOR = do
+      CBOR.decodeListLenOf 2
+      tag <- CBOR.decodeWord
+      let aDecoder =
+              mconcat
+            $ SOP.hcollapse
+            $ SOP.hcmap
+                (Proxy @ShelleyBasedEra)
+                each
+                (SOP.indices @eras)
+      case Monoid.getFirst $ aDecoder tag of
+        Nothing -> error $ "FromCBOR ShelleyTxOut, unknown tag: " <> show tag
+        Just x  -> unADecoder x
+    where
+      each ::
+           ShelleyBasedEra x
+        => SOP.Index eras x
+        -> SOP.K (Word -> Monoid.First (ADecoder eras)) x
+      each idx = SOP.K $ \w -> Monoid.First $
+        if w /= toEnum (idxLength idx) then Nothing else
+        Just
+          $ ADecoder
+          $ (ShelleyTxOut . SOP.injectNS idx . TxOutWrapper) <$> fromCBOR
+
+newtype ADecoder eras =
+  ADecoder {unADecoder :: forall s. CBOR.Decoder s (ShelleyTxOut eras)}

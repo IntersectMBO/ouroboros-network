@@ -1,16 +1,16 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 -- | Database analyse tool.
 module Main (main) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.Serialise (Serialise (decode))
-import           Control.Monad.Except (runExceptT)
 import           Data.Foldable (asum)
-import qualified Debug.Trace as Debug
+import           Data.Maybe (fromMaybe)
 import           Options.Applicative
 import           System.IO
 
@@ -19,12 +19,9 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
-import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -34,8 +31,9 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
-                     readSnapshot)
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (LMDBLimits (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+                     (BackingStoreSelector (..), DiskSnapshot (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
@@ -56,6 +54,9 @@ data SelectDB =
     SelectChainDB
   | SelectImmutableDB (Maybe DiskSnapshot)
 
+data BackingStore = LMDB (Maybe Int) | MEM
+  deriving Eq
+
 data CmdLine = CmdLine {
     dbDir      :: FilePath
   , verbose    :: Bool
@@ -63,7 +64,8 @@ data CmdLine = CmdLine {
   , validation :: Maybe ValidateBlocks
   , blockType  :: BlockType
   , analysis   :: AnalysisName
-  , limit      :: Limit
+  , limit      :: Maybe Int
+  , bsSelector :: BackingStore
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation
@@ -93,6 +95,30 @@ parseCmdLine = CmdLine
     <*> blockTypeParser
     <*> parseAnalysis
     <*> parseLimit
+    <*> parseSelector
+
+parseSelector :: Parser BackingStore
+parseSelector = fromMaybe MEM <$> parseMaybe (asum [
+      MEM <$ parseMEM
+    , LMDB <$ parseLMDB <*> parseMapSize
+    ])
+  where
+    parseMEM :: Parser ()
+    parseMEM = flag' () $ mconcat [
+        long "inmem-backingstore"
+      , help "Choose the in-memory backing store for the LedgerDB."
+      ]
+    parseLMDB :: Parser ()
+    parseLMDB = flag' () $ mconcat [
+        long "lmdb-backingstore"
+      , help "Choose the LMDB backing store for the LedgerDB."
+      ]
+    parseMapSize :: Parser (Maybe Int)
+    parseMapSize = optional $ read <$> strOption (mconcat [
+        long "mapsize"
+      , metavar "NR_BYTES"
+      , help "The maximum database size defined in nr. of bytes NR_BYTES. NR_BYTES must be a multiple of the OS page size."
+      ])
 
 parseSelectDB :: Parser SelectDB
 parseSelectDB = asum [
@@ -181,14 +207,14 @@ checkNoThunksParser = CheckNoThunksEvery <$> option auto
   <> metavar "BLOCK_COUNT"
   <> help "Check the ledger state for thunks every n blocks" )
 
-parseLimit :: Parser Limit
+parseLimit :: Parser (Maybe Int)
 parseLimit = asum [
-    Limit <$> option auto (mconcat [
+    read <$> strOption (mconcat [
         long "num-blocks-to-process"
       , help "Maximum number of blocks we want to process"
       , metavar "INT"
       ])
-  , pure Unlimited
+  , pure Nothing
   ]
 
 blockTypeParser :: Parser BlockType
@@ -231,7 +257,7 @@ analyse ::
      , Show (Header blk)
      , HasAnalysis blk
      , HasProtocolInfo blk
-     , LedgerSupportsMempool.HasTxs blk
+     -- , LedgerSupportsMempool.HasTxs blk
      )
   => CmdLine
   -> Args blk
@@ -249,7 +275,7 @@ analyse CmdLine {..} args =
           args' =
             Node.mkChainDbArgs
               registry InFuture.dontCheck cfg genesisLedger chunkInfo $
-            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy
+            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy InMemoryBackingStore
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy
@@ -260,24 +286,27 @@ analyse CmdLine {..} args =
 
       case selectDB of
         SelectImmutableDB initializeFrom -> do
-          initLedgerErr <- runExceptT $ case initializeFrom of
-            Nothing       -> pure genesisLedger
-            Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
-          initLedger <- either (error . show) pure initLedgerErr
-          -- This marker divides the "loading" phase of the program, where the
-          -- system is principally occupied with reading snapshot data from
-          -- disk, from the "processing" phase, where we are streaming blocks
-          -- and running the ledger processing on them.
-          Debug.traceMarkerIO "SNAPSHOT_LOADED"
+          let initLedger = case initializeFrom of
+                                Nothing       -> Right genesisLedger
+                                Just snapshot -> Left snapshot
+
+          let bs = case bsSelector of
+                MEM          -> InMemoryBackingStore
+                LMDB mapsize ->
+                  maybe
+                    (LMDBBackingStore defaultLMDBLimits)
+                    (\n -> LMDBBackingStore (defaultLMDBLimits { lmdbMapSize = n }))
+                    mapsize
+
           ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs runWithTempRegistry) $ \immutableDB -> do
             runAnalysis analysis $ AnalysisEnv {
                 cfg
               , initLedger
               , db = Left immutableDB
-              , registry
               , ledgerDbFS = ledgerDbFS
               , limit = limit
               , tracer = analysisTracer
+              , backing = bs
               }
             tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
             putStrLn $ "ImmutableDB tip: " ++ show tipPoint
@@ -285,12 +314,12 @@ analyse CmdLine {..} args =
           ChainDB.withDB chainDbArgs $ \chainDB -> do
             runAnalysis analysis $ AnalysisEnv {
                 cfg
-              , initLedger = genesisLedger
+              , initLedger = Right genesisLedger
               , db = Right chainDB
-              , registry
               , ledgerDbFS = ledgerDbFS
               , limit = limit
               , tracer = analysisTracer
+              , backing = undefined
               }
             tipPoint <- atomically $ ChainDB.getTipPoint chainDB
             putStrLn $ "ChainDB tip: " ++ show tipPoint
@@ -316,10 +345,12 @@ analyse CmdLine {..} args =
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
 
-    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk)
-    decodeExtLedgerState' cfg =
-      let ccfg = configCodec cfg
-      in decodeExtLedgerState
-           (decodeDisk ccfg)
-           (decodeDisk ccfg)
-           (decodeDisk ccfg)
+    -- Preferably, these settings should match the default configuration for
+    -- @cardano-node@. There, we pick @'lmdbMapSize'@ and @'lmdbMaxDatabases'@
+    -- such that they are sufficient for the medium term, i.e., until a more
+    -- performant backing store is developed and integrated.
+    defaultLMDBLimits = LMDBLimits {
+      lmdbMapSize      = 16_000_000_000
+    , lmdbMaxDatabases = 10
+    , lmdbMaxReaders   = 16
+    }
