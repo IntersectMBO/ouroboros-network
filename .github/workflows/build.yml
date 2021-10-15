@@ -97,6 +97,7 @@ jobs:
         sudo apt-get update
         sudo apt-get -y install libsodium23 libsodium-dev
         sudo apt-get -y install libsystemd0 libsystemd-dev
+        sudo apt-get -y install liblmdb-dev
         sudo apt-get -y remove --purge software-properties-common
         sudo apt-get -y autoremove
 
@@ -118,6 +119,26 @@ jobs:
           make check
           $CI_SECP_INSTALL_CMD make install
         )
+
+    - name: 'WINDOWS: Install lmdb'
+      if: matrix.os == 'windows-latest'
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
+      run: |
+        echo "RUNNER_TEMP=$RUNNER_TEMP"
+        cd "$RUNNER_TEMP"
+
+        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
+
+        curl -Ls \
+          --connect-timeout 5 \
+          --max-time 10 \
+          --retry 5 \
+          --retry-delay 0 \
+          --retry-max-time 40 \
+          https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-lmdb-0.9.29-1-any.pkg.tar.zst -o lmdb-0.9.29.pkg.tar.zst
+
+        tar xvf lmdb-0.9.29.pkg.tar.zst
 
     - uses: actions/checkout@v3
 
@@ -157,6 +178,9 @@ jobs:
         key: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.record-deps.outputs.weeknum }}
         restore-keys: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
+    # DO NOT RUN cabal configure. It will _overwrite_ the cabal.project.local.
+    # - name: Cabal Configure
+    #   run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
 
     - name: Build dependencies
       run: cabal build --only-dependencies all

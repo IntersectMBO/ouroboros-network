@@ -21,7 +21,7 @@ import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 
 forgeByronSpecBlock :: BlockNo
                     -> SlotNo
-                    -> Ticked (LedgerState ByronSpecBlock)
+                    -> Ticked1 (LedgerState ByronSpecBlock) mk
                     -> [Validated (GenTx ByronSpecBlock)]
                     -> Spec.VKey
                     -> ByronSpecBlock

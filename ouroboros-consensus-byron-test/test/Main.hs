@@ -4,8 +4,8 @@ import           Test.Tasty
 
 import qualified Test.Consensus.Byron.Golden (tests)
 import qualified Test.Consensus.Byron.Serialisation (tests)
-import qualified Test.ThreadNet.Byron (tests)
-import qualified Test.ThreadNet.DualByron (tests)
+--import qualified Test.ThreadNet.Byron (tests)
+--import qualified Test.ThreadNet.DualByron (tests)
 import           Test.Util.TestEnv (defaultMainWithTestEnv,
                      defaultTestEnvConfig)
 
@@ -17,6 +17,6 @@ tests =
   testGroup "byron"
   [ Test.Consensus.Byron.Golden.tests
   , Test.Consensus.Byron.Serialisation.tests
-  , Test.ThreadNet.Byron.tests
-  , Test.ThreadNet.DualByron.tests
+  -- , Test.ThreadNet.Byron.tests
+  -- , Test.ThreadNet.DualByron.tests
   ]

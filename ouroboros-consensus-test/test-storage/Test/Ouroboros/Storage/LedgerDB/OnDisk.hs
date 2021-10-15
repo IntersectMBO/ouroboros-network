@@ -13,6 +13,7 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -31,11 +32,14 @@ module Test.Ouroboros.Storage.LedgerDB.OnDisk (
 
 import           Prelude hiding (elem)
 
+import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans as Trans
 import           Control.Tracer (nullTracer)
+import qualified Control.Tracer as Trace
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Classes
@@ -45,8 +49,12 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.TreeDiff.Class (genericToExpr)
+import           Data.TreeDiff.Expr (Expr (App))
 import           Data.Word
 import           GHC.Generics (Generic)
+import qualified System.Directory as Dir
+import qualified System.IO.Temp as Temp
 import           System.Random (getStdRandom, randomR)
 
 import qualified Test.QuickCheck as QC
@@ -57,7 +65,9 @@ import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import qualified Test.Util.Tasty.Traceable as TTT
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -68,18 +78,19 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import qualified Ouroboros.Consensus.Storage.FS.IO as FSIO
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-
 import qualified Test.Util.Classify as C
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
 import           Test.Util.Range
 import           Test.Util.TestBlock hiding (TestBlock, TestBlockCodecConfig,
                      TestBlockStorageConfig)
-
 -- For the Arbitrary instance of 'MemPolicy'
-import           Codec.Serialise (Serialise)
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
@@ -88,9 +99,29 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 -------------------------------------------------------------------------------}
 
 tests :: TestTree
-tests = testGroup "OnDisk" [
-      testProperty "LedgerSimple" prop_sequential
+tests = testGroup "OnDisk"
+    [ TTT.traceableProperty "LedgerSimple-InMem" $ \showTrace ->
+        prop_sequential 1000000  $ inMemDbEnv showTrace
+    , TTT.traceableProperty "LedgerSimple-LMDB"  $ \showTrace ->
+        -- FIXME: we test 1000 cases since the LMDB version of this property test
+        -- takes an unreasonable amount of time to finish. At the moment, a 1000
+        -- property tests that exercise an LMDB backing store will take ~3
+        -- minutes to run.
+        prop_sequential 1000     $ lmdbDbEnv showTrace testLMDBLimits
     ]
+
+testLMDBLimits :: LMDB.LMDBLimits
+testLMDBLimits = LMDB.LMDBLimits
+  { -- 100 MiB should be more than sufficient for the tests we're running here.
+    -- If the database were to grow beyond 100 Mebibytes, resulting in a test
+    -- error, then something in the LMDB backing store or tests has changed and
+    -- we should reconsider this value.
+    LMDB.lmdbMapSize = 100 * 1024 * 1024
+    -- 3 internal databases: 1 for the settings, 1 for the state, and 1 for the
+    -- ledger tables.
+  , LMDB.lmdbMaxDatabases = 3
+  , LMDB.lmdbMaxReaders = 16
+  }
 
 {-------------------------------------------------------------------------------
   TestBlock
@@ -130,16 +161,6 @@ newtype TValue = TValue (WithOrigin SlotNo)
   A ledger semantics for TestBlock
 -------------------------------------------------------------------------------}
 
-data UTxTok = UTxTok { utxtok  :: Map Token TValue
-                     , -- | All the tokens that ever existed. We use this to
-                       -- make sure a token is not created more than once. See
-                       -- the definition of 'applyPayload' in the
-                       -- 'PayloadSemantics' of 'Tx'.
-                       utxhist :: Set Token
-                     }
-  deriving stock (Generic, Eq, Show)
-  deriving anyclass (NoThunks, Serialise, ToExpr)
-
 data TxErr
   = TokenWasAlreadyCreated Token
   | TokenDoesNotExist      Token
@@ -147,7 +168,15 @@ data TxErr
   deriving anyclass (NoThunks, Serialise, ToExpr)
 
 instance PayloadSemantics Tx where
-  type PayloadDependentState Tx = UTxTok
+  data PayloadDependentState Tx mk =
+    UTxTok { utxtoktables :: LedgerTables (LedgerState TestBlock) mk
+             -- | All the tokens that ever existed. We use this to
+             -- make sure a token is not created more than once. See
+             -- the definition of 'applyPayload' in the
+             -- 'PayloadSemantics' of 'Tx'.
+           , utxhist      :: Set Token
+           }
+    deriving stock    (Generic)
 
   type PayloadDependentError Tx = TxErr
 
@@ -158,21 +187,200 @@ instance PayloadSemantics Tx where
   -- * a key is inserted at most once
   --
   applyPayload st Tx{consumed, produced} =
-      delete consumed st >>= uncurry insert produced
+      fmap track $ delete consumed st >>= uncurry insert produced
     where
-      insert :: Token -> TValue -> UTxTok -> Either TxErr UTxTok
-      insert tok val UTxTok{utxtok, utxhist} =
-        if tok `Set.member` utxhist
-        then Left  $ TokenWasAlreadyCreated tok
-        else Right $ UTxTok { utxtok  = Map.insert tok val utxtok
-                            , utxhist = Set.insert tok utxhist
-                            }
+      insert ::
+           Token
+        -> TValue
+        -> PayloadDependentState Tx ValuesMK
+        -> Either TxErr (PayloadDependentState Tx ValuesMK)
+      insert tok val st'@UTxTok{utxtoktables, utxhist} =
+          if tok `Set.member` utxhist
+          then Left  $ TokenWasAlreadyCreated tok
+          else Right $ st' { utxtoktables = Map.insert tok val `onValues` utxtoktables
+                           , utxhist      = Set.insert tok utxhist
+                           }
+      delete ::
+           Token
+        -> PayloadDependentState Tx ValuesMK
+        -> Either TxErr (PayloadDependentState Tx ValuesMK)
+      delete tok st'@UTxTok{utxtoktables} =
+          if Map.member tok `queryKeys` utxtoktables
+          then Right $ st' { utxtoktables = Map.delete tok `onValues` utxtoktables
+                           }
+          else Left  $ TokenDoesNotExist tok
 
-      delete :: Token -> UTxTok -> Either TxErr UTxTok
-      delete tok st'@UTxTok{utxtok} =
-        if tok `Map.member` utxtok
-        then Right $ st' { utxtok = Map.delete tok utxtok }
-        else Left  $ TokenDoesNotExist tok
+      track :: PayloadDependentState Tx ValuesMK -> PayloadDependentState Tx TrackingMK
+      track stAfter =
+          stAfter { utxtoktables =
+                      TokenToTValue $ rawCalculateDifference utxtokBefore utxtokAfter
+                  }
+        where
+          utxtokBefore = testUtxtokTable $ utxtoktables st
+          utxtokAfter  = testUtxtokTable $ utxtoktables stAfter
+
+  getPayloadKeySets Tx{consumed} =
+    TokenToTValue $ ApplyKeysMK $ HD.UtxoKeys $ Set.singleton consumed
+
+deriving stock    instance (Eq        (PayloadDependentState Tx EmptyMK))
+deriving stock    instance (Eq        (PayloadDependentState Tx DiffMK))
+deriving stock    instance (Eq        (PayloadDependentState Tx ValuesMK))
+deriving stock    instance (Show      (PayloadDependentState Tx (ApplyMapKind' mk)))
+deriving anyclass instance (Serialise (PayloadDependentState Tx EmptyMK))
+deriving anyclass instance (ToExpr    (PayloadDependentState Tx ValuesMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx EmptyMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx DiffMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx ValuesMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx SeqDiffMK))
+
+onValues ::
+     (Map Token TValue -> Map Token TValue)
+  -> LedgerTables (LedgerState TestBlock) ValuesMK
+  -> LedgerTables (LedgerState TestBlock) ValuesMK
+onValues f TokenToTValue {testUtxtokTable} = TokenToTValue $ updateMap testUtxtokTable
+  where
+    updateMap :: ApplyMapKind ValuesMK Token TValue -> ApplyMapKind ValuesMK Token TValue
+    updateMap (ApplyValuesMK (HD.UtxoValues utxovals)) =
+      ApplyValuesMK $ HD.UtxoValues $ f utxovals
+
+queryKeys ::
+     (Map Token TValue -> a)
+  -> LedgerTables (LedgerState TestBlock) ValuesMK
+  -> a
+queryKeys f (TokenToTValue (ApplyValuesMK (HD.UtxoValues utxovals))) = f utxovals
+
+{-------------------------------------------------------------------------------
+  Instances required for HD storage of ledger state tables
+-------------------------------------------------------------------------------}
+
+instance TableStuff (LedgerState TestBlock) where
+  newtype LedgerTables (LedgerState TestBlock) mk =
+    TokenToTValue { testUtxtokTable :: ApplyMapKind mk Token TValue }
+    deriving stock (Generic)
+
+  projectLedgerTables st       = utxtoktables $ payloadDependentState st
+  withLedgerTables    st table = st { payloadDependentState =
+                                        (payloadDependentState st) {utxtoktables = table}
+                                    }
+
+  pureLedgerTables = TokenToTValue
+
+  mapLedgerTables      f                                     (TokenToTValue x) = TokenToTValue    (f x)
+  traverseLedgerTables f                                     (TokenToTValue x) = TokenToTValue <$> f x
+  zipLedgerTables      f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
+  zipLedgerTables2     f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue    (f x y z)
+  zipLedgerTablesA     f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue <$> f x y
+  zipLedgerTables2A    f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue <$> f x y z
+  foldLedgerTables     f                                     (TokenToTValue x) =                   f x
+  foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
+  namesLedgerTables                                                            = TokenToTValue $ NameMK "testblocktables"
+
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) EmptyMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) DiffMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving newtype  instance Show     (LedgerTables (LedgerState TestBlock) (ApplyMapKind' mk))
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) EmptyMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) DiffMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) SeqDiffMK)
+
+instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
+  codecLedgerTables = TokenToTValue $ CodecMK toCBOR toCBOR fromCBOR fromCBOR
+
+instance Serialise (LedgerTables (LedgerState TestBlock) EmptyMK) where
+  encode TokenToTValue {testUtxtokTable} = toCBOR testUtxtokTable
+  decode = fmap TokenToTValue fromCBOR
+
+instance ToCBOR Token where
+  toCBOR (Token pt) = S.encode pt
+
+instance FromCBOR Token where
+  fromCBOR = fmap Token S.decode
+
+instance ToCBOR TValue where
+  toCBOR (TValue v) = S.encode v
+
+instance FromCBOR TValue where
+  fromCBOR = fmap TValue S.decode
+
+instance TickedTableStuff (LedgerState TestBlock) where
+  projectLedgerTablesTicked (TickedTestLedger st)        = projectLedgerTables st
+  withLedgerTablesTicked    (TickedTestLedger st) tables =
+    TickedTestLedger $ withLedgerTables st tables
+
+instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
+  showsLedgerState _sing = shows
+
+instance StowableLedgerTables (LedgerState TestBlock) where
+  stowLedgerTables     = stowErr "stowLedgerTables"
+  unstowLedgerTables   = stowErr "unstowLedgerTables"
+
+stowErr :: String -> a
+stowErr fname = error $ "Function " <> fname <> " should not be used in these tests."
+
+instance Show (ApplyMapKind' mk' Token TValue) where
+  show ap = showsApplyMapKind ap ""
+
+instance ToExpr (ApplyMapKind' mk' Token TValue) where
+  toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
+  toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
+  toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr keys]
+  toExpr (ApplySeqDiffMK (HD.SeqUtxoDiff seqdiff))
+                                      = App "ApplySeqDiffMK"   [genericToExpr $ toList seqdiff]
+  toExpr (ApplyTrackingMK vals diffs) = App "ApplyTrackingMK"  [ genericToExpr vals
+                                                               , genericToExpr diffs
+                                                               ]
+  toExpr (ApplyValuesMK vals)         = App "ApplyValuesMK"    [genericToExpr vals]
+  toExpr ApplyQueryAllMK              = App "ApplyQueryAllMK"  []
+  toExpr (ApplyQuerySomeMK keys)      = App "ApplyQuerySomeMK" [genericToExpr keys]
+
+-- About this instance: we have that the use of
+--
+-- > genericToExpr UtxoDiff
+--
+-- in instance ToExpr (ApplyMapKind mk Token TValue) requires
+--
+-- >  ToExpr Map k (UtxoEntryDiff v )
+--
+-- requires
+--
+-- > ToExpr (UtxoEntryDiff v )
+--
+-- requires
+--
+-- > ToExpr UtxoEntryDiffState
+--
+instance ToExpr HD.UtxoEntryDiffState where
+  toExpr = genericToExpr
+
+-- See instance ToExpr HD.UtxoEntryDiffState
+instance ToExpr (HD.UtxoEntryDiff TValue) where
+  toExpr = genericToExpr
+
+instance ToExpr (ExtLedgerState TestBlock ValuesMK) where
+  toExpr = genericToExpr
+
+instance ToExpr (LedgerState (TestBlockWith Tx) ValuesMK) where
+  toExpr = genericToExpr
+
+-- Required by the ToExpr (SeqUtxoDiff k v) instance
+instance ToExpr (HD.SudElement Token TValue) where
+  toExpr = genericToExpr
+
+-- Required by the ToExpr (HD.SudElement Token TValue) instance
+instance ToExpr (HD.UtxoDiff Token TValue) where
+  toExpr = genericToExpr
+
+instance ToExpr (LedgerTables (LedgerState TestBlock) ValuesMK) where
+  toExpr = genericToExpr
+
+-- Required by the genericToExpr application on RewoundKeys
+instance ToExpr (HD.UtxoKeys Token TValue) where
+  toExpr = genericToExpr
+
+-- Required by the genericToExpr application on RewoundKeys
+instance ToExpr (HD.UtxoValues Token TValue) where
+  toExpr = genericToExpr
 
 {-------------------------------------------------------------------------------
   TestBlock generation
@@ -203,10 +411,14 @@ instance PayloadSemantics Tx where
   coupled to the generator's semantics.
  -------------------------------------------------------------------------------}
 
-initialTestLedgerState :: UTxTok
+initialTestLedgerState :: PayloadDependentState Tx ValuesMK
 initialTestLedgerState = UTxTok {
-    utxtok = Map.singleton initialToken (pointTValue initialToken)
-  , utxhist = Set.singleton initialToken
+    utxtoktables =   TokenToTValue
+                   $ ApplyValuesMK
+                   $ HD.UtxoValues
+                   $ Map.singleton initialToken (pointTValue initialToken)
+  , utxhist      = Set.singleton initialToken
+
   }
   where
     initialToken = Token GenesisPoint
@@ -231,7 +443,7 @@ genBlock pt =
                     , produced = ( Token pt', TValue (pointSlot pt'))
                     }
   where
-    mkBlockFrom :: Point (TestBlockWith ptype) -> ptype -> (TestBlockWith ptype)
+    mkBlockFrom :: Point (TestBlockWith ptype) -> ptype -> TestBlockWith ptype
     mkBlockFrom GenesisPoint           = firstBlockWithPayload 0
     mkBlockFrom (BlockPoint slot hash) = successorBlockWithPayload hash slot
 
@@ -242,7 +454,7 @@ genBlock pt =
         dummyBlk :: TestBlockWith ()
         dummyBlk = mkBlockFrom (castPoint pt) ()
 
-genBlockFromLedgerState :: ExtLedgerState TestBlock -> Gen TestBlock
+genBlockFromLedgerState :: ExtLedgerState TestBlock mk -> Gen TestBlock
 genBlockFromLedgerState = pure . genBlock . lastAppliedPoint . ledgerState
 
 extLedgerDbConfig :: SecurityParam -> LedgerDbCfg (ExtLedgerState TestBlock)
@@ -287,7 +499,12 @@ data Cmd ss =
     -- | Take a snapshot (write to disk)
   | Snap
 
-    -- | Restore the DB from on-disk, then return it along with the init log
+    -- | Flush the DbChangelog in the model.
+    --
+    -- Note that as the Mock doesn't have the notion of "flushed differences", it is a no-op on the mock.
+  | Flush
+
+    -- | Restore the DB from disk, then return it along with the init log
   | Restore
 
     -- | Corrupt a previously taken snapshot
@@ -314,9 +531,10 @@ data Cmd ss =
 data Success ss =
     Unit ()
   | MaybeErr (Either (ExtValidationError TestBlock) ())
-  | Ledger (ExtLedgerState TestBlock)
+  | Ledger (ExtLedgerState TestBlock EmptyMK)
   | Snapped (Maybe (ss, RealPoint TestBlock))
-  | Restored (MockInitLog ss, ExtLedgerState TestBlock)
+  | Restored (MockInitLog ss, ExtLedgerState TestBlock EmptyMK)
+  | Flushed
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 -- | Currently we don't have any error responses
@@ -328,7 +546,10 @@ newtype Resp ss = Resp (Success ss)
 -------------------------------------------------------------------------------}
 
 -- | The mock ledger records the blocks and ledger values (new to old)
-type MockLedger = [(TestBlock, ExtLedgerState TestBlock)]
+--
+-- TODO: we need the values in the ledger state of the mock since we do not
+-- store the values anywhere else in the mock.
+type MockLedger = [(TestBlock, ExtLedgerState TestBlock ValuesMK)]
 
 -- | We use the slot number of the ledger state as the snapshot number
 --
@@ -351,23 +572,43 @@ type MockSnaps = Map MockSnap (RealPoint TestBlock, SnapState)
 -- We store the chain most recent first.
 data Mock = Mock {
       -- | Current ledger
-      mockLedger   :: MockLedger
+      mockLedger             :: MockLedger
 
       -- | Current state the snapshots
-    , mockSnaps    :: MockSnaps
+    , mockSnaps              :: MockSnaps
+
+      -- | Point at which an immutable tip in the sequence of ledger states was
+      -- flushed to disk
+      --
+      -- The latest flushed point does not necessarily correspond to the point
+      -- at which the immutable tip is. As blocks are pushed onto the LedgerDB,
+      -- the immutable tip will move further ahead from the latest flushed
+      -- point. See the example below:
+      --
+      -- p0--------------------p_f-----------------p_i----------p_t
+      -- ^                      ^                   ^            ^
+      -- Genesis point  latest flushed point     Immutable tip   Tip
+      --
+      -- A 'Flush' command will make @p_f@ and @p_i@ equal.
+      --
+      -- The value of this field is affected by a 'Flush' command, but also by
+      -- 'Restore' and 'Drop' commands. The last two affect the current chain,
+      -- and therefore they also affect the point of the most recent known
+      -- flush. See the implementation of 'runMock' for additional details.
+    , mockLatestFlushedPoint :: Point TestBlock
 
       -- | The oldest (tail) block in the real DB at the most recent restore
       --
       -- This puts a limit on how far we can roll back.
       -- See also 'applyMockLog', 'mockMaxRollback'.
-    , mockRestore  :: Point TestBlock
+    , mockRestore            :: Point TestBlock
 
       -- | Security parameter
       --
       -- We need the security parameter only to compute which snapshots the real
       -- implementation would take, so that we can accurately predict how far
       -- the real implementation can roll back.
-    , mockSecParam :: SecurityParam
+    , mockSecParam           :: SecurityParam
     }
   deriving (Show, Generic, ToExpr)
 
@@ -375,13 +616,13 @@ data SnapState = SnapOk | SnapCorrupted
   deriving (Show, Eq, Generic, ToExpr)
 
 mockInit :: SecurityParam -> Mock
-mockInit = Mock [] Map.empty GenesisPoint
-
-mockCurrent :: Mock -> ExtLedgerState TestBlock
-mockCurrent Mock{..} =
-    case mockLedger of
-      []       -> testInitExtLedgerWithState initialTestLedgerState
-      (_, l):_ -> l
+mockInit secParam = Mock
+  { mockLedger             = []
+  , mockSnaps              = Map.empty
+  , mockLatestFlushedPoint = GenesisPoint
+  , mockRestore            = GenesisPoint
+  , mockSecParam           = secParam
+  }
 
 mockChainLength :: Mock -> Word64
 mockChainLength Mock{..} = fromIntegral (length mockLedger)
@@ -449,6 +690,12 @@ mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
 applyMockLog :: MockInitLog MockSnap -> Mock -> Mock
 applyMockLog = go
   where
+    -- NOTE: we do not alter the mockLedger when applying the MockLog. When the
+    -- SUT restores, it streams all the blocks from the dbState to initLedgerDB.
+    -- No matter which snapshot we use when restoring, once we apply all the
+    -- blocks after the snapshot, we should end up with the same LedgerDB we had
+    -- after restoration. That is why the mock does not care about updating
+    -- mockLedger.
     go :: MockInitLog MockSnap -> Mock -> Mock
     go  MockFromGenesis                mock = mock { mockRestore = GenesisPoint         }
     go (MockFromSnapshot    _  tip)    mock = mock { mockRestore = realPointToPoint tip }
@@ -458,13 +705,14 @@ applyMockLog = go
 
     deleteSnap :: MockSnap -> Mock -> Mock
     deleteSnap ss mock = mock {
-          mockSnaps = Map.alter delete ss (mockSnaps mock)
-        }
-
-    delete :: Maybe (RealPoint TestBlock, SnapState)
-           -> Maybe (RealPoint TestBlock, SnapState)
-    delete Nothing  = error "setIsDeleted: impossible"
-    delete (Just _) = Nothing
+        mockSnaps = Map.alter delete ss (mockSnaps mock)
+      }
+      where
+        delete ::
+            Maybe (RealPoint TestBlock, SnapState)
+         -> Maybe (RealPoint TestBlock, SnapState)
+        delete Nothing  = error "setIsDeleted: impossible"
+        delete (Just _) = Nothing
 
 -- | Compute theoretical maximum rollback
 --
@@ -490,13 +738,45 @@ runMock cmd initMock =
     cfg = extLedgerDbConfig (mockSecParam initMock)
 
     go :: Cmd MockSnap -> Mock -> (Success MockSnap, Mock)
-    go Current       mock = (Ledger (cur (mockLedger mock)), mock)
+    go Current       mock = (Ledger (forgetLedgerTables $ cur (mockLedger mock)), mock)
     go (Push b)      mock = first MaybeErr $ mockUpdateLedger (push b)      mock
     go (Switch n bs) mock = first MaybeErr $ mockUpdateLedger (switch n bs) mock
-    go Restore       mock = (Restored (initLog, cur (mockLedger mock')), mock')
+    go Restore       mock = (Restored (initLog, forgetLedgerTables $ cur (mockLedger mock'')), mock'')
+      -- When we restore to the most recent valid snapshot, the point at which a
+      -- immutable tip was flushed to disk becomes the tip of the restoraton
+      -- point, since any flushes that occured after this point are now invalid
+      -- because we restored a snapshot.
+      --
+      -- TODO: This depends on the SUT not flushing during restoration. At the
+      -- moment we flush every 100 blocks, and the chains we generate are far
+      -- below that (about less than 40 elements). At the moment we do not model
+      -- the flushing during restoration aspect here.
       where
         initLog = mockInitLog mock
         mock'   = applyMockLog initLog mock
+        mock''  = mock'  { mockLatestFlushedPoint = mockRestore mock' }
+    go Flush         mock =
+      (Flushed, mock { mockLatestFlushedPoint = immutableTipSlot })
+      -- When we flush, we might encounter the following scenarios:
+      --
+      -- 1. We do not have an immutable tip because we have less than @k@ blocks
+      -- in the chain.
+      --
+      -- 2. We have less than @k@ blocks from the immutable tip, which will
+      -- happen only after a restoration. In that case we leave the latest
+      -- flushed point unaltered.
+      --
+      -- 2. We have more than @k@ blocks, in which case we set the latest
+      -- flushed point to the immutable tip.
+      where
+        immutableTipSlot :: Point TestBlock
+        immutableTipSlot =
+          case drop k (mockLedger mock) of
+            []           -> mockLatestFlushedPoint mock
+            (blk, _st):_ -> max (mockLatestFlushedPoint mock) (blockPoint blk)
+          where
+            k :: Int
+            k = fromIntegral $ maxRollbacks $ mockSecParam mock
     go Snap          mock = case mbSnapshot of
         Just pt
           | let mockSnap = MockSnap (unSlotNo (realPointSlot pt))
@@ -514,17 +794,16 @@ runMock cmd initMock =
         -- | The snapshot that the real implementation will possibly write to
         -- disk.
         --
-        -- 1. We will write the snapshot of the ledger state @k@ blocks back
-        --    from the tip to disk.
+        -- 1. We will write the snapshot of the latest flushed ledger state.
         --
-        --    For example, with @k = 2@:
+        --    In the example below, if the latest flushed state was B this is
+        --    what we will write to disk, unless there is already a snapshot of
+        --    B.
         --
         --    > A -> B -> C -> D -> E
         --
-        --    We will write C to disk.
-        --
-        -- 2. In case we don't have enough snapshots for (1), i.e., @<= k@, we
-        --    look at the snapshot from which we restored ('mockRestore').
+        -- 2. In case flushed never ocurred, we look at the snapshot from which
+        --    we restored ('mockRestore').
         --
         --    a. When that corresponds to the genesis ledger state, we don't
         --       write a snapshot to disk.
@@ -533,22 +812,11 @@ runMock cmd initMock =
         --       check whether that snapshots still exists on disk, in which
         --       case we wouldn't write it to disk again.
         mbSnapshot :: Maybe (RealPoint TestBlock)
-        mbSnapshot = case drop k untilRestore of
-            (blk, _):_ -> Just (blockRealPoint blk)  -- 1
-            []         -> case pointToWithOriginRealPoint (mockRestore mock) of
+        mbSnapshot = case pointToWithOriginRealPoint $ mockLatestFlushedPoint mock of
+            NotOrigin pt -> Just pt                  -- 1
+            Origin       -> case pointToWithOriginRealPoint (mockRestore mock) of
                             Origin       -> Nothing  -- 2a
                             NotOrigin pt -> Just pt  -- 2b
-          where
-            k :: Int
-            k = fromIntegral $ maxRollbacks $ mockSecParam mock
-
-            -- The snapshots from new to old until 'mockRestore' (inclusive)
-            untilRestore :: [(TestBlock, ExtLedgerState TestBlock)]
-            untilRestore =
-              takeWhile
-                ((/= (mockRestore mock)) . blockPoint . fst)
-                (mockLedger mock)
-
     go (Corrupt c ss) mock = (
           Unit ()
         , mock { mockSnaps = Map.alter corrupt ss (mockSnaps mock) }
@@ -569,7 +837,7 @@ runMock cmd initMock =
     push b = do
         ls <- State.get
         l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (cur ls)
-        State.put ((b, l'):ls)
+        State.put ((b, applyLedgerTablesDiffs (cur ls) l'):ls)
 
     switch :: Word64
            -> [TestBlock]
@@ -578,7 +846,7 @@ runMock cmd initMock =
         State.modify $ drop (fromIntegral n)
         mapM_ push bs
 
-    cur :: MockLedger -> ExtLedgerState TestBlock
+    cur :: MockLedger -> ExtLedgerState TestBlock ValuesMK
     cur []         = testInitExtLedgerWithState initialTestLedgerState
     cur ((_, l):_) = l
 
@@ -588,8 +856,11 @@ runMock cmd initMock =
 
 -- | Arguments required by 'StandaloneDB'
 data DbEnv m = DbEnv {
-      dbHasFS    :: SomeHasFS m
-    , dbSecParam :: SecurityParam
+      dbHasFS                :: !(SomeHasFS m)
+    , dbSecParam             :: !SecurityParam
+    , dbBackingStoreSelector :: !(BackingStoreSelector m)
+    , dbTracer               :: !(Trace.Tracer m LMDB.TraceDb)
+    , dbCleanup              :: !(m ())
     }
 
 -- | Standalone ledger DB
@@ -620,13 +891,23 @@ data StandaloneDB m = DB {
 
       -- | LedgerDB config
     , dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState TestBlock)
+
+    , dbBackingStore :: StrictTVar m (LedgerBackingStore m (ExtLedgerState TestBlock))
+
+      -- | needed for restore TODO does this really belong here?
+    , sdbBackingStoreSelector :: BackingStoreSelector m
     }
 
-initStandaloneDB :: forall m. IOLike m => DbEnv m -> m (StandaloneDB m)
+initStandaloneDB :: forall m. (Trans.MonadIO m, IOLike m) => DbEnv m -> m (StandaloneDB m)
 initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
-
+    dbBackingStore <- uncheckedNewTVarM
+                      =<< newBackingStore
+                             dbTracer
+                             dbBackingStoreSelector
+                             dbHasFS
+                             initTables -- TODO we could consider adapting the test generator to generate an initial ledger with non-empty tables.
     let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
 
@@ -638,8 +919,15 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain :: [RealPoint TestBlock]
     initChain = []
 
-    initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbWithAnchor (testInitExtLedgerWithState initialTestLedgerState)
+    initDB     :: LedgerDB' TestBlock
+    initTables :: LedgerTables (ExtLedgerState TestBlock) ValuesMK
+    (initDB, initTables) =
+        ( ledgerDbWithAnchor
+            (forgetLedgerTables initialState)
+        , projectLedgerTables initialState
+        )
+      where
+        initialState = testInitExtLedgerWithState initialTestLedgerState
 
     getBlock ::
          RealPoint TestBlock
@@ -654,8 +942,9 @@ initStandaloneDB dbEnv@DbEnv{..} = do
         , "block in dbChain not in dbBlocks, "
         , "or LedgerDB not re-initialized after chain truncation"
         ]
+    sdbBackingStoreSelector = dbBackingStoreSelector
 
-dbStreamAPI :: forall m. IOLike m => StandaloneDB m -> StreamAPI m TestBlock
+dbStreamAPI :: forall m. IOLike m => StandaloneDB m -> StreamAPI m TestBlock TestBlock
 dbStreamAPI DB{..} = StreamAPI {..}
   where
     streamAfter ::
@@ -718,6 +1007,11 @@ runDB standalone@DB{..} cmd =
       -> ExtValidationError TestBlock
     annLedgerErr' = annLedgerErr
 
+    reader :: TypeOf_readDB m (ExtLedgerState TestBlock)
+    reader rewoundTableKeySets = do
+      backingStore <- readTVarIO dbBackingStore
+      readKeySets backingStore rewoundTableKeySets
+
     go :: SomeHasFS m -> Cmd DiskSnapshot -> m (Success DiskSnapshot)
     go _ Current =
         atomically $ (Ledger . ledgerDbCurrent . snd) <$> readTVar dbState
@@ -726,6 +1020,7 @@ runDB standalone@DB{..} cmd =
           uncurry Map.insert (refValPair b)
         upd (push b) $ \db ->
           fmap (first annLedgerErr') $
+            defaultReadKeySets reader $
             defaultThrowLedgerErrors $
               ledgerDbPush
                 dbLedgerDbCfg
@@ -736,33 +1031,58 @@ runDB standalone@DB{..} cmd =
           repeatedly (uncurry Map.insert) (map refValPair bs)
         upd (switch n bs) $ \db ->
           fmap (bimap annLedgerErr' ignoreExceedRollback) $
-            defaultResolveWithErrors dbResolve $
+            defaultReadKeySets reader $
+            defaultResolveWithErrors (DbReader . Trans.lift . dbResolve) $
               ledgerDbSwitch
                 dbLedgerDbCfg
                 n
                 (const $ pure ())
                 (map ApplyVal bs)
                 db
+
+    go _ Flush = do
+        (toFlush, bs) <- atomically $ do
+          (_, db) <- readTVar dbState
+          bs <- readTVar dbBackingStore
+          let (toFlush, db') = ledgerDbFlush DbChangelogFlushAllImmutable db
+          modifyTVar dbState (\(rs, _) -> (rs, db'))
+          pure (toFlush, bs)
+        flush bs toFlush
+        pure Flushed
     go hasFS Snap = do
-        (_, db) <- atomically $ readTVar dbState
+        (bs, db) <- atomically $ do
+          bs <- readTVar dbBackingStore
+          (_, db) <- readTVar dbState
+          pure (bs, db)
         Snapped <$>
           takeSnapshot
             nullTracer
             hasFS
+            bs
             S.encode
             db
     go hasFS Restore = do
-        (initLog, db, _replayed) <-
+        LedgerBackingStore old_db <- atomically . readTVar $ dbBackingStore
+        HD.bsClose old_db
+        (initLog, db, _replayed, backingStore) <-
           initLedgerDB
             nullTracer
-            nullTracer
+            -- Todo(jdral): Consider using @traceMaybe@. This would require
+            -- the function to be added to the IOHK-fork of @contra-variant@.
+            (Trace.Tracer $ \case
+               LMDBEvent e -> Trace.runTracer (dbTracer dbEnv) e
+               _           -> pure ())
             hasFS
             S.decode
             S.decode
             dbLedgerDbCfg
             (return (testInitExtLedgerWithState initialTestLedgerState))
             streamAPI
-        atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
+            sdbBackingStoreSelector
+
+        atomically $ do
+          modifyTVar dbState (\(rs, _) -> (rs, db))
+          writeTVar dbBackingStore backingStore
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
         catch
@@ -815,8 +1135,10 @@ runDB standalone@DB{..} cmd =
                           return $ MaybeErr (Right ())
 
     truncateSnapshot :: SomeHasFS m -> DiskSnapshot -> m ()
-    truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss =
-        withFile hasFS (snapshotToPath ss) (AppendMode AllowExisting) $ \h ->
+    truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss = do
+        withFile hasFS (snapshotToStatePath ss) (AppendMode AllowExisting) $ \h ->
+          hTruncate h 0
+        withFile hasFS (snapshotToTablesPath ss) (AppendMode AllowExisting) $ \h ->
           hTruncate h 0
 
     refValPair :: TestBlock -> (RealPoint TestBlock, TestBlock)
@@ -935,9 +1257,17 @@ generator secParam (Model mock hs) = Just $ QC.oneof $ concat [
                                 (lastAppliedPoint . ledgerState . mockCurrent $ afterRollback)
             return $ Switch numRollback blocks
         , fmap At $ return Snap
+        , fmap At $ return Flush
         , fmap At $ return Restore
         , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
         ]
+      where
+        mockCurrent :: Mock -> ExtLedgerState TestBlock ValuesMK
+        mockCurrent Mock{..} =
+          case mockLedger of
+            []       -> testInitExtLedgerWithState initialTestLedgerState
+            (_, l):_ -> l
+
 
     possibleCorruptions :: [(Corruption, Reference DiskSnapshot Symbolic)]
     possibleCorruptions = concatMap aux hs
@@ -962,6 +1292,7 @@ shrinker _ (At cmd) =
       Current      -> []
       Push _b      -> []
       Snap         -> []
+      Flush        -> []
       Restore      -> []
       Switch 0 [b] -> [At $ Push b]
       Switch n bs  -> if length bs > fromIntegral n
@@ -982,6 +1313,7 @@ instance CommandNames (At Cmd) where
   cmdName (At Push{})    = "Push"
   cmdName (At Switch{})  = "Switch"
   cmdName (At Snap{})    = "Snap"
+  cmdName (At Flush{})   = "Flush"
   cmdName (At Restore{}) = "Restore"
   cmdName (At Corrupt{}) = "Corrupt"
   cmdName (At Drop{})    = "Drop"
@@ -991,6 +1323,7 @@ instance CommandNames (At Cmd) where
     , "Push"
     , "Switch"
     , "Snap"
+    , "Flush"
     , "Restore"
     , "Corrupt"
     , "Drop"
@@ -1074,23 +1407,62 @@ sm secParam db = StateMachine {
     , shrinker      = shrinker
     , semantics     = semantics db
     , mock          = symbolicResp
-    , cleanup       = noCleanup
+    , cleanup       = \_ -> do
+        LedgerBackingStore bs <- atomically . readTVar $ dbBackingStore db
+        HD.bsClose bs
+        dbCleanup $ dbEnv db
     }
 
-prop_sequential :: SecurityParam -> QC.Property
-prop_sequential secParam =
-    forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
-      QC.monadicIO (propCmds secParam cmds)
+prop_sequential ::
+     Int
+     -- ^ Number of tests to run
+  -> (SecurityParam -> IO (DbEnv IO))
+  -> SecurityParam
+  -> QC.Property
+prop_sequential maxSuccess mkDbEnv secParam = QC.withMaxSuccess maxSuccess $
+  forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
+    QC.monadicIO $ QC.run (mkDbEnv secParam) >>= \e -> propCmds e cmds
+
+mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
+mkDbTracer (TTT.ShowTrace b)
+  | b = show `Trace.contramap` Trace.stdoutTracer
+  | otherwise = nullTracer
+
+inMemDbEnv :: Trans.MonadIO m
+  => TTT.ShowTrace
+  -> SecurityParam
+  -> m (DbEnv IO)
+inMemDbEnv showTrace dbSecParam = Trans.liftIO $ do
+  fs <- uncheckedNewTVarM MockFS.empty
+  let
+    dbHasFS = SomeHasFS $ simHasFS fs
+    dbBackingStoreSelector = InMemoryBackingStore
+    dbCleanup = pure ()
+    dbTracer = mkDbTracer showTrace
+  pure DbEnv{..}
+
+lmdbDbEnv :: Trans.MonadIO m
+  => TTT.ShowTrace
+  -> LMDB.LMDBLimits
+  -> SecurityParam
+  -> m (DbEnv IO)
+lmdbDbEnv showTrace limits dbSecParam = do
+  (dbHasFS, dbCleanup) <- Trans.liftIO $ do
+      systmpdir <- Dir.getTemporaryDirectory
+      tmpdir <- Temp.createTempDirectory systmpdir "init_standalone_db"
+      pure (SomeHasFS $ FSIO.ioHasFS $ MountPoint tmpdir, Dir.removeDirectoryRecursive tmpdir)
+  let
+    dbBackingStoreSelector = LMDBBackingStore limits
+    dbTracer = mkDbTracer showTrace
+  pure DbEnv{..}
 
 -- Ideally we'd like to use @IOSim s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
-propCmds :: SecurityParam
+propCmds :: DbEnv IO
          -> QSM.Commands (At Cmd) (At Resp)
          -> QC.PropertyM IO ()
-propCmds secParam cmds = do
-    fs <- QC.run $ uncheckedNewTVarM MockFS.empty
-    let dbEnv :: DbEnv IO
-        dbEnv = DbEnv (SomeHasFS (simHasFS fs)) secParam
+propCmds dbEnv cmds = do
+    let secParam =  dbSecParam dbEnv
     db <- QC.run $ initStandaloneDB dbEnv
     let sm' = sm secParam db
     (hist, _model, res) <- runCommands sm' cmds

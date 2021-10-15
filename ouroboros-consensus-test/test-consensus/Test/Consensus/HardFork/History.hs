@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -837,14 +838,14 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
               -> Exactly  (x ': xs) HF.EraParams
               -> AtMost         xs  EpochNo
               -> NonEmpty (x ': xs) [Event]
-              -> Telescope (K Past) (Current (AnnForecast (K ()) (K ()))) (x : xs)
+              -> Telescope (K Past) (Current (AnnForecast (K1 ()) (K ()))) (x : xs)
     mockState start (ExactlyCons ps _) ts (NonEmptyOne es) =
         TZ $ Current start $ AnnForecast {
             annForecast      = Forecast {
                 forecastAt  = tip es -- forecast at tip of ledger
               , forecastFor = \_for -> return $ TickedK TickedTrivial
               }
-          , annForecastState = K ()
+          , annForecastState = K1 ()
           , annForecastTip   = tip es
           , annForecastEnd   = HF.mkUpperBound ps start <$> atMostHead ts
           }
@@ -859,3 +860,6 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
     tip :: [Event] -> WithOrigin SlotNo
     tip [] = Origin
     tip es = NotOrigin $ eventTimeSlot $ eventTime (last es)
+
+-- | Like 'K' but adapted to the kind required by 'AnnForecast'.
+newtype K1 a b c = K1 a

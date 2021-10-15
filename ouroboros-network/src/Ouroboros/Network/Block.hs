@@ -8,6 +8,7 @@
 {-# LANGUAGE NumDecimals                #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -104,13 +105,13 @@ genesisPoint :: Point block
 genesisPoint = Point origin
 
 -- | Header hash
-type family HeaderHash b :: Type
+type family HeaderHash (b :: k) :: Type
 
 -- | Header fields we expect to be present in a block
 --
 -- These fields are lazy because they are extracted from a block or block
 -- header; this type is not intended for storage.
-data HeaderFields b = HeaderFields {
+data HeaderFields (b :: k) = HeaderFields {
       headerFieldSlot    :: SlotNo
     , headerFieldBlockNo :: BlockNo
     , headerFieldHash    :: HeaderHash b
@@ -139,7 +140,7 @@ instance StandardHash b => StandardHash (HeaderFields b)
 class (StandardHash b, Typeable b) => HasHeader b where
   getHeaderFields :: b -> HeaderFields b
 
-instance (StandardHash b, Typeable b) => HasHeader (HeaderFields b) where
+instance (StandardHash b, Typeable k, Typeable b) => HasHeader (HeaderFields (b :: k)) where
   getHeaderFields = castHeaderFields
 
 blockHash :: HasHeader b => b -> HeaderHash b
@@ -181,7 +182,7 @@ class ( Eq       (HeaderHash b)
       , Show     (HeaderHash b)
       , Typeable (HeaderHash b)
       , NoThunks (HeaderHash b)
-      ) => StandardHash b
+      ) => StandardHash (b :: k)
 
 data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
   deriving (Generic)
@@ -209,7 +210,7 @@ castHash (BlockHash h) = BlockHash (coerce h)
 --
 -- It's a newtype rather than a type synonym, because using a type synonym
 -- would lead to ambiguity, since HeaderHash is a non-injective type family.
-newtype Point block = Point
+newtype Point (block :: k) = Point
     { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
     }
   deriving (Generic)

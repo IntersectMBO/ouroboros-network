@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 -- | Intended for qualified import
 --
@@ -24,11 +25,11 @@ data InitChainDB m blk = InitChainDB {
       addBlock         :: blk -> m ()
 
       -- | Return the current ledger state
-    , getCurrentLedger :: m (LedgerState blk)
+    , getCurrentLedger :: m (LedgerState blk EmptyMK)
     }
 
 fromFull ::
-     (IsLedger (LedgerState blk), IOLike m)
+     (IOLike m, IsLedger (LedgerState blk))
   => ChainDB m blk -> InitChainDB m blk
 fromFull db = InitChainDB {
       addBlock         =
@@ -40,7 +41,7 @@ fromFull db = InitChainDB {
 map ::
      Functor m
   => (blk' -> blk)
-  -> (LedgerState blk -> LedgerState blk')
+  -> (LedgerState blk EmptyMK -> LedgerState blk' EmptyMK)
   -> InitChainDB m blk -> InitChainDB m blk'
 map f g db = InitChainDB {
       addBlock         = addBlock db . f

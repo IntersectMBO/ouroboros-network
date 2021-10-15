@@ -31,6 +31,7 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
@@ -184,14 +185,14 @@ instance SerialiseHFC xs
 
 encodeQueryHardFork ::
      HardForkSpecificNodeToClientVersion
-  -> Some (QueryHardFork xs)
+  -> SomeQuery (QueryHardFork xs)
   -> Encoding
 encodeQueryHardFork vHfc = \case
-    Some GetInterpreter -> mconcat [
+    SomeQuery GetInterpreter -> mconcat [
         Enc.encodeListLen 1
       , Enc.encodeWord8 0
       ]
-    Some GetCurrentEra
+    SomeQuery GetCurrentEra
       | vHfc < HardForkSpecificNodeToClientVersion2 ->
         throw HardForkEncoderQueryWrongVersion
       | otherwise -> mconcat [
@@ -199,21 +200,21 @@ encodeQueryHardFork vHfc = \case
       , Enc.encodeWord8 1
       ]
 
-decodeQueryHardFork :: Decoder s (Some (QueryHardFork xs))
+decodeQueryHardFork :: Decoder s (SomeQuery (QueryHardFork xs))
 decodeQueryHardFork = do
     enforceSize "QueryHardFork" 1
     tag <- Dec.decodeWord8
     case tag of
-      0 -> return $ Some GetInterpreter
-      1 -> return $ Some GetCurrentEra
+      0 -> return $ SomeQuery GetInterpreter
+      1 -> return $ SomeQuery GetCurrentEra
       _ -> fail $ "QueryHardFork: invalid tag " ++ show tag
 
 instance SerialiseHFC xs
-      => SerialiseNodeToClient (HardForkBlock xs) (SomeSecond BlockQuery (HardForkBlock xs)) where
-  encodeNodeToClient ccfg version (SomeSecond q) = case version of
+      => SerialiseNodeToClient (HardForkBlock xs) (SomeQuery (BlockQuery (HardForkBlock xs))) where
+  encodeNodeToClient ccfg version (SomeQuery q) = case version of
       HardForkNodeToClientDisabled v0 -> case q of
         QueryIfCurrent qry ->
-          case distribQueryIfCurrent (Some qry) of
+          case distribQueryIfCurrent (SomeQuery qry) of
             Z qry0  -> encodeNodeToClient (hd ccfgs) v0 qry0
             S later -> throw $ futureEraException (notFirstEra later)
         QueryAnytime {} ->
@@ -225,18 +226,18 @@ instance SerialiseHFC xs
         QueryIfCurrent qry -> mconcat [
             Enc.encodeListLen 2
           , Enc.encodeWord8 0
-          , dispatchEncoder ccfg version (distribQueryIfCurrent (Some qry))
+          , dispatchEncoder ccfg version (distribQueryIfCurrent (SomeQuery qry))
           ]
         QueryAnytime qry eraIndex -> mconcat [
             Enc.encodeListLen 3
           , Enc.encodeWord8 1
-          , Serialise.encode (Some qry)
+          , Serialise.encode (SomeQuery qry)
           , Serialise.encode eraIndex
           ]
         QueryHardFork qry -> mconcat [
             Enc.encodeListLen 2
           , Enc.encodeWord8 2
-          , encodeQueryHardFork vHfc (Some qry)
+          , encodeQueryHardFork vHfc (SomeQuery qry)
           ]
     where
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
@@ -253,29 +254,29 @@ instance SerialiseHFC xs
             (2, 0) -> injQueryIfCurrent <$> dispatchDecoder ccfg version
 
             (3, 1) -> do
-              Some (qry :: QueryAnytime result) <- Serialise.decode
+              SomeQuery (qry :: QueryAnytime fp result) <- Serialise.decode
               eraIndex :: EraIndex (x' ': xs')  <- Serialise.decode
               case checkIsNonEmpty p of
                 Nothing -> fail $ "QueryAnytime requires multiple era"
                 Just (ProofNonEmpty {}) ->
-                  return $ SomeSecond (QueryAnytime qry eraIndex)
+                  return $ SomeQuery (QueryAnytime qry eraIndex)
 
             (2, 2) -> do
-              Some (qry :: QueryHardFork xs result) <- decodeQueryHardFork
+              SomeQuery (qry :: QueryHardFork xs fp result) <- decodeQueryHardFork
               case checkIsNonEmpty p of
                 Nothing -> fail $ "QueryHardFork requires multiple era"
                 Just (ProofNonEmpty {}) ->
-                  return $ SomeSecond (QueryHardFork qry)
+                  return $ SomeQuery (QueryHardFork qry)
 
             _ -> fail $ "HardForkQuery: invalid size and tag" <> show (size, tag)
     where
       ccfgs = getPerEraCodecConfig $ hardForkCodecConfigPerEra ccfg
 
-      injQueryIfCurrent :: NS (SomeSecond BlockQuery) xs
-                        -> SomeSecond BlockQuery (HardForkBlock xs)
+      injQueryIfCurrent :: NS (SomeQuery :.: BlockQuery) xs
+                        -> SomeQuery (BlockQuery (HardForkBlock xs))
       injQueryIfCurrent ns =
           case undistribQueryIfCurrent ns of
-            Some q -> SomeSecond (QueryIfCurrent q)
+            SomeQuery q -> SomeQuery (QueryIfCurrent q)
 
 {-------------------------------------------------------------------------------
   Results
@@ -321,15 +322,15 @@ encodeQueryIfCurrentResult ::
      All SerialiseConstraintsHFC xs
   => NP CodecConfig xs
   -> NP EraNodeToClientVersion xs
-  -> QueryIfCurrent xs result
+  -> QueryIfCurrent xs fp result
   -> result -> Encoding
 encodeQueryIfCurrentResult (c :* _) (EraNodeToClientEnabled v :* _) (QZ qry) =
     encodeResult c v qry
 encodeQueryIfCurrentResult (_ :* _) (EraNodeToClientDisabled :* _) (QZ qry) =
     qryDisabledEra qry
   where
-    qryDisabledEra :: forall blk result. SingleEraBlock blk
-                   => BlockQuery blk result -> result -> Encoding
+    qryDisabledEra :: forall blk fp result. SingleEraBlock blk
+                   => BlockQuery blk fp result -> result -> Encoding
     qryDisabledEra _ _ = throw $ disabledEraException (Proxy @blk)
 encodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
     encodeQueryIfCurrentResult cs vs qry
@@ -340,15 +341,15 @@ decodeQueryIfCurrentResult ::
      All SerialiseConstraintsHFC xs
   => NP CodecConfig xs
   -> NP EraNodeToClientVersion xs
-  -> QueryIfCurrent xs result
+  -> QueryIfCurrent xs fp result
   -> Decoder s result
-decodeQueryIfCurrentResult (c :* _) (EraNodeToClientEnabled v :* _) (QZ qry) =
+decodeQueryIfCurrentResult (c :* _) (EraNodeToClientEnabled v :* _) (QZ qry) =do
     decodeResult c v qry
 decodeQueryIfCurrentResult (_ :* _) (EraNodeToClientDisabled :* _) (QZ qry) =
     qryDisabledEra qry
   where
-    qryDisabledEra :: forall blk result. SingleEraBlock blk
-                   => BlockQuery blk result -> forall s. Decoder s result
+    qryDisabledEra :: forall blk fp result. SingleEraBlock blk
+                   => BlockQuery blk fp result -> forall s. Decoder s result
     qryDisabledEra _ = fail . show $ disabledEraException (Proxy @blk)
 decodeQueryIfCurrentResult (_ :* cs) (_ :* vs) (QS qry) =
     decodeQueryIfCurrentResult cs vs qry

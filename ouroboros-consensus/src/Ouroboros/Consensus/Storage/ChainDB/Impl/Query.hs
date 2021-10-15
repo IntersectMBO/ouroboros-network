@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -14,7 +15,9 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
   , getIsFetched
   , getIsInvalidBlock
   , getIsValid
+  , getLedgerBackingStoreValueHandle
   , getLedgerDB
+  , getLedgerStateForKeys
   , getMaxSlotNo
   , getTipBlock
   , getTipHeader
@@ -25,6 +28,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
   , getAnyKnownBlockComponent
   ) where
 
+import           Data.Functor (void)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
@@ -34,9 +38,14 @@ import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (eitherToMaybe)
+import           Ouroboros.Consensus.Util (StaticEither (..), eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as RR
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
@@ -45,6 +54,9 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -185,6 +197,95 @@ getMaxSlotNo CDB{..} = do
                      <$> readTVar cdbChain
     volatileDbMaxSlotNo    <- VolatileDB.getMaxSlotNo cdbVolatileDB
     return $ curChainMaxSlotNo `max` volatileDbMaxSlotNo
+
+getLedgerStateForKeys :: forall m blk b a.
+     (IOLike m, LedgerSupportsProtocol blk)
+  => ChainDbEnv m blk
+  -> StaticEither b () (Point blk)
+  -> (ExtLedgerState blk EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) KeysMK))
+  -> m (StaticEither
+         b
+         (a, LedgerTables (ExtLedgerState blk) ValuesMK)
+         (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
+       )
+getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
+    ldb0 <- atomically $ LgrDB.getCurrent cdbLgrDB
+    case seP of
+      StaticLeft () -> StaticLeft <$> do
+        (a, ks) <- m (LedgerDB.ledgerDbCurrent ldb0)
+        finish a ks ldb0
+      StaticRight p -> StaticRight <$> case LedgerDB.ledgerDbPrefix p ldb0 of
+        Nothing  -> pure Nothing
+        Just ldb -> Just <$> do
+          (a, ks) <- m (LedgerDB.ledgerDbCurrent ldb)
+          finish a ks ldb
+  where
+    finish ::
+         a
+      -> LedgerTables (ExtLedgerState blk) KeysMK
+      -> LedgerDB.LedgerDB' blk
+      -> m (a, LedgerTables (ExtLedgerState blk) ValuesMK)
+    finish a ks ldb = (,) a <$> do
+      let chlog :: DbChangelog (ExtLedgerState blk)
+          chlog = LedgerDB.ledgerDbChangelog ldb
+
+          rew :: LedgerDB.RewoundTableKeySets (ExtLedgerState blk)
+          rew = LedgerDB.rewindTableKeySets chlog ks
+
+      ufs <- LedgerDB.readKeySets (LgrDB.lgrBackingStore cdbLgrDB) rew
+      let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk)
+      case LedgerDB.forwardTableKeySets chlog ufs of
+        Left err     -> error $ "getCurrentLedgerStateForKeys read lock violation " <> show err
+        Right values -> pure values
+
+getLedgerBackingStoreValueHandle :: forall b m blk.
+     (IOLike m, LedgerSupportsProtocol blk)
+  => ChainDbEnv m blk
+  -> RR.ResourceRegistry m
+  -> StaticEither b () (Point blk)
+  -> m (StaticEither
+         b
+         ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+         , LedgerDB.LedgerDB' blk
+         , m ()
+         )
+         (Either
+            (Point blk)
+            ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+            , LedgerDB.LedgerDB' blk
+            , m ()
+            )
+         )
+       )
+getLedgerBackingStoreValueHandle CDB{..} rreg seP = LgrDB.withReadLock cdbLgrDB $ do
+    ldb0 <- atomically $ LgrDB.getCurrent cdbLgrDB
+    case seP of
+      StaticLeft () -> StaticLeft  <$> finish ldb0
+      StaticRight p -> StaticRight <$> case LedgerDB.ledgerDbPrefix p ldb0 of
+        Nothing  -> pure $ Left $ castPoint $ getTip $ LedgerDB.ledgerDbAnchor ldb0
+        Just ldb -> Right <$> finish ldb
+  where
+    finish ::
+         LedgerDB.LedgerDB' blk
+      -> m ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+           , LedgerDB.LedgerDB' blk
+           , m ()
+           )
+    finish ldb = do
+      (key, (seqNo, vh)) <- RR.allocate
+        rreg
+        (\_key -> do
+            let LedgerDB.LedgerBackingStore store =
+                  LgrDB.lgrBackingStore cdbLgrDB
+            BackingStore.bsValueHandle store
+            -- TODO assert seqno is correct (b/c of lock)
+        )
+        (\(_seqNo, vh) -> BackingStore.bsvhClose vh)
+      pure
+        ( LedgerDB.LedgerBackingStoreValueHandle seqNo vh
+        , ldb
+        , void $ RR.release key
+        )
 
 {-------------------------------------------------------------------------------
   Unifying interface over the immutable DB and volatile DB, but independent
