@@ -1,4 +1,8 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -30,16 +34,21 @@ import           Ouroboros.Network.Block (Serialised (..))
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, IsApplyMapKind,
+                     ValuesMK)
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query (SomeQuery (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (Exactly (..))
-import           Ouroboros.Consensus.Util.SOP (Index (..))
+import           Ouroboros.Consensus.Util.SOP (Index (..), projectNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -113,23 +122,26 @@ instance Inject SomeResult where
   inject _ idx (SomeResult q r) =
       SomeResult (QueryIfCurrent (injectQuery idx q)) (Right r)
 
+type SomeCardanoQuery = SomeQuery :.: BlockQuery
+
 instance Inject Examples where
   inject startBounds (idx :: Index xs x) Golden.Examples {..} = Golden.Examples {
-        exampleBlock            = inj (Proxy @I)                       exampleBlock
-      , exampleSerialisedBlock  = inj (Proxy @Serialised)              exampleSerialisedBlock
-      , exampleHeader           = inj (Proxy @Header)                  exampleHeader
-      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)        exampleSerialisedHeader
-      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)          exampleHeaderHash
-      , exampleGenTx            = inj (Proxy @GenTx)                   exampleGenTx
-      , exampleGenTxId          = inj (Proxy @WrapGenTxId)             exampleGenTxId
-      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)          exampleApplyTxErr
-      , exampleQuery            = inj (Proxy @(SomeSecond BlockQuery)) exampleQuery
-      , exampleResult           = inj (Proxy @SomeResult)              exampleResult
-      , exampleAnnTip           = inj (Proxy @AnnTip)                  exampleAnnTip
-      , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
-      , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)          exampleExtLedgerState
-      , exampleSlotNo           =                                      exampleSlotNo
+        exampleBlock            = inj (Proxy @I)                             exampleBlock
+      , exampleSerialisedBlock  = inj (Proxy @Serialised)                    exampleSerialisedBlock
+      , exampleHeader           = inj (Proxy @Header)                        exampleHeader
+      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)              exampleSerialisedHeader
+      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)                exampleHeaderHash
+      , exampleGenTx            = inj (Proxy @GenTx)                         exampleGenTx
+      , exampleGenTxId          = inj (Proxy @WrapGenTxId)                   exampleGenTxId
+      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)                exampleApplyTxErr
+      , exampleQuery            = inj (Proxy @SomeCardanoQuery)              exampleQuery
+      , exampleResult           = inj (Proxy @SomeResult)                    exampleResult
+      , exampleAnnTip           = inj (Proxy @AnnTip)                        exampleAnnTip
+      , exampleLedgerState      = inj (Proxy @(Flip LedgerState EmptyMK))    exampleLedgerState
+      , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
+      , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
+      , exampleSlotNo           =                                            exampleSlotNo
+      , exampleLedgerTables     = inj (Proxy @WrapLedgerTables)              exampleLedgerTables
       }
     where
       inj ::
@@ -140,6 +152,37 @@ instance Inject Examples where
            )
         => Proxy f -> Labelled a -> Labelled b
       inj p = fmap (fmap (inject' p startBounds idx))
+
+-- | This wrapper is used only in the 'Example' instance of 'Inject' so that we
+-- can use a type that matches the kind expected by 'inj'.
+newtype WrapLedgerTables blk = WrapLedgerTables ( LedgerTables (ExtLedgerState blk) ValuesMK )
+
+instance Inject WrapLedgerTables where
+  inject = injectWrapLedgerTables
+
+-- In the definition of 'inject' for 'WrapLedgerTables', if we want to add a
+-- type declaration to the local definition 'injectLedgerTables' we need to add
+-- a type declaration for 'inject' which requires enabling 'InstanceSigs' and
+-- introduces a compiler warning about 'CanHardFork xs' being a redundant
+-- constraint. By defining 'inject' in terms of 'injectWrapLedgerTables' we
+-- avoid this problem.
+injectWrapLedgerTables ::
+    forall x xs.
+    LedgerTablesCanHardFork xs
+   => Exactly xs History.Bound
+      -- ^ Start bound of each era
+   -> Index xs x
+   -> WrapLedgerTables x
+   -> WrapLedgerTables (HardForkBlock xs)
+injectWrapLedgerTables _startBounds idx (WrapLedgerTables (ExtLedgerStateTables lt)) =
+    WrapLedgerTables $ ExtLedgerStateTables $ injectLedgerTables lt
+  where
+    injectLedgerTables ::
+         (IsApplyMapKind mk)
+      => LedgerTables (LedgerState                  x) mk
+      -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+    injectLedgerTables = applyInjectLedgerTables
+                       $ projectNP idx hardForkInjectLedgerTablesKeysMK
 
 {-------------------------------------------------------------------------------
   Setup
@@ -253,14 +296,14 @@ codecConfig =
       Shelley.ShelleyCodecConfig
 
 ledgerStateByron ::
-     LedgerState ByronBlock
-  -> LedgerState (CardanoBlock Crypto)
+     LedgerState ByronBlock mk
+  -> LedgerState (CardanoBlock Crypto) mk
 ledgerStateByron stByron =
     HardForkLedgerState $ HardForkState $ TZ cur
   where
     cur = State.Current {
           currentStart = History.initBound
-        , currentState = stByron
+        , currentState = Flip stByron
         }
 
 {-------------------------------------------------------------------------------
@@ -311,25 +354,25 @@ exampleApplyTxErrWrongEraShelley :: ApplyTxErr (CardanoBlock Crypto)
 exampleApplyTxErrWrongEraShelley =
       HardForkApplyTxErrWrongEra exampleEraMismatchShelley
 
-exampleQueryEraMismatchByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryEraMismatchByron :: SomeQuery (BlockQuery (CardanoBlock Crypto))
 exampleQueryEraMismatchByron =
-    SomeSecond (QueryIfCurrentShelley Shelley.GetLedgerTip)
+    SomeQuery (QueryIfCurrentShelley Shelley.GetLedgerTip)
 
-exampleQueryEraMismatchShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryEraMismatchShelley :: SomeQuery (BlockQuery (CardanoBlock Crypto))
 exampleQueryEraMismatchShelley =
-    SomeSecond (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
+    SomeQuery (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
 
-exampleQueryAnytimeByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryAnytimeByron :: SomeQuery (BlockQuery (CardanoBlock Crypto))
 exampleQueryAnytimeByron =
-    SomeSecond (QueryAnytimeByron GetEraStart)
+    SomeQuery (QueryAnytimeByron GetEraStart)
 
-exampleQueryAnytimeShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryAnytimeShelley :: SomeQuery (BlockQuery (CardanoBlock Crypto))
 exampleQueryAnytimeShelley =
-    SomeSecond (QueryAnytimeShelley GetEraStart)
+    SomeQuery (QueryAnytimeShelley GetEraStart)
 
-exampleQueryHardFork :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryHardFork :: SomeQuery (BlockQuery (CardanoBlock Crypto))
 exampleQueryHardFork =
-    SomeSecond (QueryHardFork GetInterpreter)
+    SomeQuery (QueryHardFork GetInterpreter)
 
 exampleResultEraMismatchByron :: SomeResult (CardanoBlock Crypto)
 exampleResultEraMismatchByron =

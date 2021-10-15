@@ -138,7 +138,9 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             LgrDB.decorateReplayTracerWithGoal
               immutableDbTipPoint
               (contramap TraceLedgerReplayEvent tracer)
+
       traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
+
       (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immutableDB
@@ -218,8 +220,13 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             , stream                = Iterator.stream  h
             , newFollower           = Follower.newFollower h
             , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
+            , getLedgerStateForKeys = \p m -> getEnv h $ \env' -> do
+                Query.getLedgerStateForKeys env' p m
             , closeDB               = closeDB h
             , isOpen                = isOpen  h
+
+            , getLedgerBackingStoreValueHandle = \rreg p -> getEnv h $ \env' -> do
+                Query.getLedgerBackingStoreValueHandle env' rreg p
             }
           testing = Internal
             { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB

@@ -2,6 +2,9 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE ViewPatterns             #-}
 module Ouroboros.Consensus.Cardano.Block (
@@ -9,6 +12,8 @@ module Ouroboros.Consensus.Cardano.Block (
     CardanoEras
   , CardanoShelleyEras
   , module Ouroboros.Consensus.Shelley.Eras
+  , ShelleyBasedEras
+  , ShelleyBasedProtosAndEras
     -- * Block
   , CardanoBlock
     -- Note: by exporting the pattern synonyms as part of the matching data
@@ -66,6 +71,8 @@ module Ouroboros.Consensus.Cardano.Block (
   , EraMismatch (..)
   ) where
 
+import           Data.Kind
+
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
@@ -80,6 +87,8 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 
@@ -87,6 +96,8 @@ import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+
+import           Ouroboros.Consensus.Util.SOP (MapSnd)
 
 {-------------------------------------------------------------------------------
   The eras of the Cardano blockchain
@@ -106,6 +117,17 @@ type CardanoShelleyEras c =
    , ShelleyBlock (TPraos c) (AlonzoEra c)
    , ShelleyBlock (Praos c)  (BabbageEra c)
    ]
+
+type ShelleyBasedProtosAndEras :: Type -> [(Type, Type)]
+type ShelleyBasedProtosAndEras c =
+  '[ '(TPraos c, ShelleyEra c)
+   , '(TPraos c, AllegraEra c)
+   , '(TPraos c, MaryEra c)
+   , '(TPraos c, AlonzoEra c)
+   , '(Praos c,  BabbageEra c)
+   ]
+
+type ShelleyBasedEras c = MapSnd (ShelleyBasedProtosAndEras c)
 
 {-------------------------------------------------------------------------------
   INTERNAL A tag function for each era
@@ -598,48 +620,48 @@ type CardanoQuery c = BlockQuery (CardanoBlock c)
 pattern QueryIfCurrentByron
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery ByronBlock result
-  -> CardanoQuery c a
+  => BlockQuery ByronBlock fp result
+  -> CardanoQuery c fp a
 
 -- | Shelley-specific query that can only be answered when the ledger is in the
 -- Shelley era.
 pattern QueryIfCurrentShelley
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (TPraos c) (ShelleyEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (TPraos c) (ShelleyEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- | Allegra-specific query that can only be answered when the ledger is in the
 -- Allegra era.
 pattern QueryIfCurrentAllegra
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (TPraos c) (AllegraEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (TPraos c) (AllegraEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- | Mary-specific query that can only be answered when the ledger is in the
 -- Mary era.
 pattern QueryIfCurrentMary
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (TPraos c) (MaryEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (TPraos c) (MaryEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- | Alonzo-specific query that can only be answered when the ledger is in the
 -- Alonzo era.
 pattern QueryIfCurrentAlonzo
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (TPraos c) (AlonzoEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (TPraos c) (AlonzoEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- | Babbage-specific query that can only be answered when the ledger is in the
 -- Babbage era.
 pattern QueryIfCurrentBabbage
   :: ()
   => CardanoQueryResult c result ~ a
-  => BlockQuery (ShelleyBlock (Praos c) (BabbageEra c)) result
-  -> CardanoQuery c a
+  => BlockQuery (ShelleyBlock (Praos c) (BabbageEra c)) fp result
+  -> CardanoQuery c fp a
 
 -- Here we use layout and adjacency to make it obvious that we haven't
 -- miscounted.
@@ -660,8 +682,8 @@ pattern QueryIfCurrentBabbage q = QueryIfCurrent (QS (QS (QS (QS (QS (QZ q))))))
 -- > QueryAnytimeByron EraStart
 --
 pattern QueryAnytimeByron
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeByron q = QueryAnytime q (EraIndex (TagByron (K ())))
 
 -- | Query about the Shelley era that can be answered anytime, i.e.,
@@ -673,8 +695,8 @@ pattern QueryAnytimeByron q = QueryAnytime q (EraIndex (TagByron (K ())))
 -- > QueryAnytimeShelley EraStart
 --
 pattern QueryAnytimeShelley
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (TagShelley (K ())))
 
 -- | Query about the Allegra era that can be answered anytime, i.e.,
@@ -686,8 +708,8 @@ pattern QueryAnytimeShelley q = QueryAnytime q (EraIndex (TagShelley (K ())))
 -- > QueryAnytimeAllegra EraStart
 --
 pattern QueryAnytimeAllegra
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeAllegra q = QueryAnytime q (EraIndex (TagAllegra (K ())))
 
 -- | Query about the Mary era that can be answered anytime, i.e.,
@@ -699,8 +721,8 @@ pattern QueryAnytimeAllegra q = QueryAnytime q (EraIndex (TagAllegra (K ())))
 -- > QueryAnytimeMary EraStart
 --
 pattern QueryAnytimeMary
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeMary q = QueryAnytime q (EraIndex (TagMary (K ())))
 
 -- | Query about the Alonzo era that can be answered anytime, i.e., independent
@@ -712,8 +734,8 @@ pattern QueryAnytimeMary q = QueryAnytime q (EraIndex (TagMary (K ())))
 -- > QueryAnytimeAlonzo EraStart
 --
 pattern QueryAnytimeAlonzo
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeAlonzo q = QueryAnytime q (EraIndex (TagAlonzo (K ())))
 
 -- | Query about the Babbage era that can be answered anytime, i.e., independent
@@ -725,8 +747,8 @@ pattern QueryAnytimeAlonzo q = QueryAnytime q (EraIndex (TagAlonzo (K ())))
 -- > QueryAnytimeBabbage EraStart
 --
 pattern QueryAnytimeBabbage
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeBabbage q = QueryAnytime q (EraIndex (TagBabbage (K ())))
 
 {-# COMPLETE QueryIfCurrentByron
@@ -938,55 +960,55 @@ pattern CardanoLedgerConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfg
 -- 'LedgerState'. We don't give access to those internal details through the
 -- pattern synonyms. This is also the reason the pattern synonyms are not
 -- bidirectional.
-type CardanoLedgerState c = LedgerState (CardanoBlock c)
+type CardanoLedgerState c mk = LedgerState (CardanoBlock c) mk
 
 pattern LedgerStateByron
-  :: LedgerState ByronBlock
-  -> CardanoLedgerState c
+  :: LedgerState ByronBlock mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateByron st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleByron (State.Current { currentState = st })))
+        (TeleByron (State.Current { currentState = Flip st })))
 
 pattern LedgerStateShelley
-  :: LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateShelley st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleShelley _ (State.Current { currentState = st })))
+        (TeleShelley _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateAllegra
-  :: LedgerState (ShelleyBlock (TPraos c) (AllegraEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (AllegraEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateAllegra st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleAllegra _ _  (State.Current { currentState = st })))
+        (TeleAllegra _ _  (State.Current { currentState = Flip st })))
 
 pattern LedgerStateMary
-  :: LedgerState (ShelleyBlock (TPraos c) (MaryEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (MaryEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateMary st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleMary _ _ _ (State.Current { currentState = st })))
+        (TeleMary _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateAlonzo
-  :: LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateAlonzo st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleAlonzo _ _ _ _ (State.Current { currentState = st })))
+        (TeleAlonzo _ _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateBabbage
-  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateBabbage st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleBabbage _ _ _ _ _ (State.Current { currentState = st })))
+        (TeleBabbage _ _ _ _ _ (State.Current { currentState = Flip st })))
 
 {-# COMPLETE LedgerStateByron
            , LedgerStateShelley

@@ -117,9 +117,9 @@ test_decode_ChainSummary =
 
 prop_genesisCurrent :: Property
 prop_genesisCurrent =
-    ledgerDbCurrent genSnaps === testInitLedger
+    ledgerDbCurrent genSnaps === convertMapKind testInitLedger
   where
-    genSnaps = ledgerDbWithAnchor testInitLedger
+    genSnaps = ledgerDbWithAnchor (convertMapKind testInitLedger)
 
 {-------------------------------------------------------------------------------
   Constructing snapshots
@@ -129,7 +129,7 @@ prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger cfg (expectedChain o) testInitLedger
+          l === convertMapKind (refoldLedger cfg (expectedChain o) (convertMapKind testInitLedger))
         | (o, l) <- ledgerDbSnapshots csPushed
         ]
   where
@@ -167,7 +167,7 @@ prop_pastLedger setup@ChainSetup{..} =
 
 prop_maxRollbackGenesisZero :: Property
 prop_maxRollbackGenesisZero =
-        ledgerDbMaxRollback (ledgerDbWithAnchor testInitLedger)
+        ledgerDbMaxRollback (ledgerDbWithAnchor (convertMapKind testInitLedger))
     === 0
 
 prop_snapshotsMaxRollback :: ChainSetup -> Property
@@ -195,7 +195,7 @@ prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger cfg (expectedChain o) testInitLedger
+          l === convertMapKind (refoldLedger cfg (expectedChain o) (convertMapKind testInitLedger))
         | (o, l) <- ledgerDbSnapshots ssSwitched
         ]
   where
@@ -311,7 +311,7 @@ mkTestSetup :: SecurityParam -> Word64 -> Word64 -> ChainSetup
 mkTestSetup csSecParam csNumBlocks csPrefixLen =
     ChainSetup {..}
   where
-    csGenSnaps = ledgerDbWithAnchor testInitLedger
+    csGenSnaps = ledgerDbWithAnchor (convertMapKind testInitLedger)
     csChain    = take (fromIntegral csNumBlocks) $
                    iterate successorBlock (firstBlock 0)
     csPushed   = ledgerDbPushMany' (csBlockConfig' csSecParam) csChain csGenSnaps

@@ -148,6 +148,8 @@ instance LedgerSupportsMempool ByronBlock where
 
   txForgetValidated = forgetValidatedByronTx
 
+  getTransactionKeySets _ = polyEmptyLedgerTables
+
 data instance TxId (GenTx ByronBlock)
   = ByronTxId             !Utxo.TxId
   | ByronDlgId            !Delegation.CertificateId
@@ -249,8 +251,8 @@ applyByronGenTx :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
                 -> SlotNo
                 -> GenTx ByronBlock
-                -> TickedLedgerState ByronBlock
-                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock)
+                -> TickedLedgerState ByronBlock mk1
+                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock mk2)
 applyByronGenTx validationMode cfg slot genTx st =
     (\state -> st {tickedByronLedgerState = state}) <$>
       CC.applyMempoolPayload

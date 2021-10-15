@@ -1,19 +1,20 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE EmptyCase            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
+{-# LANGUAGE StandaloneKindSignatures #-}
 module Ouroboros.Consensus.Util.SOP (
     -- * Minor variations on standard SOP operators
     Lens (..)
@@ -47,6 +48,16 @@ module Ouroboros.Consensus.Util.SOP (
   , hizipWith
   , hizipWith3
   , hizipWith4
+    -- * Tuples
+  , ApOnlySnd (..)
+  , ApOnlySnd2 (..)
+  , Fst
+  , MapSnd
+  , NsMapSnd (..)
+  , Snd
+  , Uncurry
+  , UncurryComp (..)
+  , castSndIdx
   ) where
 
 import           Data.Coerce
@@ -191,6 +202,7 @@ checkIsNonEmpty _ = case sList @xs of
   Indexing SOP types
 -------------------------------------------------------------------------------}
 
+type Index :: forall k. [k] -> k -> Type
 data Index xs x where
   IZ ::               Index (x ': xs) x
   IS :: Index xs x -> Index (y ': xs) x
@@ -224,7 +236,7 @@ projectNP (IS idx) (_ :* xs) = projectNP idx xs
 -------------------------------------------------------------------------------}
 
 hcimap ::
-     (HAp h, All c xs, Prod h ~ NP)
+     forall k. forall (h :: (k -> Type) -> [k] -> Type) c xs f1 f2 proxy. (HAp h, All c xs, Prod h ~ NP)
   => proxy c
   -> (forall a. c a => Index xs a -> f1 a -> f2 a)
   -> h f1 xs
@@ -235,7 +247,7 @@ hcimap p f xs1 =
       `hap` xs1
 
 himap ::
-     (HAp h, SListI xs, Prod h ~ NP)
+     forall k. forall (h :: (k -> Type) -> [k] -> Type) xs f1 f2. (HAp h, SListI xs, Prod h ~ NP)
   => (forall a. Index xs a -> f1 a -> f2 a)
   -> h f1 xs
   -> h f2 xs
@@ -312,3 +324,52 @@ hizipWith4 ::
   -> h  f4 xs
   -> h  f5 xs
 hizipWith4 = hcizipWith4 (Proxy @Top)
+
+{-------------------------------------------------------------------------------
+  Tuples
+-------------------------------------------------------------------------------}
+
+type Fst :: (m, n) -> m
+type family Fst t where
+  Fst '(a,b) = a
+
+type Snd :: (m, n) -> n
+type family Snd t where
+    Snd '(a,b) = b
+
+type family MapSnd (xs :: [(Type, Type)]) where
+  MapSnd '[]         = '[]
+  MapSnd (t ': next) = Snd t ': MapSnd next
+
+type UncurryComp ::
+     (Type -> Type)
+  -> (Type -> Type -> Type)
+  -> (Type, Type)
+  -> Type
+newtype UncurryComp f g tp = UncurryComp (f (Uncurry g tp))
+
+type Uncurry :: (m -> n -> k) -> (m, n) -> k
+type family Uncurry g tp where
+  Uncurry g tp = (g (Fst tp) (Snd tp))
+
+type ApOnlySnd :: (k -> Type) -> (l, k) -> Type
+newtype ApOnlySnd t a = ApOnlySnd { unApOnlySnd :: t (Snd a) }
+
+type ApOnlySnd2 :: (k -> k -> Type) -> (l, k) -> (l, k) -> Type
+newtype ApOnlySnd2 t a b = ApOnlySnd2 (t (Snd a) (Snd b))
+
+class NsMapSnd xs where
+  nsMapSnd :: NS f (MapSnd xs) -> NS (ApOnlySnd f) xs
+
+instance NsMapSnd '[] where
+  nsMapSnd = \case {}
+
+instance NsMapSnd xs => NsMapSnd (x ': xs) where
+  nsMapSnd = \case
+    Z fx -> Z (ApOnlySnd fx)
+    S ns -> S (nsMapSnd ns)
+
+castSndIdx :: Index xs x -> Index (MapSnd xs) (Snd x)
+castSndIdx = \case
+  IZ   -> IZ
+  IS n -> IS (castSndIdx n)

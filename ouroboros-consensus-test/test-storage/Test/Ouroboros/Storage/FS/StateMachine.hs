@@ -124,6 +124,7 @@ data Cmd fp h =
   | ListDirectory      (PathExpr fp)
   | DoesDirectoryExist (PathExpr fp)
   | DoesFileExist      (PathExpr fp)
+  | RemoveDirRecursive (PathExpr fp)
   | RemoveFile         (PathExpr fp)
   | RenameFile         (PathExpr fp) (PathExpr fp)
   deriving (Generic, Show, Functor, Foldable, Traversable)
@@ -172,6 +173,7 @@ run hasFS@HasFS{..} = go
     go (ListDirectory      pe  ) = withPE  pe      (const Strings) $ listDirectory
     go (DoesDirectoryExist pe  ) = withPE  pe      (const Bool)    $ doesDirectoryExist
     go (DoesFileExist      pe  ) = withPE  pe      (const Bool)    $ doesFileExist
+    go (RemoveDirRecursive pe  ) = withPE  pe      (const Unit)    $ removeDirectoryRecursive
     go (RemoveFile         pe  ) = withPE  pe      (const Unit)    $ removeFile
     go (RenameFile     pe1 pe2 ) = withPEs pe1 pe2 (\_ _ -> Unit)  $ renameFile
 
@@ -459,6 +461,7 @@ generator Model{..} = oneof $ concat [
         , fmap At $ ListDirectory      <$> genPathExpr
         , fmap At $ DoesDirectoryExist <$> genPathExpr
         , fmap At $ DoesFileExist      <$> genPathExpr
+        , fmap At $ RemoveDirRecursive <$> genPathExpr
         , fmap At $ RemoveFile         <$> genPathExpr
         , fmap At $ RenameFile         <$> genPathExpr <*> genPathExpr
         ]
@@ -801,6 +804,12 @@ data Tag =
   -- | DoesDirectoryExistOK returns False
   | TagDoesDirectoryExistKO
 
+  -- | Remove a directory recursively
+  --
+  -- > RemoveDirRecursively fe
+  -- > DoesFileExist fe
+  | TagRemoveDirectoryRecursive
+
   -- | Remove a file
   --
   -- > RemoveFile fe
@@ -927,6 +936,7 @@ tag = C.classify [
     , tagDoesFileExistKO
     , tagDoesDirectoryExistOK
     , tagDoesDirectoryExistKO
+    , tagRemoveDirectoryRecursive Set.empty
     , tagRemoveFile Set.empty
     , tagRenameFile
     , tagPutTruncateGet Map.empty Set.empty
@@ -1183,6 +1193,19 @@ tag = C.classify [
         (DoesDirectoryExist _, Bool False) -> Left TagDoesDirectoryExistKO
         _otherwise                         -> Right tagDoesDirectoryExistKO
 
+    tagRemoveDirectoryRecursive :: Set FsPath -> EventPred
+    tagRemoveDirectoryRecursive removed = successful $ \ev _suc ->
+      case eventMockCmd ev of
+        RemoveDirRecursive fe -> Right $ tagRemoveDirectoryRecursive $ Set.insert fp removed
+          where
+            fp = evalPathExpr fe
+        DoesFileExist fe -> if Set.member fp removed
+          then Left TagRemoveDirectoryRecursive
+          else Right $ tagRemoveDirectoryRecursive removed
+            where
+              fp = evalPathExpr fe
+        _otherwise -> Right $ tagRemoveDirectoryRecursive removed
+
     tagRemoveFile :: Set FsPath -> EventPred
     tagRemoveFile removed = successful $ \ev _suc ->
       case eventMockCmd ev of
@@ -1358,7 +1381,7 @@ showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
 prop_sequential :: FilePath -> Property
-prop_sequential tmpDir =
+prop_sequential tmpDir = withMaxSuccess 50000 $
     QSM.forAllCommands (sm mountUnused) Nothing $ \cmds -> QC.monadicIO $ do
       (tstTmpDir, hist, res) <- QC.run $
         withTempDirectory tmpDir "HasFS" $ \tstTmpDir -> do
@@ -1443,6 +1466,7 @@ instance (Condense fp, Condense h) => Condense (Cmd fp h) where
       go (ListDirectory fp)        = ["listDirectory", condense fp]
       go (DoesDirectoryExist fp)   = ["doesDirectoryExist", condense fp]
       go (DoesFileExist fp)        = ["doesFileExist", condense fp]
+      go (RemoveDirRecursive fp)   = ["removeDirectoryRecursive", condense fp]
       go (RemoveFile fp)           = ["removeFile", condense fp]
       go (RenameFile fp1 fp2)      = ["renameFile", condense fp1, condense fp2]
 

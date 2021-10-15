@@ -132,6 +132,9 @@ data HasFS m h = HasFS {
     -- | Check if the path exists and is a file
   , doesFileExist            :: HasCallStack => FsPath -> m Bool
 
+    -- | Remove the directory (which must exist) and its contents
+  , removeDirectoryRecursive :: HasCallStack => FsPath -> m ()
+
     -- | Remove the file (which must exist)
   , removeFile               :: HasCallStack => FsPath -> m ()
 
@@ -140,10 +143,23 @@ data HasFS m h = HasFS {
     -- the new one.
     --
     -- NOTE: only works for files within the same folder.
-  , renameFile                 :: HasCallStack => FsPath -> FsPath -> m ()
+  , renameFile               :: HasCallStack => FsPath -> FsPath -> m ()
 
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
+
+    -- | Create a concrete @`FilePath`@ from an abstract @`FsPath`@.
+    --
+    -- Parts of the storage layer that can not be simulated, such as the
+    -- @`LMDBBackingStore`@, can only run in `IO` (or some `m` for which
+    -- @`MonadIO` m@), since the backing store requires concrete @`FilePath`@s
+    -- to work with. Seeing as we use @`HasFs`@ as the interface to the
+    -- filesystem, we must add the possibility of creating concrete
+    -- @`FilePath`@s to the interface.
+    --
+    -- Postcondition: Should throw an error for any @m@ that is not @IO@
+    -- (or for which we do not have @`MonadIO` m@).
+  , unsafeToFilePath         :: !(FsPath -> m FilePath)
   }
   deriving NoThunks via OnlyCheckWhnfNamed "HasFS" (HasFS m h)
 

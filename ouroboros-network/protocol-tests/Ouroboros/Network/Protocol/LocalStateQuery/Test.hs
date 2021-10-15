@@ -1,6 +1,8 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -84,26 +86,26 @@ tests =
 -- Common types & clients and servers used in the tests in this module.
 --
 
-data Query result where
-  QueryPoint :: Query (Maybe (Point Block))
+data Query (fp :: FootprintL) result where
+  QueryPoint :: Query SmallL (Maybe (Point Block))
 
-deriving instance Show (Query result)
+deriving instance Show (Query fp result)
 instance ShowProxy Query where
 
 -- | Information to test an example server and client.
 data Setup = Setup
-  { clientInput   :: [(Maybe (Point Block), Query (Maybe (Point Block)))]
+  { clientInput   :: [(Maybe (Point Block), QueryWithSomeFootprintL Query (Maybe (Point Block)))]
     -- ^ Input for 'localStateQueryClient'
   , serverAcquire :: Maybe (Point Block) -> Either AcquireFailure (Maybe (Point Block))
     -- ^ First input parameter for 'localStateQueryServer'
-  , serverAnswer  :: forall result. Maybe (Point Block) -> Query result -> result
+  , serverAnswer  :: forall fp result. Maybe (Point Block) -> Query fp result -> result
     -- ^ Second input parameter for 'localStateQueryServer'
   , expected      :: [(Maybe (Point Block), Either AcquireFailure (Maybe (Point Block)))]
     -- ^ Expected result for the 'localStateQueryClient'.
   }
 
 mkSetup
-  :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+  :: Map (Maybe (Point Block)) (Maybe AcquireFailure, QueryWithSomeFootprintL Query (Maybe (Point Block)))
      -- ^ For each point, the given state queries will be executed. In case of
      -- the second field is an 'AcquireFailure', the server will fail with
      -- that failure.
@@ -120,14 +122,14 @@ mkSetup input = Setup {
     , serverAnswer  = answer
     , expected      =
         [ (pt, res)
-        | (pt, (mbFailure, q)) <- Map.toList input
+        | (pt, (mbFailure, QueryWithSomeFootprintL q)) <- Map.toList input
         , let res = case mbFailure of
                 Nothing      -> Right $ answer pt q
                 Just failure -> Left failure
         ]
     }
   where
-    answer :: Maybe (Point Block) -> Query result -> result
+    answer :: Maybe (Point Block) -> Query fp result -> result
     answer pt q = case q of
       QueryPoint -> pt
 
@@ -139,7 +141,7 @@ mkSetup input = Setup {
 -- | Run a simple local state query client and server, directly on the wrappers,
 -- without going via the 'Peer'.
 --
-prop_direct :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_direct :: Map (Maybe (Point Block)) (Maybe AcquireFailure, QueryWithSomeFootprintL Query (Maybe (Point Block)))
             -> Property
 prop_direct input =
     runSimOrThrow
@@ -159,7 +161,7 @@ prop_direct input =
 -- | Run a simple local state query client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-prop_connect :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_connect :: Map (Maybe (Point Block)) (Maybe AcquireFailure, QueryWithSomeFootprintL Query (Maybe (Point Block)))
              -> Property
 prop_connect input =
     case runSimOrThrow
@@ -185,7 +187,7 @@ prop_channel :: ( MonadAsync m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
-             -> Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+             -> Map (Maybe (Point Block)) (Maybe AcquireFailure, QueryWithSomeFootprintL Query (Maybe (Point Block)))
              -> m Property
 prop_channel createChannels input =
 
@@ -204,7 +206,7 @@ prop_channel createChannels input =
 
 -- | Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_channel_ST :: Map (Maybe (Point Block)) (Maybe AcquireFailure, QueryWithSomeFootprintL Query (Maybe (Point Block)))
                 -> Property
 prop_channel_ST input =
     runSimOrThrow
@@ -212,14 +214,14 @@ prop_channel_ST input =
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_channel_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, QueryWithSomeFootprintL Query (Maybe (Point Block)))
                 -> Property
 prop_channel_IO input =
     ioProperty (prop_channel createConnectedChannels input)
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_pipe_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, QueryWithSomeFootprintL Query (Maybe (Point Block)))
              -> Property
 prop_pipe_IO input =
     ioProperty (prop_channel createPipeConnectedChannels input)
@@ -235,8 +237,11 @@ instance Arbitrary AcquireFailure where
     , AcquireFailurePointNotOnChain
     ]
 
-instance Arbitrary (Query (Maybe (Point Block))) where
+instance Arbitrary (Query SmallL (Maybe (Point Block))) where
   arbitrary = pure QueryPoint
+
+instance Arbitrary (QueryWithSomeFootprintL Query (Maybe (Point Block))) where
+  arbitrary = QueryWithSomeFootprintL <$> (arbitrary :: Gen (Query SmallL (Maybe (Point Block))))
 
 instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)) where
   arbitrary = oneof
@@ -269,7 +274,7 @@ instance Arbitrary AnyMessageAndAgencyV7 where
         (MsgFailure <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgQuery <$> (arbitrary :: Gen (Query (Maybe (Point Block)))))
+        (MsgQuery <$> (arbitrary :: Gen (Query SmallL (Maybe (Point Block)))))
 
     , AnyMessageAndAgency (ServerAgency (TokQuerying QueryPoint)) <$>
         (MsgResult QueryPoint <$> arbitrary)
@@ -331,18 +336,18 @@ codec =
       encodeQuery      decodeQuery
       encodeResult     decodeResult
   where
-    encodeQuery :: Query result -> CBOR.Encoding
+    encodeQuery :: Query fp result -> CBOR.Encoding
     encodeQuery QueryPoint = Serialise.encode ()
 
-    decodeQuery :: forall s . CBOR.Decoder s (Some Query)
+    decodeQuery :: forall s . CBOR.Decoder s (SomeQuery Query)
     decodeQuery = do
       () <- Serialise.decode
-      return $ Some QueryPoint
+      return $ SomeQuery QueryPoint
 
-    encodeResult :: Query result -> result -> CBOR.Encoding
+    encodeResult :: Query fp result -> result -> CBOR.Encoding
     encodeResult QueryPoint = Serialise.encode
 
-    decodeResult :: Query result -> forall s. CBOR.Decoder s result
+    decodeResult :: Query fp result -> forall s. CBOR.Decoder s result
     decodeResult QueryPoint = Serialise.decode
 
 -- | Check the codec round trip property.
