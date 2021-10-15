@@ -681,6 +681,7 @@ pattern TraceDeadlock time threads = Trace.Nil (Deadlock time threads)
 data SimEventType
   = EventSay  String
   | EventLog  Dynamic
+  | EventMask MaskingState
 
   | EventThrow          SomeException
   | EventThrowTo        SomeException ThreadId -- This thread used ThrowTo
@@ -806,7 +807,8 @@ schedule thread@Thread{
         let thread' = thread { threadControl = ThreadControl (k x) ctl'
                              , threadMasking = maskst' }
         -- but if we're now unmasked, check for any pending async exceptions
-        deschedule Interruptable thread' simstate
+        trace <- deschedule Interruptable thread' simstate
+        return (SimTrace time tid tlbl (EventMask maskst') trace)
 
       CatchFrame _handler k ctl' -> do
         -- pop the control stack and continue
@@ -814,10 +816,11 @@ schedule thread@Thread{
         schedule thread' simstate
 
     Throw e -> case unwindControlStack e thread of
-      Right thread' -> do
+      Right thread'@Thread { threadMasking = maskst' } -> do
         -- We found a suitable exception handler, continue with that
         trace <- schedule thread' simstate
-        return (SimTrace time tid tlbl (EventThrow e) trace)
+        return (SimTrace time tid tlbl (EventThrow e) $
+                SimTrace time tid tlbl (EventMask maskst') trace)
 
       Left isMain
         -- We unwound and did not find any suitable exception handler, so we
@@ -1050,10 +1053,12 @@ schedule thread@Thread{
                                                (runIOSim action')
                                                (MaskFrame k maskst ctl)
                            , threadMasking = maskst' }
-      case maskst' of
-        -- If we're now unmasked then check for any pending async exceptions
-        Unmasked -> deschedule Interruptable thread' simstate
-        _        -> schedule                 thread' simstate
+      trace <-
+        case maskst' of
+          -- If we're now unmasked then check for any pending async exceptions
+          Unmasked -> deschedule Interruptable thread' simstate
+          _        -> schedule                 thread' simstate
+      return (Trace time tid tlbl (EventMask maskst') trace)
 
     ThrowTo e tid' _ | tid' == tid -> do
       -- Throw to ourself is equivalent to a synchronous throw,
