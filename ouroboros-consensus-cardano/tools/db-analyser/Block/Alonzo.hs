@@ -27,7 +27,10 @@ import qualified Cardano.Ledger.Alonzo.Genesis as Alonzo
 import qualified Cardano.Ledger.Alonzo.Language as Alonzo
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import qualified Cardano.Ledger.BaseTypes as Ledger
+
+import           GHC.Natural (Natural)
 import           HasAnalysis (HasProtocolInfo (..))
+
 import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 
@@ -89,6 +92,7 @@ instance FromJSON Alonzo.AlonzoGenesis where
         , Alonzo.maxCollateralInputs
         }
 
+deriving instance FromJSON (Alonzo.ExUnits' Natural)
 deriving instance FromJSON Alonzo.ExUnits
 
 instance FromJSON Alonzo.Language where

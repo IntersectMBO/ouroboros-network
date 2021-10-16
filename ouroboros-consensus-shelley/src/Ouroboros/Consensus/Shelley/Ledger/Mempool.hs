@@ -36,17 +36,19 @@ import           Control.Monad.Identity (Identity (..))
 import           Data.Foldable (toList)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           GHC.Int (Int64)
+import           GHC.Natural (Natural)
 import           GHC.Records
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
                      FullByteString (..), ToCBOR (..))
 import           Data.DerivingVia (InstantiatedAt (..))
-import           Data.Measure (BoundedMeasure, Measure)
+import           Data.Measure (BoundedMeasure (..), Measure)
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
-import           Cardano.Ledger.Alonzo.Scripts (ExUnits (..))
+import           Cardano.Ledger.Alonzo.Scripts (ExUnits (..), ExUnits')
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -310,6 +312,14 @@ instance ( SL.PraosCrypto c
         }
     where
       pparams = getPParams $ tickedShelleyLedgerState ledgerState
+
+-- FIXME: Confirm the desired instances
+instance BoundedMeasure Natural where
+  maxBound = fromIntegral (Prelude.maxBound :: Int64)
+deriving via (InstantiatedAt Generic (ExUnits' Natural))
+  instance Measure ExUnits
+deriving via (InstantiatedAt Generic (ExUnits' Natural))
+  instance BoundedMeasure ExUnits
 
 data AlonzoMeasure = AlonzoMeasure {
     byteSize :: !ByteSize
