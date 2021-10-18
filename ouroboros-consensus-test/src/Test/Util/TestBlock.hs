@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
@@ -394,9 +395,18 @@ instance HasHardForkHistory TestBlock where
 data instance BlockQuery TestBlock fp result where
   QueryLedgerTip :: BlockQuery TestBlock SmallL (Point TestBlock)
 
+instance SmallQuery (BlockQuery TestBlock) where
+  proveSmallQuery k = \case
+    QueryLedgerTip -> k
+
 instance QueryLedger TestBlock where
-  answerBlockQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
+  answerBlockSmallQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
+
+  answerBlockQuery cfg _dlv query st =
+      withSmallQueryProof query
+    $ pure
+    $ answerBlockSmallQuery cfg query st
 
 instance EqQuery (BlockQuery TestBlock) where
   eqQuery QueryLedgerTip QueryLedgerTip = Just Refl

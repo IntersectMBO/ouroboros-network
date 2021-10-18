@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerCfg
   , applyChainTick
     -- * Link block to its ledger
+  , DiskLedgerView
   , LedgerConfig
   , LedgerError
   , LedgerState
@@ -182,3 +183,7 @@ type instance HeaderHash (LedgerState blk) = HeaderHash blk
 type LedgerConfig      blk = LedgerCfg (LedgerState blk)
 type LedgerError       blk = LedgerErr (LedgerState blk)
 type TickedLedgerState blk = Ticked    (LedgerState blk)
+
+-- | Monadic functions used to query this this block type's 'LargeL' ledger
+-- states, which typically involve accessing disk.
+data family DiskLedgerView blk :: (Type -> Type) -> Type
