@@ -153,6 +153,8 @@ localRootPeersProvider tracer
                        RelayAccessAddress {} -> True
                        RelayAccessDomain {}  -> False
                      )
+      atomically $
+        writeTVar rootPeersGroupsVar rootPeersGroups
 
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
