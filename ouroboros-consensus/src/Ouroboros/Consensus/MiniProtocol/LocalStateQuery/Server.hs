@@ -10,6 +10,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
+import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util.IOLike
@@ -17,6 +18,7 @@ import           Ouroboros.Consensus.Util.IOLike
 localStateQueryServer ::
      forall m blk. (IOLike m, QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
+  -> DiskLedgerView blk m
   -> STM m (Point blk)
      -- ^ Get tip point
   -> (Point blk -> STM m (Maybe (ExtLedgerState SmallL blk)))
@@ -24,7 +26,7 @@ localStateQueryServer ::
   -> STM m (Point blk)
      -- ^ Get the immutable point
   -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
-localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
+localStateQueryServer cfg dlv getTipPoint getPastLedger getImmutablePoint =
     LocalStateQueryServer $ return idle
   where
     idle :: ServerStIdle blk (Point blk) (Query blk) m ()
@@ -61,7 +63,6 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
          ExtLedgerState SmallL blk
       -> Query          blk fp result
       -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
-    handleQuery ledgerState query = return $
-        SendMsgResult
-          (answerQuery cfg query (error "cast" ledgerState))
-          (acquired ledgerState)
+    handleQuery ledgerState query = do
+      result <- answerQuery cfg dlv query (error "handleQuery FootPrint cast" ledgerState)
+      pure $ SendMsgResult result (acquired ledgerState)
