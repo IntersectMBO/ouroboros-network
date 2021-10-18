@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      headerStateBlockNo, headerStatePoint)
+import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -257,18 +258,35 @@ instance EqQuery (BlockQuery blk) => EqQuery (Query blk) where
 
 deriving instance Show (BlockQuery blk fp result) => Show (Query blk fp result)
 
--- | Answer the given query about the extended ledger state.
-answerQuery ::
+-- | A variant of 'answerQuery' that is restricted to 'SmallL'.
+answerSmallQuery ::
      (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
-  -> Query          blk fp result
-  -> ExtLedgerState fp blk
+  -> Query          blk SmallL result
+  -> ExtLedgerState SmallL blk
   -> result
-answerQuery cfg query st = case query of
-  BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
+answerSmallQuery cfg query st = case query of
+  BlockQuery blockQuery -> answerBlockSmallQuery cfg blockQuery st
   GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
   GetChainBlockNo -> headerStateBlockNo (headerState st)
   GetChainPoint -> headerStatePoint (headerState st)
+
+-- | Answer the given query about the extended ledger state.
+answerQuery :: forall blk m fp result.
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, Monad m)
+  => ExtLedgerCfg blk
+  -> DiskLedgerView blk m
+  -> Query          blk fp result
+  -> ExtLedgerState fp blk
+  -> m result
+answerQuery cfg dlv query st = case query of
+    BlockQuery blockQuery -> answerBlockQuery cfg dlv blockQuery st
+    GetSystemStart        -> small
+    GetChainBlockNo       -> small
+    GetChainPoint         -> small
+  where
+    small :: (fp ~ SmallL) => m result
+    small = pure $ answerSmallQuery cfg query st
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: FootprintL -> Type -> Type
@@ -281,8 +299,33 @@ class ( ShowQuery (BlockQuery blk)
       , EqQuery (BlockQuery blk)
       ) => QueryLedger blk where
 
+  -- | A variant of 'answerBlockQuery' that is restricted to 'SmallL'.
+  answerBlockSmallQuery :: ExtLedgerCfg blk -> BlockQuery blk SmallL result -> ExtLedgerState SmallL blk -> result
+
   -- | Answer the given query about the extended ledger state.
-  answerBlockQuery :: ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState fp blk -> result
+  --
+  -- TODO de-duplicate with answerBlockSmallQuery; eg a GADT that maps @fp ~
+  -- 'SmallL'@ to @m ~ 'Identity'@ and 'DiskLedgerView' to @NothingIf@ but maps
+  -- @fp ~ 'LargeL'@ to 'DiskLedgerView' to @JustIf@?
+  --
+  -- TODO I'm having second thoughts. Should we, at this level here, explicitly
+  -- factor the task of " use disk to answer the query " into the same two-step
+  -- process we're using for block and tx validation? IE Ask the ledger what
+  -- KeySet the query needs, fetch those, build the " complete enough " ledger
+  -- state, and then use it to answer the query? I think it's possible that the
+  -- " one shot " approach currently expressed here may be simpler for some
+  -- queries. It might even be necessary, if we ever want to eg answer a debug
+  -- query that must be streamed because the whole result would not fit in
+  -- memory at once (but that'd probably require enriching LocalStateQuery to
+  -- support multi-message results... perhaps we'd instead introduce a set of
+  -- queries that amount to range queries...). Open CAD-3559 for this.
+  answerBlockQuery      ::
+       Monad m
+    => ExtLedgerCfg blk
+    -> DiskLedgerView blk m
+    -> BlockQuery     blk fp result
+    -> ExtLedgerState fp blk
+    -> m result
 
 {-------------------------------------------------------------------------------
   Queries that are small
