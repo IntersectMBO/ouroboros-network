@@ -15,7 +15,7 @@ import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Control.Monad.IOSim (IOSim, Trace, TraceEvent (..),
+import           Control.Monad.IOSim (IOSim, SimEventType (..), SimTrace,
                      runSimTrace, selectTraceEvents, traceResult)
 
 import           Test.QuickCheck
@@ -122,7 +122,7 @@ prop_RAWLock_correctness (TestSetup rawDelays) =
 -- allows inspecting the trace for labelling purposes.
 monadicSimWithTrace
   :: Testable a
-  => (forall x. Trace x -> Property -> Property)
+  => (forall x. SimTrace x -> Property -> Property)
   -> (forall s. PropertyM (IOSim s) a)
   -> Property
 monadicSimWithTrace attachTrace m = property $ do
@@ -131,7 +131,7 @@ monadicSimWithTrace attachTrace m = property $ do
       Left failure -> throw failure
       Right prop   -> return $ attachTrace tr prop
   where
-    runSimGenWithTrace :: (forall s. Gen (IOSim s a)) -> Gen (Trace a)
+    runSimGenWithTrace :: (forall s. Gen (IOSim s a)) -> Gen (SimTrace a)
     runSimGenWithTrace f = do
       Capture eval <- capture
       return $ runSimTrace (eval f)
@@ -140,14 +140,14 @@ monadicSimWithTrace attachTrace m = property $ do
 --
 -- The higher this number, the higher the contention. If there's no
 -- contention, we're not testing the lock properly.
-tabulateBlockeds :: Trace a -> Property -> Property
+tabulateBlockeds :: SimTrace a -> Property -> Property
 tabulateBlockeds tr =
     tabulate "number of times blocked" [classifyBand (count isBlocked tr)]
   where
     isBlocked (EventTxBlocked {}) = Just ()
     isBlocked _                   = Nothing
 
-    count :: (TraceEvent -> Maybe x) -> Trace a -> Int
+    count :: (SimEventType -> Maybe x) -> SimTrace a -> Int
     count p = length . selectTraceEvents p
 
     classifyBand :: Int -> String
