@@ -1,5 +1,3 @@
-[![Build Status](https://badge.buildkite.com/3c5e581fd69202ceddd64e91351846c41baa285aaca835cdd9.svg?style=flat-square&branch=master)](https://buildkite.com/input-output-hk/ouroboros-network)
-
 # Ouroboros-Network
 
 * `io-sim` - `IOSim` simulator monad which supports asynchronous exceptions,
@@ -97,15 +95,15 @@ stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.
 ```
 
 Alternatively, call the script used by CI itself:
-https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/buildkite/check-stylish.sh
+https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/ci/check-stylish.sh
 
 ```bash
-./scripts/buildkite/check-stylish.sh
+./scripts/ci/check-stylish.sh
 ```
 
 When using Nix, you can use the following command, which will build and use
 the right version of `stylish-haskell`.
 
 ```bash
-nix-shell --run ./scripts/buildkite/check-stylish.sh
+nix-shell --run ./scripts/ci/check-stylish.sh
 ```
