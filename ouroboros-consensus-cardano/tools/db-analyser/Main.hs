@@ -215,7 +215,8 @@ analyse ::
 analyse CmdLine {..} args =
     withRegistry $ \registry -> do
 
-      tracer <- mkTracer verbose
+      chainDBTracer  <- mkTracer verbose
+      analysisTracer <- mkTracer True
       ProtocolInfo { pInfoInitLedger = genesisLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
@@ -228,7 +229,7 @@ analyse CmdLine {..} args =
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy
-            , ChainDB.cdbTracer                = tracer
+            , ChainDB.cdbTracer                = chainDBTracer
             }
           (immutableDbArgs, _, _, _) = fromChainDbArgs chainDbArgs
           ledgerDbFS = ChainDB.cdbHasFSLgrDB chainDbArgs
@@ -247,6 +248,7 @@ analyse CmdLine {..} args =
               , registry
               , ledgerDbFS = ledgerDbFS
               , limit = limit
+              , tracer = analysisTracer
               }
             tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
             putStrLn $ "ImmutableDB tip: " ++ show tipPoint
@@ -259,6 +261,7 @@ analyse CmdLine {..} args =
               , registry
               , ledgerDbFS = ledgerDbFS
               , limit = limit
+              , tracer = analysisTracer
               }
             tipPoint <- atomically $ ChainDB.getTipPoint chainDB
             putStrLn $ "ChainDB tip: " ++ show tipPoint
