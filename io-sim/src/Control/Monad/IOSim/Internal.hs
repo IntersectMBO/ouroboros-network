@@ -97,7 +97,8 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
-import           Control.Monad.Class.MonadThrow as MonadThrow
+import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
+import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
@@ -173,9 +174,6 @@ type STMSim = STM
 
 type SimSTM = STM
 {-# DEPRECATED SimSTM "Use STMSim" #-}
-
-data MaskingState = Unmasked | MaskedInterruptible | MaskedUninterruptible
-  deriving (Eq, Ord, Show)
 
 --
 -- Monad class instances
@@ -300,18 +298,21 @@ instance Exceptions.MonadCatch (IOSim s) where
 
 instance MonadMask (IOSim s) where
   mask action = do
-      b <- getMaskingState
+      b <- getMaskingStateImpl
       case b of
         Unmasked              -> block $ action unblock
         MaskedInterruptible   -> action block
         MaskedUninterruptible -> action blockUninterruptible
 
   uninterruptibleMask action = do
-      b <- getMaskingState
+      b <- getMaskingStateImpl
       case b of
         Unmasked              -> blockUninterruptible $ action unblock
         MaskedInterruptible   -> blockUninterruptible $ action block
         MaskedUninterruptible -> action blockUninterruptible
+
+instance MonadMaskingState (IOSim s) where
+    getMaskingState = getMaskingStateImpl
 
 instance Exceptions.MonadMask (IOSim s) where
   mask                = MonadThrow.mask
@@ -327,10 +328,10 @@ instance Exceptions.MonadMask (IOSim s) where
       return (b, c)
 
 
-getMaskingState :: IOSim s MaskingState
+getMaskingStateImpl :: IOSim s MaskingState
 unblock, block, blockUninterruptible :: IOSim s a -> IOSim s a
 
-getMaskingState        = IOSim  GetMaskState
+getMaskingStateImpl    = IOSim  GetMaskState
 unblock              a = IOSim (SetMaskState Unmasked a)
 block                a = IOSim (SetMaskState MaskedInterruptible a)
 blockUninterruptible a = IOSim (SetMaskState MaskedUninterruptible a)
@@ -1289,8 +1290,12 @@ unwindControlStack e thread =
                       -- As per async exception rules, the handler is run masked
                      threadControl = ThreadControl (handler e')
                                                    (MaskFrame k maskst ctl),
-                     threadMasking = max maskst MaskedInterruptible
+                     threadMasking = atLeastInterruptibleMask maskst
                    }
+
+    atLeastInterruptibleMask :: MaskingState -> MaskingState
+    atLeastInterruptibleMask Unmasked = MaskedInterruptible
+    atLeastInterruptibleMask ms       = ms
 
 
 removeMinimums :: (Ord k, Ord p)

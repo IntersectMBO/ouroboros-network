@@ -10,7 +10,9 @@ module Control.Monad.Class.MonadThrow
   ( MonadThrow(..)
   , MonadCatch(..)
   , MonadMask(..)
+  , MonadMaskingState(..)
   , MonadEvaluate(..)
+  , MaskingState(..)
   , Exception(..)
   , SomeException
   , ExitCase(..)
@@ -20,7 +22,7 @@ module Control.Monad.Class.MonadThrow
   , throwM
   ) where
 
-import           Control.Exception (Exception (..), SomeException)
+import           Control.Exception (Exception (..), MaskingState, SomeException)
 import qualified Control.Exception as IO
 import           Control.Monad (liftM)
 import           Control.Monad.Except (ExceptT (..), lift, runExceptT)
@@ -183,6 +185,9 @@ class MonadCatch m => MonadMask m where
   uninterruptibleMask_ action = uninterruptibleMask $ \_ -> action
 
 
+class MonadMask m => MonadMaskingState m where
+  getMaskingState :: m MaskingState
+
 -- | Monads which can 'evaluate'.
 --
 class MonadThrow m => MonadEvaluate m where
@@ -222,6 +227,9 @@ instance MonadMask IO where
 
   uninterruptibleMask  = IO.uninterruptibleMask
   uninterruptibleMask_ = IO.uninterruptibleMask_
+
+instance MonadMaskingState IO where
+  getMaskingState = IO.getMaskingState
 
 instance MonadEvaluate IO where
   evaluate = IO.evaluate
