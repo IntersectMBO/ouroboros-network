@@ -59,6 +59,51 @@ tests =
     , testProperty "5" unit_catch_5
     , testProperty "6" unit_catch_6
     ]
+  , testGroup "masking state"
+    [ testProperty "set (IO)"
+    $ forall_masking_states unit_set_masking_state_IO
+    , testProperty "set (IOSim)"
+    $ forall_masking_states unit_set_masking_state_ST
+
+    , testProperty "unmask (IO)"
+    $ forall_masking_states $ \ms  ->
+      forall_masking_states $ \ms' -> unit_unmask_IO ms ms'
+    , testProperty "unmask (IOSim)"
+    $ forall_masking_states $ \ms  ->
+      forall_masking_states $ \ms' -> unit_unmask_ST ms ms'
+
+    , testProperty "fork (IO)"
+    $ forall_masking_states unit_fork_masking_state_IO
+    , testProperty "fork (IOSim)"
+    $ forall_masking_states unit_fork_masking_state_ST
+
+    , testProperty "fork unmask (IO)"
+    $ forall_masking_states $ \ms  ->
+      forall_masking_states $ \ms' -> unit_fork_unmask_IO ms ms'
+    , testProperty "fork unmask (IOSim)"
+    $ forall_masking_states $ \ms  ->
+      forall_masking_states $ \ms' -> unit_fork_unmask_ST ms ms'
+
+    , testProperty "catch (IO)"
+    $ forall_masking_states unit_catch_throwIO_masking_state_IO
+    , testProperty "catch (IOSim)"
+    $ forall_masking_states unit_catch_throwIO_masking_state_ST
+
+    , testProperty "catch: throwTo (IO)"
+    $ forall_masking_states unit_catch_throwTo_masking_state_IO
+    , testProperty "catch: throwTo (IOSim)"
+    $ forall_masking_states unit_catch_throwTo_masking_state_ST
+
+    , testProperty "catch: throwTo async (IO)"
+    $ forall_masking_states unit_catch_throwTo_masking_state_async_IO
+    , testProperty "catch: throwTo async (IOSim)"
+    $ forall_masking_states unit_catch_throwTo_masking_state_async_ST
+
+    , testProperty "catch: throwTo async blocking (IO)"
+    $ forall_masking_states unit_catch_throwTo_masking_state_async_mayblock_IO
+    , testProperty "catch: throwTo async blocking (IOSim)"
+    $ forall_masking_states unit_catch_throwTo_masking_state_async_mayblock_ST
+    ]
   , testProperty "evaluate unit test" unit_evaluate_0
   , testGroup "forkIO unit tests"
     [ testProperty "1" unit_fork_1
@@ -886,6 +931,253 @@ prop_timeout_no_deadlock_Sim = runSimOrThrow prop_timeout_no_deadlockM
 
 prop_timeout_no_deadlock_IO :: Property
 prop_timeout_no_deadlock_IO = ioProperty prop_timeout_no_deadlockM
+
+
+--
+-- MonadMask properties
+--
+
+setMaskingState_ :: MonadMask m => MaskingState -> m a -> m a
+setMaskingState_ Unmasked              = id
+setMaskingState_ MaskedInterruptible   = mask_
+setMaskingState_ MaskedUninterruptible = uninterruptibleMask_
+
+setMaskingState :: MonadMask m => MaskingState
+                -> ((forall x. m x -> m x) -> m a) -> m a
+setMaskingState Unmasked              = \f -> f id
+setMaskingState MaskedInterruptible   = mask
+setMaskingState MaskedUninterruptible = uninterruptibleMask
+
+maxMS :: MaskingState -> MaskingState -> MaskingState
+maxMS MaskedUninterruptible _                     = MaskedUninterruptible
+maxMS _                     MaskedUninterruptible = MaskedUninterruptible
+maxMS MaskedInterruptible   _                     = MaskedInterruptible
+maxMS _                     MaskedInterruptible   = MaskedInterruptible
+maxMS Unmasked              Unmasked              = Unmasked
+
+
+forall_masking_states :: (MaskingState -> Property)
+                      -> Property
+forall_masking_states prop =
+    -- make sure that the property is executed once!
+    withMaxSuccess 1 $
+    foldr (\ms p -> counterexample (show ms) (prop ms) .&&. p)
+          (property True)
+          [Unmasked, MaskedInterruptible, MaskedUninterruptible]
+
+-- | Check that setting masking state is effective.
+--
+prop_set_masking_state :: MonadMaskingState m
+                       => MaskingState
+                       -> m Property
+prop_set_masking_state ms =
+    setMaskingState_ ms $ do
+      ms' <- getMaskingState
+      return (ms === ms')
+
+unit_set_masking_state_IO :: MaskingState -> Property
+unit_set_masking_state_IO =
+    ioProperty . prop_set_masking_state
+
+unit_set_masking_state_ST :: MaskingState -> Property
+unit_set_masking_state_ST ms =
+    runSimOrThrow (prop_set_masking_state ms)
+
+
+-- | Check that 'unmask' restores the masking state.
+--
+prop_unmask :: MonadMaskingState m
+            => MaskingState
+            -> MaskingState
+            -> m Property
+prop_unmask ms ms' = 
+    setMaskingState_ ms $
+      setMaskingState ms' $ \unmask -> do
+        ms'' <- unmask getMaskingState
+        return (ms'' === ms)
+
+unit_unmask_IO :: MaskingState -> MaskingState -> Property
+unit_unmask_IO ms ms' = ioProperty $ prop_unmask ms ms'
+
+unit_unmask_ST :: MaskingState -> MaskingState -> Property
+unit_unmask_ST ms ms' = runSimOrThrow $ prop_unmask ms ms'
+
+
+-- | Check that masking state is inherited by a forked thread.
+--
+prop_fork_masking_state :: ( MonadMaskingState m
+                           , MonadFork m
+                           , MonadSTM m
+                           )
+                        => MaskingState -> m Property
+prop_fork_masking_state ms = setMaskingState_ ms $ do
+    var <- newEmptyTMVarIO
+    _ <- forkIO $ getMaskingState >>= atomically . putTMVar var
+    ms' <- atomically $ takeTMVar var
+    return $ ms === ms'
+
+unit_fork_masking_state_IO :: MaskingState -> Property
+unit_fork_masking_state_IO =
+    ioProperty . prop_fork_masking_state
+
+unit_fork_masking_state_ST :: MaskingState -> Property
+unit_fork_masking_state_ST ms =
+    runSimOrThrow (prop_fork_masking_state ms)
+
+
+-- | Check that 'unmask' restores the masking state in a forked thread.
+--
+-- Note: unlike 'prop_unmask', 'forkIOWithUnmask's 'unmask' function will
+-- restore 'Unmasked' state, not the encosing masking state.
+--
+prop_fork_unmask :: ( MonadMaskingState m
+                    , MonadFork m
+                    , MonadSTM m
+                    )
+                 => MaskingState
+                 -> MaskingState
+                 -> m Property
+prop_fork_unmask ms ms' =
+    setMaskingState_ ms $
+      setMaskingState_ ms' $ do
+        var <- newEmptyTMVarIO
+        _ <- forkIOWithUnmask $ \unmask -> unmask getMaskingState
+                                       >>= atomically . putTMVar var
+        ms'' <- atomically $ takeTMVar var
+        return $ Unmasked === ms''
+
+unit_fork_unmask_IO :: MaskingState -> MaskingState -> Property
+unit_fork_unmask_IO ms ms' = ioProperty $ prop_fork_unmask ms ms'
+
+unit_fork_unmask_ST :: MaskingState -> MaskingState -> Property
+unit_fork_unmask_ST ms ms' = runSimOrThrow $ prop_fork_unmask ms ms'
+
+
+-- | A unit test which checks the masking state in the context of a catch
+-- handler.
+--
+prop_catch_throwIO_masking_state :: forall m. MonadMaskingState m
+                                 => MaskingState -> m Property
+prop_catch_throwIO_masking_state ms =
+    setMaskingState_ ms $ do
+      throwIO (userError "error")
+      `catch` \(_ :: IOError) -> do
+        ms' <- getMaskingState
+        return $ ms' === MaskedInterruptible `maxMS` ms
+
+unit_catch_throwIO_masking_state_IO :: MaskingState -> Property
+unit_catch_throwIO_masking_state_IO ms =
+    ioProperty $ prop_catch_throwIO_masking_state ms
+
+unit_catch_throwIO_masking_state_ST :: MaskingState -> Property
+unit_catch_throwIO_masking_state_ST ms =
+    runSimOrThrow (prop_catch_throwIO_masking_state ms)
+
+
+-- | Like 'prop_catch_masking_state' but using 'throwTo'.
+--
+prop_catch_throwTo_masking_state :: forall m.
+                                    ( MonadMaskingState m
+                                    , MonadFork m
+                                    )
+                                 => MaskingState -> m Property
+prop_catch_throwTo_masking_state ms =
+    setMaskingState_ ms $ do
+      tid <- myThreadId
+      (throwTo tid (userError "error") >> error "impossible")
+      `catch` \(_ :: IOError) -> do
+        ms' <- getMaskingState
+        return $ ms' === MaskedInterruptible `maxMS` ms
+
+unit_catch_throwTo_masking_state_IO :: MaskingState -> Property
+unit_catch_throwTo_masking_state_IO =
+    ioProperty . prop_catch_throwTo_masking_state
+
+unit_catch_throwTo_masking_state_ST :: MaskingState -> Property
+unit_catch_throwTo_masking_state_ST ms =
+    runSimOrThrow $ prop_catch_throwTo_masking_state ms
+
+
+-- | Like 'prop_catch_throwTo_masking_state' but using 'throwTo' to a different
+-- thread which is in a non-blocking mode.
+--
+prop_catch_throwTo_masking_state_async :: forall m.
+                                          ( MonadMaskingState m
+                                          , MonadFork  m
+                                          , MonadSTM   m
+                                          , MonadDelay m
+                                          )
+                                       => MaskingState -> m Property
+prop_catch_throwTo_masking_state_async ms = do
+    sgnl <- newEmptyTMVarIO
+    var <- newEmptyTMVarIO
+    tid <- forkIO $
+      setMaskingState ms $ \unmask ->
+        (do atomically $ putTMVar sgnl ()
+            unmask (threadDelay 1)
+        )
+        `catch` \(_ :: IOError) -> do
+          ms' <- getMaskingState
+          atomically $ putTMVar var (ms' === ms `maxMS` MaskedInterruptible)
+    -- wait until the catch handler is installed
+    atomically $ takeTMVar sgnl
+    -- the forked thread is interruptibly blocked on `threadDelay`,
+    -- `throwTo` will not block
+    throwTo tid (userError "error")
+    atomically $ takeTMVar var
+
+
+unit_catch_throwTo_masking_state_async_IO :: MaskingState -> Property
+unit_catch_throwTo_masking_state_async_IO =
+    ioProperty . prop_catch_throwTo_masking_state_async
+
+unit_catch_throwTo_masking_state_async_ST :: MaskingState -> Property
+unit_catch_throwTo_masking_state_async_ST ms =
+    runSimOrThrow (prop_catch_throwTo_masking_state_async ms)
+
+
+-- | Like 'prop_catch_throwTo_masking_state_async' but 'throwTo' will block if
+-- masking state is set to 'MaskedUninterruptible'.  This makes sure that the
+-- 'willBlock' branch of 'ThrowTo' in 'schedule' is covered. 
+--
+prop_catch_throwTo_masking_state_async_mayblock :: forall m.
+                                                ( MonadMaskingState m
+                                                , MonadFork  m
+                                                , MonadSTM   m
+                                                , MonadDelay m
+                                                )
+                                             => MaskingState -> m Property
+prop_catch_throwTo_masking_state_async_mayblock ms = do
+    sgnl <- newEmptyTMVarIO
+    var <- newEmptyTMVarIO
+    tid <- forkIO $
+      setMaskingState ms $ \unmask ->
+        (do atomically $ putTMVar sgnl ()
+            -- if 'ms' is 'MaskedUninterruptible' then the following
+            -- 'threadDelay' will block.
+            threadDelay 0.1
+            -- make sure that even in 'MaskedUninterruptible' the thread
+            -- unblocks so async exceptions can be delivered.
+            unmask (threadDelay 1)
+        )
+        `catch` \(_ :: IOError) -> do
+          ms' <- getMaskingState
+          atomically $ putTMVar var (ms' === ms `maxMS` MaskedInterruptible)
+    -- wait until the catch handler is installed
+    atomically $ takeTMVar sgnl
+    threadDelay 0.05
+    -- we know the forked thread is interruptibly blocked on `threadDelay`,
+    -- `throwTo` will not be blocked.
+    throwTo tid (userError "error")
+    atomically $ takeTMVar var
+
+unit_catch_throwTo_masking_state_async_mayblock_IO :: MaskingState -> Property
+unit_catch_throwTo_masking_state_async_mayblock_IO =
+    ioProperty . prop_catch_throwTo_masking_state_async_mayblock
+
+unit_catch_throwTo_masking_state_async_mayblock_ST :: MaskingState -> Property
+unit_catch_throwTo_masking_state_async_mayblock_ST ms =
+    runSimOrThrow (prop_catch_throwTo_masking_state_async_mayblock ms)
 
 --
 -- Utils
