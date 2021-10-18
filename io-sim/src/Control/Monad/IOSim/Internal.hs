@@ -1064,8 +1064,7 @@ schedule thread@Thread{
     ThrowTo e tid' _ | tid' == tid -> do
       -- Throw to ourself is equivalent to a synchronous throw,
       -- and works irrespective of masking state since it does not block.
-      let thread' = thread { threadControl = ThreadControl (Throw e) ctl
-                           , threadMasking = MaskedInterruptible }
+      let thread' = thread { threadControl = ThreadControl (Throw e) ctl }
       trace <- schedule thread' simstate
       return (SimTrace time tid tlbl (EventThrowTo e tid) trace)
 
@@ -1096,7 +1095,7 @@ schedule thread@Thread{
           let adjustTarget t@Thread{ threadControl = ThreadControl _ ctl' } =
                 t { threadControl = ThreadControl (Throw e) ctl'
                   , threadBlocked = False
-                  , threadMasking = MaskedInterruptible }
+                  }
               simstate'@SimState { threads = threads' }
                          = snd (unblockThreads [tid'] simstate)
               threads''  = Map.adjust adjustTarget tid' threads'
