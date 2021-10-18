@@ -42,7 +42,7 @@ import           GHC.Records
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
 
-import           Cardano.Binary (FromCBOR, ToCBOR)
+import           Cardano.Binary (Annotator, FromCBOR, ToCBOR)
 
 import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Allegra.Translation ()
@@ -131,6 +131,8 @@ class ( SL.ShelleyBasedEra era
       , HasField "_rho" (Core.PParams era) UnitInterval
       , HasField "_tau" (Core.PParams era) UnitInterval
 
+      , Core.ValidateScript era
+
       , FromCBOR (Core.PParams era)
       , ToCBOR (Core.PParams era)
 
@@ -142,7 +144,12 @@ class ( SL.ShelleyBasedEra era
 
       , NoThunks (Core.TranslationContext era)
 
+      , FromCBOR (Annotator (Core.Witnesses era))
       , ToCBOR (Core.Witnesses era)
+
+      , Eq (TxSeq era)
+      , Show (TxSeq era)
+      , FromCBOR (Annotator (TxSeq era))
 
       ) => ShelleyBasedEra era where
 

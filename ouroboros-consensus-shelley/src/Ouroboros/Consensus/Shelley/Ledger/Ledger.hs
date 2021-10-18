@@ -79,12 +79,13 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
 
+import qualified Cardano.Ledger.BHeaderView as SL (BHeaderView)
+import qualified Cardano.Ledger.Chain as Chain
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL (makeHeaderView)
 import qualified Control.State.Transition.Extended as STS
-
-import qualified Cardano.Ledger.Shelley.Rules.Chain as SL (PredicateFailure)
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -373,7 +374,7 @@ applyHelper ::
      (ShelleyBasedEra era, Monad m)
   => (   SL.Globals
       -> SL.NewEpochState era
-      -> SL.Block era
+      -> SL.Block SL.BHeaderView era
       -> m (LedgerResult
               (LedgerState (ShelleyBlock era))
               (SL.NewEpochState era)
@@ -389,7 +390,18 @@ applyHelper f cfg blk TickedShelleyLedgerState{
                           tickedShelleyLedgerTransition
                         , tickedShelleyLedgerState
                         } = do
-    ledgerResult <- f globals tickedShelleyLedgerState (shelleyBlockRaw blk)
+    ledgerResult <-
+      f
+        globals
+        tickedShelleyLedgerState
+        ( let b  = shelleyBlockRaw blk
+              h' = SL.makeHeaderView (SL.bheader b)
+          -- Jared Corduan explains that the " Unsafe " here ultimately only
+          -- means the value must not be serialized. We're only passing it to
+          -- 'STS.applyBlockOpts', which does not serialize it. So this is a
+          -- safe use.
+          in SL.UnsafeUnserialisedBlock h' (SL.bbody b)
+        )
 
     return $ ledgerResult <&> \newNewEpochState -> ShelleyLedgerState {
         shelleyLedgerTip = NotOrigin ShelleyTip {
@@ -482,10 +494,13 @@ instance ShelleyBasedEra era => BasicEnvelopeValidation (ShelleyBlock era) where
 
 instance ShelleyBasedEra era => ValidateEnvelope (ShelleyBlock era) where
   type OtherHeaderEnvelopeError (ShelleyBlock era) =
-    SL.PredicateFailure (SL.CHAIN era)
+    Chain.ChainPredicateFailure era
 
   additionalEnvelopeChecks cfg (TickedPraosLedgerView ledgerView) hdr =
-      SL.chainChecks globals (SL.lvChainChecks ledgerView) (shelleyHeaderRaw hdr)
+      SL.chainChecks
+        globals
+        (SL.lvChainChecks ledgerView)
+        (SL.makeHeaderView (shelleyHeaderRaw hdr))
     where
       globals = shelleyLedgerGlobals (configLedger cfg)
 
