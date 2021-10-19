@@ -15,7 +15,10 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
 import           Cardano.Slotting.Slot (SlotNo (..))
+import           Ouroboros.Network.DeltaQ ( SizeInBytes )
 import           Ouroboros.Network.NodeToNode ( ConnectionId (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric.Type
+
 
 -- The maximum numbers of slots we will store data for.
 -- On some chains sometimes this corresponds to 1h
@@ -24,13 +27,28 @@ maxEntriesToTrack :: Int
 maxEntriesToTrack = 180
 
 
-type ReportHeaderMetricsSTM m = (SlotNo -> Time -> STM m ())
-
 type SlotMetric p = IntPSQ SlotNo (p, Time)
 
 data PeerMetrics m p = PeerMetrics {
     headerMetrics :: StrictTVar m (SlotMetric p)
+  , fetchedMetrics :: StrictTVar m (SlotMetric (p, SizeInBytes))
   }
+
+reportMetric
+    :: forall m p.
+       ( MonadSTM m )
+     => PeerMetrics m p
+     -> ReportPeerMetrics m (ConnectionId p)
+reportMetric peerMetrics =
+  ReportPeerMetrics (addHeaderMetric peerMetrics)
+                    (addFetchedMetric peerMetrics)
+
+nullMetric
+    :: MonadSTM m
+    => ReportPeerMetrics m p
+nullMetric =
+  ReportPeerMetrics (\_ _ _   -> pure ())
+                    (\_ _ _ _ -> pure ())
 
 slotMetricKey :: SlotNo -> Int
 slotMetricKey (SlotNo s) = fromIntegral s
@@ -39,12 +57,24 @@ addHeaderMetric
     :: forall m p.
        ( MonadSTM m )
     => PeerMetrics m p
-    -> (ConnectionId p)
+    -> ConnectionId p
     -> SlotNo
     -> Time
     -> STM m ()
-addHeaderMetric PeerMetrics{headerMetrics} con slotNo time =
-     addMetrics headerMetrics (remoteAddress con) slotNo time
+addHeaderMetric PeerMetrics{headerMetrics} con =
+     addMetrics headerMetrics (remoteAddress con)
+
+addFetchedMetric
+    :: forall m p.
+       ( MonadSTM m )
+    => PeerMetrics m p
+    -> ConnectionId p
+    -> SizeInBytes
+    -> SlotNo
+    -> Time
+    -> STM m ()
+addFetchedMetric  PeerMetrics{fetchedMetrics} con bytes =
+     addMetrics fetchedMetrics (remoteAddress con, bytes)
 
 
 getHeaderMetrics
@@ -52,6 +82,12 @@ getHeaderMetrics
     => PeerMetrics m p
     -> STM m (SlotMetric p)
 getHeaderMetrics PeerMetrics{headerMetrics} = readTVar headerMetrics
+
+getFetchedMetrics
+    :: MonadSTM m
+    => PeerMetrics m p
+    -> STM m (SlotMetric (p, SizeInBytes))
+getFetchedMetrics PeerMetrics{fetchedMetrics} = readTVar fetchedMetrics
 
 addMetrics
     :: forall m p.  ( MonadSTM m )
@@ -84,7 +120,8 @@ newPeerMetric
     => m (PeerMetrics m p)
 newPeerMetric = do
   hs <- newTVarIO Pq.empty
-  return $ PeerMetrics hs
+  bs <- newTVarIO Pq.empty
+  return $ PeerMetrics hs bs
 
 -- Returns a Map which counts the number of times a given peer
 -- was the first to present us with a block/header.
@@ -105,6 +142,27 @@ upstreamyness = Pq.fold' count Map.empty
         fn :: Maybe Int -> Maybe Int
         fn Nothing = Just 1
         fn (Just c) = Just $! c + 1
+
+
+-- Returns a Map which counts the number of bytes downloaded
+-- for a given peer.
+fetchyness
+    :: forall p.  ( Ord p )
+    => SlotMetric (p, SizeInBytes)
+    -> Map p Int
+fetchyness = Pq.fold' count Map.empty
+  where
+    count :: Int
+          -> SlotNo
+          -> ((p, SizeInBytes), Time)
+          -> Map p Int
+          -> Map p Int
+    count _ _ ((peer, bytes),_) m =
+        Map.alter fn peer m
+      where
+        fn :: Maybe Int -> Maybe Int
+        fn Nothing = Just $ fromIntegral bytes
+        fn (Just oldBytes) = Just $! oldBytes + fromIntegral bytes
 
 
 
