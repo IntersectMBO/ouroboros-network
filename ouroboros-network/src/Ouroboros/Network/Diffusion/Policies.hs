@@ -40,9 +40,10 @@ closeConnectionTimeout = 120
 
 simplePeerSelectionPolicy :: forall m. MonadSTM m
                           => StrictTVar m StdGen
+                          -> STM m ChurnMode
                           -> PeerMetrics m SockAddr
                           -> PeerSelectionPolicy SockAddr m
-simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
+simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
       policyPickKnownPeersForGossip = simplePromotionPolicy,
       policyPickColdPeersToPromote  = simplePromotionPolicy,
       policyPickWarmPeersToPromote  = simplePromotionPolicy,
@@ -72,7 +73,12 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
 
     hotDemotionPolicy :: PickPolicy SockAddr m
     hotDemotionPolicy _ _ available pickNum = do
-        scores <- upstreamyness <$> (getHeaderMetrics metrics)
+        mode <- getChurnMode
+        scores <- case mode of
+                       ChurnModeNormal ->
+                           upstreamyness <$> getHeaderMetrics metrics
+                       ChurnModeBulkSync ->
+                           fetchyness <$> getFetchedMetrics metrics
         available' <- addRand available
         return $ Set.fromList
              . map fst

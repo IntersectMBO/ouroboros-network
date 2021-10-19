@@ -491,6 +491,7 @@ traceNum TraceDemoteHotDone{}         = 22
 traceNum TraceDemoteAsynchronous{}    = 23
 traceNum TraceGovernorWakeup{}        = 24
 traceNum TraceChurnWait{}             = 25
+traceNum TraceChurnMode{}             = 26
 
 allTraceNames :: Map Int String
 allTraceNames =
