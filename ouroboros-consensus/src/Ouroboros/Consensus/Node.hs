@@ -73,6 +73,8 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode,
                      MiniProtocolParameters (..), NodeToNodeVersionData (..),
                      RemoteAddress, combineVersions,
                      defaultMiniProtocolParameters)
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..),
+                     newPeerMetric, addHeaderMetric)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 
 import           Ouroboros.Consensus.Block
@@ -320,13 +322,15 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       nodeKernel <- initNodeKernel nodeKernelArgs
       rnNodeKernelHook registry nodeKernel
 
-      let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel
+      peerMetrics <- newPeerMetric
+      let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
           ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
           diffusionApplications = mkDiffusionApplications
                                     (miniProtocolParameters nodeKernelArgs)
                                     ntnApps
                                     ntcApps
                                     nodeKernel
+                                    peerMetrics
 
       llrnRunDataDiffusion registry diffusionApplications
   where
@@ -342,15 +346,17 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
     mkNodeToNodeApps
       :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
       -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> PeerMetrics m addrNTN
       -> BlockNodeToNodeVersion blk
       -> NTN.Apps m (ConnectionId addrNTN) ByteString ByteString ByteString ByteString ByteString ()
-    mkNodeToNodeApps nodeKernelArgs nodeKernel version =
+    mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics version =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
           NTN.byteLimits
           llrnChainSyncTimeout
+          (addHeaderMetric peerMetrics)
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps
@@ -376,11 +382,12 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ()
          )
       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      -> PeerMetrics m addrNTN
       -> DiffusionApplications
            addrNTN addrNTC
            versionDataNTN versionDataNTC
            m
-    mkDiffusionApplications miniProtocolParams ntnApps ntcApps kernel =
+    mkDiffusionApplications miniProtocolParams ntnApps ntcApps kernel peerMetrics =
       DiffusionApplications {
           daResponderApplication = combineVersions [
               simpleSingletonVersions
@@ -405,6 +412,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
             ]
         , daErrorPolicies = consensusErrorPolicy (Proxy @blk)
         , daLedgerPeersCtx = LedgerPeersConsensusInterface (getPeersFromCurrentLedgerAfterSlot kernel)
+        , daPeerMetrics = peerMetrics
         }
 
 -- | Did the ChainDB already have existing clean-shutdown marker on disk?
