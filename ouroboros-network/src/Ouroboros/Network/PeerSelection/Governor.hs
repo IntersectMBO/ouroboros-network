@@ -59,6 +59,7 @@ import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers       as Kn
 import qualified Ouroboros.Network.PeerSelection.Governor.Monitor          as Monitor
 import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers        as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.BlockFetch (FetchMode (..))
 
 
@@ -585,12 +586,13 @@ peerChurnGovernor :: forall m peeraddr.
                      , MonadDelay m
                      )
                   => Tracer m (TracePeerSelection peeraddr)
+                  -> PeerMetrics m peeraddr
                   -> StdGen
                   -> STM m FetchMode
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
                   -> m Void
-peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
+peerChurnGovernor tracer _metrics inRng getFetchMode base peerSelectionVar = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime

@@ -62,6 +62,7 @@ import           Ouroboros.Network.NodeToNode ( NodeToNodeVersion (..)
 import qualified Ouroboros.Network.NodeToNode   as NodeToNode
 import           Ouroboros.Network.PeerSelection.LedgerPeers ( LedgerPeersConsensusInterface (..)
                                                              , TraceLedgerPeers)
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.Socket ( ConnectionId (..)
                                           , NetworkMutableState
                                           , newNetworkMutableState
@@ -165,6 +166,7 @@ data DiffusionApplications ntnAddr ntcAddr ntnVersionData ntcVersionData m = Dif
 
     ,  daLedgerPeersCtx :: LedgerPeersConsensusInterface m
       -- ^ Interface used to get peers from the current ledger.
+    , daPeerMetrics    :: PeerMetrics m ntnAddr
     }
 
 data DiffusionFailure = UnsupportedLocalSocketType

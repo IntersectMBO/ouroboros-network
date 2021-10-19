@@ -78,6 +78,7 @@ library
                        Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.LocalRootPeers
+                       Ouroboros.Network.PeerSelection.PeerMetric
                        Ouroboros.Network.PeerSelection.RelayAccessPoint
                        Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
