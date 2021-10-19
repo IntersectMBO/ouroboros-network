@@ -587,12 +587,13 @@ peerChurnGovernor :: forall m peeraddr.
                      )
                   => Tracer m (TracePeerSelection peeraddr)
                   -> PeerMetrics m peeraddr
+                  -> StrictTVar m ChurnMode
                   -> StdGen
                   -> STM m FetchMode
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
                   -> m Void
-peerChurnGovernor tracer _metrics inRng getFetchMode base peerSelectionVar = do
+peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -600,34 +601,42 @@ peerChurnGovernor tracer _metrics inRng getFetchMode base peerSelectionVar = do
   -- The intention is to give local root peers give head start and avoid
   -- giving advantage to hostile and quick root peers.
   threadDelay 3
-  atomically increaseActivePeers
+  mode <- atomically updateChurnMode
+  atomically $ increaseActivePeers mode
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= go
 
   where
 
+    updateChurnMode :: STM m ChurnMode
+    updateChurnMode = do
+        fm <- getFetchMode
+        let mode = case fm of
+                        FetchModeDeadline -> ChurnModeNormal
+                        FetchModeBulkSync -> ChurnModeBulkSync
+        writeTVar churnModeVar mode
+        return mode
+
     -- TODO: #3396 revisit the policy for genesis
-    increaseActivePeers :: STM m ()
-    increaseActivePeers =  do
-        mode <- getFetchMode
+    increaseActivePeers :: ChurnMode -> STM m ()
+    increaseActivePeers mode =  do
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
               case mode of
-                   FetchModeDeadline ->
+                   ChurnModeNormal  ->
                        targetNumberOfActivePeers base
-                   FetchModeBulkSync ->
+                   ChurnModeBulkSync ->
                        min 2 (targetNumberOfActivePeers base)
         })
 
-    decreaseActivePeers :: STM m ()
-    decreaseActivePeers =  do
-        mode <- getFetchMode
+    decreaseActivePeers :: ChurnMode -> STM m ()
+    decreaseActivePeers mode =  do
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
               case mode of
-                   FetchModeDeadline ->
+                   ChurnModeNormal ->
                        decrease $ targetNumberOfActivePeers base
-                   FetchModeBulkSync ->
+                   ChurnModeBulkSync ->
                        min 1 (targetNumberOfActivePeers base - 1)
         })
 
@@ -636,15 +645,18 @@ peerChurnGovernor tracer _metrics inRng getFetchMode base peerSelectionVar = do
     go !rng = do
       startTs <- getMonotonicTime
 
+      churnMode <- atomically updateChurnMode
+      traceWith tracer $ TraceChurnMode churnMode
+
       -- Purge the worst active peer(s).
-      atomically decreaseActivePeers
+      atomically $ decreaseActivePeers churnMode
 
       -- Short delay, we may have no active peers right now
       threadDelay 1
 
       -- Pick new active peer(s) based on the best performing established
       -- peers.
-      atomically increaseActivePeers
+      atomically $ increaseActivePeers churnMode
 
       -- Give the promotion process time to start
       threadDelay 1
