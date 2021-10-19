@@ -25,7 +25,7 @@ import           Data.Functor.Identity
 --import qualified Data.Hashable as H
 import           Data.Monoid
 import qualified Data.List as List
-import           Data.Maybe (isJust)
+import           Data.Maybe (isJust, fromMaybe)
 import qualified Data.Foldable as Foldable
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as Map
@@ -42,16 +42,6 @@ import           Control.Monad.ST.Strict (ST)
 --import           Control.Concurrent.STM (STM, TVar)
 --import qualified Control.Concurrent.STM as STM
 import           Control.Exception
-
-
---
--- Diffs
---------
-
-class Monoid (Diff a) => Changes a where
-  data Diff a
-
-  applyDiff :: a -> Diff a -> a
 
 
 --
@@ -132,62 +122,90 @@ newtype PMapRWU k v = PMapRWU (PMapRep k v)
   deriving (Eq, Show, MappingR, MappingW, MappingU)
 
 
+castPMapRWToRO :: PMapRW  k v -> PMapRO k v
+castPMapRWToRO (PMapRW m) = PMapRO m
+
+castPMapRWUToRO :: PMapRWU k v -> PMapRO k v
+castPMapRWUToRO (PMapRWU m) = PMapRO m
+
+
+--
+-- Diffs
+--------
+
+class Monoid (Diff a) => Changes a where
+  type Diff a
+
+  applyDiff :: a -> Diff a -> a
+
+
 --
 -- Diffs on mappings
 --------------------
 
-data MapRWDiffElem a = MapRWElemDelete
+newtype DiffMapRW k v = DiffMapRW (Map.Map k (DiffMapRWElem v))
+  deriving (Eq, Show)
+
+data DiffMapRWElem a = MapRWElemDelete
                      | MapRWElemInsert !a
   deriving (Eq, Show)
 
-instance Semigroup (MapRWDiffElem a) where
+instance Semigroup (DiffMapRWElem a) where
   _ <> y = y --TODO: check if this should be left or right biased
 
-instance Ord k => Changes (MapRW k v) where
-  newtype Diff (MapRW k v) = MapRWDiff (Map.Map k (MapRWDiffElem v))
-    deriving (Eq, Show)
+instance Ord k => Monoid (DiffMapRW k v) where
+  mempty = DiffMapRW Map.empty
 
-  applyDiff :: MapRW k v -> Diff (MapRW k v) -> MapRW k v
-  applyDiff (MapRW m) (MapRWDiff md) =
-      MapRW (Map.merge
-               Map.preserveMissing
-               (Map.mapMaybeMissing      insertDiffElem)
-               (Map.zipWithMaybeMatched  applyDiffElem)
-               m
-               md)
-    where
-      insertDiffElem :: k -> MapRWDiffElem a -> Maybe a
-      insertDiffElem _    MapRWElemDelete     = Nothing
-      insertDiffElem _ (  MapRWElemInsert x)  = Just x
-
-      applyDiffElem :: k -> a -> MapRWDiffElem a -> Maybe a
-      applyDiffElem _ _    MapRWElemDelete     = Nothing
-      applyDiffElem _ _ (  MapRWElemInsert x)  = Just x
-
-instance Ord k => Monoid (Diff (MapRW k v)) where
-  mempty = MapRWDiff Map.empty
-
-instance Ord k => Semigroup (Diff (MapRW k v)) where
-  MapRWDiff a <> MapRWDiff b = MapRWDiff (Map.unionWith (<>) a b)
-
-
-newtype DiffMapRW k v = DiffMapRW (Diff (MapRW k v))
-  deriving (Eq, Show, Semigroup, Monoid)
+instance Ord k => Semigroup (DiffMapRW k v) where
+  DiffMapRW a <> DiffMapRW b = DiffMapRW (Map.unionWith (<>) a b)
 
 instance MappingW DiffMapRW where
-  insert k v (DiffMapRW (MapRWDiff m)) =
-    DiffMapRW (MapRWDiff (Map.insert k (MapRWElemInsert v) m))
+  insert k v (DiffMapRW m) =
+    DiffMapRW (Map.insert k (MapRWElemInsert v) m)
 
-  delete k (DiffMapRW (MapRWDiff m)) =
-    DiffMapRW (MapRWDiff (Map.insert k  MapRWElemDelete m))
+  delete k (DiffMapRW m) =
+    DiffMapRW (Map.insert k  MapRWElemDelete m)
+
+applyDiffMapRW :: Ord k => MapRW k v -> DiffMapRW k v -> MapRW k v
+applyDiffMapRW (MapRW m) (DiffMapRW md) =
+    MapRW (Map.merge
+             Map.preserveMissing
+             (Map.mapMaybeMissing      insertDiffElem)
+             (Map.zipWithMaybeMatched  applyDiffElem)
+             m
+             md)
+  where
+    insertDiffElem :: k -> DiffMapRWElem a -> Maybe a
+    insertDiffElem _    MapRWElemDelete     = Nothing
+    insertDiffElem _ (  MapRWElemInsert x)  = Just x
+
+    applyDiffElem :: k -> a -> DiffMapRWElem a -> Maybe a
+    applyDiffElem _ _    MapRWElemDelete     = Nothing
+    applyDiffElem _ _ (  MapRWElemInsert x)  = Just x
 
 
-data MapRWUDiffElem a = MapRWUElemDelete
+instance Ord k => Changes (MapRW k v) where
+  type Diff (MapRW k v) = DiffMapRW k v
+  applyDiff = applyDiffMapRW
+
+instance Ord k => Changes (PMapRW k v) where
+  type Diff (PMapRW k v) = DiffMapRW k v
+
+  applyDiff (PMapRW (PMapRep m s)) dm =
+      PMapRW (PMapRep m' s)
+    where
+      MapRW m' = applyDiffMapRW (MapRW m) dm
+
+
+newtype DiffMapRWU k v = DiffMapRWU (Map.Map k (DiffMapRWUElem v))
+    deriving (Eq, Show)
+
+data DiffMapRWUElem a = MapRWUElemDelete
                       | MapRWUElemInsert !a
                       | MapRWUElemUpdate !a
   deriving (Eq, Show)
 
-instance Semigroup a => Semigroup (MapRWUDiffElem a) where
+instance Semigroup a => Semigroup (DiffMapRWUElem a) where
   _                  <> MapRWUElemDelete   = MapRWUElemDelete
   _                  <> MapRWUElemInsert y = MapRWUElemInsert  y
 
@@ -195,49 +213,55 @@ instance Semigroup a => Semigroup (MapRWUDiffElem a) where
   MapRWUElemInsert x <> MapRWUElemUpdate y = MapRWUElemInsert (x <> y)
   MapRWUElemUpdate x <> MapRWUElemUpdate y = MapRWUElemUpdate (x <> y)
 
-instance (Ord k, Semigroup v) => Changes (MapRWU k v) where
-  newtype Diff (MapRWU k v) = MapRWUDiff (Map.Map k (MapRWUDiffElem v))
-    deriving (Eq, Show)
+instance (Ord k, Semigroup v) => Monoid (DiffMapRWU k v) where
+  mempty = DiffMapRWU Map.empty
 
-  applyDiff :: MapRWU k v -> Diff (MapRWU k v) -> MapRWU k v
-  applyDiff (MapRWU m) (MapRWUDiff md) =
-      MapRWU (Map.merge
-                Map.preserveMissing
-                (Map.mapMaybeMissing      insertDiffElem)
-                (Map.zipWithMaybeMatched  applyDiffElem)
-                m
-                md)
-    where
-      insertDiffElem :: k -> MapRWUDiffElem v -> Maybe v
-      insertDiffElem _    MapRWUElemDelete     = Nothing
-      insertDiffElem _ (  MapRWUElemInsert x)  = Just x
-      insertDiffElem _ (  MapRWUElemUpdate x)  = Just x
-
-      applyDiffElem :: k -> v -> MapRWUDiffElem v -> Maybe v
-      applyDiffElem _ _    MapRWUElemDelete     = Nothing
-      applyDiffElem _ _ (  MapRWUElemInsert y)  = Just y
-      applyDiffElem _ x (  MapRWUElemUpdate y)  = Just (x<>y)
-
-instance (Ord k, Semigroup v) => Monoid (Diff (MapRWU k v)) where
-  mempty = MapRWUDiff Map.empty
-
-instance (Ord k, Semigroup v) => Semigroup (Diff (MapRWU k v)) where
-  MapRWUDiff a <> MapRWUDiff b = MapRWUDiff (Map.unionWith (<>) a b)
-
-
-newtype DiffMapRWU k v = DiffMapRWU (Diff (MapRWU k v))
-  deriving (Eq, Show, Semigroup, Monoid)
+instance (Ord k, Semigroup v) => Semigroup (DiffMapRWU k v) where
+  DiffMapRWU a <> DiffMapRWU b = DiffMapRWU (Map.unionWith (<>) a b)
 
 instance MappingW DiffMapRWU where
-  insert k v (DiffMapRWU (MapRWUDiff m)) =
-    DiffMapRWU (MapRWUDiff (Map.insert k (MapRWUElemInsert v) m))
+  insert k v (DiffMapRWU m) =
+    DiffMapRWU (Map.insert k (MapRWUElemInsert v) m)
 
-  delete k (DiffMapRWU (MapRWUDiff m)) =
-    DiffMapRWU (MapRWUDiff (Map.insert k  MapRWUElemDelete m))
+  delete k (DiffMapRWU m) =
+    DiffMapRWU (Map.insert k  MapRWUElemDelete m)
 
 instance MappingU DiffMapRWU where
-  update k v (DiffMapRWU (MapRWUDiff m)) =
-    DiffMapRWU (MapRWUDiff (Map.insertWith (<>) k (MapRWUElemUpdate v) m))
+  update k v (DiffMapRWU m) =
+    DiffMapRWU (Map.insertWith (<>) k (MapRWUElemUpdate v) m)
+
+applyDiffMapRWU :: forall k v.
+                   (Ord k, Semigroup v)
+                => MapRWU k v -> Diff (MapRWU k v) -> MapRWU k v
+applyDiffMapRWU (MapRWU m) (DiffMapRWU md) =
+    MapRWU (Map.merge
+              Map.preserveMissing
+              (Map.mapMaybeMissing      insertDiffElem)
+              (Map.zipWithMaybeMatched  applyDiffElem)
+              m
+              md)
+  where
+    insertDiffElem :: k -> DiffMapRWUElem v -> Maybe v
+    insertDiffElem _    MapRWUElemDelete     = Nothing
+    insertDiffElem _ (  MapRWUElemInsert x)  = Just x
+    insertDiffElem _ (  MapRWUElemUpdate x)  = Just x
+
+    applyDiffElem :: k -> v -> DiffMapRWUElem v -> Maybe v
+    applyDiffElem _ _    MapRWUElemDelete     = Nothing
+    applyDiffElem _ _ (  MapRWUElemInsert y)  = Just y
+    applyDiffElem _ x (  MapRWUElemUpdate y)  = Just (x<>y)
+
+instance (Ord k, Semigroup v) => Changes (MapRWU k v) where
+  type Diff (MapRWU k v) = DiffMapRWU k v
+  applyDiff = applyDiffMapRWU
+
+instance (Ord k, Semigroup v) => Changes (PMapRWU k v) where
+  type Diff (PMapRWU k v) = DiffMapRWU k v
+
+  applyDiff (PMapRWU (PMapRep m s)) dm =
+      PMapRWU (PMapRep m' s)
+    where
+      MapRWU m' = applyDiffMapRWU (MapRWU m) dm
 
 
 --
@@ -256,7 +280,7 @@ instance MappingW PTMapRW where
   delete k   (PTMapRW m d) = PTMapRW (delete k   m) (delete k   d)
 
 mkPTMapRW :: PMapRW k v -> PTMapRW k v
-mkPTMapRW pm = PTMapRW pm (DiffMapRW (MapRWDiff Map.empty))
+mkPTMapRW pm = PTMapRW pm (DiffMapRW Map.empty)
 
 getDiffMapRW :: PTMapRW k v -> DiffMapRW k v
 getDiffMapRW (PTMapRW _ d) = d
@@ -276,7 +300,7 @@ instance MappingU PTMapRWU where
   update k v (PTMapRWU m d) = PTMapRWU (update k v m) (update k v d)
 
 mkPTMapRWU :: PMapRWU k v -> PTMapRWU k v
-mkPTMapRWU pm = PTMapRWU pm (DiffMapRWU (MapRWUDiff Map.empty))
+mkPTMapRWU pm = PTMapRWU pm (DiffMapRWU Map.empty)
 
 getDiffMapRWU :: PTMapRWU k v -> DiffMapRWU k v
 getDiffMapRWU (PTMapRWU _ d) = d
@@ -322,6 +346,10 @@ newtype ConstTable a (t :: TableType) k v where
        ConstTable :: a -> ConstTable a t k v
   deriving Show
 
+data PairTable tablea tableb (t :: TableType) k v =
+       PairTable (tablea t k v) (tableb t k v)
+  deriving Show
+
 
 data TableKeySet (t :: TableType) k v where
        TableKeySet :: Set.Set k
@@ -337,9 +365,9 @@ data AnnTable table a (t :: TableType) k v =
 
 
 data TableReadSet (t :: TableType) k v where
-     TableRO  :: PMapRO  k v -> TableReadSet TableTypeRO  k v
-     TableRW  :: PMapRW  k v -> TableReadSet TableTypeRW  k v
-     TableRWU :: PMapRWU k v -> TableReadSet TableTypeRWU k v
+     TableReadSetRO  :: PMapRO  k v -> TableReadSet TableTypeRO  k v
+     TableReadSetRW  :: PMapRW  k v -> TableReadSet TableTypeRW  k v
+     TableReadSetRWU :: PMapRWU k v -> TableReadSet TableTypeRWU k v
 
 
 data TrackingTable (t :: TableType) k v where
@@ -354,14 +382,14 @@ data TableDiff (t :: TableType) k v where
      TableDiffRWU :: DiffMapRWU k v -> TableDiff TableTypeRWU k v
 
 mkTableReadSet :: Ord k => TableTag t v -> TableKeySet t k v -> Map.Map k v -> TableReadSet t k v
-mkTableReadSet TableTagRO  (TableKeySet ks) m = TableRO  (PMapRO  (mkPMapRep m ks))
-mkTableReadSet TableTagRW  (TableKeySet ks) m = TableRW  (PMapRW  (mkPMapRep m ks))
-mkTableReadSet TableTagRWU (TableKeySet ks) m = TableRWU (PMapRWU (mkPMapRep m ks))
+mkTableReadSet TableTagRO  (TableKeySet ks) m = TableReadSetRO  (PMapRO  (mkPMapRep m ks))
+mkTableReadSet TableTagRW  (TableKeySet ks) m = TableReadSetRW  (PMapRW  (mkPMapRep m ks))
+mkTableReadSet TableTagRWU (TableKeySet ks) m = TableReadSetRWU (PMapRWU (mkPMapRep m ks))
 
 mkTrackingTable :: TableReadSet t k v -> TrackingTable t k v
-mkTrackingTable (TableRO  m) = TrackingTableRO  m
-mkTrackingTable (TableRW  m) = TrackingTableRW  (mkPTMapRW  m)
-mkTrackingTable (TableRWU m) = TrackingTableRWU (mkPTMapRWU m)
+mkTrackingTable (TableReadSetRO  m) = TrackingTableRO  m
+mkTrackingTable (TableReadSetRW  m) = TrackingTableRW  (mkPTMapRW  m)
+mkTrackingTable (TableReadSetRWU m) = TrackingTableRWU (mkPTMapRWU m)
 
 getTableDiff :: TrackingTable t k v -> TableDiff t k v
 getTableDiff (TrackingTableRO _)  = TableDiffRO
@@ -444,13 +472,29 @@ class HasTables state => HasOnlyTables state where
               -> state table
   constTables f = runIdentity (traverse0Tables (pure . f))
 
-  zipTables  :: (forall (t :: TableType) k v.
+  zipTables  :: forall table table' table''.
+                (forall (t :: TableType) k v.
                         Ord k
                      => StateTableKeyConstraint   state k
                      => StateTableValueConstraint state v
                      => TableTag t v -> table t k v -> table' t k v -> table'' t k v)
              -> state table -> state table' -> state table''
   zipTables f a b = runIdentity (traverse2Tables (\t x y -> pure (f t x y)) a b)
+
+  zip3Tables  :: forall table table' table'' table'''.
+                 (forall (t :: TableType) k v.
+                        Ord k
+                     => StateTableKeyConstraint   state k
+                     => StateTableValueConstraint state v
+                     => TableTag t v -> table t k v -> table' t k v -> table'' t k v -> table''' t k v)
+             -> state table -> state table' -> state table'' -> state table'''
+  zip3Tables f a b c = zip3rd (zippair a b) c
+    where
+      zippair :: state table -> state table' -> state (PairTable table table')
+      zippair = zipTables (\_ -> PairTable)
+
+      zip3rd :: state (PairTable table table') -> state table'' -> state table'''
+      zip3rd = zipTables (\t (PairTable x y) z -> f t x y z)
 
 
 class (HasTables state, HasOnlyTables (Tables state))
@@ -553,39 +597,6 @@ instance HasOnDiskTables state => Semigroup (TableSnapshots state) where
       fixup_g _ (SnapshotOfTable (KeepTable'       t)) _ = SnapshotOfTable t
       fixup_g _ (SnapshotOfTable (SnapshotOfTable' t)) _ = SnapshotOfTable t
 
-{-
-data TableId (t :: TableType) k v where
-     TableId :: TableTag t v -> Int -> TableId t k v
-  deriving Show
-
-data AnyTableId where
-     AnyTableId :: TableId t k v -> AnyTableId
-
-deriving instance Show AnyTableId
-
-
-enumerateTables :: forall state. HasOnlyTables state => state TableId
-enumerateTables =
-    evalState enumerate 0
-  where
-    enumerate :: State Int (state TableId)
-    enumerate =
-      traverse0Tables $ \t -> do
-        i <- State.get
-        State.modify' (+1)
-        pure $! TableId t i
-
-listTables :: forall state. HasOnlyTables state => state TableId -> [AnyTableId]
-listTables s =
-    reverse (execState (collect s) [])
-  where
-    collect :: state TableId -> State [AnyTableId] ()
-    collect =
-      traverseTables_ $ \_t i -> State.modify (AnyTableId i :)
-
-takeSnapshotTableId :: TableId t k v -> TableId TableTypeRO k v
-takeSnapshotTableId (TableId _t i) = TableId TableTagRO i
--}
 
 applyTableSnapshots
   :: forall state map.
@@ -776,17 +787,26 @@ invariantDbChangelog DbChangelog{..} =
     -- The disk anchor can be earlier than or the same as the main state anchor
  && dbChangelogDiskAnchor <= dbChangelogStateAnchor
 
-    -- The disk diff sequence numbers must either be empty or must include the
-    -- state sequence numbers as a suffix
- && (let isEmptyOrSuffix :: TableTag t v -> SeqTableDiff state t k v -> All
-         isEmptyOrSuffix _  SeqTableDiffRO       = All True
-         isEmptyOrSuffix _ (SeqTableDiffRW  seq) = All $
-             FT.null seq
-          || seqSeqNos dbChangelogStates `List.isSuffixOf` sseqSeqNos seq
-         isEmptyOrSuffix _ (SeqTableDiffRWU seq) = All $
-             FT.null seq
-          || seqSeqNos dbChangelogStates `List.isSuffixOf` sseqSeqNos seq
-      in getAll (foldMapTables isEmptyOrSuffix dbChangelogTableDiffs))
+    -- The disk diff sequence numbers must match the state sequence numbers.
+    -- Depending on whether dbChangelogDiskAnchor == dbChangelogStateAnchor or
+    -- not, then one is a suffix of the other, or the other way around.
+ && (let isSuffix :: TableTag t v -> SeqTableDiff state t k v -> All
+         isSuffix _  SeqTableDiffRO = All True
+         isSuffix _ (SeqTableDiffRW  seq)
+           | dbChangelogDiskAnchor == dbChangelogStateAnchor
+           = All $ sseqSeqNos seq `List.isSuffixOf` seqSeqNos dbChangelogStates
+
+           | otherwise
+           = All $ seqSeqNos dbChangelogStates `List.isSuffixOf` sseqSeqNos seq
+
+         isSuffix _ (SeqTableDiffRWU seq)
+           | dbChangelogDiskAnchor == dbChangelogStateAnchor
+           = All $ sseqSeqNos seq `List.isSuffixOf` seqSeqNos dbChangelogStates
+
+           | otherwise
+           = All $ seqSeqNos dbChangelogStates `List.isSuffixOf` sseqSeqNos seq
+
+      in getAll (foldMapTables isSuffix dbChangelogTableDiffs))
 
     -- The disk anchor must be earlier than the disk diff sequence numbers and
     -- the disk diff sequence numbers must be increasing. (This is not already
@@ -806,15 +826,21 @@ invariantDbChangelog DbChangelog{..} =
                      -> TableTag t v -> SeqTableDiff state t k v -> All
          isSeqMember _     _  SeqTableDiffRO       = All True
          isSeqMember seqno _ (SeqTableDiffRW  seq) = All $
-           isJust (splitSSeq seqno seq)
+           isJust (splitAtAfterSSeq seqno seq)
          isSeqMember seqno _ (SeqTableDiffRWU seq) = All $
-           isJust (splitSSeq seqno seq)
+           isJust (splitAtAfterSSeq seqno seq)
       in and [ getAll (foldMapTables (isSeqMember seqno) dbChangelogTableDiffs)
              | seqno <- sseqSeqNos dbChangelogSnapshots ])
 
+-- TODO: check
+-- &&    dbChangelogSnapshotDiffs
+--    == cacheSnapshotDiffs dbChangelogTableDiffs dbChangelogSnapshots
   where
     -- TODO: increasing or strictly increasing: does this need to be relaxed to
     -- use (<=) ? What about EBBs? Do they appear in the ledger state seq?
+    -- TODO: how about the split operations guaranteeing that we never split
+    -- between equal slot nos. Then we can keep the invariant that the disk
+    -- anchor point is /strictly/ before the diffs.
     increasing :: Ord a => [a] -> Bool
     increasing xs = and (zipWith (<) xs (drop 1 xs))
 
@@ -961,6 +987,23 @@ extendSnapshotDiffs snapshots tdiffs sdiffs =
 
     impossible = error "extendSnapshotDiffs: impossible"
 
+cacheSnapshotDiffs :: HasOnlyTables (Tables state)
+                   => Tables state (SeqTableDiff state)
+                   -> SSeq state (TableSnapshots state)
+                   -> Tables state (SeqSnapshotDiff state)
+cacheSnapshotDiffs diffs snapshots =
+   -- The algorithm starts with the sequence of snapshot operations and
+   -- taking prefixes of diffs at the corresponding seqnos. Then working
+   -- from oldest to newest it extends the snapshot diffs for each snapshot
+   -- and the prefix of the diffs from the corresponding seqno.
+   List.foldl'
+     (\sdiffs (snapshot, diffsPrefix) ->
+         extendSnapshotDiffs snapshot diffsPrefix sdiffs)
+     mempty
+     [ (snapshot, diffsPrefix)
+     | SSeqElem seqno snapshot <- Foldable.toList snapshots
+     , let diffsPrefix = mapTables (\_ -> fst . splitAfterSeqTableDiff seqno) diffs ]
+
 
 -- | Get the first and last 'SeqNo' in the sequence of changes.
 -- TODO: or maybe we only need the anchor?
@@ -983,20 +1026,46 @@ endOfDbChangelog DbChangelog {dbChangelogStates}
 -- | Reset the \"leading edge\" of the sequence of states to the given 'SeqNo'.
 --
 -- The given 'SeqNo' must be an element of the sequence (or the result will be
--- @Nothing@). The 
+-- @Nothing@). The given 'SeqNo' will be the new last 'SeqNo' for the result.
 --
-rewindDbChangelog :: SeqNo state -> DbChangelog state -> Maybe (DbChangelog state)
-rewindDbChangelog = undefined
-  --TODO: check the state seq has the element and drop to there
-  -- also drop the table diffs to the same point
-  -- and re-cache the snapshot diffs
+rewindDbChangelog :: HasOnDiskTables state
+                  => SeqNo state
+                  -> DbChangelog state
+                  -> Maybe (DbChangelog state)
+rewindDbChangelog seqno dbchangelog@DbChangelog{..} = do
+    -- Check that the state sequence has the seqno and we reset it back to
+    -- that point, so the seqno is the last element of the new sequence.
+    (dbChangelogStates', _) <- splitAtAfterSeq seqno dbChangelogStates
 
-{-
-cacheSnapshotDiffs :: Tables state (SSeq state TableDiff)
-                   -> SSeq state (TableSnapshots state)
-                   -> Tables state (SSeq state SnapshotDiff)
-cacheSnapshotDiffs = undefined
--}
+    -- Do the same for the table diffs, but these should not fail
+    -- (since the invariant requires they match).
+    let dbChangelogTableDiffs' =
+          mapTables (\_ -> fst . splitAfterSeqTableDiff seqno)
+                    dbChangelogTableDiffs
+
+        -- The "no change" case is very common and the alternative has some
+        -- cost, so we special case it:
+        snapshotNoChanges = 
+          case FT.viewr dbChangelogSnapshots of
+            FT.EmptyR                                   -> True
+            _ FT.:> SSeqElem seqno' _ | seqno >= seqno' -> True
+            _                                           -> False
+        dbChangelogSnapshots'
+          | snapshotNoChanges = dbChangelogSnapshots 
+          | otherwise         = fst (splitAfterSSeq seqno dbChangelogSnapshots)
+
+        dbChangelogSnapshotDiffs'
+          | snapshotNoChanges = dbChangelogSnapshotDiffs
+          | otherwise         = cacheSnapshotDiffs dbChangelogTableDiffs
+                                                   dbChangelogSnapshots
+
+    Just dbchangelog {
+      dbChangelogStates        = dbChangelogStates',
+      dbChangelogTableDiffs    = dbChangelogTableDiffs',
+      dbChangelogSnapshots     = dbChangelogSnapshots',
+      dbChangelogSnapshotDiffs = dbChangelogSnapshotDiffs'
+    }
+
 
 -- | Advance the \"trailing edge\" to the given 'SeqNo'. This does not affect
 -- the disk diffs which must be advanced separately using 'flushDbChangelog'.
@@ -1005,19 +1074,80 @@ cacheSnapshotDiffs = undefined
 -- @Nothing@). This 'SeqNo' will be the new anchor element.
 --
 advanceDbChangelog :: SeqNo state -> DbChangelog state -> Maybe (DbChangelog state)
-advanceDbChangelog = undefined
-  --TODO: check the state seq has the element and drop to there
-  -- also drop the table diffs and snapshot diffs to the same point
+advanceDbChangelog seqno dbchangelog@DbChangelog{..} = do
+    -- Check that the state sequence has the seqno, and keep everything at and
+    -- after the seqno. The seqno becomes the new anchor.
+    -- Note that we make no changes to the disk parts.
+    (_, dbChangelogStates') <- splitAtBeforeSeq seqno dbChangelogStates
+    Just dbchangelog {
+      dbChangelogStates      = dbChangelogStates',
+      dbChangelogStateAnchor = seqno
+    }
 
 -- | Advance the disk diffs to the same 'SeqNo' as the states. This always
 -- succeeds but will be a no-op if the two anchor points are already the same.
 --
 -- The disk diffs are returned in the format required by 'writeDb'.
 --
-flushDbChangelog :: DbChangelog state
+flushDbChangelog :: HasOnDiskTables state
+                 => DbChangelog state
                  -> ([Either (TableDiffs state) (TableSnapshots state)],
                      DbChangelog state)
-flushDbChangelog = undefined
+flushDbChangelog dbchangelog@DbChangelog{..} =
+    (toDiskDbWrites diffsToFlush snapshotsToFlush, dbchangelog')
+  where
+    !dbchangelog' =
+      dbchangelog {
+        dbChangelogDiskAnchor = dbChangelogStateAnchor,
+
+        dbChangelogTableDiffs =
+          mapTables (\_ -> snd . splitAfterSeqTableDiff dbChangelogStateAnchor)
+                    dbChangelogTableDiffs,
+
+        dbChangelogSnapshots  = dbChangelogSnapshots',
+
+        dbChangelogSnapshotDiffs =
+          mapTables (\_ -> snd . splitAfterSeqSnapshotDiff dbChangelogStateAnchor)
+                    dbChangelogSnapshotDiffs
+      }
+
+    !diffsToFlush =
+      mapTables (\_ -> fst . splitAfterSeqTableDiff dbChangelogStateAnchor)
+                dbChangelogTableDiffs
+
+    !(snapshotsToFlush, dbChangelogSnapshots') =
+      splitAfterSSeq dbChangelogStateAnchor dbChangelogSnapshots
+
+-- | Helper function to squash the DbChangelog's sequences of changes to the
+-- table contents and sequence of snapshots into the summary form needed by
+-- 'writeDb' to write to disk.
+--
+-- We interleave the snapshots with the table diffs according to the seqnos.
+-- For any seqno with a snapshot, the snapshot comes /after/ the diffs at the
+-- same seqno. Contiguous sequences of diffs are merged together into a single
+-- diff for efficiency for writing to disk.
+--
+toDiskDbWrites :: HasOnDiskTables state
+               => Tables state (SeqTableDiff state)
+               -> SSeq state (TableSnapshots state)
+               -> [Either (TableDiffs state) (TableSnapshots state)]
+toDiskDbWrites !diffs !snapshots =
+    -- Split on the slot number of the next snapshot, if any.
+    case FT.viewl snapshots of
+      FT.EmptyL ->
+          Left (mapTables (\_ -> summarySeqTableDiff) diffs)
+        : []
+
+      SSeqElem seqno snapshot FT.:< snapshots' ->
+          Left (mapTables (\_ -> summarySeqTableDiff
+                               . fst . splitAfterSeqTableDiff seqno)
+                          diffs)
+        : Right snapshot
+        : toDiskDbWrites diffs' snapshots'
+        where
+          diffs' = mapTables (\_ -> snd . splitAfterSeqTableDiff seqno) diffs
+
+
   --TODO: split the table diffs at the state anchor point
   -- return the summary of the bit split off
 
@@ -1040,6 +1170,9 @@ rewindTableKeySets :: HasOnDiskTables state
                    -> TableKeySets state
                    -> AnnTableKeySets state (KeySetSanityInfo state)
 rewindTableKeySets (DbChangelog _ _ _ _ snapshots _) tks =
+    -- Push the key sets through the inverse of the prevailing composition
+    -- of snapshot transformations (if any). Also annotate the key sets
+    -- with the seqno of the /last/ snapshot (if any) for later sanity checks.
     case FT.measure snapshots of
       SSeqSummaryEmpty ->
         mapTables (\_ x -> AnnTable x Nothing) tks
@@ -1049,10 +1182,100 @@ rewindTableKeySets (DbChangelog _ _ _ _ snapshots _) tks =
                   (applyTableSnapshotsInverse sn tks)
 
 
-forwardTableReadSets :: DbChangelog state
+forwardTableReadSets :: forall state.
+                        HasOnDiskTables state
+                     => DbChangelog state
                      -> AnnTableReadSets state (ReadSetSanityInfo state)
                      -> Maybe (TableReadSets state)
-forwardTableReadSets = undefined
+forwardTableReadSets DbChangelog {
+                       dbChangelogSnapshots,
+                       dbChangelogSnapshotDiffs,
+                       dbChangelogTableDiffs
+                     } =
+    -- The benefit of the complicated snapshot diffs now finally pays off:
+    -- we apply all the snapshot transformations first, and then apply all of
+    -- the content diffs.
+    -- This is in contrast to the naive approach where we would have to
+    -- interleave applying diffs and snapshots. We have been able to
+    -- disentangle and distribute the diffs and snapshots so that we can
+    -- bring all of the snapshots up front, and keep all of the diffs together.
+    -- This is more complex but gives us a much more efficient algorithm for
+    -- the very common operation of forwarding read sets.
+    Just --TODO: check the sanity info
+  . bar
+  . foo
+  . mapTables (\_ (AnnTable t _) -> t)
+  where
+    bar :: Tables state (SnapshotOfTable' TableReadSet)
+        -> Tables state TableReadSet
+    bar = zip3Tables applyReadSetDiffs
+                     dbChangelogSnapshotDiffs
+                     dbChangelogTableDiffs
+
+    foo :: TableReadSets state
+        -> Tables state (SnapshotOfTable' TableReadSet)
+    foo = case summarySSeq dbChangelogSnapshots of
+            Nothing -> mapTables (\_ -> KeepTable')
+            Just sn -> applyTableSnapshots' sn
+
+    applyReadSetDiffs :: Ord k
+                      => TableTag t v
+                      -> SeqSnapshotDiff state t k v
+                      -> SeqTableDiff    state t k v
+                      -> SnapshotOfTable' TableReadSet t k v
+                      -> TableReadSet t k v
+
+    applyReadSetDiffs  TableTagRW
+                       SeqSnapshotDiffEmpty
+                      (SeqTableDiffRW seqdiffs)
+                      (KeepTable' (TableReadSetRW pm)) =
+      TableReadSetRW (maybe pm (applyDiff pm) (summarySSeq seqdiffs))
+
+    applyReadSetDiffs  TableTagRWU
+                       SeqSnapshotDiffEmpty
+                      (SeqTableDiffRWU seqdiffs)
+                      (KeepTable' (TableReadSetRWU pm)) =
+      TableReadSetRWU (maybe pm (applyDiff pm) (summarySSeq seqdiffs))
+
+    applyReadSetDiffs  TableTagRO SeqSnapshotDiffEmpty SeqTableDiffRO
+                      (KeepTable' t) = t
+
+    applyReadSetDiffs  TableTagRO _ SeqTableDiffRO
+                      (KeepTable' _) = inconsistency
+
+    applyReadSetDiffs  TableTagRO seqdiffs SeqTableDiffRO
+                      (SnapshotOfTable' readset) =
+      applySnapshotDiffs readset seqdiffs
+
+
+    applySnapshotDiffs :: Ord k
+                       => TableReadSet          t           k v
+                       -> SeqSnapshotDiff state TableTypeRO k v
+                       -> TableReadSet          TableTypeRO k v
+    applySnapshotDiffs (TableReadSetRW pm) (SeqSnapshotOfDiffRW seqdiffs) =
+      TableReadSetRO $ castPMapRWToRO $
+        maybe pm (applyDiff pm) (summarySSeq seqdiffs)
+
+    applySnapshotDiffs (TableReadSetRWU pm) (SeqSnapshotOfDiffRWU seqdiffs) =
+      TableReadSetRO $ castPMapRWUToRO $
+        maybe pm (applyDiff pm) (summarySSeq seqdiffs)
+
+    applySnapshotDiffs (TableReadSetRO pm) SeqSnapshotDiffEmpty =
+      TableReadSetRO pm
+
+    -- By the invariant the swizzle and the snapshot diffs match each other.
+    -- And when the read set is passed through the swizzle inverse then the
+    -- read set will also match. So all other combinations are inconsistent.
+    applySnapshotDiffs TableReadSetRW{}  SeqSnapshotDiffEmpty   = inconsistency
+    applySnapshotDiffs TableReadSetRWU{} SeqSnapshotDiffEmpty   = inconsistency
+
+    applySnapshotDiffs TableReadSetRO{}  SeqSnapshotOfDiffRW{}  = inconsistency
+    applySnapshotDiffs TableReadSetRO{}  SeqSnapshotOfDiffRWU{} = inconsistency
+
+    applySnapshotDiffs TableReadSetRW{}  SeqSnapshotOfDiffRWU{} = inconsistency
+    applySnapshotDiffs TableReadSetRWU{} SeqSnapshotOfDiffRW{}  = inconsistency
+
+    inconsistency = error "forwardTableReadSets: inconsistency between the snapshots and snapshot diffs"
 
 
 -- | A 'SeqTableDiff' is a sequence of 'TableDiff's.
@@ -1094,6 +1317,30 @@ snocSeqTableDiff (SeqTableDiffRW ds) (TableDiffRW d) seqno =
     SeqTableDiffRW (ds FT.|> SSeqElem seqno d)
 snocSeqTableDiff (SeqTableDiffRWU ds) (TableDiffRWU d) seqno =
     SeqTableDiffRWU (ds FT.|> SSeqElem seqno d)
+
+
+splitAfterSeqTableDiff :: Ord k
+                       => SeqNo state
+                       -> SeqTableDiff state t k v
+                       -> (SeqTableDiff state t k v, SeqTableDiff state t k v)
+splitAfterSeqTableDiff _ SeqTableDiffRO = (SeqTableDiffRO, SeqTableDiffRO)
+splitAfterSeqTableDiff seqno (SeqTableDiffRW ds) =
+  case splitAfterSSeq seqno ds of
+    (before, after) -> (SeqTableDiffRW before, SeqTableDiffRW after)
+splitAfterSeqTableDiff seqno (SeqTableDiffRWU ds) =
+  case splitAfterSSeq seqno ds of
+    (before, after) -> (SeqTableDiffRWU before, SeqTableDiffRWU after)
+
+
+-- | Merge a sequence of 'TableDiff' (as a 'SeqTableDiff') down to a single
+-- 'TableDiff'. This uses the usual 'Semigroup' on diffs.
+--
+summarySeqTableDiff :: Ord k => SeqTableDiff state t k v -> TableDiff t k v
+summarySeqTableDiff  SeqTableDiffRO       = TableDiffRO
+summarySeqTableDiff (SeqTableDiffRW  seq) =
+    TableDiffRW (fromMaybe mempty (summarySSeq seq))
+summarySeqTableDiff (SeqTableDiffRWU seq) =
+    TableDiffRWU (fromMaybe mempty (summarySSeq seq))
 
 
 -- | The 'SeqSnapshotDiff' is used to forward reads through snapshots.
@@ -1145,6 +1392,22 @@ instance MonoidalTable (SeqSnapshotDiff state) where
     appendTables TableTagRO  (SeqSnapshotOfDiffRWU _) (SeqSnapshotOfDiffRW _) =
       error "SnapshotDiff.appendTables: you probably did not want to do this"
 
+splitAfterSeqSnapshotDiff :: Ord k
+                          => SeqNo state
+                          -> SeqSnapshotDiff state t k v
+                          -> (SeqSnapshotDiff state t k v,
+                              SeqSnapshotDiff state t k v)
+splitAfterSeqSnapshotDiff _ SeqSnapshotDiffEmpty =
+    (SeqSnapshotDiffEmpty, SeqSnapshotDiffEmpty)
+
+splitAfterSeqSnapshotDiff seqno (SeqSnapshotOfDiffRW ds) =
+  case splitAfterSSeq seqno ds of
+    (before, after) -> (SeqSnapshotOfDiffRW before, SeqSnapshotOfDiffRW after)
+
+splitAfterSeqSnapshotDiff seqno (SeqSnapshotOfDiffRWU ds) =
+  case splitAfterSSeq seqno ds of
+    (before, after) -> (SeqSnapshotOfDiffRWU before, SeqSnapshotOfDiffRWU after)
+
 
 -- | A summarisable sequence. That is a sequence of elements (with sequence
 -- numbers) that can be summarised in a monoidal way.
@@ -1181,26 +1444,56 @@ instance Semigroup a
       => FT.Measured (SSeqSummary state a) (SSeqElem state a) where
   measure (SSeqElem seqno a) = SSeqSummary seqno seqno a
 
-splitSSeq :: Semigroup a => SeqNo state -> SSeq state a -> Maybe (SSeq state a, SSeq state a)
-splitSSeq seqno seq =
-    case FT.search predicate seq of
-      FT.Position before splitelem@(SSeqElem seqno' _) after | seqno == seqno' ->
-           Just (before, splitelem FT.<| after)
-      _ -> Nothing
+boundsSSeq :: Semigroup a => SSeq state a -> Maybe (SeqNo state, SeqNo state)
+boundsSSeq seq =
+    case FT.measure seq of
+      SSeqSummaryEmpty    -> Nothing
+      SSeqSummary lb ub _ -> Just (lb, ub)
 
-  where
-    predicate (SSeqSummary _ smaxLeft _) (SSeqSummary _ sminRight _) =
-      smaxLeft >= seqno && sminRight > seqno
+summarySSeq :: Semigroup a => SSeq state a -> Maybe a
+summarySSeq seq =
+    case FT.measure seq of
+      SSeqSummaryEmpty  -> Nothing
+      SSeqSummary _ _ s -> Just s
 
-    predicate SSeqSummaryEmpty (SSeqSummary _ sminRight _) =
-      -- smaxLeft >= seqno is vacuously true as the "max" for empty is the top
-      -- element of the order
-      sminRight > seqno
+splitBeforeSSeq :: Semigroup a => SeqNo state -> SSeq state a -> (SSeq state a, SSeq state a)
+splitBeforeSSeq seqno seq =
+    FT.split (splitPredicateBeforeSSeq seqno) seq
 
-    predicate _ SSeqSummaryEmpty =
-      -- sminRight > seqno is vacuously false as the "min" for empty is the
-      -- bottom element of the order
-      False
+splitAtBeforeSSeq :: Semigroup a => SeqNo state -> SSeq state a -> Maybe (SSeq state a, SSeq state a)
+splitAtBeforeSSeq seqno seq
+  | let result@(_before, after) = FT.split (splitPredicateBeforeSSeq seqno) seq
+  , SSeqElem seqno' _ FT.:< _ <- FT.viewl after
+  , seqno == seqno'
+  = Just result
+
+  | otherwise
+  = Nothing
+
+splitAfterSSeq :: Semigroup a => SeqNo state -> SSeq state a -> (SSeq state a, SSeq state a)
+splitAfterSSeq seqno seq =
+    FT.split (splitPredicateAfterSSeq seqno) seq
+
+splitAtAfterSSeq :: Semigroup a => SeqNo state -> SSeq state a -> Maybe (SSeq state a, SSeq state a)
+splitAtAfterSSeq seqno seq
+  | let result@(before, _after) = FT.split (splitPredicateAfterSSeq seqno) seq
+  , _ FT.:> SSeqElem seqno' _ <- FT.viewr before
+  , seqno == seqno'
+  = Just result
+
+  | otherwise
+  = Nothing
+
+splitPredicateBeforeSSeq :: SeqNo state -> SSeqSummary state a -> Bool
+splitPredicateBeforeSSeq seqno (SSeqSummary _ smax _) = smax >= seqno
+splitPredicateBeforeSSeq _      SSeqSummaryEmpty      = True -- vacuously true
+
+splitPredicateAfterSSeq :: SeqNo state -> SSeqSummary state a -> Bool
+splitPredicateAfterSSeq seqno (SSeqSummary _ smax _) = smax > seqno
+splitPredicateAfterSSeq _      SSeqSummaryEmpty      = True -- vacuously true
+
+-- In the empty case, smax > seqno is vacuously true as the "max" for empty
+-- is the top element of the order.
 
 
 -- | A simple sequence, with sequence numbers.
@@ -1234,25 +1527,50 @@ instance Monoid (SeqSummary state) where
 instance FT.Measured (SeqSummary state) (SeqElem state a) where
   measure (SeqElem seqno _) = SeqSummary seqno seqno
 
-splitSeq :: SeqNo state -> Seq state a -> Maybe (Seq state a, Seq state a)
-splitSeq seqno seq =
-    case FT.search predicate seq of
-      FT.Position before splitelem@(SeqElem seqno' _) after | seqno == seqno' ->
-           Just (before, splitelem FT.<| after)
-      _ -> Nothing
-  where
-    predicate (SeqSummary _ smaxLeft) (SeqSummary _ sminRight) =
-      smaxLeft >= seqno && sminRight > seqno
+boundsSeq :: Seq state a -> Maybe (SeqNo state, SeqNo state)
+boundsSeq seq =
+    case FT.measure seq of
+      SeqSummaryEmpty  -> Nothing
+      SeqSummary lb ub -> Just (lb, ub)
 
-    predicate SeqSummaryEmpty (SeqSummary _ sminRight) =
-      -- smaxLeft >= seqno is vacuously true as the "max" for empty is the top
-      -- element of the order
-      sminRight > seqno
+splitBeforeSeq :: SeqNo state -> Seq state a -> (Seq state a, Seq state a)
+splitBeforeSeq seqno seq =
+    FT.split (splitPredicateBeforeSeq seqno) seq
 
-    predicate _ SeqSummaryEmpty =
-      -- sminRight > seqno is vacuously false as the "min" for empty is the
-      -- bottom element of the order
-      False
+splitAtBeforeSeq :: SeqNo state -> Seq state a -> Maybe (Seq state a, Seq state a)
+splitAtBeforeSeq seqno seq
+  | let result@(_before, after) = FT.split (splitPredicateBeforeSeq seqno) seq
+  , SeqElem seqno' _ FT.:< _ <- FT.viewl after
+  , seqno == seqno'
+  = Just result
+
+  | otherwise
+  = Nothing
+
+splitAfterSeq :: SeqNo state -> Seq state a -> (Seq state a, Seq state a)
+splitAfterSeq seqno seq =
+    FT.split (splitPredicateAfterSeq seqno) seq
+
+splitAtAfterSeq :: SeqNo state -> Seq state a -> Maybe (Seq state a, Seq state a)
+splitAtAfterSeq seqno seq
+  | let result@(before, _after) = FT.split (splitPredicateAfterSeq seqno) seq
+  , _ FT.:> SeqElem seqno' _ <- FT.viewr before
+  , seqno == seqno'
+  = Just result
+
+  | otherwise
+  = Nothing
+
+splitPredicateBeforeSeq :: SeqNo state -> SeqSummary state -> Bool
+splitPredicateBeforeSeq seqno (SeqSummary _ smax) = smax >= seqno
+splitPredicateBeforeSeq _      SeqSummaryEmpty    = True -- vacuously true
+
+splitPredicateAfterSeq :: SeqNo state -> SeqSummary state -> Bool
+splitPredicateAfterSeq seqno (SeqSummary _ smax) = smax > seqno
+splitPredicateAfterSeq _      SeqSummaryEmpty    = True -- vacuously true
+
+-- In the empty case, smax > seqno is vacuously true as the "max" for empty
+-- is the top element of the order.
 
 
 
