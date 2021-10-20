@@ -64,6 +64,8 @@ library
                        Ouroboros.Network.Counter
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Diffusion
+                       Ouroboros.Network.Diffusion.P2P
+                       Ouroboros.Network.Diffusion.NonP2P
                        Ouroboros.Network.Diffusion.Policies
                        Ouroboros.Network.KeepAlive
                        Ouroboros.Network.Magic
@@ -129,7 +131,8 @@ library
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
-  other-modules:       Ouroboros.Network.PeerSelection.Governor.ActivePeers
+  other-modules:       Ouroboros.Network.Diffusion.Common
+                       Ouroboros.Network.PeerSelection.Governor.ActivePeers
                        Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
                        Ouroboros.Network.PeerSelection.Governor.KnownPeers
                        Ouroboros.Network.PeerSelection.Governor.Monitor
