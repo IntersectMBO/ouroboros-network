@@ -109,7 +109,7 @@ prop_pick100 seed =
 
         sim :: IOSim s [RelayAccessPoint]
         sim = withLedgerPeers
-                rng verboseTracer
+                rng (curry IP.toSockAddr) verboseTracer
                 (pure (UseLedgerAfter 0))
                 interface
                 (\_ -> pure Map.empty) -- we're not relying on domain name resolution in this simulation
@@ -147,7 +147,7 @@ prop_pick (LedgerPools lps) count seed =
 
         sim :: IOSim s [RelayAccessPoint]
         sim = withLedgerPeers
-                rng (verboseTracer) --  <> Tracer Debug.traceShowM)
+                rng (curry IP.toSockAddr) verboseTracer
                 (pure (UseLedgerAfter 0))
                 interface resolve
                 (\request _ -> do
