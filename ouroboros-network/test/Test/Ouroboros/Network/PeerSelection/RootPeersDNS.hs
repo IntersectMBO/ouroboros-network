@@ -203,7 +203,6 @@ mockDNSActions dnsMap dnsTimeoutScript dnsLookupDelayScript =
       dnsLookupAWithTTL
     }
  where
-
    dnsResolverResource      _ = return (constantResource ())
    dnsAsyncResolverResource _ = return (constantResource ())
 
@@ -562,10 +561,11 @@ prop_public_resolvesDomainsCorrectly :: MockRoots
                                      -> DelayAndTimeoutScripts
                                      -> Int
                                      -> Property
-prop_public_resolvesDomainsCorrectly mockRoots@(MockRoots _ dnsMap)
-                                     (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
-                                     n =
-    lookupLoop mockRoots dnsMap === dnsMap
+prop_public_resolvesDomainsCorrectly
+    mockRoots@(MockRoots _ dnsMap)
+    (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
+    n
+  = lookupLoop mockRoots dnsMap === dnsMap
   where
     -- Perform public root DNS lookup until no failures
     lookupLoop :: MockRoots -> Map Domain [IPv4] -> Map Domain [IPv4]
