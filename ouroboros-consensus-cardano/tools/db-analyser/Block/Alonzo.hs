@@ -89,7 +89,9 @@ instance FromJSON Alonzo.AlonzoGenesis where
         , Alonzo.maxCollateralInputs
         }
 
-deriving instance FromJSON Alonzo.ExUnits
+deriving instance FromJSON a => FromJSON (Alonzo.ExUnits' a)
+
+deriving newtype instance FromJSON Alonzo.ExUnits
 
 instance FromJSON Alonzo.Language where
   parseJSON = Aeson.withText "Language" languageFromText

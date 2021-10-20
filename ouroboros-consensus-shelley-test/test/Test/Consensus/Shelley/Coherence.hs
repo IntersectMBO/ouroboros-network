@@ -11,7 +11,8 @@ import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Cardano.Ledger.Alonzo.Scripts (ExUnits, pointWiseExUnits)
 import           Test.Cardano.Ledger.Alonzo.Serialisation.Generators ()
 
-import           Ouroboros.Consensus.Shelley.Ledger.Mempool (AlonzoMeasure (..))
+import           Ouroboros.Consensus.Shelley.Ledger.Mempool (AlonzoMeasure (..),
+                     fromExUnits)
 
 tests :: TestTree
 tests = testGroup "Shelley coherences" [
@@ -23,7 +24,7 @@ leqCoherence :: Word32 -> ExUnits -> ExUnits -> Property
 leqCoherence w eu1 eu2 =
     actual === expected
   where
-    inj eu = AlonzoMeasure (TxLimits.ByteSize w) eu
+    inj eu = AlonzoMeasure (TxLimits.ByteSize w) (fromExUnits eu)
 
     actual   = inj eu1 TxLimits.<= inj eu2
     expected = pointWiseExUnits (<=) eu1 eu2

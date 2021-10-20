@@ -196,8 +196,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 592aa61d657ad5935a33bace1243abce3728b643
-  --sha256: 1bgq3a2wfdz24jqfwylcc6jjg5aji8dpy5gjkhpnmkkvgcr2rkyb
+  tag: 654f5b7c76f7cc57900b4ddc664a82fc3b925fb0
+  --sha256: 0j4x9zbx5dkww82sqi086h39p456iq5xr476ylmrnpwcpfb4xai4
   subdir:
     base-deriving-via
     binary
@@ -212,8 +212,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger-specs
-  tag: ac51494e151af0ad99b937a787458ce71db0aaea
-  --sha256: 1dh80kaqhq4fn0w1dixcqiir3mz5nahr7n9drds3rrjlx1nkczi4
+  tag: bf008ce028751cae9fb0b53c3bef20f07c06e333
+  --sha256: 0my3801w1vinc0kf5yh9lxl6saqxgwm6ccg0vvzi104pafcwwcqx
   subdir:
     eras/alonzo/impl
     eras/alonzo/test-suite
@@ -228,6 +228,7 @@ source-repository-package
     eras/shelley/impl
     eras/shelley/test-suite
     libs/cardano-ledger-core
+    libs/cardano-ledger-pretty
     libs/cardano-protocol-tpraos
     libs/non-integral
     libs/small-steps
@@ -236,8 +237,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: 8c83c4abe211b4bbcaca3cdf1b2c0e38d0eb683f
-  --sha256: 1643s1g3jlm9pgalpc3vpij1zqb1n8yv8irq6qc43gs9bvl0wc3l
+  tag: 2f08f29732e602c5f3afc174bd381a17eb49b041
+  --sha256: 1j4zinp6rfa78842cqfdwzr08jnnn05k6w0sqg5vf1vw80kl7w83
   subdir:
     plutus-ledger-api
     plutus-tx

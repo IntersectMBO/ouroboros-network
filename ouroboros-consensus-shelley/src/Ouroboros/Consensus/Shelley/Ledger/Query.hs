@@ -240,7 +240,7 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
         DebugChainDepState ->
           tpraosStateChainDepState (headerStateChainDep hst)
         GetRewardProvenance ->
-          snd $ SL.getRewardInfo globals st
+          snd $ SL.getRewardProvenance globals st
         GetUTxOByTxIn txins ->
           SL.getUTxOSubset st txins
         GetStakePools ->

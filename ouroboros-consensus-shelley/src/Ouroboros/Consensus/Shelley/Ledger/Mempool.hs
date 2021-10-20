@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE Rank2Types                 #-}
@@ -23,12 +24,14 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
   , SL.ApplyTxError (..)
   , TxId (..)
   , Validated (..)
+  , WithTop (..)
   , fixedBlockBodyOverhead
   , mkShelleyTx
   , mkShelleyValidatedTx
   , perTxOverhead
     -- * Exported for tests
   , AlonzoMeasure (..)
+  , fromExUnits
   ) where
 
 import           Control.Monad.Except (Except)
@@ -36,6 +39,7 @@ import           Control.Monad.Identity (Identity (..))
 import           Data.Foldable (toList)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           GHC.Natural (Natural)
 import           GHC.Records
 import           NoThunks.Class (NoThunks (..))
 
@@ -43,10 +47,12 @@ import           Cardano.Binary (Annotator (..), FromCBOR (..),
                      FullByteString (..), ToCBOR (..))
 import           Data.DerivingVia (InstantiatedAt (..))
 import           Data.Measure (BoundedMeasure, Measure)
+import qualified Data.Measure as Measure
 
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
-import           Cardano.Ledger.Alonzo.Scripts (ExUnits (..))
+import           Cardano.Ledger.Alonzo.Scripts (ExUnits, ExUnits',
+                     unWrapExUnits)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -59,7 +65,7 @@ import           Cardano.Ledger.Alonzo.Tx (ValidatedTx (..), totExUnits)
 import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (Crypto, TxSeq, fromTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.UTxO as SL (txid)
+import qualified Cardano.Ledger.TxIn as SL (txid)
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -300,20 +306,58 @@ instance ( SL.PraosCrypto c
   txMeasure (ShelleyValidatedTx _txid vtx) =
     AlonzoMeasure {
         byteSize = ByteSize $ txInBlockSize (mkShelleyTx @(AlonzoEra c) (SL.extractTx vtx))
-      , exUnits  = totExUnits (SL.extractTx vtx)
+      , exUnits  = fromExUnits $ totExUnits (SL.extractTx vtx)
       }
 
   txsBlockCapacity ledgerState =
       AlonzoMeasure {
           byteSize = ByteSize $ txsMaxBytes ledgerState
-        , exUnits  = getField @"_maxBlockExUnits" pparams
+        , exUnits  = fromExUnits $ getField @"_maxBlockExUnits" pparams
         }
     where
       pparams = getPParams $ tickedShelleyLedgerState ledgerState
 
 data AlonzoMeasure = AlonzoMeasure {
     byteSize :: !ByteSize
-  , exUnits  :: !ExUnits
+  , exUnits  :: !(ExUnits' (WithTop Natural))
   } deriving stock (Eq, Generic, Show)
     deriving (BoundedMeasure, Measure)
          via (InstantiatedAt Generic AlonzoMeasure)
+
+fromExUnits :: ExUnits -> ExUnits' (WithTop Natural)
+fromExUnits = fmap NotTop . unWrapExUnits
+
+{-------------------------------------------------------------------------------
+  WithTop
+-------------------------------------------------------------------------------}
+
+-- | Add a unique top element to a lattice.
+--
+-- TODO This should be relocated to `cardano-base:Data.Measure'.
+data WithTop a = NotTop a | Top
+  deriving (Eq, Generic, Show)
+
+instance Ord a => Ord (WithTop a) where
+  compare = curry $ \case
+    (Top     , Top     ) -> EQ
+    (Top     , _       ) -> GT
+    (_       , Top     ) -> LT
+    (NotTop l, NotTop r) -> compare l r
+
+instance Measure a => Measure (WithTop a) where
+  zero = NotTop Measure.zero
+  plus = curry $ \case
+    (Top     , _       ) -> Top
+    (_       , Top     ) -> Top
+    (NotTop l, NotTop r) -> NotTop $ Measure.plus l r
+  min  = curry $ \case
+    (Top     , r       ) -> r
+    (l       , Top     ) -> l
+    (NotTop l, NotTop r) -> NotTop $ Measure.min l r
+  max  = curry $ \case
+    (Top     , _       ) -> Top
+    (_       , Top     ) -> Top
+    (NotTop l, NotTop r) -> NotTop $ Measure.max l r
+
+instance Measure a => BoundedMeasure (WithTop a) where
+  maxBound = Top

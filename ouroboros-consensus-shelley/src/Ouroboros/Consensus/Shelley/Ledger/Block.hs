@@ -90,7 +90,7 @@ instance ShelleyBasedEra era => ConvertRawHash (ShelleyBlock era) where
 -- we need to work with this block. Most of the code here does not care,
 -- but we may need different additional information when running the chain.
 data ShelleyBlock era = ShelleyBlock {
-      shelleyBlockRaw        :: !(SL.Block era)
+      shelleyBlockRaw        :: !(SL.Block SL.BHeader era)
     , shelleyBlockHeaderHash :: !(ShelleyHash (EraCrypto era))
     }
 
@@ -101,7 +101,7 @@ instance Typeable era => ShowProxy (ShelleyBlock era) where
 
 type instance HeaderHash (ShelleyBlock era) = ShelleyHash (EraCrypto era)
 
-mkShelleyBlock :: ShelleyBasedEra era => SL.Block era -> ShelleyBlock era
+mkShelleyBlock :: ShelleyBasedEra era => SL.Block SL.BHeader era -> ShelleyBlock era
 mkShelleyBlock raw = ShelleyBlock {
       shelleyBlockRaw        = raw
     , shelleyBlockHeaderHash = ShelleyHash (SL.bhHash (SL.bheader raw))
