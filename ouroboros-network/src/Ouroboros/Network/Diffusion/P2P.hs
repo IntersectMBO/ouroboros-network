@@ -35,6 +35,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Exception
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import           Data.Foldable (asum)
+import qualified Data.IP as IP
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map (Map)
@@ -136,7 +137,7 @@ import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 --
 data TracersExtra = TracersExtra {
       dtTraceLocalRootPeersTracer
-        :: Tracer IO (TraceLocalRootPeers IOException)
+        :: Tracer IO (TraceLocalRootPeers SockAddr IOException)
 
     , dtTracePublicRootPeersTracer
         :: Tracer IO TracePublicRootPeers
@@ -677,6 +678,7 @@ run tracers
         remoteThread =
           withLedgerPeers
             ledgerPeersRng
+            (curry IP.toSockAddr)
             dtLedgerPeersTracer
             daReadUseLedgerAfter
             daLedgerPeersCtx
@@ -779,6 +781,7 @@ run tracers
                     withPeerSelectionActions
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
+                      (curry IP.toSockAddr)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
@@ -913,6 +916,7 @@ run tracers
                     withPeerSelectionActions
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
+                      (curry IP.toSockAddr)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers

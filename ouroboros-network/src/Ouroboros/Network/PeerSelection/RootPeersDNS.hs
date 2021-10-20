@@ -79,12 +79,12 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 -- local root peer set provider based on DNS
 --
 
-data TraceLocalRootPeers exception =
+data TraceLocalRootPeers peerAddr exception =
        TraceLocalRootDomains [(Int, Map RelayAccessPoint PeerAdvertise)]
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
      | TraceLocalRootResult  DomainAccessPoint [(IPv4, DNS.TTL)]
-     | TraceLocalRootGroups  (Seq (Int, Map Socket.SockAddr PeerAdvertise))
+     | TraceLocalRootGroups  (Seq (Int, Map peerAddr PeerAdvertise))
        -- ^ This traces the results of the local root peer provider
      | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
@@ -97,27 +97,30 @@ data TraceLocalRootPeers exception =
 -- the output 'StrictTVar'.
 --
 localRootPeersProvider
-  :: forall m resolver exception.
+  :: forall m peerAddr resolver exception.
      ( MonadAsync m
      , MonadDelay m
      , Eq (Async m Void)
+     , Ord peerAddr
      )
-  => Tracer m (TraceLocalRootPeers exception)
+  => Tracer m (TraceLocalRootPeers peerAddr exception)
+  -> (IP -> Socket.PortNumber -> peerAddr)
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
   -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
   -- ^ input
-  -> StrictTVar m (Seq (Int, Map Socket.SockAddr PeerAdvertise))
+  -> StrictTVar m (Seq (Int, Map peerAddr PeerAdvertise))
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
+                       toPeerAddr
                        resolvConf
                        DNSActions {
                          dnsAsyncResolverResource,
                          dnsLookupAWithTTL
                        }
                        readDomainsGroups
-                       rootPeersGroupsVar = do
+                       rootPeersGroupsVar =
     atomically readDomainsGroups >>= loop
   where
     loop domainsGroups = do
@@ -136,15 +139,15 @@ localRootPeersProvider tracer
           -- the addresses within each group, we fill the TVar with
           -- a placeholder list, in order for each monitored DomainAddress to
           -- be updated in the correct group.
-          rootPeersGroups :: Seq (Int, Map Socket.SockAddr PeerAdvertise)
+          rootPeersGroups :: Seq (Int, Map peerAddr PeerAdvertise)
           rootPeersGroups = Seq.fromList $ map (\(target, m) -> (target, f m)) domainsGroups
             where
                f :: Map RelayAccessPoint PeerAdvertise
-                 -> Map Socket.SockAddr PeerAdvertise
+                 -> Map peerAddr PeerAdvertise
                f = Map.mapKeys
                      (\k -> case k of
                        RelayAccessAddress ip port ->
-                         IP.toSockAddr (ip, port)
+                         toPeerAddr ip port
                        _ ->
                          error "localRootPeersProvider: impossible happend"
                      )
@@ -191,7 +194,7 @@ localRootPeersProvider tracer
       :: resolver
       -> DomainAccessPoint
       -> PeerAdvertise
-      -> m (Either DNS.DNSError [((Socket.SockAddr, PeerAdvertise), DNS.TTL)])
+      -> m (Either DNS.DNSError [((peerAddr, PeerAdvertise), DNS.TTL)])
     resolveDomain resolver
                   domain@DomainAccessPoint {dapDomain, dapPortNumber}
                   advertisePeer = do
@@ -203,24 +206,22 @@ localRootPeersProvider tracer
 
         Right results -> do
           traceWith tracer (TraceLocalRootResult domain results)
-          return $ Right [ (( Socket.SockAddrInet
-                               dapPortNumber
-                               (IP.toHostAddress addr)
+          return $ Right [ (( toPeerAddr (IP.IPv4 addr) dapPortNumber
                            , advertisePeer)
                            , _ttl)
                          | (addr, _ttl) <- results ]
 
     monitorDomain
       :: Resource m (DNSorIOError exception) resolver
-      -> Seq (Int, Map Socket.SockAddr PeerAdvertise)
-      -- ^ local group peers which didnhh
+      -> Seq (Int, Map peerAddr PeerAdvertise)
+      -- ^ local group peers
       -> (Int, DomainAccessPoint, PeerAdvertise)
       -> m Void
     monitorDomain rr0 rootPeersGroups0 (index, domain, advertisePeer) =
         go rr0 rootPeersGroups0 0
       where
         go :: Resource m (DNSorIOError exception) resolver
-           -> Seq (Int, Map Socket.SockAddr PeerAdvertise)
+           -> Seq (Int, Map peerAddr PeerAdvertise)
            -> DiffTime
            -> m Void
         go !rr !rootPeersGroups !ttl = do
@@ -271,15 +272,18 @@ data TracePublicRootPeers =
 -- TODO track PeerAdvertise
 --
 publicRootPeersProvider
-  :: forall resolver exception a m.
-     (MonadThrow m, MonadAsync m, Exception exception)
+  :: forall peerAddr resolver exception a m.
+     (MonadThrow m, MonadAsync m, Exception exception,
+      Ord peerAddr)
   => Tracer m TracePublicRootPeers
+  -> (IP -> Socket.PortNumber -> peerAddr)
   -> DNS.ResolvConf
   -> STM m [RelayAccessPoint]
   -> DNSActions resolver exception m
-  -> ((Int -> m (Set Socket.SockAddr, DiffTime)) -> m a)
+  -> ((Int -> m (Set peerAddr, DiffTime)) -> m a)
   -> m a
 publicRootPeersProvider tracer
+                        toPeerAddr
                         resolvConf
                         readDomains
                         DNSActions {
@@ -296,7 +300,7 @@ publicRootPeersProvider tracer
     requestPublicRootPeers
       :: StrictTVar m (Resource m (DNSorIOError exception) resolver)
       -> Int
-      -> m (Set Socket.SockAddr, DiffTime)
+      -> m (Set peerAddr, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
         domains <- atomically readDomains
         traceWith tracer (TracePublicRootRelayAccessPoint domains)
@@ -323,14 +327,13 @@ publicRootPeersProvider tracer
                   Left  dnserr -> TracePublicRootFailure dapDomain dnserr
                   Right ipttls -> TracePublicRootResult  dapDomain ipttls
               | (DomainAccessPoint {dapDomain}, result) <- results ]
-            let successes = [ ( Socket.SockAddrInet dapPortNumber
-                                                    (IP.toHostAddress ip)
+            let successes = [ ( toPeerAddr (IP.IPv4 ip) dapPortNumber
                               , ipttl)
                             | ( DomainAccessPoint {dapPortNumber}
                               , Right ipttls) <- results
                             , (ip, ipttl) <- ipttls
                             ]
-                !domainsIps = [ IP.toSockAddr (ip, port)
+                !domainsIps = [toPeerAddr ip port
                               | RelayAccessAddress ip port <- domains ]
                 !ips      = Set.fromList  (map fst successes ++ domainsIps)
                 !ttl      = ttlForResults (map snd successes)

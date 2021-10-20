@@ -18,6 +18,7 @@ module Test.Ouroboros.Network.PeerSelection (tests, unfHydra) where
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
 import           Data.List (groupBy, foldl')
+import qualified Data.IP as IP
 import           Data.Maybe (listToMaybe, isNothing, fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -1893,6 +1894,7 @@ _governorFindingPublicRoots :: Int -> STM IO [RelayAccessPoint] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     publicRootPeersProvider
       tracer
+      (curry IP.toSockAddr)
       DNS.defaultResolvConf
       readDomains
       ioDNSActions $ \requestPublicRootPeers ->
