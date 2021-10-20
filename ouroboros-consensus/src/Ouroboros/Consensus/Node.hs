@@ -1,9 +1,13 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 -- | Run the whole Node
 --
@@ -139,7 +143,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB
 
 -- | Arguments expected from any invocation of 'runWith', whether by deployed
 -- code, tests, etc.
-data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
+data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
       -- | Consensus tracers
       rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
@@ -168,7 +172,9 @@ data RunNodeArgs m addrNTN addrNTC blk = RunNodeArgs {
 -- 'runWith'. The @cardano-node@, for example, instead calls the 'run'
 -- abbreviation, which uses 'stdLowLevelRunNodeArgsIO' to indirectly specify
 -- these low-level values from the higher-level 'StdRunNodeArgs'.
-data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = LowLevelRunNodeArgs {
+data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
+                         (p2p :: Diffusion.P2P) =
+   LowLevelRunNodeArgs {
 
       -- | How to manage the clean-shutdown marker on disk
       llrnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
@@ -209,6 +215,7 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
              addrNTN        addrNTC
              versionDataNTN versionDataNTC
              m
+        -> Diffusion.ExtraApplications p2p addrNTN m
         -> m ()
 
     , llrnVersionDataNTC :: versionDataNTC
@@ -230,10 +237,10 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk = L
 -------------------------------------------------------------------------------}
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
-run :: forall blk.
+run :: forall blk p2p.
      RunNode blk
-  => RunNodeArgs IO RemoteAddress LocalAddress blk
-  -> StdRunNodeArgs IO blk
+  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
+  -> StdRunNodeArgs IO blk p2p
   -> IO ()
 run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 
@@ -243,13 +250,13 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk.
+runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
      )
-  => RunNodeArgs m addrNTN addrNTC blk
-  -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
+  => RunNodeArgs m addrNTN addrNTC blk p2p
+  -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
   -> m ()
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
@@ -328,7 +335,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                                     ntcApps
                                     nodeKernel
 
-      llrnRunDataDiffusion registry diffusionApplications
+      llrnRunDataDiffusion registry apps appsExtra
   where
     ProtocolInfo
       { pInfoConfig       = cfg
@@ -628,14 +635,15 @@ stdRunDataDiffusion ::
        RemoteAddress LocalAddress
        NodeToNodeVersionData NodeToClientVersionData
        IO
+  -> Diffusion.ExtraApplications p2p RemoteAddress IO
   -> IO ()
-stdRunDataDiffusion = runDataDiffusion
+stdRunDataDiffusion = Diffusion.run
 
 -- | Higher-level arguments that can determine the 'LowLevelRunNodeArgs' under
 -- some usual assumptions for realistic use cases such as in @cardano-node@.
 --
 -- See 'stdLowLevelRunNodeArgsIO'.
-data StdRunNodeArgs m blk = StdRunNodeArgs
+data StdRunNodeArgs m blk (p2p :: Diffusion.P2P) = StdRunNodeArgs
   { srnBfcMaxConcurrencyBulkSync    :: Maybe Word
   , srnBfcMaxConcurrencyDeadline    :: Maybe Word
   , srnChainDbValidateOverride      :: Bool
@@ -658,16 +666,17 @@ data StdRunNodeArgs m blk = StdRunNodeArgs
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
 -- non-testing invocation.
 stdLowLevelRunNodeArgsIO ::
-     forall blk. RunNode blk
-  => RunNodeArgs IO RemoteAddress LocalAddress blk
-  -> StdRunNodeArgs IO blk
+     forall blk p2p. RunNode blk
+  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
+  -> StdRunNodeArgs IO blk p2p
   -> IO (LowLevelRunNodeArgs
           IO
           RemoteAddress
           LocalAddress
           NodeToNodeVersionData
           NodeToClientVersionData
-          blk)
+          blk
+          p2p)
 stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
@@ -681,8 +690,12 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnCustomiseChainDbArgs = id
       , llrnCustomiseNodeKernelArgs
       , llrnRunDataDiffusion =
-          \_reg apps ->
-            stdRunDataDiffusion srnDiffusionTracers srnDiffusionArguments apps
+          \_reg apps extraApps ->
+            stdRunDataDiffusion srnDiffusionTracers
+                                srnDiffusionTracersExtra
+                                srnDiffusionArguments
+                                srnDiffusionArgumentsExtra
+                                apps extraApps
       , llrnVersionDataNTC =
           stdVersionDataNTC networkMagic
       , llrnVersionDataNTN =
