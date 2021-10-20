@@ -42,7 +42,6 @@ import           Data.Set (Set)
 import           Data.Word
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
-import           Network.Socket (SockAddr)
 import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
@@ -201,19 +200,21 @@ pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
 
 -- | Run the LedgerPeers worker thread.
 --
-ledgerPeersThread :: forall m.
+ledgerPeersThread :: forall m peerAddr.
                      ( MonadAsync m
                      , MonadTime m
+                     , Ord peerAddr
                      )
                   => StdGen
+                  -> (IP.IP -> Socket.PortNumber -> peerAddr)
                   -> Tracer m TraceLedgerPeers
                   -> STM m UseLedgerAfter
                   -> LedgerPeersConsensusInterface m
-                  -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set SockAddr)))
+                  -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set peerAddr)))
                   -> STM m NumberOfPeers
-                  -> (Maybe (Set SockAddr, DiffTime) -> STM m ())
+                  -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
-ledgerPeersThread inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
+ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
                   getReq putRsp =
     go inRng (Time 0) Map.empty
   where
@@ -272,9 +273,9 @@ ledgerPeersThread inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{
                go rng'' ts peerMap'
 
     -- Randomly pick one of the addresses returned in the DNS result.
-    pickDomainAddrs :: (StdGen, Set SockAddr)
-                    -> Set SockAddr
-                    -> (StdGen, Set SockAddr)
+    pickDomainAddrs :: (StdGen, Set peerAddr)
+                    -> Set peerAddr
+                    -> (StdGen, Set peerAddr)
     pickDomainAddrs (rng, pickedAddrs) addrs | Set.null addrs = (rng, pickedAddrs)
     pickDomainAddrs (rng, pickedAddrs) addrs =
         let (ix, rng') = randomR (0, Set.size addrs - 1) rng
@@ -284,41 +285,44 @@ ledgerPeersThread inRng tracer readUseLedgerAfter LedgerPeersConsensusInterface{
 
     -- Divide the picked peers form the ledger into addresses we can use directly and
     -- domain names that we need to resolve.
-    splitPeers :: (Set SockAddr, [DomainAccessPoint])
+    splitPeers :: (Set peerAddr, [DomainAccessPoint])
                -> RelayAccessPoint
-               -> (Set SockAddr, [DomainAccessPoint])
+               -> (Set peerAddr, [DomainAccessPoint])
     splitPeers (addrs, domains) (RelayDomainAccessPoint domain) = (addrs, domain : domains)
     splitPeers (addrs, domains) (RelayAccessAddress ip port) =
-        let !addr = IP.toSockAddr (ip, port) in
+        let !addr = toPeerAddr ip port in
         (Set.insert addr addrs, domains)
 
 
 -- | For a LederPeers worker thread and submit request and receive responses.
 --
-withLedgerPeers :: forall m a.
+withLedgerPeers :: forall peerAddr m a.
                    ( MonadAsync m
                    , MonadTime m
+                   , Ord peerAddr
                    )
                 => StdGen
+                -> (IP.IP -> Socket.PortNumber -> peerAddr)
                 -> Tracer m TraceLedgerPeers
                 -> STM m UseLedgerAfter
                 -> LedgerPeersConsensusInterface m
-                -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set SockAddr)))
-                -> ( (NumberOfPeers -> m (Maybe (Set SockAddr, DiffTime)))
+                -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set peerAddr)))
+                -> ( (NumberOfPeers -> m (Maybe (Set peerAddr, DiffTime)))
                      -> Async m Void
                      -> m a )
                 -> m a
-withLedgerPeers inRng tracer readUseLedgerAfter interface doResolve k = do
+withLedgerPeers inRng toPeerAddr tracer readUseLedgerAfter interface doResolve k = do
     reqVar  <- newEmptyTMVarIO 
     respVar <- newEmptyTMVarIO
     let getRequest  = takeTMVar reqVar
         putResponse = putTMVar  respVar
-        request :: NumberOfPeers -> m (Maybe (Set SockAddr, DiffTime))
+        request :: NumberOfPeers -> m (Maybe (Set peerAddr, DiffTime))
         request = \numberOfPeers -> do
           atomically $ putTMVar reqVar numberOfPeers
           atomically $ takeTMVar respVar
     withAsync
-      ( ledgerPeersThread inRng tracer readUseLedgerAfter interface doResolve
+      ( ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter
+                          interface doResolve
                           getRequest putResponse )
       $ \ thread -> k request thread
 
