@@ -342,7 +342,7 @@ publicRootPeersProvider tracer
 --
 resolveDomainAccessPoint
   :: forall exception resolver m.
-  (MonadThrow m, MonadAsync m, Exception exception)
+     (MonadThrow m, MonadAsync m, Exception exception)
   => Tracer m TracePublicRootPeers
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
