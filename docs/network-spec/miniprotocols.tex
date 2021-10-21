@@ -1292,13 +1292,17 @@ ledger state.
     \node[state, myblue, right of=Idle] (Acquiring) {\StAcquiring};
     \node[state, mygreen, right of=Acquiring] (Acquired) {\StAcquired};
     \node[state, myblue, right of=Acquired] (Querying) {\StQuerying};
+    \node[state,         below of=Idle] (Done) {\StDone};
 
     \draw (Idle)      edge[bend left=45] node{\MsgAcquire}   (Acquiring);
     \draw (Acquiring) edge[bend left=45] node{\MsgFailure}   (Idle);
     \draw (Acquiring) edge[bend left=45] node{\MsgAcquired}  (Acquired);
     \draw (Acquired)  edge[bend left=45] node{\MsgReAcquire} (Acquiring);
     \draw (Acquired)  edge[bend left=45] node{\MsgQuery}     (Querying);
+    \draw (Acquired.275)
+                      to[in=-65, out=-115] node{\MsgRelease} (Idle.260);
     \draw (Querying)  edge[bend left=45] node{\MsgResult}    (Acquired);
+    \draw (Idle)      edge node[left]{\MsgDone}                    (Done)
   \end{tikzpicture}
   \caption{State machine of the Local State Query mini-protocol.}
 \end{figure}
@@ -1313,9 +1317,11 @@ ledger state.
     \StIdle             & \MsgAcquire         & $Maybe\ point$      & \StAcquiring \\\hline
     \StAcquiring        & \MsgFailure         & $AcquireFailure$    & \StIdle      \\\hline
     \StAcquiring        & \MsgAcquired        &                     & \StAcquired  \\\hline
-    \StAcquired         & \MsgReAcquire       & $Maybe\ point$      & \StAcquiring \\\hline
     \StAcquired         & \MsgQuery           & $query$             & \StQuerying  \\\hline
     \StQuerying         & \MsgResult          & $result$            & \StAcquired  \\\hline
+    \StAcquired         & \MsgReAcquire       & $Maybe\ point$      & \StAcquiring \\\hline
+    \StAcquired         & \MsgRelease         &                     & \StIdle      \\\hline
+    \StIdle             & \MsgDone            &                     & \StDone        \\\hline
   \end{tabular}
   \caption{Local State Query mini-protocol messages.}
 \end{figure}
