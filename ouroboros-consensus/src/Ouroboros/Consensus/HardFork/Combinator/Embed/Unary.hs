@@ -355,7 +355,7 @@ instance Isomorphic (Ticked :.: LedgerState) where
       . Telescope.TZ
       . State.Current History.initBound
 
-instance Isomorphic (ExtLedgerState fp) where
+instance Isomorphic (ExtLedgerState mk) where
   project ExtLedgerState{..} = ExtLedgerState {
         ledgerState = project ledgerState
       , headerState = project headerState

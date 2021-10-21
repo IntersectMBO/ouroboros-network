@@ -127,7 +127,7 @@ instance Inject Examples where
       , exampleAnnTip           = inj (Proxy @AnnTip)                  exampleAnnTip
       , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @(ExtLedgerState SmallL)) exampleExtLedgerState
+      , exampleExtLedgerState   = inj (Proxy @(ExtLedgerState EmptyMK)) exampleExtLedgerState
       , exampleSlotNo           =                                      exampleSlotNo
       }
     where

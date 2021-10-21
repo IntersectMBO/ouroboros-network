@@ -59,8 +59,8 @@ import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
-                     encodeExtLedgerState)
-import           Ouroboros.Consensus.Ledger.Query (BlockQuery, FootprintL (..),
+                     MapKind (..), encodeExtLedgerState)
+import           Ouroboros.Consensus.Ledger.Query (BlockQuery,
                      QueryVersion, SomeQuery, nodeToClientVersionToQueryVersion)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
@@ -224,8 +224,7 @@ data Examples blk = Examples {
     , exampleAnnTip           :: Labelled (AnnTip blk)
     , exampleLedgerState      :: Labelled (LedgerState blk)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
-    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk)
-    , exampleExtLedgerState   :: Labelled (ExtLedgerState SmallL blk)
+    , exampleExtLedgerState   :: Labelled (ExtLedgerState EmptyMK blk)
     , exampleSlotNo           :: Labelled SlotNo
     }
 

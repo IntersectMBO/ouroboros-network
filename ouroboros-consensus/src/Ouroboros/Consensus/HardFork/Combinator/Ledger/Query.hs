@@ -172,7 +172,7 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
 -- manually crafted.
 distribExtLedgerState ::
      All SingleEraBlock xs
-  => ExtLedgerState fp (HardForkBlock xs) -> NS (ExtLedgerState fp) xs
+  => ExtLedgerState mk (HardForkBlock xs) -> NS (ExtLedgerState mk) xs
 distribExtLedgerState (ExtLedgerState ledgerState headerState) =
     hmap (\(Pair hst lst) -> ExtLedgerState lst hst) $
       mustMatchNS
@@ -256,17 +256,17 @@ instance All SingleEraBlock xs => EqQuery (QueryIfCurrent xs) where
   eqQuery _        _         = Nothing
 
 interpretSmallQueryIfCurrent ::
-     forall result xs. All SingleEraBlock xs
+     forall mk result xs. All SingleEraBlock xs
   => NP ExtLedgerCfg xs
   -> QueryIfCurrent xs SmallL result
-  -> NS (ExtLedgerState SmallL) xs
+  -> NS (ExtLedgerState mk) xs
   -> HardForkQueryResult xs result
 interpretSmallQueryIfCurrent = go
   where
     go :: All SingleEraBlock xs'
        => NP ExtLedgerCfg xs'
        -> QueryIfCurrent xs' SmallL result
-       -> NS (ExtLedgerState SmallL) xs'
+       -> NS (ExtLedgerState mk) xs'
        -> HardForkQueryResult xs' result
     go (c :* _)  (QZ qry) (Z st) =
         Right $ answerBlockSmallQuery c qry st
@@ -279,11 +279,11 @@ interpretSmallQueryIfCurrent = go
 
 -- TODO de-duplicate with interpretSmallQueryIfCurrent
 interpretQueryIfCurrent ::
-     forall result xs fp m. (All SingleEraBlock xs, Monad m)
+     forall result xs mk fp m. (All SingleEraBlock xs, Monad m)
   => NP ExtLedgerCfg xs
   -> NP (WrapDiskLedgerView m) xs
   -> QueryIfCurrent xs fp result
-  -> NS (ExtLedgerState fp) xs
+  -> NS (ExtLedgerState mk) xs
   -> m (HardForkQueryResult xs result)
 interpretQueryIfCurrent = go
   where
@@ -291,7 +291,7 @@ interpretQueryIfCurrent = go
        => NP ExtLedgerCfg xs'
        -> NP (WrapDiskLedgerView m) xs'
        -> QueryIfCurrent xs' fp result
-       -> NS (ExtLedgerState fp) xs'
+       -> NS (ExtLedgerState mk) xs'
        -> m (HardForkQueryResult xs' result)
     go (c :* _)  (dlv :* _)  (QZ qry) (Z st) =
         Right <$> answerBlockQuery c (unwrapDiskLedgerView dlv) qry st
@@ -445,8 +445,8 @@ decodeQueryHardForkResult = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk fp. SingleEraBlock blk
-           => ExtLedgerState fp blk
+ledgerInfo :: forall blk mk fp. SingleEraBlock blk
+           => ExtLedgerState mk blk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 

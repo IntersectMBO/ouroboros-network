@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..), MapKind (..))
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -165,7 +165,7 @@ instance Inject HeaderState where
                             $ WrapChainDepState headerStateChainDep
       }
 
-instance Inject (ExtLedgerState fp) where
+instance Inject (ExtLedgerState mk) where
   inject startBounds idx ExtLedgerState {..} = ExtLedgerState {
         ledgerState = inject startBounds idx ledgerState
       , headerState = inject startBounds idx headerState
@@ -188,8 +188,8 @@ instance Inject (ExtLedgerState fp) where
 injectInitialExtLedgerState ::
      forall x xs. CanHardFork (x ': xs)
   => TopLevelConfig (HardForkBlock (x ': xs))
-  -> ExtLedgerState SmallL x
-  -> ExtLedgerState SmallL (HardForkBlock (x ': xs))
+  -> ExtLedgerState EmptyMK x
+  -> ExtLedgerState EmptyMK (HardForkBlock (x ': xs))
 injectInitialExtLedgerState cfg extLedgerState0 =
     ExtLedgerState {
         ledgerState = targetEraLedgerState

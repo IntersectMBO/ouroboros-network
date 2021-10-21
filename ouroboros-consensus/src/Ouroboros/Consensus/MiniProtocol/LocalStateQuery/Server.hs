@@ -21,7 +21,7 @@ localStateQueryServer ::
   -> DiskLedgerView blk m
   -> STM m (Point blk)
      -- ^ Get tip point
-  -> (Point blk -> STM m (Maybe (ExtLedgerState SmallL blk)))
+  -> (Point blk -> STM m (Maybe (ExtLedgerState EmptyMK blk)))
      -- ^ Get a past ledger
   -> STM m (Point blk)
      -- ^ Get the immutable point
@@ -51,7 +51,7 @@ localStateQueryServer cfg dlv getTipPoint getPastLedger getImmutablePoint =
             | otherwise
             -> SendMsgFailure AcquireFailurePointNotOnChain idle
 
-    acquired :: ExtLedgerState SmallL blk
+    acquired :: ExtLedgerState EmptyMK blk
              -> ServerStAcquired blk (Point blk) (Query blk) m ()
     acquired ledgerState = ServerStAcquired {
           recvMsgQuery     = handleQuery ledgerState
@@ -60,7 +60,7 @@ localStateQueryServer cfg dlv getTipPoint getPastLedger getImmutablePoint =
         }
 
     handleQuery ::
-         ExtLedgerState SmallL blk
+         ExtLedgerState EmptyMK blk
       -> Query          blk fp result
       -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
     handleQuery ledgerState query = do
