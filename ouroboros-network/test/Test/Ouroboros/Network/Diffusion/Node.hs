@@ -40,7 +40,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (nullTracer)
 
 import qualified Data.IntPSQ as IntPSQ
-import           Data.IP (IPv4)
+import           Data.IP (IP)
 import           Data.Map (Map)
 import           Data.Set (Set)
 import qualified Data.Text as Text
@@ -94,8 +94,7 @@ data Interfaces m = Interfaces
     , iNtnDomainResolver :: [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
     , iNtcSnocket        :: Snocket m (NtCFD m) (NtCAddr)
     , iRng               :: StdGen
-    , iDomainMap         :: Map Domain [IPv4]
-      -- TODO use 'IP' instead of 'IPv4'
+    , iDomainMap         :: Map Domain [IP]
     , iLedgerPeersConsensusInterface
                          :: LedgerPeersConsensusInterface m
     }
