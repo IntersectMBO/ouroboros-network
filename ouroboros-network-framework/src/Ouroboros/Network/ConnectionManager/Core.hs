@@ -1091,12 +1091,13 @@ withConnectionManager ConnectionManagerArguments {
                               (const $ Connected connId dataFlow handle)
                               mbTransition)
 
-
+    -- Needs 'mask' in order to guarantee that the traces are logged if the an
+    -- Async exception lands between the successful STM action and the logging action.
     unregisterInboundConnectionImpl
         :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> peerAddr
         -> m (OperationResult DemotedToColdRemoteTr)
-    unregisterInboundConnectionImpl stateVar peerAddr = do
+    unregisterInboundConnectionImpl stateVar peerAddr = mask_ $ do
       traceWith tracer (TrUnregisterConnection Inbound peerAddr)
       (mbThread, mbTransition, result) <- atomically $ do
         state <- readTMVar stateVar
@@ -1759,7 +1760,7 @@ withConnectionManager ConnectionManagerArguments {
                 -- @
                 --   DemotedToCold^{Duplex}_{Local}
                 --     : OutboundState Duplex
-                --     → InboundIdleState^\tau
+                --     → OutboundIdleState^\tau
                 -- @
                 let connState' = OutboundIdleState connId connThread handle
                                                    Duplex
