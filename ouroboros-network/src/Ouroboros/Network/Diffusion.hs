@@ -23,10 +23,12 @@ module Ouroboros.Network.Diffusion
   where
 
 import           Data.Functor (void)
+import           Control.Exception (IOException)
+
+import           Network.Socket (Socket)
 
 import           Ouroboros.Network.NodeToNode
                   ( RemoteAddress
-                  , Socket
                   , NodeToNodeVersionData
                   , NodeToNodeVersion
                   )
@@ -53,6 +55,7 @@ data ExtraTracers (p2p :: P2P) where
     :: P2P.TracersExtra
            RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
            LocalAddress   NodeToClientVersion NodeToClientVersionData
+           IOException IO
     -> ExtraTracers 'P2P
 
   NonP2PTracers
@@ -62,26 +65,26 @@ data ExtraTracers (p2p :: P2P) where
 
 -- | Diffusion arguments which depend on p2p mode.
 --
-data ExtraArguments (p2p :: P2P) where
+data ExtraArguments (p2p :: P2P) m where
   P2PArguments
-    :: P2P.ArgumentsExtra
-    -> ExtraArguments 'P2P
+    :: P2P.ArgumentsExtra m
+    -> ExtraArguments 'P2P m
 
   NonP2PArguments
     :: NonP2P.ArgumentsExtra
-    -> ExtraArguments 'NonP2P
+    -> ExtraArguments 'NonP2P m
 
 
 -- | Application data which depend on p2p mode.
 --
-data ExtraApplications (p2p :: P2P) ntnAddr where
+data ExtraApplications (p2p :: P2P) ntnAddr m where
   P2PApplications
-    :: P2P.ApplicationsExtra ntnAddr
-    -> ExtraApplications 'P2P ntnAddr
+    :: P2P.ApplicationsExtra ntnAddr m
+    -> ExtraApplications 'P2P ntnAddr m
 
   NonP2PApplications
     :: NonP2P.ApplicationsExtra
-    -> ExtraApplications 'NonP2P ntnAddr
+    -> ExtraApplications 'NonP2P ntnAddr m
 
 
 -- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
@@ -90,15 +93,17 @@ run :: forall (p2p :: P2P).
        Tracers
          RemoteAddress NodeToNodeVersion
          LocalAddress  NodeToClientVersion
+         IO
     -> ExtraTracers p2p
     -> Arguments
          Socket      RemoteAddress
          LocalSocket LocalAddress
-    -> ExtraArguments p2p
+    -> ExtraArguments p2p IO
     -> Applications
          RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress   NodeToClientVersion NodeToClientVersionData
-    -> ExtraApplications p2p RemoteAddress
+         IO
+    -> ExtraApplications p2p RemoteAddress IO
     -> IO ()
 run tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)
