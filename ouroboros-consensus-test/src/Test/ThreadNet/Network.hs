@@ -665,7 +665,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> STM m (ExtLedgerState SmallL blk)
+                   -> STM m (ExtLedgerState EmptyMK blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
@@ -683,7 +683,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
     mkArgs :: OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
-           -> ExtLedgerState SmallL blk
+           -> ExtLedgerState EmptyMK blk
            -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)

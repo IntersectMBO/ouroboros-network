@@ -419,7 +419,7 @@ instance ShowQuery (BlockQuery TestBlock) where
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint
 
-testInitExtLedger :: ExtLedgerState SmallL TestBlock
+testInitExtLedger :: ExtLedgerState EmptyMK TestBlock
 testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
@@ -626,7 +626,7 @@ instance Serialise (AnnTip TestBlock) where
   encode = defaultEncodeAnnTip encode
   decode = defaultDecodeAnnTip decode
 
-instance Serialise (ExtLedgerState SmallL TestBlock) where
+instance Serialise (ExtLedgerState EmptyMK TestBlock) where
   encode = encodeExtLedgerState encode encode encode
   decode = decodeExtLedgerState decode decode decode
 

@@ -131,8 +131,8 @@ data Model blk = Model {
     , immutableDbChain :: Chain blk
       -- ^ The ImmutableDB
     , cps              :: CPS.ChainProducerState blk
-    , currentLedger    :: ExtLedgerState SmallL blk
-    , initLedger       :: ExtLedgerState SmallL blk
+    , currentLedger    :: ExtLedgerState EmptyMK blk
+    , initLedger       :: ExtLedgerState EmptyMK blk
     , iterators        :: Map IteratorId [blk]
     , invalid          :: InvalidBlocks blk
     , currentSlot      :: SlotNo
@@ -341,7 +341,7 @@ getLedgerDB ::
      LedgerSupportsProtocol blk
   => TopLevelConfig blk
   -> Model blk
-  -> LedgerDB (ExtLedgerState SmallL blk)
+  -> LedgerDB (ExtLedgerState EmptyMK blk)
 getLedgerDB cfg m@Model{..} =
       ledgerDbPrune (SecurityParam (maxActualRollback k m))
     $ ledgerDbPushMany' ledgerDbCfg blks
@@ -361,7 +361,7 @@ getLedgerDB cfg m@Model{..} =
 -------------------------------------------------------------------------------}
 
 empty
-  :: ExtLedgerState SmallL blk
+  :: ExtLedgerState EmptyMK blk
   -> Word64   -- ^ Max clock skew in number of blocks
   -> Model blk
 empty initLedger maxClockSkew = Model {
@@ -424,7 +424,7 @@ addBlock cfg blk m = Model {
     -- @invalid'@ will be a (non-strict) superset of the previous value of
     -- @invalid@, see 'validChains', thus no need to union.
     invalid'   :: InvalidBlocks blk
-    candidates :: [(Chain blk, ExtLedgerState SmallL blk)]
+    candidates :: [(Chain blk, ExtLedgerState EmptyMK blk)]
     (invalid', candidates) =
         validChains cfg m (immutableDbBlocks m <> volatileDbBlocks')
 
@@ -440,7 +440,7 @@ addBlock cfg blk m = Model {
       map blockHash (Chain.toOldestFirst fork)
 
     newChain  :: Chain blk
-    newLedger :: ExtLedgerState SmallL blk
+    newLedger :: ExtLedgerState EmptyMK blk
     (newChain, newLedger) =
         fromMaybe (currentChain m, currentLedger m)
       . selectChain
@@ -627,7 +627,7 @@ type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
 data ValidatedChain blk =
     ValidatedChain
       (Chain blk)           -- ^ Valid prefix
-      (ExtLedgerState SmallL blk)  -- ^ Corresponds to the tip of the valid prefix
+      (ExtLedgerState EmptyMK blk)  -- ^ Corresponds to the tip of the valid prefix
       (InvalidBlocks blk)   -- ^ Invalid blocks encountered while validating
                             -- the candidate chain.
 
@@ -647,7 +647,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
     mkInvalid b reason =
       Map.singleton (blockHash b) (reason, blockSlot b)
 
-    go :: ExtLedgerState SmallL blk  -- ^ Corresponds to the tip of the valid prefix
+    go :: ExtLedgerState EmptyMK blk  -- ^ Corresponds to the tip of the valid prefix
        -> Chain blk           -- ^ Valid prefix
        -> [blk]               -- ^ Remaining blocks to validate
        -> ValidatedChain blk
@@ -718,7 +718,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
     -- Note that ledger validation stops at the first invalid block, so this
     -- function should find 0 or 1 invalid blocks.
     findInvalidBlockInTheFuture
-      :: ExtLedgerState SmallL blk
+      :: ExtLedgerState EmptyMK blk
       -> [blk]
       -> InvalidBlocks blk
     findInvalidBlockInTheFuture ledger = \case
@@ -758,7 +758,7 @@ validChains :: forall blk. LedgerSupportsProtocol blk
             => TopLevelConfig blk
             -> Model blk
             -> Map (HeaderHash blk) blk
-            -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState SmallL blk)])
+            -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState EmptyMK blk)])
 validChains cfg m bs =
     foldMap (classify . validate cfg m) $
     -- Note that we sort here to make sure we pick the same chain as the real
@@ -787,7 +787,7 @@ validChains cfg m bs =
         )
 
     classify :: ValidatedChain blk
-             -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState SmallL blk)])
+             -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState EmptyMK blk)])
     classify (ValidatedChain chain ledger invalid) =
       (invalid, [(chain, ledger)])
 
@@ -993,7 +993,7 @@ wipeVolatileDB cfg m =
     -- Get the chain ending at the ImmutableDB by doing chain selection on the
     -- sole candidate (or none) in the ImmutableDB.
     newChain  :: Chain blk
-    newLedger :: ExtLedgerState SmallL blk
+    newLedger :: ExtLedgerState EmptyMK blk
     (newChain, newLedger) =
         isSameAsImmutableDbChain
       $ selectChain

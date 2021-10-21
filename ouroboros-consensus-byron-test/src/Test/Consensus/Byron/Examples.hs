@@ -203,7 +203,7 @@ exampleLedgerState =
 exampleHeaderState :: HeaderState ByronBlock
 exampleHeaderState = HeaderState (NotOrigin exampleAnnTip) exampleChainDepState
 
-exampleExtLedgerState :: ExtLedgerState SmallL ByronBlock
+exampleExtLedgerState :: ExtLedgerState EmptyMK ByronBlock
 exampleExtLedgerState = ExtLedgerState {
       ledgerState = exampleLedgerState
     , headerState = exampleHeaderState
