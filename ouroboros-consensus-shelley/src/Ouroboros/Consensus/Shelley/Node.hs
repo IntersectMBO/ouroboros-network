@@ -392,7 +392,7 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
     initChainDepState = TPraosState Origin $
       SL.initialChainDepState initialNonce (SL.sgGenDelegs genesis)
 
-    initExtLedgerState :: ExtLedgerState SmallL (ShelleyBlock era)
+    initExtLedgerState :: ExtLedgerState EmptyMK (ShelleyBlock era)
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState

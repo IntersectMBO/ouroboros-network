@@ -213,7 +213,7 @@ deriving instance SOP.HasDatatypeInfo (Cmd blk it flr)
 data Success blk it flr
   = Unit                ()
   | Chain               (AnchoredFragment (Header blk))
-  | LedgerDB            (LedgerDB (ExtLedgerState SmallL blk))
+  | LedgerDB            (LedgerDB (ExtLedgerState EmptyMK blk))
   | MbBlock             (Maybe blk)
   | MbAllComponents     (Maybe (AllComponents blk))
   | MbGCedAllComponents (MaybeGCedBlock (AllComponents blk))
@@ -688,7 +688,7 @@ deriving instance (TestConstraints blk, Show1 r) => Show (Model blk m r)
 
 -- | Initial model
 initModel :: TopLevelConfig blk
-          -> ExtLedgerState SmallL blk
+          -> ExtLedgerState EmptyMK blk
           -> MaxClockSkew
           -> Model blk m r
 initModel cfg initLedger (MaxClockSkew maxClockSkew) = Model
@@ -1117,7 +1117,7 @@ sm :: TestConstraints blk
    => ChainDBEnv IO blk
    -> BlockGen                  blk IO
    -> TopLevelConfig            blk
-   -> ExtLedgerState SmallL     blk
+   -> ExtLedgerState EmptyMK     blk
    -> MaxClockSkew
    -> StateMachine (Model       blk IO)
                    (At Cmd      blk IO)
@@ -1616,7 +1616,7 @@ mkArgs :: IOLike m
        => TopLevelConfig Blk
        -> MaxClockSkew
        -> ImmutableDB.ChunkInfo
-       -> ExtLedgerState SmallL Blk
+       -> ExtLedgerState EmptyMK Blk
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
        -> StrictTVar m SlotNo

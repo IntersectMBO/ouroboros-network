@@ -645,7 +645,7 @@ instance InspectLedger TestBlock where
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint GenesisHash
 
-testInitExtLedger :: ExtLedgerState SmallL TestBlock
+testInitExtLedger :: ExtLedgerState EmptyMK TestBlock
 testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
