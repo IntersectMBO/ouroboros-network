@@ -43,6 +43,9 @@ import           Data.Void (Void)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Kind (Type)
 import           System.Random (newStdGen, split)
+#ifdef POSIX
+import qualified System.Posix.Signals as Signals
+#endif
 
 import           Network.Mux
                   ( MiniProtocolBundle (..)
@@ -738,6 +741,19 @@ run tracers
                   NotInResponderMode
                   $ \(connectionManager
                       :: NodeToNodeConnectionManager InitiatorMode Void) -> do
+#ifdef POSIX
+                  -- TODO: this can be removed once trace reporting will be
+                  -- merged.
+                  _ <- Signals.installHandler
+                    Signals.sigUSR1
+                    (Signals.Catch
+                      (do state <- readState connectionManager
+                          traceWith dtConnectionManagerTracer
+                                    (TrState state)
+                      )
+                    )
+                    Nothing
+#endif
 
                   --
                   -- peer state actions
@@ -860,6 +876,17 @@ run tracers
                   (InResponderMode controlChannel)
                   $ \(connectionManager
                         :: NodeToNodeConnectionManager InitiatorResponderMode ()) -> do
+#ifdef POSIX
+                  _ <- Signals.installHandler
+                    Signals.sigUSR1
+                    (Signals.Catch
+                      (do state <- readState connectionManager
+                          traceWith dtConnectionManagerTracer
+                                    (TrState state)
+                      )
+                    )
+                    Nothing
+#endif
                   --
                   -- peer state actions
                   --
