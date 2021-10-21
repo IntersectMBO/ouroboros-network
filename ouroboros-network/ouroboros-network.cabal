@@ -194,6 +194,8 @@ library
                        typed-protocols   >=0.1 && < 1.0,
                        typed-protocols-cborg
                                          >=0.1 && < 1.0
+  if !os(windows)
+    build-depends:     unix
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
