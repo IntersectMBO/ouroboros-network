@@ -263,7 +263,7 @@ answerSmallQuery ::
      (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
   -> Query          blk SmallL result
-  -> ExtLedgerState SmallL blk
+  -> ExtLedgerState mk blk
   -> result
 answerSmallQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockSmallQuery cfg blockQuery st
@@ -272,12 +272,12 @@ answerSmallQuery cfg query st = case query of
   GetChainPoint -> headerStatePoint (headerState st)
 
 -- | Answer the given query about the extended ledger state.
-answerQuery :: forall blk m fp result.
+answerQuery :: forall blk m mk fp result.
      (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, Monad m)
   => ExtLedgerCfg blk
   -> DiskLedgerView blk m
   -> Query          blk fp result
-  -> ExtLedgerState fp blk
+  -> ExtLedgerState mk blk
   -> m result
 answerQuery cfg dlv query st = case query of
     BlockQuery blockQuery -> answerBlockQuery cfg dlv blockQuery st
@@ -300,7 +300,7 @@ class ( ShowQuery (BlockQuery blk)
       ) => QueryLedger blk where
 
   -- | A variant of 'answerBlockQuery' that is restricted to 'SmallL'.
-  answerBlockSmallQuery :: ExtLedgerCfg blk -> BlockQuery blk SmallL result -> ExtLedgerState SmallL blk -> result
+  answerBlockSmallQuery :: ExtLedgerCfg blk -> BlockQuery blk SmallL result -> ExtLedgerState mk blk -> result
 
   -- | Answer the given query about the extended ledger state.
   --
@@ -324,7 +324,7 @@ class ( ShowQuery (BlockQuery blk)
     => ExtLedgerCfg blk
     -> DiskLedgerView blk m
     -> BlockQuery     blk fp result
-    -> ExtLedgerState fp blk
+    -> ExtLedgerState mk blk
     -> m result
 
 {-------------------------------------------------------------------------------

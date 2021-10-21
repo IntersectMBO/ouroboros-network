@@ -40,7 +40,7 @@ instance (ToExpr slot, ToExpr hash) => ToExpr (Block slot hash)
 instance ( ToExpr (LedgerState blk)
          , ToExpr (ChainDepState (BlockProtocol blk))
          , ToExpr (TipInfo blk)
-         ) => ToExpr (ExtLedgerState SmallL blk)
+         ) => ToExpr (ExtLedgerState EmptyMK blk)
 
 instance ( ToExpr (ChainDepState (BlockProtocol blk))
          , ToExpr (TipInfo blk)

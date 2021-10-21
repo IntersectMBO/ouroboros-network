@@ -125,6 +125,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
 test-suite test-consensus
@@ -301,4 +302,5 @@ test-suite test-infra
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts

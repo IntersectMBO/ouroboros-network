@@ -308,7 +308,7 @@ analyse CmdLine {..} args =
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
 
-    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState SmallL blk)
+    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState EmptyMK blk)
     decodeExtLedgerState' cfg =
       let ccfg = configCodec cfg
       in decodeExtLedgerState
