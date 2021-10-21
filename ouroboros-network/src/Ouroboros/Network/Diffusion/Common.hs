@@ -79,14 +79,14 @@ instance (Typeable ntnAddr, Show ntnAddr) => Exception (Failure ntnAddr)
 
 -- | Common DiffusionTracers interface between P2P and NonP2P
 --
-data Tracers ntnAddr ntnVersion ntcAddr ntcVersion = Tracers {
+data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
       -- | Mux tracer
       dtMuxTracer
-        :: Tracer IO (WithMuxBearer (ConnectionId ntnAddr) MuxTrace)
+        :: Tracer m (WithMuxBearer (ConnectionId ntnAddr) MuxTrace)
 
       -- | Handshake protocol tracer
     , dtHandshakeTracer
-        :: Tracer IO (NodeToNode.HandshakeTr ntnAddr ntnVersion)
+        :: Tracer m (NodeToNode.HandshakeTr ntnAddr ntnVersion)
 
       --
       -- NodeToClient tracers
@@ -94,24 +94,26 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion = Tracers {
 
       -- | Mux tracer for local clients
     , dtLocalMuxTracer
-        :: Tracer IO (WithMuxBearer (ConnectionId ntcAddr) MuxTrace)
+        :: Tracer m (WithMuxBearer (ConnectionId ntcAddr) MuxTrace)
 
       -- | Handshake protocol tracer for local clients
     , dtLocalHandshakeTracer
-        :: Tracer IO (NodeToClient.HandshakeTr ntcAddr ntcVersion)
+        :: Tracer m (NodeToClient.HandshakeTr ntcAddr ntcVersion)
 
       -- | Diffusion initialisation tracer
     , dtDiffusionInitializationTracer
-        :: Tracer IO (InitializationTracer ntnAddr ntcAddr)
+        :: Tracer m (InitializationTracer ntnAddr ntcAddr)
 
       -- | Ledger Peers tracer
     , dtLedgerPeersTracer
-        :: Tracer IO TraceLedgerPeers
+        :: Tracer m TraceLedgerPeers
     }
 
 
-nullTracers :: Tracers ntnAddr ntnVersion
+nullTracers :: Applicative m
+            => Tracers ntnAddr ntnVersion
                        ntcAddr ntcVersion
+                       m
 nullTracers = Tracers {
     dtMuxTracer                     = nullTracer
   , dtHandshakeTracer               = nullTracer
@@ -153,7 +155,7 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
 --
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
-                  =
+                  m =
   Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
@@ -165,7 +167,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorMode ntnAddr
-                      ByteString IO () Void)
+                      ByteString m () Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
@@ -174,7 +176,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorResponderMode ntnAddr
-                      ByteString IO () ())
+                      ByteString m () ())
 
       -- | NodeToClient responder application (server role)
       --
@@ -183,9 +185,10 @@ data Applications ntnAddr ntnVersion ntnVersionData
                     ntcVersionData
                     (OuroborosApplication
                       ResponderMode ntcAddr
-                      ByteString IO Void ())
+                      ByteString m Void ())
 
       -- | Interface used to get peers from the current ledger.
       --
-    , daLedgerPeersCtx :: LedgerPeersConsensusInterface IO
+      -- TODO: it should be in 'InterfaceExtra'
+    , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
   }
