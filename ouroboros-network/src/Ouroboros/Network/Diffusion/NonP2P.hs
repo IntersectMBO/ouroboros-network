@@ -167,6 +167,7 @@ run
     :: Tracers
          RemoteAddress NodeToNodeVersion
          LocalAddress  NodeToClientVersion
+         IO
     -> TracersExtra
     -> Arguments
          Socket      RemoteAddress
@@ -175,6 +176,7 @@ run
     -> Applications
          RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress  NodeToClientVersion NodeToClientVersionData
+         IO
     -> ApplicationsExtra
     -> IO ()
 run Tracers
