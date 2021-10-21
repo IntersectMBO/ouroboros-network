@@ -372,8 +372,6 @@ The handshake mini protocol is used to negotiate the protocol version
 and the protocol parameters that are used by the client and the server.
 It is run exactly once when a new connection is initialised
 and consists of a single request from the client and a single reply from the server.
-Section \ref{peer-setup-section} explains the live cycle of a connection and the role of
-the handshake mini protocol in more detail.
 
 The handshake mini protocol is a generic protocol that can negotiate any kind protocol parameters.
 It only assumes that protocol parameters can be encoded to, and decoded from, CBOR terms.
