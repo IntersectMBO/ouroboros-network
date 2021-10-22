@@ -345,11 +345,16 @@ instance ShowQuery (BlockQuery BlockA) where
 data instance BlockQuery BlockA fp result
   deriving (Show)
 
+instance SmallQuery (BlockQuery BlockA) where
+  proveSmallQuery _k = \case {}
+
 instance QueryLedger BlockA where
   answerBlockQuery _ qry = case qry of {}
 
 instance EqQuery (BlockQuery BlockA) where
   eqQuery qry _qry' = case qry of {}
+
+instance IsQuery (BlockQuery BlockA) where
 
 instance ConvertRawHash BlockA where
   toRawHash   _ = id

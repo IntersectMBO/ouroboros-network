@@ -271,6 +271,8 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
       hst = headerState ext
       st  = shelleyLedgerState lst
 
+  prepareBlockQuery = error "prepareBlockQuery @Shelley"
+
 instance EqQuery (BlockQuery (ShelleyBlock era)) where
   eqQuery GetLedgerTip GetLedgerTip
     = Just Refl
@@ -388,6 +390,27 @@ instance ShelleyBasedEra era => ShowQuery (BlockQuery (ShelleyBlock era)) where
       GetStakePools                              -> show
       GetStakePoolParams {}                      -> show
       GetRewardInfoPools                         -> show
+
+instance ShelleyBasedEra era => IsQuery (BlockQuery (ShelleyBlock era)) where
+  classifyQuery = \case
+      GetLedgerTip                               -> Left Refl
+      GetEpochNo                                 -> Left Refl
+      GetNonMyopicMemberRewards {}               -> Left Refl
+      GetCurrentPParams                          -> Left Refl
+      GetProposedPParamsUpdates                  -> Left Refl
+      GetStakeDistribution                       -> Left Refl
+      GetUTxOByAddress {}                        -> Left Refl
+      GetUTxOWhole                               -> Left Refl
+      DebugEpochState                            -> Left Refl
+      GetCBOR q                                  -> classifyQuery q
+      GetFilteredDelegationsAndRewardAccounts {} -> Left Refl
+      GetGenesisConfig                           -> Left Refl
+      DebugNewEpochState                         -> Left Refl
+      DebugChainDepState                         -> Left Refl
+      GetRewardProvenance                        -> Left Refl
+      GetUTxOByTxIn {}                           -> Left Refl
+      GetStakePools                              -> Left Refl
+      GetStakePoolParams {}                      -> Left Refl
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock era) fp result -> ShelleyNodeToClientVersion -> Bool

@@ -1,7 +1,11 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -9,24 +13,31 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module Ouroboros.Consensus.Ledger.Query (
     BlockQuery
   , ConfigSupportsNode (..)
   , Query (..)
   , QueryLedger (..)
+  , QuerySat
   , QueryVersion (..)
   , answerQuery
+  , handleLargeQuery
+  , handleQuery
+  , prepareQuery
   , nodeToClientVersionToQueryVersion
   , queryDecodeNodeToClient
   , queryEncodeNodeToClient
   , SmallQuery (..)
+  , proveNotLargeQuery
   , withSmallQueryProof
     -- * Re-exports
   , FootprintL (..)
   , QueryWithSomeFootprintL (..)
   , QueryWithSomeResult (..)
   , EqQuery (..)
+  , IsQuery (..)
   , ShowQuery (..)
   , SomeQuery (..)
   ) where
@@ -54,13 +65,14 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      headerStateBlockNo, headerStatePoint)
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView)
+import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView, LedgerState, TableKeySets)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (BlockNodeToClientVersion)
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.DepPair
 
@@ -258,35 +270,27 @@ instance EqQuery (BlockQuery blk) => EqQuery (Query blk) where
 
 deriving instance Show (BlockQuery blk fp result) => Show (Query blk fp result)
 
--- | A variant of 'answerQuery' that is restricted to 'SmallL'.
-answerSmallQuery ::
-     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
+-- | Answer the given query about the extended ledger state.
+answerQuery ::
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, QuerySat mk fp)
   => ExtLedgerCfg blk
-  -> Query          blk SmallL result
+  -> Query          blk fp result
   -> ExtLedgerState mk blk
   -> result
-answerSmallQuery cfg query st = case query of
-  BlockQuery blockQuery -> answerBlockSmallQuery cfg blockQuery st
+answerQuery cfg query st = case query of
+  BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
   GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
   GetChainBlockNo -> headerStateBlockNo (headerState st)
   GetChainPoint -> headerStatePoint (headerState st)
 
--- | Answer the given query about the extended ledger state.
-answerQuery :: forall blk m mk fp result.
-     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, Monad m)
-  => ExtLedgerCfg blk
-  -> DiskLedgerView blk m
-  -> Query          blk fp result
-  -> ExtLedgerState mk blk
-  -> m result
-answerQuery cfg dlv query st = case query of
-    BlockQuery blockQuery -> answerBlockQuery cfg dlv blockQuery st
-    GetSystemStart        -> small
-    GetChainBlockNo       -> small
-    GetChainPoint         -> small
-  where
-    small :: (fp ~ SmallL) => m result
-    small = pure $ answerSmallQuery cfg query st
+prepareQuery :: QueryLedger blk => Query blk LargeL result -> TableKeySets (LedgerState blk)
+prepareQuery (BlockQuery query) = prepareBlockQuery query
+
+class QuerySat (mk :: MapKind) (fp :: FootprintL)
+
+instance QuerySat mk SmallL
+
+instance QuerySat TrackingMK LargeL
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: FootprintL -> Type -> Type
@@ -295,37 +299,61 @@ data family BlockQuery blk :: FootprintL -> Type -> Type
 --
 -- Used by the LocalStateQuery protocol to allow clients to query the extended
 -- ledger state.
-class ( ShowQuery (BlockQuery blk)
-      , EqQuery (BlockQuery blk)
-      ) => QueryLedger blk where
-
-  -- | A variant of 'answerBlockQuery' that is restricted to 'SmallL'.
-  answerBlockSmallQuery :: ExtLedgerCfg blk -> BlockQuery blk SmallL result -> ExtLedgerState mk blk -> result
+class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  --
-  -- TODO de-duplicate with answerBlockSmallQuery; eg a GADT that maps @fp ~
-  -- 'SmallL'@ to @m ~ 'Identity'@ and 'DiskLedgerView' to @NothingIf@ but maps
-  -- @fp ~ 'LargeL'@ to 'DiskLedgerView' to @JustIf@?
-  --
-  -- TODO I'm having second thoughts. Should we, at this level here, explicitly
-  -- factor the task of " use disk to answer the query " into the same two-step
-  -- process we're using for block and tx validation? IE Ask the ledger what
-  -- KeySet the query needs, fetch those, build the " complete enough " ledger
-  -- state, and then use it to answer the query? I think it's possible that the
-  -- " one shot " approach currently expressed here may be simpler for some
-  -- queries. It might even be necessary, if we ever want to eg answer a debug
-  -- query that must be streamed because the whole result would not fit in
-  -- memory at once (but that'd probably require enriching LocalStateQuery to
-  -- support multi-message results... perhaps we'd instead introduce a set of
-  -- queries that amount to range queries...). Open CAD-3559 for this.
-  answerBlockQuery      ::
-       Monad m
-    => ExtLedgerCfg blk
-    -> DiskLedgerView blk m
-    -> BlockQuery     blk fp result
-    -> ExtLedgerState mk blk
-    -> m result
+  answerBlockQuery :: QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState mk blk -> result
+
+  prepareBlockQuery :: BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
+
+  -- This method need not be defined for a @'BlockQuery' blk@ that only contains
+  -- 'SmallL' queries.
+  default prepareBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
+  prepareBlockQuery query = proveNotLargeQuery query
+
+-- | Same as 'handleLargeQuery', but can also handle small queries.
+handleQuery ::
+     forall blk m fp result. (ConfigSupportsNode blk, HasAnnTip blk, QueryLedger blk, Monad m)
+  => ExtLedgerCfg blk
+  -> DiskLedgerView blk m
+  -> Query blk fp result
+  -> LedgerDB' blk
+  -> m result
+handleQuery cfg dlv query lgrdb = case classifyQuery query of
+  Left  Refl -> pure $ answerQuery cfg query (error "getLatestState" lgrdb)
+  Right Refl -> handleLargeQuery cfg dlv query lgrdb
+
+handleLargeQuery ::
+     forall blk m result. (ConfigSupportsNode blk, HasAnnTip blk, QueryLedger blk, Monad m)
+  => ExtLedgerCfg blk
+  -> DiskLedgerView blk m
+     -- ^ interface used to read the on-disk ledger data
+  -> Query blk LargeL result
+  -> LedgerDB' blk
+     -- ^ the ledger state to query, ie an in-memory ledger state along with its
+     -- contemporary 'DbChangelog'
+     --
+     -- We can answer queries about the tip of this ledger state until it is no
+     -- longer an extension of the on-disk tip. We therefore assume that whoever
+     -- is providing this 'DbChangelog' is also holding the lock that prevents
+     -- the on-disk tip from advancing, and they won't release it until we
+     -- return a @result@. (For this reason, every @answerQuery@ call should
+     -- return relatively quickly.)
+  -> m result
+handleLargeQuery cfg dlv query lgrdb = do
+  let now_keys = prepareQuery query
+      chlog    = error "getChangelog" lgrdb
+      old_keys = error "rewindTableKeySets" chlog now_keys
+  (old_values, chlog') <- error "readKeys" dlv old_keys
+  let now_values = error "forwardTableReadSets" chlog' old_values
+      now_state  :: ExtLedgerState TrackingMK blk
+      now_state  = error "setTables" (error "getLatestState" lgrdb) now_values
+
+  -- All of the above is just bookkeeping necessary to enable this computation.
+  -- The @now_state@ includes a slice of the " large " data that is just enough
+  -- to answer @query@. That slice is typically small but eg could be the entire
+  -- disk data for some family of debug queries.
+  pure $ answerQuery cfg query now_state
 
 {-------------------------------------------------------------------------------
   Queries that are small
@@ -336,3 +364,26 @@ class SmallQuery query where
 
 withSmallQueryProof :: SmallQuery query => query fp result -> ((fp ~ SmallL) => a) -> a
 withSmallQueryProof q k = proveSmallQuery k q
+
+proveNotLargeQuery :: forall query result a. SmallQuery query => query LargeL result -> a
+proveNotLargeQuery q = case mk q of {}
+  where
+    mk :: forall fp. query fp result -> fp :~: SmallL
+    mk q' = withSmallQueryProof q' Refl
+
+class ( EqQuery query
+      , ShowQuery query
+      ) => IsQuery query where
+  classifyQuery :: query fp result -> Either (fp :~: SmallL) (fp :~: LargeL)
+
+  -- This method need not be defined for a @query@ that only contains 'SmallL'
+  -- queries.
+  default classifyQuery :: SmallQuery query => query fp result -> Either (fp :~: SmallL) (fp :~: LargeL)
+  classifyQuery query = withSmallQueryProof query (Left Refl)
+
+instance (IsQuery (BlockQuery blk), StandardHash blk) => IsQuery (Query blk) where
+  classifyQuery = \case
+    BlockQuery query -> classifyQuery query
+    GetSystemStart   -> Left Refl
+    GetChainBlockNo  -> Left Refl
+    GetChainPoint    -> Left Refl

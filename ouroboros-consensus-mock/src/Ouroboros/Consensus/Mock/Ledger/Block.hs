@@ -495,6 +495,10 @@ txSize = fromIntegral . Lazy.length . serialise
 data instance BlockQuery (SimpleBlock c ext) fp result where
     QueryLedgerTip :: BlockQuery (SimpleBlock c ext) SmallL (Point (SimpleBlock c ext))
 
+instance SmallQuery (BlockQuery (SimpleBlock c ext)) where
+  proveSmallQuery k = \case
+    QueryLedgerTip -> k
+
 instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   answerBlockQuery _cfg QueryLedgerTip =
         castPoint
@@ -512,6 +516,8 @@ instance (Typeable c, Typeable ext)
 instance (SimpleCrypto c, Typeable ext)
       => ShowQuery (BlockQuery (SimpleBlock c ext)) where
   showResult QueryLedgerTip = show
+
+instance (SimpleCrypto c, Typeable ext) => IsQuery (BlockQuery (SimpleBlock c ext)) where
 
 {-------------------------------------------------------------------------------
   Inspection
