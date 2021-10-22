@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -15,6 +16,10 @@ module Ouroboros.Consensus.Network.NodeToNode (
   , Codecs (..)
   , defaultCodecs
   , identityCodecs
+    -- * Byte Limits
+  , ByteLimits
+  , byteLimits
+  , noByteLimits
     -- * Tracers
   , Tracers
   , Tracers' (..)
@@ -40,6 +45,8 @@ import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BSL
+import           Data.Int (Int64)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
 
@@ -54,6 +61,7 @@ import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
@@ -436,6 +444,62 @@ data Apps m peer bCS bBF bTX bTX2 bKA a = Apps {
     , aKeepAliveServer     :: ServerApp m peer bKA a
     }
 
+
+-- | Per mini-protocol byte limits;  For each mini-protocol they provide
+-- per-state byte size limits, i.e. how much data can arrive from the network.
+--
+-- They don't depend on the instantiation of the protocol parameters (which
+-- block type is used, etc.), hence the use of 'RankNTypes'.
+--
+data ByteLimits bCS bBF bTX bTX2 bKA = ByteLimits {
+      blChainSync     :: forall header point tip.
+                         ProtocolSizeLimits
+                           (ChainSync  header point tip)
+                           bCS
+
+    , blBlockFetch    :: forall block point.
+                         ProtocolSizeLimits
+                           (BlockFetch block point)
+                           bBF
+
+    , blTxSubmission  :: forall txid tx.
+                          ProtocolSizeLimits
+                           (TxSubmission txid tx)
+                           bTX
+
+    , blTxSubmission2 :: forall txid tx.
+                         ProtocolSizeLimits
+                           (TxSubmission2 txid tx)
+                           bTX2
+
+    , blKeepAlive     :: ProtocolSizeLimits
+                           KeepAlive
+                           bKA
+
+    }
+
+noByteLimits :: ByteLimits bCS bBF bTX bTX2 bKA
+noByteLimits = ByteLimits {
+    blChainSync     = byteLimitsChainSync     (const 0)
+  , blBlockFetch    = byteLimitsBlockFetch    (const 0)
+  , blTxSubmission  = byteLimitsTxSubmission  (const 0)
+  , blTxSubmission2 = byteLimitsTxSubmission2 (const 0)
+  , blKeepAlive     = byteLimitsKeepAlive     (const 0)
+  }
+
+byteLimits :: ByteLimits ByteString ByteString ByteString ByteString ByteString
+byteLimits = ByteLimits {
+      blChainSync     = byteLimitsChainSync     size
+    , blBlockFetch    = byteLimitsBlockFetch    size
+    , blTxSubmission  = byteLimitsTxSubmission  size
+    , blTxSubmission2 = byteLimitsTxSubmission2 size
+    , blKeepAlive     = byteLimitsKeepAlive     size
+    }
+  where
+    size :: ByteString -> Word
+    size = (fromIntegral :: Int64 -> Word)
+         . BSL.length
+
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
 mkApps
   :: forall m remotePeer localPeer blk e bCS bBF bTX bTX2 bKA.
@@ -452,10 +516,11 @@ mkApps
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
   -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA)
+  -> ByteLimits bCS bBF bTX bTX2 bKA
   -> m ChainSyncTimeout
   -> Handlers m remotePeer blk
   -> Apps m remotePeer bCS bBF bTX bTX2 bKA ()
-mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
+mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
@@ -483,7 +548,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
                 runPipelinedPeerWithLimits
                   (contramap (TraceLabelPeer them) tChainSyncTracer)
                   (cChainSyncCodec (mkCodecs version))
-                  (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+                  blChainSync
                   (timeLimitsChainSync chainSyncTimeout)
                   channel
                   $ chainSyncClientPeerPipelined
@@ -505,7 +570,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
           runPeerWithLimits
             (contramap (TraceLabelPeer them) tChainSyncSerialisedTracer)
             (cChainSyncCodecSerialised (mkCodecs version))
-            (byteLimitsChainSync (const 0)) -- TODO: Real Bytelimits, see #1727
+            blChainSync
             (timeLimitsChainSync chainSyncTimeout)
             channel
             $ chainSyncServerPeer
@@ -523,7 +588,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
         runPipelinedPeerWithLimits
           (contramap (TraceLabelPeer them) tBlockFetchTracer)
           (cBlockFetchCodec (mkCodecs version))
-          (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
+          blBlockFetch
           timeLimitsBlockFetch
           channel
           $ hBlockFetchClient version controlMessageSTM clientCtx
@@ -539,7 +604,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
         runPeerWithLimits
           (contramap (TraceLabelPeer them) tBlockFetchSerialisedTracer)
           (cBlockFetchCodecSerialised (mkCodecs version))
-          (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
+          blBlockFetch
           timeLimitsBlockFetch
           channel
           $ blockFetchServerPeer
@@ -556,7 +621,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
       runPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
         (cTxSubmissionCodec (mkCodecs version))
-        (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
+        blTxSubmission
         timeLimitsTxSubmission
         channel
         (txSubmissionClientPeer (hTxSubmissionClient version controlMessageSTM them))
@@ -571,7 +636,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
       runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmissionTracer)
         (cTxSubmissionCodec (mkCodecs version))
-        (byteLimitsTxSubmission (const 0)) -- TODO: Real Bytelimits, see #1727
+        blTxSubmission
         timeLimitsTxSubmission
         channel
         (txSubmissionServerPeerPipelined (hTxSubmissionServer version them))
@@ -587,7 +652,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
       runPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmission2Tracer)
         (cTxSubmission2Codec (mkCodecs version))
-        (byteLimitsTxSubmission2 (const 0)) -- TODO: Real Bytelimits, see #1727
+        blTxSubmission2
         timeLimitsTxSubmission2
         channel
         (Hello.wrapClientPeer (txSubmissionClientPeer (hTxSubmissionClient version controlMessageSTM them)))
@@ -602,7 +667,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
       runPipelinedPeerWithLimits
         (contramap (TraceLabelPeer them) tTxSubmission2Tracer)
         (cTxSubmission2Codec (mkCodecs version))
-        (byteLimitsTxSubmission2 (const 0)) -- TODO: Real Bytelimits, see #1727
+        blTxSubmission2
         timeLimitsTxSubmission2
         channel
         (Hello.wrapServerPeerPipelined (txSubmissionServerPeerPipelined (hTxSubmissionServer version them)))
@@ -624,7 +689,7 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout Handlers {..} =
                        runPeerWithLimits
                          nullTracer
                          (cKeepAliveCodec (mkCodecs version))
-                         (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
+                         blKeepAlive
                          timeLimitsKeepAlive
                          channel
                          $ keepAliveClientPeer

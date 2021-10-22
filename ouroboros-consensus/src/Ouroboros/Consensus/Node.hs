@@ -349,6 +349,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           nodeKernel
           rnTraceNTN
           (NTN.defaultCodecs codecConfig version)
+          NTN.byteLimits
           llrnChainSyncTimeout
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
