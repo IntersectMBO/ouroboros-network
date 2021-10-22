@@ -18,6 +18,7 @@ module Ouroboros.Network.ConnectionManager.Core
   , withConnectionManager
   , defaultTimeWaitTimeout
   , defaultProtocolIdleTimeout
+  , defaultResetTimeout
 
   , ConnectionState (..)
   , abstractState
@@ -30,6 +31,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSTM.Strict
+import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Tracer (Tracer, traceWith, contramap)
 import           Data.Foldable (traverse_)
 import           Data.Functor (($>))
@@ -42,6 +44,8 @@ import           GHC.Stack (CallStack, HasCallStack, callStack)
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
+
+import           Data.Monoid.Synchronisation
 
 import           Network.Mux.Types (MuxMode)
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
@@ -100,6 +104,11 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         -- 'TerminatingState' to 'TerminatedState'.
         --
         cmTimeWaitTimeout     :: DiffTime,
+
+        -- | Inactivity timeout before the connection will be reset.  It is the
+        -- timeout attached to the 'OutboundIdleState'.
+        --
+        cmOutboundIdleTimeout :: DiffTime,
 
         -- | @version@ represents the tuple of @versionNumber@ and
         -- @agreedOptions@.
@@ -201,11 +210,27 @@ data ConnectionState peerAddr handle handleError version m =
 
     -- | Either @OutboundState Duplex@ or @OutobundState^\tau Duplex@.
   | OutboundDupState    !(ConnectionId peerAddr) !(Async m ()) !handle !TimeoutExpired
+
+    -- | Before connection is reset it is put in 'OutboundIdleState' for the
+    -- duration of 'cmOutboundIdleTimeout'.
+    --
+  | OutboundIdleState   !(ConnectionId peerAddr) !(Async m ()) !handle !DataFlow
   | InboundIdleState    !(ConnectionId peerAddr) !(Async m ()) !handle !DataFlow
   | InboundState        !(ConnectionId peerAddr) !(Async m ()) !handle !DataFlow
   | DuplexState         !(ConnectionId peerAddr) !(Async m ()) !handle
   | TerminatingState    !(ConnectionId peerAddr) !(Async m ()) !(Maybe handleError)
   | TerminatedState                              !(Maybe handleError)
+
+
+-- | Return 'True' for states in which the connection was already closed.
+--
+connectionTerminated :: ConnectionState peerAddr handle handleError version m
+                     -> Bool
+connectionTerminated TerminatingState {} = True
+connectionTerminated TerminatedState  {} = True
+connectionTerminated _                   = False
+
+
 
 -- | Perform counting from an 'AbstractState'
 connectionStateToCounters
@@ -225,6 +250,7 @@ connectionStateToCounters state =
                                             <> duplexConn
                                             <> outgoingConn
 
+      OutboundIdleState _ _ _ _             -> mempty
       InboundIdleState _ _ _ Unidirectional -> prunableConn
                                             <> uniConn
                                             <> incomingConn
@@ -285,6 +311,14 @@ instance ( Show peerAddr
              , " "
              , show expired
              ]
+    show (OutboundIdleState connId connThread _handle df) =
+      concat [ "OutboundIdleState "
+             , show connId
+             , " "
+             , show (asyncThreadId (Proxy :: Proxy m) connThread)
+             , " "
+             , show df
+             ]
     show (InboundIdleState connId connThread _handle df) =
       concat ([ "InboundIdleState "
               , show connId
@@ -325,6 +359,7 @@ getConnThread ReservedOutboundState                                     = Nothin
 getConnThread (UnnegotiatedState _pr   _connId connThread)              = Just connThread
 getConnThread (OutboundUniState        _connId connThread _handle )     = Just connThread
 getConnThread (OutboundDupState        _connId connThread _handle _te)  = Just connThread
+getConnThread (OutboundIdleState       _connId connThread _handle _df)  = Just connThread
 getConnThread (InboundIdleState        _connId connThread _handle _df)  = Just connThread
 getConnThread (InboundState            _connId connThread _handle _df)  = Just connThread
 getConnThread (DuplexState             _connId connThread _handle)      = Just connThread
@@ -341,6 +376,7 @@ getConnType ReservedOutboundState                                    = Nothing
 getConnType (UnnegotiatedState pr  _connId _connThread)              = Just (UnnegotiatedConn pr)
 getConnType (OutboundUniState      _connId _connThread _handle)      = Just (NegotiatedConn Outbound Unidirectional)
 getConnType (OutboundDupState      _connId _connThread _handle _te)  = Just (NegotiatedConn Outbound Duplex)
+getConnType (OutboundIdleState     _connId _connThread _handle df)   = Just (OutboundIdleConn df)
 getConnType (InboundIdleState      _connId _connThread _handle df)   = Just (InboundIdleConn df)
 getConnType (InboundState          _connId _connThread _handle df)   = Just (NegotiatedConn Inbound df)
 getConnType (DuplexState           _connId _connThread _handle)      = Just DuplexConn
@@ -359,6 +395,7 @@ abstractState = \s -> case s of
     go (UnnegotiatedState pr _ _)     = UnnegotiatedSt pr
     go (OutboundUniState    _ _ _)    = OutboundUniSt
     go (OutboundDupState    _ _ _ te) = OutboundDupSt te
+    go (OutboundIdleState _ _ _ df)   = OutboundIdleSt df
     go (InboundIdleState _ _ _ df)    = InboundIdleSt df
     go (InboundState     _ _ _ df)    = InboundSt df
     go DuplexState {}                 = DuplexSt
@@ -376,6 +413,9 @@ defaultTimeWaitTimeout = 60
 --
 defaultProtocolIdleTimeout :: DiffTime
 defaultProtocolIdleTimeout = 5
+
+defaultResetTimeout :: DiffTime
+defaultResetTimeout = 5
 
 
 -- | A wedge product
@@ -400,6 +440,7 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
     --
     = DemotedToColdLocal      (ConnectionId peerAddr)
                               (Async m ())
+                              (StrictTVar m (ConnectionState peerAddr handle handleError version m))
                              !(Transition (ConnectionState peerAddr handle handleError version m))
 
     -- | Any @DemoteToCold@ transition which does not terminate the connection, i.e.
@@ -470,6 +511,7 @@ withConnectionManager ConnectionManagerArguments {
                           cmAddressType,
                           cmSnocket,
                           cmTimeWaitTimeout,
+                          cmOutboundIdleTimeout,
                           connectionDataFlow,
                           cmPrunePolicy,
                           cmConnectionsLimits
@@ -645,6 +687,9 @@ withConnectionManager ConnectionManagerArguments {
                             writeTVar connVar (TerminatedState Nothing)
                             return $ There connState
                           OutboundDupState {} -> do
+                            writeTVar connVar (TerminatedState Nothing)
+                            return $ There connState
+                          OutboundIdleState {} -> do
                             writeTVar connVar (TerminatedState Nothing)
                             return $ There connState
                           InboundIdleState {} -> do
@@ -865,6 +910,13 @@ withConnectionManager ConnectionManagerArguments {
                 OutboundDupState _connId _connThread _handle _expired ->
                   throwSTM (withCallStack (ImpossibleState peerAddr))
 
+                OutboundIdleState _ _ _ dataFlow' -> do
+                  let connState' = InboundIdleState
+                                     connId connThread handle
+                                     dataFlow'
+                  writeTVar connVar connState'
+                  return (mkTransition connState connState')
+
                 InboundIdleState {} ->
                   throwSTM (withCallStack (ImpossibleState peerAddr))
 
@@ -958,6 +1010,14 @@ withConnectionManager ConnectionManagerArguments {
                 return ( Nothing
                        , Nothing
                        , UnsupportedState OutboundUniSt )
+
+              -- unexpected state, this state is reachable only from outbound
+              -- states
+              OutboundIdleState _connId _connThread _handle _dataFlow ->
+                assert False $
+                return ( Nothing
+                       , Nothing
+                       , OperationSuccess CommitTr )
 
               -- @
               --   Commit^{dataFlow} : InboundIdleState dataFlow
@@ -1065,6 +1125,13 @@ withConnectionManager ConnectionManagerArguments {
                          , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
+                         )
+
+                OutboundIdleState _connId _connThread _handle _dataFlow ->
+                  let tr = abstractState (Known connState) in
+                  return ( Just (Right (TrForbiddenOperation peerAddr tr))
+                         , mutableConnState
+                         , Left (withCallStack (ForbiddenOperation peerAddr tr))
                          )
 
                 InboundIdleState connId _connThread _handle Unidirectional -> do
@@ -1307,6 +1374,10 @@ withConnectionManager ConnectionManagerArguments {
                 OutboundDupState {} ->
                   throwSTM (withCallStack (ConnectionExists provenance connId))
 
+                OutboundIdleState _connId _connThread _handle _dataFlow ->
+                  let tr = abstractState (Known connState) in
+                  throwSTM (withCallStack (ForbiddenOperation peerAddr tr))
+
                 InboundIdleState _connId connThread handle dataFlow@Duplex -> do
                   -- @
                   --   Awake^{Duplex}_{Local} : InboundIdleState Duplex
@@ -1413,26 +1484,28 @@ withConnectionManager ConnectionManagerArguments {
                     (TrForbiddenOperation peerAddr st)
                     st
 
-              OutboundUniState connId connThread _handle -> do
+              OutboundUniState connId connThread handle -> do
                 -- @
                 --   DemotedToCold^{Unidirectional}_{Local}
                 --     : OutboundState Unidirectional
                 --     → TerminatingState
                 -- @
-                let connState' = TerminatingState connId connThread Nothing
+                let connState' = OutboundIdleState connId connThread handle
+                                                   Unidirectional
                 writeTVar connVar connState'
-                return (DemotedToColdLocal connId connThread
+                return (DemotedToColdLocal connId connThread connVar
                          (mkTransition connState connState'))
 
-              OutboundDupState connId connThread _handle Expired -> do
+              OutboundDupState connId connThread handle Expired -> do
                 -- @
                 --   DemotedToCold^{Duplex}_{Local}
                 --     : OutboundState Duplex
                 --     → InboundIdleState^\tau
                 -- @
-                let connState' = TerminatingState connId connThread Nothing
+                let connState' = OutboundIdleState connId connThread handle
+                                                   Duplex
                 writeTVar connVar connState'
-                return (DemotedToColdLocal connId connThread
+                return (DemotedToColdLocal connId connThread connVar
                          (mkTransition connState connState'))
 
               OutboundDupState connId connThread handle Ticking -> do
@@ -1444,6 +1517,9 @@ withConnectionManager ConnectionManagerArguments {
                 let connState' = InboundIdleState connId connThread handle Duplex
                 writeTVar connVar connState'
                 return (DemoteToColdLocalNoop (mkTransition connState connState'))
+
+              OutboundIdleState _connId _connThread _handleError _dataFlow ->
+                return (DemoteToColdLocalNoop (mkTransition connState connState))
 
               InboundIdleState _connId _connThread _handle dataFlow ->
                 assert (dataFlow == Duplex) $
@@ -1509,14 +1585,39 @@ withConnectionManager ConnectionManagerArguments {
 
       traceCounters stateVar
       case transition of
-        DemotedToColdLocal _connId connThread tr -> do
+        DemotedToColdLocal connId connThread connVar tr -> do
           traceWith trTracer (TransitionTrace peerAddr tr)
-          cancel connThread
-          -- We relay on the `finally` handler of connection thread to:
-          --
-          -- - close the socket,
-          -- - set the state to 'TerminatedState'
-          return (OperationSuccess (abstractState (fromState tr)))
+          timeoutVar <- registerDelay cmOutboundIdleTimeout
+          r <- atomically $ runFirstToFinish $
+               FirstToFinish (do connState <- readTVar connVar
+                                 check (case connState of
+                                          OutboundIdleState {} -> False
+                                          _                    -> True
+                                       )
+                                 return (Left connState)
+                             )
+            <> FirstToFinish (do b <- LazySTM.readTVar timeoutVar
+                                 check b
+                                 Right <$> readTVar connVar
+                             )
+          case r of
+            Right connState -> do
+              let connState' = TerminatingState connId connThread Nothing
+              atomically $ writeTVar connVar connState'
+              traceWith trTracer (TransitionTrace peerAddr
+                                   (mkTransition connState connState'))
+              -- We relay on the `finally` handler of connection thread to:
+              --
+              -- - close the socket,
+              -- - set the state to 'TerminatedState'
+              cancel connThread
+              return (OperationSuccess (abstractState $ Known connState'))
+
+            Left connState  | connectionTerminated connState
+                           ->
+              return (OperationSuccess (abstractState $ Known connState))
+            Left connState ->
+              return (UnsupportedState (abstractState $ Known connState))
 
         PruneConnections _connId pruneMap tr -> do
           traceWith trTracer (TransitionTrace peerAddr tr)
@@ -1563,6 +1664,21 @@ withConnectionManager ConnectionManagerArguments {
                 let connState' = DuplexState connId connThread handle
                 writeTVar connVar connState'
                 return (OperationSuccess (mkTransition connState connState'))
+              -- @
+              --   Awake^{Duplex}_{Remote} : OutboundIdleState Duplex
+              --                           → InboundState Duplex
+              -- @
+              OutboundIdleState connId connThread handle dataFlow@Duplex -> do
+                -- @
+                --   Awake^{Duplex}_{Remote} : OutboundIdleState Duplex
+                --                           → InboundState Duplex
+                -- @
+                let connState' = InboundState connId connThread handle dataFlow
+                writeTVar connVar connState
+                return (OperationSuccess (mkTransition connState connState'))
+              OutboundIdleState _connId _connThread _handle
+                                                      dataFlow@Unidirectional ->
+                return (UnsupportedState (OutboundIdleSt dataFlow))
               InboundIdleState connId connThread handle dataFlow -> do
                 -- @
                 --   Awake^{dataFlow}_{Remote} : InboundIdleState Duplex
@@ -1614,6 +1730,10 @@ withConnectionManager ConnectionManagerArguments {
                 return (UnsupportedState OutboundUniSt)
               OutboundDupState _connId _connThread _handle expired ->
                 return (UnsupportedState (OutboundDupSt expired))
+              -- one can only enter 'OutboundIdleState' if remote state is
+              -- already cold.
+              OutboundIdleState _connId _connThread _handle dataFlow ->
+                return (UnsupportedState (OutboundIdleSt dataFlow))
               InboundIdleState _connId _connThread _handle dataFlow ->
                 return (UnsupportedState (InboundIdleSt dataFlow))
 
