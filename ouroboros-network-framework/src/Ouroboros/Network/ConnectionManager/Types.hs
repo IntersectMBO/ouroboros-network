@@ -218,6 +218,10 @@ data ConnectionType
     --
     = UnnegotiatedConn !Provenance
 
+    -- | An outbound idle connection.
+    --
+    | OutboundIdleConn !DataFlow
+
     -- | An inbound idle connection.
     --
     | InboundIdleConn !DataFlow
@@ -630,11 +634,13 @@ data AbstractState
     | InboundSt      !DataFlow
     | OutboundUniSt
     | OutboundDupSt  !TimeoutExpired
+    | OutboundIdleSt !DataFlow
     | DuplexSt
     | WaitRemoteIdleSt
     | TerminatingSt
     | TerminatedSt
     deriving (Eq, Show, Typeable)
+
 
 -- | Counters for tracing and analysis purposes
 --
