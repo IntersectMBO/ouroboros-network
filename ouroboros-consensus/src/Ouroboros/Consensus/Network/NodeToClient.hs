@@ -133,9 +133,8 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
       , hStateQueryServer =
           localStateQueryServer
             (ExtLedgerCfg cfg)
-            (error "NTC.DiskLedgerView")
             (ChainDB.getTipPoint getChainDB)
-            (ChainDB.getPastLedger getChainDB)
+            (\pt -> error "splitLedgerDB" pt <$> ChainDB.getLedgerDB getChainDB)
             (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
 
       , hTxMonitorServer =

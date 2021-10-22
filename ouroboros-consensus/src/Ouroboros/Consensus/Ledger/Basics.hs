@@ -24,13 +24,14 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerCfg
   , applyChainTick
     -- * Link block to its ledger
-  , DiskLedgerView
   , LedgerConfig
   , LedgerError
   , LedgerState
   , TickedLedgerState
-    -- * Re-exported for convenience
+    -- * UTxO HD
+  , DiskLedgerView
   , FootprintL (..)
+  , TableKeySets
   ) where
 
 import           Data.Kind (Type)
@@ -184,6 +185,12 @@ type LedgerConfig      blk = LedgerCfg (LedgerState blk)
 type LedgerError       blk = LedgerErr (LedgerState blk)
 type TickedLedgerState blk = Ticked    (LedgerState blk)
 
+{-------------------------------------------------------------------------------
+  UTxO HD stubs
+-------------------------------------------------------------------------------}
+
 -- | Monadic functions used to query this this block type's 'LargeL' ledger
 -- states, which typically involve accessing disk.
 data family DiskLedgerView blk :: (Type -> Type) -> Type
+
+data family TableKeySets l

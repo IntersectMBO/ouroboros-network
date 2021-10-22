@@ -57,7 +57,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
-import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..), WrapDiskLedgerView (..))
+import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 
@@ -112,13 +112,13 @@ data instance BlockQuery (HardForkBlock xs) :: FootprintL -> Type -> Type where
     -> BlockQuery (HardForkBlock (x ': xs)) fp result
 
 instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
-  answerBlockSmallQuery
+  answerBlockQuery
     (ExtLedgerCfg cfg)
     query
     ext@(ExtLedgerState st@(HardForkLedgerState hardForkState) _) =
       case query of
         QueryIfCurrent queryIfCurrent ->
-          interpretSmallQueryIfCurrent
+          interpretQueryIfCurrent
             cfgs
             queryIfCurrent
             (distribExtLedgerState ext)
@@ -138,34 +138,16 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
       lcfg = configLedger cfg
       ei   = State.epochInfoLedger lcfg hardForkState
 
-  -- TODO de-duplicate with answerBlockSmallQuery
-  answerBlockQuery
-    (ExtLedgerCfg cfg)
-    dlv
-    query
-    ext@(ExtLedgerState st@(HardForkLedgerState hardForkState) _) =
-      case query of
-        QueryIfCurrent queryIfCurrent ->
-          interpretQueryIfCurrent
-            cfgs
-            (hardForkDiskLedgerView dlv)
-            queryIfCurrent
-            (distribExtLedgerState ext)
-        QueryAnytime queryAnytime (EraIndex era) -> pure $
-          interpretQueryAnytime
-            lcfg
-            queryAnytime
-            (EraIndex era)
-            hardForkState
-        QueryHardFork queryHardFork -> pure $
-          interpretQueryHardFork
-            lcfg
-            queryHardFork
-            st
-    where
-      cfgs = hmap ExtLedgerCfg $ distribTopLevelConfig ei cfg
-      lcfg = configLedger cfg
-      ei   = State.epochInfoLedger lcfg hardForkState
+  prepareBlockQuery = \case
+      QueryIfCurrent queryIfCurrent  -> prepareQueryIfCurrent queryIfCurrent
+      QueryAnytime queryAnytime _era -> proveNotLargeQuery    queryAnytime
+      QueryHardFork queryHardFork    -> proveNotLargeQuery    queryHardFork
+
+instance All SingleEraBlock xs => IsQuery (BlockQuery (HardForkBlock xs)) where
+  classifyQuery = \case
+      QueryIfCurrent queryIfCurrent  -> classifyQuery queryIfCurrent
+      QueryAnytime queryAnytime _era -> classifyQuery queryAnytime
+      QueryHardFork queryHardFork    -> classifyQuery queryHardFork
 
 -- | Precondition: the 'ledgerState' and 'headerState' should be from the same
 -- era. In practice, this is _always_ the case, unless the 'ExtLedgerState' was
@@ -255,21 +237,26 @@ instance All SingleEraBlock xs => EqQuery (QueryIfCurrent xs) where
   eqQuery (QS qry) (QS qry') = eqQuery qry qry'
   eqQuery _        _         = Nothing
 
-interpretSmallQueryIfCurrent ::
-     forall mk result xs. All SingleEraBlock xs
+instance All SingleEraBlock xs => IsQuery (QueryIfCurrent xs) where
+  classifyQuery = \case
+    QZ qry -> classifyQuery qry
+    QS qry -> classifyQuery qry
+
+interpretQueryIfCurrent ::
+     forall mk fp result xs. (All SingleEraBlock xs, QuerySat mk fp)
   => NP ExtLedgerCfg xs
-  -> QueryIfCurrent xs SmallL result
+  -> QueryIfCurrent xs fp result
   -> NS (ExtLedgerState mk) xs
   -> HardForkQueryResult xs result
-interpretSmallQueryIfCurrent = go
+interpretQueryIfCurrent = go
   where
     go :: All SingleEraBlock xs'
        => NP ExtLedgerCfg xs'
-       -> QueryIfCurrent xs' SmallL result
+       -> QueryIfCurrent xs' fp result
        -> NS (ExtLedgerState mk) xs'
        -> HardForkQueryResult xs' result
     go (c :* _)  (QZ qry) (Z st) =
-        Right $ answerBlockSmallQuery c qry st
+        Right $ answerBlockQuery c qry st
     go (_ :* cs) (QS qry) (S st) =
         first shiftMismatch $ go cs qry st
     go _         (QZ qry) (S st) =
@@ -277,30 +264,12 @@ interpretSmallQueryIfCurrent = go
     go _         (QS qry) (Z st) =
         Left $ MismatchEraInfo $ MR (hardForkQueryInfo qry) (ledgerInfo st)
 
--- TODO de-duplicate with interpretSmallQueryIfCurrent
-interpretQueryIfCurrent ::
-     forall result xs mk fp m. (All SingleEraBlock xs, Monad m)
-  => NP ExtLedgerCfg xs
-  -> NP (WrapDiskLedgerView m) xs
-  -> QueryIfCurrent xs fp result
-  -> NS (ExtLedgerState mk) xs
-  -> m (HardForkQueryResult xs result)
-interpretQueryIfCurrent = go
-  where
-    go :: All SingleEraBlock xs'
-       => NP ExtLedgerCfg xs'
-       -> NP (WrapDiskLedgerView m) xs'
-       -> QueryIfCurrent xs' fp result
-       -> NS (ExtLedgerState mk) xs'
-       -> m (HardForkQueryResult xs' result)
-    go (c :* _)  (dlv :* _)  (QZ qry) (Z st) =
-        Right <$> answerBlockQuery c (unwrapDiskLedgerView dlv) qry st
-    go (_ :* cs) (_ :* dlvs) (QS qry) (S st) =
-        first shiftMismatch <$> go cs dlvs qry st
-    go _         _           (QZ qry) (S st) =
-        pure $ Left $ MismatchEraInfo $ ML (queryInfo qry) (hcmap proxySingle ledgerInfo st)
-    go _         _           (QS qry) (Z st) =
-        pure $ Left $ MismatchEraInfo $ MR (hardForkQueryInfo qry) (ledgerInfo st)
+prepareQueryIfCurrent ::
+     QueryIfCurrent xs fp result
+  -> TableKeySets (LedgerState (HardForkBlock xs))
+prepareQueryIfCurrent = error "prepareQueryIfCurrent"
+  -- TODO I realized here that the Tables definition for HardForkBlock is going
+  -- to be interesting...
 
 {-------------------------------------------------------------------------------
   Any era queries
@@ -320,6 +289,8 @@ instance EqQuery QueryAnytime where
 instance SmallQuery QueryAnytime where
   proveSmallQuery k = \case
     GetEraStart -> k
+
+instance IsQuery QueryAnytime where
 
 interpretQueryAnytime ::
      forall xs fp result. All SingleEraBlock xs
@@ -391,6 +362,8 @@ instance SmallQuery (QueryHardFork xs) where
     GetInterpreter -> k
     GetCurrentEra  -> k
 
+instance All SingleEraBlock xs => IsQuery (QueryHardFork xs) where
+
 interpretQueryHardFork ::
      All SingleEraBlock xs
   => HardForkLedgerConfig xs
@@ -445,7 +418,7 @@ decodeQueryHardForkResult = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk mk fp. SingleEraBlock blk
+ledgerInfo :: forall blk mk. SingleEraBlock blk
            => ExtLedgerState mk blk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
