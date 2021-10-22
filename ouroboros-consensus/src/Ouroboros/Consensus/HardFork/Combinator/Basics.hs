@@ -148,7 +148,7 @@ instance CanHardFork xs => NoThunks (HardForkLedgerConfig xs)
 type instance LedgerCfg (LedgerState (HardForkBlock xs)) = HardForkLedgerConfig xs
 
 newtype instance DiskLedgerView (HardForkBlock xs) m = HardForkDiskLedgerView {
-      -- TODO Should this be 'PerEraStorageConfig'? Why did Edsko maintain that
+      -- TODO Should this be 'PerEraDiskLedgerView'? Why did Edsko maintain that
       -- intermediate layer? Perhaps error messages? NoThunks instance hooks,
       -- etc?
       hardForkDiskLedgerView :: NP (WrapDiskLedgerView m) xs
