@@ -131,6 +131,8 @@ tests =
                  prop_inbound_governor_no_unsupported_state
   , testProperty "connection_manager_valid_transition_order"
                  prop_connection_manager_valid_transition_order
+  , testProperty "inbound_governor_valid_transition_order"
+                 prop_inbound_governor_valid_transition_order
   , testProperty "unit_connection_terminated_when_negotiating"
                  unit_connection_terminated_when_negotiating
   , testGroup "generators"
@@ -1929,13 +1931,42 @@ verifyAbstractTransitionOrder (h:t) = go t h
     -- the next 'fromState', in order for the transition chain to be correct.
     go (next@(Transition nextFromState _) : ts)
         curr@(Transition _ currToState) =
-         (AllProperty
-           $ counterexample
-               ("\nUnexpected transition order!\nWent from: "
-               ++ show curr ++ "\nto: " ++ show next)
-               (property (currToState == nextFromState)))
+         AllProperty
+           (counterexample
+              ("\nUnexpected transition order!\nWent from: "
+              ++ show curr ++ "\nto: " ++ show next)
+              (property (currToState == nextFromState)))
          <> go ts next
 
+-- Assuming all transitions in the transition list are valid, we only need to
+-- look at the 'toState' of the current transition and the 'fromState' of the
+-- next transition.
+verifyRemoteTransitionOrder :: [RemoteTransition]
+                            -> AllProperty
+verifyRemoteTransitionOrder [] = mempty
+verifyRemoteTransitionOrder (h:t) = go t h
+  where
+    go :: [RemoteTransition] -> RemoteTransition -> AllProperty
+    -- All transitions must end in the 'Nothing' (final) state, and since
+    -- we assume all transitions are valid we do not have to check the
+    -- 'fromState' .
+    go [] (Transition _ Nothing) = mempty
+    go [] tr@(Transition _ _)          =
+      AllProperty
+        $ counterexample
+            ("\nUnexpected last transition: " ++ show tr)
+            (property False)
+    -- All transitions have to be in a correct order, which means that the
+    -- current state we are looking at (current toState) needs to be equal to
+    -- the next 'fromState', in order for the transition chain to be correct.
+    go (next@(Transition nextFromState _) : ts)
+        curr@(Transition _ currToState) =
+         AllProperty
+           (counterexample
+              ("\nUnexpected transition order!\nWent from: "
+              ++ show curr ++ "\nto: " ++ show next)
+              (property (currToState == nextFromState)))
+         <> go ts next
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2005,6 +2036,10 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
                        (Script (toBearerInfo absBi :| [noAttenuation]))
                        maxAcceptedConnectionsLimit l
 
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates the order of connection manager state changes.
+--
 prop_connection_manager_valid_transition_order :: Int
                                                -> ArbDataFlow
                                                -> AbsBearerInfo
@@ -2124,6 +2159,45 @@ prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
                        maxAcceptedConnectionsLimit l
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates the order of inbound governor state changes.
+--
+prop_inbound_governor_valid_transition_order :: Int
+                                             -> ArbDataFlow
+                                             -> AbsBearerInfo
+                                             -> MultiNodeScript Int TestAddr
+                                             -> Property
+prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
+                                             absBi script@(MultiNodeScript l) =
+  let trace = runSimTrace sim
+
+      evsRTT :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
+      evsRTT = traceWithNameTraceEvents trace
+
+      evsIGT :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      evsIGT = traceWithNameTraceEvents trace
+
+  in tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (Trace.ppTrace show show evsIGT)
+    . counterexample (ppScript script)
+    . counterexample (Trace.ppTrace show show evsRTT)
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           _             -> AllProperty (property False)
+       )
+       verifyRemoteTransitionOrder
+    . splitRemoteConns
+    $ evsRTT
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       (Script (toBearerInfo absBi :| [noAttenuation]))
+                       maxAcceptedConnectionsLimit l
+
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
@@ -2435,6 +2509,34 @@ splitConns =
       )
       Map.empty
 
+splitRemoteConns :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
+                 -> Trace (SimResult ()) [RemoteTransition]
+splitRemoteConns =
+    bimap id fromJust
+  . Trace.filter isJust
+  -- there might be some connections in the state, push them onto the 'Trace'
+  . (\(s, o) -> foldr (\a as -> Trace.Cons (Just a) as) o (Map.elems s))
+  . bimapAccumL
+      ( \ s a -> ( s, a))
+      ( \ s TransitionTrace { ttPeerAddr, ttTransition } ->
+          case ttTransition of
+            Transition _ Nothing ->
+              case ttPeerAddr `Map.lookup` s of
+                Nothing  -> ( Map.insert ttPeerAddr [ttTransition] s
+                            , Nothing
+                            )
+                Just trs -> ( Map.delete ttPeerAddr s
+                            , Just (reverse $ ttTransition : trs)
+                            )
+            _ ->            ( Map.alter ( \ case
+                                              Nothing -> Just [ttTransition]
+                                              Just as -> Just (ttTransition : as)
+                                        ) ttPeerAddr s
+                            , Nothing
+                            )
+      )
+      Map.empty
+
 ppTransition :: AbstractTransition -> String
 ppTransition Transition {fromState, toState} =
     printf "%-30s → %s" (show fromState) (show toState)
@@ -2513,6 +2615,7 @@ showCEvs (OutboundMiniprotocols{})   = "OutboundMiniprotocols"
 showCEvs (CloseInboundConnection{})  = "CloseInboundConnection"
 showCEvs (CloseOutboundConnection{}) = "CloseOutboundConnection"
 showCEvs (ShutdownClientServer{})    = "ShutdownClientServer"
+
 
 -- classify negotiated data flow
 classifyPrunings :: [ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)] -> Sum Int
@@ -2611,7 +2714,6 @@ makeBundle :: (forall pt. TokProtocolTemperature pt -> a) -> Bundle a
 makeBundle f = Bundle (WithHot         $ f TokHot)
                       (WithWarm        $ f TokWarm)
                       (WithEstablished $ f TokEstablished)
-
 
 
 -- TODO: we should use @traceResult True@; the `prop_unidirectional_Sim` and
