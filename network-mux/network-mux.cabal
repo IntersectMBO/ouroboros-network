@@ -167,6 +167,7 @@ executable cardano-ping
   import:              demo-deps
   hs-source-dirs:      demo
   main-is:             cardano-ping.hs
+  other-modules:       Linger
   build-depends:       base,
                        aeson,
                        network-mux,

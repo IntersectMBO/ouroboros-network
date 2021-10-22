@@ -40,6 +40,8 @@ import           Network.Mux.Bearer.Socket
 import           Network.Mux.Types
 import           Network.Mux.Timeout
 
+import           Linger
+
 mainnetMagic :: Word32
 mainnetMagic = 764824073
 
@@ -431,6 +433,12 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
     (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
     Socket.close
     (\sd -> withTimeoutSerial $ \timeoutfn -> do
+        when (Socket.addrFamily peer /= Socket.AF_UNIX) $ do
+            Socket.setSocketOption sd Socket.NoDelay 1
+            Socket.setSockOpt sd Socket.Linger
+                (StructLinger { sl_onoff  = 1
+                              , sl_linger = 0 })
+
         !t0_s <- getMonotonicTime
         Socket.connect sd (Socket.addrAddress peer)
         !t0_e <- getMonotonicTime

@@ -13,7 +13,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.PeerSelection (tests) where
+module Test.Ouroboros.Network.PeerSelection (tests, unfHydra) where
 
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
@@ -54,6 +54,9 @@ import           Test.QuickCheck.Signal
 import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
 import           Test.Tasty.QuickCheck (testProperty)
 
+-- Exactly as named.
+unfHydra :: Int
+unfHydra = 1
 
 tests :: TestTree
 tests =
