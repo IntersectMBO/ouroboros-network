@@ -10,23 +10,23 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView)
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Query
+import qualified Ouroboros.Consensus.Ledger.Query as Query
+import           Ouroboros.Consensus.Ledger.Query (Query, QueryLedger)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
 import           Ouroboros.Consensus.Util.IOLike
 
 localStateQueryServer ::
-     forall m blk. (IOLike m, QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
+     forall m blk. (IOLike m, QueryLedger blk, Query.ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
-  -> DiskLedgerView blk m
   -> STM m (Point blk)
      -- ^ Get tip point
-  -> (Point blk -> STM m (Maybe (ExtLedgerState EmptyMK blk)))
+  -> (Point blk -> STM m (Maybe (LedgerDB' blk)))
      -- ^ Get a past ledger
   -> STM m (Point blk)
      -- ^ Get the immutable point
   -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
-localStateQueryServer cfg dlv getTipPoint getPastLedger getImmutablePoint =
+localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
     LocalStateQueryServer $ return idle
   where
     idle :: ServerStIdle blk (Point blk) (Query blk) m ()
@@ -38,6 +38,9 @@ localStateQueryServer cfg dlv getTipPoint getPastLedger getImmutablePoint =
     handleAcquire :: Maybe (Point blk)
                   -> m (ServerStAcquiring blk (Point blk) (Query blk) m ())
     handleAcquire mpt = do
+        -- TODO this must also acquire the lock that prevents the ChainSel logic
+        -- from flushing DbChangelog prefixes to disk
+
         (pt, mPastLedger, immutablePoint) <- atomically $ do
           pt <- maybe getTipPoint pure mpt
           (pt,,) <$> getPastLedger pt <*> getImmutablePoint
@@ -51,18 +54,24 @@ localStateQueryServer cfg dlv getTipPoint getPastLedger getImmutablePoint =
             | otherwise
             -> SendMsgFailure AcquireFailurePointNotOnChain idle
 
-    acquired :: ExtLedgerState EmptyMK blk
+    acquired :: LedgerDB' blk
              -> ServerStAcquired blk (Point blk) (Query blk) m ()
-    acquired ledgerState = ServerStAcquired {
-          recvMsgQuery     = handleQuery ledgerState
-        , recvMsgReAcquire = handleAcquire
-        , recvMsgRelease   = return idle
+    acquired ledgerDB = ServerStAcquired {
+          recvMsgQuery     = handleQuery ledgerDB
+        , recvMsgReAcquire =
+            -- TODO this must also release the lock that prevents the ChainSel
+            -- logic from flushing a DbChangelog prefix to disk
+            handleAcquire
+        , recvMsgRelease   =
+            -- TODO this must also release the lock that prevents the ChainSel
+            -- logic from flushing a DbChangelog prefix to disk
+            return idle
         }
 
     handleQuery ::
-         ExtLedgerState EmptyMK blk
-      -> Query          blk fp result
+         LedgerDB' blk
+      -> Query blk fp result
       -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
-    handleQuery ledgerState query = do
-      result <- answerQuery cfg dlv query (error "handleQuery FootPrint cast" ledgerState)
-      pure $ SendMsgResult result (acquired ledgerState)
+    handleQuery ledgerDB query = do
+      result <- Query.handleQuery cfg (error "dlv") query ledgerDB
+      pure $ SendMsgResult result (acquired ledgerDB)

@@ -504,6 +504,9 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
 data instance BlockQuery (DualBlock m a) fp result
   deriving (Show)
 
+instance SmallQuery (BlockQuery (DualBlock m a)) where
+  proveSmallQuery _k = \case {}
+
 instance (Typeable m, Typeable a)
     => ShowProxy (BlockQuery (DualBlock m a)) where
 
@@ -516,6 +519,8 @@ instance EqQuery (BlockQuery (DualBlock m a)) where
 
 instance ShowQuery (BlockQuery (DualBlock m a)) where
   showResult = \case {}
+
+instance IsQuery (BlockQuery (DualBlock m a))
 
 -- | Forward to the main ledger
 instance Bridge m a => CommonProtocolParams (DualBlock m a) where

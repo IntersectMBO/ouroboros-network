@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -400,13 +401,8 @@ instance SmallQuery (BlockQuery TestBlock) where
     QueryLedgerTip -> k
 
 instance QueryLedger TestBlock where
-  answerBlockSmallQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
+  answerBlockQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
-
-  answerBlockQuery cfg _dlv query st =
-      withSmallQueryProof query
-    $ pure
-    $ answerBlockSmallQuery cfg query st
 
 instance EqQuery (BlockQuery TestBlock) where
   eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
@@ -415,6 +411,8 @@ deriving instance Show (BlockQuery TestBlock fp result)
 
 instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
+
+instance IsQuery (BlockQuery TestBlock) where
 
 testInitLedger :: LedgerState TestBlock
 testInitLedger = TestLedger GenesisPoint

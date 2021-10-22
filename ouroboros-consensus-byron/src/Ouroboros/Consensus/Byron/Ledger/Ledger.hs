@@ -201,6 +201,9 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
 data instance BlockQuery ByronBlock :: FootprintL -> Type -> Type where
   GetUpdateInterfaceState :: BlockQuery ByronBlock SmallL UPI.State
 
+instance SmallQuery (BlockQuery ByronBlock) where
+  proveSmallQuery k GetUpdateInterfaceState = k
+
 instance QueryLedger ByronBlock where
   answerBlockQuery _cfg GetUpdateInterfaceState (ExtLedgerState ledgerState _) =
     CC.cvsUpdateState (byronLedgerState ledgerState)
@@ -212,6 +215,8 @@ deriving instance Show (BlockQuery ByronBlock fp result)
 
 instance ShowQuery (BlockQuery ByronBlock) where
   showResult GetUpdateInterfaceState = show
+
+instance IsQuery (BlockQuery ByronBlock) where
 
 instance ShowProxy (BlockQuery ByronBlock) where
 

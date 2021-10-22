@@ -188,6 +188,9 @@ instance ShowQuery (BlockQuery ByronToCardano) where
 instance EqQuery (BlockQuery ByronToCardano) where
   eqQuery (QueryB2C q1) (QueryB2C q2) = eqQuery q1 q2
 
+instance IsQuery (BlockQuery ByronToCardano) where
+  classifyQuery (QueryB2C q1) = classifyQuery q1
+
 {------------------------------------------------------------------------------
   Byron to Cardano: Disk
 ------------------------------------------------------------------------------}
