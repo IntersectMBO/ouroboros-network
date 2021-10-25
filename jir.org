@@ -14,18 +14,18 @@
 ** Types of Tasks
 
  We want just three kinds Jira tickets: ~Epic~, ~Research~ and ~Task~. Only
- ~Task~ tickets are actionable, meaning they can be assign to a developer and
+ ~Task~ tickets are actionable, meaning they can be assigned to a developer and
  put on the Kanban board.
 
 *** Epic
     #
-    Ticket of type ~Epic~ will represent feature that requires substantially
+    A ticket of type ~Epic~ will represent feature that requires substantially
     bigger team effort.  They are an entry point for anyone willing to
     understand what the given feature is about and how work on it is
     progressing.  ~Epics~ will aggregate tickets of type ~Task~ and ~Research~.
 
     When creating this ticket we want to only provide:
-    + it's title / name
+    + its title / name
     + description
 
     This ticket is binary in its nature, will have following two statuses:
@@ -36,7 +36,6 @@
     Example ticket: "Ouroboros Genesis"
 
 *** Research a.k.a Open Problem
-**** TODO decide on a name
     Let's keep one name and stick to it. I'm personally leaning towards ~Open
     Problem~
 
@@ -56,12 +55,15 @@
 
     Example ticket: "Eclipsing Detection Problem"
 
+**** TODO decide on a name
+     It's either Research or Open Problem
+
 *** Task
     Tasks represents actionable issues, that means issues that can be assigned
     to developer and put on the Kanban board.
 
     When creating this ticket we want to only provide:
-    + it's title / name
+    + its title / name
     + description
     + assignee
 
@@ -80,6 +82,7 @@
     + connected to an ~Epic~ ticket
     + connected to a ~Research~ ticket
     + not connected to any ticket at all
+**** TODO Can't open questions be blocked?
 
 ** Kanban board
  We want to have a dedicated to our team Kanban board. This board should only
@@ -125,5 +128,34 @@
  becomes a subboard where the Subtasks are going through typical lifecycle (To
  Do, In Progress and Done). Once all subtasks are done, the ~Task~ can be
  considered ~Done~
+
+* FAQ
+** What is issue proposed hierarchy?
+   It can be viewed as:
+#+BEGIN_SRC
+- Epic
+  - Task
+  - Open problem
+    - Task
+#+END_SRC
+   Please note however that
+   + Task can be grouped under Epic or Open Problem or not grouped at all
+   + All issues can be easily linked, relations like (created from, blocked by
+     etc)
+** What is the difference between Open and To Do ~Task~
+   ~Open~ - you’ve defined it, it exists, a unit of work but you are not planning
+   to work on it any time soon. Maybe it needs grooming, maybe there is no
+   simply enough man-power. Tickets with status Open lands in the Backlog and
+   are NOT visible on the Kanban Board.
+   ~To Do~ - this status means that ticket is defined and will be worked on in a
+   near future. Tickets with status To Do will be visible in the Kanban Board,
+   they are no longer visible in the Backlog.
+** What about *definition of done* for issues?
+   "I'd like that when we start working on a very concrete programming task we
+   agree on the scope with the stakeholders beforehand."
+
+   Definition of Done can be simply added (as plain text) into a issue
+   description.
+
 
 * Questions from slack
