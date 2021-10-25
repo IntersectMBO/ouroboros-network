@@ -1,0 +1,127 @@
+#+TITLE: Consensus team micro-process proposal
+#+AUTHOR: The Consensus Team
+
+* JIRA configuration
+** Motivations
+   Why the new JIRA board? The existing "Consensus" content in Jira is a
+   confusing bag of previous attempts. So we want a view that excludes it. We
+   want a narrow dashboard for just our team. At any time, any of us (eg Jack)
+   can go look to see what any another team member is currently doing. We want a
+   source-of-truth for weekly reporting (eg to Jack). Have a way for team
+   members to know which task to pick next.
+
+** Types of Tasks
+
+ We want just three kinds Jira tickets: ~Epic~, ~Research~ and ~Task~. Only
+ ~Task~ tickets are actionable, meaning they can be assign to a developer and
+ put on the Kanban board.
+
+*** Epic
+    #
+    Ticket of type ~Epic~ will represent feature that requires substantially
+    bigger team effort.  They are an entry point for anyone willing to
+    understand what the given feature is about and how work on it is
+    progressing.  ~Epics~ will aggregate tickets of type ~Task~ and ~Research~.
+
+    When creating this ticket we want to only provide:
+    + it's title / name
+    + description
+
+    This ticket is binary in its nature, will have following two statuses:
+    + Open
+    + Done
+    When ticket is created it should by default get status ~Open~.
+
+    Example ticket: "Ouroboros Genesis"
+
+*** Research a.k.a Open Problem
+**** TODO decide on a name
+    Let's keep one name and stick to it. I'm personally leaning towards ~Open
+    Problem~
+
+    Tickets of type ~Research~ will represent open problems that require further
+    investigation.  They will aggregate tickets of type ~Task~. Those tasks will
+    represent actionable issues that move forward investigation of a given
+    ~Research~ problem.
+
+    When creating this ticket we want to only provide:
+    + it's title / name
+    + description
+
+    This ticket is binary in its nature, will have following two statuses:
+    + Open
+    + Done
+    When ticket is created it should by default get status ~Open~.
+
+    Example ticket: "Eclipsing Detection Problem"
+
+*** Task
+    Tasks represents actionable issues, that means issues that can be assigned
+    to developer and put on the Kanban board.
+
+    When creating this ticket we want to only provide:
+    + it's title / name
+    + description
+    + assignee
+
+    ~Tasks~ can be divided into subtasks. Each subtask can be assigned to a
+    developer.
+
+    This ticket can have following statuses:
+    + Open
+    + To Do
+    + In Progress
+    + Blocked
+    + Done
+    When ticket is created it should by default get status ~Open~.
+
+    Tickets of type ~Task~ can be:
+    + connected to an ~Epic~ ticket
+    + connected to a ~Research~ ticket
+    + not connected to any ticket at all
+
+** Kanban board
+ We want to have a dedicated to our team Kanban board. This board should only
+ holds tickets of type ~Task~.  Tickets with status ~Open~ should be aggregated
+ in "Backlog", all other statuses (~To Do~, ~In Progress~, ~Blocked~ and ~Done~)
+ should have corresponding columns in the Kanban board.  If ~Task~ is divided
+ into subtasks, then on the Kanban Board task should become a 'subboard' that
+ holds its subtasks.
+
+*** Open questions
+**** TODO How can we remove the ticket from board once it is ~Done~
+     and we've acknowledged that it is done
+
+* The process
+ We wanted to keep a process that on one hand is as lightweight as possible and
+ on the other hand keeps our work as much transparent as it can.  Ideally we aim
+ for a process in which at any point in time anyone with access to our JIRA can
+ tell:
+ + what is the team currently working at,
+ + what are the blocked tickets and why are they blocked
+
+ The process should be simple to use for the engineers and any ambiguities
+ should be wiped out from the tools supporting the process. That includes
+ removal of fields we never set, subprocess and methodologies that we do not
+ follow.  Creating and maintaining a ticket should be quick and straightforward
+ task.  See [[JIRA configuration]] for details how we want to configure the tool.
+
+ Actionable tickets will be of type ~Task~. When created they will have status
+ open and thus they will automatically be placed in the ~Backlog~.  It is
+ responsibility of the Jack and Team Lead (Nick/Damian) to keep that Backlog
+ prioritized so that tasks with highest priority are listed on the top of the
+ Backlog.
+
+ At any point ticket can be moved from Backlog to Kanban board by either
+ dragging it via the UI, or changing its status to ~To Do~ at which point ticket
+ can be assigned to a person and then go through its lifecycle: To Do, In
+ Progress and Done.
+
+ Task should usually last few days. If it sits in ~In Progress~ for longer then
+ that is is most likely an indication that is should be broken into subtasks.
+
+ Subtasks will be visualized on the Kanban board as well. In that case a Task
+ becomes a subboard where the Subtasks are going through typical lifecycle (To
+ Do, In Progress and Done). Once all subtasks are done, the ~Task~ can be
+ considered ~Done~
+
