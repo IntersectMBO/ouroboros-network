@@ -22,7 +22,6 @@
  put on the Kanban board.
 
 *** Epic
-    #
     A ticket of type ~Epic~ will represent feature that requires substantially
     bigger team effort.  They are an entry point for anyone willing to
     understand what the given feature is about and how work on it is
@@ -155,6 +154,3 @@
 
    Definition of Done can be simply added (as plain text) into a issue
    description.
-
-
-* Questions from slack
