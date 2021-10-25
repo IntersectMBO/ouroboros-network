@@ -1,14 +1,15 @@
 #+TITLE: Consensus team micro-process proposal
 #+AUTHOR: The Consensus Team
 
-* JIRA configuration
-** Motivations
+* Motivation
    Why the new JIRA board? The existing "Consensus" content in Jira is a
    confusing bag of previous attempts. So we want a view that excludes it. We
    want a narrow dashboard for just our team. At any time, any of us (eg Jack)
    can go look to see what any another team member is currently doing. We want a
-   source-of-truth for weekly reporting (eg to Jack). Have a way for team
+   source-of-truth for weekly reporting (eg to Jack). We also have a way for team
    members to know which task to pick next.
+
+* JIRA configuration
 
 ** Types of Tasks
 
@@ -125,3 +126,4 @@
  Do, In Progress and Done). Once all subtasks are done, the ~Task~ can be
  considered ~Done~
 
+* Questions from slack
