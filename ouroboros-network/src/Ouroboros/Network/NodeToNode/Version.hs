@@ -53,6 +53,10 @@ data NodeToNodeVersion
     --
     -- * new 'KeepAlive' codec
     -- * Enable @CardanoNodeToNodeVersion5@, i.e., Alonzo
+    | NodeToNodeV_8
+    -- ^ Changes:
+    --
+    -- * Enable full duplex connections.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -65,6 +69,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_5  = CBOR.TInt 5
     encodeTerm NodeToNodeV_6  = CBOR.TInt 6
     encodeTerm NodeToNodeV_7  = CBOR.TInt 7
+    encodeTerm NodeToNodeV_8  = CBOR.TInt 8
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
     decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
@@ -73,6 +78,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     decodeTerm (CBOR.TInt 5) = Right NodeToNodeV_5
     decodeTerm (CBOR.TInt 6) = Right NodeToNodeV_6
     decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
+    decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n
