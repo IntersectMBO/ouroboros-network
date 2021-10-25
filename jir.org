@@ -3,11 +3,15 @@
 
 * Motivation
    Why the new JIRA board? The existing "Consensus" content in Jira is a
-   confusing bag of previous attempts. So we want a view that excludes it. We
-   want a narrow dashboard for just our team. At any time, any of us (eg Jack)
-   can go look to see what any another team member is currently doing. We want a
-   source-of-truth for weekly reporting (eg to Jack). We also have a way for team
-   members to know which task to pick next.
+   confusing bag of previous attempts. So we want a view that excludes it; once
+   we settle in to the new process, we can migrate some of the items from the
+   old lists to this new dashboard. We want a narrow dashboard for just our
+   team. At any time, any of us (eg Jack) can go look to see what any another
+   team member is currently doing. We want a source-of-truth for weekly
+   reporting (eg to Jack). We also have a way for team members to know which
+   task to pick next.
+   Please note that with this process we are not intending to help
+   us predict deliver dates?
 
 * JIRA configuration
 
@@ -89,7 +93,7 @@
  holds tickets of type ~Task~.  Tickets with status ~Open~ should be aggregated
  in "Backlog", all other statuses (~To Do~, ~In Progress~, ~Blocked~ and ~Done~)
  should have corresponding columns in the Kanban board.  If ~Task~ is divided
- into subtasks, then on the Kanban Board task should become a 'subboard' that
+ into subtasks, then on the Kanban Board task should become a 'swimlane' that
  holds its subtasks.
 
 *** Open questions
@@ -125,7 +129,7 @@
  that is is most likely an indication that is should be broken into subtasks.
 
  Subtasks will be visualized on the Kanban board as well. In that case a Task
- becomes a subboard where the Subtasks are going through typical lifecycle (To
+ becomes a swimlane where the Subtasks are going through typical lifecycle (To
  Do, In Progress and Done). Once all subtasks are done, the ~Task~ can be
  considered ~Done~
 
