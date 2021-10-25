@@ -17,7 +17,7 @@
 
 ** Types of Tasks
 
- We want just three kinds Jira tickets: ~Epic~, ~Research~ and ~Task~. Only
+ We want just three kinds Jira tickets: ~Epic~, ~Open Problem~ and ~Task~. Only
  ~Task~ tickets are actionable, meaning they can be assigned to a developer and
  put on the Kanban board.
 
@@ -26,7 +26,8 @@
     A ticket of type ~Epic~ will represent feature that requires substantially
     bigger team effort.  They are an entry point for anyone willing to
     understand what the given feature is about and how work on it is
-    progressing.  ~Epics~ will aggregate tickets of type ~Task~ and ~Research~.
+    progressing.  ~Epics~ will aggregate tickets of type ~Task~ and ~Open
+    Problem~.
 
     When creating this ticket we want to only provide:
     + its title / name
@@ -39,14 +40,11 @@
 
     Example ticket: "Ouroboros Genesis"
 
-*** Research a.k.a Open Problem
-    Let's keep one name and stick to it. I'm personally leaning towards ~Open
-    Problem~
-
-    Tickets of type ~Research~ will represent open problems that require further
-    investigation.  They will aggregate tickets of type ~Task~. Those tasks will
-    represent actionable issues that move forward investigation of a given
-    ~Research~ problem.
+*** Open Problem
+    Tickets of type ~Open Problem~ will represent research problems that require
+    further investigation.  They will aggregate tickets of type ~Task~. Those
+    tasks will represent actionable issues that move forward investigation of a
+    given ~Open Problem~.
 
     When creating this ticket we want to only provide:
     + it's title / name
@@ -58,9 +56,6 @@
     When ticket is created it should by default get status ~Open~.
 
     Example ticket: "Eclipsing Detection Problem"
-
-**** TODO decide on a name
-     It's either Research or Open Problem
 
 *** Task
     Tasks represents actionable issues, that means issues that can be assigned
@@ -84,7 +79,7 @@
 
     Tickets of type ~Task~ can be:
     + connected to an ~Epic~ ticket
-    + connected to a ~Research~ ticket
+    + connected to a ~Open Problem~ ticket
     + not connected to any ticket at all
 **** TODO Can't open questions be blocked?
 
