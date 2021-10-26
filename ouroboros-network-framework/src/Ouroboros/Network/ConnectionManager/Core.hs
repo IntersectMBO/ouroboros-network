@@ -35,6 +35,7 @@ import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Tracer (Tracer, traceWith, contramap)
 import           Data.Foldable (traverse_, foldMap')
 import           Data.Functor (($>))
+import           Data.Function (on)
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
@@ -123,6 +124,60 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
       }
 
 
+-- | 'MutableConnState', which supplies a unique identifier.
+--
+-- TODO: We can get away without id, by tracking connections in
+-- `TerminatingState` using a seprate priority search queue.
+--
+data MutableConnState peerAddr handle handleError version m = MutableConnState {
+    -- | A unique identifier
+    --
+    connStateId  :: !Int
+
+  , -- | Mutable state
+    --
+    connVar      :: !(StrictTVar m (ConnectionState peerAddr handle handleError
+                                                    version m))
+  }
+
+
+instance Eq (MutableConnState peerAddr handle handleError version m) where
+    (==) =  (==) `on` connStateId
+
+
+-- | A supply of fresh id's.
+--
+-- We use a fresh ids for 'MutableConnState'.
+--
+newtype FreshIdSupply m = FreshIdSupply { getFreshId :: STM m Int }
+
+
+-- | Create a 'FreshIdSupply' inside and 'STM' monad.
+--
+newFreshIdSupply :: forall m. MonadSTM m
+                 => Proxy m -> STM m (FreshIdSupply m)
+newFreshIdSupply _ = do
+    (v :: StrictTVar m Int) <- newTVar 0
+    let getFreshId :: STM m Int
+        getFreshId = do
+          c <- readTVar v
+          writeTVar v (succ c)
+          return c
+    return $ FreshIdSupply { getFreshId }
+
+
+newMutableConnState :: MonadSTM m
+                    => FreshIdSupply m
+                    -> ConnectionState peerAddr handle handleError
+                                       version m
+                    -> STM m (MutableConnState peerAddr handle handleError
+                                               version m)
+newMutableConnState freshIdSupply connState = do
+      connStateId <- getFreshId freshIdSupply
+      connVar <- newTVar connState
+      return $! MutableConnState { connStateId, connVar }
+
+
 -- | 'ConnectionManager' state: for each peer we keep a 'ConnectionState' in
 -- a mutable variable, which reduce congestion on the 'TMVar' which keeps
 -- 'ConnectionManagerState'.
@@ -132,7 +187,7 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 -- @peerAddr@ and reuse the 'ConnectionState'.
 --
 type ConnectionManagerState peerAddr handle handleError version m
-  = Map peerAddr (StrictTVar m (ConnectionState peerAddr handle handleError version m))
+  = Map peerAddr (MutableConnState peerAddr handle handleError version m)
 
 connectionManagerStateToCounters
   :: Map peerAddr (ConnectionState peerAddr handle handleError version m)
@@ -489,11 +544,17 @@ withConnectionManager ConnectionManagerArguments {
                       classifyHandleError
                       inboundGovernorControlChannel
                       k = do
-    (stateVar ::  StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m))
+    ((freshIdSupply, stateVar)
+       ::  ( FreshIdSupply m
+           , StrictTMVar m (ConnectionManagerState peerAddr handle handleError
+                                                   version m)
+           ))
       <- atomically $  do
-          v <- newTMVar Map.empty
+          v  <- newTMVar Map.empty
           labelTMVar v "cm-state"
-          return v
+          freshIdSupply <- newFreshIdSupply (Proxy :: Proxy m)
+          return (freshIdSupply, v)
+
     let readState
           :: m (Map peerAddr AbstractState)
         readState =
@@ -501,6 +562,7 @@ withConnectionManager ConnectionManagerArguments {
               state <- readTMVar stateVar
               traverse ( fmap (abstractState . Known)
                        . readTVar
+                       . connVar
                        )
                        state
 
@@ -514,7 +576,8 @@ withConnectionManager ConnectionManagerArguments {
                   WithInitiatorMode
                     OutboundConnectionManager {
                         ocmRequestConnection =
-                          requestOutboundConnectionImpl stateVar outboundHandler,
+                          requestOutboundConnectionImpl freshIdSupply stateVar
+                                                        outboundHandler,
                         ocmUnregisterConnection =
                           unregisterOutboundConnectionImpl stateVar
                       },
@@ -527,7 +590,8 @@ withConnectionManager ConnectionManagerArguments {
                   WithResponderMode
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl stateVar inboundHandler,
+                          includeInboundConnectionImpl freshIdSupply stateVar
+                                                       inboundHandler,
                         icmUnregisterConnection =
                           unregisterInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -546,13 +610,15 @@ withConnectionManager ConnectionManagerArguments {
                   WithInitiatorResponderMode
                     OutboundConnectionManager {
                         ocmRequestConnection =
-                          requestOutboundConnectionImpl stateVar outboundHandler,
+                          requestOutboundConnectionImpl freshIdSupply stateVar
+                                                        outboundHandler,
                         ocmUnregisterConnection =
                           unregisterOutboundConnectionImpl stateVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
-                          includeInboundConnectionImpl stateVar inboundHandler,
+                          includeInboundConnectionImpl freshIdSupply stateVar
+                                                       inboundHandler,
                         icmUnregisterConnection =
                           unregisterInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
@@ -570,7 +636,7 @@ withConnectionManager ConnectionManagerArguments {
         traceWith tracer TrShutdown
         state <- atomically $ readTMVar stateVar
         traverse_
-          (\connVar -> do
+          (\MutableConnState { connVar } -> do
             -- cleanup handler for that thread will close socket associated
             -- with the thread.  We put each connection in 'TerminatedState' to
             -- guarantee, that non of the connection threads will enter
@@ -585,7 +651,7 @@ withConnectionManager ConnectionManagerArguments {
   where
     traceCounters :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m) -> m ()
     traceCounters stateVar = do
-      mState <- atomically $ readTMVar stateVar >>= traverse readTVar
+      mState <- atomically $ readTMVar stateVar >>= traverse (readTVar . connVar)
       traceWith tracer (TrConnectionManagerCounters (connectionManagerStateToCounters mState))
 
     countIncomingConnections
@@ -594,7 +660,7 @@ withConnectionManager ConnectionManagerArguments {
     countIncomingConnections st =
           incomingConns
         . connectionManagerStateToCounters
-      <$> traverse readTVar st
+      <$> traverse (readTVar . connVar) st
 
 
     -- Fork connection thread.
@@ -644,7 +710,7 @@ withConnectionManager ConnectionManagerArguments {
               wConnVar <- uninterruptibleMask_ $ atomically $ do
                 case Map.lookup peerAddr state of
                   Nothing      -> return Nowhere
-                  Just connVar -> do
+                  Just mcs@MutableConnState { connVar } -> do
                       connState <- readTVar connVar
                       let connState' = TerminatedState Nothing
                           transition = mkTransition connState connState'
@@ -674,7 +740,7 @@ withConnectionManager ConnectionManagerArguments {
                           writeTVar connVar connState'
                           return $ There (Just transition)
                         TerminatingState {} -> do
-                          return $ Here (connVar, transition)
+                          return $ Here (mcs, transition)
                         TerminatedState {} ->
                           return $ There Nothing
 
@@ -691,10 +757,10 @@ withConnectionManager ConnectionManagerArguments {
                   return ( Map.delete peerAddr state
                          , Left (Known (TerminatedState Nothing))
                          )
-                Here connVarAndTransition -> do
+                Here mutableConnStateAndTransition -> do
                   close cmSnocket socket
                   return ( state
-                         , Right connVarAndTransition
+                         , Right mutableConnStateAndTransition
                          )
 
             case mConnVar of
@@ -714,7 +780,7 @@ withConnectionManager ConnectionManagerArguments {
               -- does not return the 'Race' constructor.
               -- TODO: Make this pattern match impossible.
               Left _ -> error "connection cleanup handler: impossible happened"
-              Right (connVar, transition) ->
+              Right (mcs@MutableConnState { connVar }, transition) ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    when (cmTimeWaitTimeout > 0) $
                      unmask (threadDelay cmTimeWaitTimeout)
@@ -737,7 +803,7 @@ withConnectionManager ConnectionManagerArguments {
                           case Map.lookup peerAddr state of
                             Nothing -> (state, False)
                             Just v  ->
-                              if eqTVar (Proxy :: Proxy m) connVar v
+                              if mcs == v
                                 then (Map.delete peerAddr state , True)
                                 else (state                     , False)
                         )
@@ -768,7 +834,8 @@ withConnectionManager ConnectionManagerArguments {
 
     includeInboundConnectionImpl
         :: HasCallStack
-        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => FreshIdSupply m
+        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
         -> Word32
         -- ^ inbound connections hard limit
@@ -782,7 +849,8 @@ withConnectionManager ConnectionManagerArguments {
         -> peerAddr
         -- ^ remote address used as an identifier of the resource
         -> m (Connected peerAddr handle handleError)
-    includeInboundConnectionImpl stateVar
+    includeInboundConnectionImpl freshIdSupply 
+                                 stateVar
                                  handler
                                  hardLimit
                                  socket
@@ -822,9 +890,10 @@ withConnectionManager ConnectionManagerArguments {
             let connState' = UnnegotiatedState provenance connId connThread
             (connVar, connState) <-
               atomically $ do
-                v <- newTVar connState'
-                labelTVar v ("conn-state-" ++ show connId)
-                connState <- traverse readTVar (Map.lookup peerAddr state)
+                v <- newMutableConnState freshIdSupply connState'
+                labelTVar (connVar v) ("conn-state-" ++ show connId)
+                connState <- traverse (readTVar . connVar)
+                                      (Map.lookup peerAddr state)
                 return ( v
                        , maybe Unknown Known connState
                        )
@@ -844,7 +913,7 @@ withConnectionManager ConnectionManagerArguments {
           Nothing ->
             return (Disconnected connId Nothing)
 
-          Just (connVar, connThread, reader) -> do
+          Just (MutableConnState { connVar }, connThread, reader) -> do
             traceCounters stateVar
 
             res <- atomically $ readPromise reader
@@ -959,7 +1028,7 @@ withConnectionManager ConnectionManagerArguments {
             pure ( Nothing
                  , Nothing
                  , OperationSuccess CommitTr )
-          Just connVar -> do
+          Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
             case connState of
               -- In any of the following two states unregistering is not
@@ -1060,30 +1129,31 @@ withConnectionManager ConnectionManagerArguments {
 
     requestOutboundConnectionImpl
         :: HasCallStack
-        => StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        => FreshIdSupply m
+        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
         -> peerAddr
         -> m (Connected peerAddr handle handleError)
-    requestOutboundConnectionImpl stateVar handler peerAddr = do
+    requestOutboundConnectionImpl freshIdSupply stateVar handler peerAddr = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
-        (trace, connVar, eHandleWedge) <- atomically $ do
+        (trace, mutableConnState@MutableConnState { connVar }, eHandleWedge) <- atomically $ do
           state <- readTMVar stateVar
           case Map.lookup peerAddr state of
-            Just connVar -> do
+            Just mutableConnState@MutableConnState { connVar } -> do
               connState <- readTVar connVar
               let st = abstractState (Known connState)
               case connState of
                 ReservedOutboundState ->
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
 
                 UnnegotiatedState Outbound _connId _connThread -> do
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1093,20 +1163,20 @@ withConnectionManager ConnectionManagerArguments {
                   -- return 'There' to indicate that we need to block on
                   -- the connection state.
                   return ( Nothing
-                         , connVar
+                         , mutableConnState
                          , Right (There connId)
                          )
 
                 OutboundUniState {} -> do
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
 
                 OutboundDupState {} -> do
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1114,13 +1184,13 @@ withConnectionManager ConnectionManagerArguments {
                 OutboundIdleState _connId _connThread _handle _dataFlow ->
                   let tr = abstractState (Known connState) in
                   return ( Just (Right (TrForbiddenOperation peerAddr tr))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack (ForbiddenOperation peerAddr tr))
                          )
 
                 InboundIdleState connId _connThread _handle Unidirectional -> do
                   return ( Just (Right (TrForbiddenConnection connId))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack
                                   (ForbiddenConnection connId))
                          )
@@ -1135,7 +1205,7 @@ withConnectionManager ConnectionManagerArguments {
                   return ( Just (Left (TransitionTrace
                                          peerAddr
                                          (mkTransition connState connState')))
-                         , connVar
+                         , mutableConnState
                          , Right (Here (Connected connId dataFlow handle))
                          )
 
@@ -1143,7 +1213,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- the remote side negotiated unidirectional connection, we
                   -- cannot re-use it.
                   return ( Just (Right (TrForbiddenConnection connId))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack
                                   (ForbiddenConnection connId))
                          )
@@ -1158,13 +1228,13 @@ withConnectionManager ConnectionManagerArguments {
                   return ( Just (Left (TransitionTrace
                                         peerAddr
                                         (mkTransition connState connState')))
-                         , connVar
+                         , mutableConnState
                          , Right (Here (Connected connId dataFlow handle))
                          )
 
                 DuplexState _connId _connThread  _handle ->
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , connVar
+                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1182,22 +1252,28 @@ withConnectionManager ConnectionManagerArguments {
 
             Nothing -> do
               let connState' = ReservedOutboundState
-              connVar <- newTVar connState'
+              (mutableConnState :: MutableConnState peerAddr handle handleError
+                                                    version m)
+                <- newMutableConnState freshIdSupply connState'
+              -- TODO: label `connVar` using 'ConnectionId'
+              labelTVar (connVar mutableConnState) ("conn-state-" ++ show peerAddr)
+
               -- record the @connVar@ in 'ConnectionManagerState' we can use
               -- 'swapTMVar' as we did not use 'takeTMVar' at the beginning of
               -- this transaction.  Since we already 'readTMVar', it will not
               -- block.
-              mbConnState <-
-                      swapTMVar stateVar
-                        (Map.insert peerAddr connVar state)
-                  >>= traverse readTVar . Map.lookup peerAddr
+              (mbConnState
+                 :: Maybe (ConnectionState peerAddr handle handleError version m))
+                   <- swapTMVar stateVar
+                        (Map.insert peerAddr mutableConnState state)
+                        >>= traverse (readTVar . connVar) . Map.lookup peerAddr
               return ( Just (Left (TransitionTrace
                                     peerAddr
                                     Transition {
                                         fromState = maybe Unknown Known mbConnState,
                                         toState   = Known connState'
                                       }))
-                     , connVar
+                     , mutableConnState
                      , Right Nowhere
                      )
 
@@ -1244,10 +1320,10 @@ withConnectionManager ConnectionManagerArguments {
                           let connState' = TerminatedState Nothing
                           writeTVar connVar connState'
                           modifyTMVarPure_ stateVar $
-                            (Map.update (\connVar' ->
-                              if eqTVar (Proxy :: Proxy m) connVar' connVar
+                            (Map.update (\mutableConnState' ->
+                              if mutableConnState' == mutableConnState
                                  then Nothing
-                                 else Just connVar')
+                                 else Just mutableConnState')
                             peerAddr)
                           return (mkTransition connState connState')
                         traceCounters stateVar
@@ -1323,10 +1399,10 @@ withConnectionManager ConnectionManagerArguments {
                         TerminatedState (Just handleError)
 
                   return ( Map.update
-                            (\connVar' ->
-                              if eqTVar (Proxy :: Proxy m) connVar' connVar
+                            (\mutableConnState' ->
+                              if mutableConnState' == mutableConnState
                                 then Nothing
-                                else Just connVar')
+                                else Just mutableConnState')
                             peerAddr
                             state
                          , Disconnected connId (Just handleError)
@@ -1490,7 +1566,7 @@ withConnectionManager ConnectionManagerArguments {
           -- Calling 'unregisterOutboundConnection' is a no-op in this case.
           Nothing -> pure (DemoteToColdLocalNoop Nothing UnknownConnectionSt)
 
-          Just connVar -> do
+          Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
             case connState of
               -- In any of the following three states unregistering is not
@@ -1555,7 +1631,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr connVar' ->
+                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> -- this expression returns @Maybe (connType, connThread)@;
                                  -- 'traverseMaybeWithKey' collects all 'Just' cases.
                              (,) <$> getConnType cs
@@ -1625,7 +1701,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr connVar' ->
+                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> -- this expression returns @Maybe (connType, connThread)@;
                                  -- 'traverseMaybeWithKey' collects all 'Just' cases.
                              (,) <$> getConnType cs
@@ -1735,7 +1811,7 @@ withConnectionManager ConnectionManagerArguments {
         let mbConnVar = Map.lookup peerAddr state
         case mbConnVar of
           Nothing -> return (UnsupportedState UnknownConnectionSt, Nothing)
-          Just connVar -> do
+          Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
             case connState of
               ReservedOutboundState {} ->
@@ -1781,7 +1857,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr connVar' ->
+                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> -- this expression returns @Maybe (connType, connThread)@;
                                  -- 'traverseMaybeWithKey' collects all 'Just' cases.
                              (,) <$> getConnType cs
@@ -1829,7 +1905,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr connVar' ->
+                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> -- this expression returns @Maybe (connType, connThread)@;
                                  -- 'traverseMaybeWithKey' collects all 'Just' cases.
                              (,) <$> getConnType cs
@@ -1906,7 +1982,7 @@ withConnectionManager ConnectionManagerArguments {
         mbConnVar <- Map.lookup peerAddr <$> readTMVar stateVar
         case mbConnVar of
           Nothing -> return (UnsupportedState UnknownConnectionSt)
-          Just connVar -> do
+          Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
             case connState of
               ReservedOutboundState {} ->
