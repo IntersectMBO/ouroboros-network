@@ -151,7 +151,7 @@ localRootPeersProvider tracer
                        RelayAccessAddress ip port ->
                          toPeerAddr ip port
                        _ ->
-                         error "localRootPeersProvider: impossible happend"
+                         error "localRootPeersProvider: impossible happened"
                      )
                  . Map.filterWithKey
                      (\k _ -> case k of
@@ -160,6 +160,7 @@ localRootPeersProvider tracer
                      )
       atomically $
         writeTVar rootPeersGroupsVar rootPeersGroups
+      traceWith tracer (TraceLocalRootGroups rootPeersGroups)
 
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
