@@ -50,10 +50,8 @@ import           Data.Void (Void)
 import           Data.List (intercalate)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
-#if defined(mingw32_HOST_OS)
-import           System.IO.Error
-#else
 import           GHC.IO.Exception
+#if !defined(mingw32_HOST_OS)
 import           Foreign.C.Error
 #endif
 
@@ -176,9 +174,24 @@ run ServerArguments {
             throwIO e
   where
 
-#if !defined(mingw32_HOST_OS)
     iseCONNABORTED :: IOError -> Bool
+#if defined(mingw32_HOST_OS)
+    -- On Windows the network packet classifies all errors
+    -- as OtherError. This means that we're forced to match
+    -- on the error string. The text string comes from
+    -- the network package's winSockErr.c, and if it ever
+    -- changes we must update our text string too.
+    iseCONNABORTED (IOError _ _ _ "Software caused connection abort (WSAECONNABORTED)" _ _) = True
+    iseCONNABORTED _ = False
+#else
     iseCONNABORTED (IOError _ _ _ _ (Just cerrno) _) = eCONNABORTED == Errno cerrno
+#if defined(darwin_HOST_OS)
+    -- There is a bug in accept for IPv6 sockets. Instead of returning -1
+    -- and setting errno to ECONNABORTED an invalid (>= 0) file descriptor
+    -- is returned, with the client address left unchanged. The uninitialized
+    -- client address causes the network package to throw the user error below.
+    iseCONNABORTED (IOError _ UserError _ "Network.Socket.Types.peekSockAddr: address family '0' not supported." _ _) = True
+#endif
     iseCONNABORTED _ = False
 #endif
 
@@ -220,31 +233,16 @@ run ServerArguments {
           case result of
             (AcceptFailure err, acceptNext) -> do
               traceWith tracer (TrAcceptError err)
-              -- Try the determine if the connection was aborted by the remote end
+              -- Try to determine if the connection was aborted by the remote end
               -- before we could process the accept, or if it was a resource
               -- exhaustion problem.
               -- NB. This piece of code is fragile and depends on specific
               -- strings/mappings in the network and base libraries.
               case fromException err of
                  Just ioErr ->
-#if defined(mingw32_HOST_OS)
-                   -- On Windows the network packet classifies all errors
-                   -- as OtherError. This means that we're forced to match
-                   -- on the error string. The text string comes from
-                   -- the network package's winSockErr.c, and if it ever
-                   -- changes we must update our text string too.
-                   if ioeGetErrorString ioErr /=
-                       "Software caused connection abort (WSAECONNABORTED)"
-                      then throwIO ioErr
-                      else threadDelay 0.5 >>
-                           go unmask acceptNext
-#else
-                   -- TODO: iseCONNABORTED should be defined on all platforms,
-                   -- so we can avoid the #ifs here.
                    if iseCONNABORTED ioErr
                       then threadDelay 0.5 >> go unmask acceptNext
                       else throwIO ioErr
-#endif
                  Nothing -> throwIO err
 
             (Accepted socket peerAddr, acceptNext) ->
