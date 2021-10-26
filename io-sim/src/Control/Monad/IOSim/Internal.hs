@@ -14,6 +14,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 -- incomplete uni patterns in 'schedule' (when interpreting 'StmTxCommitted')
@@ -58,6 +59,7 @@ import           Data.Bifoldable
 import           Data.Bifunctor
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
+import           Data.Function (on)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
@@ -96,7 +98,9 @@ import qualified Control.Monad.Class.MonadFork as MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
+import           Control.Monad.Class.MonadSTM.Strict (StrictTVar, StrictTMVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
+import qualified Control.Monad.Class.MonadSTM.Strict as StrictSTM
 import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
 import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -348,6 +352,10 @@ instance MonadFork (IOSim s) where
 
 instance MonadSay (STMSim s) where
   say msg = STM $ \k -> SayStm msg (k ())
+
+instance ( tvar ~ TVar_ (STM s)
+         , forall a. Eq (tvar a)
+         ) => MonadSTMVars tvar (TMVarDefault (IOSim s)) (TQueueDefault (IOSim s)) (TBQueueDefault (IOSim s))
 
 instance MonadSTMTx (STM s) where
   type TVar_      (STM s) = TVar s
@@ -1372,6 +1380,32 @@ data TVar s a = TVar {
        --
        tvarBlocked :: !(STRef s ([ThreadId], Set ThreadId))
      }
+
+instance Eq (TVar s a) where
+    (==) = on (==) tvarId
+
+instance Eq (TMVarDefault (IOSim s) a) where
+    (==) = (==) `on` \(TMVar v) -> v
+
+instance Eq (TQueueDefault (IOSim s) a) where
+    TQueue read write == TQueue read' write' =
+         read  == read'
+      && write == write'
+
+instance Eq (TBQueueDefault (IOSim s) a) where
+    TBQueue rsize read wsize write size
+      == TBQueue rsize' read' wsize' write' size' =
+         rsize == rsize'
+      && read  == read'
+      && wsize == wsize'
+      && write == write'
+      && size  == size'
+
+instance Eq (StrictTVar (IOSim s) a) where
+    (==) = (==) `on` StrictSTM.toLazyTVar
+
+instance Eq (StrictTMVar (IOSim s) a) where
+    (==) = (==) `on` StrictSTM.toLazyTMVar
 
 data StmTxResult s a =
        -- | A committed transaction reports the vars that were written (in order
