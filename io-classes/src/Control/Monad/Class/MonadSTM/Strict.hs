@@ -32,6 +32,7 @@ module Control.Monad.Class.MonadSTM.Strict
   , labelTMVar
   , labelTMVarIO
   , castStrictTMVar
+  , toLazyTMVar
   , newTMVar
   , newTMVarIO
   , newEmptyTMVar
@@ -185,6 +186,9 @@ labelTMVarIO v = atomically . labelTMVar v
 castStrictTMVar :: LazyTMVar m ~ LazyTMVar n
                 => StrictTMVar m a -> StrictTMVar n a
 castStrictTMVar (StrictTMVar var) = StrictTMVar var
+
+toLazyTMVar :: StrictTMVar m a -> LazyTMVar m a
+toLazyTMVar (StrictTMVar v) = v
 
 newTMVar :: MonadSTM m => a -> STM m (StrictTMVar m a)
 newTMVar !a = StrictTMVar <$> Lazy.newTMVar a
