@@ -404,7 +404,7 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
     \draw (StPropose) --node[above=1em]{\MsgProposeVersions} (StConfirm);
     \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion}   (StDone.170);
     \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}          (StDone.190);
-    \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em] {\MsgReplayVersions} (StDone.west);
+    \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em] {\MsgReplyVersions} (StDone.west);
   \end{tikzpicture}
 \end{figure}
 
@@ -412,11 +412,11 @@ Messages of the protocol:
 \begin{description}
 \item [\MsgProposeVersions{} {\boldmath $(versionTable)$}]
       The client proposes a number of possible versions and protocol parameters.
-\item [\MsgReplayVersions{} {\boldmath $(versionTable)$}]
-      In TCP simultaneous open the client will receive \MsgReplayVersions{}
+\item [\MsgReplyVersions{} {\boldmath $(versionTable)$}]
+      In TCP simultaneous open the client will receive \MsgReplyVersions{}
       (which was sent as \MsgProposeVersions{}) as a reply to its own
       \MsgProposeVersions{}; thus both \MsgProposeVersions{} and
-      \MsgReplayVersions{} have to have the same CBOR encoding.
+      \MsgReplyVersions{} have to have the same CBOR encoding.
 \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
 \item [\MsgRefuse{} {\boldmath $(reason)$}]
@@ -429,7 +429,7 @@ Messages of the protocol:
   \multicolumn{4}{|c|}{Transition table} \\ \hline
     from       & message/event         & parameters                        & to \\ \hline\hline
     \StPropose & \MsgProposeVersions   & $versionTable$                    & \StConfirm \\ \hline
-    \StConfirm & \MsgReplayVersions    & $versionTable$                    & \StDone \\ \hline
+    \StConfirm & \MsgReplyVersions    & $versionTable$                    & \StDone \\ \hline
     \StConfirm & \MsgAcceptVersion     & $(versionNumber,extraParameters)$ & \StDone \\ \hline
     \StConfirm & \MsgRefuse            & $reason$                          & \StDone \\ \hline
   \end{tabular}
@@ -489,7 +489,7 @@ version.
 
 In case of simultaneous open of a TCP connection, both handshake clients will
 send their \MsgProposeVersions{}, both will interpret the incoming message as
-\MsgReplayVersions{} (thus both must have the same encoding, the implementation
+\MsgReplyVersions{} (thus both must have the same encoding, the implementation
 can distinguish them by the protocol state).  Both clients should choose the
 highest version of the protocol available.  If any side does not accept any
 version (or its parameters) it can reset the connection.
@@ -497,19 +497,18 @@ version (or its parameters) it can reset the connection.
 The protocol does not forbid, nor could it detect a usage of
 \MsgReplyVersions{} outside of TCP simultaneous open.  The process of
 choosing between proposed and received version must be symmetric, in the
-following sense.
+following sense:
 
 \begin{description}
+  \item[]
     We use \texttt{acceptable :: vData -> vData -> Accept vData}
     function to compute accepted version data from proposed and received data,
     where
-\begin{code}
 \begin{verbatim}
   data Accept vData = Accept vData
                     | Refuse Text
                     deriving Eq
 \end{verbatim}
-\end{code}
     See
     \href{https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
     Both \texttt{acceptable proposed received} and \texttt{acceptable received
@@ -518,7 +517,7 @@ following sense.
       \item if either of them accepts a version by returning \texttt{Accept},
         the other one must accept the same value, i.e. in this case
         \texttt{acceptable proposed received == acceptable received proposed}
-      \item if either of them refuses to accept (returns \textt{Refuse reason})
+      \item if either of them refuses to accept (returns \texttt{Refuse reason})
         the other one shall return \texttt{Refuse} as well.
     \end{itemize}
 \end{description}
