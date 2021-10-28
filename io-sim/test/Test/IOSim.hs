@@ -363,7 +363,7 @@ test_threadId_order = \(Positive n) -> do
       return tid
 
     isValid :: Int -> [ThreadId m] -> Property
-    isValid n tr = map show tr === map (("ThreadId " ++ ) . show) [1..n]
+    isValid n tr = map show tr === map (("ThreadId " ++ ) . show . (:[])) [1..n]
 
 prop_threadId_order_order_Sim :: Positive Int -> Property
 prop_threadId_order_order_Sim n = runSimOrThrow $ test_threadId_order n
@@ -584,7 +584,7 @@ unit_async_1 =
           threadDelay 1
       )
  ===
-   ["main ThreadId 0", "parent ThreadId 1", "child ThreadId 1"]
+   ["main ThreadId []", "parent ThreadId [1]", "child ThreadId [1]"]
 
 
 unit_async_2 =
