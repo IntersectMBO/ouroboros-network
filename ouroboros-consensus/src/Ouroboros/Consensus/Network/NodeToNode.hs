@@ -58,7 +58,7 @@ import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
-                     (ReportFetchedMetricsSTM, ReportHeaderMetricsSTM,
+                     (FetchedMetricsTracer, HeaderMetricsTracer,
                      ReportPeerMetrics (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
@@ -114,7 +114,7 @@ data Handlers m peer blk = Handlers {
         :: peer
         -> NodeToNodeVersion
         -> ControlMessageSTM m
-        -> ReportHeaderMetricsSTM m
+        -> HeaderMetricsTracer m
         -> StrictTVar m (AnchoredFragment (Header blk))
         -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
         -- TODO: we should consider either bundling these context parameters
@@ -131,7 +131,7 @@ data Handlers m peer blk = Handlers {
     , hBlockFetchClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> ReportFetchedMetricsSTM m
+        -> FetchedMetricsTracer m
         -> BlockFetchClient (Header blk) blk m ()
 
     , hBlockFetchServer
@@ -494,7 +494,8 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout ReportPeerMetrics {..} H
                   channel
                   $ chainSyncClientPeerPipelined
                   $ hChainSyncClient them version controlMessageSTM
-                      (reportHeader them) varCandidate
+                      (TraceLabelPeer them `contramap` reportHeader)
+                      varCandidate
               return ((), trailing)
 
     aChainSyncServer
@@ -533,7 +534,8 @@ mkApps kernel Tracers {..} mkCodecs genChainSyncTimeout ReportPeerMetrics {..} H
           (byteLimitsBlockFetch (const 0)) -- TODO: Real Bytelimits, see #1727
           timeLimitsBlockFetch
           channel
-          $ hBlockFetchClient version controlMessageSTM (reportFetch them) clientCtx
+          $ hBlockFetchClient version controlMessageSTM
+                              (TraceLabelPeer them `contramap` reportFetch) clientCtx
 
     aBlockFetchServer
       :: NodeToNodeVersion
