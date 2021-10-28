@@ -25,6 +25,9 @@ module Test.Ouroboros.Network.PeerSelection.Script (
     arbitraryPickScript,
     interpretPickScript,
 
+    -- needed to write test cases
+    NonEmpty(..)
+
   ) where
 
 import           Data.Set (Set)

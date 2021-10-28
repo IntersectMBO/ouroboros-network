@@ -9,15 +9,16 @@
 {-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.PeerSelection (tests, unfHydra) where
+module Test.Ouroboros.Network.PeerSelection where
 
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
-import           Data.List (groupBy, foldl')
+import           Data.List (groupBy, foldl', sort, isPrefixOf)
 import           Data.Maybe (listToMaybe, isNothing, fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -31,8 +32,11 @@ import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
 import           Control.Monad.Class.MonadSTM.Strict (STM)
+import           Control.Applicative
+import           Control.Exception --(SomeException)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
+import           Control.Monad.IOSim.Types hiding (STM)
 
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
@@ -47,12 +51,25 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
+
+import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
+import           Test.Ouroboros.Network.PeerSelection.Script
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers(..))
+import           Ouroboros.Network.PeerSelection.Types
+
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Signal
 import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
 import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Pretty.Simple
+
+import           System.IO
+import           System.IO.Unsafe(unsafePerformIO)
+import           System.Timeout
+import           Data.IORef
+import qualified Debug.Trace as Debug
 
 -- Exactly as named.
 unfHydra :: Int
@@ -108,6 +125,7 @@ tests =
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
+  , testProperty "governor no livelock (racing)"    prop_explore_governor_nolivelock
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others
@@ -238,10 +256,38 @@ prop_governor_nofail env =
 --
 prop_governor_nolivelock :: GovernorMockEnvironment -> Property
 prop_governor_nolivelock env =
-    let trace = take 5000 .
+    check_governor_nolivelock 5000 $ runGovernorInMockEnvironment env
+
+prop_explore_governor_nolivelock :: GovernorMockEnvironment -> Property
+prop_explore_governor_nolivelock =
+
+    -- Simulation steps take longer and longer as simulated time
+    -- advances; running time for this property is quadratic in the
+    -- number of events explored. We limit the test to 500 governor
+    -- events to avoid unreasonably slow tests. This may be because
+    -- the governor becomes slower over time with priority-based
+    -- scheduling, or because IOSimPOR's data structures grow.
+
+    -- This test currently fails, because of a broken assertion in
+    -- Ouroboros.Network.PeerSelection.Governor.ActivePeers, which
+    -- checks that a newly promoted warm peer is a member of the set
+    -- of established peers. This may not be true if the promotion is
+    -- delayed by a race condition.
+    
+    prop'_explore_governor_nolivelock id 500
+    
+prop'_explore_governor_nolivelock :: ExplorationSpec -> Int -> GovernorMockEnvironment -> Property
+prop'_explore_governor_nolivelock spec len env =
+    exploreGovernorInMockEnvironment spec env $ \_ trace ->
+      -- counterexample (showTrace trace) $
+      -- whenfail (pPrint env) $
+      check_governor_nolivelock len trace
+
+check_governor_nolivelock n trace0 =
+    let trace = take n .
                 selectGovernorEvents .
                 selectPeerSelectionTraceEvents $
-                  runGovernorInMockEnvironment env
+                  trace0
      in case tooManyEventsBeforeTimeAdvances 1000 trace of
           Nothing -> property True
           Just (t, es) ->
@@ -250,6 +296,13 @@ prop_governor_nolivelock env =
                "first 50 events: " ++ (unlines . map show . take 50 $ es)) $
             property False
 
+{-
+showTrace = break . show
+  where break s | "(Trace " `isPrefixOf` s = "\n" ++ breaks
+                | otherwise                = breaks
+         where breaks | null s    = []
+                      | otherwise = head s : break (tail s)
+-}
 
 -- | Scan the trace and return any occurrence where we have at least threshold
 -- events before virtual time moves on. Return the tail of the trace from that
@@ -535,6 +588,7 @@ allTraceNames =
 -- must find all the reachable ones, or if the target for the number of known
 -- peers to find is too low then it should at least find the target number.
 --
+
 prop_governor_gossip_1hr :: GovernorMockEnvironment -> Property
 prop_governor_gossip_1hr env@GovernorMockEnvironment {
                                peerGraph,
@@ -600,14 +654,30 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
 -- | Check the governor's view of connection status does not lag behind reality
 -- by too much.
 --
+
 prop_governor_connstatus :: GovernorMockEnvironment -> Property
 prop_governor_connstatus env =
+  check_governor_connstatus Nothing (runGovernorInMockEnvironment env)
+
+-- The explore version of this property fails, I think because the
+-- assumption made in the check that status events appear in the trace
+-- in the correct order is broken by a race.
+
+prop_explore_governor_connstatus :: GovernorMockEnvironment -> Property
+prop_explore_governor_connstatus = prop'_explore_governor_connstatus id
+
+prop'_explore_governor_connstatus :: ExplorationSpec -> GovernorMockEnvironment -> Property
+prop'_explore_governor_connstatus opts env =
+  whenFail (pPrint env) $
+  exploreGovernorInMockEnvironment opts env check_governor_connstatus
+
+check_governor_connstatus _ trace0 = 
     let trace = takeFirstNHours 1
-              . selectPeerSelectionTraceEvents $
-                  runGovernorInMockEnvironment env
-        --TODO: check any actually get a true status output and try some
-        --      deliberate bugs
-     in conjoin (map ok (groupBy ((==) `on` fst) trace))
+              . selectPeerSelectionTraceEvents $ trace0
+        --TODO: check any actually get a true status output and try some deliberate bugs
+     in
+     whenFail (pPrint trace) $
+     conjoin $ map ok (groupBy ((==) `on` fst) trace)
   where
     -- We look at events when the environment's view of the state of all the
     -- peer connections changed, and check that before simulated time advances
