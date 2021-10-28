@@ -296,7 +296,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                    chainDbView
                    maxBound
                    (return Continue)
-                   (\_ _ -> return ())
+                   nullTracer
 
     -- Set up the server
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis

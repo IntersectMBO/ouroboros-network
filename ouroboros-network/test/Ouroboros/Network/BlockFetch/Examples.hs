@@ -88,7 +88,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                     (contramap (TraceLabelPeer peerno) serverMsgTracer)
                     clientDelay serverDelay
                     registry peerno
-                    (blockFetchClient NodeToNodeV_1 controlMessageSTM (\_ _ _ -> pure ()))
+                    (blockFetchClient NodeToNodeV_1 controlMessageSTM nullTracer)
                     (mockBlockFetchServer1 candidateChain)
 
     fetchAsync  <- async $ do
@@ -194,7 +194,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                         (contramap (TraceLabelPeer peerno) serverMsgTracer)
                         clientDelay serverDelay
                         registry peerno
-                        (blockFetchClient NodeToNodeV_1 controlMessageSTM (\_ _ _ -> pure ()))
+                        (blockFetchClient NodeToNodeV_1 controlMessageSTM nullTracer)
                         (mockBlockFetchServer1 candidateChain)
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]
