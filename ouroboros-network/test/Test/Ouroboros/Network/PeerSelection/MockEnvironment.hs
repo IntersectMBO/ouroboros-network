@@ -195,7 +195,7 @@ governorAction mockEnv = do
 exploreGovernorInMockEnvironment :: Testable test =>
                                           (ExplorationOptions->ExplorationOptions)
                                           -> GovernorMockEnvironment
-                                          -> (Maybe (Trace Void) -> Trace Void -> test)
+                                          -> (Maybe (SimTrace Void) -> SimTrace Void -> test)
                                           -> Property
 exploreGovernorInMockEnvironment optsf mockEnv k =
     exploreSimTrace optsf (governorAction mockEnv) k

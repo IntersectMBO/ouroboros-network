@@ -27,7 +27,8 @@ module Control.Monad.IOSim (
   unshareClock,
   -- * Simulation trace
   type SimTrace,
-  Trace (Cons, Nil, Trace, SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock),
+  Trace (Cons, Nil, Trace, SimTrace, TraceRacesFound,
+         TraceMainReturn, TraceMainException, TraceDeadlock, TraceLoop),
   ppTrace,
   ppTrace_,
   ppEvents,
@@ -147,14 +148,14 @@ selectTraceRaces = go
 -- unsafe, of course, since that function may return different results
 -- at different times.
 
-detachTraceRaces :: SimTrace a -> (() -> [ScheduleControl], Trace a)
+detachTraceRaces :: SimTrace a -> (() -> [ScheduleControl], SimTrace a)
 detachTraceRaces trace = unsafePerformIO $ do
   races <- newIORef []
   let readRaces ()  = concat . reverse . unsafePerformIO $ readIORef races
       saveRaces r t = unsafePerformIO $ do
                         modifyIORef races (r:)
                         return t
-  let go (SimTrace a b c d trace)  = Trace a b c d $ go trace
+  let go (SimTrace a b c d trace)  = SimTrace a b c d $ go trace
       go (TraceRacesFound r trace) = saveRaces r   $ go trace
       go t                         = t
   return (readRaces,go trace)
@@ -334,13 +335,13 @@ ppEvents events =
 runSimTrace :: forall a. (forall s. IOSim s a) -> SimTrace a
 runSimTrace mainAction = runST (runSimTraceST mainAction)
 
-controlSimTrace :: forall a. Maybe Int -> ScheduleControl -> (forall s. IOSim s a) -> Trace a
+controlSimTrace :: forall a. Maybe Int -> ScheduleControl -> (forall s. IOSim s a) -> SimTrace a
 controlSimTrace limit control mainAction = runST (controlSimTraceST limit control mainAction)
 
 exploreSimTrace ::
   forall a test. (Testable test, Show a) =>
     (ExplorationOptions->ExplorationOptions) ->
-    (forall s. IOSim s a) -> (Maybe (Trace a) -> Trace a -> test) -> Property
+    (forall s. IOSim s a) -> (Maybe (SimTrace a) -> SimTrace a -> test) -> Property
 exploreSimTrace optsf mainAction k =
   case explorationReplay opts of
     Nothing ->
@@ -414,7 +415,7 @@ replaySimTrace :: forall a test. (Testable test)
                => ExplorationOptions
                -> (forall s. IOSim s a)
                -> ScheduleControl
-               -> (Maybe (Trace a) -> Trace a -> test)
+               -> (Maybe (SimTrace a) -> SimTrace a -> test)
                -> Property
 replaySimTrace opts mainAction control k =
   let (readRaces,trace) = detachTraceRaces $
@@ -436,33 +437,33 @@ raceReversals ControlFollow{}     = error "Impossible: raceReversals ControlFoll
 -- this far, then we collect its identity only if it is reached using
 -- unsafePerformIO.
 
-compareTraces :: Maybe (Trace a1)
-              -> Trace a2
+compareTraces :: Maybe (SimTrace a1)
+              -> SimTrace a2
               -> (Maybe ((Time, ThreadId, Maybe ThreadLabel),
                          Set.Set (ThreadId, Maybe ThreadLabel)),
-                  Trace a2)
+                  SimTrace a2)
 compareTraces Nothing trace = (Nothing, trace)
 compareTraces (Just passing) trace = unsafePerformIO $ do
   sleeper <- newIORef Nothing
   return (unsafePerformIO $ readIORef sleeper,
           go sleeper passing trace)
-  where go sleeper (Trace tpass tidpass tlpass _ pass')
-           (Trace tfail tidfail tlfail evfail fail')
+  where go sleeper (SimTrace tpass tidpass tlpass _ pass')
+           (SimTrace tfail tidfail tlfail evfail fail')
           | (tpass,tidpass) == (tfail,tidfail) =
-              Trace tfail tidfail tlfail evfail $
+              SimTrace tfail tidfail tlfail evfail $
                 go sleeper pass' fail'
-        go sleeper pass@(Trace tpass tidpass tlpass _ _) fail =
+        go sleeper pass@(SimTrace tpass tidpass tlpass _ _) fail =
           unsafePerformIO $ do
             writeIORef sleeper $ Just ((tpass, tidpass, tlpass),Set.empty)
-            return $ Trace tpass tidpass tlpass EventThreadSleep $
+            return $ SimTrace tpass tidpass tlpass EventThreadSleep $
                        wakeup sleeper tidpass fail
         go sleeper pass fail = fail
-        wakeup sleeper tidpass (Trace tfail tidfail tlfail evfail fail')
+        wakeup sleeper tidpass (SimTrace tfail tidfail tlfail evfail fail')
           | tidpass == tidfail =
-              Trace tfail tidfail tlfail EventThreadWake fail'
+              SimTrace tfail tidfail tlfail EventThreadWake fail'
           | otherwise = unsafePerformIO $ do
               Just (slp,racing) <- readIORef sleeper
               writeIORef sleeper $ Just (slp,Set.insert (tidfail,tlfail) racing)
-              return $ Trace tfail tidfail tlfail evfail $
+              return $ SimTrace tfail tidfail tlfail evfail $
                          wakeup sleeper tidpass fail'
         wakeup sleeper tidpass fail = fail

@@ -9,6 +9,8 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -37,13 +39,17 @@ import qualified Control.Monad.ST.Strict as StrictST
 import qualified Control.Monad.Catch as Exceptions
 import qualified Control.Monad.Fail as Fail
 
+import           Data.Bifoldable
+import           Data.Bifunctor
+import           Data.Maybe (fromMaybe)
 import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Function (on)
 import           Data.Typeable
 import           Data.STRef.Lazy
-import           Data.List.Trace
+import qualified Data.List.Trace as Trace
+import           Text.Printf
 
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
@@ -502,7 +508,7 @@ data SimEvent
   deriving Show via Quiet SimEvent
 
 seThreadLabel' SimEvent {seThreadLabel} = seThreadLabel
-seThreadLabel' SimRacesFound            = Nothing
+seThreadLabel' (SimRacesFound _)        = Nothing
 
 ppSimEvent :: Int -- ^ width of thread label
            -> SimEvent
@@ -551,18 +557,18 @@ pattern Trace time threadId threadLabel traceEvent trace =
     Trace.Cons (SimEvent time threadId threadLabel traceEvent)
                trace
 
-pattern TraceRacesFound :: [ScheduleControl] -> SimTrace a
-                        -> SimTrace a
-pattern TraceRacesFound controls trace =
-    Trace.Cons (SimRacesFound controls)
-               trace
-
 {-# DEPRECATED Trace "Use 'SimTrace' instead." #-}
 
 pattern SimTrace :: Time -> ThreadId -> Maybe ThreadLabel -> SimEventType -> SimTrace a
                  -> SimTrace a
 pattern SimTrace time threadId threadLabel traceEvent trace =
     Trace.Cons (SimEvent time threadId threadLabel traceEvent)
+               trace
+
+pattern TraceRacesFound :: [ScheduleControl] -> SimTrace a
+                        -> SimTrace a
+pattern TraceRacesFound controls trace =
+    Trace.Cons (SimRacesFound controls)
                trace
 
 pattern TraceMainReturn :: Time -> a -> [Labelled ThreadId]
