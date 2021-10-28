@@ -56,7 +56,7 @@ import           Ouroboros.Network.BlockFetch.ClientState
                    , rejectedFetchBatch )
 import           Ouroboros.Network.BlockFetch.DeltaQ
                    ( PeerGSV(..), PeerFetchInFlightLimits(..) )
-import           Ouroboros.Network.PeerSelection.PeerMetric.Type (ReportFetchedMetricsSTM)
+import           Ouroboros.Network.PeerSelection.PeerMetric.Type (FetchedMetricsTracer)
 
 
 data BlockFetchProtocolFailure =
@@ -85,7 +85,7 @@ blockFetchClient :: forall header block m.
                      HeaderHash header ~ HeaderHash block)
                  => NodeToNodeVersion
                  -> ControlMessageSTM m
-                 -> ReportFetchedMetricsSTM m
+                 -> FetchedMetricsTracer m
                  -> FetchClientContext header block m
                  -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m ()
 blockFetchClient _version controlMessageSTM reportFetched
@@ -303,7 +303,10 @@ blockFetchClient _version controlMessageSTM reportFetched
 
             let hf = getHeaderFields header
                 slotNo = headerFieldSlot hf
-            atomically $ reportFetched (blockFetchSize header) slotNo nowMono
+            atomically $ traceWith reportFetched ( blockFetchSize header
+                                                 , slotNo
+                                                 , nowMono
+                                                 )
 
             -- Note that we add the block to the chain DB /before/ updating our
             -- current status and in-flight stats. Otherwise blocks will

@@ -13,6 +13,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
+import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Ouroboros.Network.DeltaQ ( SizeInBytes )
@@ -40,41 +41,42 @@ reportMetric
      => PeerMetrics m p
      -> ReportPeerMetrics m (ConnectionId p)
 reportMetric peerMetrics =
-  ReportPeerMetrics (addHeaderMetric peerMetrics)
-                    (addFetchedMetric peerMetrics)
+  ReportPeerMetrics (headerMetricTracer peerMetrics)
+                    (fetchedMetricTracer peerMetrics)
 
 nullMetric
     :: MonadSTM m
     => ReportPeerMetrics m p
 nullMetric =
-  ReportPeerMetrics (\_ _ _   -> pure ())
-                    (\_ _ _ _ -> pure ())
+  ReportPeerMetrics nullTracer nullTracer
 
 slotMetricKey :: SlotNo -> Int
 slotMetricKey (SlotNo s) = fromIntegral s
 
-addHeaderMetric
+headerMetricTracer
     :: forall m p.
        ( MonadSTM m )
     => PeerMetrics m p
-    -> ConnectionId p
-    -> SlotNo
-    -> Time
-    -> STM m ()
-addHeaderMetric PeerMetrics{headerMetrics} con =
-     addMetrics headerMetrics (remoteAddress con)
+    -> Tracer (STM m) (TraceLabelPeer (ConnectionId p) (SlotNo, Time))
+headerMetricTracer PeerMetrics{headerMetrics} =
+    (\(TraceLabelPeer con d) -> TraceLabelPeer (remoteAddress con) d)
+    `contramap`
+    metricsTracer headerMetrics
 
-addFetchedMetric
+fetchedMetricTracer
     :: forall m p.
        ( MonadSTM m )
     => PeerMetrics m p
-    -> ConnectionId p
-    -> SizeInBytes
-    -> SlotNo
-    -> Time
-    -> STM m ()
-addFetchedMetric  PeerMetrics{fetchedMetrics} con bytes =
-     addMetrics fetchedMetrics (remoteAddress con, bytes)
+    -> Tracer (STM m) (TraceLabelPeer (ConnectionId p)
+                                      ( SizeInBytes
+                                      , SlotNo
+                                      , Time
+                                      ))
+fetchedMetricTracer PeerMetrics{fetchedMetrics} =
+    (\(TraceLabelPeer con (bytes, slot, time)) ->
+       TraceLabelPeer (remoteAddress con, bytes) (slot, time))
+    `contramap`
+     metricsTracer fetchedMetrics
 
 
 getHeaderMetrics
@@ -89,14 +91,11 @@ getFetchedMetrics
     -> STM m (SlotMetric (p, SizeInBytes))
 getFetchedMetrics PeerMetrics{fetchedMetrics} = readTVar fetchedMetrics
 
-addMetrics
+metricsTracer
     :: forall m p.  ( MonadSTM m )
     => StrictTVar m (SlotMetric p)
-    -> p
-    -> SlotNo
-    -> Time
-    -> STM m ()
-addMetrics metricsVar !peer !slot !time = do
+    -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
+metricsTracer metricsVar = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
     metrics <- readTVar metricsVar
     case Pq.lookup (slotMetricKey slot) metrics of
          Nothing -> do

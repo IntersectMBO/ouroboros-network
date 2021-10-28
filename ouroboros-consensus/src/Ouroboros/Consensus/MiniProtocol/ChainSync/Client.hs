@@ -57,7 +57,7 @@ import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
-                     (ReportHeaderMetricsSTM)
+                     (HeaderMetricsTracer)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
@@ -428,7 +428,7 @@ chainSyncClient
     -> ChainDbView m blk
     -> NodeToNodeVersion
     -> ControlMessageSTM m
-    -> ReportHeaderMetricsSTM m
+    -> HeaderMetricsTracer m
     -> StrictTVar m (AnchoredFragment (Header blk))
     -> Consensus ChainSyncClientPipelined blk m
 chainSyncClient mkPipelineDecision0 tracer cfg
@@ -440,7 +440,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 }
                 _version
                 controlMessageSTM
-                reportHeaderMetricsSTM
+                headerMetricsTracer
                 varCandidate = ChainSyncClientPipelined $
     continueWithState () $ initialise
   where
@@ -820,7 +820,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                   }
           atomically $ writeTVar varCandidate theirFrag'
           let slotNo = blockSlot hdr
-          atomically $ reportHeaderMetricsSTM slotNo now
+          atomically $ traceWith headerMetricsTracer (slotNo, now)
 
           continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
 
