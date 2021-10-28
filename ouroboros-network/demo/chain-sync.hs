@@ -299,7 +299,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               codecBlockFetch
               channel
               (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy IO))
-                (\_ _ _ -> return ()) clientCtx)
+                nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO
