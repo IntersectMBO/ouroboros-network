@@ -552,8 +552,8 @@ peerSelectionGovernorLoop tracer
       -- All the alternative potentially-blocking decisions.
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions st
-      <> Monitor.jobs                 jobPool st
       <> Monitor.connections          actions st
+      <> Monitor.jobs                 jobPool st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
