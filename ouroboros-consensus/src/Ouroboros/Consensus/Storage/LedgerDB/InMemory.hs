@@ -268,7 +268,12 @@ data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
+applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c
+                                -- TODO we __might__ need a new 'UTxOHD l m blk'
+                                -- -that tells us how to fetch values from disk
+                                -- (we're not sure at this moment whether we ned
+                                -- all the type parameters).
+                                )
            => LedgerCfg l
            -> Ap m l blk c
            -> LedgerDB l -> m l
@@ -276,17 +281,33 @@ applyBlock cfg ap db = case ap of
     ReapplyVal b ->
       return $
         tickThenReapply cfg b l
-    ApplyVal b ->
-      either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
-        tickThenApply cfg b l
+    ApplyVal (b, unforwardedReadSet) -> do
+      case hydrateLedgerState unforwardedReadSet db of
+        Just l   ->  -- l is the current hydrated ledger state
+          either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
+          tickThenApply cfg b l
+        Nothing ->
+          -- Here we need to read from the database anyway because we need to retry.
+          --
+          -- TODO: I'm not sure what to do in this case. Just reapply? Under
+          -- which circumstances can this fail? Since we're extending the
+          -- database this should happen only if the underlying database gets
+          -- corrupted. In such case we should simply abort the operation.
+          error "TODO: Could not fast-forward the changes, this should not happen because ..."
     ReapplyRef r  -> do
       b <- resolveBlock r
       return $
         tickThenReapply cfg b l
     ApplyRef r -> do
       b <- resolveBlock r
-      either (throwLedgerError db r) return $ runExcept $
-        tickThenApply cfg b l
+      let keySet = getTableKeysetsForBlock b (ledgerDbCurrent db)
+          rewoundReadSet = rewindTableKeySets db ks
+      unforwardedReadSet <- readDb dbhandle rewoundReadSet
+      case hydrateLedgerState unforwardedReadSet db of
+        Just l   ->  -- l is the current hydrated ledger state
+          either (throwLedgerError db r) return $ runExcept $
+           tickThenApply cfg b l
+        Nothing -> undefined -- TODO: factor this pattern out.
     Weaken ap' ->
       applyBlock cfg ap' db
   where
@@ -384,9 +405,10 @@ pushLedgerState ::
   -> l -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
 pushLedgerState secParam current' db@LedgerDB{..}  =
-    ledgerDbPrune secParam $ db {
-        ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint current'
-      }
+  extendDbChangelog seqNo current' mTableSnapshots db
+  where
+    seqNo = undefined
+    mTableSnapshots = undefined
 
 {-------------------------------------------------------------------------------
   Internal: rolling back
