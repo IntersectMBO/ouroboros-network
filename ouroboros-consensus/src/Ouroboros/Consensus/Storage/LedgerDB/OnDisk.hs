@@ -30,11 +30,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , trimSnapshots
   , writeSnapshot
     -- * Low-level API (primarily exposed for testing)
+  , DiskSnapshot (..)
   , deleteSnapshot
   , snapshotToFileName
   , snapshotToPath
-    -- ** opaque
-  , DiskSnapshot (..)
     -- * Trace events
   , TraceEvent (..)
   , TraceReplayEvent (..)
