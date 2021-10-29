@@ -72,7 +72,6 @@ import           Test.QuickCheck
 import           Test.QuickCheck.Utils
 import           Test.Tasty (TestTree, localOption, testGroup)
 import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
-import qualified Debug.Trace as Debug
 
 
 tests :: TestTree
@@ -181,8 +180,8 @@ governorAction mockEnv = do
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv policy
     exploreRaces      -- explore races within the governor
-    forkIO $ do       -- races with the governor should be explored
-      peerSelectionGovernor
+    _ <- forkIO $ do  -- races with the governor should be explored
+      _ <- peerSelectionGovernor
         tracerTracePeerSelection
         tracerDebugPeerSelection
         tracerTracePeerSelectionCounters

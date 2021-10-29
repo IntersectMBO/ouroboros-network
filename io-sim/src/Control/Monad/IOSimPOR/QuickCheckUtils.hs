@@ -30,6 +30,7 @@ conjoinPar = conjoinSpeculate speculate
 conjoinNoCatch :: TestableNoCatch prop => [prop] -> Property
 conjoinNoCatch = conjoinSpeculate id
 
+conjoinSpeculate :: TestableNoCatch prop => ([Rose Result] -> [Rose Result]) -> [prop] -> Property
 conjoinSpeculate spec ps =
   againNoCatch $
   MkProperty $
@@ -111,6 +112,7 @@ instance TestableNoCatch prop => TestableNoCatch (Gen prop) where
 instance TestableNoCatch Property where
   propertyNoCatch p = p
 
+againNoCatch :: Property -> Property
 againNoCatch (MkProperty gen) = MkProperty $ do
   MkProp rose <- gen
   return . MkProp $ fmap (\res -> res{ abort = False }) rose

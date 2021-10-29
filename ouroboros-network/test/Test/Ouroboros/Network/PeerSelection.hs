@@ -18,7 +18,7 @@ module Test.Ouroboros.Network.PeerSelection where
 
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
-import           Data.List (groupBy, foldl', sort, isPrefixOf)
+import           Data.List (groupBy, foldl', sort)
 import           Data.Maybe (listToMaybe, isNothing, fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -69,7 +69,6 @@ import           System.IO
 import           System.IO.Unsafe(unsafePerformIO)
 import           System.Timeout
 import           Data.IORef
-import qualified Debug.Trace as Debug
 
 -- Exactly as named.
 unfHydra :: Int
@@ -283,6 +282,7 @@ prop'_explore_governor_nolivelock spec len env =
       -- whenfail (pPrint env) $
       check_governor_nolivelock len trace
 
+check_governor_nolivelock :: Int -> SimTrace a -> Property
 check_governor_nolivelock n trace0 =
     let trace = take n .
                 selectGovernorEvents .
@@ -671,6 +671,7 @@ prop'_explore_governor_connstatus opts env =
   whenFail (pPrint env) $
   exploreGovernorInMockEnvironment opts env check_governor_connstatus
 
+check_governor_connstatus :: Maybe (SimTrace a) -> SimTrace a -> Property
 check_governor_connstatus _ trace0 = 
     let trace = takeFirstNHours 1
               . selectPeerSelectionTraceEvents $ trace0

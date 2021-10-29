@@ -47,6 +47,7 @@ timeout n f
                             (uninterruptibleMask_ . killThread)
                             (\_ -> fmap Just f))
 
+waitFor :: Int -> IO ()
 waitFor n = do
   t0 <- getGCTime
   threadDelay n
@@ -55,6 +56,7 @@ waitFor n = do
     -- allow some extra time because of GC
     waitFor (t1-t0)
 
+getGCTime :: IO Int
 getGCTime = fromIntegral . (`div` 1000) . gc_elapsed_ns <$> getRTSStats
 
 -- | unsafeTimeout n a forces the evaluation of a, with a time limit of n microseconds.
