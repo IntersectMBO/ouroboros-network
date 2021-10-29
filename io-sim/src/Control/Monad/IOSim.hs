@@ -385,10 +385,10 @@ exploreSimTrace optsf mainAction k =
 
     bucket n | n<10  = show n
              | n>=10 = buck n 1
-             | otherwise = error "Ord Int is not a total order!"
+             | otherwise = error "Ord Int is not a total order!"  -- GHC made me do it!
     buck n t | n<10      = show (n*t) ++ "-" ++ show ((n+1)*t-1)
              | n>=10     = buck (n `div` 10) (t*10)
-             | otherwise = error "Ord Int is not a total order!"
+             | otherwise = error "Ord Int is not a total order!"  -- GHC made me do it!
 
     divide n k =
       [ n `div` k + if i<n `mod` k then 1 else 0

@@ -587,8 +587,8 @@ pattern TraceDeadlock time threads = Trace.Nil (Deadlock time threads)
 pattern TraceLoop :: SimTrace a
 pattern TraceLoop = Trace.Nil Loop
 
-{-# COMPLETE SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock #-}
-{-# COMPLETE Trace, TraceMainReturn, TraceMainException, TraceDeadlock #-}
+{-# COMPLETE SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock, TraceLoop #-}
+{-# COMPLETE Trace,    TraceMainReturn, TraceMainException, TraceDeadlock, TraceLoop #-}
 
 
 data SimEventType

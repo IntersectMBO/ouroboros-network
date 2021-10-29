@@ -320,6 +320,7 @@ selectRootPeerDNSTraceEvents = go
     go (TraceMainException _ e _) = throw e
     go (TraceDeadlock      _   _) = [] -- expected result in many cases
     go (TraceMainReturn    _ _ _) = []
+    go TraceLoop                  = error "IOSimPOR step time limit exceeded"
 
 selectLocalRootPeersEvents :: [(Time, TestTraceEvent Failure)]
                            -> [(Time, TraceLocalRootPeers Failure)]
