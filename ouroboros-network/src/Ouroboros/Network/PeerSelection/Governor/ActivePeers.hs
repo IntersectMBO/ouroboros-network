@@ -441,11 +441,6 @@ aboveTargetOther actions
     numActivePeers      = Set.size activePeers
     numDemoteInProgress = Set.size inProgressDemoteHot
 
--- | Reconnect delay for peers which asynchronously transitioned to cold state.
---
-reconnectDelay :: DiffTime
-reconnectDelay = 10
---TODO: make this a policy param
 
 jobDemoteActivePeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
@@ -459,43 +454,22 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
-      -- It's quite bad if demoting fails. The peer is cold so
-      -- remove if from the set of established and hot peers.
+      -- It's quite bad if closing fails, but the best we can do is revert to
+      -- the state where we believed these peers are still warm, since then we
+      -- can have another go at the ones we didn't yet try to close, or perhaps
+      -- it'll be closed for other reasons and our monitoring will notice it.
       Completion $ \st@PeerSelectionState {
                       activePeers,
-                      establishedPeers,
-                      inProgressDemoteHot,
-                      knownPeers,
                       targets = PeerSelectionTargets {
                                   targetNumberOfActivePeers
-                                },
-                      fuzzRng
+                                }
                     }
-                    now ->
-        let (rFuzz, fuzzRng')     = randomR (-2, 2 :: Double) fuzzRng
-            peerSet               = Set.singleton peeraddr
-            activePeers'          = Set.delete peeraddr activePeers
-            inProgressDemoteHot'  = Set.delete peeraddr inProgressDemoteHot
-            knownPeers'           = KnownPeers.setConnectTime
-                                     peerSet
-                                     ((realToFrac rFuzz + reconnectDelay)
-                                      `addTime` now)
-                                   . Set.foldr'
-                                     ((snd .) . KnownPeers.incrementFailCount)
-                                     knownPeers
-                                   $ peerSet
-            establishedPeers'     = EstablishedPeers.deletePeers
-                                     peerSet
-                                     establishedPeers in
-        Decision {
+                    _now -> Decision {
         decisionTrace = TraceDemoteHotFailed targetNumberOfActivePeers
                                              (Set.size activePeers) peeraddr e,
         decisionState = st {
-                          inProgressDemoteHot = inProgressDemoteHot',
-                          fuzzRng = fuzzRng',
-                          activePeers = activePeers',
-                          knownPeers = knownPeers',
-                          establishedPeers = establishedPeers'
+                          inProgressDemoteHot = Set.delete peeraddr
+                                                  (inProgressDemoteHot st)
                         },
         decisionJobs  = []
       }
