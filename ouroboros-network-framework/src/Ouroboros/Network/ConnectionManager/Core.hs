@@ -778,10 +778,10 @@ withConnectionManager ConnectionManagerArguments {
                          )
 
             case mConnVar of
-              Left Unknown ->
-                assert False $ do
-                  traceWith tracer (TrUnexpectedlyMissingConnectionState connId)
-                  traceCounters stateVar
+              Left Unknown -> do
+                traceWith tracer (TrUnexpectedlyMissingConnectionState connId)
+                _ <- evaluate (assert False)
+                traceCounters stateVar
 
               Left connState@Known {} -> do
                 traceWith trTracer (TransitionTrace peerAddr
