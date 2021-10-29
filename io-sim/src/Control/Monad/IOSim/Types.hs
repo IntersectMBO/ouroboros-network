@@ -12,7 +12,7 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 
-{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns -Wno-partial-fields #-}
 
 module Control.Monad.IOSim.Types where
 
@@ -507,6 +507,7 @@ data SimEvent
   deriving Generic
   deriving Show via Quiet SimEvent
 
+seThreadLabel' :: SimEvent -> Maybe ThreadLabel
 seThreadLabel' SimEvent {seThreadLabel} = seThreadLabel
 seThreadLabel' (SimRacesFound _)        = Nothing
 
@@ -522,7 +523,7 @@ ppSimEvent d SimEvent {seTime, seThreadId, seThreadLabel, seType} =
            (show seType)
   where
     threadLabel = fromMaybe "" seThreadLabel
-ppSimEvent d (SimRacesFound controls) =
+ppSimEvent _ (SimRacesFound controls) =
     "RacesFound "++show controls
 
 data SimResult a

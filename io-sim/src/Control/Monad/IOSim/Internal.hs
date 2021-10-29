@@ -54,24 +54,16 @@ module Control.Monad.IOSim.Internal (
 
 import           Prelude hiding (read)
 
-import           Data.Bifoldable
-import           Data.Bifunctor
-import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Foldable (traverse_)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
-import           Data.Typeable (Typeable)
-import           Text.Printf
-import           Quiet (Quiet (..))
-import           GHC.Generics (Generic)
 
 import           Control.Exception (assert)
 import           Control.Monad (join)
@@ -82,9 +74,7 @@ import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
 import           Data.STRef.Lazy
 
 import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
-import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
-import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
@@ -490,7 +480,7 @@ schedule thread@Thread{
           -- If we're now unmasked then check for any pending async exceptions
           Unmasked -> deschedule Interruptable thread' simstate
           _        -> schedule                 thread' simstate
-      return (Trace time tid tlbl (EventMask maskst') trace)
+      return (SimTrace time tid tlbl (EventMask maskst') trace)
 
     ThrowTo e tid' _ | tid' == tid -> do
       -- Throw to ourself is equivalent to a synchronous throw,

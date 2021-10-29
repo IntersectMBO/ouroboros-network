@@ -18,7 +18,7 @@ module Test.Ouroboros.Network.PeerSelection where
 
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
-import           Data.List (groupBy, foldl', sort)
+import           Data.List (groupBy, foldl')
 import           Data.Maybe (listToMaybe, isNothing, fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -32,8 +32,6 @@ import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
 import           Control.Monad.Class.MonadSTM.Strict (STM)
-import           Control.Applicative
-import           Control.Exception --(SomeException)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
 import           Control.Monad.IOSim.Types hiding (STM)
@@ -52,23 +50,13 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 
-import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
-import           Test.Ouroboros.Network.PeerSelection.Script
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers(..))
-import           Ouroboros.Network.PeerSelection.Types
-
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Signal
 import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Pretty.Simple
-
-import           System.IO
-import           System.IO.Unsafe(unsafePerformIO)
-import           System.Timeout
-import           Data.IORef
 
 -- Exactly as named.
 unfHydra :: Int

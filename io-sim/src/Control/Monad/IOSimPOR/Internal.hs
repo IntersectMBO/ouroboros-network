@@ -39,8 +39,8 @@ module Control.Monad.IOSimPOR.Internal (
   ThreadId,
   ThreadLabel,
   Labelled (..),
-  SimTrace (..),
-  TraceEvent (..),
+  SimTrace,
+  TraceEvent,
   liftST,
   execReadTVar,
   controlSimTraceST,
@@ -61,7 +61,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 
-import           Control.Exception (assert, MaskingState(..))
+import           Control.Exception (assert)
 import           Control.Monad (join)
 
 import           Control.Monad (when)
@@ -919,7 +919,7 @@ removeMinimums = \psq ->
           | p == p' -> collectAll (k:ks) p (x:xs) psq'
         _           -> (reverse ks, p, reverse xs, psq)
 
-traceMany :: [(Time, ThreadId, Maybe ThreadLabel, TraceEvent)]
+traceMany :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
           -> SimTrace a -> SimTrace a
 traceMany []                      trace = trace
 traceMany ((time, tid, tlbl, event):ts) trace =

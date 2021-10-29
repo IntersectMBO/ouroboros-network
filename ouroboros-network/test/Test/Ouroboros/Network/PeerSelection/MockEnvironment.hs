@@ -52,13 +52,11 @@ import qualified Control.Monad.Fail as Fail
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
 import           Control.Monad.Class.MonadTimer hiding (timeout)
-import           Control.Monad.IOSim.Types(ExplorationOptions)
 import           Control.Monad.IOSim
 
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import           Ouroboros.Network.PeerSelection.Types
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
@@ -524,7 +522,7 @@ selectPeerSelectionTraceEvents = go
 selectPeerSelectionTraceEventsUntil :: Time -> SimTrace a -> [(Time, TestTraceEvent)]
 selectPeerSelectionTraceEventsUntil tmax = go
   where
-    go (SimTrace t _ _ e _)
+    go (SimTrace t _ _ _ _)
      | t > tmax                   = []
     go (SimTrace t _ _ (EventLog e) trace)
      | Just x <- fromDynamic e    = (t,x) : go trace

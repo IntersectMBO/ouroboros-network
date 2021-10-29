@@ -290,6 +290,7 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection.Script
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
+                       Test.Ouroboros.Network.ShrinkCarefully
                        Test.Mux
                        Test.Pipe
                        Test.Socket

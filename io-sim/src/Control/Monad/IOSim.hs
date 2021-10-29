@@ -75,7 +75,6 @@ import           Data.Dynamic (fromDynamic)
 import           Data.List (intercalate)
 import           Data.Bifoldable
 import qualified Data.Set as Set
-import qualified Data.Map as Map
 import           Data.Typeable (Typeable)
 
 import           Data.List.Trace (Trace (..))
@@ -96,7 +95,6 @@ import           Test.QuickCheck
 
 
 import           System.IO.Unsafe
-import           Control.Monad.IOSimPOR.Timeout
 import           Data.IORef
 
 
@@ -339,7 +337,7 @@ controlSimTrace :: forall a. Maybe Int -> ScheduleControl -> (forall s. IOSim s 
 controlSimTrace limit control mainAction = runST (controlSimTraceST limit control mainAction)
 
 exploreSimTrace ::
-  forall a test. (Testable test, Show a) =>
+  forall a test. (Testable test) =>
     (ExplorationOptions->ExplorationOptions) ->
     (forall s. IOSim s a) -> (Maybe (SimTrace a) -> SimTrace a -> test) -> Property
 exploreSimTrace optsf mainAction k =
@@ -387,8 +385,10 @@ exploreSimTrace optsf mainAction k =
 
     bucket n | n<10  = show n
              | n>=10 = buck n 1
-    buck n t | n<10  = show (n*t) ++ "-" ++ show ((n+1)*t-1)
-             | n>=10 = buck (n `div` 10) (t*10)
+             | otherwise = error "Ord Int is not a total order!"
+    buck n t | n<10      = show (n*t) ++ "-" ++ show ((n+1)*t-1)
+             | n>=10     = buck (n `div` 10) (t*10)
+             | otherwise = error "Ord Int is not a total order!"
 
     divide n k =
       [ n `div` k + if i<n `mod` k then 1 else 0
@@ -418,7 +418,7 @@ replaySimTrace :: forall a test. (Testable test)
                -> (Maybe (SimTrace a) -> SimTrace a -> test)
                -> Property
 replaySimTrace opts mainAction control k =
-  let (readRaces,trace) = detachTraceRaces $
+  let (_,trace) = detachTraceRaces $
                             controlSimTrace (explorationStepTimelimit opts) control mainAction
       in property (k Nothing trace)
 
@@ -447,17 +447,17 @@ compareTraces (Just passing) trace = unsafePerformIO $ do
   sleeper <- newIORef Nothing
   return (unsafePerformIO $ readIORef sleeper,
           go sleeper passing trace)
-  where go sleeper (SimTrace tpass tidpass tlpass _ pass')
+  where go sleeper (SimTrace tpass tidpass _ _ pass')
            (SimTrace tfail tidfail tlfail evfail fail')
           | (tpass,tidpass) == (tfail,tidfail) =
               SimTrace tfail tidfail tlfail evfail $
                 go sleeper pass' fail'
-        go sleeper pass@(SimTrace tpass tidpass tlpass _ _) fail =
+        go sleeper (SimTrace tpass tidpass tlpass _ _) fail =
           unsafePerformIO $ do
             writeIORef sleeper $ Just ((tpass, tidpass, tlpass),Set.empty)
             return $ SimTrace tpass tidpass tlpass EventThreadSleep $
                        wakeup sleeper tidpass fail
-        go sleeper pass fail = fail
+        go _ _ fail = fail
         wakeup sleeper tidpass (SimTrace tfail tidfail tlfail evfail fail')
           | tidpass == tidfail =
               SimTrace tfail tidfail tlfail EventThreadWake fail'
@@ -466,4 +466,4 @@ compareTraces (Just passing) trace = unsafePerformIO $ do
               writeIORef sleeper $ Just (slp,Set.insert (tidfail,tlfail) racing)
               return $ SimTrace tfail tidfail tlfail evfail $
                          wakeup sleeper tidpass fail'
-        wakeup sleeper tidpass fail = fail
+        wakeup _ _ fail = fail
