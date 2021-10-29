@@ -129,6 +129,8 @@ tests =
   , testProperty "multinode_Sim"      prop_multinode_Sim
   , testProperty "unit_connection_terminated_when_negotiating"
                  unit_connection_terminated_when_negotiating
+  , testProperty "valid connection manager trace"
+                 prop_valid_connection_manager_trace
   , testProperty "failure" prop'
   , testGroup "generators"
     [ testProperty "MultiNodeScript"  prop_generator_MultiNodeScript
@@ -2279,8 +2281,85 @@ prop_multinode_pruning_Sim serverAcc (MultiNodePruningScript acceptedConnLimit l
         Just a  -> return a
 
 
+-- | Check that connection manager trace is valid:
+--
+-- * it does not contian 'TrUnexpectedlyMissingConnectionState'
+--
+prop_valid_connection_manager_trace
+  :: Int
+  -> MultiNodePruningScript Int
+  -> Property
+prop_valid_connection_manager_trace
+  serverAcc (MultiNodePruningScript acceptedConnLimit l) =
+  let tr  :: SimTrace ()
+      tr = runSimTrace sim
+
+      evs :: Trace (SimResult ())
+                   (WithName
+                      (Name SimAddr)
+                      (ConnectionManagerTrace
+                         SimAddr
+                         (ConnectionHandlerTrace UnversionedProtocol
+                                                 DataFlowProtocolData)))
+      evs = traceSelectTraceEventsDynamic tr
+
+      validateTrace
+        :: Trace (SimResult ())
+                 (WithName
+                    (Name SimAddr)
+                    (ConnectionManagerTrace
+                       SimAddr
+                       (ConnectionHandlerTrace UnversionedProtocol
+                                               DataFlowProtocolData)))
+        -> Property
+      validateTrace =
+          getAllProperty
+        . bifoldMap
+            ( \ _ -> AllProperty (property True))
+            ( \ ev -> case wnEvent ev of
+              TrUnexpectedlyMissingConnectionState {} ->
+                AllProperty (counterexample (show ev) $ property False)
+
+              -- TODO: issue #3465
+              _ ->
+                AllProperty (property True) )
+
+  in  tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (intercalate "\n"
+                     [ "========== Script =========="
+                     , ppScript (MultiNodeScript l)
+                     , "========== ConnectionManager Events =========="
+                     , Trace.ppTrace show show evs
+                     , "========== Simulation Trace =========="
+                     , ppTrace tr
+                     ])
+    . validateTrace
+    $ evs
+  where
+    sim :: IOSim s ()
+    sim = do
+      mb <- timeout 7200
+                    ( withSnocket sayTracer
+                                  (singletonScript noAttenuation)
+              $ \snocket ->
+                 multinodeExperiment nullTracer
+                                     (Tracer $ say . show)
+                                     nullTracer
+                                     (Tracer traceM <> Tracer (say . show))
+                                     snocket
+                                     Snocket.TestFamily
+                                     (Snocket.TestAddress 0)
+                                     serverAcc
+                                     Duplex
+                                     acceptedConnLimit
+                                     (unTestAddr <$> MultiNodeScript l)
+              )
+      case mb of
+        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Just a  -> return a
+
 prop' :: Property
-prop' = prop_multinode_pruning_Sim 0
+prop' = prop_valid_connection_manager_trace 0
         (MultiNodePruningScript (AcceptedConnectionsLimit {acceptedConnectionsHardLimit = 1, acceptedConnectionsSoftLimit = 0, acceptedConnectionsDelay = 0}) [StartServer 0.3 (TestAddr {unTestAddr = TestAddress 38}) 29,InboundConnection 0.22 (TestAddr {unTestAddr = TestAddress 38}),OutboundConnection 0.0165 (TestAddr {unTestAddr = TestAddress 38}),InboundMiniprotocols 0.34 (TestAddr {unTestAddr = TestAddress 38}) (Bundle {withHot = WithHot [-3,-53,-12,49,31,-36,-54,-41,-39,57,3,-5,-40,-55,43,67,-8,-38,57,31,0,38,-21,57,-32,67,15,40,-10,54,-62,17,71,-61,-36,27,-43,40], withWarm = WithWarm [-6,-72,-29,-54,-52,-32,-15,58,55,19,-59,-18,55,12,32,61,38,49,-23,64,6,-25,-19,-68,55,-58,-34,-33,68,-54,-31,61,50,-27,-3,-60,65,-44,-15,-71,7,-1,50,-64,-57,-45,-55,71,26,-34,21,28,-35,38,-61,25,63,49,-72,-40], withEstablished = WithEstablished [64,6,26,-25,70,14,10,-64,8,-4,-72,-70,-44,64,36,7,31,30,23,-47,70,7,-5,54,-4,35,21,64,-72,67,-65,6,-13,68,-41,3,-26,-40,50,-37,23,44,6,66,-6,-14,-63,-22,-16,20,-51,-59,-69,-38,-32,-37,-9,20,-67,-62,-52,40,25,31,10,39,12,-3,49,-22,45,30]}),CloseOutboundConnection 0.35 (TestAddr {unTestAddr = TestAddress 38}), StartServer 0.0595 (TestAddr {unTestAddr = TestAddress 4}) (-5),InboundConnection 0.051 (TestAddr {unTestAddr = TestAddress 4}),OutboundConnection 0.025 (TestAddr {unTestAddr = TestAddress 4}),InboundMiniprotocols 0.42 (TestAddr {unTestAddr = TestAddress 4}) (Bundle {withHot = WithHot [-50,-55,-21,-5,31,-32,28,-17,61,40,43,8,-37,9,70,-50,3,34,31,-51,-4,-7,-45,-23,72,-6,21], withWarm = WithWarm [12,46,19,4,17,38,68,-59,-11,-12,-58,31,-56,50,-34,55,-51,64,13,-57,-12,53,4,-58,17,-3,47,-46,-65], withEstablished = WithEstablished [7,26]}),StartServer 4.85 (TestAddr {unTestAddr = TestAddress 63}) (-38),InboundConnection 0.315 (TestAddr {unTestAddr = TestAddress 63}),OutboundConnection 0.052 (TestAddr {unTestAddr = TestAddress 63}),InboundMiniprotocols 0.08 (TestAddr {unTestAddr = TestAddress 63}) (Bundle {withHot = WithHot [-31,57,40,33,-34,-44,-21,-31,27,30,32,-30,63,28,58,-36,54,-9,12,37,15,70,-71,-40,55,22,52,57,14,-31,26,17,24,-7,-13,43], withWarm = WithWarm [63,50,5,50,24,-65,-39,-33,15,-15,-65,33,8,39,42,-31,-50,-4,-12,14,9,32,-7,-72,28,34,66,-72,-17,-51,46,-18,42,62,-67,-16,-46,-12,-9,17,-22,-47,-8,-72,51,35,38,67,-71,20,27,-58,28,-64,-23,-49,51,65,-13,54,-72,-15,-54,-7,-28], withEstablished = WithEstablished [-45,-68,-15,-63,-72,68,-71,-1,71,11]}),CloseOutboundConnection 0.105 (TestAddr {unTestAddr = TestAddress 63}),CloseOutboundConnection 2.2 (TestAddr {unTestAddr = TestAddress 4}),InboundMiniprotocols 0.008 (TestAddr {unTestAddr = TestAddress 4}) (Bundle {withHot = WithHot [-47,-33,-1,33,41,25,-65,16,-7,-37,49,37,40,54,-8], withWarm = WithWarm [69,50,-7,-23,1,55,58,69,42,19,27,4,24,29,-28,-5,36], withEstablished = WithEstablished [60,-57,48]}),StartServer 0.55 (TestAddr {unTestAddr = TestAddress 91}) (-16),InboundConnection 0.245 (TestAddr {unTestAddr = TestAddress 91}),OutboundConnection 0.49 (TestAddr {unTestAddr = TestAddress 91}),InboundMiniprotocols 0.395 (TestAddr {unTestAddr = TestAddress 91}) (Bundle {withHot = WithHot [68,65,-69,67,0,-15,2,-36,-22,65,-41,63,-66,-51,45,-5,27,-55,-67,-69,-14,-41,-68,-68,-42,-71,-39,14,17,60,70,33,53,-18,-18], withWarm = WithWarm [-34,44,-6,25,13,-55,-60,13,16,-26,-55,31,52,62,17,29,29,-62,58,-27,-20,-7,31,-63,-11,32,-32,47,-10,-26,58,-38,-23,37,-27,-34,-60,43], withEstablished = WithEstablished [-54,18,-57,37,-21,-62,-33,25,68,-67,23,-72,7,-38,-51,-3,-27,-36,-19,51,-56,-13,-48,63,52,-70,46,39,48,49,35,38,-27,-70,-34,-64,-72,70,28,-2,-51,9,-6,-59,-56,33,49,51,72,-67,4,-14,-38,-72,-62,68,13,66,-24,23,-39,48,52,15,57,41,49,-3,-16,-49]}),OutboundConnection 0.525 (TestAddr {unTestAddr = TestAddress 38}),InboundMiniprotocols 0.24 (TestAddr {unTestAddr = TestAddress 91}) (Bundle {withHot = WithHot [30,-36,13,12,-18,42,61,-47,62,-21,61,-8,67,-1,-5,34,22,-34,-47,-32,2,-32,-71,-28,31,-40,-21,4,-11,-12,29,-60,37,-27,-55,9,-16,14,-30,44,60,-19,59,72,32,53,-15,-30,49,-13,50,-12,15,62,15,62,47,-64,-34,-68,-45,-11,-71,15,25,29,-1], withWarm = WithWarm [63,37,-65,27,30,30,-19,-41,51,36,17,50,-69,2,-61,-53,34,-9,-46,-36,-52,-47,-6,-25,10,-14,47,-59,26,-45,-49,-57,-18,-53], withEstablished = WithEstablished [47,-13,8,0,40,-59,42,72,50,51,-56,49,-3,15,17,-19,-39,63,44,67,-18,-48,36,-28,14,-43,-63,14,10,-16,-6,-65,38,23,49,-40,19,67,-2,49,-60,-72,68,-71,62,-42,60,69,-60,32,-18,27,-61,-14,3,54,63,69,-22,30,-34,-29,12,-55,40,-43,-6,-9]}),CloseOutboundConnection 0.58 (TestAddr {unTestAddr = TestAddress 38}),StartServer 3.2 (TestAddr {unTestAddr = TestAddress 79}) 60,InboundConnection 0.18 (TestAddr {unTestAddr = TestAddress 79}),OutboundConnection 0.052 (TestAddr {unTestAddr = TestAddress 79}),InboundMiniprotocols 0.38 (TestAddr {unTestAddr = TestAddress 79}) (Bundle {withHot = WithHot [-22,60,-41,56,45,-71,-53,42,-42,-10,-3,55,30,-44,-67,68,-22,41,-11,-30,2,29,-58,-42,7,24,67,-48,65,43,-58,23,-66,55,20,-67], withWarm = WithWarm [-43,-56,10,-29,-51,-11,45,2,-10,2,32,-26,41,-68,-62,-25,-9,67,-1,16,50,52,67,-31,29,61,56,-35,56,47,-42,28,-21,50], withEstablished = WithEstablished [-2,-67,10,23,12,-22,-9,-64]}),CloseOutboundConnection 0.017 (TestAddr {unTestAddr = TestAddress 91}),InboundMiniprotocols 0.61 (TestAddr {unTestAddr = TestAddress 38}) (Bundle {withHot = WithHot [-29,-27,-20,43,-41,58,39,-58,66,54,19,56,-2,36,38,-48,-23,-2,51,-29,45,59,45,69,-31,-46,-22,13,-47,27,45,72,-33,38,7,16,30,-36,70,-9,-55,-14,18,1,-20,26,11,-57,-39,63,30,46,39,-23,43,33,-1,42,11,30,-7,32,44,62,31,63,-11], withWarm = WithWarm [56,26,6,-71,-5,-7,-32,-62,17,-9,45,-62,-32,21,-59,14,-67,-8,34,51,-49,53,1,-44,65,-23,11,9,-42,58,-52,9,-32,0,29,27,25,20,-56,42,26,52,-7,26,-26,49,-21,-11,51,-67,9,27,-60,48,-59,37,39,-70,-18,18,-10,-26,62], withEstablished = WithEstablished [49,4,43,-50,-44,68,-35,59,-64,-8,-57,-31,6,-59,33,61,-70,-16,-13,26,66,28,-20,31,-6,-11,-55,8,-30,-16,22,60,39,57,-40,-26,1,37,-67,-54,-65,40,6,-30,27,-5,-47,24,-6,-11,48,-24,-63,-68,7,-16,18,17,-71,13,-24,10,-71,-41,32,28,9,-24,30]})])
 
 
@@ -2501,7 +2580,12 @@ data WithName name event = WithName {
     wnName  :: name,
     wnEvent :: event
   }
-  deriving (Show, Functor)
+  deriving Functor
+
+
+instance (Show name, Show event) => Show (WithName name event) where
+    show (WithName name event) =
+      printf "%-21s: %s" (show name) (show event)
 
 type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
 
