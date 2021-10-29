@@ -125,6 +125,8 @@ tests =
                  prop_never_above_hardlimit
   , testProperty "connection_manager_valid_transitions"
                  prop_connection_manager_valid_transitions
+  , testProperty "connection_manager_no_invalid_traces"
+                 prop_connection_manager_no_invalid_traces
   , testProperty "inbound_governor_valid_transitions"
                  prop_inbound_governor_valid_transitions
   , testProperty "inbound_governor_no_unsupported_state"
@@ -2030,6 +2032,57 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
        )
     . splitConns
     $ evsATT
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       (Script (toBearerInfo absBi :| [noAttenuation]))
+                       maxAcceptedConnectionsLimit l
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates that we do not get undesired traces, such as
+-- TrUnexpectedlyMissingConnectionState in connection manager.
+--
+prop_connection_manager_no_invalid_traces :: Int
+                                          -> ArbDataFlow
+                                          -> AbsBearerInfo
+                                          -> MultiNodeScript Int TestAddr
+                                          -> Property
+prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
+                                          absBi (MultiNodeScript l) =
+  let trace = runSimTrace sim
+
+      evsCMT :: Trace (SimResult ())
+                      (ConnectionManagerTrace
+                        SimAddr
+                        (ConnectionHandlerTrace
+                          UnversionedProtocol
+                          DataFlowProtocolData))
+      evsCMT = traceWithNameTraceEvents trace
+
+  in tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (intercalate "\n"
+                     [ "========== Script =========="
+                     , ppScript (MultiNodeScript l)
+                     , "========== ConnectionManager Events =========="
+                     , Trace.ppTrace show show evsCMT
+                     , "========== Simulation Trace =========="
+                     , ppTrace trace
+                     ])
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           v             -> AllProperty (counterexample (show v) False)
+       )
+       ( \ tr
+        -> case tr of
+          TrUnexpectedlyMissingConnectionState _ ->
+            AllProperty (counterexample (show tr) False)
+          _                                       ->
+            mempty
+       )
+    $ evsCMT
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
