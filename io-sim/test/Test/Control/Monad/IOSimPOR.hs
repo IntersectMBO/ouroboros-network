@@ -6,16 +6,12 @@
 
 module Test.Control.Monad.IOSimPOR where
 
-import Data.Time.Clock
-
 import Control.Monad
 import Control.Monad.IOSim
-import Control.Monad.IOSim.Types(withScheduleBound)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTimer
 import Control.Monad.Class.MonadTest
-import Control.Monad.Class.MonadThrow(catch)
 
 import GHC.Generics
 
@@ -27,11 +23,8 @@ import Data.List
 import Data.Map(Map)
 import qualified Data.Map as Map
 import Control.Exception(try, evaluate, SomeException)
-import Control.Monad.ST.Lazy
 import Control.Parallel
 import Data.IORef
-
-import qualified Debug.Trace as Debug
 
 data Step =
     WhenSet Int Int
@@ -85,12 +78,15 @@ instance Arbitrary Task where
     (Task <$> compressSteps steps) ++
     (Task . normalize <$> shrink steps)
 
+normalize :: [Step] -> [Step]
 normalize steps = plug steps wsSteps 1000000
   where wsSteps = reverse $ sort [s | s@(WhenSet _ _) <- steps]
-        plug []              []               m = []
+        plug []              []               _ = []
         plug (WhenSet _ _:s) (WhenSet a b:ws) m = WhenSet (min a m) (min b m):plug s ws (min b m)
         plug (step:s)        ws               m = step:plug s ws m
+        plug _               _                _ = error "plug: impossible"
 
+compressSteps :: [Step] -> [[Step]]
 compressSteps (WhenSet a b:WhenSet c d:steps) =
   [WhenSet a d:steps] ++ ((WhenSet a b:) <$> compressSteps (WhenSet c d:steps))
 compressSteps (s:steps) = (s:) <$> compressSteps steps
@@ -108,15 +104,17 @@ instance Arbitrary Tasks where
          advanceThrowTo ts ++
          sortTasks ts
 
+fixThrowTos :: [Task] -> [Task]
 fixThrowTos tasks = mapThrowTos (`mod` length tasks) tasks
 
+shrinkDelays :: [Task] -> [[Task]]
 shrinkDelays tasks
   | null times = []
   | otherwise  = [map (Task . removeTime d) [steps | Task steps <- tasks]
                  | d <- times]
   where times = foldr union [] [scanl1 (+) [d | Delay d <- t] | Task t <- tasks]
         removeTime 0 steps = steps
-        removeTime d []    = []
+        removeTime _ []    = []
         removeTime d (Delay d':steps)
           | d==d' = steps
           | d< d' = Delay (d'-d):steps
@@ -124,6 +122,7 @@ shrinkDelays tasks
         removeTime d (s:steps) =
           s:removeTime d steps
 
+removeTask :: [Task] -> [[Task]]
 removeTask tasks =
   [ mapThrowTos (fixup i) . map (dontThrowTo i) $ take i tasks++drop (i+1) tasks
   | i <- [0..length tasks-1]]
@@ -131,20 +130,23 @@ removeTask tasks =
                   | otherwise = j
         dontThrowTo i (Task steps) = Task (filter (/=ThrowTo i) steps)
 
+advanceThrowTo :: [Task] -> [[Task]]
 advanceThrowTo [] = []
 advanceThrowTo (Task steps:ts) =
   ((:ts) . Task <$> advance steps) ++
   ((Task steps:) <$> advanceThrowTo ts)
-  where advance (WhenSet a b:ThrowTo i:steps) =
-          [ThrowTo i:WhenSet a b:steps] ++ (([WhenSet a b,ThrowTo i]++) <$> advance steps)
-        advance (s:steps) = (s:) <$> advance steps
-        advance [] = []
+  where advance (WhenSet a b:ThrowTo i:steppes) =
+          [ThrowTo i:WhenSet a b:steppes] ++ (([WhenSet a b,ThrowTo i]++) <$> advance steppes)
+        advance (s:steppes) = (s:) <$> advance steppes
+        advance []          = []
 
+mapThrowTos :: (Int -> Int) -> [Task] -> [Task]
 mapThrowTos f tasks = map mapTask tasks
   where mapTask (Task steps) = Task (map mapStep steps)
         mapStep (ThrowTo i) = ThrowTo (f i)
         mapStep s           = s
 
+sortTasks :: Ord a => [a] -> [[a]]
 sortTasks (x:y:xs) | x>y = [y:x:xs] ++ ((x:) <$> sortTasks (y:xs))
 sortTasks (x:xs)         = (x:) <$> sortTasks xs
 sortTasks []             = []
@@ -164,14 +166,14 @@ interpret r t (Task steps) = forkIO $ do
         interpretStep (ts,_) (ThrowTo i) = throwTo (ts !! i) (ExitFailure 0)
         interpretStep _      (Delay i)   = threadDelay (fromIntegral i)
         interpretStep (_,timer) (Timeout tstep) = do
-          t <- atomically $ readTVar timer
-          case (t,tstep) of
-            (_,NewTimeout n)          -> do to <- newTimeout (fromIntegral n)
-                                            atomically $ writeTVar timer (Just to)
-            (Just to,UpdateTimeout n) -> updateTimeout to (fromIntegral n)
-            (Just to,CancelTimeout)   -> cancelTimeout to
-            (Just to,AwaitTimeout)    -> atomically $ awaitTimeout to >> return ()
-            (Nothing,_)               -> return ()
+          timerVal <- atomically $ readTVar timer
+          case (timerVal,tstep) of
+            (_,NewTimeout n)            -> do tout <- newTimeout (fromIntegral n)
+                                              atomically $ writeTVar timer (Just tout)
+            (Just tout,UpdateTimeout n) -> updateTimeout tout (fromIntegral n)
+            (Just tout,CancelTimeout)   -> cancelTimeout tout
+            (Just tout,AwaitTimeout)    -> atomically $ awaitTimeout tout >> return ()
+            (Nothing,_)                 -> return ()
 
 runTasks :: [Task] -> IOSim s (Int,Int)
 runTasks tasks = do
@@ -185,6 +187,7 @@ runTasks tasks = do
   a  <- atomically $ readTVar r
   return (m,a)
 
+maxTaskValue :: [Step] -> Int
 maxTaskValue (WhenSet m _:_) = m
 maxTaskValue (_:t)           = maxTaskValue t
 maxTaskValue []              = 0
@@ -195,6 +198,7 @@ propSimulates (Tasks tasks) =
     let Right (m,a) = runSim (runTasks tasks) in
     m>=a
 
+propExploration :: Tasks -> Property
 propExploration (Tasks tasks) =
   any (not . null . (\(Task steps)->steps)) tasks ==>
     traceNoDuplicates $ \addTrace ->
@@ -209,6 +213,7 @@ propExploration (Tasks tasks) =
 
 -- Testing propPermutations n should collect every permutation of [1..n] once only.
 -- Test manually, and supply a small value of n.
+propPermutations :: Int -> Property
 propPermutations n =
   traceNoDuplicates $ \addTrace ->
   exploreSimTrace (withScheduleBound 10000) (doit n) $ \_ trace ->
@@ -225,18 +230,22 @@ doit n = do
           threadDelay 1
           atomically $ readTVar r
 
+ordered :: Ord a => [a] -> Bool
 ordered xs = and (zipWith (<) xs (drop 1 xs))
 
+noExceptions :: [Char] -> [Char]
 noExceptions xs = unsafePerformIO $ try (evaluate xs) >>= \case
   Right []     -> return []
   Right (x:ys) -> return (x:noExceptions ys)
   Left e       -> return ("\n"++show (e :: SomeException))
 
+splitTrace :: [Char] -> [Char]
 splitTrace [] = []
 splitTrace (x:xs) | begins "(Trace" = "\n(" ++ splitTrace xs
                   | otherwise       = x:splitTrace xs
   where begins s = take (length s) (x:xs) == s
 
+traceCounter :: (Testable prop1, Show a1) => ((a1 -> a2 -> a2) -> prop1) -> Property
 traceCounter k = r `pseq` (k addTrace .&&.
                            tabulate "Trace repetitions" (map show $ traceCounts ()) True)
   where
@@ -246,6 +255,7 @@ traceCounter k = r `pseq` (k addTrace .&&.
       return x
     traceCounts () = unsafePerformIO $ Map.elems <$> readIORef r
 
+traceNoDuplicates :: (Testable prop1, Show a1) => ((a1 -> a2 -> a2) -> prop1) -> Property
 traceNoDuplicates k = r `pseq` (k addTrace .&&. maximum (traceCounts ()) == 1)
   where
     r = unsafePerformIO $ newIORef (Map.empty :: Map String Int)
