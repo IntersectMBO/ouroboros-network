@@ -18,7 +18,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.Hybrid (
   , hydrateLedgerState2
     -- * DB Changelog extension.
   , extendDbChangelog
+  , trackingTablesToTableDiffs
   ) where
+
+class HasTables (state :: (TableType -> * -> * -> *) -> *)
 
 class HasOnDiskTables (state :: (TableType -> * -> * -> *) -> *)
 
@@ -133,15 +136,24 @@ hydrateLedgerState2 utrs dbcl = do
 -- DB Changelog extension
 --------------------------------------------------------------------------------
 
+-- | This function allows to convert the @TrackingTable@s we get afer applying
+-- the ledger rules need to @TableDiff@s.
+trackingTablesToTableDiffs :: forall state. HasTables state => state TrackingTable -> state TableDiff
+trackingTablesToTableDiffs = undefined -- mapTables (const getTableDiff)
+
 -- | Apply a state change to the changelog.
 extendDbChangelog :: forall state.
                      HasOnDiskTables state
                   => SeqNo state
-                  -- ^ ???
+                  -- ^ The SeqNo naming the new state.
                   -> state TableDiff
-                  -- ^ ??? This be derived from the ledger state, right
+                  -- ^ The changes in the new state. These will typically come
+                  -- from the new ledger state that results from applying the
+                  -- ledger rules. Function 'trackingTablesToTableDiffs'
+                  -- provides a way to obtain a @state TableDiff@ value from the
+                  -- @state TrackingTable@ value returned by the ledger rules.
                   -> Maybe (TableSnapshots state)
-                  -- ^ ???
+                  -- ^ Snapshotting instructions, returned by the ledger rules.
                   -> DbChangelog state
                   -> DbChangelog state
 extendDbChangelog = undefined
