@@ -227,8 +227,6 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                                          }
                              }
                     now ->
-        -- TODO: this is a temporary fix, which will by addressed by
-        -- #3460
         let establishedPeers' = EstablishedPeers.delete peeraddr
                                   establishedPeers
             (fuzz, fuzzRng')  = randomR (-2, 2 :: Double) fuzzRng
