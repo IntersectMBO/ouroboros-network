@@ -587,6 +587,8 @@ data TracePeerSelection peeraddr =
      | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
      -- | target established, actual established, peer
      | TracePromoteColdDone    Int Int peeraddr
+     -- | target established, actual established, peer
+     | TracePromoteColdDoneNop Int Int peeraddr
      -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
      -- | local per-group (target active, actual active), selected peers
@@ -595,12 +597,16 @@ data TracePeerSelection peeraddr =
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TracePromoteWarmDone    Int Int peeraddr
+     -- | target active, actual active, peer
+     | TracePromoteWarmDoneNop Int Int peeraddr
      -- | target established, actual established, selected peers
      | TraceDemoteWarmPeers    Int Int (Set peeraddr)
      -- | target established, actual established, peer, reason
      | TraceDemoteWarmFailed   Int Int  peeraddr SomeException
      -- | target established, actual established, peer
      | TraceDemoteWarmDone     Int Int peeraddr
+     -- | target established, actual established, peer
+     | TraceDemoteWarmDoneNop  Int Int peeraddr
      -- | target active, actual active, selected peers
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
      -- | local per-group (target active, actual active), selected peers
@@ -609,6 +615,7 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TraceDemoteHotDone      Int Int peeraddr
+     | TraceDemoteHotDoneNop   Int Int peeraddr
      | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime

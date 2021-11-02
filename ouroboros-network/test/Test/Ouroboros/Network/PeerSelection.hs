@@ -487,6 +487,10 @@ traceNum TraceDemoteAsynchronous{}    = 23
 traceNum TraceGovernorWakeup{}        = 24
 traceNum TraceChurnWait{}             = 25
 traceNum TraceChurnMode{}             = 26
+traceNum TracePromoteWarmDoneNop{}    = 27
+traceNum TraceDemoteHotDoneNop{}      = 28
+traceNum TracePromoteColdDoneNop{}    = 29
+traceNum TraceDemoteWarmDoneNop{}     = 30
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -517,6 +521,11 @@ allTraceNames =
    , (23, "TraceDemoteAsynchronous")
    , (24, "TraceGovernorWakeup")
    , (25, "TraceChurnWait")
+   , (26, "TraceChurnMode")
+   , (27, "TracePromoteWarmDoneNop")
+   , (28, "TraceDemoteHotDoneNop")
+   , (29, "TracePromoteColdDoneNop")
+   , (30, "TraceDemoteWarmDoneNop")
    ]
 
 

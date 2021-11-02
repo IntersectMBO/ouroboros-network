@@ -295,9 +295,9 @@ jobPromoteColdPeer PeerSelectionActions {
             knownPeers'       = KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount
                                         peeraddr
-                                        knownPeers
-
-        in Decision {
+                                        knownPeers in
+        if peeraddr `KnownPeers.member` knownPeers
+           then Decision {
              decisionTrace = TracePromoteColdDone targetNumberOfEstablishedPeers
                                                   (EstablishedPeers.size establishedPeers')
                                                   peeraddr,
@@ -309,7 +309,14 @@ jobPromoteColdPeer PeerSelectionActions {
                              },
              decisionJobs  = []
            }
-
+           else -- The peer has failed before we had a chance to run.
+             Decision {
+               decisionTrace = TracePromoteColdDoneNop targetNumberOfEstablishedPeers
+                                               (EstablishedPeers.size establishedPeers)
+                                               peeraddr,
+               decisionState = st,
+               decisionJobs = []
+             }
 
 ---------------------------------
 -- Established peers above target
@@ -435,14 +442,16 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
       closePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {
                                establishedPeers,
+                               knownPeers,
                                targets = PeerSelectionTargets {
                                            targetNumberOfEstablishedPeers
                                          }
                              }
                              _now ->
         let establishedPeers' = EstablishedPeers.delete peeraddr
-                                                        establishedPeers
-        in Decision {
+                                                        establishedPeers in
+        if peeraddr `KnownPeers.member` knownPeers
+           then Decision {
              decisionTrace = TraceDemoteWarmDone targetNumberOfEstablishedPeers
                                                  (EstablishedPeers.size establishedPeers')
                                                  peeraddr,
@@ -453,3 +462,11 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
                              },
              decisionJobs  = []
            }
+           else -- The peer has failed before we had a chance to run.
+             Decision {
+               decisionTrace = TraceDemoteWarmDoneNop targetNumberOfEstablishedPeers
+                                               (EstablishedPeers.size establishedPeers)
+                                               peeraddr,
+               decisionState = st,
+               decisionJobs = []
+             }

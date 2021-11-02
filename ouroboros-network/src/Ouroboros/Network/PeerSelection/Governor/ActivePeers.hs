@@ -17,7 +17,7 @@ import qualified Data.Set as Set
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Concurrent.JobPool (Job(..))
-import           Control.Exception (SomeException, assert)
+import           Control.Exception (SomeException)
 import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -263,25 +263,35 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
       activatePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {
                                activePeers,
+                               establishedPeers,
+                               knownPeers,
                                targets = PeerSelectionTargets {
                                            targetNumberOfActivePeers
                                          }
                              }
                            _now ->
-        assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
-        assert (peeraddr `KnownPeers.member` knownPeers st) $
         let activePeers' = Set.insert peeraddr activePeers in
-        Decision {
-          decisionTrace = TracePromoteWarmDone targetNumberOfActivePeers
+        if peeraddr `EstablishedPeers.member` establishedPeers &&
+            peeraddr `KnownPeers.member` knownPeers
+            then Decision {
+                   decisionTrace = TracePromoteWarmDone targetNumberOfActivePeers
                                                (Set.size activePeers')
                                                peeraddr,
-          decisionState = st {
+                   decisionState = st {
                             activePeers           = activePeers',
                             inProgressPromoteWarm = Set.delete peeraddr
                                                       (inProgressPromoteWarm st)
                           },
-          decisionJobs  = []
-        }
+                   decisionJobs  = []
+                 }
+            else -- The peer has failed before we had a chance to run.
+                Decision {
+                   decisionTrace = TracePromoteWarmDoneNop targetNumberOfActivePeers
+                                               (Set.size activePeers)
+                                               peeraddr,
+                   decisionState = st,
+                   decisionJobs  =[]
+                }
 
 
 ----------------------------
@@ -477,24 +487,34 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
       deactivatePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {
                                 activePeers,
+                                establishedPeers,
                                 knownPeers,
                                 targets = PeerSelectionTargets {
                                             targetNumberOfActivePeers
                                           }
                              }
                              _now ->
-        assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
         let activePeers' = Set.delete peeraddr activePeers
             knownPeers'  = setTepidFlag peeraddr knownPeers in
-        Decision {
-          decisionTrace = TraceDemoteHotDone targetNumberOfActivePeers
+        if peeraddr `EstablishedPeers.member` establishedPeers &&
+           peeraddr `KnownPeers.member` knownPeers
+           then Decision {
+             decisionTrace = TraceDemoteHotDone targetNumberOfActivePeers
                                              (Set.size activePeers')
                                              peeraddr,
-          decisionState = st {
-                            activePeers         = activePeers',
-                            knownPeers          = knownPeers',
-                            inProgressDemoteHot = Set.delete peeraddr
-                                                    (inProgressDemoteHot st)
-                          },
-          decisionJobs  = []
-        }
+             decisionState = st {
+                               activePeers         = activePeers',
+                               knownPeers          = knownPeers',
+                               inProgressDemoteHot = Set.delete peeraddr
+                                                       (inProgressDemoteHot st)
+                             },
+             decisionJobs  = []
+           }
+           else -- The peer has failed before we had a chance to run.
+             Decision {
+               decisionTrace = TraceDemoteHotDoneNop targetNumberOfActivePeers
+                                               (Set.size activePeers)
+                                               peeraddr,
+               decisionState = st,
+               decisionJobs = []
+             }
