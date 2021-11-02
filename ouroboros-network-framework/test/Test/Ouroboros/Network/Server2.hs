@@ -129,6 +129,8 @@ tests =
                  prop_inbound_governor_valid_transitions
   , testProperty "inbound_governor_no_unsupported_state"
                  prop_inbound_governor_no_unsupported_state
+  , testProperty "connection_manager_valid_transition_order"
+                 prop_connection_manager_valid_transition_order
   , testProperty "unit_connection_terminated_when_negotiating"
                  unit_connection_terminated_when_negotiating
   , testGroup "generators"
@@ -1904,6 +1906,36 @@ data Three a b c
   deriving Show
 
 
+-- Assuming all transitions in the transition list are valid, we only need to
+-- look at the 'toState' of the current transition and the 'fromState' of the
+-- next transition.
+verifyAbstractTransitionOrder :: [AbstractTransition]
+                              -> AllProperty
+verifyAbstractTransitionOrder [] = mempty
+verifyAbstractTransitionOrder (h:t) = go t h
+  where
+    go :: [AbstractTransition] -> AbstractTransition -> AllProperty
+    -- All transitions must end in the 'UnknownConnectionSt', and since we
+    -- assume that all transitions are valid we do not have to check the
+    -- 'fromState'.
+    go [] (Transition _ UnknownConnectionSt) = mempty
+    go [] tr@(Transition _ _)          =
+      AllProperty
+        $ counterexample
+            ("\nUnexpected last transition: " ++ show tr)
+            (property False)
+    -- All transitions have to be in a correct order, which means that the
+    -- current state we are looking at (current toState) needs to be equal to
+    -- the next 'fromState', in order for the transition chain to be correct.
+    go (next@(Transition nextFromState _) : ts)
+        curr@(Transition _ currToState) =
+         (AllProperty
+           $ counterexample
+               ("\nUnexpected transition order!\nWent from: "
+               ++ show curr ++ "\nto: " ++ show next)
+               (property (currToState == nextFromState)))
+         <> go ts next
+
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -1973,6 +2005,35 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
                        (Script (toBearerInfo absBi :| [noAttenuation]))
                        maxAcceptedConnectionsLimit l
 
+prop_connection_manager_valid_transition_order :: Int
+                                               -> ArbDataFlow
+                                               -> AbsBearerInfo
+                                               -> MultiNodeScript Int TestAddr
+                                               -> Property
+prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
+                                               absBi script@(MultiNodeScript l) =
+  let trace = runSimTrace sim
+
+      evsATT :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+      evsATT = traceWithNameTraceEvents trace
+
+  in tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (ppScript script)
+    . counterexample (Trace.ppTrace show show evsATT)
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           _             -> AllProperty (property False)
+       )
+       verifyAbstractTransitionOrder
+    . splitConns
+    $ evsATT
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       (Script (toBearerInfo absBi :| [noAttenuation]))
+                       maxAcceptedConnectionsLimit l
 
 -- | Property wrapping `multinodeExperiment`.
 --
