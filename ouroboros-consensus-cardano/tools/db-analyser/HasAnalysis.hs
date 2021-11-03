@@ -2,6 +2,7 @@
 module HasAnalysis (
     HasAnalysis (..)
   , HasProtocolInfo (..)
+  , WithLedgerState (..)
   , SizeInBytes
   ) where
 
@@ -10,6 +11,7 @@ import           Options.Applicative
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 
@@ -17,10 +19,21 @@ import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
   HasAnalysis
 -------------------------------------------------------------------------------}
 
+data WithLedgerState blk = WithLedgerState
+  { wlsBlk :: blk
+  , wlsStateBefore :: LedgerState blk
+  , wlsStateAfter :: LedgerState blk
+  }
+
 class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where
+
   countTxOutputs :: blk -> Int
   blockTxSizes   :: blk -> [SizeInBytes]
   knownEBBs      :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
+
+  -- | Emit trace markers at points in processing.
+  emitTraces     :: WithLedgerState blk -> [String]
+  emitTraces _ = []
 
 class HasProtocolInfo blk where
   data Args blk

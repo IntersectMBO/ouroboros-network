@@ -20,6 +20,7 @@ import           Control.Tracer (Tracer (..), traceWith)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word16, Word64)
+import qualified Debug.Trace as Debug
 import           NoThunks.Class (noThunks)
 
 import           Ouroboros.Consensus.Block
@@ -65,6 +66,7 @@ data AnalysisName =
   | StoreLedgerStateAt SlotNo
   | CountBlocks
   | CheckNoThunksEvery Word64
+  | TraceLedgerProcessing
   deriving Show
 
 runAnalysis ::
@@ -88,6 +90,7 @@ runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
     go (StoreLedgerStateAt slotNo) = (storeLedgerStateAt slotNo) env
     go CountBlocks                 = countBlocks env
     go (CheckNoThunksEvery nBks)   = checkNoThunksEvery nBks env
+    go TraceLedgerProcessing       = traceLedgerProcessing env
 
 type Analysis blk = AnalysisEnv IO blk -> IO ()
 
@@ -373,6 +376,35 @@ checkNoThunksEvery
         Just ti -> do
           putStrLn $ "BlockNo " <> show bn <> ": thunks found."
           print ti
+
+{-------------------------------------------------------------------------------
+  Analysis: maintain a ledger state and issue trace markers at appropriate
+  points in the epoch
+-------------------------------------------------------------------------------}
+
+traceLedgerProcessing ::
+  forall blk.
+  ( HasAnalysis blk,
+    LedgerSupportsProtocol blk
+  ) =>
+  Analysis blk
+traceLedgerProcessing
+  (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
+    void $ processAll db registry GetBlock initLedger limit initLedger process
+  where
+    process
+      :: ExtLedgerState blk
+      -> blk
+      -> IO (ExtLedgerState blk)
+    process oldLedger blk = do
+      let ledgerCfg     = ExtLedgerCfg cfg
+          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
+          newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
+          traces        =
+            (HasAnalysis.emitTraces $
+              HasAnalysis.WithLedgerState blk (ledgerState oldLedger) (ledgerState newLedger))
+      mapM_ Debug.traceMarkerIO traces
+      return $ newLedger
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB

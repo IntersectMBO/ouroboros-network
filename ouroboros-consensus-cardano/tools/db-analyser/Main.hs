@@ -10,6 +10,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (decode))
 import           Control.Monad.Except (runExceptT)
 import           Data.Foldable (asum)
+import qualified Debug.Trace as Debug
 import           Options.Applicative
 import           System.IO
 
@@ -150,6 +151,10 @@ parseAnalysis = asum [
         , help "Count number of blocks processed"
         ]
     , checkNoThunksParser
+    , flag' TraceLedgerProcessing $ mconcat [
+          long "trace-lgr"
+        , help "Maintain ledger state and trace ledger phases"
+        ]
     , pure OnlyValidation
     ]
 
@@ -247,6 +252,7 @@ analyse CmdLine {..} args =
             Nothing       -> pure genesisLedger
             Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
           initLedger <- either (error . show) pure initLedgerErr
+          Debug.traceMarkerIO "SNAPSHOT_LOADED"
           ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs runWithTempRegistry) $ \immutableDB -> do
             runAnalysis analysis $ AnalysisEnv {
                 cfg
