@@ -171,7 +171,6 @@ openDB :: forall m blk.
           , LedgerSupportsProtocol blk
           , LgrDbSerialiseConstraints blk
           , InspectLedger blk
-          , LedgerDB.Persistent (ExtLedgerState blk)
           , HasCallStack
           )
        => LgrDbArgs Identity m blk
@@ -234,7 +233,6 @@ initFromDisk
      , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      , InspectLedger blk
-     , LedgerDB.Persistent (ExtLedgerState blk)
      , HasCallStack
      )
   => LgrDbArgs Identity m blk
@@ -361,8 +359,7 @@ data ValidateResult blk =
   | ValidateLedgerError      (AnnLedgerError' blk)
   | ValidateExceededRollBack ExceededRollback
 
-validate :: forall m blk. ( IOLike m, LedgerSupportsProtocol blk
-                          , LedgerDB.Persistent (ExtLedgerState blk), HasCallStack)
+validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          => LgrDB m blk
          -> LedgerDB' blk
             -- ^ This is used as the starting point for validation, not the one

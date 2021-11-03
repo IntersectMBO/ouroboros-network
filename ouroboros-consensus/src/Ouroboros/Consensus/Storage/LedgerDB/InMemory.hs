@@ -47,7 +47,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPush
   , ledgerDbSwitch
     -- * Persistence
-  , Persistent
     -- * Exports for the benefit of tests
     -- ** Additional queries
   , ledgerDbIsSaturated
@@ -268,7 +267,7 @@ data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
   Internal utilities for 'Ap'
 -------------------------------------------------------------------------------}
 
-class Persistent l where
+class Persistent chlog l where
   -- | Part of the ledger that will be stored on-disk.
   type family OnDisk l :: Type
 
@@ -278,16 +277,22 @@ class Persistent l where
   hydrateLedgerState
     :: OnDisk l
     -- ^ On-disk data that will be added to the in-memory part of the ledger.
-    -> LedgerDB l
+    -> chlog l
     -- ^ Changelog, which will be used to extract the current ledger state.
     --
     -- TODO: this type should eventually be an abstraction of the DbChangelog.
     -> l
 
+  -- Parameters used to operate on the changelog.
+  type family ChLogParams l :: Type
+
+  extendDbChangelog
+    :: ChLogParams l -> l -> chlog l -> chlog l
+
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l  blk. (ApplyBlock l blk, Persistent l, Monad m, c)
+applyBlock :: forall m c l  blk. (ApplyBlock l blk, Monad m, c)
            => LedgerCfg l
            -> Ap m l blk c
            -> LedgerDB l -> m l
@@ -398,22 +403,25 @@ ledgerDbPrune (SecurityParam k) db = db {
   Internal updates
 -------------------------------------------------------------------------------}
 
+instance GetTip l => Persistent LedgerDB l where
+  type instance OnDisk l = ()
+
+  type instance ChLogParams l = SecurityParam
+
+  hydrateLedgerState () db = ledgerDbCurrent db
+
+  extendDbChangelog secParam current' db =
+    ledgerDbPrune secParam $ db {
+        ledgerDbCheckpoints = ledgerDbCheckpoints db AS.:> Checkpoint current'
+     }
+
 -- | Push an updated ledger state
 pushLedgerState ::
      GetTip l
   => SecurityParam
   -> l -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
-pushLedgerState secParam current' db@LedgerDB{..}  =
-    ledgerDbPrune secParam $ db {
-        ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint current'
-     }
-  -- TODO: change to:
-  --
-  -- extendDbChangelog seqNo current' mTableSnapshots db
-  -- where
-  --   seqNo = undefined
-  --   mTableSnapshots = undefined
+pushLedgerState = extendDbChangelog
 
 {-------------------------------------------------------------------------------
   Internal: rolling back
@@ -447,7 +455,7 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Persistent l, Monad m, c)
+ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
              => LedgerDbCfg l
              -> Ap m l blk c -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPush cfg ap db =
@@ -455,13 +463,13 @@ ledgerDbPush cfg ap db =
       applyBlock (ledgerDbCfg cfg) ap db
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany :: (ApplyBlock l blk, Persistent l, Monad m, c)
+ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c)
                  => LedgerDbCfg l
                  -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
-ledgerDbSwitch :: (ApplyBlock l blk, Persistent l, Monad m, c)
+ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
                => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l blk c]  -- ^ New blocks to apply
@@ -545,15 +553,15 @@ instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
 pureBlock :: blk -> Ap m l blk ()
 pureBlock = ReapplyVal
 
-ledgerDbPush' :: (ApplyBlock l blk, Persistent l)
+ledgerDbPush' :: ApplyBlock l blk
               => LedgerDbCfg l -> blk -> LedgerDB l -> LedgerDB l
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
-ledgerDbPushMany' :: (ApplyBlock l blk, Persistent l)
+ledgerDbPushMany' :: ApplyBlock l blk
                   => LedgerDbCfg l -> [blk] -> LedgerDB l -> LedgerDB l
 ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
 
-ledgerDbSwitch' :: forall l blk. (ApplyBlock l blk, Persistent l)
+ledgerDbSwitch' :: forall l blk. ApplyBlock l blk
                 => LedgerDbCfg l
                 -> Word64 -> [blk] -> LedgerDB l -> Maybe (LedgerDB l)
 ledgerDbSwitch' cfg n bs db =

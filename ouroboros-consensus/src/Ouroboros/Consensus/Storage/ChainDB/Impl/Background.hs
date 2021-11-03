@@ -58,7 +58,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -77,7 +76,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (TimeSinceLast (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Persistent)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -89,7 +87,6 @@ launchBgTasks
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
-     , Persistent (ExtLedgerState blk)
      , HasHardForkHistory blk
      , LgrDbSerialiseConstraints blk
      )
@@ -529,7 +526,6 @@ addBlockRunner
   :: ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
-     , Persistent (ExtLedgerState blk)
      , HasHardForkHistory blk
      , HasCallStack
      )

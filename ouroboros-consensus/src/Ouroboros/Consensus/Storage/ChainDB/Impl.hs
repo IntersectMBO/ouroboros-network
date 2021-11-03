@@ -46,7 +46,6 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
@@ -56,7 +55,6 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Persistent)
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
                      defaultArgs)
@@ -80,7 +78,6 @@ withDB
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
-     , Persistent (ExtLedgerState blk)
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
@@ -95,7 +92,6 @@ openDB
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
-     , Persistent (ExtLedgerState blk)
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk
@@ -109,7 +105,6 @@ openDBInternal
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
-     , Persistent (ExtLedgerState blk)
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk

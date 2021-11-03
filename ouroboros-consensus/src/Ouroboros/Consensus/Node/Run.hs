@@ -25,7 +25,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -40,7 +39,6 @@ import           Ouroboros.Consensus.Storage.ChainDB
                      (ImmutableDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
                      VolatileDbSerialiseConstraints)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Persistent)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
@@ -80,7 +78,6 @@ class ( Typeable blk
 
 class ( LedgerSupportsProtocol           blk
       , InspectLedger                    blk
-      , Persistent       (ExtLedgerState blk)
       , HasHardForkHistory               blk
       , LedgerSupportsMempool            blk
       , HasTxId                   (GenTx blk)
