@@ -779,7 +779,11 @@ withConnectionManager ConnectionManagerArguments {
 
             case mConnVar of
               Left Unknown -> do
-                traceWith tracer (TrUnexpectedlyMissingConnectionState connId)
+                traceWith tracer (TrCMUnexpectedlyFalseAssertion
+                                    (ForkConnectionHandlerCleanup
+                                      (Just connId)
+                                      UnknownConnectionSt)
+                                 )
                 _ <- evaluate (assert False)
                 traceCounters stateVar
 
@@ -1099,7 +1103,7 @@ withConnectionManager ConnectionManagerArguments {
         -> m (OperationResult DemotedToColdRemoteTr)
     unregisterInboundConnectionImpl stateVar peerAddr = mask_ $ do
       traceWith tracer (TrUnregisterConnection Inbound peerAddr)
-      (mbThread, mbTransition, result) <- atomically $ do
+      (mbThread, mbTransition, result, mbAssertion) <- atomically $ do
         state <- readTMVar stateVar
         case Map.lookup peerAddr state of
           Nothing -> do
@@ -1108,9 +1112,12 @@ withConnectionManager ConnectionManagerArguments {
             -- at this point.
             pure ( Nothing
                  , Nothing
-                 , OperationSuccess CommitTr )
+                 , OperationSuccess CommitTr
+                 , Nothing
+                 )
           Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
+            let st = abstractState (Known connState)
             case connState of
               -- In any of the following two states unregistering is not
               -- supported.  'includeInboundConnection' is a synchronous
@@ -1119,11 +1126,15 @@ withConnectionManager ConnectionManagerArguments {
               ReservedOutboundState ->
                 return ( Nothing
                        , Nothing
-                       , UnsupportedState ReservedOutboundSt )
-              UnnegotiatedState provenance _ _ ->
+                       , UnsupportedState st
+                       , Nothing
+                       )
+              UnnegotiatedState _ _ _ ->
                 return ( Nothing
                        , Nothing
-                       , UnsupportedState (UnnegotiatedSt provenance) )
+                       , UnsupportedState st
+                       , Nothing
+                       )
 
               -- @
               --   TimeoutExpired : OutboundState^\tau Duplex
@@ -1134,25 +1145,38 @@ withConnectionManager ConnectionManagerArguments {
                 writeTVar connVar connState'
                 return ( Nothing
                        , Just (mkTransition connState connState')
-                       , OperationSuccess KeepTr )
-              OutboundDupState _connId _connThread _handle Expired ->
+                       , OperationSuccess KeepTr
+                       , Nothing
+                       )
+              OutboundDupState connId _connThread _handle Expired ->
                 assert False $
                 return ( Nothing
                        , Nothing
-                       , OperationSuccess KeepTr )
+                       , OperationSuccess KeepTr
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                 (UnregisterInboundConnection (Just connId)
+                                                              st)
+                                 )
+                       )
 
               OutboundUniState _connId _connThread _handle ->
                 return ( Nothing
                        , Nothing
-                       , UnsupportedState OutboundUniSt )
+                       , UnsupportedState st
+                       , Nothing
+                       )
 
               -- unexpected state, this state is reachable only from outbound
               -- states
-              OutboundIdleState _connId _connThread _handle _dataFlow ->
-                assert False $
+              OutboundIdleState connId _connThread _handle _dataFlow ->
                 return ( Nothing
                        , Nothing
-                       , OperationSuccess CommitTr )
+                       , OperationSuccess CommitTr
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                 (UnregisterInboundConnection (Just connId)
+                                                              st)
+                                 )
+                       )
 
               -- @
               --   Commit^{dataFlow} : InboundIdleState dataFlow
@@ -1165,27 +1189,37 @@ withConnectionManager ConnectionManagerArguments {
                 writeTVar connVar connState'
                 return ( Just connThread
                        , Just (mkTransition connState connState')
-                       , OperationSuccess CommitTr )
+                       , OperationSuccess CommitTr
+                       , Nothing
+                       )
 
               -- the inbound protocol governor was supposed to call
               -- 'demotedToColdRemote' first.
-              InboundState connId connThread _handle dataFlow ->
-                assert False $ do
+              InboundState connId connThread _handle _dataFlow -> do
                 let connState' = TerminatingState connId connThread Nothing
                 writeTVar connVar connState'
                 return ( Just connThread
                        , Just (mkTransition connState connState')
-                       , UnsupportedState (InboundSt dataFlow) )
+                       , UnsupportedState st
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                 (UnregisterInboundConnection (Just connId)
+                                                              st)
+                                 )
+                       )
 
               -- the inbound connection governor ought to call
               -- 'demotedToColdRemote' first.
-              DuplexState connId connThread handle ->
-                assert False $ do
+              DuplexState connId connThread handle -> do
                 let connState' = OutboundDupState connId connThread handle Ticking
                 writeTVar connVar connState'
                 return ( Nothing
                        , Just (mkTransition connState connState')
-                       , UnsupportedState DuplexSt )
+                       , UnsupportedState st
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                 (UnregisterInboundConnection (Just connId)
+                                                              st)
+                                 )
+                       )
 
               -- If 'unregisterOutboundConnection' is called just before
               -- 'unregisterInboundConnection', the latter one might observe
@@ -1193,21 +1227,30 @@ withConnectionManager ConnectionManagerArguments {
               TerminatingState _connId _connThread _handleError ->
                 return ( Nothing
                        , Nothing
-                       , OperationSuccess CommitTr )
+                       , OperationSuccess CommitTr
+                       , Nothing
+                       )
               -- However, 'TerminatedState' should not be observable by
               -- 'unregisterInboundConnection', unless 'cmTimeWaitTimeout' is
               -- close to 'serverProtocolIdleTimeout'.
               TerminatedState _handleError ->
                 return ( Nothing
                        , Nothing
-                       , UnsupportedState TerminatedSt )
+                       , UnsupportedState TerminatedSt
+                       , Nothing
+                       )
 
       traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
       traceCounters stateVar
 
       traverse_ cancel mbThread
-      return result
 
+      whenJust mbAssertion $ \tr' -> do
+        traceWith tracer tr'
+        _ <- evaluate (assert False)
+        pure ()
+
+      return result
 
     requestOutboundConnectionImpl
         :: HasCallStack
@@ -1480,19 +1523,34 @@ withConnectionManager ConnectionManagerArguments {
                     stateVar socket connId writer handler
                 return (connId, connThread)
 
-            tr <- atomically $ do
+            (tr, mbAssertion) <- atomically $ do
               connState <- readTVar connVar
-              !_ <- assert (case connState of
-                                  ReservedOutboundState -> True
-                                  _ -> False)
-                           (pure ())
+
+              let assertion = case connState of
+                    ReservedOutboundState ->
+                      Nothing
+                    _                     ->
+                      Just (TrCMUnexpectedlyFalseAssertion
+                              (RequestOutboundConnection
+                                (Just connId)
+                                (abstractState (Known connState))
+                              )
+                           )
               -- @
               --  Connected : ReservedOutboundState
               --            → UnnegotiatedState Outbound
               -- @
-              let connState' = UnnegotiatedState provenance connId connThread
+                  connState' = UnnegotiatedState provenance connId connThread
               writeTVar connVar connState'
-              return (mkTransition connState connState')
+              return ( mkTransition connState connState'
+                     , assertion
+                     )
+
+            whenJust mbAssertion $ \tr' -> do
+              traceWith tracer tr'
+              _ <- evaluate (assert False)
+              pure ()
+
             traceWith trTracer (TransitionTrace peerAddr tr)
             traceCounters stateVar
 
@@ -1714,35 +1772,38 @@ withConnectionManager ConnectionManagerArguments {
         -> m (OperationResult AbstractState)
     unregisterOutboundConnectionImpl stateVar peerAddr = do
       traceWith tracer (TrUnregisterConnection Outbound peerAddr)
-      (transition :: DemoteToColdLocal peerAddr handlerTrace
-                                       handle handleError version m)
+      (transition, mbAssertion)
         <- atomically $ do
         state <- readTMVar stateVar
         case Map.lookup peerAddr state of
           -- if the connection errored, it will remove itself from the state.
           -- Calling 'unregisterOutboundConnection' is a no-op in this case.
-          Nothing -> pure (DemoteToColdLocalNoop Nothing UnknownConnectionSt)
+          Nothing -> pure ( DemoteToColdLocalNoop Nothing UnknownConnectionSt
+                          , Nothing)
 
           Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
+            let st = abstractState (Known connState)
             case connState of
               -- In any of the following three states unregistering is not
               -- supported.  'requestOutboundConnection' is a synchronous
               -- operation which returns only once the connection is
               -- negotiated.
               ReservedOutboundState ->
-                let st = ReservedOutboundSt in
                 return $
-                  DemoteToColdLocalError
-                    (TrForbiddenOperation peerAddr st)
-                    st
+                  ( DemoteToColdLocalError
+                     (TrForbiddenOperation peerAddr st)
+                     st
+                  , Nothing
+                  )
 
-              UnnegotiatedState provenance _ _ ->
-                let st = UnnegotiatedSt provenance in
+              UnnegotiatedState _ _ _ ->
                 return $
-                  DemoteToColdLocalError
-                    (TrForbiddenOperation peerAddr st)
-                    st
+                  ( DemoteToColdLocalError
+                     (TrForbiddenOperation peerAddr st)
+                     st
+                  , Nothing
+                  )
 
               OutboundUniState connId connThread handle -> do
                 -- @
@@ -1753,8 +1814,10 @@ withConnectionManager ConnectionManagerArguments {
                 let connState' = OutboundIdleState connId connThread handle
                                                    Unidirectional
                 writeTVar connVar connState'
-                return (DemotedToColdLocal connId connThread connVar
-                         (mkTransition connState connState'))
+                return ( DemotedToColdLocal connId connThread connVar
+                          (mkTransition connState connState')
+                       , Nothing
+                       )
 
               OutboundDupState connId connThread handle Expired -> do
                 -- @
@@ -1765,8 +1828,10 @@ withConnectionManager ConnectionManagerArguments {
                 let connState' = OutboundIdleState connId connThread handle
                                                    Duplex
                 writeTVar connVar connState'
-                return (DemotedToColdLocal connId connThread connVar
-                         (mkTransition connState connState'))
+                return ( DemotedToColdLocal connId connThread connVar
+                          (mkTransition connState connState')
+                       , Nothing
+                       )
 
               OutboundDupState connId connThread handle Ticking -> do
                 let connState' = InboundIdleState connId connThread handle Duplex
@@ -1800,10 +1865,12 @@ withConnectionManager ConnectionManagerArguments {
                       (fst <$> choiseMap)
                       numberToPrune
 
-                  return $
-                    PruneConnections connId
-                      (snd <$> choiseMap `Map.restrictKeys` pruneSet)
-                      (Left connState)
+                  return
+                    ( PruneConnections connId
+                       (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                       (Left connState)
+                    , Nothing
+                    )
 
                 else do
                   -- @
@@ -1814,27 +1881,37 @@ withConnectionManager ConnectionManagerArguments {
                   -- does not require to perform any additional io action (we
                   -- already updated 'connVar').
                   writeTVar connVar connState'
-                  return (DemoteToColdLocalNoop
-                           (Just tr)
-                           (abstractState $ Known connState'))
+                  return ( DemoteToColdLocalNoop (Just tr) st
+                         , Nothing
+                         )
 
               OutboundIdleState _connId _connThread _handleError _dataFlow ->
-                return (DemoteToColdLocalNoop Nothing
-                                              (abstractState $ Known connState))
+                return ( DemoteToColdLocalNoop Nothing st
+                       , Nothing
+                       )
 
               -- TODO: This assertion is benign and also hit rarely (once per
               -- 100_000 simulations)
               InboundIdleState _connId _connThread _handle _dataFlow ->
                 -- assert (dataFlow == Duplex) $
-                return (DemoteToColdLocalNoop Nothing
-                                              (abstractState $ Known connState))
-              InboundState _peerAddr _connThread _handle dataFlow ->
-                assert (dataFlow == Duplex) $ do
-                let st = InboundSt dataFlow
-                return $
-                  DemoteToColdLocalError
-                    (TrForbiddenOperation peerAddr st)
-                    st
+                return ( DemoteToColdLocalNoop Nothing st
+                       , Nothing
+                       )
+              InboundState connId _connThread _handle dataFlow -> do
+                let mbAssertion =
+                      if dataFlow == Duplex
+                         then Nothing
+                         else Just (TrCMUnexpectedlyFalseAssertion
+                                      (UnregisterOutboundConnection
+                                        (Just connId)
+                                        st)
+                                   )
+                return
+                  ( DemoteToColdLocalError
+                     (TrForbiddenOperation peerAddr st)
+                     st
+                  , mbAssertion
+                  )
 
               DuplexState connId connThread handle -> do
                 -- @
@@ -1874,16 +1951,20 @@ withConnectionManager ConnectionManagerArguments {
                   -- evolve to a new state. Otherwise we do.
                   if Set.member peerAddr pruneSet
                   then
-                    return $
-                      PruneConnections connId
-                        (snd <$> choiseMap `Map.restrictKeys` pruneSet)
-                        (Left connState)
+                    return
+                      ( PruneConnections connId
+                         (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                         (Left connState)
+                      , Nothing
+                      )
                   else do
                     writeTVar connVar connState'
-                    return $
-                      PruneConnections connId
-                        (snd <$> choiseMap `Map.restrictKeys` pruneSet)
-                        (Right tr)
+                    return
+                      ( PruneConnections connId
+                         (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                         (Right tr)
+                      , Nothing
+                      )
 
                 else do
                   -- @
@@ -1893,14 +1974,23 @@ withConnectionManager ConnectionManagerArguments {
                   -- does not require to perform any additional io action (we
                   -- already updated 'connVar').
                   writeTVar connVar connState'
-                  return (DemoteToColdLocalNoop
-                           (Just tr)
-                           (abstractState $ Known connState'))
+                  return ( DemoteToColdLocalNoop (Just tr) st
+                         , Nothing
+                         )
 
               TerminatingState _connId _connThread _handleError ->
-                return (DemoteToColdLocalNoop Nothing (abstractState $ Known connState))
+                return (DemoteToColdLocalNoop Nothing st
+                       , Nothing
+                       )
               TerminatedState _handleError ->
-                return (DemoteToColdLocalNoop Nothing (abstractState $ Known connState))
+                return ( DemoteToColdLocalNoop Nothing st
+                       , Nothing
+                       )
+
+      whenJust mbAssertion $ \tr' -> do
+        traceWith tracer tr'
+        _ <- evaluate (assert False)
+        pure ()
 
       case transition of
         DemotedToColdLocal connId connThread connVar tr -> do
@@ -1966,23 +2056,45 @@ withConnectionManager ConnectionManagerArguments {
         -> peerAddr
         -> m (OperationResult AbstractState)
     promotedToWarmRemoteImpl stateVar peerAddr = mask_ $ do
-      result <- atomically $ do
+      (result, pruneTr, mbAssertion) <- atomically $ do
         state <- readTMVar stateVar
         let mbConnVar = Map.lookup peerAddr state
         case mbConnVar of
-          Nothing -> return (UnsupportedState UnknownConnectionSt, Nothing)
+          Nothing -> return ( UnsupportedState UnknownConnectionSt
+                            , Nothing
+                            , Nothing
+                            )
           Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
+            let st = abstractState (Known connState)
             case connState of
-              ReservedOutboundState {} ->
-                assert False $
-                return (UnsupportedState ReservedOutboundSt, Nothing)
-              UnnegotiatedState provenance _ _ ->
-                assert False $
-                return (UnsupportedState (UnnegotiatedSt provenance), Nothing)
-              OutboundUniState _connId _connThread _handle ->
-                assert False $
-                return (UnsupportedState OutboundUniSt, Nothing)
+              ReservedOutboundState {} -> do
+                return ( UnsupportedState st
+                       , Nothing
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                (PromotedToWarmRemote
+                                  Nothing
+                                  st)
+                              )
+                       )
+              UnnegotiatedState _ connId _ ->
+                return ( UnsupportedState st
+                       , Nothing
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                (PromotedToWarmRemote
+                                  (Just connId)
+                                  st)
+                              )
+                       )
+              OutboundUniState connId _connThread _handle ->
+                return ( UnsupportedState st
+                       , Nothing
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                (PromotedToWarmRemote
+                                  (Just connId)
+                                  st)
+                              )
+                       )
               OutboundDupState connId connThread handle _expired -> do
                 -- @
                 --   PromotedToWarm^{Duplex}_{Remote} : OutboundState Duplex
@@ -2034,11 +2146,16 @@ withConnectionManager ConnectionManagerArguments {
                     , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
                            , Nothing
                            )
+
+                    , Nothing
                     )
 
                 else do
                   writeTVar connVar connState'
-                  return (OperationSuccess tr, Nothing)
+                  return ( OperationSuccess tr
+                         , Nothing
+                         , Nothing
+                         )
               OutboundIdleState connId connThread handle dataFlow@Duplex -> do
                 -- @
                 --   Awake^{Duplex}_{Remote} : OutboundIdleState^\tau Duplex
@@ -2082,14 +2199,20 @@ withConnectionManager ConnectionManagerArguments {
                     , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
                            , Nothing
                            )
+                    , Nothing
                     )
 
                 else do
                   writeTVar connVar connState'
-                  return (OperationSuccess tr, Nothing)
-              OutboundIdleState _connId _connThread _handle
-                                                      dataFlow@Unidirectional ->
-                return (UnsupportedState (OutboundIdleSt dataFlow), Nothing)
+                  return ( OperationSuccess tr
+                         , Nothing
+                         , Nothing
+                         )
+              OutboundIdleState _connId _connThread _handle Unidirectional ->
+                return ( UnsupportedState st
+                       , Nothing
+                       , Nothing
+                       )
               InboundIdleState connId connThread handle dataFlow -> do
                 -- @
                 --   Awake^{dataFlow}_{Remote} : InboundIdleState Duplex
@@ -2098,22 +2221,42 @@ withConnectionManager ConnectionManagerArguments {
                 let connState' = InboundState connId connThread handle dataFlow
                 writeTVar connVar connState'
                 return ( OperationSuccess (mkTransition connState connState')
-                       , Nothing)
-              InboundState {} ->
-                -- already in 'InboundState'?
-                assert False $
+                       , Nothing
+                       , Nothing
+                       )
+              InboundState connId _ _ _ ->
                 return ( OperationSuccess (mkTransition connState connState)
-                       , Nothing)
+                       , Nothing
+                       -- already in 'InboundState'?
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                (PromotedToWarmRemote
+                                  (Just connId)
+                                  st)
+                              )
+                       )
               DuplexState {} ->
                 return ( OperationSuccess (mkTransition connState connState)
-                       , Nothing)
+                       , Nothing
+                       , Nothing
+                       )
               TerminatingState {} ->
-                return (UnsupportedState TerminatingSt, Nothing)
+                return ( UnsupportedState TerminatingSt
+                       , Nothing
+                       , Nothing
+                       )
               TerminatedState {} ->
-                return (UnsupportedState TerminatedSt, Nothing)
+                return ( UnsupportedState TerminatedSt
+                       , Nothing
+                       , Nothing
+                       )
+
+      whenJust mbAssertion $ \tr' -> do
+        traceWith tracer tr'
+        _ <- evaluate (assert False)
+        pure ()
 
       -- trace transition
-      case result of
+      case (result, pruneTr) of
         (OperationSuccess tr, Nothing) -> do
           traceWith trTracer (TransitionTrace peerAddr tr)
           traceCounters stateVar
@@ -2130,7 +2273,7 @@ withConnectionManager ConnectionManagerArguments {
           traverse_ cancel pruneMap
 
         _ -> return ()
-      return (abstractState . fromState <$> fst result)
+      return (abstractState . fromState <$> result)
 
 
     demotedToColdRemoteImpl
@@ -2138,30 +2281,54 @@ withConnectionManager ConnectionManagerArguments {
         -> peerAddr
         -> m (OperationResult AbstractState)
     demotedToColdRemoteImpl stateVar peerAddr = do
-      result <- atomically $ do
+      (result, mbAssertion) <- atomically $ do
         mbConnVar <- Map.lookup peerAddr <$> readTMVar stateVar
         case mbConnVar of
-          Nothing -> return (UnsupportedState UnknownConnectionSt)
+          Nothing -> return (UnsupportedState UnknownConnectionSt
+                            , Nothing
+                            )
           Just MutableConnState { connVar } -> do
             connState <- readTVar connVar
+            let st = abstractState (Known connState)
             case connState of
-              ReservedOutboundState {} ->
-                assert False $
-                return (UnsupportedState ReservedOutboundSt)
-              UnnegotiatedState provenance _ _ ->
-                assert False $
-                return (UnsupportedState (UnnegotiatedSt provenance))
-              OutboundUniState _connId _connThread _handle ->
-                assert False $
-                return (UnsupportedState OutboundUniSt)
+              ReservedOutboundState {} -> do
+                return ( UnsupportedState st
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                (DemotedToColdRemote
+                                  Nothing
+                                  st)
+                              )
+                       )
+              UnnegotiatedState _ connId _ ->
+                return ( UnsupportedState st
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                (DemotedToColdRemote
+                                  (Just connId)
+                                  st)
+                              )
+                       )
+              OutboundUniState connId _connThread _handle ->
+                return ( UnsupportedState st
+                       , Just (TrCMUnexpectedlyFalseAssertion
+                                (DemotedToColdRemote
+                                  (Just connId)
+                                  st)
+                              )
+                       )
               OutboundDupState _connId _connThread _handle _expired ->
-                return (OperationSuccess (mkTransition connState connState))
+                return ( OperationSuccess (mkTransition connState connState)
+                       , Nothing
+                       )
               -- one can only enter 'OutboundIdleState' if remote state is
               -- already cold.
               OutboundIdleState _connId _connThread _handle _dataFlow ->
-                return (OperationSuccess (mkTransition connState connState))
+                return ( OperationSuccess (mkTransition connState connState)
+                       , Nothing
+                       )
               InboundIdleState _connId _connThread _handle _dataFlow ->
-                return (OperationSuccess (mkTransition connState connState))
+                return ( OperationSuccess (mkTransition connState connState)
+                       , Nothing
+                       )
 
               -- @
               --   DemotedToCold^{dataFlow}_{Remote}
@@ -2171,7 +2338,9 @@ withConnectionManager ConnectionManagerArguments {
               InboundState connId connThread handle dataFlow -> do
                 let connState' = InboundIdleState connId connThread handle dataFlow
                 writeTVar connVar connState'
-                return (OperationSuccess (mkTransition connState connState'))
+                return ( OperationSuccess (mkTransition connState connState')
+                       , Nothing
+                       )
 
               -- @
               --   DemotedToCold^{dataFlow}_{Remote}
@@ -2181,12 +2350,23 @@ withConnectionManager ConnectionManagerArguments {
               DuplexState connId connThread handle -> do
                 let connState' = OutboundDupState connId connThread handle Ticking
                 writeTVar connVar connState'
-                return (OperationSuccess (mkTransition connState connState'))
+                return ( OperationSuccess (mkTransition connState connState')
+                       , Nothing
+                       )
 
               TerminatingState {} ->
-                return (UnsupportedState TerminatingSt)
+                return ( UnsupportedState TerminatingSt
+                       , Nothing
+                       )
               TerminatedState {} ->
-                return (UnsupportedState TerminatedSt)
+                return ( UnsupportedState TerminatedSt
+                       , Nothing
+                       )
+
+      whenJust mbAssertion $ \tr' -> do
+        traceWith tracer tr'
+        _ <- evaluate (assert False)
+        pure ()
 
       -- trace transition
       case result of
@@ -2201,6 +2381,11 @@ withConnectionManager ConnectionManagerArguments {
 --
 -- Utilities
 --
+
+-- | Perform some operation on 'Just', given the field inside the 'Just'.
+--
+whenJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
+whenJust mg f = maybe (pure ()) f mg
 
 -- | Like 'modifyMVar' but strict in @a@ and for 'TMVar's
 --
