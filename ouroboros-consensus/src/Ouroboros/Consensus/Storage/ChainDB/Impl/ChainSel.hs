@@ -76,6 +76,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Persistent)
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -86,7 +87,7 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 --
 -- See "## Initialization" in ChainDB.md.
 initialChainSelection
-  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
+  :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, Persistent (ExtLedgerState blk))
   => ImmutableDB m blk
   -> VolatileDB m blk
   -> LgrDB m blk
@@ -240,6 +241,7 @@ addBlockSync
      ( IOLike m
      , GetPrevHash blk
      , LedgerSupportsProtocol blk
+     , Persistent (ExtLedgerState blk)
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
@@ -354,6 +356,7 @@ olderThanK hdr isEBB immBlockNo
 chainSelectionForFutureBlocks
   :: ( IOLike m
      , LedgerSupportsProtocol blk
+     , Persistent (ExtLedgerState blk)
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
@@ -412,6 +415,7 @@ chainSelectionForBlock
      ( IOLike m
      , HasHeader blk
      , LedgerSupportsProtocol blk
+     , Persistent (ExtLedgerState blk)
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
@@ -768,6 +772,7 @@ chainSelection
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , Persistent (ExtLedgerState blk)
      , HasCallStack
      )
   => ChainSelEnv m blk
@@ -905,6 +910,7 @@ ledgerValidateCandidate
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , Persistent (ExtLedgerState blk)
      , HasCallStack
      )
   => ChainSelEnv m blk
@@ -1019,6 +1025,7 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
 validateCandidate
   :: ( IOLike m
      , LedgerSupportsProtocol blk
+     , Persistent (ExtLedgerState blk)
      , HasCallStack
      )
   => ChainSelEnv m blk

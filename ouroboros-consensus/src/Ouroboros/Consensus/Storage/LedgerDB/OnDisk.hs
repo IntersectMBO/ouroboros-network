@@ -183,6 +183,7 @@ initLedgerDB ::
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
+       , Persistent (ExtLedgerState blk)
        , HasCallStack
        )
   => Tracer m (TraceReplayEvent blk ())
@@ -265,6 +266,7 @@ initFromSnapshot ::
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
+       , Persistent (ExtLedgerState blk)
        , HasCallStack
        )
   => Tracer m (TraceReplayEvent blk ())
@@ -296,6 +298,7 @@ initStartingWith ::
          Monad m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
+       , Persistent (ExtLedgerState blk)
        , HasCallStack
        )
   => Tracer m (TraceReplayEvent blk ())

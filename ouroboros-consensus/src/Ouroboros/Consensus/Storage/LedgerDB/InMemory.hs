@@ -46,6 +46,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ExceededRollback (..)
   , ledgerDbPush
   , ledgerDbSwitch
+    -- * Persistence
+  , Persistent
     -- * Exports for the benefit of tests
     -- ** Additional queries
   , ledgerDbIsSaturated
@@ -251,7 +253,8 @@ instance Monad m => ThrowsLedgerError (ExceptT (AnnLedgerError l blk) m) l blk w
 --   b. If we are applying rather than reapplying, we might have ledger errors.
 data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
   ReapplyVal ::           blk -> Ap m l blk ()
-  ApplyVal   ::           blk -> Ap m l blk (                      ThrowsLedgerError m l blk)
+  ApplyVal   ::           blk
+              -> OnDisk l     -> Ap m l blk (                      ThrowsLedgerError m l blk)
   ReapplyRef :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk)
   ApplyRef   :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk, ThrowsLedgerError m l blk)
 
@@ -265,15 +268,26 @@ data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
   Internal utilities for 'Ap'
 -------------------------------------------------------------------------------}
 
+class Persistent l where
+  -- | Part of the ledger that will be stored on-disk.
+  type family OnDisk l :: Type
+
+  -- | Given the changelog (for now called LedgerDB, but this should be
+  -- eventually DbChangelog), enrich the current in-memory ledger state with the
+  -- given on-disk data.
+  hydrateLedgerState
+    :: OnDisk l
+    -- ^ On-disk data that will be added to the in-memory part of the ledger.
+    -> LedgerDB l
+    -- ^ Changelog, which will be used to extract the current ledger state.
+    --
+    -- TODO: this type should eventually be an abstraction of the DbChangelog.
+    -> l
+
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c
-                                -- TODO we __might__ need a new 'UTxOHD l m blk'
-                                -- -that tells us how to fetch values from disk
-                                -- (we're not sure at this moment whether we ned
-                                -- all the type parameters).
-                                )
+applyBlock :: forall m c l  blk. (ApplyBlock l blk, Persistent l, Monad m, c)
            => LedgerCfg l
            -> Ap m l blk c
            -> LedgerDB l -> m l
@@ -281,33 +295,19 @@ applyBlock cfg ap db = case ap of
     ReapplyVal b ->
       return $
         tickThenReapply cfg b l
-    ApplyVal (b, unforwardedReadSet) -> do
-      case hydrateLedgerState unforwardedReadSet db of
-        Just l   ->  -- l is the current hydrated ledger state
-          either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
-          tickThenApply cfg b l
-        Nothing ->
-          -- Here we need to read from the database anyway because we need to retry.
-          --
-          -- TODO: I'm not sure what to do in this case. Just reapply? Under
-          -- which circumstances can this fail? Since we're extending the
-          -- database this should happen only if the underlying database gets
-          -- corrupted. In such case we should simply abort the operation.
-          error "TODO: Could not fast-forward the changes, this should not happen because ..."
+    ApplyVal b urs -> do
+      let
+        lh = hydrateLedgerState urs db -- lh is the current hydrated ledger state
+      either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
+        tickThenApply cfg b lh
     ReapplyRef r  -> do
       b <- resolveBlock r
       return $
         tickThenReapply cfg b l
     ApplyRef r -> do
-      b <- resolveBlock r
-      let keySet = getTableKeysetsForBlock b (ledgerDbCurrent db)
-          rewoundReadSet = rewindTableKeySets db ks
-      unforwardedReadSet <- readDb dbhandle rewoundReadSet
-      case hydrateLedgerState unforwardedReadSet db of
-        Just l   ->  -- l is the current hydrated ledger state
-          either (throwLedgerError db r) return $ runExcept $
-           tickThenApply cfg b l
-        Nothing -> undefined -- TODO: factor this pattern out.
+     b <- resolveBlock r
+     either (throwLedgerError db r) return $ runExcept $
+        tickThenApply cfg b l
     Weaken ap' ->
       applyBlock cfg ap' db
   where
@@ -405,10 +405,15 @@ pushLedgerState ::
   -> l -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
 pushLedgerState secParam current' db@LedgerDB{..}  =
-  extendDbChangelog seqNo current' mTableSnapshots db
-  where
-    seqNo = undefined
-    mTableSnapshots = undefined
+    ledgerDbPrune secParam $ db {
+        ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint current'
+     }
+  -- TODO: change to:
+  --
+  -- extendDbChangelog seqNo current' mTableSnapshots db
+  -- where
+  --   seqNo = undefined
+  --   mTableSnapshots = undefined
 
 {-------------------------------------------------------------------------------
   Internal: rolling back
@@ -442,7 +447,7 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
+ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Persistent l, Monad m, c)
              => LedgerDbCfg l
              -> Ap m l blk c -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPush cfg ap db =
@@ -450,13 +455,13 @@ ledgerDbPush cfg ap db =
       applyBlock (ledgerDbCfg cfg) ap db
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c)
+ledgerDbPushMany :: (ApplyBlock l blk, Persistent l, Monad m, c)
                  => LedgerDbCfg l
                  -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
-ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
+ledgerDbSwitch :: (ApplyBlock l blk, Persistent l, Monad m, c)
                => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l blk c]  -- ^ New blocks to apply
@@ -540,15 +545,15 @@ instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
 pureBlock :: blk -> Ap m l blk ()
 pureBlock = ReapplyVal
 
-ledgerDbPush' :: ApplyBlock l blk
+ledgerDbPush' :: (ApplyBlock l blk, Persistent l)
               => LedgerDbCfg l -> blk -> LedgerDB l -> LedgerDB l
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
-ledgerDbPushMany' :: ApplyBlock l blk
+ledgerDbPushMany' :: (ApplyBlock l blk, Persistent l)
                   => LedgerDbCfg l -> [blk] -> LedgerDB l -> LedgerDB l
 ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
 
-ledgerDbSwitch' :: forall l blk. ApplyBlock l blk
+ledgerDbSwitch' :: forall l blk. (ApplyBlock l blk, Persistent l)
                 => LedgerDbCfg l
                 -> Word64 -> [blk] -> LedgerDB l -> Maybe (LedgerDB l)
 ledgerDbSwitch' cfg n bs db =

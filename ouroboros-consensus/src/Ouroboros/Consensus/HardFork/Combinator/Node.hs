@@ -25,6 +25,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Persistent)
+
 {-------------------------------------------------------------------------------
   ConfigSupportsNode
 -------------------------------------------------------------------------------}
@@ -58,5 +62,6 @@ getSameConfigValue getValue blockConfig = getSameValue values
 instance ( CanHardFork xs
            -- Instances that must be defined for specific values of @b@:
          , SupportedNetworkProtocolVersion (HardForkBlock xs)
+         , Persistent (ExtLedgerState (HardForkBlock xs))
          , SerialiseHFC xs
          ) => RunNode (HardForkBlock xs)

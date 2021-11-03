@@ -6,7 +6,8 @@
 
 module Ouroboros.Consensus.Storage.LedgerDB.Hybrid (
     -- * Operations on keysets.
-    forwardTableReadSets
+    TableReadSets
+  , forwardTableReadSets
   , rewindTableKeySets
     -- * Disk database.
   , DiskDb
@@ -15,6 +16,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Hybrid (
     -- * Ledger interface.
   , getTableKeysetsForBlock
     -- * Ledger state hydration.
+  , hydrateLedgerState
   , hydrateLedgerState2
     -- * DB Changelog extension.
   , extendDbChangelog
@@ -94,10 +96,10 @@ getTableKeysetsForBlock
   --
   -- TODO: Is it correct to use EmptyTable here?
   --
-  -- TODO: explain why. This might have to do with incremental computations. if
-  --       the ledger thinks that no-incremental computation should take place
-  --       but it should then the keys the ledger needs won't be in the
-  --       resulting TableKeySets.
+  -- TODO: explain why this should be a recent state. This might have to do with
+  --       incremental computations. if the ledger thinks that no-incremental
+  --       computation should take place but it should then the keys the ledger
+  --       needs won't be in the resulting TableKeySets.
   --
   -- TODO: what is the exact type we need here? I can't imagine we use the
   --       actual ledger state. Would the ledger require a 'DbChangelog'
@@ -117,11 +119,11 @@ getTableKeysetsForBlock = undefined
 type UnforwardedTableReadSets state = AnnTableReadSets state (ReadSetSanityInfo state)
 data TrackingTable (t :: TableType) k v
 
-hydrateLedgerState1 ::
+hydrateLedgerState ::
      TableReadSets state
   -> DbChangelog state
   -> state TrackingTable
-hydrateLedgerState1  = undefined
+hydrateLedgerState  = undefined
 
 hydrateLedgerState2 ::
      HasOnDiskTables state
@@ -130,7 +132,7 @@ hydrateLedgerState2 ::
   -> Maybe (state TrackingTable)
 hydrateLedgerState2 utrs dbcl = do
   trs <- forwardTableReadSets dbcl utrs
-  pure $ hydrateLedgerState1 trs dbcl
+  pure $ hydrateLedgerState trs dbcl
 
 --------------------------------------------------------------------------------
 -- DB Changelog extension

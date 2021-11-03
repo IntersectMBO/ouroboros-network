@@ -171,6 +171,7 @@ openDB :: forall m blk.
           , LedgerSupportsProtocol blk
           , LgrDbSerialiseConstraints blk
           , InspectLedger blk
+          , LedgerDB.Persistent (ExtLedgerState blk)
           , HasCallStack
           )
        => LgrDbArgs Identity m blk
@@ -233,6 +234,7 @@ initFromDisk
      , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      , InspectLedger blk
+     , LedgerDB.Persistent (ExtLedgerState blk)
      , HasCallStack
      )
   => LgrDbArgs Identity m blk
@@ -359,7 +361,8 @@ data ValidateResult blk =
   | ValidateLedgerError      (AnnLedgerError' blk)
   | ValidateExceededRollBack ExceededRollback
 
-validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
+validate :: forall m blk. ( IOLike m, LedgerSupportsProtocol blk
+                          , LedgerDB.Persistent (ExtLedgerState blk), HasCallStack)
          => LgrDB m blk
          -> LedgerDB' blk
             -- ^ This is used as the starting point for validation, not the one
@@ -398,7 +401,9 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
              ) of
           (False, Nothing)  ->          ApplyRef   (headerRealPoint hdr)
           (True,  Nothing)  -> Weaken $ ReapplyRef (headerRealPoint hdr)
-          (False, Just blk) -> Weaken $ ApplyVal   blk
+          (False, Just blk) -> Weaken $ ApplyVal   blk undefined
+          -- TODO: here we'd need to modify the block cache so that it also
+          -- contains the unforwarded read sets.
           (True,  Just blk) -> Weaken $ ReapplyVal blk
       | hdr <- hdrs
       ]
