@@ -75,10 +75,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Control.Monad.IOSim.Types
-
 import           Control.Monad.IOSimPOR.Timeout(unsafeTimeout)
-
--- import qualified Debug.Trace as Debug
 
 deriving instance Ord MaskingState
 
