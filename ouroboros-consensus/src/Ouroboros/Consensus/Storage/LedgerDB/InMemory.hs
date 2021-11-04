@@ -16,6 +16,8 @@
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE UndecidableInstances   #-}
 
+{-# LANGUAGE AllowAmbiguousTypes    #-}
+
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
     LedgerDbCfg (..)
@@ -47,6 +49,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPush
   , ledgerDbSwitch
     -- * Persistence
+  , ApplyBlock' (getKeySets)
+  , HasDiskDb (readDb, DbEnv)
+  , Persistent (KeySets, AnnKeySets, AnnReadSets, forward, rewind)
     -- * Exports for the benefit of tests
     -- ** Additional queries
   , ledgerDbIsSaturated
@@ -253,7 +258,7 @@ instance Monad m => ThrowsLedgerError (ExceptT (AnnLedgerError l blk) m) l blk w
 data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
   ReapplyVal ::           blk -> Ap m l blk ()
   ApplyVal   ::           blk
-              -> OnDisk l     -> Ap m l blk (                      ThrowsLedgerError m l blk)
+              -> ReadSets l     -> Ap m l blk (                      ThrowsLedgerError m l blk)
   ReapplyRef :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk)
   ApplyRef   :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk, ThrowsLedgerError m l blk)
 
@@ -267,15 +272,52 @@ data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
   Internal utilities for 'Ap'
 -------------------------------------------------------------------------------}
 
+-- | In memory ledger state.
+type family InMemory l :: Type
+
+
+-- | Given a block, get the key-sets that we need to apply it to a ledger state.
+--
+-- TODO: maybe this is a constraint that'll end up in 'ApplyBlock'? Or maybe
+-- not, because 'ApplyBlock' is abstract, and does not need to know about the
+-- ledger HD aspect.
+class ApplyBlock' l blk where
+
+  getKeySets :: blk -> Maybe (InMemory l) -> KeySets l
+
+class HasDiskDb m l where
+  -- | Database environment. In an on disk implementation this would contain
+  -- database file handles for instance.
+  type family DbEnv l :: Type
+
+  readDb :: DbEnv l -> AnnKeySets l -> m (AnnReadSets l)
+
 class Persistent chlog l where
-  -- | Part of the ledger that will be stored on-disk.
-  type family OnDisk l :: Type
+  -- | Ledger state key-value maps. These values would be typically read from
+  -- disk.
+  type family ReadSets l :: Type
+
+  -- | Set of ledger state keys that are required when applying a block.
+  type family KeySets l :: Type
+
+  -- | Annotated version of 'KeySets'.
+  --
+  -- TOOD: describe what are annotations for.
+  type family AnnKeySets l :: Type
+
+  -- | TODO: docstring.
+  rewind :: chlog l -> KeySets l -> AnnKeySets l
+
+  type family AnnReadSets l :: Type
+
+  -- | TODO: docstring.
+  forward :: chlog l -> AnnReadSets l -> Maybe (ReadSets l)
 
   -- | Given the changelog (for now called LedgerDB, but this should be
   -- eventually DbChangelog), enrich the current in-memory ledger state with the
   -- given on-disk data.
   hydrateLedgerState
-    :: OnDisk l
+    :: ReadSets l
     -- ^ On-disk data that will be added to the in-memory part of the ledger.
     -> chlog l
     -- ^ Changelog, which will be used to extract the current ledger state.
@@ -289,10 +331,26 @@ class Persistent chlog l where
   extendDbChangelog
     :: ChLogParams l -> l -> chlog l -> chlog l
 
+instance GetTip l => Persistent LedgerDB l where
+  type instance KeySets l = ()
+
+  type instance ReadSets l = ()
+
+  type instance AnnReadSets l = ()
+
+  type instance ChLogParams l = SecurityParam
+
+  hydrateLedgerState () db = ledgerDbCurrent db
+
+  extendDbChangelog secParam current' db =
+    ledgerDbPrune secParam $ db {
+        ledgerDbCheckpoints = ledgerDbCheckpoints db AS.:> Checkpoint current'
+     }
+
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l  blk. (ApplyBlock l blk, Monad m, c)
+applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
            => LedgerCfg l
            -> Ap m l blk c
            -> LedgerDB l -> m l
@@ -402,18 +460,6 @@ ledgerDbPrune (SecurityParam k) db = db {
 {-------------------------------------------------------------------------------
   Internal updates
 -------------------------------------------------------------------------------}
-
-instance GetTip l => Persistent LedgerDB l where
-  type instance OnDisk l = ()
-
-  type instance ChLogParams l = SecurityParam
-
-  hydrateLedgerState () db = ledgerDbCurrent db
-
-  extendDbChangelog secParam current' db =
-    ledgerDbPrune secParam $ db {
-        ledgerDbCheckpoints = ledgerDbCheckpoints db AS.:> Checkpoint current'
-     }
 
 -- | Push an updated ledger state
 pushLedgerState ::

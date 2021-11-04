@@ -1,14 +1,17 @@
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 -- | Thin wrapper around the LedgerDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
@@ -79,7 +82,9 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
-                     ExceededRollback (..), LedgerDbCfg (..))
+                     ApplyBlock' (getKeySets), ExceededRollback (..),
+                     HasDiskDb (DbEnv, readDb), LedgerDbCfg (..),
+                     Persistent (AnnReadSets, KeySets, forward, rewind))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      DiskSnapshot, LedgerDB', NextBlock (..), StreamAPI (..),
@@ -359,6 +364,17 @@ data ValidateResult blk =
   | ValidateLedgerError      (AnnLedgerError' blk)
   | ValidateExceededRollBack ExceededRollback
 
+-- TODO: for now I'm defining this here to avoid propagating contraints. This
+-- design will probably change, so I don't want to do unnecessary work.
+instance KeySets (ExtLedgerState blk) ~ () => ApplyBlock' (ExtLedgerState blk) blk where
+  getKeySets _ = const ()
+
+-- TODO: this is just temporary to explore the current design path.
+instance (IOLike m, AnnReadSets (ExtLedgerState blk) ~ ()) => HasDiskDb m (ExtLedgerState blk) where
+  type instance DbEnv (ExtLedgerState blk) = ()
+
+  readDb _ _ = pure ()
+
 validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          => LgrDB m blk
          -> LedgerDB' blk
@@ -369,7 +385,7 @@ validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          -> [Header blk]
          -> m (ValidateResult blk)
 validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
-    aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
+    aps <- (mkAps hdrs <$> atomically (readTVar varPrevApplied)) >>= sequence
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.ledgerDbSwitch
                (configLedgerDb cfg)
@@ -389,19 +405,36 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
     mkAps :: forall n l. l ~ ExtLedgerState blk
           => [Header blk]
           -> Set (RealPoint blk)
-          -> [Ap n l blk ( LedgerDB.ResolvesBlocks    n   blk
-                         , LedgerDB.ThrowsLedgerError n l blk
-                         )]
+          -> [ m (Ap n l blk ( LedgerDB.ResolvesBlocks    n   blk
+                             , LedgerDB.ThrowsLedgerError n l blk
+                             ))
+             ]
     mkAps hdrs prevApplied =
       [ case ( Set.member (headerRealPoint hdr) prevApplied
              , BlockCache.lookup (headerHash hdr) blockCache
              ) of
-          (False, Nothing)  ->          ApplyRef   (headerRealPoint hdr)
-          (True,  Nothing)  -> Weaken $ ReapplyRef (headerRealPoint hdr)
-          (False, Just blk) -> Weaken $ ApplyVal   blk undefined
-          -- TODO: here we'd need to modify the block cache so that it also
-          -- contains the unforwarded read sets.
-          (True,  Just blk) -> Weaken $ ReapplyVal blk
+          (False, Nothing)  -> pure $          ApplyRef   (headerRealPoint hdr)
+          (True,  Nothing)  -> pure $ Weaken $ ReapplyRef (headerRealPoint hdr)
+          (False, Just blk) -> do
+            let ks = getKeySets @(ExtLedgerState blk) @blk blk Nothing
+                  -- 'LedgerSupportsProtocol' will (transitively) bring the
+                  -- 'ApplyBlock' instance into scope. So if getKeySets is a
+                  -- method of this class, we don't need to have a @ApplyBlock'
+                  -- blk (ExtLedgerState blk)@ instance in scope. However, we
+                  -- might not want to incorporate ledger-on-disk concerns in
+                  -- the module where `ApplyBlock` is defined.
+
+            -- Rewind the changelog to obtain the annotated keyset
+            let aks = rewind ledgerDB ks
+            -- Get the unforwarded read sets from the database.
+            urs <- readDb @m @(ExtLedgerState blk) () aks
+            -- Forward the annotated read sets.
+            case forward ledgerDB urs of
+              Nothing ->
+                -- We should explain here in which circumstances this might happen.
+                error "TODO: handle this case appropriately."
+              Just rs -> pure $ Weaken $ ApplyVal blk rs
+          (True,  Just blk) -> pure $ Weaken $ ReapplyVal blk
       | hdr <- hdrs
       ]
 
