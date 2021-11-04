@@ -17,6 +17,8 @@ module Block.Shelley (
 import qualified Data.Aeson as Aeson
 import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (catMaybes)
+import           Data.Maybe.Strict
 import           Data.Sequence.Strict (StrictSeq)
 import           GHC.Records (HasField, getField)
 import           Options.Applicative
@@ -24,6 +26,7 @@ import           Options.Applicative
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as CL
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -58,13 +61,22 @@ instance ( ShelleyBasedEra era
 
   knownEBBs = const Map.empty
 
-  emitTraces (WithLedgerState _blk lsb lsa) =
-    let be = SL.nesEL . shelleyLedgerState $ lsb
-        ae = SL.nesEL . shelleyLedgerState $ lsa
-    in if be /= ae
-      then
-        ["EPOCH_START_" <> show ae]
-      else []
+  emitTraces (WithLedgerState _blk lsb lsa) = catMaybes
+    [
+      let be = SL.nesEL . shelleyLedgerState $ lsb
+          ae = SL.nesEL . shelleyLedgerState $ lsa
+      in if be /= ae
+        then
+          Just $ "EPOCH_START_" <> show ae
+        else Nothing
+    , let brp = SL.nesRu . shelleyLedgerState $ lsb
+          arp = SL.nesRu . shelleyLedgerState $ lsa
+      in case (brp, arp) of
+        (SNothing, SJust _) -> Just "RWDPULSER_START"
+        (SJust (SL.Pulsing _ _), SJust (SL.Complete _)) -> Just "RWDPULSER_COMPLETE"
+        (SJust _, SNothing) -> Just "RWDPULSER_RESET"
+        (_, _) -> Nothing
+    ]
 
 
 -- | Shelley-era specific

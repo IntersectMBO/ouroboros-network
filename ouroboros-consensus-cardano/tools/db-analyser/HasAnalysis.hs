@@ -2,8 +2,8 @@
 module HasAnalysis (
     HasAnalysis (..)
   , HasProtocolInfo (..)
-  , WithLedgerState (..)
   , SizeInBytes
+  , WithLedgerState (..)
   ) where
 
 import           Data.Map.Strict (Map)
@@ -20,9 +20,9 @@ import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 -------------------------------------------------------------------------------}
 
 data WithLedgerState blk = WithLedgerState
-  { wlsBlk :: blk
+  { wlsBlk         :: blk
   , wlsStateBefore :: LedgerState blk
-  , wlsStateAfter :: LedgerState blk
+  , wlsStateAfter  :: LedgerState blk
   }
 
 class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where
@@ -33,7 +33,6 @@ class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where
 
   -- | Emit trace markers at points in processing.
   emitTraces     :: WithLedgerState blk -> [String]
-  emitTraces _ = []
 
 class HasProtocolInfo blk where
   data Args blk

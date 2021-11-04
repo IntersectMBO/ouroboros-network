@@ -152,8 +152,11 @@ parseAnalysis = asum [
         ]
     , checkNoThunksParser
     , flag' TraceLedgerProcessing $ mconcat [
-          long "trace-lgr"
-        , help "Maintain ledger state and trace ledger phases"
+          long "trace-ledger"
+        , help $ "Maintain ledger state and trace ledger phases in the GHC event"
+                <> " log. The db-analyser tool performs era-specific analysis"
+                <> " of the ledger state and inserts markers for 'significant'"
+                <> " events, such as for example epoch transitions."
         ]
     , pure OnlyValidation
     ]
@@ -252,6 +255,10 @@ analyse CmdLine {..} args =
             Nothing       -> pure genesisLedger
             Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
           initLedger <- either (error . show) pure initLedgerErr
+          -- This marker divides the "loading" phase of the program, where the
+          -- system is principally occupied with reading snapshot data from
+          -- disk, from the "processing" phase, where we are streaming blocks
+          -- and running the ledger processing on them.
           Debug.traceMarkerIO "SNAPSHOT_LOADED"
           ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs runWithTempRegistry) $ \immutableDB -> do
             runAnalysis analysis $ AnalysisEnv {

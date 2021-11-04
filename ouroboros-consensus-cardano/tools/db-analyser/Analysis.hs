@@ -355,9 +355,7 @@ checkNoThunksEvery
   nBlocks
   (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
     putStrLn $
-      "Checking ledger state for thunks every "
-        <> show nBlocks
-        <> " blocks."
+      "Checking for thunks in each block where blockNo === 0 (mod " <> show nBlocks <> ")."
     void $ processAll db registry GetBlock initLedger limit initLedger process
   where
     process :: ExtLedgerState blk -> blk -> IO (ExtLedgerState blk)

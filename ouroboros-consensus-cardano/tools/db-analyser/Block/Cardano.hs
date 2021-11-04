@@ -1,12 +1,12 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE MultiParamTypeClasses   #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -24,11 +24,12 @@ import qualified Cardano.Chain.Genesis as Byron.Genesis
 import qualified Cardano.Chain.Update as Byron.Update
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
-                     OneEraBlock (..), OneEraHash (..), getHardForkState, hardForkLedgerStatePerEra)
-import Ouroboros.Consensus.HardFork.Combinator.State (currentState)
+                     OneEraBlock (..), OneEraHash (..), getHardForkState,
+                     hardForkLedgerStatePerEra)
+import           Ouroboros.Consensus.HardFork.Combinator.State (currentState)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
@@ -48,8 +49,8 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Block.Alonzo (Args (..))
 import           Block.Byron (Args (..), openGenesisByron)
 import           Block.Shelley (Args (..))
+import           Data.Maybe (fromJust)
 import           HasAnalysis
-import Data.Maybe (fromJust)
 
 analyseBlock ::
      (forall blk. HasAnalysis blk => blk -> a)
@@ -63,6 +64,8 @@ analyseBlock f =
     p :: Proxy HasAnalysis
     p = Proxy
 
+-- | Lift a function polymorphic over all block types supporting `HasAnalysis`
+-- into a corresponding function over `CardanoBlock.`
 analyseWithLedgerState ::
   forall a.
   (forall blk. HasAnalysis blk => WithLedgerState blk -> a) ->
