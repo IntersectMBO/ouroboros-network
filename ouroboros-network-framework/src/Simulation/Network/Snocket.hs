@@ -300,8 +300,9 @@ newNetworkState bearerInfoScript = atomically $ do
 
 
 data ResourceException addr
-  = NotReleasedListeningSockets [addr]              (Maybe SomeException)
-  | NotReleasedConnections      [NormalisedId addr] (Maybe SomeException)
+  = NotReleasedListeningSockets [addr] (Maybe SomeException)
+  | NotReleasedConnections      (Map (NormalisedId addr) OpenState)
+                                (Maybe SomeException)
   deriving (Show, Typeable)
 
 instance (Typeable addr, Show addr)
@@ -374,7 +375,9 @@ withSnocket tr script k = do
          -> return $ Just (NotReleasedListeningSockets (Map.keys lstFDMap) err)
 
          |  not (Map.null connMap)
-         -> return $ Just (NotReleasedConnections      (Map.keys connMap) err)
+         -> return $ Just (NotReleasedConnections      ( fmap connState
+                                                       $ connMap
+                                                       ) err)
 
          |  otherwise
          -> return   Nothing
