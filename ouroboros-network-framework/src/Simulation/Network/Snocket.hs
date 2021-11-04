@@ -23,6 +23,7 @@ module Simulation.Network.Snocket
     withSnocket
   , ResourceException (..)
   , SnocketTrace (..)
+  , TimeoutDetail (..)
   , SockType (..)
   , OpenType (..)
 
@@ -41,6 +42,7 @@ module Simulation.Network.Snocket
 
 import           Prelude hiding (read)
 
+import           Control.Monad (when)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -61,6 +63,7 @@ import           Numeric.Natural (Natural)
 import           Text.Printf (printf)
 
 import           Data.Wedge
+import           Data.Monoid.Synchronisation (FirstToFinish (..))
 
 import           Network.Mux.Bearer.AttenuatedChannel
 import           Network.Mux.Types (MuxBearer, SDUSize (..))
@@ -116,6 +119,10 @@ data OpenState
 
     -- | This corresponds to established state of a tcp connection.
   | Established
+
+    -- | Half closed connection.
+  | HalfClosed
+  deriving (Eq, Show)
 
 
 dualConnection :: Connection m -> Connection m
@@ -497,11 +504,17 @@ mkSockType FDConnecting {}    = ConnectionSock
 mkSockType FDConnected {}     = ConnectionSock
 mkSockType FDClosed {}        = UnknownType
 
+data TimeoutDetail
+    = WaitingToConnect
+    | WaitingToBeAccepted
+  deriving Show
+
 data SnocketTrace m addr
-    = STConnect      (FD_ m addr) addr
+    = STConnecting   (FD_ m addr) addr
     | STConnected    (FD_ m addr) OpenType
     | STBearerInfo   BearerInfo
     | STConnectError (FD_ m addr) addr IOError
+    | STConnectTimeout TimeoutDetail
     | STBindError    (FD_ m addr) addr IOError
     | STClosing      SockType Bool
     | STClosed       SockType
@@ -522,6 +535,11 @@ data OpenType =
     -- | Normal open
     | NormalOpen
   deriving Show
+
+
+connectTimeout :: DiffTime
+connectTimeout = 120
+
 
 -- | Simulated 'Snocket' running in 'NetworkState'.  A single 'NetworkState'
 -- should be shared with all nodes in the same network.
@@ -653,9 +671,12 @@ mkSnocket state tr = Snocket { getLocalAddr
     connect :: FD m (TestAddress addr) -> TestAddress addr -> m ()
     connect fd@FD { fdVar = fdVarLocal } remoteAddress = do
         fd_ <- atomically (readTVar fdVarLocal)
-        traceWith' fd (STConnect fd_ remoteAddress)
+        traceWith' fd (STConnecting fd_ remoteAddress)
         case fd_ of
-          FDUninitialised mbLocalAddr -> do
+          -- Mask asynchronous exceptions.  Only unmask when we really block
+          -- with using a `threadDelay` or waiting for the connection to be
+          -- accepted.
+          FDUninitialised mbLocalAddr -> mask $ \unmask -> do
             (efd, connId, bearerInfo) <- atomically $ do
               bearerInfo <- stepScriptSTM (nsBearerInfo state)
               localAddress <-
@@ -678,6 +699,8 @@ mkSnocket state tr = Snocket { getLocalAddr
                          , connId
                          , bearerInfo
                          )
+                Just Connection { connState = HalfClosed } ->
+                  throwSTM (connectedIOError fd_)
                 Nothing -> do
                   conn <- mkConnection tr bearerInfo connId
                   writeTVar fdVarLocal (FDConnecting connId conn)
@@ -695,7 +718,15 @@ mkSnocket state tr = Snocket { getLocalAddr
                                    (Just remoteAddress)
                                    (STBearerInfo bearerInfo))
             -- connection delay
-            threadDelay (biConnectionDelay bearerInfo)
+            unmask (threadDelay (biConnectionDelay bearerInfo `min` connectTimeout))
+              `catch` \(_ :: SomeException) ->
+                atomically $ modifyTVar (nsConnections state)
+                                        (Map.delete (normaliseId connId))
+            when (biConnectionDelay bearerInfo >= connectTimeout) $ do
+              traceWith' fd (STConnectTimeout WaitingToConnect)
+              atomically $ modifyTVar (nsConnections state)
+                                      (Map.delete (normaliseId connId))
+              throwIO (connectIOError connId "connect timeout: when connecting")
 
             efd' <- atomically $ do
               lstMap <- readTVar (nsListeningFDs state)
@@ -704,13 +735,13 @@ mkSnocket state tr = Snocket { getLocalAddr
               case (efd, lstFd) of
                 -- error cases
                 (_, Nothing) ->
-                  return (Left (connectIOError connId))
+                  return (Left (connectIOError connId "no such listening socket"))
                 (_, Just FDUninitialised {}) ->
-                  return (Left (connectIOError connId))
+                  return (Left (connectIOError connId "unitialised listening socket"))
                 (_, Just FDConnecting {}) ->
                   return (Left (invalidError fd_))
                 (_, Just FDConnected {}) ->
-                  return (Left (connectIOError connId))
+                  return (Left (connectIOError connId "not a listening socket"))
                 (_, Just FDClosed {}) ->
                   return (Left notConnectedIOError)
 
@@ -719,21 +750,15 @@ mkSnocket state tr = Snocket { getLocalAddr
                   writeTVar fdVarLocal fd_'
                   return (Right (fd_', SimOpen))
 
-                (Right ( fd_'
-                       , Connection { connChannelLocal, connChannelRemote })
-                       , Just (FDListening _ queue)
-                       ) -> do
+                (Right (fd_', Connection { connChannelLocal, connChannelRemote })
+                  , Just (FDListening _ queue)) -> do
                   writeTVar fdVarLocal fd_'
                   mConn <- Map.lookup (normaliseId connId) <$> readTVar (nsConnections state)
                   case mConn of
                     Just Connection { connState = Established } ->
                       -- successful simultaneous open
-                      return ()
+                      return (Right (fd_', NormalOpen))
                     Just Connection { connState = HalfOpened } -> do
-                      -- successful open
-                      modifyTVar (nsConnections state)
-                                 (Map.adjust (\s -> s { connState = Established })
-                                             (normaliseId connId))
                       writeTBQueue queue
                                    ChannelWithInfo
                                      { cwiAddress       = localAddress connId
@@ -741,15 +766,50 @@ mkSnocket state tr = Snocket { getLocalAddr
                                      , cwiChannelLocal  = connChannelRemote
                                      , cwiChannelRemote = connChannelLocal
                                      }
+                      return (Right (fd_', NormalOpen))
+                    Just Connection { connState = HalfClosed } -> do
+                      return (Left (connectIOError connId "connect error (half-closed)"))
                     Nothing ->
-                      throwSTM (connectIOError connId)
-
-                  return (Right (fd_', NormalOpen))
+                      return (Left (connectIOError connId "connect error"))
 
             case efd' of
-              Left e          -> traceWith' fd (STConnectError fd_ remoteAddress e)
-                              >> throwIO e
-              Right (fd_', o) -> traceWith' fd (STConnected fd_' o)
+              Left e          -> do
+                traceWith' fd (STConnectError fd_ remoteAddress e)
+                atomically $ modifyTVar (nsConnections state)
+                                        (Map.delete (normaliseId connId))
+                throwIO e
+              Right (fd_', o) -> do
+                -- successful open
+
+                -- wait for a connection to be accepted
+                timeoutVar <-
+                  registerDelay (connectTimeout - biConnectionDelay bearerInfo)
+                r <- unmask $ atomically $ runFirstToFinish $
+                  (FirstToFinish $ do
+                    LazySTM.readTVar timeoutVar >>= check
+                    return Nothing
+                  )
+                  <>
+                  (FirstToFinish $ do
+                    mbConn <- Map.lookup (normaliseId connId)
+                          <$> readTVar (nsConnections state)
+                    case mbConn of
+                      -- it could happen that the 'accept' removes the
+                      -- connection from the state; we treat this as an io
+                      -- exception.
+                      Nothing -> throwSTM $ connectIOError connId
+                                          $ "unknown connection: "
+                                         ++ show (normaliseId connId)
+                      Just Connection { connState } ->
+                        Just <$> check (connState == Established))
+
+                case r of
+                  Nothing -> do
+                    traceWith' fd (STConnectTimeout WaitingToBeAccepted)
+                    atomically $ modifyTVar (nsConnections state)
+                                            (Map.delete (normaliseId connId))
+                    throwIO (connectIOError connId "connect timeout: when waiting for being accepted")
+                  Just _  -> traceWith' fd (STConnected fd_' o)
 
           FDConnecting {} ->
             throwIO (invalidError fd_)
@@ -772,12 +832,12 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
-        connectIOError :: ConnectionId (TestAddress addr) -> IOError
-        connectIOError connId = IOError
+        connectIOError :: ConnectionId (TestAddress addr) -> String -> IOError
+        connectIOError connId desc = IOError
           { ioe_handle      = Nothing
           , ioe_type        = OtherError
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.connect"
-          , ioe_description = printf "connect failure (%s)" (show connId)
+          , ioe_description = printf "connect failure (%s): (%s)" (show connId) desc
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
