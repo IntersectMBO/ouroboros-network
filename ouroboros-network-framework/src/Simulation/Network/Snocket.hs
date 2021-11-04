@@ -54,10 +54,10 @@ import           GHC.IO.Exception
 
 import           Data.Bifoldable (bitraverse_)
 import           Data.Foldable (traverse_)
+import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
 import           Text.Printf (printf)
@@ -516,8 +516,9 @@ data SnocketTrace m addr
     | STConnectError (FD_ m addr) addr IOError
     | STConnectTimeout TimeoutDetail
     | STBindError    (FD_ m addr) addr IOError
-    | STClosing      SockType Bool
-    | STClosed       SockType
+    | STClosing      SockType (Wedge (ConnectionId addr) [addr])
+    | STClosed       SockType (Maybe (Maybe OpenState))
+    -- ^ TODO: Document meaning of 'Maybe (Maybe OpenState)'
     | STClosingQueue Bool
     | STClosedQueue  Bool
     | STClosedWhenReading
@@ -1032,48 +1033,82 @@ mkSnocket state tr = Snocket { getLocalAddr
           -> m ()
     close FD { fdVar } =
       uninterruptibleMask_ $ do
-        (wConnId, fdType, mq) <- atomically $ do
+        wChannel <- atomically $ do
           fd_ <- readTVar fdVar
-          let wConnId = case fd_ of
-                     FDUninitialised {}    -> Nowhere
-                     FDConnecting connId _ -> Here connId
-                     FDConnected connId _  -> Here connId
-                     FDListening addr _    -> There addr
-                     FDClosed    wConnId_  -> wConnId_
-              mq = case fd_ of
-                     FDConnecting _ conn -> Just (connChannelLocal conn)
-                     FDConnected  _ conn -> Just (connChannelLocal conn)
-                     _                   -> Nothing
+          case fd_ of
+            FDUninitialised Nothing
+              -> writeTVar fdVar (FDClosed Nowhere)
+              $> Nowhere
+            FDUninitialised (Just addr)
+              -> writeTVar fdVar (FDClosed (There addr))
+              $> Nowhere
+            FDConnecting connId conn
+              -> writeTVar fdVar (FDClosed (Here connId))
+              $> Here (connId, mkSockType fd_, connChannelLocal conn)
+            FDConnected connId conn
+              -> writeTVar fdVar (FDClosed (Here connId))
+              $> Here (connId, mkSockType fd_, connChannelLocal conn)
+            FDListening localAddress queue -> do
+              writeTVar fdVar (FDClosed (There localAddress))
+              (\as -> There ( localAddress
+                            , mkSockType fd_
+                            , map (\a -> ( cwiAddress a, cwiChannelLocal a)) as
+                            )) <$> drainTBQueue queue
+            FDClosed {} ->
+              pure Nowhere
 
-          writeTVar fdVar (FDClosed wConnId)
-          -- TODO: We should move this removal after closing the attenuated channel!
-          bitraverse_
-            -- close a connected socket
-            (\connId -> modifyTVar (nsConnections state)
-                                   (Map.delete (normaliseId connId)))
-            -- close a listening socket; For Berkeley sockets, accepted
-            -- connections are not disturbed when one closes the listening
-            -- socket.
-            (\addr   -> modifyTVar (nsListeningFDs state)
-                                   (Map.delete addr))
-            wConnId
-          return (wConnId, mkSockType fd_, mq)
+        -- trace 'STClosing'
+        bitraverse_
+          (\(connId, fdType, _) ->
+              traceWith tr (WithAddr (Just (localAddress connId))
+                                     (Just (remoteAddress connId))
+                                     (STClosing fdType (Here connId))))
+          (\(addr, fdType, as) ->
+              traceWith tr (WithAddr (Just addr)
+                                     Nothing
+                                     (STClosing fdType (There (map fst as)))))
+          wChannel
 
-        let mbLocalAddr = case wConnId of
-              Here connId -> Just (localAddress connId)
-              There addr  -> Just addr
-              Nowhere     -> Nothing
-            mbRemoteAddr = case wConnId of
-              Here connId -> Just (remoteAddress connId)
-              _           -> Nothing
+        -- close channels
+        bitraverse_
+          (\(_, _, chann)  -> acClose chann)
+          (\(_, _, channs) -> traverse_ (acClose . snd) channs)
+          wChannel
 
-        traceWith tr (WithAddr mbLocalAddr mbRemoteAddr
-                               (STClosing fdType (isJust mq)))
-        case mq of
-          Nothing -> return ()
-          Just q  -> acClose q
-        traceWith tr (WithAddr mbLocalAddr mbRemoteAddr
-                               (STClosed fdType))
+        -- update NetworkState
+        atomically $ bitraverse_
+          (\(connId, _, _) ->
+             modifyTVar (nsConnections state)
+                        (Map.update
+                          (\conn@Connection { connState } ->
+                            case connState of
+                              HalfClosed ->
+                                Nothing
+                              _ ->
+                                Just conn { connState = HalfClosed })
+                          (normaliseId connId)))
+          (\(addr,   _, _) ->
+             modifyTVar (nsListeningFDs state)
+                        (Map.delete addr))
+          wChannel
+
+        -- trace 'STClosed'
+        bitraverse_
+          (\(connId, fdType, _) -> do
+            openState <- fmap connState . Map.lookup (normaliseId connId)
+                     <$> atomically (readTVar (nsConnections state))
+            traceWith tr (WithAddr (Just (localAddress connId))
+                                   (Just (remoteAddress connId))
+                                   (STClosed fdType (Just openState)))
+
+          )
+          (\(addr, fdType, _) ->
+            traceWith tr (WithAddr (Just addr)
+                                   Nothing
+                                   (STClosed fdType Nothing))
+
+          )
+          wChannel
 
 
     toBearer :: DiffTime
@@ -1108,8 +1143,19 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
+--
+-- Utils
+--
 
 hush :: Either a b -> Maybe b
 hush Left {}   = Nothing
 hush (Right a) = Just a
 {-# INLINE hush #-}
+
+drainTBQueue :: MonadSTMTx stm => TBQueue_ stm a -> stm [a]
+drainTBQueue q = do
+  ma <- tryReadTBQueue q
+  case ma of
+    Nothing -> return []
+    Just a  -> (a :) <$> drainTBQueue q
+
