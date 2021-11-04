@@ -450,7 +450,7 @@ data FD_ m addr
         -- ^ local and remote addresses
         !(Connection m)
         -- ^ connection
-    
+
     -- | 'FD_' of a closed file descriptor; we keep 'ConnectionId' just for
     -- tracing purposes.
     --
@@ -521,6 +521,8 @@ data SnocketTrace m addr
     | STClosingQueue Bool
     | STClosedQueue  Bool
     | STClosedWhenReading
+    | STAcceptFailure SockType SomeException
+    | STAccepted      addr
     | STBearer       (FD_ m addr)
     | STAttenuatedChannelTrace (ConnectionId addr) AttenuatedChannelTrace
   deriving Show
@@ -902,7 +904,7 @@ mkSnocket state tr = Snocket { getLocalAddr
             labelTBQueue queue ("aq-" ++ show addr)
             writeTVar fdVar (FDListening addr queue)
             modifyTVar (nsListeningFDs state) (Map.insert addr fd)
-            
+
           FDConnected {} ->
             throwSTM $ invalidError fd_
           FDConnecting {} ->
@@ -932,49 +934,88 @@ mkSnocket state tr = Snocket { getLocalAddr
                                 (TestAddress addr))
     accept FD { fdVar } = pure accept_
       where
-        accept_ = Accept $ atomically $ do
-          fd <- readTVar fdVar
-          case fd of
-            FDUninitialised {} ->
-              -- 'berkeleyAccept' used by 'socketSnocket' will return
-              -- 'IOException's with 'AcceptFailure', we match this behaviour
-              -- here.
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
-            FDConnecting {} ->
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
-            FDConnected {} ->
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
-            FDListening localAddress queue -> do
-              ChannelWithInfo
-                { cwiAddress       = remoteAddress
-                , cwiSDUSize       = sduSize
-                , cwiChannelLocal  = channelLocal
-                , cwiChannelRemote = channelRemote
-                } <- readTBQueue queue
-              fdRemote <- FD <$> newTVar (FDConnected
-                                            ConnectionId
-                                              { localAddress
-                                              , remoteAddress
-                                              }
-                                            Connection
-                                              { connChannelLocal  = channelLocal
-                                              , connChannelRemote = channelRemote
-                                              , connSDUSize       = sduSize
-                                              , connState         = Established
-                                              })
-              return ( Accepted fdRemote remoteAddress
-                     , accept_
-                     )
-            FDClosed {} ->
-              return ( AcceptFailure (toException $ invalidError fd)
-                     , accept_
-                     )
+        accept_ = Accept $ do
+            bracketOnError
+              (atomically $ do
+                fd <- readTVar fdVar
+                case fd of
+                  FDUninitialised mbAddr ->
+                    -- 'berkeleyAccept' used by 'socketSnocket' will return
+                    -- 'IOException's with 'AcceptFailure', we match this behaviour
+                    -- here.
+                    return $ Left ( toException $ invalidError fd
+                                  , mbAddr
+                                  , mkSockType fd
+                                  )
+                  FDConnecting connId _ ->
+                    return $ Left ( toException $ invalidError fd
+                                  , Just (localAddress connId)
+                                  , mkSockType fd
+                                  )
+                  FDConnected connId _ ->
+                    return $ Left ( toException $ invalidError fd
+                                  , Just (localAddress connId)
+                                  , mkSockType fd
+                                  )
+                  FDListening localAddress queue -> do
+                    cwi <- readTBQueue queue
+                    return $ Right ( cwi
+                                   , localAddress
+                                   )
+
+                  FDClosed {} ->
+                    return $ Left ( toException $ invalidError fd
+                                  , Nothing
+                                  , mkSockType fd
+                                  )
+              )
+              ( \ result ->
+                  case result of
+                    Left {} -> return ()
+                    Right (chann, connId) -> uninterruptibleMask_ $ do
+                      acClose (cwiChannelLocal chann)
+                      atomically $
+                        modifyTVar (nsConnections state)
+                                   (Map.update
+                                     (\conn@Connection { connState } ->
+                                       case connState of
+                                         FIN ->
+                                           Nothing
+                                         _ ->
+                                           Just conn { connState = FIN })
+                                     (normaliseId connId))
+              )
+              $ \ result ->
+                case result of
+                  Left (err, mbLocalAddr, fdType) -> do
+                    traceWith tr (WithAddr (mbLocalAddr) Nothing
+                                           (STAcceptFailure fdType err))
+                    return (AcceptFailure err, accept_)
+
+                  Right (chann, localAddress) -> do
+                    let ChannelWithInfo
+                          { cwiAddress       = remoteAddress
+                          , cwiSDUSize       = sduSize
+                          , cwiChannelLocal  = channelLocal
+                          , cwiChannelRemote = channelRemote
+                          } = chann
+                        connId = ConnectionId { localAddress, remoteAddress }
+                    fdRemote <- atomically $ do
+                      modifyTVar (nsConnections state)
+                                 (Map.adjust (\s -> s { connState = Established })
+                                             (normaliseId connId))
+                      FD <$> newTVar (FDConnected
+                                        connId
+                                        Connection
+                                          { connChannelLocal  = channelLocal
+                                          , connChannelRemote = channelRemote
+                                          , connSDUSize       = sduSize
+                                          , connState         = Established
+                                          })
+                    traceWith tr (WithAddr (Just localAddress) Nothing
+                                           (STAccepted remoteAddress))
+                    return (Accepted fdRemote remoteAddress, accept_)
+
 
         invalidError :: FD_ m (TestAddress addr) -> IOError
         invalidError fd = IOError
