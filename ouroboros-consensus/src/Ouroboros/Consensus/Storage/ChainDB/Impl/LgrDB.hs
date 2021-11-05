@@ -428,12 +428,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
             let aks = rewind ledgerDB ks
             -- Get the unforwarded read sets from the database.
             urs <- readDb @m @(ExtLedgerState blk) () aks
-            -- Forward the annotated read sets.
-            case forward ledgerDB urs of
-              Nothing ->
-                -- We should explain here in which circumstances this might happen.
-                error "TODO: handle this case appropriately."
-              Just rs -> pure $ Weaken $ ApplyVal blk rs
+            pure $ Weaken $ ApplyVal blk urs
           (True,  Just blk) -> pure $ Weaken $ ReapplyVal blk
       | hdr <- hdrs
       ]

@@ -258,8 +258,11 @@ instance Monad m => ThrowsLedgerError (ExceptT (AnnLedgerError l blk) m) l blk w
 data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
   ReapplyVal ::           blk -> Ap m l blk ()
   ApplyVal   ::           blk
-              -> ReadSets l     -> Ap m l blk (                      ThrowsLedgerError m l blk)
-  ReapplyRef :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk)
+              -- TODO: we need to distinguish between forwarded and unforwarded
+              -- readsets. Here 'ReadSets' reprensent forwarded read sets. We
+              -- need a new type for forwarded read sets.
+              -> ReadSets l     -> Ap m l blk (                    ThrowsLedgerError m l blk)
+  ReapplyRef :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk                           )
   ApplyRef   :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk, ThrowsLedgerError m l blk)
 
   -- | 'Weaken' increases the constraint on the monad @m@.
@@ -358,15 +361,16 @@ applyBlock cfg ap db = case ap of
     ReapplyVal b ->
       return $
         tickThenReapply cfg b l
-    ApplyVal b urs -> do
-      let
-        lh = hydrateLedgerState urs db -- lh is the current hydrated ledger state
-      either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
-        tickThenApply cfg b lh
+    ApplyVal b urs ->
+      withHydratedLedgerState urs $ \lh ->
+          either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
+              tickThenApply cfg b lh
     ReapplyRef r  -> do
       b <- resolveBlock r
+      let urs = undefined
       return $
-        tickThenReapply cfg b l
+        withHydratedLedgerState urs $ \lh ->
+          tickThenReapply cfg b lh
     ApplyRef r -> do
      b <- resolveBlock r
      either (throwLedgerError db r) return $ runExcept $
@@ -376,6 +380,21 @@ applyBlock cfg ap db = case ap of
   where
     l :: l
     l = ledgerDbCurrent db
+
+
+    withHydratedLedgerState :: (ReadSets l) -> (l -> a) -> a
+    withHydratedLedgerState urs act =
+      -- Forward the annotated read sets.
+      case forward db urs of
+        Nothing ->
+          -- We should explain here in which circumstances this might happen.
+          error "TODO: handle this case appropriately."
+        Just rs ->
+          let
+            lh = hydrateLedgerState rs db -- lh is the current hydrated ledger state
+          in act lh
+            -- either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
+            --   tickThenApply cfg b lh
 
 {-------------------------------------------------------------------------------
   Queries
