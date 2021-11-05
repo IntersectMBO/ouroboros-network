@@ -122,6 +122,7 @@ run :: forall muxMode socket peerAddr versionNumber m a b.
        , MonadCatch    m
        , MonadEvaluate m
        , MonadLabelledSTM  m
+       , MonadMask     m
        , MonadThrow   (STM m)
        , MonadTime     m
        , MonadTimer    m
@@ -189,61 +190,85 @@ run ServerArguments {
     acceptLoop :: peerAddr
                -> Accept m socket peerAddr
                -> m Void
-    acceptLoop localAddress acceptOne = do
-      labelThisThread ("accept-loop-" ++ show localAddress)
-      runConnectionRateLimits
-        (TrAcceptPolicyTrace `contramap` tracer)
-        (numberOfConnections serverConnectionManager)
-        serverConnectionLimits
-      result <- runAccept acceptOne
-      case result of
-        (AcceptFailure err, acceptNext) -> do
-          traceWith tracer (TrAcceptError err)
-          -- Try the determine if the connection was aborted by the remote end
-          -- before we could process the accept, or if it was a resource
-          -- exaustion problem.
-          -- NB. This piece of code is fragile and depends on specific
-          -- strings/mappings in the network and base libraries.
-          case fromException err of
-             Just ioErr ->
+    acceptLoop localAddress acceptOne0 = mask $ \unmask -> do
+        labelThisThread ("accept-loop-" ++ show localAddress)
+        go unmask acceptOne0
+        `catch` \ e -> traceWith tracer (TrServerError e)
+                    >> throwIO e
+      where
+        -- we must guarantee that 'includeInboundConnection' is called,
+        -- otherwise we will have a resource leak.
+        --
+        -- The 'mask' makes sure that exceptions are not delivered once
+        -- between accepting a socket and starting thread that runs
+        -- 'includeInboundConnection'.
+        --
+        -- NOTE: when we will make 'includeInboundConnection' a non blocking
+        -- (issue #3478) we still need to guarantee the above property.
+        --
+        go :: (forall x. m x -> m x)
+           -> Accept m socket peerAddr
+           -> m Void
+        go unmask acceptOne = do
+          result <- unmask $ do
+            runConnectionRateLimits
+              (TrAcceptPolicyTrace `contramap` tracer)
+              (numberOfConnections serverConnectionManager)
+              serverConnectionLimits
+            runAccept acceptOne
+            
+          case result of
+            (AcceptFailure err, acceptNext) -> do
+              traceWith tracer (TrAcceptError err)
+              -- Try the determine if the connection was aborted by the remote end
+              -- before we could process the accept, or if it was a resource
+              -- exhaustion problem.
+              -- NB. This piece of code is fragile and depends on specific
+              -- strings/mappings in the network and base libraries.
+              case fromException err of
+                 Just ioErr ->
 #if defined(mingw32_HOST_OS)
-                      -- On Windows the network packet classifies all errors
-                      -- as OtherError. This means that we're forced to match
-                      -- on the error string. The text string comes from
-                      -- the network package's winSockErr.c, and if it ever
-                      -- changes we must update our text string too.
-                      if ioeGetErrorString ioErr /=
-                          "Software caused connection abort (WSAECONNABORTED)"
-                         then throwIO ioErr
-                         else threadDelay 0.5 >>
-                             acceptLoop localAddress acceptNext
+                   -- On Windows the network packet classifies all errors
+                   -- as OtherError. This means that we're forced to match
+                   -- on the error string. The text string comes from
+                   -- the network package's winSockErr.c, and if it ever
+                   -- changes we must update our text string too.
+                   if ioeGetErrorString ioErr /=
+                       "Software caused connection abort (WSAECONNABORTED)"
+                      then throwIO ioErr
+                      else threadDelay 0.5 >>
+                           go unmask acceptNext
 #else
-               if iseCONNABORTED ioErr
-                  then threadDelay 0.5 >> acceptLoop localAddress acceptNext
-                  else throwIO ioErr
+                   -- TODO: iseCONNABORTED should be defined on all platforms,
+                   -- so we can avoid the #ifs here.
+                   if iseCONNABORTED ioErr
+                      then threadDelay 0.5 >> go unmask acceptNext
+                      else throwIO ioErr
 #endif
-             Nothing -> throwIO err
-        (Accepted socket peerAddr, acceptNext) -> do
-          traceWith tracer (TrAcceptConnection peerAddr)
-          -- using withAsync ensures that the thread that includes inbound
-          -- connection (which is a blocking operation), is killed when the
-          -- server terminates.
-          withAsync
-            (do
-              a <-
-                includeInboundConnection
-                  serverConnectionManager
-                  socket peerAddr
-              case a of
-                Connected connId dataFlow handle ->
-                  atomically $
-                    ControlChannel.writeMessage
-                      serverControlChannel
-                      (ControlChannel.NewConnection Inbound connId dataFlow handle)
-                Disconnected {} ->
-                  pure ()
-            )
-            $ \_ -> acceptLoop localAddress acceptNext
+                 Nothing -> throwIO err
+
+            (Accepted socket peerAddr, acceptNext) ->
+              (do traceWith tracer (TrAcceptConnection peerAddr)
+                  async $
+                    do a <-
+                         unmask
+                           (includeInboundConnection
+                             serverConnectionManager
+                             socket peerAddr)
+                       case a of
+                         Connected connId dataFlow handle ->
+                           atomically $
+                             ControlChannel.writeMessage
+                               serverControlChannel
+                               (ControlChannel.NewConnection Inbound connId dataFlow handle)
+                         Disconnected {} ->
+                           pure ()
+                    `onException`
+                      close serverSnocket socket
+              `onException`
+                 close serverSnocket socket
+              )
+              >> go unmask acceptNext
 
 --
 -- Trace
