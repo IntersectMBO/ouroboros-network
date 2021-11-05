@@ -15,7 +15,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-
+ 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 -- incomplete uni patterns in 'schedule' (when interpreting 'StmTxCommitted')
 -- and 'reschedule'.
