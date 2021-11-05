@@ -520,7 +520,7 @@ localSnocket ioManager =
   where
     toLocalAddress :: SockAddr -> LocalAddress
     toLocalAddress (SockAddrUnix path) = LocalAddress path
-    toLocalAddress _                   = error "localSnocket.toLocalAddr: impossible happend"
+    toLocalAddress _                   = error "localSnocket.toLocalAddr: impossible happened"
 
     fromLocalAddress :: LocalAddress -> SockAddr
     fromLocalAddress = SockAddrUnix . getFilePath
