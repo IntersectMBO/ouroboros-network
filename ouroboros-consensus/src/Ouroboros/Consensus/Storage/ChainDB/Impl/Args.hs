@@ -90,8 +90,6 @@ data ChainDbSpecificArgs f m blk = ChainDbSpecificArgs {
       -- ^ Batch all scheduled GCs so that at most one GC happens every
       -- 'cdbsGcInterval'.
     , cdbsRegistry        :: HKD f (ResourceRegistry m)
-      -- ^ TODO: the ImmutableDB takes a 'ResourceRegistry' too, but we're
-      -- using it for ChainDB-specific things. Revisit these arguments.
     , cdbsTracer          :: Tracer m (TraceEvent blk)
     }
 
@@ -230,7 +228,7 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
       -- Misc
     , cdbTracer                 = cdbsTracer
     , cdbTraceLedger            = lgrTraceLedger
-    , cdbRegistry               = immRegistry
+    , cdbRegistry               = cdbsRegistry
     , cdbGcDelay                = cdbsGcDelay
     , cdbGcInterval             = cdbsGcInterval
     , cdbBlocksToAddSize        = cdbsBlocksToAddSize

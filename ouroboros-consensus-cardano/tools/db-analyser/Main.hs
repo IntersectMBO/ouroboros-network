@@ -240,7 +240,7 @@ analyse CmdLine {..} args =
             Nothing       -> pure genesisLedger
             Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
           initLedger <- either (error . show) pure initLedgerErr
-          ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs) $ \immutableDB -> do
+          ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs runWithTempRegistry) $ \immutableDB -> do
             runAnalysis analysis $ AnalysisEnv {
                 cfg
               , initLedger

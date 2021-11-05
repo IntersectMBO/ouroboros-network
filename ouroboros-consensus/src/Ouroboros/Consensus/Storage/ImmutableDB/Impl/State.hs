@@ -36,8 +36,7 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     WithTempRegistry, allocateTemp, modifyWithTempRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -64,7 +63,6 @@ data ImmutableDBEnv m blk = forall h. Eq h => ImmutableDBEnv {
     , checkIntegrity   :: !(blk -> Bool)
     , chunkInfo        :: !ChunkInfo
     , tracer           :: !(Tracer m (TraceEvent blk))
-    , registry         :: !(ResourceRegistry m)
     , cacheConfig      :: !Index.CacheConfig
     , codecConfig      :: !(CodecConfig blk)
     }

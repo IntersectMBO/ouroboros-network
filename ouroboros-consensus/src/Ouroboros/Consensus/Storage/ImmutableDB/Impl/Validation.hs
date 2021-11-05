@@ -32,8 +32,7 @@ import qualified Streaming.Prelude as S
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     WithTempRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -85,7 +84,6 @@ validateAndReopen ::
      )
   => ValidateEnv m blk h
   -> ResourceRegistry m
-     -- ^ Not used for validation, only used to open a new index
   -> ValidationPolicy
   -> WithTempRegistry (OpenState m blk h) m (OpenState m blk h)
 validateAndReopen validateEnv registry valPol = wrapFsError (Proxy @blk) $ do
