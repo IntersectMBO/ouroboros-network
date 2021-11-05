@@ -42,7 +42,9 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , TempRegistryException (..)
   , allocateTemp
   , modifyWithTempRegistry
+  , runInnerWithTempRegistry
   , runWithTempRegistry
+  , runnableInnerWithTempRegistry
     -- ** opaque
   , WithTempRegistry
     -- * Combinators primarily for testing
@@ -251,15 +253,15 @@ import           Ouroboros.Consensus.Util.Orphans ()
 -- non-existent thread and A is never notified.
 --
 -- For this reason, the registry's 'linkToRegistry' combinator does not link the
--- specified to the thread calling 'linkToRegistry', but rather to the thread
--- that created the registry. After all, the lifetime of threads spawned with
--- 'forkThread' can certainly exceed the lifetime of their parent threads, but
--- the lifetime of /all/ threads spawned using the registry will be limited by
--- the scope of that registry, and hence the lifetime of the thread that created
--- it. So, when we call 'linkToRegistry', the exception will be thrown the
--- thread that created the registry, which (if not caught) will cause that that
--- to exit the scope of 'withRegistry', thereby terminating all threads in that
--- registry.
+-- specified thread to the thread calling 'linkToRegistry', but rather to the
+-- thread that created the registry. After all, the lifetime of threads spawned
+-- with 'forkThread' can certainly exceed the lifetime of their parent threads,
+-- but the lifetime of /all/ threads spawned using the registry will be limited
+-- by the scope of that registry, and hence the lifetime of the thread that
+-- created it. So, when we call 'linkToRegistry', the exception will be thrown
+-- the thread that created the registry, which (if not caught) will cause that
+-- that to exit the scope of 'withRegistry', thereby terminating all threads in
+-- that registry.
 --
 -- # Combining the registry and with-style allocation
 --
@@ -763,6 +765,69 @@ runWithTempRegistry m = withRegistry $ \rr -> do
         , tempRegistryResource = remainingResource
         }
     return a
+
+-- | Embed a self-contained 'WithTempRegistry' computation into a larger one.
+--
+-- The internal 'WithTempRegistry' is effectively passed to
+-- 'runWithTempRegistry'. It therefore must have no dangling resources, for
+-- example. This is the meaning of /self-contained/ above.
+--
+-- The key difference beyond 'runWithTempRegistry' is that the resulting
+-- composite resource is also guaranteed to be registered in the outer
+-- 'WithTempRegistry' computation's registry once the inner registry is closed.
+-- Combined with the following assumption, this establishes the invariant that
+-- all resources are (transitively) in a temporary registry.
+--
+-- As the resource might require some implementation details to be closed, the
+-- function to close it will also be provided by the inner computation.
+--
+-- ASSUMPTION: closing @res@ closes every resource contained in @inner_st@
+--
+-- NOTE: In the current implementation, there will be a brief moment where the
+-- inner registry still contains the inner computation's resources and also the
+-- outer registry simultaneously contains the new composite resource. If an async
+-- is received at that time, then the inner resources will be closed and then
+-- the composite resource will be later closed. This means there's a risk of
+-- /double freeing/, which can be harmless if anticipated.
+runInnerWithTempRegistry
+  :: forall inner_st st m res a. IOLike m
+  => WithTempRegistry inner_st m (a, inner_st, res, res -> m Bool)
+     -- ^ The embedded computation; see ASSUMPTION above
+  -> (st -> res -> Bool)
+     -- ^ How to check; same as for 'allocateTemp'
+  -> WithTempRegistry st m a
+runInnerWithTempRegistry inner isTransferred = do
+    outerTR <- WithTempRegistry ask
+
+    lift $ runWithTempRegistry $ do
+      (a, inner_st, res, free) <- inner
+
+      -- allocate in the outer layer
+      _ <-   withFixedTempRegistry outerTR
+           $ allocateTemp (return res) free isTransferred
+
+      -- TODO This point here is where an async exception could cause both the
+      -- inner resources to be closed and the outer resource to be closed later
+      --
+      -- If we want to do better than that, we'll need a variant of
+      -- 'runWithTempRegistry' that lets us perform some action with async
+      -- exceptions masked "at the same time" it closes its registry.
+
+      pure (a, inner_st)
+  where
+    withFixedTempRegistry env (WithTempRegistry (ReaderT f)) =
+      WithTempRegistry $ ReaderT $ \_ -> f env
+
+-- | Convenience function.
+--
+-- When a @WithTempRegistry@ computation has the shape expected by
+-- @runInnerWithTempRegistry@, but instead it is run directly, some of the
+-- returned values have to be omitted.
+runnableInnerWithTempRegistry
+  :: Monad m
+  => WithTempRegistry st m (a, st, st, st -> m Bool)
+  -> WithTempRegistry st m (a, st)
+runnableInnerWithTempRegistry = (>>= \(a,b,_,_) -> return (a,b))
 
 -- | When 'runWithTempRegistry' exits successfully while there are still
 -- resources remaining in the temporary registry that haven't been transferred

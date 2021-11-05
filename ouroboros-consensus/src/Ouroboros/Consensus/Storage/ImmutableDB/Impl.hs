@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeApplications          #-}
 
 -- | Immutable on-disk database of binary blobs
@@ -111,8 +112,7 @@ import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry,
-                     runWithTempRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
@@ -212,7 +212,7 @@ deleteAfter = deleteAfter_
 ------------------------------------------------------------------------------}
 
 openDB ::
-     forall m blk.
+     forall m blk ans.
      ( IOLike m
      , GetPrevHash blk
      , ConvertRawHash blk
@@ -220,14 +220,19 @@ openDB ::
      , HasCallStack
      )
   => ImmutableDbArgs Identity m blk
-  -> m (ImmutableDB m blk)
-openDB args = fst <$> openDBInternal args
+  -> (
+       (forall h.
+        WithTempRegistry (OpenState m blk h) m (ImmutableDB m blk, OpenState m blk h, OpenState m blk h, OpenState m blk h -> m Bool)
+        -> ans)
+     -> ans)
+openDB args cont = openDBInternal args (cont . swizzle)
+  where swizzle w = w >>= \((a, _), c, d, e) -> return (a, c, d, e)
 
 -- | For testing purposes: exposes internals via 'Internal'
 --
 --
 openDBInternal ::
-     forall m blk.
+     forall m blk ans.
      ( IOLike m
      , GetPrevHash blk
      , ConvertRawHash blk
@@ -235,8 +240,12 @@ openDBInternal ::
      , HasCallStack
      )
   => ImmutableDbArgs Identity m blk
-  -> m (ImmutableDB m blk, Internal m blk)
-openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempRegistry $ do
+  -> (
+       (forall h.
+        WithTempRegistry (OpenState m blk h) m ((ImmutableDB m blk, Internal m blk), OpenState m blk h, OpenState m blk h, OpenState m blk h -> m Bool)
+        -> ans)
+     -> ans)
+openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } cont = cont $ do
     lift $ createDirectoryIfMissing hasFS True (mkFsPath [])
     let validateEnv = ValidateEnv {
             hasFS          = hasFS
@@ -256,7 +265,6 @@ openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempR
           , checkIntegrity   = immCheckIntegrity
           , chunkInfo        = immChunkInfo
           , tracer           = immTracer
-          , registry         = immRegistry
           , cacheConfig      = immCacheConfig
           , codecConfig      = immCodecConfig
           }
@@ -275,7 +283,7 @@ openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } = runWithTempR
     -- Note that we can still leak resources if the caller of
     -- 'openDBInternal' doesn't bracket his call with 'closeDB' or doesn't
     -- use a 'ResourceRegistry'.
-    return ((db, internal), ost)
+    return ((db, internal), ost, ost, (>> return True) . cleanUp hasFS)
 
 closeDBImpl ::
      forall m blk. (HasCallStack, IOLike m)
