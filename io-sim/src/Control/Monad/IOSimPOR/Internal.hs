@@ -47,6 +47,7 @@ module Control.Monad.IOSimPOR.Internal (
   ScheduleControl(..),
   ScheduleMod(..)
   ) where
+  
 
 import           Prelude hiding (read)
 
