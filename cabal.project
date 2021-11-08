@@ -17,6 +17,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus-cardano-test
           ./ouroboros-consensus-mock
           ./ouroboros-consensus-mock-test
+          ./ouroboros-consensus-protocol
           ./ouroboros-consensus-shelley
           ./ouroboros-consensus-shelley-test
           ./ouroboros-consensus-test

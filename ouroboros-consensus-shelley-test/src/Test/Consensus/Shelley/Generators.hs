@@ -24,10 +24,10 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Cardano.Ledger.Shelley.API as SL
 
+import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto,
+                     TPraosState (..))
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto,
-                     TPraosState (..))
 
 import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)

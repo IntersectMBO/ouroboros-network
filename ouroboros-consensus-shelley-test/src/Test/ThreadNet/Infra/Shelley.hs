@@ -88,11 +88,11 @@ import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Cardano.Ledger.Val as SL
 import qualified Cardano.Protocol.TPraos.OCert as SL (OCertSignable (..))
 
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..),
                      ShelleyBasedEra, ShelleyBlock, mkShelleyTx)
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol
 
 import qualified Test.Cardano.Ledger.Shelley.Generator.Core as Gen
 import           Test.Cardano.Ledger.Shelley.Utils (unsafeBoundRational)

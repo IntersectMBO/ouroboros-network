@@ -53,6 +53,7 @@ library
 
                      , ouroboros-network
                      , ouroboros-consensus
+                     , ouroboros-consensus-protocol
                      , ouroboros-consensus-test
                      , ouroboros-consensus-shelley
 

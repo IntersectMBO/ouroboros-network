@@ -83,12 +83,12 @@ import           Ouroboros.Consensus.Byron.Node
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 
+import           Ouroboros.Consensus.Protocol.TPraos (TPraosParams (..))
+import qualified Ouroboros.Consensus.Protocol.TPraos as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol (TPraosParams (..))
-import qualified Ouroboros.Consensus.Shelley.Protocol as Shelley
 import           Ouroboros.Consensus.Shelley.ShelleyBased
 
 import           Ouroboros.Consensus.Cardano.Block

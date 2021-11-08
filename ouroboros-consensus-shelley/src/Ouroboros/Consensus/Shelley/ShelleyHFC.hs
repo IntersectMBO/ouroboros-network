@@ -52,11 +52,11 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
 import           Ouroboros.Consensus.Shelley.Node ()
-import           Ouroboros.Consensus.Shelley.Protocol
 
 {-------------------------------------------------------------------------------
   Synonym for convenience

@@ -1,0 +1,51 @@
+cabal-version:      3.0
+name:               ouroboros-consensus-protocol
+version:            0.1.0.0
+synopsis:           Cardano consensus protocols.
+author:             IOHK Formal methods team
+maintainer:         nick@topos.org.uk
+
+source-repository-head
+    type: git
+    location: https://github.com/input-output-hk/ouroboros-network
+    subdir: ouroboros-consensus-protocol
+
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
+library
+  hs-source-dirs: src
+  default-language:    Haskell2010
+  exposed-modules:
+    Ouroboros.Consensus.Protocol.Ledger.HotKey
+    Ouroboros.Consensus.Protocol.Ledger.Util
+    Ouroboros.Consensus.Protocol.TPraos
+  build-depends:
+    base,
+    cardano-binary,
+    cardano-crypto-class,
+    cardano-ledger-core,
+    cardano-ledger-shelley,
+    cardano-protocol-tpraos,
+    cardano-slotting,
+    cborg,
+    containers,
+    mtl,
+    nothunks,
+    ouroboros-consensus,
+    serialise,
+    text
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wmissing-export-lists
+  if flag(asserts)
+    ghc-options:
+      -fno-ignore-asserts

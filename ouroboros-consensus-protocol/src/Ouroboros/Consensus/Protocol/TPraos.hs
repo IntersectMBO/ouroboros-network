@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE EmptyDataDecls      #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -14,7 +15,7 @@
 --
 --   Transitional praos allows for the overlaying of Praos with an overlay
 --   schedule determining slots to be produced by BFT
-module Ouroboros.Consensus.Shelley.Protocol (
+module Ouroboros.Consensus.Protocol.TPraos (
     MaxMajorProtVer (..)
   , SelfIssued (..)
   , TPraos
@@ -68,13 +69,14 @@ import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import           Cardano.Ledger.Crypto (StandardCrypto, VRF)
+import qualified Cardano.Ledger.Keys as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL (mkSeed, seedEta, seedL)
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 
-import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
-import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
-import           Ouroboros.Consensus.Shelley.Protocol.Util
+import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
+import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
+import           Ouroboros.Consensus.Protocol.Ledger.Util
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header

@@ -13,8 +13,8 @@ import           Data.SOP.Strict
 import           Ouroboros.Consensus.HardFork.Combinator
 
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
-import           Ouroboros.Consensus.Shelley.Protocol (PraosCrypto)
 import           Ouroboros.Consensus.Shelley.ShelleyBased
 
 -- | When the given ledger state corresponds to a Shelley-based era, apply the

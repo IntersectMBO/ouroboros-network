@@ -41,9 +41,6 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.TPraos
                        Ouroboros.Consensus.Shelley.Node
                        Ouroboros.Consensus.Shelley.Node.Serialisation
-                       Ouroboros.Consensus.Shelley.Protocol
-                       Ouroboros.Consensus.Shelley.Protocol.HotKey
-                       Ouroboros.Consensus.Shelley.Protocol.Util
                        Ouroboros.Consensus.Shelley.ShelleyBased
                        Ouroboros.Consensus.Shelley.ShelleyHFC
 
@@ -77,6 +74,7 @@ library
 
                      , ouroboros-network
                      , ouroboros-consensus
+                     , ouroboros-consensus-protocol
 
   default-language:    Haskell2010
   ghc-options:         -Wall

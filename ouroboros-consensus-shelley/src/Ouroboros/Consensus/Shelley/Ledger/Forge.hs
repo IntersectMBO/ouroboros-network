@@ -32,13 +32,13 @@ import qualified Cardano.Protocol.TPraos.BHeader as SL
 
 import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Integrity
 import           Ouroboros.Consensus.Shelley.Ledger.Mempool
-import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
 
 {-------------------------------------------------------------------------------
   Forging
