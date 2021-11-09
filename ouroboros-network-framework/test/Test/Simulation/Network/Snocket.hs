@@ -71,6 +71,7 @@ import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instanc
 -- ShowProxy ReqResp instance
 import           Ouroboros.Network.Testing.Data.Script
                   (Script(..), singletonScript)
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
 
 import           Test.QuickCheck hiding (Result (..))
 import           Test.QuickCheck.Instances.ByteString
@@ -80,8 +81,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests =
     testGroup "Simulation.Network.Snocket"
-    [ testProperty "client-server" prop_client_server
-    ]
+      [ testProperty "client-server" prop_client_server
+      ]
 
 type TestAddr      = TestAddress Int
 type TestFD      m = FD m TestAddr

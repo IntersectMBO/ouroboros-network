@@ -3,9 +3,9 @@
 {-# LANGUAGE NumericUnderscores #-}
 
 module Ouroboros.Network.Testing.Data.AbsBearerInfo
-  ( BearerInfoScript(..)
+  ( AbsBearerInfoScript(..)
   , canFail
-  , NonFailingBearerInfoScript(..)
+  , NonFailingAbsBearerInfoScript(..)
   , AbsDelay (..)
   , delay
   , AbsSpeed (..)
@@ -17,7 +17,7 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , attenuation
   , absNoAttenuation
   , AbsBearerInfo (..)
-  , toNonFailingBearerInfoScript
+  , toNonFailingAbsBearerInfoScript
   ) where
 
 import           Control.Monad.Class.MonadTime
@@ -242,8 +242,8 @@ instance Arbitrary AbsBearerInfo where
       | a <- shrink (abiSDUSize abi)
       ]
 
-newtype BearerInfoScript =
-  BearerInfoScript { unBIScript :: Script AbsBearerInfo }
+newtype AbsBearerInfoScript =
+  AbsBearerInfoScript { unBIScript :: Script AbsBearerInfo }
   deriving       Show via (Script AbsBearerInfo)
   deriving stock Eq
 
@@ -253,15 +253,15 @@ fixupAbsBearerInfos bis =
       then bis ++ [absNoAttenuation]
       else bis
 
-instance Arbitrary BearerInfoScript where
-  arbitrary = BearerInfoScript
+instance Arbitrary AbsBearerInfoScript where
+  arbitrary = AbsBearerInfoScript
             . Script
             . NonEmpty.fromList
             . fixupAbsBearerInfos
           <$> listOf1 arbitrary
 
-  shrink (BearerInfoScript (Script script)) =
-    [ BearerInfoScript (Script script')
+  shrink (AbsBearerInfoScript (Script script)) =
+    [ AbsBearerInfoScript (Script script')
     | script'
         <- map (NonEmpty.fromList . fixupAbsBearerInfos)
         . filter (not . List.null)
@@ -271,14 +271,15 @@ instance Arbitrary BearerInfoScript where
     , script' /= script
     ]
 
-newtype NonFailingBearerInfoScript =
-  NonFailingBearerInfoScript { unNFBIScript :: Script AbsBearerInfo }
+newtype NonFailingAbsBearerInfoScript =
+  NonFailingAbsBearerInfoScript { unNFBIScript :: Script AbsBearerInfo }
   deriving       Show via (Script AbsBearerInfo)
   deriving stock Eq
 
-toNonFailingBearerInfoScript :: BearerInfoScript -> NonFailingBearerInfoScript
-toNonFailingBearerInfoScript (BearerInfoScript script) =
-    NonFailingBearerInfoScript $ fmap unfail script
+toNonFailingAbsBearerInfoScript :: AbsBearerInfoScript
+                                -> NonFailingAbsBearerInfoScript
+toNonFailingAbsBearerInfoScript (AbsBearerInfoScript script) =
+    NonFailingAbsBearerInfoScript $ fmap unfail script
   where
     unfail :: AbsBearerInfo -> AbsBearerInfo
     unfail bi =
@@ -292,7 +293,7 @@ toNonFailingBearerInfoScript (BearerInfoScript script) =
     unfailAtt (SpeedAttenuation speed _ _) = NoAttenuation speed
     unfailAtt a = a
 
-instance Arbitrary NonFailingBearerInfoScript where
-  arbitrary = toNonFailingBearerInfoScript <$> arbitrary
-  shrink (NonFailingBearerInfoScript script) =
-    toNonFailingBearerInfoScript <$> shrink (BearerInfoScript script)
+instance Arbitrary NonFailingAbsBearerInfoScript where
+  arbitrary = toNonFailingAbsBearerInfoScript <$> arbitrary
+  shrink (NonFailingAbsBearerInfoScript script) =
+    toNonFailingAbsBearerInfoScript <$> shrink (AbsBearerInfoScript script)

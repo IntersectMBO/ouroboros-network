@@ -6,8 +6,8 @@ import qualified Data.List.NonEmpty as NonEmpty
 
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
                    ( AbsBearerInfo,
-                     BearerInfoScript(..),
-                     NonFailingBearerInfoScript(..), canFail )
+                     AbsBearerInfoScript(..),
+                     NonFailingAbsBearerInfoScript(..), canFail )
 import           Ouroboros.Network.Testing.Data.Script (Script(Script))
 
 import           Test.Tasty ( testGroup, TestTree )
@@ -29,13 +29,15 @@ prop_shrinker_AbsBearerInfo :: Fixed AbsBearerInfo -> Bool
 prop_shrinker_AbsBearerInfo (Fixed abi) =
     abi `notElem` shrink abi
 
-prop_shrinker_BearerInfoScript :: Fixed BearerInfoScript -> Bool
+prop_shrinker_BearerInfoScript :: Fixed AbsBearerInfoScript -> Bool
 prop_shrinker_BearerInfoScript (Fixed bis) =
-    all (\bis'@(BearerInfoScript (Script s)) ->
+    all (\bis'@(AbsBearerInfoScript (Script s)) ->
                   bis /= bis'
                && not (canFail (NonEmpty.last s))
         )
         (shrink bis)
 
-prop_generator_NonFailingBeararInfoScript :: NonFailingBearerInfoScript -> Bool
-prop_generator_NonFailingBeararInfoScript (NonFailingBearerInfoScript s) = not (any canFail s)
+prop_generator_NonFailingBeararInfoScript :: NonFailingAbsBearerInfoScript
+                                          -> Bool
+prop_generator_NonFailingBeararInfoScript (NonFailingAbsBearerInfoScript s) =
+  not (any canFail s)

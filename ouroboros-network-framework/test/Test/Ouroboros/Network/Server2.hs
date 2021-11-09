@@ -120,9 +120,11 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import           Simulation.Network.Snocket
 
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                   (NonFailingBearerInfoScript(..), AbsBearerInfo (..),
+                   (NonFailingAbsBearerInfoScript(..), AbsBearerInfo (..),
                     AbsDelay (..), AbsAttenuation (..), AbsSpeed (..),
-                    AbsSDUSize (..), BearerInfoScript (..), toNonFailingBearerInfoScript, absNoAttenuation)
+                    AbsSDUSize (..), absNoAttenuation,
+                    toNonFailingAbsBearerInfoScript,
+                    AbsBearerInfoScript (..))
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
@@ -1944,7 +1946,6 @@ pattern RemoteEstSt <- (( \ case
                         )
 
 {-# COMPLETE RemoteEstSt, RemoteIdleSt, RemoteColdSt #-}
-{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 
 
 -- | Specification of the transition table of the inbound governor.
@@ -3272,8 +3273,8 @@ ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
 
 toNonFailing :: Script AbsBearerInfo -> Script AbsBearerInfo
 toNonFailing = unNFBIScript
-             . toNonFailingBearerInfoScript
-             . BearerInfoScript
+             . toNonFailingAbsBearerInfoScript
+             . AbsBearerInfoScript
 
 data WithName name event = WithName {
     wnName  :: name,
