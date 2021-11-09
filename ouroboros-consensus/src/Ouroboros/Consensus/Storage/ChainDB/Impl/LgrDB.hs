@@ -173,6 +173,7 @@ defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
 -- that were replayed.
 openDB :: forall m blk.
           ( IOLike m
+          , HasDiskDb m (ExtLedgerState blk)
           , LedgerSupportsProtocol blk
           , LgrDbSerialiseConstraints blk
           , InspectLedger blk
@@ -235,6 +236,7 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
 initFromDisk
   :: forall blk m.
      ( IOLike m
+     , HasDiskDb m (ExtLedgerState blk)
      , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      , InspectLedger blk
@@ -369,13 +371,11 @@ data ValidateResult blk =
 instance KeySets (ExtLedgerState blk) ~ () => ApplyBlock' (ExtLedgerState blk) blk where
   getKeySets _ = const ()
 
--- TODO: this is just temporary to explore the current design path.
-instance (IOLike m, AnnReadSets (ExtLedgerState blk) ~ ()) => HasDiskDb m (ExtLedgerState blk) where
-  type instance DbEnv (ExtLedgerState blk) = ()
 
-  readDb _ _ = pure ()
-
-validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
+validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack
+                          -- , ApplyBlock' (ExtLedgerState blk) blk
+                          , HasDiskDb m (ExtLedgerState blk)
+                          )
          => LgrDB m blk
          -> LedgerDB' blk
             -- ^ This is used as the starting point for validation, not the one
@@ -427,7 +427,8 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
             -- Rewind the changelog to obtain the annotated keyset
             let aks = rewind ledgerDB ks
             -- Get the unforwarded read sets from the database.
-            urs <- readDb @m @(ExtLedgerState blk) () aks
+            let dbenv = ledgerDbCfgDbEnv $ configLedgerDb cfg
+            urs <- readDb @m @(ExtLedgerState blk) dbenv aks
             pure $ Weaken $ ApplyVal blk urs
           (True,  Just blk) -> pure $ Weaken $ ReapplyVal blk
       | hdr <- hdrs
@@ -516,4 +517,5 @@ configLedgerDb ::
 configLedgerDb cfg = LedgerDbCfg {
       ledgerDbCfgSecParam = configSecurityParam cfg
     , ledgerDbCfg         = ExtLedgerCfg cfg
+    , ledgerDbCfgDbEnv    = undefined -- TODO: take this from the top level config
     }

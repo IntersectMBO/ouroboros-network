@@ -182,6 +182,8 @@ initLedgerDB ::
      forall m blk. (
          IOLike m
        , LedgerSupportsProtocol blk
+       , ApplyBlock' (ExtLedgerState blk) blk
+       , HasDiskDb m (ExtLedgerState blk)
        , InspectLedger blk
        , HasCallStack
        )
@@ -264,6 +266,8 @@ initFromSnapshot ::
      forall m blk. (
          IOLike m
        , LedgerSupportsProtocol blk
+       , ApplyBlock' (ExtLedgerState blk) blk
+       , HasDiskDb m (ExtLedgerState blk)
        , InspectLedger blk
        , HasCallStack
        )
@@ -295,6 +299,10 @@ initStartingWith ::
      forall m blk. (
          Monad m
        , LedgerSupportsProtocol blk
+       -- TODO: we could make the ApplyBlock' and 'HasDiskDb' constraints be
+       -- inferred from the LedgerSupportsProtocol constraint above.
+       , ApplyBlock' (ExtLedgerState blk) blk
+       , HasDiskDb m (ExtLedgerState blk)
        , InspectLedger blk
        , HasCallStack
        )

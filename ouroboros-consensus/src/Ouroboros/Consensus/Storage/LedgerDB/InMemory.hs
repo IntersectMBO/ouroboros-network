@@ -288,20 +288,24 @@ class ApplyBlock' l blk where
 
   getKeySets :: blk -> Maybe (InMemory l) -> KeySets l
 
-class HasDiskDb m l where
+class HasDiskDb m l where -- TODO: we need to add the IOLike constraint.
   -- | Database environment. In an on disk implementation this would contain
   -- database file handles for instance.
   type family DbEnv l :: Type
 
   readDb :: DbEnv l -> AnnKeySets l -> m (AnnReadSets l)
 
+instance HasDiskDb m l => HasDiskDb (ReaderT r m) l
+
+instance HasDiskDb m l => HasDiskDb (ExceptT e m) l
+
 class Persistent chlog l where
+  -- | Set of ledger state keys that are required when applying a block.
+  type family KeySets l :: Type
+
   -- | Ledger state key-value maps. These values would be typically read from
   -- disk.
   type family ReadSets l :: Type
-
-  -- | Set of ledger state keys that are required when applying a block.
-  type family KeySets l :: Type
 
   -- | Annotated version of 'KeySets'.
   --
@@ -353,11 +357,15 @@ instance GetTip l => Persistent LedgerDB l where
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
+applyBlock :: forall m c l blk. ( ApplyBlock l blk, Monad m, c
+                                -- TODO: discuss theses new constraints.
+                                , ApplyBlock' l blk
+                                , HasDiskDb m l)
            => LedgerCfg l
+           -> DbEnv l
            -> Ap m l blk c
            -> LedgerDB l -> m l
-applyBlock cfg ap db = case ap of
+applyBlock cfg dbenv ap db = case ap of
     ReapplyVal b ->
       return $
         tickThenReapply cfg b l
@@ -367,7 +375,9 @@ applyBlock cfg ap db = case ap of
               tickThenApply cfg b lh
     ReapplyRef r  -> do
       b <- resolveBlock r
-      let urs = undefined
+      let ks = getKeySets @l @blk b Nothing
+      let aks = rewind db ks
+      urs <- readDb @m @l dbenv aks
       return $
         withHydratedLedgerState urs $ \lh ->
           tickThenReapply cfg b lh
@@ -376,7 +386,7 @@ applyBlock cfg ap db = case ap of
      either (throwLedgerError db r) return $ runExcept $
         tickThenApply cfg b l
     Weaken ap' ->
-      applyBlock cfg ap' db
+      applyBlock cfg dbenv ap' db
   where
     l :: l
     l = ledgerDbCurrent db
@@ -393,8 +403,6 @@ applyBlock cfg ap db = case ap of
           let
             lh = hydrateLedgerState rs db -- lh is the current hydrated ledger state
           in act lh
-            -- either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
-            --   tickThenApply cfg b lh
 
 {-------------------------------------------------------------------------------
   Queries
@@ -520,21 +528,27 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
+ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Monad m, c
+                                  , ApplyBlock' l blk
+                                  , HasDiskDb m l)
              => LedgerDbCfg l
              -> Ap m l blk c -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPush cfg ap db =
     (\current' -> pushLedgerState (ledgerDbCfgSecParam cfg) current' db) <$>
-      applyBlock (ledgerDbCfg cfg) ap db
+      applyBlock (ledgerDbCfg cfg) (ledgerDbCfgDbEnv cfg) ap db
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c)
+ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c
+                    , ApplyBlock' l blk
+                    , HasDiskDb m l)
                  => LedgerDbCfg l
                  -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPushMany = repeatedlyM . ledgerDbPush
 
 -- | Switch to a fork
-ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
+ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c
+                  , ApplyBlock' l blk
+                  , HasDiskDb m l)
                => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> [Ap m l blk c]  -- ^ New blocks to apply
@@ -557,10 +571,12 @@ ledgerDbSwitch cfg numRollbacks newBlocks db =
 data LedgerDbCfg l = LedgerDbCfg {
       ledgerDbCfgSecParam :: !SecurityParam
     , ledgerDbCfg         :: !(LedgerCfg l)
+    , ledgerDbCfgDbEnv    :: !(DbEnv l)
     }
   deriving (Generic)
 
-deriving instance NoThunks (LedgerCfg l) => NoThunks (LedgerDbCfg l)
+deriving instance ( NoThunks (LedgerCfg l)
+                  , NoThunks (DbEnv l)) => NoThunks (LedgerDbCfg l)
 
 type instance LedgerCfg (LedgerDB l) = LedgerDbCfg l
 
@@ -572,7 +588,9 @@ instance IsLedger l => GetTip (LedgerDB l) where
 instance IsLedger l => GetTip (Ticked (LedgerDB l)) where
   getTip = castPoint . getTip . tickedLedgerDbOrig
 
-instance IsLedger l => IsLedger (LedgerDB l) where
+instance (IsLedger l
+         -- The 'NoThunks (DbEnv l)' could be moved to the 'IsLedger' class constraint.
+         , NoThunks (DbEnv l)) => IsLedger (LedgerDB l) where
   type LedgerErr (LedgerDB l) = LedgerErr l
 
   type AuxLedgerEvent (LedgerDB l) = AuxLedgerEvent l
@@ -588,7 +606,11 @@ instance IsLedger l => IsLedger (LedgerDB l) where
                        slot
                        (ledgerDbCurrent db)
 
-instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
+instance (ApplyBlock l blk
+         -- This wouldn't be necessary if 'NoThunks (DbEnv l)' would be a
+         -- 'IsLedger' class constraint.
+         , NoThunks (DbEnv l)
+         ) => ApplyBlock (LedgerDB l) blk where
   applyBlockLedgerResult cfg blk TickedLedgerDB{..} = do
       ledgerResult <- applyBlockLedgerResult
                         (ledgerDbCfg cfg)
@@ -615,18 +637,32 @@ instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
   Support for testing
 -------------------------------------------------------------------------------}
 
+-- TODO: these operations will require a 'HasDiskDb Identity l' instance. My
+-- guess is that this won't be a problem as long as the clients of these
+-- functions keep the ledger state in memory (which should be OK for certain
+-- tests).
+
 pureBlock :: blk -> Ap m l blk ()
 pureBlock = ReapplyVal
 
-ledgerDbPush' :: ApplyBlock l blk
+ledgerDbPush' :: ( ApplyBlock l blk
+                 , ApplyBlock' l blk
+                 , HasDiskDb Identity l
+                 )
               => LedgerDbCfg l -> blk -> LedgerDB l -> LedgerDB l
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
-ledgerDbPushMany' :: ApplyBlock l blk
+ledgerDbPushMany' :: ( ApplyBlock l blk
+                     , ApplyBlock' l blk
+                     , HasDiskDb Identity l
+                     )
                   => LedgerDbCfg l -> [blk] -> LedgerDB l -> LedgerDB l
 ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
 
-ledgerDbSwitch' :: forall l blk. ApplyBlock l blk
+ledgerDbSwitch' :: forall l blk. ( ApplyBlock l blk
+                                 , ApplyBlock' l blk
+                                 , HasDiskDb Identity l
+                                 )
                 => LedgerDbCfg l
                 -> Word64 -> [blk] -> LedgerDB l -> Maybe (LedgerDB l)
 ledgerDbSwitch' cfg n bs db =

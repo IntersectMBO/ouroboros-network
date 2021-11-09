@@ -68,6 +68,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import Ouroboros.Consensus.Storage.LedgerDB.InMemory (HasDiskDb(DbEnv))
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -77,6 +79,8 @@ withDB
   :: forall m blk a.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , HasDiskDb m (ExtLedgerState blk)
+     , NoThunks (DbEnv (ExtLedgerState blk))
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
@@ -91,6 +95,8 @@ openDB
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , HasDiskDb m (ExtLedgerState blk)
+     , NoThunks (DbEnv (ExtLedgerState blk))
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
@@ -104,6 +110,8 @@ openDBInternal
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , HasDiskDb m (ExtLedgerState blk)
+     , NoThunks (DbEnv (ExtLedgerState blk))
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk

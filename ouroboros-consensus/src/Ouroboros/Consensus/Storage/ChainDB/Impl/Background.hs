@@ -59,11 +59,13 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
+import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
+
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..))
@@ -77,6 +79,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (TimeSinceLast (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import Ouroboros.Consensus.Storage.LedgerDB.InMemory (HasDiskDb(DbEnv))
 
 {-------------------------------------------------------------------------------
   Launch background tasks
@@ -86,6 +89,8 @@ launchBgTasks
   :: forall m blk.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , HasDiskDb m (ExtLedgerState blk)
+     , NoThunks (DbEnv (ExtLedgerState blk))
      , InspectLedger blk
      , HasHardForkHistory blk
      , LgrDbSerialiseConstraints blk
@@ -525,6 +530,8 @@ dumpGcSchedule (GcSchedule varQueue) = toList <$> readTVar varQueue
 addBlockRunner
   :: ( IOLike m
      , LedgerSupportsProtocol blk
+     , HasDiskDb m (ExtLedgerState blk)
+     , NoThunks (DbEnv (ExtLedgerState blk))
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
