@@ -304,9 +304,7 @@ identityCodecs :: (Monad m, QueryLedger blk)
 identityCodecs = Codecs {
       cChainSyncCodec    = codecChainSyncId
     , cTxSubmissionCodec = codecLocalTxSubmissionId
-    , cStateQueryCodec   =
-        codecLocalStateQueryId
-          (\l r -> (\Refl -> (Refl, Refl)) <$> eqQuery l r)
+    , cStateQueryCodec   = codecLocalStateQueryId
     , cTxMonitorCodec    = codecLocalTxMonitorId
     }
 

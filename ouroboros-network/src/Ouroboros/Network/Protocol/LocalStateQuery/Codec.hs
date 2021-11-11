@@ -17,7 +17,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Kind (Type)
 import           Data.Type.Equality ((:~:) (..))
 import           Text.Printf
 
@@ -176,17 +175,12 @@ codecLocalStateQuery canAcquireTip
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
 codecLocalStateQueryId
-  :: forall block point (query :: FootprintL -> Type -> Type) m.
-     Monad m
-  => (forall fp1 fp2 result1 result2.
-          query fp1 result1
-       -> query fp2 result2
-       -> Maybe (fp1 :~: fp2, result1 :~: result2)
-     )
-  -> Codec (LocalStateQuery block point query)
+  :: forall block point query m.
+     (Monad m, EqQuery query)
+  => Codec (LocalStateQuery block point query)
            CodecFailure m
            (AnyMessage (LocalStateQuery block point query))
-codecLocalStateQueryId eqQuery =
+codecLocalStateQueryId =
   Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.
@@ -208,7 +202,7 @@ codecLocalStateQueryId eqQuery =
     (ServerAgency TokAcquiring,    Just (AnyMessage msg@(MsgAcquired{})))  -> res msg
     (ServerAgency TokAcquiring,    Just (AnyMessage msg@(MsgFailure{})))   -> res msg
     (ServerAgency (TokQuerying q), Just (AnyMessage msg@(MsgResult query _)))
-       | Just (Refl, Refl) <- eqQuery q query
+       | Just Refl <- eqQuery q query
        -> res msg
     (_, Nothing) -> return (DecodeFail CodecFailureOutOfInput)
     (_, _)       -> return (DecodeFail (CodecFailure failmsg))
