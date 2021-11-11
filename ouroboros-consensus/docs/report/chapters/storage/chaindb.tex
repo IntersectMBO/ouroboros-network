@@ -330,3 +330,23 @@ actually notice such a rollback; the node would crash when discovering data
 loss, and then restart with a smaller chain}, and clock changes as well, as
 iterators asking for blocks that now live on distant chains, are not important
 use cases. We could therefore decide to remove it altogether.
+
+\section{Resources}
+\label{chaindb:resources}
+
+In the case of the chain DB, the allocation function will be wrapped in a
+\lstinline!runWithTempRegistry! combinator, which will hold an empty resulting
+state. This is because as mentioned in \ref{nonfunctional:temporaryregs}, we only get
+values that do not leak implementation details and therefore we can't run any
+checks, but still we want to keep track of the resources. The allocation of each
+of the databases (Immutable DB and Volatile DB) will be executed using the
+combinator \lstinline!runInnerWithTempRegistry! so that each of them performs
+the relevant checks on the \lstinline!OpenState! they return but such checks are
+not visible (nor runnable) on the chain DB scope.
+
+The threads that are spawned during the initialization of the database will be
+registered in the node general registry as they won't be directly tracked by the
+chain DB API but instead will coexist on its side.
+
+The final step of ChainDB initialization is registering itself in the general
+registry so that it is closed in presence of an exception.
