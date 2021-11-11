@@ -195,11 +195,8 @@ openDB ::
      , VolatileDbSerialiseConstraints blk
      )
   => VolatileDbArgs Identity m blk
-  -> (
-       (forall h.
-        WithTempRegistry (OpenState blk h) m (VolatileDB m blk, OpenState blk h, OpenState blk h, OpenState blk h -> m Bool)
-        -> ans)
-    -> ans)
+  -> (forall st. WithTempRegistry st m (VolatileDB m blk, st) -> ans)
+  -> ans
 openDB VolatileDbArgs { volHasFS = SomeHasFS hasFS, .. } cont = cont $ do
     lift $ createDirectoryIfMissing hasFS True (mkFsPath [])
     ost <- mkOpenState
@@ -227,7 +224,7 @@ openDB VolatileDbArgs { volHasFS = SomeHasFS hasFS, .. } cont = cont $ do
           , getBlockInfo        = getBlockInfoImpl        env
           , getMaxSlotNo        = getMaxSlotNoImpl        env
           }
-    return (volatileDB, ost, ost, (>> return True) . closeOpenHandles hasFS)
+    return (volatileDB, ost)
 
 {------------------------------------------------------------------------------
   VolatileDB API

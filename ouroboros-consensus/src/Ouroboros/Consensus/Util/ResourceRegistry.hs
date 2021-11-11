@@ -44,7 +44,6 @@ module Ouroboros.Consensus.Util.ResourceRegistry (
   , modifyWithTempRegistry
   , runInnerWithTempRegistry
   , runWithTempRegistry
-  , runnableInnerWithTempRegistry
     -- ** opaque
   , WithTempRegistry
     -- * Combinators primarily for testing
@@ -791,16 +790,18 @@ runWithTempRegistry m = withRegistry $ \rr -> do
 -- /double freeing/, which can be harmless if anticipated.
 runInnerWithTempRegistry
   :: forall inner_st st m res a. IOLike m
-  => WithTempRegistry inner_st m (a, inner_st, res, res -> m Bool)
+  => WithTempRegistry inner_st m (a, inner_st, res)
      -- ^ The embedded computation; see ASSUMPTION above
+  -> (res -> m Bool)
+     -- ^ How to free; same as for 'allocateTemp'
   -> (st -> res -> Bool)
      -- ^ How to check; same as for 'allocateTemp'
   -> WithTempRegistry st m a
-runInnerWithTempRegistry inner isTransferred = do
+runInnerWithTempRegistry inner free isTransferred = do
     outerTR <- WithTempRegistry ask
 
     lift $ runWithTempRegistry $ do
-      (a, inner_st, res, free) <- inner
+      (a, inner_st, res) <- inner
 
       -- allocate in the outer layer
       _ <-   withFixedTempRegistry outerTR
@@ -817,17 +818,6 @@ runInnerWithTempRegistry inner isTransferred = do
   where
     withFixedTempRegistry env (WithTempRegistry (ReaderT f)) =
       WithTempRegistry $ ReaderT $ \_ -> f env
-
--- | Convenience function.
---
--- When a @WithTempRegistry@ computation has the shape expected by
--- @runInnerWithTempRegistry@, but instead it is run directly, some of the
--- returned values have to be omitted.
-runnableInnerWithTempRegistry
-  :: Monad m
-  => WithTempRegistry st m (a, st, st, st -> m Bool)
-  -> WithTempRegistry st m (a, st)
-runnableInnerWithTempRegistry = (>>= \(a,b,_,_) -> return (a,b))
 
 -- | When 'runWithTempRegistry' exits successfully while there are still
 -- resources remaining in the temporary registry that haven't been transferred

@@ -56,8 +56,8 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
-import           Ouroboros.Consensus.Util.ResourceRegistry (allocate,
-                     runInnerWithTempRegistry, runWithTempRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
+                     allocate, runInnerWithTempRegistry, runWithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
                      defaultArgs)
@@ -116,7 +116,7 @@ openDBInternal
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
 openDBInternal args launchBgTasks = runWithTempRegistry $ do
-    immutableDB <- ImmutableDB.openDB argsImmutableDb (`runInnerWithTempRegistry` (const $ const True))
+    immutableDB <- ImmutableDB.openDB argsImmutableDb $ innerOpenCont ImmutableDB.closeDB
     immutableDbTipPoint <- lift $ atomically $ ImmutableDB.getTipPoint immutableDB
     let immutableDbTipChunk =
           chunkIndexOfPoint (Args.cdbChunkInfo args) immutableDbTipPoint
@@ -124,7 +124,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
       TraceOpenEvent $
         OpenedImmutableDB immutableDbTipPoint immutableDbTipChunk
 
-    volatileDB <- VolatileDB.openDB argsVolatileDb (`runInnerWithTempRegistry` (const $ const True))
+    volatileDB <- VolatileDB.openDB argsVolatileDb $ innerOpenCont VolatileDB.closeDB
     lift $ traceWith tracer $ TraceOpenEvent OpenedVolatileDB
     let lgrReplayTracer =
           LgrDB.decorateReplayTracer
@@ -221,10 +221,26 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
 
     _ <- lift $ allocate (Args.cdbRegistry args) (\_ -> return $ chainDB) API.closeDB
 
-    return ((chainDB, testing), ())
+    return ((chainDB, testing), env)
   where
     tracer = Args.cdbTracer args
     (argsImmutableDb, argsVolatileDb, argsLgrDb, _) = Args.fromChainDbArgs args
+
+-- | We use 'runInnerWithTempRegistry' for the component databases.
+innerOpenCont ::
+     IOLike m
+  => (innerDB -> m ())
+  -> WithTempRegistry st m (innerDB, st)
+  -> WithTempRegistry (ChainDbEnv m blk) m innerDB
+innerOpenCont closer m =
+  runInnerWithTempRegistry
+    (fmap (\(innerDB, st) -> (innerDB, st, innerDB)) m)
+    ((True <$) . closer)
+    (\_env _innerDB -> True)
+      -- This check is degenerate because handles in @_env@ and the
+      -- @_innerDB@ handle do not support an equality check; all of the
+      -- identifying data is only in the handle's closure, not
+      -- accessible because of our intentional encapsulation choices.
 
 isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
 isOpen (CDBHandle varState) = readTVar varState <&> \case

@@ -220,13 +220,12 @@ openDB ::
      , HasCallStack
      )
   => ImmutableDbArgs Identity m blk
-  -> (
-       (forall h.
-        WithTempRegistry (OpenState m blk h) m (ImmutableDB m blk, OpenState m blk h, OpenState m blk h, OpenState m blk h -> m Bool)
-        -> ans)
-     -> ans)
-openDB args cont = openDBInternal args (cont . swizzle)
-  where swizzle w = w >>= \((a, _), c, d, e) -> return (a, c, d, e)
+  -> (forall st. WithTempRegistry st m (ImmutableDB m blk, st) -> ans)
+  -> ans
+openDB args cont =
+    openDBInternal args (cont . fmap swizzle)
+  where
+    swizzle ((immdb, _internal), ost) = (immdb, ost)
 
 -- | For testing purposes: exposes internals via 'Internal'
 --
@@ -240,11 +239,14 @@ openDBInternal ::
      , HasCallStack
      )
   => ImmutableDbArgs Identity m blk
-  -> (
-       (forall h.
-        WithTempRegistry (OpenState m blk h) m ((ImmutableDB m blk, Internal m blk), OpenState m blk h, OpenState m blk h, OpenState m blk h -> m Bool)
-        -> ans)
-     -> ans)
+  -> (forall h.
+         WithTempRegistry
+           (OpenState m blk h)
+           m
+           ((ImmutableDB m blk, Internal m blk), OpenState m blk h)
+      -> ans
+     )
+  -> ans
 openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } cont = cont $ do
     lift $ createDirectoryIfMissing hasFS True (mkFsPath [])
     let validateEnv = ValidateEnv {
@@ -278,12 +280,8 @@ openDBInternal ImmutableDbArgs { immHasFS = SomeHasFS hasFS, .. } cont = cont $ 
         internal = Internal {
             deleteAfter_ = deleteAfterImpl dbEnv
           }
-    -- TODO move 'withTempResourceRegistry' outside of this function?
-    --
-    -- Note that we can still leak resources if the caller of
-    -- 'openDBInternal' doesn't bracket his call with 'closeDB' or doesn't
-    -- use a 'ResourceRegistry'.
-    return ((db, internal), ost, ost, (>> return True) . cleanUp hasFS)
+
+    return ((db, internal), ost)
 
 closeDBImpl ::
      forall m blk. (HasCallStack, IOLike m)
