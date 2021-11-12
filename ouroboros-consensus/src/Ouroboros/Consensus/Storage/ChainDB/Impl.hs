@@ -76,6 +76,8 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
 
+import Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDbAsLedger (..))
+
 {-------------------------------------------------------------------------------
   Initialization
 -------------------------------------------------------------------------------}
@@ -162,8 +164,8 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
                           (Args.cdbCheckInFuture args)
       traceWith initChainSelTracer InitalChainSelected
 
-      let chain  = VF.validatedFragment chainAndLedger
-          ledger = VF.validatedLedger   chainAndLedger
+      let chain  =                  VF.validatedFragment chainAndLedger
+          ledger = forgetAsLedger $ VF.validatedLedger   chainAndLedger
           cfg    = Args.cdbTopLevelConfig args
 
       atomically $ LgrDB.setCurrent lgrDB ledger
