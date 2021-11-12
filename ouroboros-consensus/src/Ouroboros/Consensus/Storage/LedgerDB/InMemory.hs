@@ -36,6 +36,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- ** Running updates
   , AnnLedgerError (..)
   , Ap (..)
+  , LedgerDbAsLedger (..)
   , ResolveBlock
   , ResolvesBlocks (..)
   , ThrowsLedgerError (..)
@@ -156,7 +157,7 @@ instance GetTip l => Anchorable (WithOrigin SlotNo) (Checkpoint l) (Checkpoint l
 -- | Ticking the ledger DB just ticks the current state
 --
 -- We don't push the new state into the DB until we apply a block.
-data instance Ticked (LedgerDB l) = TickedLedgerDB {
+data instance Ticked (LedgerDbAsLedger l) = TickedLedgerDbAsLedger {
       tickedLedgerDbTicked :: Ticked l
     , tickedLedgerDbOrig   :: LedgerDB l
     }
@@ -480,6 +481,9 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
   The LedgerDB itself behaves like a ledger
 -------------------------------------------------------------------------------}
 
+newtype LedgerDbAsLedger l = LedgerDbAsLedger { forgetAsLedger :: LedgerDB l }
+  deriving (Show, Eq, Generic, NoThunks)
+
 data LedgerDbCfg l = LedgerDbCfg {
       ledgerDbCfgSecParam :: !SecurityParam
     , ledgerDbCfg         :: !(LedgerCfg l)
@@ -488,23 +492,25 @@ data LedgerDbCfg l = LedgerDbCfg {
 
 deriving instance NoThunks (LedgerCfg l) => NoThunks (LedgerDbCfg l)
 
-type instance LedgerCfg (LedgerDB l) = LedgerDbCfg l
+type instance LedgerCfg (LedgerDbAsLedger l) = LedgerDbCfg l
 
-type instance HeaderHash (LedgerDB l) = HeaderHash l
+type instance HeaderHash (LedgerDbAsLedger l) = HeaderHash l
 
-instance IsLedger l => GetTip (LedgerDB l) where
-  getTip = castPoint . getTip . ledgerDbCurrent
 
-instance IsLedger l => GetTip (Ticked (LedgerDB l)) where
-  getTip = castPoint . getTip . tickedLedgerDbOrig
+instance IsLedger l => GetTip (LedgerDbAsLedger l) where
+  getTip = castPoint . getTip . ledgerDbCurrent . forgetAsLedger
 
-instance IsLedger l => IsLedger (LedgerDB l) where
-  type LedgerErr (LedgerDB l) = LedgerErr l
 
-  type AuxLedgerEvent (LedgerDB l) = AuxLedgerEvent l
+instance IsLedger l => GetTip (Ticked (LedgerDbAsLedger l)) where
+  getTip = castPoint . getTip . LedgerDbAsLedger . tickedLedgerDbOrig
 
-  applyChainTickLedgerResult cfg slot db =
-      castLedgerResult ledgerResult <&> \l -> TickedLedgerDB {
+instance IsLedger l => IsLedger (LedgerDbAsLedger l) where
+  type LedgerErr (LedgerDbAsLedger l) = LedgerErr l
+
+  type AuxLedgerEvent (LedgerDbAsLedger l) = AuxLedgerEvent l
+
+  applyChainTickLedgerResult cfg slot (LedgerDbAsLedger db) =
+      castLedgerResult ledgerResult <&> \l -> TickedLedgerDbAsLedger {
           tickedLedgerDbTicked = l
         , tickedLedgerDbOrig   = db
         }
@@ -514,20 +520,20 @@ instance IsLedger l => IsLedger (LedgerDB l) where
                        slot
                        (ledgerDbCurrent db)
 
-instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
-  applyBlockLedgerResult cfg blk TickedLedgerDB{..} = do
+instance ApplyBlock l blk => ApplyBlock (LedgerDbAsLedger l) blk where
+  applyBlockLedgerResult cfg blk TickedLedgerDbAsLedger{..} = do
       ledgerResult <- applyBlockLedgerResult
                         (ledgerDbCfg cfg)
                         blk
                         tickedLedgerDbTicked
 
-      return $ push <$> castLedgerResult ledgerResult
+      return $ (LedgerDbAsLedger. push) <$> castLedgerResult ledgerResult
     where
       push :: l -> LedgerDB l
       push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
 
-  reapplyBlockLedgerResult cfg blk TickedLedgerDB{..} =
-      push <$> castLedgerResult ledgerResult
+  reapplyBlockLedgerResult cfg blk TickedLedgerDbAsLedger{..} =
+      (LedgerDbAsLedger. push) <$> castLedgerResult ledgerResult
     where
       push :: l -> LedgerDB l
       push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
