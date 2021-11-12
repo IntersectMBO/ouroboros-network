@@ -49,7 +49,7 @@ pattern ValidatedChainDiff d l <- UnsafeValidatedChainDiff d l
 -- > getTip chainDiff == ledgerTipPoint ledger
 new ::
      forall b l.
-     (IsLedger l, HasHeader b, HeaderHash l ~ HeaderHash b, HasCallStack)
+     (GetTip l, HasHeader b, HeaderHash l ~ HeaderHash b, HasCallStack)
   => ChainDiff b
   -> l
   -> ValidatedChainDiff b l
@@ -69,7 +69,7 @@ new chainDiff ledger =
           show chainDiffTip <> " /= " <> show ledgerTip
 
 toValidatedFragment
-  :: (IsLedger l, HasHeader b, HeaderHash l ~ HeaderHash b, HasCallStack)
+  :: (GetTip l, HasHeader b, HeaderHash l ~ HeaderHash b, HasCallStack)
   => ValidatedChainDiff b l
   -> ValidatedFragment b l
 toValidatedFragment (UnsafeValidatedChainDiff cs l) =
