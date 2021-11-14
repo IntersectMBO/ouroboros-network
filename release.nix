@@ -77,7 +77,7 @@ let
       # as well as exes:
       exesPaths = path: [ ([ "exes" ] ++ path) ([ "haskellPackages" (head path) "components" "exes" ] ++ (tail path)) ];
     in
-    [ [ "shell" ] ]
+    [ [ "shell" ] [ "roots" ] ]
     ++ (optionals (!withProblematicWindowsTests) (
       (checksPaths [ "ouroboros-network" "test" ])
       ++ (checksPaths [ "Win32-network" "test" ])
