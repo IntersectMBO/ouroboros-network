@@ -34,6 +34,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST    (MonadST)
 import           Control.Monad.Class.MonadSTM.Strict
+import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -53,8 +54,11 @@ import qualified Data.List.Trace as Trace
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, fromJust, isJust)
 import           Data.Monoid (Sum (..))
+import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           Foreign.C.Error
+import qualified GHC.IO.Exception as IO
 
 import           Text.Printf
 
@@ -136,6 +140,16 @@ tests =
                  prop_connection_manager_valid_transition_order
   , testProperty "inbound_governor_valid_transition_order"
                  prop_inbound_governor_valid_transition_order
+  , testGroup    "unit_server_accept_error"
+    [ testProperty "throw ConnectionAborted"
+                  (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
+    , testProperty "throw ResourceExhausted"
+                  (unit_server_accept_error IOErrResourceExhausted IOErrThrow)
+    , testProperty "return ConnectionAborted"
+                  (unit_server_accept_error IOErrConnectionAborted IOErrReturn)
+    , testProperty "return ResourceExhausted"
+                  (unit_server_accept_error IOErrResourceExhausted IOErrReturn)
+    ]
   , testProperty "unit_connection_terminated_when_negotiating"
                  unit_connection_terminated_when_negotiating
   , testGroup "generators"
@@ -1370,7 +1384,8 @@ instance Arbitrary req =>
 
 -- | The concrete address type used by simulations.
 --
-type SimAddr = Snocket.TestAddress Int
+type SimAddr  = Snocket.TestAddress SimAddr_
+type SimAddr_ = Int
 
 -- | We use a wrapper for test addresses since the Arbitrary instance for Snocket.TestAddress only
 --   generates addresses between 1 and 4.
@@ -2469,6 +2484,101 @@ prop_never_above_hardlimit serverAcc
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc Duplex (singletonScript noAttenuation)
                        acceptedConnLimit l
+
+
+-- | Checks that the server re-throws exceptions returned by an 'accept' call.
+--
+unit_server_accept_error :: IOErrType -> IOErrThrowOrReturn -> Property
+unit_server_accept_error ioErrType ioErrThrowOrReturn =
+    runSimOrThrow sim
+  where
+    -- The following attenuation make sure that the `accept` call will throw.
+    --
+    bearerAttenuation :: BearerInfo
+    bearerAttenuation =
+      noAttenuation { biAcceptFailures = Just (0, ioErrType, ioErrThrowOrReturn) }
+
+    sim :: IOSim s Property
+    sim = handle (\e -> return $ case fromException e of
+                          Just (ExceptionInLinkedThread _ err) ->
+                            case fromException err of
+                              Just (_ :: IOError) -> property True
+                              Nothing             -> property False
+                          Nothing                 -> property False
+                 )
+        $ withSnocket nullTracer
+                      (singletonScript bearerAttenuation )
+        $ \snock ->
+           bracket ((,) <$> Snocket.open snock Snocket.TestFamily
+                        <*> Snocket.open snock Snocket.TestFamily)
+                   (\ (socket0, socket1) -> Snocket.close snock socket0 >>
+                                            Snocket.close snock socket1)
+             $ \ (socket0, socket1) -> do
+
+               let addr :: SimAddr
+                   addr = Snocket.TestAddress (0 :: Int)
+                   pdata :: ClientAndServerData Int
+                   pdata = ClientAndServerData 0 [] [] []
+               Snocket.bind snock socket0 addr
+               Snocket.listen snock socket0
+               nextRequests <- oneshotNextRequests pdata
+               withBidirectionalConnectionManager "node-0" simTimeouts
+                                                  nullTracer nullTracer
+                                                  nullTracer nullTracer
+                                                  snock socket0
+                                                  (Just addr)
+                                                  [accumulatorInit pdata]
+                                                  nextRequests
+                                                  noTimeLimitsHandshake
+                                                  maxAcceptedConnectionsLimit
+                 (\_connectionManager _serverAddr serverAsync -> do
+                   -- connect to the server
+                   Snocket.connect snock socket1 addr
+                     --  connect will fail, and it will trigger accept error
+                     `catch` \(_ :: SomeException) -> return ()
+                   -- verify that server's `accept` error is rethrown by the
+                   -- server
+                   v <- registerDelay 1
+                   r <- atomically $ runFirstToFinish $
+                         (FirstToFinish $
+                           Just <$> waitCatchSTM serverAsync)
+                         <>
+                         (FirstToFinish $
+                           LazySTM.readTVar v >>= \a -> check a $> Nothing)
+                   return $ case r of
+                     Nothing        -> counterexample "server did not throw"
+                                         (ioErrType == IOErrConnectionAborted)
+                     Just (Right _) -> counterexample "unexpected value" False
+                     Just (Left e)  | IOErrReturn <- ioErrThrowOrReturn
+                                    , Just (err :: IOError) <- fromException e
+                                    -- any IO exception which is not
+                                    -- 'ECONNABORTED' is ok
+                                    -- TODO: use isECONNABORTED function
+                                    -> case IO.ioe_errno err of
+                                          Just errno ->
+                                            case eCONNABORTED of
+                                              Errno errno' ->
+                                                counterexample
+                                                  ("unexpected error " ++ show e) $
+                                                   errno /= errno'
+                                          Nothing ->
+                                            property True
+
+                                    -- If we throw exceptions, any IO exception
+                                    -- can go through; the check for
+                                    -- 'ECONNABORTED' relies on that.  It is
+                                    -- a bug in a snocket implementation if it
+                                    -- throws instead of returns io errors.
+                                    | Just (_ :: IOError) <- fromException e
+                                    -> property True
+
+                                    |  otherwise
+                                    -> counterexample ("unexpected error " ++ show e)
+                                                      False
+                 )
+
+
+
 
 multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
              => req

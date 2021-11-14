@@ -150,6 +150,7 @@ test-suite test
                      , io-sim
                      , io-classes
                      , network-mux
+                     , monoidal-synchronisation
                      , ouroboros-network-framework
                      , ouroboros-network-testing
                      , typed-protocols
