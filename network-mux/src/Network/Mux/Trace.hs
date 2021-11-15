@@ -23,6 +23,7 @@ import           Text.Printf
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Exception hiding (throwIO)
+import           Data.Int (Int64)
 import           GHC.Generics (Generic (..))
 import           Quiet (Quiet (..))
 
@@ -147,6 +148,8 @@ data MuxTrace =
     | MuxTraceStartedOnDemand !MiniProtocolNum !MiniProtocolDir
     | MuxTraceTerminating !MiniProtocolNum !MiniProtocolDir
     | MuxTraceShutdown
+    | MuxTraceDecompressionStat !Int64 !Int64 !DiffTime
+    | MuxTraceCompressionStat !Int64 !Int64 !DiffTime
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -184,4 +187,6 @@ instance Show MuxTrace where
     show (MuxTraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
     show (MuxTraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
     show MuxTraceShutdown = "Mux shutdown"
+    show (MuxTraceDecompressionStat org comp delta) = printf "Decompression org %d comp %d delta %s" org comp (show delta)
+    show (MuxTraceCompressionStat org comp delta) = printf "Compression org %d comp %d delta %s" org comp (show delta)
 

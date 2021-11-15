@@ -3,12 +3,15 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE PackageImports      #-}
 
 module Network.Mux.Bearer.Socket
   ( socketAsMuxBearer
   ) where
 
 import qualified Codec.Compression.Zstd as Zd
+import qualified "zlib" Codec.Compression.Zlib as Zl
+import qualified "pure-zlib" Codec.Compression.Zlib as Zlp
 import           Control.Monad (when)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
@@ -84,13 +87,22 @@ socketAsMuxBearer sduTimeout useCompression tracer sd =
                    blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
                    !ts <- getMonotonicTime
-                   let dec = Zd.decompress $ BL.toStrict blob
-                   blob' <- if useCompression
-                               then case dec of
+                   --let dec = Zd.decompress $ BL.toStrict blob
+                   let dec = Zlp.decompress blob
+                       compLen = BL.length blob
+                   !blob' <- if useCompression
+                               {-then case dec of
                                     Zd.Skip  -> throwIO $ Mx.MuxError  Mx.MuxSDUReadTimeout "XXX"
                                     Zd.Error e -> throwIO $ Mx.MuxError  Mx.MuxSDUReadTimeout e
-                                    Zd.Decompress c -> return $ BL.fromStrict c 
+                                    Zd.Decompress c -> return $ BL.fromStrict c -}
+                               then case dec of
+                                     Left e -> throwIO $ Mx.MuxError Mx.MuxSDUReadTimeout (show e)
+                                     Right c -> return c
                                else return blob
+                   let orgLen = BL.length blob'
+                   !tsc <- getMonotonicTime
+                   let delta = diffTime tsc ts
+                   traceWith tracer $ Mx.MuxTraceDecompressionStat orgLen compLen delta
                    let !header' = header {Mx.msBlob =  blob'}
                    traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
                    return (header', ts)
@@ -127,16 +139,26 @@ socketAsMuxBearer sduTimeout useCompression tracer sd =
 
       writeSocket :: Mx.TimeoutFn IO -> Mx.MuxSDU -> IO Time
       writeSocket timeout sdu = do
-          ts <- getMonotonicTime
+          !ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              sdu'' = sdu' {
+              orgLen = BL.length $ Mx.msBlob sdu'
+              compLen = BL.length $ Mx.msBlob sdu''
+              !sdu'' = sdu' {
                         Mx.msBlob = if useCompression
-                                       then BL.fromStrict $ Zd.compress 1
-                                         (BL.toStrict $ Mx.msBlob sdu')
+                                       then {- BL.fromStrict $ Zd.compress 1
+                                         (BL.toStrict $ Mx.msBlob sdu') -}
+                                         Zl.compressWith Zl.defaultCompressParams {
+                                             Zl.compressLevel = Zl.bestSpeed
+                                             } $ Mx.msBlob sdu'
                                        else Mx.msBlob sdu'
                       }
-              buf  = Mx.encodeMuxSDU $ sdu''
+          !tsc <- getMonotonicTime
+
+          let !delta = diffTime tsc ts
+          traceWith tracer $ Mx.MuxTraceCompressionStat orgLen compLen delta
+
+          let buf  = Mx.encodeMuxSDU $ sdu''
           traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
           r <- timeout sduTimeout $
 #if defined(mingw32_HOST_OS)
