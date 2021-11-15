@@ -124,12 +124,10 @@ import           Ouroboros.Network.Testing.Data.AbsBearerInfo
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 
 import           Test.Ouroboros.Network.ConnectionManager
-                     (verifyAbstractTransition)
+                     (allValidTransitionsNames, validTransitionMap,
+                     verifyAbstractTransition)
 import           Test.Ouroboros.Network.Orphans ()
 import           Test.Simulation.Network.Snocket hiding (tests)
-import           Test.Ouroboros.Network.ConnectionManager
-                   (validTransitionMap,
-                    allValidTransitionsNames)
 
 tests :: TestTree
 tests =

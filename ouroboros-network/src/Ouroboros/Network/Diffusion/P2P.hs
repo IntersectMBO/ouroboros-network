@@ -36,8 +36,8 @@ module Ouroboros.Network.Diffusion.P2P
 
 
 import           Control.Exception (IOException)
-import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadAsync (Async, MonadAsync)
+import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow

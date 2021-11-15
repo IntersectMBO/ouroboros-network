@@ -25,7 +25,7 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , NodeKernelError (..)
   ) where
 
-import           Control.Monad (when)
+import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
@@ -63,6 +63,9 @@ import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 import           Simulation.Network.Snocket (AddressType (..),
                      GlobalAddressScheme (..))
 
+import           Data.IP (IP (..), toIPv4, toIPv6)
+import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, oneof)
+
 
 -- | Node-to-node address type.
 --
@@ -71,6 +74,18 @@ data NtNAddr_
   | EphemeralIPv6Addr Natural
   | IPAddr IP.IP PortNumber
   deriving (Eq, Ord)
+
+instance Arbitrary NtNAddr_ where
+  arbitrary = do
+    -- TODO: Move this IP generator to ouroboros-network-testing
+    a <- oneof [ IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
+               , IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
+               ]
+    oneof
+      [ EphemeralIPv4Addr <$> (fromInteger <$> arbitrary)
+      , EphemeralIPv6Addr <$> (fromInteger <$> arbitrary)
+      , IPAddr a          <$> (read . show <$> chooseInt (0, 9999))
+      ]
 
 instance Show NtNAddr_ where
     show (EphemeralIPv4Addr n) = "ephemeral:" ++ show n
