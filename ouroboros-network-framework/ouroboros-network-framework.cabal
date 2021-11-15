@@ -94,6 +94,7 @@ library
                                        >=0.1   && < 0.2
                      , network         >=3.1.2   && < 3.2
                      , network-mux     >=0.1   && < 0.2
+                     , ouroboros-network-testing
                      , typed-protocols >=0.1   && < 0.2
                      , typed-protocols-cborg >=0.1   && < 0.2
                      , Win32-network   >=0.1   && < 0.2

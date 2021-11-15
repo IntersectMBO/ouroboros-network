@@ -19,11 +19,12 @@ import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.Types
 
+import           Ouroboros.Network.Testing.Utils
+                   (renderRanges, prop_shrink_valid, prop_shrink_nonequal)
 import           Test.Ouroboros.Network.PeerSelection.Instances
 
 
 import           Test.QuickCheck
-import           Test.QuickCheck.Utils
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 

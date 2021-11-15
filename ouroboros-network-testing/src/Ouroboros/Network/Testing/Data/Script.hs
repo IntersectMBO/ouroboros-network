@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingVia                #-}
 
-module Test.Ouroboros.Network.PeerSelection.Script (
+module Ouroboros.Network.Testing.Data.Script (
 
     -- * Test scripts
     Script(..),
@@ -11,6 +11,9 @@ module Test.Ouroboros.Network.PeerSelection.Script (
     initScript,
     stepScript,
     stepScriptSTM,
+    initScript',
+    stepScript',
+    stepScriptSTM',
     arbitraryScriptOf,
     prop_shrink_Script,
 
@@ -34,14 +37,12 @@ import qualified Data.List.NonEmpty as NonEmpty
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
+import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 
-import           Test.Ouroboros.Network.PeerSelection.Instances ()
-
 import           Test.QuickCheck
-import           Test.QuickCheck.Utils
-
+import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal, shrinkListElems)
 
 --
 -- Test script abstraction
@@ -51,7 +52,7 @@ newtype Script a = Script (NonEmpty a)
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 singletonScript :: a -> Script a
-singletonScript x = (Script (x :| []))
+singletonScript x = Script (x :| [])
 
 scriptHead :: Script a -> a
 scriptHead (Script (x :| _)) = x
@@ -60,16 +61,32 @@ arbitraryScriptOf :: Int -> Gen a -> Gen (Script a)
 arbitraryScriptOf maxSz a =
     sized $ \sz -> do
       n <- choose (1, max 1 (min maxSz sz))
-      (Script . NonEmpty.fromList) <$> vectorOf n a
+      Script . NonEmpty.fromList <$> vectorOf n a
 
-initScript :: MonadSTM m => Script a -> m (TVar m (Script a))
-initScript = newTVarIO
+initScript :: MonadSTMTx stm
+            => Script a
+            -> stm (TVar_ stm (Script a))
+initScript = LazySTM.newTVar
 
 stepScript :: MonadSTM m => TVar m (Script a) -> m a
 stepScript scriptVar = atomically (stepScriptSTM scriptVar)
 
 stepScriptSTM :: MonadSTMTx stm => TVar_ stm (Script a) -> stm a
 stepScriptSTM scriptVar = do
+    Script (x :| xs) <- LazySTM.readTVar scriptVar
+    case xs of
+      []     -> return ()
+      x':xs' -> LazySTM.writeTVar scriptVar (Script (x' :| xs'))
+    return x
+
+initScript' :: MonadSTM m => Script a -> m (TVar m (Script a))
+initScript' = newTVarIO
+
+stepScript' :: MonadSTM m => TVar m (Script a) -> m a
+stepScript' scriptVar = atomically (stepScriptSTM scriptVar)
+
+stepScriptSTM' :: MonadSTMTx stm => TVar_ stm (Script a) -> stm a
+stepScriptSTM' scriptVar = do
     Script (x :| xs) <- readTVar scriptVar
     case xs of
       []     -> return ()
