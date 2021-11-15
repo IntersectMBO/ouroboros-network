@@ -1299,7 +1299,7 @@ ledger state.
     \draw (Acquired.275)
                       to[in=-65, out=-115] node{\MsgRelease} (Idle.260);
     \draw (Querying)  edge[bend left=45] node{\MsgResult}    (Acquired);
-    \draw (Idle)      edge node[left]{\MsgDone}                    (Done)
+    \draw (Idle)      edge node[left]{\MsgDone}              (Done);
   \end{tikzpicture}
   \caption{State machine of the Local State Query mini-protocol.}
 \end{figure}
