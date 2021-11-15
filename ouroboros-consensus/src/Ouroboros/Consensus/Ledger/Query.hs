@@ -275,7 +275,7 @@ answerQuery ::
      (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, QuerySat mk fp)
   => ExtLedgerCfg blk
   -> Query          blk fp result
-  -> ExtLedgerState mk blk
+  -> ExtLedgerState blk mk
   -> result
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
@@ -302,7 +302,7 @@ data family BlockQuery blk :: FootprintL -> Type -> Type
 class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  answerBlockQuery :: QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState mk blk -> result
+  answerBlockQuery :: QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk mk -> result
 
   prepareBlockQuery :: BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
 
@@ -346,7 +346,7 @@ handleLargeQuery cfg dlv query lgrdb = do
       old_keys = error "rewindTableKeySets" chlog now_keys
   (old_values, chlog') <- error "readKeys" dlv old_keys
   let now_values = error "forwardTableReadSets" chlog' old_values
-      now_state  :: ExtLedgerState TrackingMK blk
+      now_state  :: ExtLedgerState blk TrackingMK
       now_state  = error "setTables" (error "getLatestState" lgrdb) now_values
 
   -- All of the above is just bookkeeping necessary to enable this computation.
