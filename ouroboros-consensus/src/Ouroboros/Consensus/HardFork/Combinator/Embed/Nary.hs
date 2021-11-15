@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 {-------------------------------------------------------------------------------
@@ -165,8 +166,8 @@ instance Inject HeaderState where
                             $ WrapChainDepState headerStateChainDep
       }
 
-instance Inject (ExtLedgerState mk) where
-  inject startBounds idx ExtLedgerState {..} = ExtLedgerState {
+instance Inject (Flip ExtLedgerState mk) where
+  inject startBounds idx (Flip ExtLedgerState {..}) = Flip $ ExtLedgerState {
         ledgerState = inject startBounds idx ledgerState
       , headerState = inject startBounds idx headerState
       }
@@ -188,8 +189,8 @@ instance Inject (ExtLedgerState mk) where
 injectInitialExtLedgerState ::
      forall x xs. CanHardFork (x ': xs)
   => TopLevelConfig (HardForkBlock (x ': xs))
-  -> ExtLedgerState EmptyMK x
-  -> ExtLedgerState EmptyMK (HardForkBlock (x ': xs))
+  -> ExtLedgerState x EmptyMK
+  -> ExtLedgerState (HardForkBlock (x ': xs)) EmptyMK
 injectInitialExtLedgerState cfg extLedgerState0 =
     ExtLedgerState {
         ledgerState = targetEraLedgerState

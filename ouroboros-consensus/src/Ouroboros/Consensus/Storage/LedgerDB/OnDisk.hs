@@ -82,11 +82,11 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
   Instantiate the in-memory DB to @blk@
 -------------------------------------------------------------------------------}
 
-type LedgerDB'       blk = LedgerDB       (ExtLedgerState EmptyMK blk)
+type LedgerDB'       blk = LedgerDB       (ExtLedgerState blk EmptyMK)
 
-type LedgerDb'AsLedger blk = LedgerDbAsLedger (ExtLedgerState EmptyMK blk)
+type LedgerDb'AsLedger blk = LedgerDbAsLedger (ExtLedgerState blk EmptyMK)
 
-type AnnLedgerError' blk = AnnLedgerError (ExtLedgerState EmptyMK blk) blk
+type AnnLedgerError' blk = AnnLedgerError (ExtLedgerState blk EmptyMK) blk
 
 {-------------------------------------------------------------------------------
   Abstraction over the streaming API provided by the Chain DB
@@ -200,10 +200,10 @@ initLedgerDB ::
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState EmptyMK blk))
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState EmptyMK blk)
-  -> m (ExtLedgerState EmptyMK blk) -- ^ Genesis ledger state
+  -> LedgerDbCfg (ExtLedgerState blk EmptyMK)
+  -> m (ExtLedgerState blk EmptyMK) -- ^ Genesis ledger state
   -> StreamAPI m blk
   -> m (InitLog blk, LedgerDB' blk, Word64)
 initLedgerDB replayTracer
@@ -282,9 +282,9 @@ initFromSnapshot ::
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState EmptyMK blk))
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState EmptyMK blk)
+  -> LedgerDbCfg (ExtLedgerState blk EmptyMK)
   -> StreamAPI m blk
   -> DiskSnapshot
   -> ExceptT (InitFailure blk) m (RealPoint blk, LedgerDB' blk, Word64)
@@ -314,7 +314,7 @@ initStartingWith ::
        , HasCallStack
        )
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
-  -> LedgerDbCfg (ExtLedgerState EmptyMK blk)
+  -> LedgerDbCfg (ExtLedgerState blk EmptyMK)
   -> StreamAPI m blk
   -> LedgerDB' blk
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
@@ -367,7 +367,7 @@ takeSnapshot ::
      forall m blk. (MonadThrow m, IsLedger (LedgerState blk))
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (ExtLedgerState EmptyMK blk -> Encoding)
+  -> (ExtLedgerState blk EmptyMK -> Encoding)
   -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot tracer hasFS encLedger db =
     case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
@@ -384,7 +384,7 @@ takeSnapshot tracer hasFS encLedger db =
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where
-    oldest :: ExtLedgerState EmptyMK blk
+    oldest :: ExtLedgerState blk EmptyMK
     oldest = ledgerDbAnchor db
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
@@ -446,30 +446,30 @@ diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
 readSnapshot ::
      forall m blk. IOLike m
   => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState EmptyMK blk))
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState EmptyMK blk)
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
 readSnapshot hasFS decLedger decHash =
       ExceptT
     . readIncremental hasFS decoder
     . snapshotToPath
   where
-    decoder :: Decoder s (ExtLedgerState EmptyMK blk)
+    decoder :: Decoder s (ExtLedgerState blk EmptyMK)
     decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
 
 -- | Write snapshot to disk
 writeSnapshot ::
      forall m blk. MonadThrow m
   => SomeHasFS m
-  -> (ExtLedgerState EmptyMK blk -> Encoding)
+  -> (ExtLedgerState blk EmptyMK -> Encoding)
   -> DiskSnapshot
-  -> ExtLedgerState EmptyMK blk -> m ()
+  -> ExtLedgerState blk EmptyMK -> m ()
 writeSnapshot (SomeHasFS hasFS) encLedger ss cs = do
     withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
   where
-    encode :: ExtLedgerState EmptyMK blk -> Encoding
+    encode :: ExtLedgerState blk EmptyMK -> Encoding
     encode = encodeSnapshot encLedger
 
 -- | Delete snapshot from disk
