@@ -1800,6 +1800,8 @@ withConnectionManager ConnectionManagerArguments {
                       (fst <$> choiseMap)
                       numberToPrune
 
+                  when (remoteAddress connId `Set.notMember` pruneSet)
+                    $ writeTVar connVar connState'
                   return $
                     PruneConnections connId
                       (snd <$> choiseMap `Map.restrictKeys` pruneSet)
@@ -2029,6 +2031,8 @@ withConnectionManager ConnectionManagerArguments {
                       (fst <$> choiseMap)
                       numberToPrune
 
+                  when (remoteAddress connId `Set.notMember` pruneSet)
+                    $ writeTVar connVar connState'
                   return
                     ( OperationSuccess tr
                     , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
@@ -2077,6 +2081,8 @@ withConnectionManager ConnectionManagerArguments {
                       (fst <$> choiseMap)
                       numberToPrune
 
+                  when (remoteAddress connId `Set.notMember` pruneSet)
+                    $ writeTVar connVar connState'
                   return
                     ( OperationSuccess tr
                     , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
