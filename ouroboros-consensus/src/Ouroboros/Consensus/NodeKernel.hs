@@ -287,7 +287,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     pure BlockFetchConsensusInterface {..}
   where
     toSummary ::
-         ExtLedgerState EmptyMK blk
+         ExtLedgerState blk EmptyMK
       -> History.Summary (History.HardForkIndices blk)
     toSummary = History.hardForkSummary (configLedger cfg) . ledgerState
 

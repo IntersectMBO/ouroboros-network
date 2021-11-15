@@ -71,6 +71,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..), Situated (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..), mustMatchNS)
 
@@ -154,9 +155,9 @@ instance All SingleEraBlock xs => IsQuery (BlockQuery (HardForkBlock xs)) where
 -- manually crafted.
 distribExtLedgerState ::
      All SingleEraBlock xs
-  => ExtLedgerState mk (HardForkBlock xs) -> NS (ExtLedgerState mk) xs
+  => ExtLedgerState (HardForkBlock xs) mk -> NS (Flip ExtLedgerState mk) xs
 distribExtLedgerState (ExtLedgerState ledgerState headerState) =
-    hmap (\(Pair hst lst) -> ExtLedgerState lst hst) $
+    hmap (\(Pair hst lst) -> Flip (ExtLedgerState lst hst)) $
       mustMatchNS
         "HeaderState"
         (distribHeaderState headerState)
@@ -246,17 +247,17 @@ interpretQueryIfCurrent ::
      forall mk fp result xs. (All SingleEraBlock xs, QuerySat mk fp)
   => NP ExtLedgerCfg xs
   -> QueryIfCurrent xs fp result
-  -> NS (ExtLedgerState mk) xs
+  -> NS (Flip ExtLedgerState mk) xs
   -> HardForkQueryResult xs result
 interpretQueryIfCurrent = go
   where
     go :: All SingleEraBlock xs'
        => NP ExtLedgerCfg xs'
        -> QueryIfCurrent xs' fp result
-       -> NS (ExtLedgerState mk) xs'
+       -> NS (Flip ExtLedgerState mk) xs'
        -> HardForkQueryResult xs' result
     go (c :* _)  (QZ qry) (Z st) =
-        Right $ answerBlockQuery c qry st
+        Right $ answerBlockQuery c qry (unFlip st)
     go (_ :* cs) (QS qry) (S st) =
         first shiftMismatch $ go cs qry st
     go _         (QZ qry) (S st) =
@@ -419,7 +420,7 @@ decodeQueryHardForkResult = \case
 -------------------------------------------------------------------------------}
 
 ledgerInfo :: forall blk mk. SingleEraBlock blk
-           => ExtLedgerState mk blk
+           => Flip ExtLedgerState mk blk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
