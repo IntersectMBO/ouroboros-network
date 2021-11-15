@@ -368,7 +368,8 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket local
         (mainThreadId, debugMuxErrorRethrowPolicy
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
-                    <> assertRethrowPolicy))
+                    <> assertRethrowPolicy)
+        (const False))
       (\_ -> HandshakeFailure)
       NotInResponderMode
       (\cm ->
@@ -559,7 +560,8 @@ withBidirectionalConnectionManager name timeouts
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
-                        <> assertRethrowPolicy))
+                        <> assertRethrowPolicy)
+          (const False))
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovControlChannel)
       $ \connectionManager ->

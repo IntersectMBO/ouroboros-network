@@ -343,7 +343,7 @@ prop_socket_recv_error f rerr =
                     remoteAddress <- Socket.getPeerName sd'
                     let timeout = if rerr == RecvSDUTimeout then 0.10
                                                             else (-1) -- No timeout
-                        bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
+                        bearer = Mx.socketAsMuxBearer timeout False nullTracer sd'
                         connectionId = ConnectionId {
                             localAddress = Socket.addrAddress muxAddress,
                             remoteAddress
@@ -423,7 +423,7 @@ prop_socket_send_error rerr =
                   Accepted sd' _ -> do
                     let sduTimeout = if rerr == SendSDUTimeout then 0.10
                                                                else (-1) -- No timeout
-                        bearer = Mx.socketAsMuxBearer sduTimeout nullTracer sd'
+                        bearer = Mx.socketAsMuxBearer sduTimeout False nullTracer sd'
                         blob = BL.pack $ replicate 0xffff 0xa5
                     withTimeoutSerial $ \timeout ->
                       -- send maximum mux sdus until we've filled the window.

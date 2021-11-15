@@ -258,14 +258,14 @@ data Snocket m fd addr = Snocket {
 
   , close         :: fd -> m ()
 
-  , toBearer      ::  DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
+  , toBearer      ::  DiffTime -> Bool -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
   }
 
 
 pureBearer :: Monad m
-           => (DiffTime -> Tracer m MuxTrace -> fd ->    MuxBearer m)
-           ->  DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
-pureBearer f = \timeout tr fd -> return (f timeout tr fd)
+           => (DiffTime -> Bool -> Tracer m MuxTrace -> fd ->    MuxBearer m)
+           ->  DiffTime -> Bool -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
+pureBearer f = \timeout cm tr fd -> return (f timeout cm tr fd)
 
 --
 -- Socket based Snockets
@@ -454,7 +454,7 @@ localSnocket ioManager = Snocket {
       -- Win32.closeHandle is not interruptible
     , close    = Win32.closeHandle . getLocalHandle
 
-    , toBearer = \_sduTimeout tr -> pure . namedPipeAsBearer tr . getLocalHandle
+    , toBearer = \_sduTimeout _useCompression tr -> pure . namedPipeAsBearer tr . getLocalHandle
     }
   where
     acceptNext :: Word64 -> LocalAddress -> Accept IO LocalSocket LocalAddress
@@ -515,7 +515,7 @@ localSnocket ioManager =
       , open          = openSocket
       , openToConnect = \addr -> openSocket (LocalFamily addr)
       , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
-      , toBearer      = \df tr (LocalSocket sd) -> pure (Mx.socketAsMuxBearer df tr sd)
+      , toBearer      = \df cm tr (LocalSocket sd) -> pure (Mx.socketAsMuxBearer df cm tr sd)
       }
   where
     toLocalAddress :: SockAddr -> LocalAddress

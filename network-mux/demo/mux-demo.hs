@@ -119,7 +119,7 @@ server = do
     forever $ do
       (sock', _addr) <- Socket.accept sock
       void $ forkIO $
-        let bearer = socketAsMuxBearer 1.0 nullTracer sock' in
+        let bearer = socketAsMuxBearer 1.0 False nullTracer sock' in
         serverWorker bearer
           `finally` Socket.close sock'
 #endif
@@ -180,7 +180,7 @@ client n msg =
 client n msg = do
     sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
     Socket.connect sock (SockAddrUnix pipeName)
-    let bearer = socketAsMuxBearer 1.0 nullTracer sock
+    let bearer = socketAsMuxBearer 1.0 False nullTracer sock
     clientWorker bearer n msg
 #endif
 

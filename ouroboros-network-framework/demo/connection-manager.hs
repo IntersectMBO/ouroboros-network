@@ -252,7 +252,8 @@ withBidirectionalConnectionManager snocket socket
                                 warmRequestsVar
                                 establishedRequestsVar))
           (mainThreadId,   debugMuxErrorRethrowPolicy
-                        <> debugIOErrorRethrowPolicy))
+                        <> debugIOErrorRethrowPolicy)
+          (const False))
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovControlChannel)
       $ \connectionManager -> do

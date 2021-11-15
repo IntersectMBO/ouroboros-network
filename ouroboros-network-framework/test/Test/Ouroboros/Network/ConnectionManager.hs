@@ -1603,7 +1603,7 @@ mkSnocket scheduleMap = do
                       }
           pure (Accepted (FD fd') remoteAddr, Accept $ go as)
 
-    toBearer _ _ _ =
+    toBearer _ _ _ _ =
       return MuxBearer {
           write   = \_ _ -> getMonotonicTime,
           read    = \_ -> forever (threadDelay 3600),

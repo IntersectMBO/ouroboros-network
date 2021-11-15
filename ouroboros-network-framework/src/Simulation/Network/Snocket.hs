@@ -1180,10 +1180,11 @@ mkSnocket state tr = Snocket { getLocalAddr
 
 
     toBearer :: DiffTime
+             -> Bool
              -> Tracer m MuxTrace
              -> FD m (TestAddress addr)
              -> m (MuxBearer m)
-    toBearer sduTimeout muxTracer fd@FD { fdVar } = do
+    toBearer sduTimeout _ muxTracer fd@FD { fdVar } = do
         fd_ <- atomically (readTVar fdVar)
         case fd_ of
           FDUninitialised {} ->

@@ -249,7 +249,7 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
  
-    handshakeBearer <- Snocket.toBearer sn sduHandshakeTimeout muxTracer sd
+    handshakeBearer <- Snocket.toBearer sn sduHandshakeTimeout False muxTracer sd
     app_e <-
       runHandshakeClient
         handshakeBearer
@@ -275,7 +275,7 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
 
          Right (app, _versionNumber, _agreedOptions) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             bearer <- Snocket.toBearer sn sduTimeout muxTracer sd
+             bearer <- Snocket.toBearer sn sduTimeout False muxTracer sd
              Mx.muxStart
                muxTracer
                (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
@@ -377,6 +377,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
         handshakeBearer <- Snocket.toBearer sn
                                             sduHandshakeTimeout
+                                            False
                                             muxTracer' sd
         app_e <-
           runHandshakeServer
@@ -402,7 +403,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
              Right (SomeResponderApplication app, _versionNumber, _agreedOptions) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                 bearer <- Snocket.toBearer sn sduTimeout muxTracer' sd
+                 bearer <- Snocket.toBearer sn sduTimeout False muxTracer' sd
                  Mx.muxStart
                    muxTracer'
                    (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)

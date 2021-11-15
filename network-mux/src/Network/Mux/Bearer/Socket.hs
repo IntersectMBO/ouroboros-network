@@ -8,6 +8,7 @@ module Network.Mux.Bearer.Socket
   ( socketAsMuxBearer
   ) where
 
+import qualified Codec.Compression.Zstd as Zd
 import           Control.Monad (when)
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
@@ -32,7 +33,6 @@ import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
 import qualified Network.Mux.Timeout as Mx
 
-
 -- |
 -- Create @'MuxBearer'@ from a socket.
 --
@@ -46,10 +46,11 @@ import qualified Network.Mux.Timeout as Mx
 --
 socketAsMuxBearer
   :: DiffTime
+  -> Bool
   -> Tracer IO Mx.MuxTrace
   -> Socket.Socket
   -> MuxBearer IO
-socketAsMuxBearer sduTimeout tracer sd =
+socketAsMuxBearer sduTimeout useCompression tracer sd =
       Mx.MuxBearer {
         Mx.read    = readSocket,
         Mx.write   = writeSocket,
@@ -80,10 +81,17 @@ socketAsMuxBearer sduTimeout tracer sd =
                Left  e ->  throwIO e
                Right header@Mx.MuxSDU { Mx.msHeader } -> do
                    traceWith tracer $ Mx.MuxTraceRecvHeaderEnd msHeader
-                   !blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
+                   blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
                    !ts <- getMonotonicTime
-                   let !header' = header {Mx.msBlob = blob}
+                   let dec = Zd.decompress $ BL.toStrict blob
+                   blob' <- if useCompression
+                               then case dec of
+                                    Zd.Skip  -> throwIO $ Mx.MuxError  Mx.MuxSDUReadTimeout "XXX"
+                                    Zd.Error e -> throwIO $ Mx.MuxError  Mx.MuxSDUReadTimeout e
+                                    Zd.Decompress c -> return $ BL.fromStrict c 
+                               else return blob
+                   let !header' = header {Mx.msBlob =  blob'}
                    traceWith tracer (Mx.MuxTraceRecvDeltaQObservation msHeader ts)
                    return (header', ts)
 
@@ -122,7 +130,13 @@ socketAsMuxBearer sduTimeout tracer sd =
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeMuxSDU sdu'
+              sdu'' = sdu' {
+                        Mx.msBlob = if useCompression
+                                       then BL.fromStrict $ Zd.compress 1
+                                         (BL.toStrict $ Mx.msBlob sdu')
+                                       else Mx.msBlob sdu'
+                      }
+              buf  = Mx.encodeMuxSDU $ sdu''
           traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
           r <- timeout sduTimeout $
 #if defined(mingw32_HOST_OS)

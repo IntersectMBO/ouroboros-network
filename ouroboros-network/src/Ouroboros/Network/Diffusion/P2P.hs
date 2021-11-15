@@ -530,6 +530,9 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnDataFlow
           :: ntnVersion -> ntnVersionData -> DataFlow,
 
+        diNtnCompression
+          :: ntnVersion -> Bool,
+
         -- | node-to-node peer address
         --
         diNtnToPeerAddr
@@ -631,6 +634,7 @@ runM Interfaces
        , diNtnHandshakeArguments
        , diNtnAddressType
        , diNtnDataFlow
+       , diNtnCompression
        , diNtnToPeerAddr
        , diNtnDomainResolver
        , diNtcSnocket
@@ -771,6 +775,7 @@ runM Interfaces
                                 (WithEstablished (\_ _ -> []))
                           ) <$> daLocalResponderApplication )
                         (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
+                        localCompression
 
                     localConnectionManagerArguments
                       :: NodeToClientConnectionManagerArguments
@@ -884,6 +889,7 @@ runM Interfaces
                         diNtnHandshakeArguments
                         daApplicationInitiatorMode
                         (mainThreadId, rethrowPolicy <> daRethrowPolicy)
+                        diNtnCompression
 
                 withConnectionManager
                   connectionManagerArguments
@@ -1005,6 +1011,7 @@ runM Interfaces
                          diNtnHandshakeArguments
                          daApplicationInitiatorResponderMode
                          (mainThreadId, rethrowPolicy <> daRethrowPolicy)
+                         diNtnCompression
 
                 withConnectionManager
                   connectionManagerArguments
@@ -1314,6 +1321,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diNtnHandshakeArguments,
                  diNtnAddressType = socketAddressType,
                  diNtnDataFlow = nodeDataFlow,
+                 diNtnCompression = nodeCompression,
                  diNtnToPeerAddr = curry IP.toSockAddr,
                  diNtnDomainResolver,
 
@@ -1343,6 +1351,15 @@ nodeDataFlow v NodeToNodeVersionData { diffusionMode = InitiatorAndResponderDiff
                  | v >= NodeToNodeV_8
                  = Duplex
 nodeDataFlow _ _ = Unidirectional
+
+nodeCompression :: NodeToNodeVersion
+                -> Bool
+nodeCompression v | v >= NodeToNodeV_9 = True
+nodeCompression _ = False
+
+localCompression :: ntcVersion
+                 -> Bool
+localCompression _ = False
 
 
 -- | For Node-To-Client protocol all connection are considered 'Unidirectional'.

@@ -196,12 +196,14 @@ makeConnectionHandler
     -> (ThreadId m, RethrowPolicy)
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
+    -> (versionNumber -> Bool)
     -> MuxConnectionHandler muxMode socket peerAddr versionNumber versionData ByteString m a b
 makeConnectionHandler muxTracer singMuxMode
                       miniProtocolBundle
                       handshakeArguments
                       versionedApplication
-                      (mainThreadId, rethrowPolicy) =
+                      (mainThreadId, rethrowPolicy)
+                      useCompression =
     ConnectionHandler {
         connectionHandler =
           case singMuxMode of
@@ -262,7 +264,7 @@ makeConnectionHandler muxTracer singMuxMode
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout False socket
             hsResult <-
               unmask (runHandshakeClient handshakeBearer
                                          connectionId
@@ -299,7 +301,7 @@ makeConnectionHandler muxTracer singMuxMode
                           hControlMessage = controlMessageBundle
                         }
                   atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
-                  bearer <- mkMuxBearer sduTimeout socket
+                  bearer <- mkMuxBearer sduTimeout (useCompression versionNumber) socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
                          mux bearer
 
@@ -329,7 +331,7 @@ makeConnectionHandler muxTracer singMuxMode
                                     , "-"
                                     , show remoteAddress
                                     ])
-            handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket
+            handshakeBearer <- mkMuxBearer sduHandshakeTimeout False socket
             hsResult <-
               unmask (runHandshakeServer handshakeBearer
                                          connectionId
@@ -366,7 +368,7 @@ makeConnectionHandler muxTracer singMuxMode
                           hControlMessage = controlMessageBundle
                         }
                   atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
-                  bearer <- mkMuxBearer sduTimeout socket
+                  bearer <- mkMuxBearer sduTimeout (useCompression versionNumber) socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
                              mux bearer
 

@@ -57,6 +57,10 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable full duplex connections.
+    | NodeToNodeV_9
+    -- ^ Changes:
+    --
+    -- * Enable mux compression.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -70,6 +74,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_6  = CBOR.TInt 6
     encodeTerm NodeToNodeV_7  = CBOR.TInt 7
     encodeTerm NodeToNodeV_8  = CBOR.TInt 8
+    encodeTerm NodeToNodeV_9  = CBOR.TInt 9
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
     decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
@@ -79,6 +84,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     decodeTerm (CBOR.TInt 6) = Right NodeToNodeV_6
     decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
     decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
+    decodeTerm (CBOR.TInt 9) = Right NodeToNodeV_9
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n

@@ -1028,12 +1028,12 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
               (Snocket.connect sn fdConn  addr')
               (Snocket.connect sn fdConn' addr)
             bearer  <- Snocket.toBearer
-                        sn 1
+                        sn 1 False
                         nullTracer
                         -- (("client",) `contramap` Tracer Debug.traceShowM)
                         fdConn
             bearer' <- Snocket.toBearer
-                        sn 1
+                        sn 1 False
                         nullTracer
                         -- (("server",) `contramap` Tracer Debug.traceShowM)
                         fdConn'

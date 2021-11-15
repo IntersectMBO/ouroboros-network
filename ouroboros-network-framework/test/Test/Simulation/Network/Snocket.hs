@@ -230,7 +230,7 @@ clientServerSimulation script payloads =
           (accepted, accept1) <- runAccept accept0
           case accepted of
             Accepted fd' remoteAddr -> do
-              bearer <- toBearer snocket 10 nullTracer fd'
+              bearer <- toBearer snocket 10 False nullTracer fd'
               thread <- async $ handleConnection bearer remoteAddr
                                 `finally`
                                close snocket fd'
@@ -311,7 +311,7 @@ clientServerSimulation script payloads =
                               (\channel -> runPeer tr codecReqResp
                                                    (fromChannel channel)
                                                    clientPeer)
-                  bearer <- toBearer snocket 10 nullTracer fd
+                  bearer <- toBearer snocket 10 False nullTracer fd
 
                   -- kill mux as soon as the client returns
                   withAsync

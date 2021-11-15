@@ -700,10 +700,11 @@ withConnectionManager ConnectionManagerArguments {
             (handler socket writer
                      (TrConnectionHandler connId `contramap` tracer)
                      connId
-                     (\bearerTimeout ->
+                     (\bearerTimeout useCompression ->
                        toBearer
                          cmSnocket
                          bearerTimeout
+                         useCompression
                          (WithMuxBearer connId `contramap` muxTracer)))
             unmask
           `finally` cleanup

@@ -455,7 +455,7 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
         peerStr <- peerString
         unless quiet $ printf "%s network rtt: %.3f\n" peerStr $ toSample t0_e t0_s
         let timeout = 30
-            bearer = socketAsMuxBearer timeout nullTracer sd
+            bearer = socketAsMuxBearer timeout False nullTracer sd
 
         !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir
                     (handshakeReq versions)
