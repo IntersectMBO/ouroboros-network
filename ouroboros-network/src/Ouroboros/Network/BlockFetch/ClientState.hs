@@ -41,6 +41,8 @@ import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
+import           Network.Mux.Trace (TraceLabelPeer (..))
+
 import           Ouroboros.Network.Mux (ControlMessageSTM, timeoutWithControlMessage)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -418,12 +420,6 @@ data TraceFetchClientState header =
         --
       | ClientTerminating Int
   deriving Show
-
--- | A peer label for use in 'Tracer's. This annotates tracer output as being
--- associated with a given peer identifier.
---
-data TraceLabelPeer peerid a = TraceLabelPeer peerid a
-  deriving (Eq, Functor, Show)
 
 
 -- | Add a new fetch request for a single peer. This is used by the fetch

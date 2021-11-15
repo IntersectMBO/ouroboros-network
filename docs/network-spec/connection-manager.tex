@@ -54,7 +54,7 @@
   , minimum height=2em
   ]
 \tikzstyle{requestOutboundArr}      = [ color = DodgerBlue1 ]
-\tikzstyle{includeInboundArr}       = [ color = HotPink3 ]
+\tikzstyle{registerInboundArr}      = [ color = HotPink3 ]
 \tikzstyle{promotedToWarmRemoteArr} = [ color = DarkOliveGreen3 ]
 \tikzstyle{demotedToColdRemoteArr}  = [ color = Orange2 ]
 \tikzstyle{unregisterOutboundArr}   = [ color = Turquoise ]
@@ -71,11 +71,13 @@
 \def\UnnegotiatedStateOut{\texttt{UnnegotiatedState Outbound}}
 \def\UnnegotiatedStateIn{\texttt{UnnegotiatedState Inbound}}
 \def\UnnegotiatedStateAny{\texttt{UnnegotiatedState prov}}
-\def\OutboundStateUni{\texttt{OutboundState\phantom{\textsuperscript{$\tau$}} Unidirectional}}
-\def\OutboundStateDup{\texttt{OutboundState\phantom{\textsuperscript{$\tau$}} Duplex}}
+\def\OutboundStateUni{\texttt{OutboundState Unidirectional}}
+\def\OutboundStateDup{\texttt{OutboundState Duplex}}
 \def\OutboundStateDupTau{\texttt{OutboundState\textsuperscript{$\tau$} Duplex}}
+\def\OutboundStateDupP{\texttt{OutboundState\phantom{\textsuperscript{$\tau$}} Duplex}}
 \def\OutboundStateUniTau{\texttt{OutboundState\textsuperscript{$\tau$} Unidirectional}}
-\def\OutboundStateAny{\texttt{OutboundState\textsuperscript{*} dataFlow}}
+\def\OutboundStateAny{\texttt{OutboundState dataFlow}}
+\def\OutboundStateAnyTau{\texttt{OutboundState\textsuperscript{$\tau$} dataFlow}}
 \def\DuplexState{\texttt{DuplexState}}
 \def\InboundStateUni{\texttt{InboundState Unidirectional}}
 \def\InboundStateDup{\texttt{InboundState Duplex}}
@@ -84,6 +86,9 @@
 \def\InboundIdleStateUni{\texttt{InboundIdleState\textsuperscript{$\tau$} Unidirectional}}
 \def\InboundIdleStateDup{\texttt{InboundIdleState\textsuperscript{$\tau$} Duplex}}
 \def\InboundIdleStateAny{\texttt{InboundIdleState\textsuperscript{$\tau$} dataFlow}}
+\def\OutboundIdleStateUni{\texttt{OutboundIdleState\textsuperscript{$\tau$} Unidirectional}}
+\def\OutboundIdleStateDup{\texttt{OutboundIdleState\textsuperscript{$\tau$} Duplex}}
+\def\OutboundIdleStateAny{\texttt{OutboundIdleState\textsuperscript{$\tau$} dataFlow}}
 \def\TerminatingState{\texttt{TerminatingState\textsuperscript{$\tau$}}}
 \def\TerminatedState{\texttt{TerminatedState}}
 
@@ -101,6 +106,7 @@
 \def\PromotedToWarmDupRem{\textsf{PromotedToWarm}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Remote}}}
 \def\PromotedToWarmAnyRem{\textsf{PromotedToWarm}\textsuperscript{\textsf{dataFlow}}\textsubscript{\textsf{Remote}}}
 \def\DemotedToColdDupLoc{\textsf{DemotedToCold}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Local}}}
+\def\DemotedToColdAnyLoc{\textsf{DemotedToCold}\textsuperscript{\textsf{dataFlow}}\textsubscript{\textsf{Local}}}
 \def\DemotedToColdDupRem{\textsf{DemotedToCold}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Remote}}}
 \def\TimeoutExpired{\textsf{TimeoutExpired}}
 \def\DemotedToColdAnyRem{\textsf{DemotedToCold}\textsuperscript{\textsf{dataFlow}}\textsubscript{\textsf{Remote}}}
@@ -108,13 +114,16 @@
 \def\DemotedToColdUniRem{\textsf{DemotedToCold}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Remote}}}
 \def\Restart{\textsf{Restart}}
 \def\Prune{\textsf{Prune}}
-\def\CommitDup{\textsf{Commit}\textsuperscript{\textsf{Duplex}}}
-\def\CommitUni{\textsf{Commit}\textsuperscript{\textsf{Unidirectional}}}
-\def\CommitAny{\textsf{Commit}\textsuperscript{\textsf{dataFlow}}}
+\def\CommitDupRem{\textsf{Commit}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Remote}}}
+\def\CommitUniRem{\textsf{Commit}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Remote}}}
+\def\CommitAnyRem{\textsf{Commit}\textsuperscript{\textsf{dataFlow}}\textsubscript{\textsf{Remote}}}
 \def\AwakeDupRem{\textsf{Awake}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Remote}}}
 \def\AwakeUniRem{\textsf{Awake}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Remote}}}
 \def\AwakeAnyRem{\textsf{Awake}\textsuperscript{\textsf{dataFlow}}\textsubscript{\textsf{Remote}}}
 \def\AwakeDupLoc{\textsf{Awake}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Local}}}
+\def\CommitAnyLoc{\textsf{Commit}\textsuperscript{\textsf{dataFlow}}\textsubscript{\textsf{Local}}}
+\def\CommitDupLoc{\textsf{Commit}\textsuperscript{\textsf{Duplex}}\textsubscript{\textsf{Local}}}
+\def\CommitUniLoc{\textsf{Commit}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Local}}}
 \def\Terminate{\textsf{Terminate}}
 \def\Timeout{\textsf{Timeout}}
 
@@ -538,6 +547,11 @@ data ConnectionState
   -- 'Duplex' data flow, or 'InboundState Duplex' was reused.
   | DuplexState
 
+  -- Connection manager is about to close (reset) the connection, before it
+  -- will do that it will put the connection in 'OutboundIdleState' and start
+  -- a timeout.
+  | OutboundIdleState*'$^\tau$'*
+
   -- Connection has terminated; socket is closed, thread running the
   -- connection is killed.  For some delay (`TIME_WAIT`) the connection is kept
   -- in this state until the kernel releases all the resources.
@@ -560,7 +574,7 @@ the implementation avoids this constructor, for the same reasons that were given
 regarding \texttt{InitiatorMode}.
 
 \begin{figure}[p]
-  {\hspace{-3cm}\begin{tikzpicture}[scale=0.66]
+  {\begin{tikzpicture}[scale=0.66]
     \node                                     (init)                       at ( 2,   2)     {\small\InitialState};
     \node[outbound_state]                     (ReservedOutboundState)      at ( 0,-0.25)    {\small\ReservedOutboundState};
     \node[outbound_state,anchor=east]         (UnnegotiatedStateOut)       at (-1,  -3)     {\small\UnnegotiatedStateOut};
@@ -569,12 +583,14 @@ regarding \texttt{InitiatorMode}.
     \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 5, -8)      {\small\InboundIdleStateUni};
     \node[outbound_state,anchor=east]         (OutboundStateUni)           at (-2, -7.5)    {\small\OutboundStateUni};
     \node[inbound_outbound_state,anchor=east] (OutboundStateDupTau)        at (-1, -10.5)   {\small\OutboundStateDupTau};
-    \node[inbound_outbound_state,anchor=east] (OutboundStateDup)           at (-1,  -14.0)  {\small\OutboundStateDup};
-    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 5, -15.0)   {\small\InboundStateUni};
+    \node[inbound_outbound_state,anchor=east] (OutboundStateDup)           at (-1,  -14.0)  {\small\OutboundStateDupP};
+    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 5, -16.0)   {\small\InboundStateUni};
     \node[inbound_outbound_state,anchor=west] (InboundStateDup)            at ( 1,  -13.5)  {\small\InboundStateDup};
     \node[inbound_outbound_state]             (DuplexState)                at (-1.5, -21.5) {\small\DuplexState};
-    \node[inbound_outbound_state]             (TerminatingState)           at ( 3,  -23)    {\small\TerminatingState};
-    \node[inbound_outbound_state]             (TerminatedState)            at ( 3,  -26)    {\small\TerminatedState};
+    \node[inbound_outbound_state]             (OutboundIdleStateDup)       at ( 5,  -23)    {\small\OutboundIdleStateDup};
+    \node[outbound_state]                     (OutboundIdleStateUni)       at (-5,  -24.5)  {\small\OutboundIdleStateUni};
+    \node[inbound_outbound_state]             (TerminatingState)           at ( 3,  -27)    {\small\TerminatingState};
+    \node[inbound_outbound_state]             (TerminatedState)            at ( 3,  -30)    {\small\TerminatedState};
 
 
     \draw[->] (init) -- node[fill=white,pos=0.425,above left]{\small\Reserve}                                          (ReservedOutboundState);
@@ -590,21 +606,25 @@ regarding \texttt{InitiatorMode}.
     \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,left=-12pt]{\small\NegotiatedDupIn}                  (InboundIdleStateDup.150);
     \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,pos=0.35,right=-28pt]{\small\NegotiatedUniIn}        (InboundIdleStateUni.60);
 
+    \draw[->]         (InboundIdleStateUni.320) to [out=-90,in=40]
+                                                node[fill=white,pos=0.5,rotate=70,left=-15pt]{\small\CommitUniRem}     (TerminatingState.0);
     \draw[->, dashed] (InboundStateUni.10)      -- node[pos=0.3,fill=white,right=-45pt]{\small\DemotedToColdUniRem}    (InboundIdleStateUni.350);
     \draw[->]         (InboundIdleStateDup.195) -- node[fill=white,pos=0.4]{\small\AwakeDupLoc}                        (OutboundStateDupTau.10);
 
     \draw[->, dashed] (InboundIdleStateDup.200) -- node[fill=white,pos=0.65]{\small\AwakeDupRem}                       (InboundStateDup.160);
     \draw[->]         (OutboundStateDupTau.150) to [out=90,in=-170]
-                                                node[fill=white,pos=0.15,left=-56pt]{\small\DemotedToColdDupLoc}       (InboundIdleStateDup.180);
-    \draw[->]         (OutboundStateDup.192)    to [out=-90,in=-170,looseness=2]
-                                                node[fill=white,rotate=90,pos=0.2]{\small\DemotedToColdDupLoc}         (TerminatingState.185);
+                                                node[fill=white,pos=0.10,left=-56pt]{\small\DemotedToColdDupLoc}       (InboundIdleStateDup.180);
+    \draw[->]         (OutboundStateDup.192)    to [out=-90,in=180,looseness=2]
+                                                node[fill=white,rotate=90,pos=0.2]{\small\DemotedToColdDupLoc}         (OutboundIdleStateDup.180);
     \draw[->]         (OutboundStateDupTau.192) --
                                                 node[fill=white] {\small\TimeoutExpired}
                                                 (OutboundStateDup.168);
-    \draw[->]         (DuplexState)             to [out=50,in=220]
-                                                node[fill=white,pos=0.90,left=24pt,rotate=65]{\small\DemotedToColdDupLoc} (InboundStateDup);
     \draw[->]         (InboundStateDup)         to [out=-110,in=40]
-                                                node[pos=0.9,right=22pt,rotate=70]{\small\PromotedToWarmDupLoc}           (DuplexState.10);
+                                                node[pos=0.9,right=20pt,rotate=70]{\footnotesize\PromotedToWarmDupLoc}     (DuplexState.10);
+    \draw[->, dashed] (OutboundIdleStateDup.60) to [out=90, in=270]
+                                                node[fill=white,rotate=90,pos=0.6,below=30pt]{\footnotesize\AwakeDupRem}   (InboundStateDup.345);
+    \draw[->]         (DuplexState)             to [out=50,in=220]
+                                                node[fill=white,pos=0.90,left=24pt,rotate=65]{\small\DemotedToColdDupLoc}  (InboundStateDup);
     \draw[->, dashed] (DuplexState.155)         to [out=90,in=-40]
                                                 node[fill=white,right=10pt,pos=0.01,rotate=80]{\small\DemotedToColdDupRem} (OutboundStateDupTau);
 
@@ -612,18 +632,18 @@ regarding \texttt{InitiatorMode}.
     \filldraw (OutboundStateDupTau.south) circle [radius=3pt];
     \filldraw (OutboundStateDup.south)    circle [radius=3pt];
     \draw[->, dashed] (OutboundStateDup)        to [out=-90,in=180]
-                                                node[left,pos=0.05,left=10pt,rotate=80]{\small\PromotedToWarmDupRem}      (DuplexState);
+                                                node[left,pos=0.05,left=10pt,rotate=80]{\small\PromotedToWarmDupRem}  (DuplexState);
 
     \draw[->]         (InboundIdleStateDup.270) to [out=-80,in=80]
-                                                      node[fill=white,pos=0.6,left=-10pt,rotate=80]{\small\CommitDup} (TerminatingState.110);
-    \draw[->]         (InboundIdleStateUni.320) to [out=-90,in=70]
-                                                      node[fill=white,pos=0.5,rotate=70,left=-10pt]{\small\CommitUni} (TerminatingState.10);
+                                                      node[fill=white,pos=0.5,left=-10pt,rotate=80]{\small\CommitDupRem} (TerminatingState.155);
     \draw[->, dashed] (InboundIdleStateUni.200) -- node[fill=white,right=-15pt]{\small\AwakeUniRem}                   (InboundStateUni.160);
     \draw[->, dashed] (InboundStateDup.15)      -- node[fill=white,left=-75pt,pos=0.5]{\small\DemotedToColdDupRem}    (InboundIdleStateDup.345);
-    \draw[->]         (OutboundStateUni.195)    to [out=270, in=180,pos=0.23,looseness=2]
-                                                node[fill=white,rotate=88,pos=0.3]{\small\DemotedToColdUniLoc}  (TerminatingState.175);
+    \draw[->]         (OutboundStateUni.190)    to [out=270, in=90,pos=0.23,looseness=2]
+                                                node[fill=white,rotate=88,pos=0.3]{\small\DemotedToColdUniLoc}        (OutboundIdleStateUni.173);
 
-    \draw[->] (TerminatingState) -- node[left]{\Terminate} (TerminatedState);
+    \draw[->]         (OutboundIdleStateUni)       to [out=300, in=180] node[fill=white,below left]{\CommitUniLoc}         (TerminatingState.180);
+    \draw[->]         (OutboundIdleStateDup.280)   -- node[fill=white,pos=.4]{\CommitDupLoc}                          (TerminatingState.40);
+    \draw[->]         (TerminatingState)           -- node[left]{\Terminate}                                          (TerminatedState);
   \end{tikzpicture}}
   \caption{\textit{Outbound} (blue \& violet) and \textit{inbound} (green \&
   violet) connection states and allowed transitions.}
@@ -649,8 +669,9 @@ promptly. This however, cannot be assumed about the inbound side.
     \textit{local connection state} & \textit{remote connection state} \\ [0.3em]
     \hline \\
     \UnnegotiatedStateOut{}         & \UnnegotiatedStateIn{}           \\ [0.2em]
-    -                               & \InboundIdleStateAny{}           \\ [0.2em]
+    \OutboundIdleStateAny{}         & \InboundIdleStateAny{}           \\ [0.2em]
     \OutboundStateAny{}             & \InboundStateAny{}               \\ [0.2em]
+    \OutboundStateAnyTau{}          & \InboundStateAny{}               \\ [0.2em]
     \InboundStateAny{}              & \OutboundStateAny{}              \\ [0.2em]
     \DuplexState{}                  & \DuplexState{}                   \\ [0.2em]
   \end{tabular}
@@ -674,15 +695,15 @@ simplifies the implementation.
 
 \begin{figure}[p]
   {\begin{tikzpicture}[scale=0.66]
-    \node                                     (init)                       at ( 2,   2)     {\small\InitialState};
-    \node[inbound_outbound_state]             (ReservedOutboundState)      at ( 0,-0.25)    {\small\ReservedOutboundState};
-    \node[inbound_outbound_state]             (UnnegotiatedStateIn)        at ( 5.5, -3)    {\small\UnnegotiatedStateIn};
-    \node[inbound_outbound_state,anchor=west] (InboundIdleStateDup)        at ( -0.5, -7.0) {\small\InboundIdleStateDup};
-    \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 7.5, -7)    {\small\InboundIdleStateUni};
-    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 7.5, -12)   {\small\InboundStateUni};
-    \node[inbound_outbound_state,anchor=west] (InboundStateDup)            at ( 0,  -12)    {\small\InboundStateDup};
-    \node[inbound_outbound_state]             (TerminatingState)           at ( 6,  -16)    {\small\TerminatingState};
-    \node[inbound_outbound_state]             (TerminatedState)            at ( 6,  -19)    {\small\TerminatedState};
+    \node                                     (init)                       at ( 2,   2)   {\small\InitialState};
+    \node[inbound_outbound_state]             (ReservedOutboundState)      at ( 0,-0.25)  {\small\ReservedOutboundState};
+    \node[inbound_outbound_state]             (UnnegotiatedStateIn)        at ( 5.5, -3)  {\small\UnnegotiatedStateIn};
+    \node[inbound_outbound_state,anchor=west] (InboundIdleStateDup)        at ( 0, -7.0)  {\small\InboundIdleStateDup};
+    \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 8, -7)    {\small\InboundIdleStateUni};
+    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 7.5, -12) {\small\InboundStateUni};
+    \node[inbound_outbound_state,anchor=west] (InboundStateDup)            at ( 0,  -12)  {\small\InboundStateDup};
+    \node[inbound_outbound_state]             (TerminatingState)           at ( 6,  -16)  {\small\TerminatingState};
+    \node[inbound_outbound_state]             (TerminatedState)            at ( 6,  -19)  {\small\TerminatedState};
 
 
     \draw[->] (init) -- node[fill=white,pos=0.425,above left]{\small\Reserve}                                      (ReservedOutboundState);
@@ -698,10 +719,10 @@ simplifies the implementation.
     \draw[->, dashed] (InboundIdleStateDup.200) -- node[fill=white,pos=0.65]{\small\AwakeDupRem}                   (InboundStateDup.160);
 
     \draw[->]         (InboundIdleStateDup.270) to [out=-80,in=110]
-                                                      node[fill=white,pos=0.8]{\small\CommitDup}                   (TerminatingState.170);
-    \draw[->]         (InboundIdleStateUni.320) to [out=-90,in=70]
-                                                      node[fill=white,pos=0.8]{\small\CommitUni}                   (TerminatingState.10);
-    \draw[->, dashed] (InboundStateDup.15)      -- node[fill=white,left=-75pt,pos=0.6]{\small\DemotedToColdDupRem} (InboundIdleStateDup.345);
+                                                      node[fill=white,pos=0.8]{\small\CommitDupRem}                (TerminatingState.170);
+    \draw[->]         (InboundIdleStateUni.320) to [out=-90,in=50]
+                                                      node[fill=white,pos=0.8]{\small\CommitUniRem}                (TerminatingState.10);
+    \draw[->, dashed] (InboundStateDup.15)      -- node[fill=white,left=-85pt,pos=0.6]{\small\DemotedToColdDupRem} (InboundIdleStateDup.345);
     \draw[->, dashed] (InboundStateUni.165)     -- node[pos=0.3,fill=white]{\small\DemotedToColdUniRem}            (InboundIdleStateUni.200);
     % \draw[->]         (OutboundStateUni.195)    to [out=270, in=180,pos=0.23,looseness=2]
                                                       % node[right=12pt,rotate=88,pos=0.3]{\small\DemotedToColdUniLoc}  (TerminatingState.175);
@@ -779,8 +800,8 @@ This transition is done by the \texttt{includeInboundConnection}.
 
 
 \subsubsection{\AwakeDupLoc{}, \AwakeDupRem{} and \AwakeUniRem{}}
-All the awake transitions start either at \InboundIdleStateUni{} or
-\InboundIdleStateDup{}.
+All the awake transitions start either at \InboundIdleStateAny{}, the
+\AwakeDupRem{} can also be triggered on \OutboundIdleStateDup{}.
 
 \begin{detail}
   \AwakeDupLoc{} transition is done by \texttt{requestOutboundConnection} on
@@ -790,12 +811,12 @@ All the awake transitions start either at \InboundIdleStateUni{} or
 \end{detail}
 
 
-\subsubsection{\CommitUni{}, \CommitDup{}}\label{sec:tr_commit}
+\subsubsection{\CommitUniRem{}, \CommitDupRem{}}\label{sec:tr_commit}
 Both commit transitions happen after \textit{protocol idle timeout} of
 inactivity (as the \TimeoutExpired{} transition does). They transition to
 \TerminatingState{} (closing the bearer). For duplex connections a normal
 shutdown procedure goes through \InboundIdleStateDup{}
-via \CommitDup{} - which gave the name to this transition.
+via \CommitDupRem{} - which gave the name to this transition.
 
 These transitions are triggered by inactivity of responder mini-protocols. They
 both protect against a client that connects but never sends any data through
@@ -805,8 +826,8 @@ states.
 
 Both commit transitions:
 \begin{itemize}
-  \item \CommitDup{}
-  \item \CommitUni{}
+  \item \CommitDupRem{}
+  \item \CommitUniRem{}
 \end{itemize}
 need to detect idleness during time interval (which we call: \text{protocol
 idle timeout}). If during this time frame inbound traffic on any responder
@@ -843,22 +864,26 @@ the local \AwakeDupLoc{} transition.
 \end{detail}
 
 
-\subsubsection{\DemotedToColdUniLoc{}}
-This transition is driven by the \ptopgov{} when it decides to demote the peer
-to \cold{} state, its domain is \OutboundStateUni{}. This transition should
-trigger connection termination.
+\subsubsection{\DemotedToColdUniLoc{}, \DemotedToColdDupLoc{}}
+This transitions is driven by the \ptopgov{} when it decides to demote the peer
+to \cold{} state, its domain is \OutboundStateAny{} or \OutboundStateDupTau{}.
+The target state is \OutboundIdleStateAny{} in which the connection manager
+sets up a timeout.  When the timeout expires connection manager will do
+\CommitAnyLoc{} transition, which will reset the connection.
 
 \begin{detail}
 This transition is done by \texttt{unregisterOutboundConnection}.
 \end{detail}
 
 
-\subsubsection{\DemotedToColdDupLoc{}}
-It is driven, as the previous transition, by the local \ptopgov{}, but this time it is
-triggered on a connection in either \OutboundStateDup{} or \DuplexState{}.
+\subsubsection{\DemotedToColdUniRem{}, \DemotedToColdDupRem{}}
+Both transitions are edge-triggered, the connection manager is notified by the
+\inbgov{} once it notices that all responders became idle. Detection of
+idleness during \textit{protocol idle timeout} is done in a separate step which
+is triggered immediately, see section~\ref{sec:tr_commit_rem} for details.
 
 \begin{detail}
-This transition is done by \texttt{unregisterOutboundConnection}.
+  Both transitions are done by \texttt{demotedToColdRemote}.
 \end{detail}
 
 
@@ -872,16 +897,6 @@ This transition is done by \texttt{requestOutboundConnection}.
 \end{detail}
 
 
-\subsubsection{\DemotedToColdUniRem{}, \DemotedToColdDupRem{}}
-Both transitions are edge-triggered, the connection manager is notified by the
-\inbgov{} once it notices that all responders stopped. Detection of idleness
-during \textit{protocol idle timeout} is done in a separate step which is
-triggered immediately, see section~\ref{sec:tr_commit} for details.
-
-\begin{detail}
-  Both transitions are done by \texttt{demotedToColdRemote}.
-\end{detail}
-
 \subsubsection{\TimeoutExpired{}}
 This transition is triggered when the protocol idleness timeout expires while
 the connection is in \OutboundStateDupTau{}. The server starts this timeout
@@ -892,6 +907,7 @@ state can terminate or it needs to await for that timeout to expire.
 \begin{detail}
   This transition is done by \texttt{unregisterInboundConnection}.
 \end{detail}
+
 
 \subsubsection{\PromotedToWarmDupRem{}}
 This asynchronous transition is triggered by the remote peer.  The \inbgov{}
@@ -910,12 +926,14 @@ It then should notify the \connmngr{}.
   \end{itemize}
 \end{detail}
 
+
 \subsubsection{\Prune{} transitions}
 First let us note that a connection in \InboundStateDup{}, could have been
 initiated by either side (Outbound or Inbound). This means that even though a node might have not
 accepted any connection, it could end up serving peers and possibly go beyond
 server hard limit, thus exceeding the number of file descriptors. This is
 possible via the following path:
+
 \begin{itemize}
   \item[] \Connected{},
   \item[] \NegotiatedDupOut{},
@@ -928,16 +946,44 @@ same state in which accepted duplex connections end up. Even though the server
 rate limits connections based on how many connections are in this state, we
 could end up exceeding server hard limit.
 
+These are all transitions that potentially could lead to exceeding server hard limit,
+all of them are transitions from some outbound / duplex state into an inbound / duplex state:
+\begin{itemize}
+  \item \DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{})
+  \item \OutboundStateDupTau{} to \InboundStateDup{} (via \DemotedToColdDupLoc{})
+  \item \OutboundIdleStateDup{} to \InboundStateDup{} (via \AwakeDupRem{})
+  \item \OutboundStateDupTau{} to \DuplexState{} (via \PromotedToWarmDupRem{})
+  \item \OutboundStateDup{} to \DuplexState{} (via \PromotedToWarmDupRem{})
+\end{itemize}
+
 To solve this problem, when a connection is transitioned from
-\DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{}) the
-\connmngr{} will check if the server hard limit was exceeded. If that
+\DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{}), for example,
+the \connmngr{} will check if the server hard limit was exceeded. If that
 happened, the \connmngr{} will reset an arbitrary connection (with some preference).
 
-We prefer to reset an inbound connection rather than close an outbound
+The reason why going from \OutboundStateDupTau{} (or \OutboundStateDup{}, or
+\OutboundIdleStateDup{}) to \InboundStateDup{} might exceed the server hard limit
+is exacty the same as the \DuplexState{} to \InboundStateDup{} one.
+However, the reason why going from \OutboundStateDupTau{} to \DuplexState{} might
+exceed the limit is more tricky.  To reach a \DuplexState{} one assumes there must
+have been an incoming \textit{accepted} connection, but there's another way that two
+end-points can establish a connection without a node accepting it. If two nodes try
+to request an outbound connection simultaneously, it is possible, for two applications
+to both perform an active open to each other at the same time.  This is called a
+\href{https://flylib.com/books/en/3.223.1.190/1/}{\textit{simultaneous open}}.
+In a simultaneous TCP open, we can have 2 nodes establishing a connection without any of
+them having explicitly accepted a connection, which can make a server violate its file
+descriptor limit.
+
+Given this, we prefer to reset an inbound connection rather than close an outbound
 connection because from a systemic point of view, outbound connections are more
 valuable than inbound ones. If we keep the number of \established{} peers to
 be smaller than the server hard limit, with a right policy we should never need
-to reset a connection in \DuplexState{}.
+to reset a connection in \DuplexState{}. However, when dealing with a connection that
+transitions from \OutboundStateDupTau{} to \DuplexState{}, we actually need to
+make sure this connection is closed, because we have no way to know for sure
+if this connection is the result of a TCP simultaneous open and there might
+not be any other connection available to prune that can make space for this one.
 
 The \textit{inbound protocol governor} is in position to make an educated
 decision about which connection to reset. Initially, we aim for a decision driven by
@@ -946,36 +992,100 @@ whether we are \hot{} to the remote end, or for how long we have been \hot{} to
 to the remote node.} and the implementation should allow to easily extend the
 initial choice.
 
+
+\subsubsection{\CommitUniRem{}, \CommitDupRem{}}\label{sec:tr_commit_rem}
+Both commit transitions happen after \textit{protocol idle timeout} of
+inactivity (as the \TimeoutExpired{} transition does). They transition to
+\TerminatingState{} (closing the bearer). For duplex connections a normal
+shutdown procedure goes through \InboundIdleStateDup{}
+via \CommitDupRem{} - which gave the name to this transition, or through
+\OutboundIdleStateDup{} via \CommitDupLoc{} transition.
+
+These transitions are triggered by inactivity of responder mini-protocols. They
+both protect against a client that connects but never sends any data through
+the bearer; also, as part of a termination sequence, it is protecting us from
+shutting down a connection which is transitioning between \warm{} and \hot{}
+states.
+
+Both commit transitions:
+\begin{itemize}
+  \item \CommitDupRem{}
+  \item \CommitUniRem{}
+\end{itemize}
+
+need to detect idleness during time interval (which we call: \text{protocol
+idle timeout}). If during this time frame inbound traffic on any responder
+mini-protocol is detected, one of the \AwakeDupRem{} or \AwakeUniRem{}
+transition is performed. The idleness detection might also be interrupted by
+the local \AwakeDupLoc{} transition.
+
+\begin{detail}
+  These transitions can be triggered by \texttt{unregisterInboundConnection} and
+  \texttt{unregisterOutboundConnection} (both are non-blocking), but the
+  stateful idleness detection during \textit{protocol idle timeout} is
+  implemented by the \inbgov{}.  The implementation is relying on two
+  properties:
+  \begin{itemize}
+    \item the multiplexer being able to start mini-protocols on-demand, which
+      allows us to restart a mini-protocol as soon as it returns, without
+      disturbing idleness detection;
+    \item the initial agency for any mini-protocol is on the client.
+  \end{itemize}
+\end{detail}
+
+\begin{detail}
+  Whenever an outbound connection is requested, we notify the server about
+  a new connection.  We do that also when the connection manager hands over an
+  existing connection.  If \inbgov{} is already tracking that connection,
+  we need to make sure that
+  \begin{itemize}
+    \item \inbgov{} preserves its internal state of that connection;
+    \item \inbgov{} does not starts mini-protocols, as they are already running
+      (we restart responders as soon as the stop, using the on-demand
+      strategy).
+  \end{itemize}
+\end{detail}
+
+
+\subsubsection{\CommitUniLoc{}, \CommitDupLoc{}}\label{sec:tr_commit_loc}
+As previous two transitions, these also are trigged after \textit{protocol idle
+timeout}, but this time are triggered on the outbound side.  These transition
+will reset the connection, and the timeout make sure that the remote end will
+be able to clear its ingress queue before the \TCP{} reset arrives.  For a more
+detailed analysis see~\ref{sec:connection-close} section.
+
+
+\subsubsection{\Terminate{}}
+After a connection was closed, we keep it in \TerminatingState{} for the
+duration of \textit{wait time timeout}.  When the timeout expires the
+connection is forgotten.  \todo[inline]{Add a haddock link to \texttt{daTimeWaitTimeout}}
+
+
 \subsection{Protocol errors}
 If a mini-protocol errors, on either side, connection will be reset, and put in
-\TerminatedState{}. This can possibly happen in any connection state.
+\TerminatedState{}. This can happen in any connection state.
 
-\subsubsection{\TerminatingState{} and \TerminatedState{}}
-After a connection was closed we keep it in \TerminatingState{} for some time
-(\textit{wait time timeout}). This allows for the kernel to release all the
-resources. After this fixed timeout the connection is removed from the
-\connmngr{} state, which we explicitly denote, in this specification, as
-\TerminatedState{}.
 
-\paragraph{Closing a TCP connection}
-We decided to use \texttt{SO\_LINGER} socket option when closing a connection.
-Without it the socket is closed in the background, but when using it, the
-\texttt{close} system call blocks until either all messages are sent or the
-specified linger timeout fires. Unfortunately, our experiments showed that if
-the remote side (not the one that called \texttt{close}), delays reading
-the packets, then even with \texttt{SO\_LINGER} option set, the socket is kept
-by the OS, after which the connection is closed. On \texttt{FreeBSD}
-it is closed cleanly, on \texttt{Linux} and \texttt{OSX} it is reset. This
-would give the power to the remote end to keep resources for extended amounts of
-time, which we want to avoid. We thus decided to always use
-\texttt{SO\_LINGER} option with timeout set to \texttt{0}, which always resets
-the connection. The consequences of this are:
+\subsection{Closing connection}\label{sec:connection-close}
+
+By default when operating system is closing a socket it is done in the
+background, but when \texttt{SO\_LINGER} option is set, the \texttt{close}
+system call blocks until either all messages are sent or the specified linger
+timeout fires. Unfortunately, our experiments showed that if the remote side
+(not the one that called \texttt{close}), delays reading the packets, then even
+with \texttt{SO\_LINGER} option set, the socket is kept in the background by
+the OS.  On \texttt{FreeBSD} it is eventually closed cleanly, on \texttt{Linux}
+and \texttt{OSX} it is reset. This behaviour gives the power to the
+remote end to keep resources for extended amount of time, which we want to
+avoid. We thus decided to always use \texttt{SO\_LINGER} option with timeout
+set to \texttt{0}, which always resets the connection (i.e. it sets the
+\texttt{RST} \TCP{} flag). This has the following consequences:
 
 \begin{itemize}
   \item Four-way handshake used by \TCP{} termination will not be used. The
     four-way handshake allows to close each side of the connection separately.
     With reset, the OS is instructed to forget the state of the connection
-    immediately.
+    immediately (including freeing unread ingress buffer).
   \item the system will not keep the socket in \texttt{TIME\_WAIT} state, which
     was designed to:
     \begin{itemize}
@@ -987,8 +1097,13 @@ the connection. The consequences of this are:
 \end{itemize}
 
 The connection state machine makes sure that we close a connection only when
-both sides are not using the connection. With exception of protocol errors and
-the prune transitions, which uncooperatively close the connection.
+both sides are not using the connection for some time: for outbound connections
+this is configured by the timeout on the \OutboundIdleStateAny{}, while for
+inbound connections by the timeout on the \InboundIdleStateAny{}.
+\todo{Add haddock link to \texttt{daProtocolIdleTimeout}}
+This ensures that the application is able to read from ingress buffers
+before the \texttt{RST} packet arrives.  Excluding protocol errors and prune
+transitions, which uncooperatively reset the connection.
 
 We also provide application level \texttt{TIME\_WAIT} state:
 \TerminatingState{}, in which we keep a connection which should also protect us
@@ -996,18 +1111,20 @@ from late packets from a previous connection. However the connection manager
 does allow to accept new connections during \TerminatingState{} - it is
 the responsibility of the client to not re-connect too early. For example,
 \ptopgov{} enforces 60s idle period before it can reconnect to the same peer, after
-either a protocol error or connection failure.
+either a protocol error or a connection failure.
 
 From an operational point of view it's important that connections are not held in
 \texttt{TIME\_WAIT} state for too long. This would be problematic when
 restarting a node (without rebooting the system) (e.g. when adjusting
 configuration). Since we reset connections, this is not a concern.
 
+
 \subsection{\textit{Outbound} connection}
 
-If the connection state is in either \ReservedOutboundState{}, \UnnegotiatedStateIn
-or \InboundStateDup{} then, when calling \texttt{requestOutboundConnection} the state of a connection leads to
-either \OutboundStateUni{} or \DuplexState{}.
+If the connection state is in either \ReservedOutboundState{},
+\UnnegotiatedStateIn{} or \InboundStateDup{} then, when calling
+\texttt{requestOutboundConnection} the state of a connection leads to either
+\OutboundStateUni{} or \DuplexState{}.
 
 If \texttt{Unidirectional} connection was
 negotiated, \texttt{requestOutboundConnection} must error. If \texttt{Duplex}
@@ -1036,11 +1153,10 @@ the initial state.
 \paragraph{\textnormal{Otherwise}:} if \connmngr{} is asked to connect to
 peer and there exists a connection which is in any other state, e.g.
 \UnnegotiatedStateOut{}, \OutboundStateAny{}, \DuplexState{}, \connmngr{} signals the caller with an error, see
-section~\ref{sub:includeOutboundConnect}.
+section~\ref{table:requestOutboundConnection}.
 
-Figure~\ref{fig:outbound_flow} shows outbound connection state evolution.  This
-shows the exact steps and decisions that \texttt{requestOutboundConnection}
-needs to make.
+Figure~\ref{fig:outbound_flow} shows outbound connection state evolution,  e.g.
+the flow graph of \texttt{requestOutboundConnection}.
 
 \begin{figure}[p]
   \footnotesize{\begin{tikzpicture}[scale=0.8]
@@ -1054,11 +1170,11 @@ needs to make.
 
     % This may be influenced by `initiator only` flag or version of the connection.
     \node[decision]               (handshake_decision_outbound) at (-5, -6.5) {Which data flow was negotiated?};
-    \node[outbound_state]         (outbound_unidf)              at (-8, -9)   {\OutboundStateUni{}};
+    \node[outbound_state]         (outbound_unidf)              at (-8.5, -9)   {\OutboundStateUni{}};
     \draw (connected) -- node[left] {\textbf{\textbf{handshake}}} (handshake_decision_outbound);
 
     \node[inbound_outbound_state] (outbound_dupdf)             at (-8, -11)  {\OutboundStateDup{}};
-    \draw[->] (handshake_decision_outbound.west) -| node[left, near end] {\texttt{Unidirectional}} (outbound_unidf);
+    \draw[->] (handshake_decision_outbound.west) -| node[left, near end] {\textbf{\texttt{Unidirectional}}} (outbound_unidf);
     \draw[->] (handshake_decision_outbound) |- node[right, near start] {\textbf{\texttt{Duplex}}} (outbound_dupdf);
 
     % Connection found flow
@@ -1081,13 +1197,13 @@ needs to make.
     \node[circle,fill=black] (x2) at (0, -11) {};
     \node[error,anchor=west] (termination_unidf) at (4, -12) {\textbf{error \texttt{ForbiddenConnection}}};
     \draw (x2) |- (inbound_unidf);
-    \draw[] (inbound_unidf) |- (termination_unidf);
+    \draw[] (inbound_unidf.200) |- (termination_unidf);
 
     \node[inbound_state,anchor=west] (inboundidle_unidf)       at (1, -13) {\InboundIdleStateUni};
     \node[circle,fill=black] (x3) at (0, -13) {};
     \node[error,anchor=west] (termination_inboundidle) at (4, -14) {\textbf{error \texttt{ForbiddenConnection}}};
     \draw (x3) |- (inboundidle_unidf);
-    \draw (inboundidle_unidf.225) |- (termination_inboundidle);
+    \draw (inboundidle_unidf.200) |- (termination_inboundidle);
 
     \node[inbound_outbound_state,anchor=west] (inboundidle_dupdf)         at (1, -15) {\InboundIdleStateDup};
     \node[circle,fill=black] (x4) at (0, -15) {};
@@ -1105,7 +1221,7 @@ needs to make.
     \node[circle,fill=black] (x6) at (0, -19) {};
     \node[error,anchor=west] (termination_outuni) at (4, -20) {\textbf{error \texttt{ConnectionExists}}};
     \draw (x6) |- (outbound_uni);
-    \draw (outbound_uni) |- (termination_outuni.west);
+    \draw (outbound_uni.200) |- (termination_outuni.west);
 
     \node[impossible_outbound_state,anchor=west] (duplex_imp)   at (1, -21) {\DuplexState};
     \node[circle,fill=black] (x7) at (0, -21) {};
@@ -1113,17 +1229,23 @@ needs to make.
     \draw (x7) |- (duplex_imp);
     \draw (duplex_imp) |- (termination_dupuni.west);
 
-    \node[inbound_outbound_state,anchor=west] (terminating) at (1, -23) {\TerminatingState};
-    \node[circle,fill=black] (x8) at (0, -23) {};
-    \draw (x8) |- (terminating);
+    \node[inbound_outbound_state,anchor=west] (outboundidle) at (1, -23) {\OutboundIdleStateAny};
+    \node[circle,fill=black] (x8) at (0,-23) {};
+    \node[error,anchor=west] (termination_outboundidle) at (4,-24) {\textbf{error \texttt{ForbiddenOperation}}};
+    \draw (x8) |- (outboundidle);
+    \draw (outboundidle.200) |- (termination_outboundidle);
+
+    \node[inbound_outbound_state,anchor=west] (terminating) at (1, -25) {\TerminatingState};
+    \node[circle,fill=black] (x9) at (0, -25) {};
+    \draw (x9) |- (terminating);
     \draw[->] (terminating.0) to [out=30,in=340] node[above right,pos=0.8,looseness=2] {\textbf{await wait time timeout}} (init.east);
 
-    \node[inbound_outbound_state,anchor=west] (terminated)  at (1, -24) {\TerminatedState};
-    \node[circle,fill=black] (x9) at (0, -24) {};
-    \draw (x9) |- (terminated);
+    \node[inbound_outbound_state,anchor=west] (terminated)  at (1, -26) {\TerminatedState};
+    \node[circle,fill=black] (x10) at (0, -26) {};
+    \draw (x10) |- (terminated);
     \draw[->] (terminated) to [out=90,in=315] (not_found);
 
-    \draw (found.south) |- (x9);
+    \draw (found.south) |- (x10);
 
   \end{tikzpicture}}
   \caption{\textit{Outbound} connection flow graph}
@@ -1136,7 +1258,10 @@ to \OutboundStateDup{}.  At this point we need to start responder protocols.
 This means that the \connmngr{} needs a way to inform server (which
 accepts and monitors inbound connections), to start the protocols and monitor
 that connection.  This connection will transition to \DuplexState{} only once
-we notice incoming traffic on any of \established{} protocols.
+we notice incoming traffic on any of \established{} protocols. Since this connection might
+have been established via TCP simultaneous open, this transition to \DuplexState{} can
+also trigger \Prune{} transitions if the number of inbound connections becomes above
+the limit.
 
 \begin{detail}
   The implementation is using a \texttt{TBQueue}. Server is using this channel
@@ -1149,9 +1274,8 @@ When \ptopgov{} demotes a peer to \cold{} state, an outbound
 connection needs to transition from either:
 
 \begin{itemize}
-  \item \OutboundStateUni{} to \TerminatingState{}
+  \item \OutboundStateAny{} to \OutboundIdleStateAny{}
   \item \OutboundStateDupTau{} to \InboundIdleStateDup{}
-  \item \OutboundStateDup{} to \TerminatingState{}
   \item \DuplexState{} to \InboundStateDup{}
 \end{itemize}
 
@@ -1168,8 +1292,15 @@ the number of inbound connections becomes above the limit.
 
 \subsubsection{Connection manager methods}
 
-\paragraph{\texttt{requestOutboundConnection}}\label{sub:includeOutboundConnect}
-\begin{center}
+The tables~\ref{table:requestOutboundConnection}
+and~\ref{table:unregisterOutboundConnection} show transitions performed by
+\begin{itemize}
+  \item \texttt{requestOutboundConnection} and
+  \item \texttt{unregisterOutboundConnection}
+\end{itemize}
+respectively.
+
+\begin{table}
   \begin{tabular}[h]{ll}
     \textit{State}           & \textit{Action} \\\hline\\[2pt]
     \InitialState{}          &
@@ -1191,32 +1322,43 @@ the number of inbound connections becomes above the limit.
         \texttt{ForbiddenConnection}
       \end{minipage}
       \vspace{8pt}\\
-    \InboundIdleStateDup{}   & transition to \OutboundStateDup{}  \\[8pt]
+    \OutboundStateAny{}      & error \texttt{ConnectionExists}    \\[8pt]
+    \OutboundStateDupTau{}   & error \texttt{ConnectionExists}    \\[8pt]
+    \OutboundIdleStateAny{}  & error \texttt{ForbiddenOperation}  \\[8pt]
     \InboundIdleStateUni{}   & error \texttt{ForbiddenConnection} \\[8pt]
-    \OutboundStateAny{}      & error \texttt{ConnectionExists} \\[8pt]
-    \DuplexState{}           & error \texttt{ConnectionExists} \\[8pt]
-    \TerminatingState{}      & await for \TerminatedState{}    \\[8pt]
-    \TerminatedState{}       & can be treated as initial state \\[8pt]
+    \InboundIdleStateDup{}   & transition to \OutboundStateDup{}  \\[8pt]
+    \InboundStateUni{}       & error \texttt{ForbiddenConnection} \\[8pt]
+    \InboundStateDup{}       & transition to \DuplexState{}       \\[8pt]
+    \DuplexState{}           & error \texttt{ConnectionExists}    \\[8pt]
+    \TerminatingState{}      & await for \TerminatedState{}       \\[8pt]
+    \TerminatedState{}       & can be treated as initial state    \\[8pt]
   \end{tabular}
-\end{center}
+  \caption{\texttt{requestOutboundConnection}; states indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.}
+  \label{table:requestOutboundConnection}
+\end{table}
 
-\paragraph{\texttt{unregisterOutboundConnection}}
-\begin{center}
+\begin{table}
   \begin{tabular}[h]{ll}
     \textit{State}           & \textit{Action} \\\hline\\[2pt]
     \InitialState{}          & \texttt{no-op} \\[8pt]
     \ReservedOutboundState{} & error \texttt{ForbiddenOperation} \\[8pt]
     \UnnegotiatedStateOut{}  & error \texttt{ForbiddenOperation} \\[8pt]
     \UnnegotiatedStateIn{}   & error \texttt{ForbiddenOperation} \\[8pt]
-    \InboundIdleStateUni{}   & assertion error or \texttt{no-op} \\[8pt]
+    \OutboundStateAny{}      & \DemotedToColdAnyLoc{} \\[8pt]
+    \OutboundStateDupTau{}   & \Prune{} or \DemotedToColdDupLoc{} \\[8pt]
+    \OutboundIdleStateAny{}  & \texttt{no-op} \\[8pt]
+    \InboundIdleStateUni{}   & assertion error \\[8pt]
     \InboundIdleStateDup{}   & \texttt{no-op} \\[8pt]
-    \OutboundStateUni{}      & \DemotedToColdUniLoc{} \\[8pt]
-    \OutboundStateDup{}      & \DemotedToColdDupLoc{} \\[8pt]
-    \DuplexState{}           & \Prune{} and \DemotedToColdDupLoc{} \\[8pt]
+    \InboundStateUni{}       & assertion error \\[8pt]
+    \InboundStateDup{}       & \texttt{no-op} \\[8pt]
+    \DuplexState{}           & \Prune{} or \DemotedToColdDupLoc{} \\[8pt]
     \TerminatingState{}      & \texttt{no-op} \\[8pt]
     \TerminatedState{}       & \texttt{no-op} \\[8pt]
   \end{tabular}
-\end{center}
+  \caption{\texttt{unregisterOutboundConnection}}
+  \label{table:unregisterOutboundConnection}
+\end{table}
+
 The choice between \texttt{no-op} and error is solved by the following rule: if
 the calling component (e.g. \ptopgov{}), is able to keep its state in
 a consistent state with \connmngr{} then use \texttt{no-op}, otherwise
@@ -1267,8 +1409,19 @@ Initial states for inbound connection are either:
 
 \subsubsection{Connection manager methods}
 
-\paragraph{\texttt{includeInboundConnection}}
-\begin{center}
+The following tables show transitions of the following connection manager methods:
+\begin{itemize}
+  \item \texttt{includeInboundConnection}: table~\ref{table:includeInboundConnection}
+  \item \texttt{promotedToWarmRemote}: table~\ref{table:promotedToWarmRemote}
+  \item \texttt{demotedToColdRemote}: table~\ref{table:demotedToColdRemote}
+  \item \texttt{unregisterInboundConnection}: table~\ref{table:unregisterInboundConnection}
+\end{itemize}
+
+States indicated by `-` are preserved, though unexpected;
+\texttt{promotedToWarmRemote} will use \texttt{UnsupportedState ::
+OperationResult a} to indicate that to the caller.
+
+\begin{table}
   \begin{tabular}[h]{ll}
     \textit{State}           & \textit{Action} \\\hline\\[2pt]
     \InitialState{}          &
@@ -1290,19 +1443,19 @@ Initial states for inbound connection are either:
     \TerminatingState{}      & the same as \InitialState{} \\[8pt]
     \TerminatedState{}       & the same as \InitialState{} \\[8pt]
   \end{tabular}
-\end{center}
+  \caption{\texttt{includeInboundConnection}}
+  \label{table:includeInboundConnection}
+\end{table}
 States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
 
-\paragraph{\texttt{promotedToWarmRemote}}
-\begin{center}
-  \footnotesize
+\begin{table}
   \begin{tabular}[h]{llll}
     \textit{StateIn}         & \textit{StateOut} & \textit{transition} \\\hline\\[2pt]
     \InitialState{}          & - & \\[8pt]
     \ReservedOutboundState{} & - & \\[8pt]
     \UnnegotiatedStateAny{}  & - & \\[8pt]
     \OutboundStateUni{}      & - & \\[8pt]
-    \OutboundStateDup{}      & \DuplexState{} & \PromotedToWarmDupRem{} \\[8pt]
+    \OutboundStateDup{}      & \Prune{} or (\DuplexState{} & \PromotedToWarmDupRem{}) \\[8pt]
     \InboundIdleStateUni{}   & \InboundStateUni{} & \AwakeUniRem{} \\[8pt]
     \InboundIdleStateDup{}   & \InboundStateDup{} & \AwakeDupRem{} \\[8pt]
     \InboundStateUni{}       & - & \\[8pt]
@@ -1311,18 +1464,11 @@ States indicated with a \textsuperscript{$\dagger$} are forbidden by \TCP{}.
     \TerminatingState{}      & - & \\[8pt]
     \TerminatedState{}       & - & \\[8pt]
   \end{tabular}
-\end{center}
-States indicated by - are preserved, though unexpected;
-\texttt{promotedToWarmRemote} will use \texttt{UnsupportedState ::
-OperationResult a} to indicate that to the caller.
+  \caption{\texttt{promotedToWarmRemote}}
+  \label{table:promotedToWarmRemote}
+\end{table}
 
-% TODO:
-% See section~\ref{}
-
-\paragraph{\texttt{demotedToColdRemote}}
-
-\begin{center}
-  \footnotesize
+\begin{table}
   \begin{tabular}[h]{lll}
     \textit{StateIn}         & \textit{StateOut} & \textit{transition} \\\hline\\[2pt]
     \ReservedOutboundState{} & - & - \\[8pt]
@@ -1334,13 +1480,11 @@ OperationResult a} to indicate that to the caller.
     \TerminatingState{}      & - & - \\[8pt]
     \TerminatedState{}       & - & - \\[8pt]
   \end{tabular}
-\end{center}
-As in the case of \texttt{promotedToWarmRemote}, states indicated by - are
-preserved, though unexpected.
+  \caption{\texttt{demotedToColdRemote}}
+  \label{table:demotedToColdRemote}
+\end{table}
 
-\paragraph{\texttt{unregisterInboundConnection}}
-\begin{center}
-  \footnotesize
+\begin{table}
   \begin{tabular}[h]{llll}
     \textit{StateIn}         & \textit{StateOut} & \textit{transition} & \textit{Returned Value}\\\hline\\[2pt]
     \InitialState{}          & - & & - \\[8pt]
@@ -1355,7 +1499,7 @@ preserved, though unexpected.
       \begin{minipage}[t]{5cm}
         \begin{itemize}
           \item \DemotedToColdAnyRem{}
-          \item \CommitAny{}
+          \item \CommitAnyRem{}
         \end{itemize}
       \end{minipage}
         & \True \\[8pt]
@@ -1363,13 +1507,16 @@ preserved, though unexpected.
     \TerminatingState{}      & - & & - \\[8pt]
     \TerminatedState{}       & - & & - \\[8pt]
   \end{tabular}
-\end{center}
-Both transitions denoted by \textsuperscript{$\dagger$} should not happen.  The
-implementation is using assertion, and the production system will trust that
-the server side calls this method only after all responder mini-protocols where
-idle for \textit{protocol idle timeout}.
+  \caption{\texttt{unregisterInboundConnection}}
+  \label{table:unregisterInboundConnection}
+\end{table}
 
-\texttt{unregisterInboundConnection} might be called when the connection is in
+Transitions denoted by \textsuperscript{$\dagger$} should not happen.  The
+implementation is using assertion, and the production system will trust that
+the server side calls \texttt{unregisterInboundConnection} only after all
+responder mini-protocols where idle for \textit{protocol idle timeout}.
+
+\noindent\texttt{unregisterInboundConnection} might be called when the connection is in
 \OutboundStateDup{}. This can, though very rarely, happen as a race between
 \AwakeDupRem{} and \DemotedToColdDupRem{}\footnote{race is not the right term,
 these transitions are concurrent and independent}. Lets consider the
@@ -1387,13 +1534,12 @@ following sequence of transitions:
     \draw[->] (InboundIdleStateDup) -- node [right] {\small\AwakeDupLoc} (OutboundStateDup);
   \end{tikzpicture}
 \end{center}
-
 If the \textit{protocol idle timeout} on the \InboundIdleStateDup{} expires
-after the \AwakeDupLoc{} transition the server will call
+the \AwakeDupRem{} transition is triggered and the \inbgov{} calls
 \texttt{unregisterInboundConnection}.
 
 \begin{figure}[p]
-  {\hspace{-3cm}\begin{tikzpicture}[scale=0.66]
+  \begin{tikzpicture}[scale=0.66]
     \node                                     (init)                       at ( 2,   2)     {\small\InitialState};
     \node[outbound_state]                     (ReservedOutboundState)      at ( 0,-0.25)    {\small\ReservedOutboundState};
     \node[outbound_state,anchor=east]         (UnnegotiatedStateOut)       at (-1,  -3)     {\small\UnnegotiatedStateOut};
@@ -1402,112 +1548,78 @@ after the \AwakeDupLoc{} transition the server will call
     \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 5, -8)      {\small\InboundIdleStateUni};
     \node[outbound_state,anchor=east]         (OutboundStateUni)           at (-2, -7.5)    {\small\OutboundStateUni};
     \node[inbound_outbound_state,anchor=east] (OutboundStateDupTau)        at (-1, -10.5)   {\small\OutboundStateDupTau};
-    \node[inbound_outbound_state,anchor=east] (OutboundStateDup)           at (-1,  -14.0)  {\small\OutboundStateDup};
-    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 5, -15.0)   {\small\InboundStateUni};
+    \node[inbound_outbound_state,anchor=east] (OutboundStateDup)           at (-1,  -14.0)  {\small\OutboundStateDupP};
+    \node[inbound_state,anchor=west]          (InboundStateUni)            at ( 5, -16.0)   {\small\InboundStateUni};
     \node[inbound_outbound_state,anchor=west] (InboundStateDup)            at ( 1,  -13.5)  {\small\InboundStateDup};
     \node[inbound_outbound_state]             (DuplexState)                at (-1.5, -21.5) {\small\DuplexState};
-    \node[inbound_outbound_state]             (TerminatingState)           at ( 3,  -23)    {\small\TerminatingState};
-    \node[inbound_outbound_state]             (TerminatedState)            at ( 3,  -26)    {\small\TerminatedState};
+    \node[inbound_outbound_state]             (OutboundIdleStateDup)       at ( 5,  -23)    {\small\OutboundIdleStateDup};
+    \node[outbound_state]                     (OutboundIdleStateUni)       at (-5,  -24.5)  {\small\OutboundIdleStateUni};
+    \node[inbound_outbound_state]             (TerminatingState)           at ( 3,  -27)    {\small\TerminatingState};
+    \node[inbound_outbound_state]             (TerminatedState)            at ( 3,  -30)    {\small\TerminatedState};
 
 
     % legend
-    \node[anchor=west]                         at (8,-20.25) {\textbf{Legend:}};
-    \node[requestOutboundArr,anchor=west]      at (8,-21)    {\texttt{requestOutboundConnection}};
-    \node[unregisterOutboundArr,anchor=west]   at (8,-21.75) {\texttt{unregisterOutboundConnection}};
-    \node[includeInboundArr,anchor=west]       at (8,-22.5)  {\texttt{includeInboundConnection}};
-    \node[promotedToWarmRemoteArr,anchor=west] at (8,-23.25) {\texttt{promotedToWarmRemote}};
-    \node[demotedToColdRemoteArr,anchor=west]  at (8,-24)    {\texttt{demotedToColdRemote}};
-    \node[unregisterInboundArr,anchor=west]    at (8,-24.75) {\texttt{unregisterInboundConnection}};
+    \node[anchor=west]                         at (8,-25.25) {\textbf{Legend:}};
+    \node[requestOutboundArr,anchor=west]      at (8,-26)    {\texttt{requestOutboundConnection}};
+    \node[unregisterOutboundArr,anchor=west]   at (8,-26.75) {\texttt{unregisterOutboundConnection}};
+    \node[registerInboundArr,anchor=west]       at (8,-27.5)  {\texttt{includeInboundConnection}};
+    \node[promotedToWarmRemoteArr,anchor=west] at (8,-28.25) {\texttt{promotedToWarmRemote}};
+    \node[demotedToColdRemoteArr,anchor=west]  at (8,-29)    {\texttt{demotedToColdRemote}};
+    \node[unregisterInboundArr,anchor=west]    at (8,-29.75) {\texttt{unregisterInboundConnection}};
 
+    \draw[->,requestOutboundArr] (init) -- node[fill=white,pos=0.425,above left]{\small\Reserve}                                          (ReservedOutboundState);
+    \draw[->,registerInboundArr] (init) to [out=310, in=90] node[fill=white, above right]{\small\Accepted}                                (UnnegotiatedStateIn.30);
 
-    \draw[->,requestOutboundArr] (init)
-                                   -- node[fill=white,pos=0.425,above left]{\small\Reserve}
-                                   (ReservedOutboundState);
-    \draw[->,includeInboundArr]  (init)
-                                   to [out=310, in=90] node[fill=white, above right]{\small\Accepted}
-                                   (UnnegotiatedStateIn.30);
+    \draw[->,requestOutboundArr] (ReservedOutboundState)          -- node[fill=white,above left] {\small\Connected}                       (UnnegotiatedStateOut);
+    \draw[->,registerInboundArr] (ReservedOutboundState)          -- node[fill=white,above right] {\small\Overwritten}                    (UnnegotiatedStateIn);
 
-    \draw[->,requestOutboundArr] (ReservedOutboundState)
-                                   -- node[fill=white,above left] {\small\Connected}
-                                   (UnnegotiatedStateOut);
-    \draw[->,includeInboundArr]  (ReservedOutboundState)
-                                   -- node[fill=white,above right] {\small\Overwritten}
-                                   (UnnegotiatedStateIn);
+    \draw[->,requestOutboundArr] (UnnegotiatedStateOut)           -- node[fill=white,left=-42pt] {\small\NegotiatedUniOut}                (OutboundStateUni.165);
+    \draw[->,requestOutboundArr] (UnnegotiatedStateOut.340)       to [out=-60, in=90]
+                                               node[fill=white,right=-30pt,pos=0.23]{\small\NegotiatedDupOut}          (OutboundStateDupTau.13);
 
-    \draw[->,requestOutboundArr] (UnnegotiatedStateOut)
-                                   -- node[fill=white,left=-42pt] {\small\NegotiatedUniOut}
-                                   (OutboundStateUni.165);
-    \draw[->,requestOutboundArr] (UnnegotiatedStateOut.340)
-                                   to [out=-60, in=90]
-                                   node[fill=white,right=-30pt,pos=0.23]{\small\NegotiatedDupOut}
-                                   (OutboundStateDupTau.13);
+    \draw[->, registerInboundArr]         (UnnegotiatedStateIn)    -- node[fill=white,left=-12pt]{\small\NegotiatedDupIn}                  (InboundIdleStateDup.150);
+    \draw[->, registerInboundArr]         (UnnegotiatedStateIn)    -- node[fill=white,pos=0.35,right=-28pt]{\small\NegotiatedUniIn}        (InboundIdleStateUni.60);
 
-    \draw[->,includeInboundArr]  (UnnegotiatedStateIn)
-                                   -- node[fill=white,left=-12pt]{\small\NegotiatedDupIn}
-                                   (InboundIdleStateDup.150);
-    \draw[->,includeInboundArr]  (UnnegotiatedStateIn)
-                                   -- node[fill=white,pos=0.35,right=-28pt]{\small\NegotiatedUniIn}
-                                   (InboundIdleStateUni.60);
+    \draw[->, unregisterInboundArr]         (InboundIdleStateUni.320) to [out=-90,in=40]
+                                                node[fill=white,pos=0.5,rotate=70,left=-15pt]{\small\CommitUniRem}     (TerminatingState.0);
+    \draw[->, dashed,  demotedToColdRemoteArr] (InboundStateUni.10)      -- node[pos=0.3,fill=white,right=-45pt]{\small\DemotedToColdUniRem}    (InboundIdleStateUni.350);
+    \draw[->, requestOutboundArr]         (InboundIdleStateDup.195) -- node[fill=white,pos=0.4]{\small\AwakeDupLoc}                        (OutboundStateDupTau.10);
 
-    \draw[->,dashed,demotedToColdRemoteArr] (InboundStateUni.10)
-                                              -- node[pos=0.3,fill=white,right=-45pt]{\small\DemotedToColdUniRem}
-                                              (InboundIdleStateUni.350);
-    \draw[->,requestOutboundArr]            (InboundIdleStateDup.195)
-                                              -- node[fill=white,pos=0.4]{\small\AwakeDupLoc}
-                                              (OutboundStateDupTau.10);
+    \draw[->, dashed, promotedToWarmRemoteArr] (InboundIdleStateDup.200) -- node[fill=white,pos=0.65]{\small\AwakeDupRem}                       (InboundStateDup.160);
+    \draw[->, unregisterOutboundArr]         (OutboundStateDupTau.150) to [out=90,in=-170]
+                                                node[fill=white,pos=0.10,left=-56pt]{\small\DemotedToColdDupLoc}       (InboundIdleStateDup.180);
+    \draw[->, unregisterOutboundArr]         (OutboundStateDup.192)    to [out=-90,in=180,looseness=2]
+                                                node[fill=white,rotate=90,pos=0.2]{\small\DemotedToColdDupLoc}         (OutboundIdleStateDup.180);
+    \draw[->, unregisterInboundArr]         (OutboundStateDupTau.192) --
+                                                node[fill=white] {\small\TimeoutExpired}
+                                                (OutboundStateDup.168);
+    \draw[->, requestOutboundArr]         (InboundStateDup)         to [out=-110,in=40]
+                                                node[pos=0.9,right=20pt,rotate=70]{\footnotesize\PromotedToWarmDupLoc}     (DuplexState.10);
+    \draw[->, dashed, promotedToWarmRemoteArr] (OutboundIdleStateDup.60) to [out=90, in=270]
+                                                node[fill=white,rotate=90,pos=0.6,below=30pt]{\footnotesize\AwakeDupRem}   (InboundStateDup.345);
+    \draw[->, unregisterOutboundArr]         (DuplexState)             to [out=50,in=220]
+                                                node[fill=white,pos=0.90,left=24pt,rotate=65]{\small\DemotedToColdDupLoc}  (InboundStateDup);
+    \draw[->, dashed, demotedToColdRemoteArr] (DuplexState.155)         to [out=90,in=-40]
+                                                node[fill=white,right=10pt,pos=0.01,rotate=80]{\small\DemotedToColdDupRem} (OutboundStateDupTau);
 
-    \draw[->,dashed,promotedToWarmRemoteArr]
-                                        (InboundIdleStateDup.200)
-                                          -- node[fill=white,pos=0.65]{\small\AwakeDupRem}
-                                          (InboundStateDup.160);
-    \draw[->,unregisterOutboundArr]     (OutboundStateDupTau.150) to [out=90,in=-170]
-                                          node[fill=white,pos=0.15,left=-56pt]{\small\DemotedToColdDupLoc}
-                                          (InboundIdleStateDup.180);
-    \draw[->,unregisterOutboundArr]     (OutboundStateDup.192)    to [out=-90,in=-170,looseness=2]
-                                          node[fill=white,rotate=90,pos=0.2]{\small\DemotedToColdDupLoc}
-                                          (TerminatingState.185);
-    \draw[->,unregisterInboundArr]      (OutboundStateDupTau.192) --
-                                          node[fill=white] {\small\TimeoutExpired}
-                                          (OutboundStateDup.168);
-    \draw[->,unregisterOutboundArr]     (DuplexState)             to [out=50,in=220]
-                                          node[fill=white,pos=0.90,left=24pt,rotate=65]{\small\DemotedToColdDupLoc}
-                                          (InboundStateDup);
-    \draw[->,requestOutboundArr]        (InboundStateDup)         to [out=-110,in=40]
-                                          node[pos=0.9,right=22pt,rotate=70]{\small\PromotedToWarmDupLoc}
-                                          (DuplexState.10);
-    \draw[->,dashed,demotedToColdRemoteArr]
-                                        (DuplexState.155)         to [out=90,in=-40]
-                                          node[fill=white,right=10pt,pos=0.01,rotate=80]{\small\DemotedToColdDupRem}
-                                          (OutboundStateDupTau);
+    \draw[dashed, promotedToWarmRemoteArr] (OutboundStateDupTau)         -- (OutboundStateDup.south);
+    \filldraw (OutboundStateDupTau.south) circle [radius=3pt];
+    \filldraw (OutboundStateDup.south)    circle [radius=3pt];
+    \draw[->, dashed, promotedToWarmRemoteArr] (OutboundStateDup)        to [out=-90,in=180]
+                                                node[left,pos=0.05,left=10pt,rotate=80]{\small\PromotedToWarmDupRem}  (DuplexState);
 
-    \draw[dashed,promotedToWarmRemoteArr] (OutboundStateDupTau) -- (OutboundStateDup.south);
-    \filldraw[promotedToWarmRemoteArr] (OutboundStateDupTau.south) circle [radius=3pt];
-    \filldraw[promotedToWarmRemoteArr] (OutboundStateDup.south)    circle [radius=3pt];
-    \draw[->,dashed,promotedToWarmRemoteArr] (OutboundStateDup)
-                                                to [out=-90,in=180]
-                                                node[left,pos=0.05,left=10pt,rotate=80]{\small\PromotedToWarmDupRem}
-                                                (DuplexState);
+    \draw[->, unregisterInboundArr]         (InboundIdleStateDup.270) to [out=-80,in=80]
+                                                      node[fill=white,pos=0.5,left=-10pt,rotate=80]{\small\CommitDupRem} (TerminatingState.155);
+    \draw[->, dashed, promotedToWarmRemoteArr] (InboundIdleStateUni.200) -- node[fill=white,right=-15pt]{\small\AwakeUniRem}                   (InboundStateUni.160);
+    \draw[->, dashed, demotedToColdRemoteArr] (InboundStateDup.15)      -- node[fill=white,left=-75pt,pos=0.5]{\small\DemotedToColdDupRem}    (InboundIdleStateDup.345);
+    \draw[->, unregisterOutboundArr]         (OutboundStateUni.190)    to [out=270, in=90,pos=0.23,looseness=2]
+                                                node[fill=white,rotate=88,pos=0.3]{\small\DemotedToColdUniLoc}        (OutboundIdleStateUni.173);
 
-    \draw[->,unregisterInboundArr]           (InboundIdleStateDup.270) to [out=-80,in=80]
-                                               node[fill=white,pos=0.6,left=-10pt,rotate=80]{\small\CommitDup}
-                                               (TerminatingState.110);
-    \draw[->,unregisterInboundArr]           (InboundIdleStateUni.320) to [out=-90,in=70]
-                                               node[fill=white,pos=0.5,rotate=70,left=-10pt]{\small\CommitUni}
-                                               (TerminatingState.10);
-    \draw[->,dashed,promotedToWarmRemoteArr] (InboundIdleStateUni.200)
-                                               -- node[fill=white,right=-15pt]{\small\AwakeUniRem}
-                                               (InboundStateUni.160);
-    \draw[->,dashed,demotedToColdRemoteArr]  (InboundStateDup.15)
-                                               -- node[fill=white,left=-75pt,pos=0.5]{\small\DemotedToColdDupRem}
-                                               (InboundIdleStateDup.345);
-    \draw[->,unregisterOutboundArr]          (OutboundStateUni.195)
-                                               to [out=270, in=180,pos=0.23,looseness=2]
-                                               node[fill=white,rotate=88,pos=0.3]{\small\DemotedToColdUniLoc}
-                                               (TerminatingState.175);
+    \draw[->, unregisterOutboundArr]         (OutboundIdleStateUni)       to [out=300, in=180] node[fill=white,below left]{\CommitUniLoc}         (TerminatingState.180);
+    \draw[->, unregisterOutboundArr]         (OutboundIdleStateDup.280)   -- node[fill=white,pos=.4]{\CommitDupLoc}                          (TerminatingState.40);
+    \draw[->]         (TerminatingState)           -- node[left]{\Terminate}                                          (TerminatedState);
 
-    \draw[->] (TerminatingState) -- node[left]{\Terminate} (TerminatedState);
-
-  \end{tikzpicture}}
+  \end{tikzpicture}
   \caption{Transitions classified by connection manager method.}
   \label{fig:methods}
 \end{figure}
@@ -1517,13 +1629,13 @@ after the \AwakeDupLoc{} transition the server will call
 The server consists of two components: an accept loop and an \inbgov{}.  The
 accept loop is using \texttt{includeInboundConnnection} on incoming
 connections, while the \inbgov{} tracks the state of responder side of all
-mini-protocols, and is responsible for starting and restarting
+mini-protocols, and it is responsible for starting and restarting
 mini-protocols, as well as detecting if they are used, in order to support:
 
 \begin{itemize}
   \item \PromotedToWarmDupRem{},
   \item \DemotedToColdUniRem{},
-  \item \CommitUni{} and \CommitDup{} transitions.
+  \item \CommitUniRem{} and \CommitDupRem{} transitions.
 \end{itemize}
 
 The \inbgov{} will always start/restart all the mini-protocols using
@@ -1532,9 +1644,9 @@ any traffic on its ingress queues, corresponding to responder protocols,
 it will do the \PromotedToWarmDupRem{} transition using
 \texttt{promotedToWarmRemote} method.
 
-Once all responder mini-protocols become idle, i.e. they all stopped or were
-re-started but are not yet running, a \DemotedToColdAnyRem{} transition is
-run: the \inbgov{} will notify the \connmngr{} using:
+Once all responder mini-protocols become idle, i.e. they all stopped, were
+re-started (on-demand) but are not yet running, a \DemotedToColdAnyRem{}
+transition is run: the \inbgov{} will notify the \connmngr{} using:
 
 \begin{lstlisting}
 -- | Notify the 'ConnectionManager' that a remote end demoted us to a /cold
@@ -1550,9 +1662,13 @@ demotedToColdRemote
 \end{lstlisting}
 
 When all responder mini-protocols are idle for \textit{protocol idle timeout},
-the \inbgov{} will execute \CommitUni{}, \CommitDup{} if the inital state is
-\InboundIdleStateDup{} or \texttt{no-op} if the initial state is
-\OutboundStateDup{}.
+the \inbgov{} will execute \texttt{unregisterInboundConnection} which will trigger:
+\begin{itemize}
+  \item \CommitUniRem{} or \CommitDupRem{} if the initial state is
+    \InboundIdleStateDup{};
+  \item \TimeoutExpired{}  if the initial state is \OutboundStateDupTau{};
+  \item \texttt{no-op}  if the initial state is \OutboundStateDup{} or \OutboundIdleStateAny{}.
+\end{itemize}
 
 \begin{lstlisting}
 -- | Return value of 'unregisterInboundConnection' to inform the caller about
@@ -1575,7 +1691,7 @@ data DemotedToColdRemoteTr =
 
 unregisterInboundConnection *'$\coloncolon$'* peerAddr *'$\Rightarrow$'* m (OperationResult DemotedToColdRemoteTr)
 \end{lstlisting}
-Both \CommitUni{} and \CommitDup{} will free resources (terminate the
+Both \CommitUniRem{} and \CommitDupRem{} will free resources (terminate the
 connection thread, close the socket).
 
 
@@ -1587,7 +1703,7 @@ are responsible to notify it about new connections once they are negotiated.
 Figure~\ref{fig:inbgov-state-machine} presents the state machine that drives
 changes to connection states tracked by \inbgov{}.  As in the connection
 manager case there is an implicit transition from every state to the
-terminating state, which represents mux failures, or mini-protocol changes.
+terminating state, which represents mux or mini-protocol failures.
 
 \begin{figure}[h]
   \begin{tikzpicture}
@@ -1621,7 +1737,7 @@ which represents negotiated inbound or duplex outbound connections to the
   & \Phi(\text{\TerminatedState})     & =\; & \text{\FinalState} \\
 \end{align*}
 Furthermore, \(\Phi\) gives rise to a functor: any transformation that has
-\textsf{Local} subscript is mapped to identity, and:
+\textsf{Local} subscript is mapped to identity:
 \begin{lstlisting}
 *'$\Phi$(\textsf{a\textsubscript{Local}}) = \textsf{id}'*
 *'$\Phi$(\DemotedToColdAnyRem:\InboundIdleStateAny{}$\rightarrow$\TerminatingState)'*

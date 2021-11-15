@@ -11,7 +11,6 @@ module Network.Mux.Bearer.AttenuatedChannel
   , Attenuation (..)
   , newConnectedAttenuatedChannelPair
   , attenuationChannelAsMuxBearer
-  , CloseError (..)
   -- * Trace
   , AttenuatedChannelTrace (..)
   -- * Utils
@@ -34,7 +33,6 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (($>))
 import           Data.Int (Int64)
 import           Data.Maybe (isJust)
-import           Data.Typeable (Typeable)
 
 import           Network.Mux.Codec
 import           Network.Mux.Time
@@ -100,16 +98,24 @@ writeQueueChannel QueueChannel { qcWrite } msg =
                 >> return True
 
 
-newConnectedQueueChannelPair :: MonadSTM m
+newConnectedQueueChannelPair :: ( MonadSTM         m
+                                , MonadLabelledSTM m
+                                )
                              => STM m ( QueueChannel m
                                       , QueueChannel m )
 newConnectedQueueChannelPair = do
     read  <- newTQueue
     write <- newTQueue
+    labelTQueue read  "qc-queue-read"
+    labelTQueue write "qc-queue-write"
     q  <- QueueChannel <$> newTVar (Just read)
                        <*> newTVar (Just write)
+    labelTVar (qcRead q)  "qc-read"
+    labelTVar (qcWrite q) "qc-write"
     q' <- QueueChannel <$> newTVar (Just write)
                        <*> newTVar (Just read)
+    labelTVar (qcRead q')  "qc-read'"
+    labelTVar (qcWrite q') "qc-write'"
     return (q, q')
 
 
@@ -130,16 +136,6 @@ data AttenuatedChannel m = AttenuatedChannel {
     acClose :: m ()
   }
 
-
--- | Error thrown when expected 'MsgClose' does not arrive within `120s`.
---
--- This excpetion should not be handled by a simulation, it is a proof of a half
--- closed connection, which should never happen when using connection manager.
---
-data CloseError = CloseTimeoutError
-  deriving (Show, Typeable)
-
-instance Exception CloseError
 
 
 data SuccessOrFailure = Success | Failure
@@ -218,11 +214,16 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
       when (not sent) $
         throwIO (resourceVanishedIOError "AttenuatedChannel.write" "")
 
+    -- closing is a 3-way handshake.
+    --
     acClose :: m ()
     acClose = do
+      -- send 'MsgClose' and close the underlying channel
       sent <- writeQueueChannel qc MsgClose
       traceWith tr (AttChannClosing sent)
 
+      -- await for a reply, unless the read channel is already closed.
+      --
       -- TODO: switch to timeout once it's fixed.
       d <- registerDelay 120
       res <-
@@ -235,23 +236,21 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
               case msg of
                 Nothing       -> return ()
                 Just MsgClose -> return ()
+                -- some other message; let the appliction read it first.
                 Just _        -> retry)
 
       traceWith tr (AttChannClosed (isJust res))
-      case res of
-        Just _  -> return ()
-        Nothing -> throwIO CloseTimeoutError
 
 
 -- | Create a pair of connected 'AttenuatedChannel's.
 --
 newConnectedAttenuatedChannelPair
     :: forall m.
-       ( MonadSTM        m
-       , MonadTime       m
-       , MonadTimer      m
-       , MonadThrow      m
-       , MonadThrow (STM m)
+       ( MonadLabelledSTM m
+       , MonadTime        m
+       , MonadTimer       m
+       , MonadThrow       m
+       , MonadThrow  (STM m)
        )
     => Tracer m AttenuatedChannelTrace
     -> Tracer m AttenuatedChannelTrace

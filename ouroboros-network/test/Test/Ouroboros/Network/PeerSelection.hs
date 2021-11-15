@@ -18,6 +18,7 @@ module Test.Ouroboros.Network.PeerSelection (tests, unfHydra) where
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
 import           Data.List (groupBy, foldl')
+import qualified Data.IP as IP
 import           Data.Maybe (listToMaybe, isNothing, fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -105,9 +106,6 @@ tests =
     , testProperty "progresses towards active local root peers target (from above)"
                    prop_governor_target_active_local_above
     ]
-  , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
-  , testProperty "governor connection status"       prop_governor_connstatus
-  , testProperty "governor no livelock"             prop_governor_nolivelock
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others
@@ -491,6 +489,7 @@ traceNum TraceDemoteHotDone{}         = 22
 traceNum TraceDemoteAsynchronous{}    = 23
 traceNum TraceGovernorWakeup{}        = 24
 traceNum TraceChurnWait{}             = 25
+traceNum TraceChurnMode{}             = 26
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -1360,6 +1359,8 @@ prop_governor_target_established_below env =
                        | otherwise         -> Just failures
                        where
                          failures = Map.keysSet (Map.filter (==PeerCold) status)
+                     TracePromoteWarmFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
                      _ -> Nothing
               )
           . selectGovEvents
@@ -1659,6 +1660,8 @@ prop_governor_target_established_local env =
                        | otherwise         -> Just failures
                        where
                          failures = Map.keysSet (Map.filter (==PeerCold) status)
+                     TracePromoteWarmFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
                      _ -> Nothing
               )
           . selectGovEvents
@@ -1891,6 +1894,7 @@ _governorFindingPublicRoots :: Int -> STM IO [RelayAccessPoint] -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
     publicRootPeersProvider
       tracer
+      (curry IP.toSockAddr)
       DNS.defaultResolvConf
       readDomains
       ioDNSActions $ \requestPublicRootPeers ->
@@ -1930,12 +1934,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
 
     policy :: PeerSelectionPolicy SockAddr IO
     policy  = PeerSelectionPolicy {
-                policyPickKnownPeersForGossip = pickTrivially,
-                policyPickColdPeersToForget   = pickTrivially,
-                policyPickColdPeersToPromote  = pickTrivially,
-                policyPickWarmPeersToPromote  = pickTrivially,
-                policyPickHotPeersToDemote    = pickTrivially,
-                policyPickWarmPeersToDemote   = pickTrivially,
+                policyPickKnownPeersForGossip = \_ _ _ -> pickTrivially,
+                policyPickColdPeersToForget   = \_ _ _ -> pickTrivially,
+                policyPickColdPeersToPromote  = \_ _ _ -> pickTrivially,
+                policyPickWarmPeersToPromote  = \_ _ _ -> pickTrivially,
+                policyPickHotPeersToDemote    = \_ _ _ -> pickTrivially,
+                policyPickWarmPeersToDemote   = \_ _ _ -> pickTrivially,
                 policyFindPublicRootTimeout   = 5,
                 policyMaxInProgressGossipReqs = 0,
                 policyGossipRetryTime         = 0, -- seconds

@@ -15,11 +15,16 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Concurrent.JobPool (Job(..))
 import           Control.Exception (SomeException, assert)
+import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.KnownPeers (setTepidFlag)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
@@ -32,14 +37,14 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 -- peers/ according to 'policyPickWarmPeersToPromote' policy.
 --
 belowTarget :: forall peeraddr peerconn m.
-               (MonadSTM m, Ord peeraddr)
+               (MonadDelay m, MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
 belowTarget = belowTargetLocal <> belowTargetOther
 
 
 belowTargetLocal :: forall peeraddr peerconn m.
-                    (MonadSTM m, Ord peeraddr)
+                    (MonadDelay m, MonadSTM m, Ord peeraddr)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetLocal actions
@@ -84,7 +89,7 @@ belowTargetLocal actions
   = Guarded Nothing $ do
       selectedToPromote <-
         Set.unions <$> sequence
-          [ pickPeers
+          [ pickPeers st
               policyPickWarmPeersToPromote
               membersAvailableToPromote
               numMembersToPromote
@@ -132,7 +137,7 @@ belowTargetLocal actions
       ]
 
 belowTargetOther :: forall peeraddr peerconn m.
-                    (MonadSTM m, Ord peeraddr)
+                    (MonadDelay m, MonadSTM m, Ord peeraddr)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetOther actions
@@ -165,7 +170,7 @@ belowTargetOther actions
   , not (Set.null availableToPromote)
   , numPeersToPromote > 0
   = Guarded Nothing $ do
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickWarmPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -198,7 +203,7 @@ belowTargetOther actions
 
 
 jobPromoteWarmPeer :: forall peeraddr peerconn m.
-                      (Monad m, Ord peeraddr)
+                      (MonadDelay m, Ord peeraddr)
                    => PeerSelectionActions peeraddr peerconn m
                    -> peeraddr
                    -> peerconn
@@ -207,31 +212,69 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                    peeraddr peerconn =
     Job job handler () "promoteWarmPeer"
   where
+    baseReconnectDelay :: Double
+    baseReconnectDelay = 10
+
     handler :: SomeException -> m (Completion m peeraddr peerconn)
-    handler e = return $
-      --TODO: decide what happens if promotion fails, do we stay warm or go to
-      -- cold? Will this be reported asynchronously via the state monitoring?
-      Completion $ \st@PeerSelectionState {
-                               activePeers,
-                               targets = PeerSelectionTargets {
-                                           targetNumberOfActivePeers
-                                         }
-                             }
-                    _now -> Decision {
-        decisionTrace = TracePromoteWarmFailed targetNumberOfActivePeers
-                                               (Set.size activePeers) 
-                                               peeraddr e,
-        decisionState = st {
-                          inProgressPromoteWarm = Set.delete peeraddr
-                                                    (inProgressPromoteWarm st)
-                        },
-        decisionJobs  = []
-      }
+    handler e = do
+      -- We wait here, not to avoid race conditions or broken locking, this is
+      -- just a very simple back-off strategy. For cold -> warm failures we use
+      -- an exponential back-off retry strategy. For warm -> hot we do not need
+      -- such a strategy. Simply a short pause is enough to ensure we never
+      -- busy-loop.  Failures of warm -> hot will be accompanied by an
+      -- asynchronous demotion to cold relatively promptly. If we did ever need
+      -- to carry on after warm -> hot failures then we would need to implement
+      -- a more sophisticated back-off strategy, like an exponential back-off
+      -- (and perhaps use that failure count in the policy to drop useless peers
+      -- in the warm -> cold transition).
+      threadDelay 1
+      return $
+        -- When promotion fails we set the peer as cold.
+        Completion $ \st@PeerSelectionState {
+                                 activePeers,
+                                 establishedPeers,
+                                 knownPeers,
+                                 fuzzRng,
+                                 targets = PeerSelectionTargets {
+                                             targetNumberOfActivePeers
+                                           }
+                               }
+                      now ->
+          -- TODO: this is a temporary fix, which will by addressed by
+          -- #3460
+          let establishedPeers' = EstablishedPeers.delete peeraddr
+                                    establishedPeers
+              (fuzz, fuzzRng')  = randomR (-2, 2 :: Double) fuzzRng
+              delay             = realToFrac $ fuzz + baseReconnectDelay
+              knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
+                                     then KnownPeers.setConnectTime
+                                            (Set.singleton peeraddr)
+                                            (delay `addTime` now)
+                                          $ snd $ KnownPeers.incrementFailCount
+                                            peeraddr
+                                            knownPeers
+                                     else
+                                       -- Apparently the governor can remove
+                                       -- the peer we failed to promote from the
+                                       -- set of known peers before we can process
+                                       -- the failure.
+                                       knownPeers in
+          Decision {
+          decisionTrace = TracePromoteWarmFailed targetNumberOfActivePeers
+                                                 (Set.size activePeers)
+                                                 peeraddr e,
+          decisionState = st {
+                            inProgressPromoteWarm = Set.delete peeraddr
+                                                      (inProgressPromoteWarm st),
+                            knownPeers            = knownPeers',
+                            establishedPeers      = establishedPeers',
+                            fuzzRng               = fuzzRng'
+                          },
+          decisionJobs  = []
+        }
 
     job :: m (Completion m peeraddr peerconn)
     job = do
-      --TODO: decide if we should do timeouts here or if we should make that
-      -- the responsibility of activatePeerConnection
       activatePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {
                                activePeers,
@@ -241,6 +284,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                              }
                            _now ->
         assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
+        assert (peeraddr `KnownPeers.member` knownPeers st) $
         let activePeers' = Set.insert peeraddr activePeers in
         Decision {
           decisionTrace = TracePromoteWarmDone targetNumberOfActivePeers
@@ -320,7 +364,7 @@ aboveTargetLocal actions
   = Guarded Nothing $ do
       selectedToDemote <-
         Set.unions <$> sequence
-          [ pickPeers
+          [ pickPeers st
               policyPickHotPeersToDemote
               membersAvailableToDemote
               numMembersToDemote
@@ -383,7 +427,7 @@ aboveTargetOther actions
                               Set.\\ LocalRootPeers.keysSet localRootPeers
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
-      selectedToDemote <- pickPeers
+      selectedToDemote <- pickPeers st
                             policyPickHotPeersToDemote
                             availableToDemote
                             numPeersToDemote
@@ -410,6 +454,11 @@ aboveTargetOther actions
     numActivePeers      = Set.size activePeers
     numDemoteInProgress = Set.size inProgressDemoteHot
 
+-- | Reconnect delay for peers which asynchronously transitioned to cold state.
+--
+reconnectDelay :: DiffTime
+reconnectDelay = 10
+--TODO: make this a policy param
 
 jobDemoteActivePeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
@@ -423,22 +472,43 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
-      -- It's quite bad if closing fails, but the best we can do is revert to
-      -- the state where we believed these peers are still warm, since then we
-      -- can have another go at the ones we didn't yet try to close, or perhaps
-      -- it'll be closed for other reasons and our monitoring will notice it.
+      -- It's quite bad if demoting fails. The peer is cold so
+      -- remove if from the set of established and hot peers.
       Completion $ \st@PeerSelectionState {
                       activePeers,
+                      establishedPeers,
+                      inProgressDemoteHot,
+                      knownPeers,
                       targets = PeerSelectionTargets {
                                   targetNumberOfActivePeers
-                                }
+                                },
+                      fuzzRng
                     }
-                    _now -> Decision {
+                    now ->
+        let (rFuzz, fuzzRng')     = randomR (-2, 2 :: Double) fuzzRng
+            peerSet               = Set.singleton peeraddr
+            activePeers'          = Set.delete peeraddr activePeers
+            inProgressDemoteHot'  = Set.delete peeraddr inProgressDemoteHot
+            knownPeers'           = KnownPeers.setConnectTime
+                                     peerSet
+                                     ((realToFrac rFuzz + reconnectDelay)
+                                      `addTime` now)
+                                   . Set.foldr'
+                                     ((snd .) . KnownPeers.incrementFailCount)
+                                     knownPeers
+                                   $ peerSet
+            establishedPeers'     = EstablishedPeers.deletePeers
+                                     peerSet
+                                     establishedPeers in
+        Decision {
         decisionTrace = TraceDemoteHotFailed targetNumberOfActivePeers
                                              (Set.size activePeers) peeraddr e,
         decisionState = st {
-                          inProgressDemoteHot = Set.delete peeraddr
-                                                  (inProgressDemoteHot st)
+                          inProgressDemoteHot = inProgressDemoteHot',
+                          fuzzRng = fuzzRng',
+                          activePeers = activePeers',
+                          knownPeers = knownPeers',
+                          establishedPeers = establishedPeers'
                         },
         decisionJobs  = []
       }
@@ -448,19 +518,22 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
       deactivatePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {
                                 activePeers,
+                                knownPeers,
                                 targets = PeerSelectionTargets {
                                             targetNumberOfActivePeers
                                           }
                              }
                              _now ->
         assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
-        let activePeers' = Set.delete peeraddr activePeers in
+        let activePeers' = Set.delete peeraddr activePeers
+            knownPeers'  = setTepidFlag peeraddr knownPeers in
         Decision {
           decisionTrace = TraceDemoteHotDone targetNumberOfActivePeers
                                              (Set.size activePeers')
                                              peeraddr,
           decisionState = st {
                             activePeers         = activePeers',
+                            knownPeers          = knownPeers',
                             inProgressDemoteHot = Set.delete peeraddr
                                                     (inProgressDemoteHot st)
                           },

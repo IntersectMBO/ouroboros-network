@@ -11,6 +11,7 @@ module Ouroboros.Network.PeerSelection.LocalRootPeers (
     empty,
     null,
     size,
+    member,
     target,
     fromGroups,
     toGroups,
@@ -75,6 +76,9 @@ null (LocalRootPeers m _) = Map.null m
 
 size :: LocalRootPeers peeraddr -> Int
 size (LocalRootPeers m _) = Map.size m
+
+member :: Ord peeraddr => peeraddr -> LocalRootPeers peeraddr -> Bool
+member p (LocalRootPeers m _) = Map.member p m
 
 target :: LocalRootPeers peeraddr -> Int
 target (LocalRootPeers _ gs) = sum [ t | (t, _) <- gs ]

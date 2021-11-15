@@ -20,7 +20,9 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
 library
-  exposed-modules:     Ouroboros.Network.CodecCBORTerm
+  exposed-modules:     Data.Cache
+                       Data.Wedge
+                       Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
@@ -28,6 +30,7 @@ library
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux
+                       Ouroboros.Network.MuxMode
                        Ouroboros.Network.Util.ShowProxy
 
                        Ouroboros.Network.Protocol.Handshake
@@ -40,9 +43,18 @@ library
                        Ouroboros.Network.Protocol.Limits
 
                        Ouroboros.Network.ConnectionId
+                       Ouroboros.Network.ConnectionHandler
+                       Ouroboros.Network.ConnectionManager.Types
+                       Ouroboros.Network.ConnectionManager.Core
+                       Ouroboros.Network.InboundGovernor
+                       Ouroboros.Network.InboundGovernor.Event
+                       Ouroboros.Network.InboundGovernor.State
+                       Ouroboros.Network.InboundGovernor.ControlChannel
+                       Ouroboros.Network.RethrowPolicy
                        Ouroboros.Network.Server.ConnectionTable
                        Ouroboros.Network.Server.Socket
                        Ouroboros.Network.Server.RateLimiting
+                       Ouroboros.Network.Server2
                        Ouroboros.Network.Snocket
                        Ouroboros.Network.Socket
 
@@ -53,6 +65,8 @@ library
                        Ouroboros.Network.Subscription.PeerState
                        Ouroboros.Network.Subscription.Subscriber
                        Ouroboros.Network.Subscription.Worker
+
+                       Simulation.Network.Snocket
 
   other-modules:       Ouroboros.Network.Linger
   -- other-extensions:
@@ -66,6 +80,7 @@ library
                      , hashable
                      , mtl
                      , nothunks
+                     , random
                      , stm
                      , text
                      , time
@@ -101,11 +116,14 @@ test-suite test
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   hs-source-dirs:      test
-  other-modules:       Test.Ouroboros.Network.Driver
+  other-modules:       Test.Ouroboros.Network.ConnectionManager
+                       Test.Ouroboros.Network.Driver
                        Test.Ouroboros.Network.Orphans
+                       Test.Ouroboros.Network.Server2
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
                        Test.Ouroboros.Network.RateLimiting
+                       Test.Simulation.Network.Snocket
 
   build-depends:       base
                      , bytestring
@@ -115,19 +133,25 @@ test-suite test
                      , dns
                      , iproute
                      , network
+                     , pretty-simple
                      , serialise
+                     , text
                      , time
+                     , quiet
 
                      , QuickCheck
+                     , quickcheck-instances
                      , tasty
                      , tasty-quickcheck
 
+                     , cardano-prelude
                      , contra-tracer
 
                      , io-sim
                      , io-classes
                      , network-mux
                      , ouroboros-network-framework
+                     , ouroboros-network-testing
                      , typed-protocols
                      , typed-protocols-cborg
                      , typed-protocols-examples
@@ -168,6 +192,36 @@ executable demo-ping-pong
   if os(windows)
     build-depends:     Win32-network                <0.2,
                        Win32           >=2.5.4.1 && <3.0
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wno-unticked-promoted-constructors
+
+executable demo-connection-manager
+  hs-source-dirs:      demo test
+  main-is:             connection-manager.hs
+  build-depends:       base,
+                       bytestring,
+                       cborg,
+                       network,
+                       optparse-applicative,
+                       random,
+                       serialise,
+
+                       contra-tracer,
+
+                       io-classes,
+                       network-mux,
+                       ouroboros-network-framework,
+                       typed-protocols,
+                       typed-protocols-examples
 
   default-language:    Haskell2010
   ghc-options:         -Wall

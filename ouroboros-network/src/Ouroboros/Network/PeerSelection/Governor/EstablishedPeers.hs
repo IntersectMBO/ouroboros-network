@@ -104,7 +104,7 @@ belowTargetLocal actions
           numPeersToPromote  = targetNumberOfLocalPeers
                              - numLocalEstablishedPeers
                              - numLocalConnectInProgress
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -187,7 +187,7 @@ belowTargetOther actions
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
-      selectedToPromote <- pickPeers
+      selectedToPromote <- pickPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
                              numPeersToPromote
@@ -284,6 +284,7 @@ jobPromoteColdPeer PeerSelectionActions {
       peerconn <- establishPeerConnection peeraddr
       return $ Completion $ \st@PeerSelectionState {
                                establishedPeers,
+                               knownPeers,
                                targets = PeerSelectionTargets {
                                            targetNumberOfEstablishedPeers
                                          }
@@ -291,6 +292,11 @@ jobPromoteColdPeer PeerSelectionActions {
                              _now ->
         let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
                                                         establishedPeers
+            knownPeers'       = KnownPeers.clearTepidFlag peeraddr $
+                                    KnownPeers.resetFailCount
+                                        peeraddr
+                                        knownPeers
+
         in Decision {
              decisionTrace = TracePromoteColdDone targetNumberOfEstablishedPeers
                                                   (EstablishedPeers.size establishedPeers')
@@ -299,9 +305,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                establishedPeers      = establishedPeers',
                                inProgressPromoteCold = Set.delete peeraddr
                                                          (inProgressPromoteCold st),
-                               knownPeers            = KnownPeers.resetFailCount
-                                                         peeraddr
-                                                         (knownPeers st)
+                               knownPeers            = knownPeers'
                              },
              decisionJobs  = []
            }
@@ -368,7 +372,7 @@ aboveTarget actions
                                 Set.\\ LocalRootPeers.keysSet localRootPeers
                                 Set.\\ inProgressDemoteWarm
                                 Set.\\ inProgressPromoteWarm
-      selectedToDemote <- pickPeers
+      selectedToDemote <- pickPeers st
                             policyPickWarmPeersToDemote
                             availableToDemote
                             numPeersToDemote
@@ -393,6 +397,12 @@ aboveTarget actions
   = GuardedSkip Nothing
 
 
+-- | Reconnect delay for peers which asynchronously transitioned to cold state.
+--
+reconnectDelay :: DiffTime
+reconnectDelay = 10
+--TODO: make this a policy param
+
 jobDemoteEstablishedPeer :: forall peeraddr peerconn m.
                             (Monad m, Ord peeraddr)
                          => PeerSelectionActions peeraddr peerconn m
@@ -405,23 +415,41 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
-      -- It's quite bad if closing fails, but the best we can do is revert to
-      -- the state where we believed this peer is still warm, since then we
-      -- can have another go or perhaps it'll be closed for other reasons and
-      -- our monitoring will notice it.
+      -- It's quite bad if closing fails. The peer is cold so
+      -- remove if from the set of established.
       Completion $ \st@PeerSelectionState {
                        establishedPeers,
+                       inProgressDemoteWarm,
+                       knownPeers,
                        targets = PeerSelectionTargets {
                                    targetNumberOfEstablishedPeers
-                                 }
+                                 },
+                       fuzzRng
                      }
-                     _now -> Decision {
+                     now ->
+        let (rFuzz, fuzzRng')     = randomR (-2, 2 :: Double) fuzzRng
+            peerSet               = Set.singleton peeraddr
+            inProgressDemoteWarm' = Set.delete peeraddr inProgressDemoteWarm
+            knownPeers'           = KnownPeers.setConnectTime
+                                     peerSet
+                                     ((realToFrac rFuzz + reconnectDelay)
+                                      `addTime` now)
+                                   . Set.foldr'
+                                     ((snd .) . KnownPeers.incrementFailCount)
+                                     knownPeers
+                                   $ peerSet
+            establishedPeers'     = EstablishedPeers.deletePeers
+                                     peerSet
+                                     establishedPeers in
+        Decision {
         decisionTrace = TraceDemoteWarmFailed targetNumberOfEstablishedPeers
                                               (EstablishedPeers.size establishedPeers)
                                               peeraddr e,
         decisionState = st {
-                          inProgressDemoteWarm = Set.delete peeraddr
-                                                   (inProgressDemoteWarm st)
+                          inProgressDemoteWarm = inProgressDemoteWarm',
+                          fuzzRng = fuzzRng',
+                          knownPeers = knownPeers',
+                          establishedPeers = establishedPeers'
                         },
         decisionJobs  = []
       }

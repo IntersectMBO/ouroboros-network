@@ -35,8 +35,10 @@ module Ouroboros.Network.PeerSelection.Governor (
     PeerSelectionCounters(..),
     nullPeerSelectionTargets,
     emptyPeerSelectionState,
+    ChurnMode (..)
 ) where
 
+import           Data.Cache
 import           Data.Void (Void)
 import           Data.Semigroup (Min(..))
 
@@ -48,9 +50,10 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer(..), traceWith, contramap)
+import           Control.Tracer (Tracer(..), traceWith)
 import           System.Random
 
+import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
@@ -59,15 +62,8 @@ import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers       as Kn
 import qualified Ouroboros.Network.PeerSelection.Governor.Monitor          as Monitor
 import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers        as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.BlockFetch (FetchMode (..))
-
-
--- TODO: at a later patch it will be defined in
--- 'Ouroboros.Network.Diffusion.Policies'
---
-closeConnectionTimeout :: DiffTime
-closeConnectionTimeout = 120
-
 
 {- $overview
 
@@ -439,8 +435,8 @@ base our decision on include:
 
 -- |
 --
-peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
-                          Ord peeraddr)
+peerSelectionGovernor :: (MonadAsync m, MonadLabelledSTM m, MonadMask m,
+                          MonadTime m, MonadTimer m, Ord peeraddr)
                       => Tracer m (TracePeerSelection peeraddr)
                       -> Tracer m (DebugPeerSelection peeraddr peerconn)
                       -> Tracer m PeerSelectionCounters
@@ -451,14 +447,13 @@ peerSelectionGovernor :: (MonadAsync m, MonadMask m, MonadTime m, MonadTimer m,
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
-        tracer (debugTracer <> contramap transform countersTracer)
-        actions policy
+        tracer
+        debugTracer
+        countersTracer
+        actions
+        policy
         jobPool
         (emptyPeerSelectionState fuzzRng)
-  where
-    transform :: Ord peeraddr => DebugPeerSelection peeraddr peerconn -> PeerSelectionCounters
-    transform (TraceGovernorState _ _ st) = peerStateToCounters st
-
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -481,12 +476,18 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                               Ord peeraddr)
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr peerconn)
+                          -> Tracer m PeerSelectionCounters
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
                           -> JobPool () m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
                           -> m Void
-peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
+peerSelectionGovernorLoop tracer
+                          debugTracer
+                          countersTracer
+                          actions
+                          policy
+                          jobPool =
     loop
   where
     loop :: PeerSelectionState peeraddr peerconn -> m Void
@@ -502,10 +503,16 @@ peerSelectionGovernorLoop tracer debugTracer actions policy jobPool =
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
       now <- getMonotonicTime
-      let Decision { decisionTrace, decisionJobs, decisionState } = timedDecision now
+      let Decision { decisionTrace, decisionJobs, decisionState } =
+            timedDecision now
+          newCounters = peerStateToCounters decisionState
       traceWith tracer decisionTrace
+      traceWithCache countersTracer
+                     (countersCache decisionState)
+                     newCounters
+
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop decisionState
+      loop (decisionState { countersCache = Cache newCounters })
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
@@ -585,12 +592,14 @@ peerChurnGovernor :: forall m peeraddr.
                      , MonadDelay m
                      )
                   => Tracer m (TracePeerSelection peeraddr)
+                  -> PeerMetrics m peeraddr
+                  -> StrictTVar m ChurnMode
                   -> StdGen
                   -> STM m FetchMode
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
                   -> m Void
-peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
+peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -598,34 +607,42 @@ peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
   -- The intention is to give local root peers give head start and avoid
   -- giving advantage to hostile and quick root peers.
   threadDelay 3
-  atomically increaseActivePeers
+  mode <- atomically updateChurnMode
+  atomically $ increaseActivePeers mode
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= go
 
   where
 
+    updateChurnMode :: STM m ChurnMode
+    updateChurnMode = do
+        fm <- getFetchMode
+        let mode = case fm of
+                        FetchModeDeadline -> ChurnModeNormal
+                        FetchModeBulkSync -> ChurnModeBulkSync
+        writeTVar churnModeVar mode
+        return mode
+
     -- TODO: #3396 revisit the policy for genesis
-    increaseActivePeers :: STM m ()
-    increaseActivePeers =  do
-        mode <- getFetchMode
+    increaseActivePeers :: ChurnMode -> STM m ()
+    increaseActivePeers mode =  do
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
               case mode of
-                   FetchModeDeadline ->
+                   ChurnModeNormal  ->
                        targetNumberOfActivePeers base
-                   FetchModeBulkSync ->
+                   ChurnModeBulkSync ->
                        min 2 (targetNumberOfActivePeers base)
         })
 
-    decreaseActivePeers :: STM m ()
-    decreaseActivePeers =  do
-        mode <- getFetchMode
+    decreaseActivePeers :: ChurnMode -> STM m ()
+    decreaseActivePeers mode =  do
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
               case mode of
-                   FetchModeDeadline ->
+                   ChurnModeNormal ->
                        decrease $ targetNumberOfActivePeers base
-                   FetchModeBulkSync ->
+                   ChurnModeBulkSync ->
                        min 1 (targetNumberOfActivePeers base - 1)
         })
 
@@ -634,15 +651,18 @@ peerChurnGovernor tracer inRng getFetchMode base peerSelectionVar = do
     go !rng = do
       startTs <- getMonotonicTime
 
+      churnMode <- atomically updateChurnMode
+      traceWith tracer $ TraceChurnMode churnMode
+
       -- Purge the worst active peer(s).
-      atomically decreaseActivePeers
+      atomically $ decreaseActivePeers churnMode
 
       -- Short delay, we may have no active peers right now
       threadDelay 1
 
       -- Pick new active peer(s) based on the best performing established
       -- peers.
-      atomically increaseActivePeers
+      atomically $ increaseActivePeers churnMode
 
       -- Give the promotion process time to start
       threadDelay 1

@@ -69,6 +69,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
 import           Ouroboros.Network.Protocol.TxSubmission.Type
@@ -1012,6 +1013,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                      , intersectTimeout = waitForever
                      , mustReplyTimeout = waitForever
                      })
+                  nullMetric
                   (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
       -- In practice, a robust wallet/user can persistently add a transaction

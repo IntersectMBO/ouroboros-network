@@ -45,7 +45,7 @@ module Ouroboros.Network.NodeToClient (
   , withIOManager
   , LocalSnocket
   , localSnocket
-  , LocalSocket
+  , LocalSocket (..)
   , LocalAddress (..)
 
     -- * Versions
@@ -124,8 +124,9 @@ import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.IOManager
 
 -- The Handshake tracer types are simply terrible.
-type HandshakeTr = WithMuxBearer (ConnectionId LocalAddress)
-    (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
+type HandshakeTr ntcAddr ntcVersion =
+    WithMuxBearer (ConnectionId ntcAddr)
+                  (TraceSendRecv (Handshake ntcVersion CBOR.Term))
 
 
 -- | Recorod of node-to-client mini protocols.

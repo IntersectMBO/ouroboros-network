@@ -64,6 +64,9 @@ library
                        Ouroboros.Network.Counter
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Diffusion
+                       Ouroboros.Network.Diffusion.P2P
+                       Ouroboros.Network.Diffusion.NonP2P
+                       Ouroboros.Network.Diffusion.Policies
                        Ouroboros.Network.KeepAlive
                        Ouroboros.Network.Magic
                        Ouroboros.Network.NodeToNode
@@ -77,6 +80,9 @@ library
                        Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.LocalRootPeers
+                       Ouroboros.Network.PeerSelection.PeerMetric
+                       Ouroboros.Network.PeerSelection.PeerMetric.Type
+                       Ouroboros.Network.PeerSelection.PeerStateActions
                        Ouroboros.Network.PeerSelection.RelayAccessPoint
                        Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -125,7 +131,8 @@ library
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
-  other-modules:       Ouroboros.Network.PeerSelection.Governor.ActivePeers
+  other-modules:       Ouroboros.Network.Diffusion.Common
+                       Ouroboros.Network.PeerSelection.Governor.ActivePeers
                        Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
                        Ouroboros.Network.PeerSelection.Governor.KnownPeers
                        Ouroboros.Network.PeerSelection.Governor.Monitor
@@ -187,6 +194,8 @@ library
                        typed-protocols   >=0.1 && < 1.0,
                        typed-protocols-cborg
                                          >=0.1 && < 1.0
+  if !os(windows)
+    build-depends:     unix
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -243,8 +252,10 @@ library ouroboros-protocol-tests
                        bytestring,
                        cborg,
                        containers,
+                       hashable,
                        pipes,
                        QuickCheck,
+                       quickcheck-instances,
                        serialise,
                        strict-containers,
                        tasty,
@@ -256,6 +267,7 @@ library ouroboros-protocol-tests
 
                        io-classes,
                        io-sim,
+                       network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,
                        typed-protocols
@@ -274,6 +286,10 @@ test-suite test
                        Test.AnchoredFragment
                        Test.Chain
                        Test.LedgerPeers
+                       Test.Ouroboros.Network.Diffusion.Node
+                       Test.Ouroboros.Network.Diffusion.Node.NodeKernel
+                       Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
+                       Test.Ouroboros.Network.Diffusion.Policies
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.MockNode
@@ -327,6 +343,7 @@ test-suite test
 
                        io-classes,
                        io-sim,
+                       monoidal-synchronisation,
                        network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,

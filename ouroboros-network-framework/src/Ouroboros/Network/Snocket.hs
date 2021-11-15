@@ -24,8 +24,9 @@ module Ouroboros.Network.Snocket
   , LocalSocket (..)
   , LocalAddress (..)
   , localAddressFromPath
+  , TestAddress (..)
 
-  , FileDescriptor
+  , FileDescriptor (..)
   , socketFileDescriptor
   , localSocketFileDescriptor
   ) where
@@ -37,6 +38,7 @@ import           Control.Tracer (Tracer)
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Bifoldable (Bifoldable (..))
 import           Data.Hashable
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
@@ -62,6 +64,7 @@ import           Network.Mux.Trace (MuxTrace)
 import qualified Network.Mux.Bearer.Socket as Mx
 
 import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.Linger (StructLinger (..))
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting
@@ -146,7 +149,7 @@ berkeleyAccept ioManager sock =
 #else
           (Win32.Async.accept sock)
 #endif
-          (Socket.close . fst)
+          (uninterruptibleMask_ . Socket.close . fst)
           $ \(sock', addr') -> do
             associateWithIOManager ioManager (Right sock')
 
@@ -188,7 +191,15 @@ newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
 instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
+newtype TestAddress addr = TestAddress { getTestAddress :: addr }
+  deriving (Eq, Ord, Generic, Typeable)
+  deriving Show via Quiet (TestAddress addr)
+
 -- | We support either sockets or named pipes.
+--
+-- There are three families of addresses: 'SocketFamily' usef for Berkeley
+-- sockets, 'LocalFamily' used for 'LocalAddress'es (either Unix sockets or
+-- Windows named pipe addresses), and 'TestFamily' for testing purposes.
 --
 -- 'LocalFamily' requires 'LocalAddress', this is needed to provide path of the
 -- opened Win32 'HANDLE'.
@@ -199,6 +210,12 @@ data AddressFamily addr where
                  -> AddressFamily Socket.SockAddr
 
     LocalFamily  :: !LocalAddress -> AddressFamily LocalAddress
+
+    -- | Using a newtype wrapper 'TestAddress' makes pattern matches on
+    -- @AddressFamily@ complete, e.g. it makes 'AddressFamily' injective:
+    -- @AddressFamily addr == AddressFamily addr'@ then @addr == addr'@. .
+    --
+    TestFamily   :: AddressFamily (TestAddress addr)
 
 deriving instance Eq   addr => Eq   (AddressFamily addr)
 deriving instance Show addr => Show (AddressFamily addr)
@@ -300,6 +317,14 @@ socketSnocket ioManager = Snocket {
           Socket.setSocketOption sd Socket.ReusePort 1
 #endif
           Socket.setSocketOption sd Socket.NoDelay 1
+          -- it is safe to set 'SO_LINGER' option (which implicates that every
+          -- close will reset the connection), since our protocols are robust.
+          -- In particualar if invalid data will arive (which includes the the
+          -- rare case of a late packet from a previous connection), we will
+          -- abandon (and close) the connection.
+          Socket.setSockOpt sd Socket.Linger
+                              (StructLinger { sl_onoff  = 1,
+                                              sl_linger = 0 })
         when (fml == Socket.AF_INET6)
           -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
           -- it is enabled by default on some systems. Disabled here since we run a separate
@@ -495,7 +520,7 @@ localSnocket ioManager =
   where
     toLocalAddress :: SockAddr -> LocalAddress
     toLocalAddress (SockAddrUnix path) = LocalAddress path
-    toLocalAddress _                   = error "localSnocket.toLocalAddr: impossible happend"
+    toLocalAddress _                   = error "localSnocket.toLocalAddr: impossible happened"
 
     fromLocalAddress :: LocalAddress -> SockAddr
     fromLocalAddress = SockAddrUnix . getFilePath

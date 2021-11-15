@@ -11,6 +11,7 @@
 
 module Main where
 
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void)
 import           Data.List
@@ -156,7 +157,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         (localSnocket iocp)
         unversionedHandshakeCodec
         noTimeLimitsHandshake
-        (cborTermVersionDataCodec unversionedProtocolDataCodec)
+        unversionedProtocolDataCodec
         nullNetworkConnectTracers
         acceptableVersion
         (simpleSingletonVersions
@@ -190,7 +191,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
       noTimeLimitsHandshake
-      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      unversionedProtocolDataCodec
       acceptableVersion
       (simpleSingletonVersions
         UnversionedProtocol
@@ -297,7 +298,8 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               nullTracer -- (contramap (show . TraceLabelPeer connectionId) stdoutTracer)
               codecBlockFetch
               channel
-              (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy IO)) clientCtx)
+              (blockFetchClient NodeToNodeV_1 (continueForever (Proxy :: Proxy IO))
+                nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO
@@ -369,7 +371,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                           (localSnocket iocp)
                           unversionedHandshakeCodec
                           noTimeLimitsHandshake
-                          (cborTermVersionDataCodec unversionedProtocolDataCodec)
+                          unversionedProtocolDataCodec
                           nullNetworkConnectTracers
                           acceptableVersion
                           (simpleSingletonVersions
@@ -425,7 +427,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       (localAddressFromPath sockAddr)
       unversionedHandshakeCodec
       noTimeLimitsHandshake
-      (cborTermVersionDataCodec unversionedProtocolDataCodec)
+      unversionedProtocolDataCodec
       acceptableVersion
       (simpleSingletonVersions
         UnversionedProtocol
@@ -676,7 +678,7 @@ genBlockHeader g prevHeader body =
 
 genBlockBody :: RandomGen g => g -> BlockBody
 genBlockBody g =
-    BlockBody . take len . drop offset $ bodyData
+    BlockBody . BSC.take len . BSC.drop offset . BSC.pack $ bodyData
   where
     (offset, g') = randomR (0, bodyDataCycle-1)    g
     (len   , _ ) = randomR (1, bodyDataCycle*10-1) g'
