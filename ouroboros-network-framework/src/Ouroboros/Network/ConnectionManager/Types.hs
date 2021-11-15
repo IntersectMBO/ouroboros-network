@@ -881,7 +881,7 @@ data TransitionTrace' peerAddr state = TransitionTrace
 instance (Show peerAddr, Show state)
       =>  Show (TransitionTrace' peerAddr state) where
     show (TransitionTrace addr tr) =
-      concat [ "TranstionTrace @("
+      concat [ "TransitionTrace @("
              , show addr
              , ") ("
              , show tr
