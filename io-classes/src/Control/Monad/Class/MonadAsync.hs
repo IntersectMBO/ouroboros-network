@@ -203,9 +203,7 @@ newtype Concurrently m a = Concurrently { runConcurrently :: m a }
 instance Functor m => Functor (Concurrently m) where
     fmap f (Concurrently ma) = Concurrently (fmap f ma)
 
-instance ( Applicative m
-         , MonadAsync m
-         ) => Applicative (Concurrently m) where
+instance MonadAsync m => Applicative (Concurrently m) where
     pure = Concurrently . pure
 
     Concurrently fn <*> Concurrently as =
@@ -214,8 +212,7 @@ instance ( Applicative m
         `fmap`
         concurrently fn as
 
-instance ( Alternative m
-         , MonadAsync  m
+instance ( MonadAsync  m
          , MonadTimer  m
          ) => Alternative (Concurrently m) where
     empty = Concurrently $ forever (threadDelay 86400)
