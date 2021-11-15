@@ -87,17 +87,18 @@ socketAsMuxBearer sduTimeout useCompression tracer sd =
                    blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
 
                    !ts <- getMonotonicTime
-                   --let dec = Zd.decompress $ BL.toStrict blob
-                   let dec = Zlp.decompress blob
+                   let dec = Zd.decompress $ BL.toStrict blob
+                   -- let dec = Zl.decompress blob
                        compLen = BL.length blob
                    !blob' <- if useCompression
-                               {-then case dec of
+                               then case dec of
                                     Zd.Skip  -> throwIO $ Mx.MuxError  Mx.MuxSDUReadTimeout "XXX"
                                     Zd.Error e -> throwIO $ Mx.MuxError  Mx.MuxSDUReadTimeout e
-                                    Zd.Decompress c -> return $ BL.fromStrict c -}
-                               then case dec of
+                                    Zd.Decompress c -> return $ BL.fromStrict c
+                               {-then case dec of
                                      Left e -> throwIO $ Mx.MuxError Mx.MuxSDUReadTimeout (show e)
-                                     Right c -> return c
+                                     Right c -> return c-}
+                               {-then return dec-}
                                else return blob
                    let orgLen = BL.length blob'
                    !tsc <- getMonotonicTime
@@ -146,11 +147,11 @@ socketAsMuxBearer sduTimeout useCompression tracer sd =
               compLen = BL.length $ Mx.msBlob sdu''
               !sdu'' = sdu' {
                         Mx.msBlob = if useCompression
-                                       then {- BL.fromStrict $ Zd.compress 1
-                                         (BL.toStrict $ Mx.msBlob sdu') -}
-                                         Zl.compressWith Zl.defaultCompressParams {
+                                       then BL.fromStrict $ Zd.compress 1
+                                         (BL.toStrict $ Mx.msBlob sdu')
+                                         {- Zl.compressWith Zl.defaultCompressParams {
                                              Zl.compressLevel = Zl.bestSpeed
-                                             } $ Mx.msBlob sdu'
+                                             } $ Mx.msBlob sdu'-}
                                        else Mx.msBlob sdu'
                       }
           !tsc <- getMonotonicTime
