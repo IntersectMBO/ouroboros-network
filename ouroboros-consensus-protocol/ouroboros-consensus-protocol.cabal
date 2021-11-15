@@ -2,8 +2,12 @@ cabal-version:      3.0
 name:               ouroboros-consensus-protocol
 version:            0.1.0.0
 synopsis:           Cardano consensus protocols.
+license:               Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 author:             IOHK Formal methods team
-maintainer:         nick@topos.org.uk
+maintainer:         operations@iohk.io
 
 source-repository-head
     type: git
@@ -21,11 +25,17 @@ library
   exposed-modules:
     Ouroboros.Consensus.Protocol.Ledger.HotKey
     Ouroboros.Consensus.Protocol.Ledger.Util
+    Ouroboros.Consensus.Protocol.Praos
+    Ouroboros.Consensus.Protocol.Praos.Common
+    Ouroboros.Consensus.Protocol.Praos.Views
+    Ouroboros.Consensus.Protocol.Praos.VRF
     Ouroboros.Consensus.Protocol.TPraos
   build-depends:
     base,
+    bytestring,
     cardano-binary,
     cardano-crypto-class,
+    cardano-data,
     cardano-ledger-core,
     cardano-ledger-shelley,
     cardano-protocol-tpraos,
