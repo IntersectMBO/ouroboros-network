@@ -442,11 +442,11 @@ signalProperty atMost showSignalValue p =
   where
     go :: Int -> Deque (Time, a) -> [(Time, a)] -> Property
     go !_ !_ []                   = property True
-    go !n !q ((t, x) : txs) | p x = next
+    go !n !recent ((t, x) : txs) | p x = next
       where
         next
-          | n < atMost = go (n+1) (              Deque.snoc (t,x)  q) txs
-          | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) q) txs
+          | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
+          | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
 
     go !_ !recent ((t, x) : _) = counterexample details (property False)
       where

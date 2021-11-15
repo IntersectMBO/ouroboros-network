@@ -42,7 +42,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 
 import           Test.QuickCheck
-import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal, shrinkListElems)
+import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal, shrinkVector)
 
 --
 -- Test script abstraction
@@ -104,7 +104,7 @@ instance Arbitrary a => Arbitrary (Script a) where
 
         -- drop none, shrink only elements
       : [ Script (x' :| xs) | x'  <- shrink x ]
-     ++ [ Script (x :| xs') | xs' <- shrinkListElems shrink xs ]
+     ++ [ Script (x :| xs') | xs' <- shrinkVector shrink xs ]
 
 
 --

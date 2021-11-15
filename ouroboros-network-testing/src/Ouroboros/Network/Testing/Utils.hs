@@ -65,10 +65,10 @@ arbitrarySubset s = do
 --
 -- Useful when you want a custom strategy for dropping elements.
 --
-shrinkListElems :: (a -> [a]) -> [a] -> [[a]]
-shrinkListElems _   []     = []
-shrinkListElems shr (x:xs) = [ x':xs | x'  <- shr x ]
-                          ++ [ x:xs' | xs' <- shrinkListElems shr xs ]
+shrinkVector :: (a -> [a]) -> [a] -> [[a]]
+shrinkVector _   []     = []
+shrinkVector shr (x:xs) = [ x':xs | x'  <- shr x ]
+                          ++ [ x:xs' | xs' <- shrinkVector shr xs ]
 
 
 -- | Check that each shrink satisfies some invariant or validity condition.
