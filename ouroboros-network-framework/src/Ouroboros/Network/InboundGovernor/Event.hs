@@ -315,10 +315,8 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } = runFirstToFinis
           -- terminates quickly while other mini-protocols are inactive
           -- (e.g. their initial messages are still in flight).
           RemoteIdle timeoutSTM ->
-              -- In non-compat mode, at this stage we know that all
-              -- mini-protocols terminated, and we wait for a period of
-              -- idleness.  Note that the meaning of 'timeoutSTM' is
-              -- different from the compat mode case.
+              -- At this stage we know that all mini-protocols terminated, and
+              -- we wait for a period of idleness.
                     Map.foldMapWithKey
                       (\(_, miniProtocolDir) miniProtocolStatus ->
                           case miniProtocolDir of
