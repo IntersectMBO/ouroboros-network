@@ -33,7 +33,7 @@ instance (SL.PraosCrypto (EraCrypto era), ShelleyBasedEra era)
   => BlockSupportsProtocol (ShelleyBlock era) where
   validateView _cfg (ShelleyHeader hdr _) = hdr
 
-  selectView _ hdr@(ShelleyHeader shdr _) = TPraosChainSelectView {
+  selectView _ hdr@(ShelleyHeader shdr _) = PraosChainSelectView {
         csvChainLength = blockNo hdr
       , csvSlotNo      = blockSlot hdr
       , csvIssuer      = SL.bheaderVk hdrBody
