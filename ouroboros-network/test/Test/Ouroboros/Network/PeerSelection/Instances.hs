@@ -22,8 +22,9 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.Types
 
+import           Ouroboros.Network.Testing.Utils
+                   (prop_shrink_valid, prop_shrink_nonequal)
 import           Test.QuickCheck
-import           Test.QuickCheck.Utils
 import qualified Data.IP as IP
 
 

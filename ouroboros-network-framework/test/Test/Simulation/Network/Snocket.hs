@@ -12,6 +12,8 @@
 
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
+-- TODO: Create a 'snocket' package, in order to avoid having to have
+-- ouroboros-network-testing as a dependency for this cabal library.
 module Test.Simulation.Network.Snocket
   ( tests
   , BearerInfoScript(..)
@@ -72,6 +74,7 @@ import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
 
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
+import           Ouroboros.Network.Testing.Data.Script (Script(..))
 
 import           Test.QuickCheck hiding (Result (..))
 import           Test.QuickCheck.Instances.ByteString

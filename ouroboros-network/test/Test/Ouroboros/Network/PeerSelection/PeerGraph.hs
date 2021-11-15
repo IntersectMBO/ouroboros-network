@@ -25,6 +25,7 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph (
 
 import           Data.Graph (Graph)
 import qualified Data.Graph as Graph
+import           Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
@@ -33,11 +34,14 @@ import qualified Data.Tree as Tree
 
 import           Control.Monad.Class.MonadTime
 
+import           Ouroboros.Network.Testing.Data.Script
+                   (Script(..), TimedScript, ScriptDelay(NoDelay),
+                    arbitraryScriptOf)
+import           Ouroboros.Network.Testing.Utils
+                   (prop_shrink_nonequal, renderRanges, prop_shrink_valid)
 import           Test.Ouroboros.Network.PeerSelection.Instances
-import           Test.Ouroboros.Network.PeerSelection.Script
 
 import           Test.QuickCheck
-import           Test.QuickCheck.Utils
 
 
 --

@@ -6,6 +6,7 @@
 
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 
 module Test.Ouroboros.Network.PeerSelection.MockEnvironment (
 
@@ -20,7 +21,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment (
     selectPeerSelectionTraceEvents,
     firstGossipReachablePeers,
 
-    module Test.Ouroboros.Network.PeerSelection.Script,
+    module Ouroboros.Network.Testing.Data.Script,
     module Ouroboros.Network.PeerSelection.Types,
 
     tests,
@@ -55,14 +56,19 @@ import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeer
 import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import           Ouroboros.Network.PeerSelection.Types
 
+import           Ouroboros.Network.Testing.Data.Script
+                   (TimedScript, PickScript, ScriptDelay (..), prop_shrink_Script,
+                     singletonScript, initScript', stepScript, playTimedScript,
+                     arbitraryPickScript, interpretPickScript)
+import           Ouroboros.Network.Testing.Utils
+                   (arbitrarySubset, prop_shrink_valid, prop_shrink_nonequal)
+
 import           Test.Ouroboros.Network.PeerSelection.Instances
-import           Test.Ouroboros.Network.PeerSelection.Script
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers
                    as LocalRootPeers hiding (tests)
 
 import           Test.QuickCheck
-import           Test.QuickCheck.Utils
 import           Test.Tasty (TestTree, localOption, testGroup)
 import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 
@@ -128,7 +134,7 @@ instance Arbitrary GovernorMockEnvironmentWithoutAsyncDemotion where
         fixGraph g@GovernorMockEnvironment { peerGraph = PeerGraph peerGraph } =
           g { peerGraph = PeerGraph (map fixNode peerGraph) }
         fixNode (addr, addrs, peerInfo) =
-          (addr, addrs, peerInfo { connectionScript = Script ((Noop, ShortDelay) :| []) })
+          (addr, addrs, peerInfo { connectionScript = singletonScript (Noop, ShortDelay) })
     shrink (GovernorMockEnvironmentWAD env) = map GovernorMockEnvironmentWAD (shrink env)
 
 
@@ -206,8 +212,8 @@ mockPeerSelectionActions tracer
     scripts <- Map.fromList <$>
                  sequence
                    [ (\a b -> (addr, (a, b)))
-                     <$> initScript gossipScript
-                     <*> initScript connectionScript
+                     <$> initScript' gossipScript
+                     <*> initScript' connectionScript
                    | let PeerGraph adjacency = peerGraph
                    , (addr, _, GovernorScripts {
                                  gossipScript,
@@ -427,12 +433,12 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
                           pickWarmPeersToDemote,
                           pickColdPeersToForget
                         } = do
-    pickKnownPeersForGossipVar <- initScript pickKnownPeersForGossip
-    pickColdPeersToPromoteVar  <- initScript pickColdPeersToPromote
-    pickWarmPeersToPromoteVar  <- initScript pickWarmPeersToPromote
-    pickHotPeersToDemoteVar    <- initScript pickHotPeersToDemote
-    pickWarmPeersToDemoteVar   <- initScript pickWarmPeersToDemote
-    pickColdPeersToForgetVar   <- initScript pickColdPeersToForget
+    pickKnownPeersForGossipVar <- initScript' pickKnownPeersForGossip
+    pickColdPeersToPromoteVar  <- initScript' pickColdPeersToPromote
+    pickWarmPeersToPromoteVar  <- initScript' pickWarmPeersToPromote
+    pickHotPeersToDemoteVar    <- initScript' pickHotPeersToDemote
+    pickWarmPeersToDemoteVar   <- initScript' pickWarmPeersToDemote
+    pickColdPeersToForgetVar   <- initScript' pickColdPeersToForget
     return PeerSelectionPolicy {
       policyPickKnownPeersForGossip = \_ _ _ -> interpretPickScript pickKnownPeersForGossipVar,
       policyPickColdPeersToPromote  = \_ _ _ -> interpretPickScript pickColdPeersToPromoteVar,

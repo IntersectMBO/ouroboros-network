@@ -26,8 +26,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Void (Void)
 
-import qualified Data.Signal as Signal
-import           Data.Signal (Signal, Events, E(E), TS(TS))
 import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
@@ -46,12 +44,16 @@ import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeer
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
+import           Ouroboros.Network.Testing.Data.Script (scriptHead)
+import           Ouroboros.Network.Testing.Data.Signal (signalProperty, Signal,
+                  Events, E (E), TS (TS))
+import qualified Ouroboros.Network.Testing.Data.Signal as Signal
+
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
-import           Test.QuickCheck.Signal
 import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
 import           Test.Tasty.QuickCheck (testProperty)
 

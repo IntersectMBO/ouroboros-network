@@ -75,13 +75,13 @@ import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                    TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+import qualified Ouroboros.Network.Testing.Data.Script as Script
 
 import           Simulation.Network.Snocket
 
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NtNAddr,
                    NtNVersion, NtNVersionData (..), NtCAddr, NtCVersion,
                    NtCVersionData)
-import qualified Test.Ouroboros.Network.PeerSelection.Script as Script
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSTimeout,
                    DNSLookupDelay, mockDNSActions)
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel    as Node

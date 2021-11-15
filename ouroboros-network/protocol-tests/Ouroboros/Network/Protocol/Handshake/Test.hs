@@ -71,6 +71,7 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient.Version
 import           Ouroboros.Network.NodeToNode.Version
 
+import           Ouroboros.Network.Testing.Data.Script (singletonScript)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
