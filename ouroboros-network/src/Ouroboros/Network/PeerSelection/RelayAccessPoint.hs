@@ -37,13 +37,13 @@ data DomainAccessPoint = DomainAccessPoint {
 instance FromJSON DomainAccessPoint where
   parseJSON = withObject "DomainAccessPoint" $ \v ->
     DomainAccessPoint
-      <$> (encodeUtf8 <$> v .: "addr")
+      <$> (encodeUtf8 <$> v .: "address")
       <*> ((fromIntegral :: Int -> Socket.PortNumber) <$> v .: "port")
 
 instance ToJSON DomainAccessPoint where
   toJSON da =
     object
-      [ "addr" .= decodeUtf8 (dapDomain da)
+      [ "address" .= decodeUtf8 (dapDomain da)
       , "port" .= (fromIntegral (dapPortNumber da) :: Int)
       ]
 
@@ -85,19 +85,19 @@ instance NFData RelayAccessPoint where
 
 instance FromJSON RelayAccessPoint where
   parseJSON = withObject "RelayAccessPoint" $ \v -> do
-    addr <- v .: "addr"
+    addr <- v .: "address"
     port <- v .: "port"
     return (toRelayAccessPoint addr port)
 
 instance ToJSON RelayAccessPoint where
   toJSON (RelayAccessDomain addr port) =
     object
-      [ "addr" .= decodeUtf8 addr
+      [ "address" .= decodeUtf8 addr
       , "port" .= (fromIntegral port :: Int)
       ]
   toJSON (RelayAccessAddress ip port) =
     object
-      [ "addr" .= Text.pack (show ip)
+      [ "address" .= Text.pack (show ip)
       , "port" .= (fromIntegral port :: Int)
       ]
 
