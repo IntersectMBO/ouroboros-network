@@ -1,5 +1,9 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Util.TraceSize (
     -- * Generic
@@ -37,7 +41,7 @@ traceSize (Tracer f) = Tracer $ \a -> do
   Ledger DB specific
 -------------------------------------------------------------------------------}
 
-data LedgerDbSize l = LedgerDbSize {
+data LedgerDbSize (l :: LedgerStateKind) = LedgerDbSize {
       -- | The tip of the ledger DB
       ledgerDbTip       :: Point l
 
@@ -53,13 +57,13 @@ data LedgerDbSize l = LedgerDbSize {
 --
 -- Only traces slots for which the predicate results true (genesis will be
 -- considered to be slot 0).
-traceLedgerDbSize :: forall m l. (MonadIO m, GetTip l)
+traceLedgerDbSize :: forall m l. (MonadIO m, forall mk. GetTip (l mk), HeaderHash (l EmptyMK) ~ HeaderHash l)
                   => (Word64 -> Bool)
                   -> Tracer m (LedgerDbSize l)
                   -> Tracer m (LedgerDB l)
 traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
     let !ledger = LedgerDB.ledgerDbCurrent db
-        !tip    = getTip ledger
+        !tip    = castPoint $ getTip ledger
 
     when (shouldTrace tip) $ do
       sizeTip   <- liftIO $ computeHeapSize ledger

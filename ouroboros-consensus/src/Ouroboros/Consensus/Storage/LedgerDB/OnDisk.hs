@@ -20,7 +20,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- ** Instantiate in-memory to @blk@
   , AnnLedgerError'
   , LedgerDB'
-  , LedgerDb'AsLedger
     -- ** Abstraction over the stream API
   , NextBlock (..)
   , StreamAPI (..)
@@ -82,11 +81,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
   Instantiate the in-memory DB to @blk@
 -------------------------------------------------------------------------------}
 
-type LedgerDB'       blk = LedgerDB       (ExtLedgerState blk EmptyMK)
-
-type LedgerDb'AsLedger blk = LedgerDbAsLedger (ExtLedgerState blk EmptyMK)
-
-type AnnLedgerError' blk = AnnLedgerError (ExtLedgerState blk EmptyMK) blk
+type LedgerDB'       blk = LedgerDB       (ExtLedgerState blk)
+type AnnLedgerError' blk = AnnLedgerError (ExtLedgerState blk) blk
 
 {-------------------------------------------------------------------------------
   Abstraction over the streaming API provided by the Chain DB
@@ -202,7 +198,7 @@ initLedgerDB ::
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState blk EmptyMK)
+  -> LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk EmptyMK) -- ^ Genesis ledger state
   -> StreamAPI m blk
   -> m (InitLog blk, LedgerDB' blk, Word64)
@@ -284,7 +280,7 @@ initFromSnapshot ::
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState blk EmptyMK)
+  -> LedgerDbCfg (ExtLedgerState blk)
   -> StreamAPI m blk
   -> DiskSnapshot
   -> ExceptT (InitFailure blk) m (RealPoint blk, LedgerDB' blk, Word64)
@@ -314,7 +310,7 @@ initStartingWith ::
        , HasCallStack
        )
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
-  -> LedgerDbCfg (ExtLedgerState blk EmptyMK)
+  -> LedgerDbCfg (ExtLedgerState blk)
   -> StreamAPI m blk
   -> LedgerDB' blk
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)

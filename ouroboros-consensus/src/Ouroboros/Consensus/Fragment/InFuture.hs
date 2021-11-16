@@ -2,6 +2,7 @@
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -47,7 +48,8 @@ data CheckInFuture m blk = CheckInFuture {
        -- | POSTCONDITION:
        -- > checkInFuture vf >>= \(af, fut) ->
        -- >   validatedFragment vf == af <=> null fut
-       checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)
+       checkInFuture :: forall mk.
+                        ValidatedFragment (Header blk) (LedgerState blk mk)
                      -> m (AnchoredFragment (Header blk), [InFuture blk])
     }
   deriving NoThunks

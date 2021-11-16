@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -87,8 +88,8 @@ class ( IsLedger l
        HasCallStack
     => LedgerCfg l
     -> blk
-    -> Ticked l
-    -> Except (LedgerErr l) (LedgerResult l l)
+    -> Ticked1 l ValuesMK
+    -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
 
   -- | Re-apply a block to the very same ledger state it was applied in before.
   --
@@ -103,11 +104,11 @@ class ( IsLedger l
        HasCallStack
     => LedgerCfg l
     -> blk
-    -> Ticked l
-    -> LedgerResult l l
+    -> Ticked1 l ValuesMK
+    -> LedgerResult l (l TrackingMK)
 
 -- | Interaction with the ledger layer
-class ApplyBlock (LedgerState blk) blk => UpdateLedger blk
+class (ApplyBlock (LedgerState blk) blk, TableStuff (LedgerState blk)) => UpdateLedger blk
 
 {-------------------------------------------------------------------------------
   Derived functionality
@@ -118,8 +119,8 @@ applyLedgerBlock ::
      (ApplyBlock l blk, HasCallStack)
   => LedgerCfg l
   -> blk
-  -> Ticked l
-  -> Except (LedgerErr l) l
+  -> Ticked1 l ValuesMK
+  -> Except (LedgerErr l) (l TrackingMK)
 applyLedgerBlock = fmap lrResult ..: applyBlockLedgerResult
 
 -- | 'lrResult' after 'reapplyBlockLedgerResult'
@@ -127,63 +128,63 @@ reapplyLedgerBlock ::
      (ApplyBlock l blk, HasCallStack)
   => LedgerCfg l
   -> blk
-  -> Ticked l
-  -> l
+  -> Ticked1 l ValuesMK
+  -> l TrackingMK
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TableStuff l)
   => LedgerCfg l
   -> blk
-  -> l
-  -> Except (LedgerErr l) (LedgerResult l l)
+  -> l ValuesMK
+  -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
 tickThenApplyLedgerResult cfg blk l = do
   let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) l
-  lrBlock <-   applyBlockLedgerResult     cfg            blk  (lrResult lrTick)
+  lrBlock <-   applyBlockLedgerResult     cfg            blk  (forgetTickedLedgerStateTracking (lrResult lrTick))
   pure LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = lrResult lrBlock
+    , lrResult = lrResult lrTick `prependLedgerStateTracking` lrResult lrBlock
     }
 
 tickThenReapplyLedgerResult ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TableStuff l)
   => LedgerCfg l
   -> blk
-  -> l
-  -> LedgerResult l l
+  -> l ValuesMK
+  -> LedgerResult l (l TrackingMK)
 tickThenReapplyLedgerResult cfg blk l =
   let lrTick  = applyChainTickLedgerResult cfg (blockSlot blk) l
-      lrBlock = reapplyBlockLedgerResult   cfg            blk (lrResult lrTick)
+      lrBlock = reapplyBlockLedgerResult   cfg            blk (forgetTickedLedgerStateTracking (lrResult lrTick))
   in LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = lrResult lrBlock
+    , lrResult = lrResult lrTick `prependLedgerStateTracking` lrResult lrBlock
     }
 
 tickThenApply ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TableStuff l)
   => LedgerCfg l
   -> blk
-  -> l
-  -> Except (LedgerErr l) l
+  -> l ValuesMK
+  -> Except (LedgerErr l) (l TrackingMK)
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TableStuff l)
   => LedgerCfg l
   -> blk
-  -> l
-  -> l
+  -> l ValuesMK
+  -> l TrackingMK
 tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
 
 foldLedger ::
-     ApplyBlock l blk
-  => LedgerCfg l -> [blk] -> l -> Except (LedgerErr l) l
-foldLedger = repeatedlyM . tickThenApply
+     (ApplyBlock l blk, TableStuff l)
+  => LedgerCfg l -> [blk] -> l ValuesMK -> Except (LedgerErr l) (l ValuesMK)
+foldLedger cfg = repeatedlyM (\blk -> fmap forgetLedgerStateTracking . tickThenApply cfg blk)
 
 refoldLedger ::
-     ApplyBlock l blk
-  => LedgerCfg l -> [blk] -> l -> l
-refoldLedger = repeatedly . tickThenReapply
+     (ApplyBlock l blk, TableStuff l)
+  => LedgerCfg l -> [blk] -> l ValuesMK -> l ValuesMK
+refoldLedger cfg = repeatedly (\blk -> forgetLedgerStateTracking . tickThenReapply cfg blk)
 
 {-------------------------------------------------------------------------------
   Short-hand
@@ -194,15 +195,15 @@ refoldLedger = repeatedly . tickThenReapply
 -- This is occassionally useful to guide type inference
 ledgerTipPoint ::
      UpdateLedger blk
-  => Proxy blk -> LedgerState blk -> Point blk
+  => Proxy blk -> LedgerState blk mk -> Point blk
 ledgerTipPoint _ = castPoint . getTip
 
 ledgerTipHash ::
-     forall blk. UpdateLedger blk
-  => LedgerState blk -> ChainHash blk
+     forall blk mk. UpdateLedger blk
+  => LedgerState blk mk -> ChainHash blk
 ledgerTipHash = pointHash . (ledgerTipPoint (Proxy @blk))
 
 ledgerTipSlot ::
-     forall blk. UpdateLedger blk
-  => LedgerState blk -> WithOrigin SlotNo
+     forall blk mk. UpdateLedger blk
+  => LedgerState blk mk -> WithOrigin SlotNo
 ledgerTipSlot = pointSlot . (ledgerTipPoint (Proxy @blk))

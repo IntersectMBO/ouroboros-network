@@ -167,7 +167,7 @@ data ChainDB m blk = ChainDB {
     , getCurrentChain    :: STM m (AnchoredFragment (Header blk))
 
       -- | Return the LedgerDB containing the last @k@ ledger states.
-    , getLedgerDB        :: STM m (LedgerDB (ExtLedgerState blk EmptyMK))
+    , getLedgerDB        :: STM m (LedgerDB (ExtLedgerState blk))
 
       -- | Get block at the tip of the chain, if one exists
       --
@@ -369,7 +369,7 @@ getHeaderStateHistory ::
 getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
   where
     toHeaderStateHistory ::
-         LedgerDB (ExtLedgerState blk EmptyMK)
+         LedgerDB (ExtLedgerState blk)
       -> HeaderStateHistory blk
     toHeaderStateHistory =
           HeaderStateHistory
