@@ -82,10 +82,12 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
+import qualified Ouroboros.Network.ConnectionManager.Types as CM
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
                    RemoteSt (..))
+import qualified Ouroboros.Network.InboundGovernor as IG
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
@@ -128,8 +130,10 @@ tests =
                  prop_connection_manager_valid_transitions
   , testProperty "connection_manager_no_invalid_traces"
                  prop_connection_manager_no_invalid_traces
+  , testProperty "inbound_governor_no_invalid_traces"
+                 prop_inbound_governor_no_invalid_traces
   , testProperty "inbound_governor_valid_transitions"
-                 prop_inbound_governor_valid_transitions
+              prop_inbound_governor_valid_transitions
   , testProperty "inbound_governor_no_unsupported_state"
                  prop_inbound_governor_no_unsupported_state
   , testProperty "connection_manager_valid_transition_order"
@@ -2067,8 +2071,8 @@ prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
                      , ppScript (MultiNodeScript l)
                      , "========== ConnectionManager Events =========="
                      , Trace.ppTrace show show evsCMT
-                     , "========== Simulation Trace =========="
-                     , ppTrace trace
+                     -- , "========== Simulation Trace =========="
+                     -- , ppTrace trace
                      ])
     . getAllProperty
     . bifoldMap
@@ -2078,7 +2082,7 @@ prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
        )
        ( \ tr
         -> case tr of
-          TrUnexpectedlyMissingConnectionState _ ->
+          CM.TrUnexpectedlyFalseAssertion _ ->
             AllProperty (counterexample (show tr) False)
           _                                       ->
             mempty
@@ -2207,6 +2211,52 @@ prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
 
             _     -> AllProperty (property True)
         )
+    $ evsIGT
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       (Script (toBearerInfo absBi :| [noAttenuation]))
+                       maxAcceptedConnectionsLimit l
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates that we do not get undesired traces, such as
+-- TrUnexpectedlyMissingConnectionState in inbound governor.
+--
+prop_inbound_governor_no_invalid_traces :: Int
+                                        -> ArbDataFlow
+                                        -> AbsBearerInfo
+                                        -> MultiNodeScript Int TestAddr
+                                        -> Property
+prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
+                                          absBi (MultiNodeScript l) =
+  let trace = runSimTrace sim
+
+      evsIGT :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      evsIGT = traceWithNameTraceEvents trace
+
+  in tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (intercalate "\n"
+                     [ "========== Script =========="
+                     , ppScript (MultiNodeScript l)
+                     , "========== Inbound Governor Events =========="
+                     , Trace.ppTrace show show evsIGT
+                     -- , "========== Simulation Trace =========="
+                     -- , ppTrace trace
+                     ])
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           v             -> AllProperty (counterexample (show v) False)
+       )
+       ( \ tr
+        -> case tr of
+          IG.TrUnexpectedlyFalseAssertion _ ->
+            AllProperty (counterexample (show tr) False)
+          _                                       ->
+            mempty
+       )
     $ evsIGT
   where
     sim :: IOSim s ()

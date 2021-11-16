@@ -140,6 +140,7 @@ module Ouroboros.Network.ConnectionManager.Types
   , PromiseWriter (..)
   , PromiseWriterException (..)
     -- * Tracing
+  , AssertionLocation (..)
   , ConnectionManagerTrace (..)
   , MaybeUnknown (..)
   , Transition' (..)
@@ -800,36 +801,47 @@ connectionManagerErrorFromException x = do
 -- Tracing
 --
 
+-- | 'AssertionLocation' contains constructors that situate the location of the tracing so
+-- one can be sure where the assertion came from as well as the all relevant information.
+--
+data AssertionLocation peerAddr
+  = ForkConnectionHandlerCleanup !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | UnregisterInboundConnection  !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | RequestOutboundConnection    !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | UnregisterOutboundConnection !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | PromotedToWarmRemote         !(Maybe (ConnectionId peerAddr)) !AbstractState
+  | DemotedToColdRemote          !(Maybe (ConnectionId peerAddr)) !AbstractState
+  deriving Show
 
 -- | 'ConnectionManagerTrace' contains a hole for a trace of single connection
 -- which is filled with 'ConnectionHandlerTrace'.
 --
 data ConnectionManagerTrace peerAddr handlerTrace
-  = TrIncludeConnection          !Provenance !peerAddr
-  | TrUnregisterConnection       !Provenance !peerAddr
-  | TrConnect                    !(Maybe peerAddr) -- ^ local address
-                                 !peerAddr         -- ^ remote address
-  | TrConnectError               !(Maybe peerAddr) -- ^ local address
-                                 !peerAddr         -- ^ remote address
-                                 !SomeException
-  | TrTerminatingConnection      !Provenance !(ConnectionId peerAddr)
-  | TrTerminatedConnection       !Provenance !peerAddr
-  | TrConnectionHandler          !(ConnectionId peerAddr) !handlerTrace
+  = TrIncludeConnection            !Provenance !peerAddr
+  | TrUnregisterConnection         !Provenance !peerAddr
+  | TrConnect                      !(Maybe peerAddr) -- ^ local address
+                                   !peerAddr         -- ^ remote address
+  | TrConnectError                 !(Maybe peerAddr) -- ^ local address
+                                   !peerAddr         -- ^ remote address
+                                   !SomeException
+  | TrTerminatingConnection        !Provenance !(ConnectionId peerAddr)
+  | TrTerminatedConnection         !Provenance !peerAddr
+  | TrConnectionHandler            !(ConnectionId peerAddr) !handlerTrace
   | TrShutdown
-  | TrConnectionExists           !Provenance !peerAddr    !AbstractState
-  | TrForbiddenConnection        !(ConnectionId peerAddr)
-  | TrImpossibleConnection       !(ConnectionId peerAddr)
-  | TrConnectionFailure          !(ConnectionId peerAddr)
-  | TrConnectionNotFound         !Provenance !peerAddr
-  | TrForbiddenOperation         !peerAddr                !AbstractState
-  | TrPruneConnections           ![peerAddr]
-  | TrConnectionCleanup          !(ConnectionId peerAddr)
-  | TrConnectionTimeWait         !(ConnectionId peerAddr)
-  | TrConnectionTimeWaitDone     !(ConnectionId peerAddr)
-  | TrConnectionManagerCounters  !ConnectionManagerCounters
-  | TrState                      !(Map peerAddr AbstractState)
+  | TrConnectionExists             !Provenance !peerAddr    !AbstractState
+  | TrForbiddenConnection          !(ConnectionId peerAddr)
+  | TrImpossibleConnection         !(ConnectionId peerAddr)
+  | TrConnectionFailure            !(ConnectionId peerAddr)
+  | TrConnectionNotFound           !Provenance !peerAddr
+  | TrForbiddenOperation           !peerAddr                !AbstractState
+  | TrPruneConnections             ![peerAddr]
+  | TrConnectionCleanup            !(ConnectionId peerAddr)
+  | TrConnectionTimeWait           !(ConnectionId peerAddr)
+  | TrConnectionTimeWaitDone       !(ConnectionId peerAddr)
+  | TrConnectionManagerCounters    !ConnectionManagerCounters
+  | TrState                        !(Map peerAddr AbstractState)
   -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
-  | TrUnexpectedlyMissingConnectionState !(ConnectionId peerAddr)
+  | TrUnexpectedlyFalseAssertion   !(AssertionLocation peerAddr)
   -- ^ This case is unexpected at call site.
   deriving Show
 
