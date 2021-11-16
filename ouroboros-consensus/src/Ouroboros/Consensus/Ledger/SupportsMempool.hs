@@ -1,5 +1,8 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeFamilies          #-}
+
 module Ouroboros.Consensus.Ledger.SupportsMempool (
     ApplyTxErr
   , GenTx
@@ -14,12 +17,12 @@ module Ouroboros.Consensus.Ledger.SupportsMempool (
 
 import           Control.Monad.Except
 import           Data.Kind (Type)
+import           Data.Typeable (Typeable)
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Generalized transaction
@@ -58,7 +61,7 @@ data WhetherToIntervene
 class ( UpdateLedger blk
       , NoThunks (GenTx blk)
       , NoThunks (Validated (GenTx blk))
-      , NoThunks (Ticked (LedgerState blk))
+      , forall mk. Typeable mk => NoThunks (TickedLedgerState blk mk)
       , Show (GenTx blk)
       , Show (Validated (GenTx blk))
       , Show (ApplyTxErr blk)
@@ -73,8 +76,8 @@ class ( UpdateLedger blk
           -> WhetherToIntervene
           -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
-          -> TickedLedgerState blk
-          -> Except (ApplyTxErr blk) (TickedLedgerState blk, Validated (GenTx blk))
+          -> TickedLedgerState blk ValuesMK
+          -> Except (ApplyTxErr blk) (TickedLedgerState blk TrackingMK, Validated (GenTx blk))
 
   -- | Apply a previously validated transaction to a potentially different
   -- ledger state
@@ -86,8 +89,8 @@ class ( UpdateLedger blk
             => LedgerConfig blk
             -> SlotNo -- ^ Slot number of the block containing the tx
             -> Validated (GenTx blk)
-            -> TickedLedgerState blk
-            -> Except (ApplyTxErr blk) (TickedLedgerState blk)
+            -> TickedLedgerState blk ValuesMK
+            -> Except (ApplyTxErr blk) (TickedLedgerState blk TrackingMK)
 
   -- | The maximum number of bytes worth of transactions that can be put into
   -- a block according to the currently adopted protocol parameters of the
@@ -95,7 +98,7 @@ class ( UpdateLedger blk
   --
   -- This is (conservatively) computed by subtracting the header size and any
   -- other fixed overheads from the maximum block size.
-  txsMaxBytes :: TickedLedgerState blk -> Word32
+  txsMaxBytes :: TickedLedgerState blk mk -> Word32
 
   -- | Return the post-serialisation size in bytes of a 'GenTx' /when it is
   -- embedded in a block/. This size might differ from the size of the

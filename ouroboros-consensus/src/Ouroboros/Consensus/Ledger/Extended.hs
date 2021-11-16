@@ -13,6 +13,8 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
     ExtLedgerCfg (..)
@@ -24,7 +26,7 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Casts
   , castExtLedgerState
     -- * Type family instances
-  , Ticked (..)
+  , Ticked1 (..)
     -- * MapKind
   , MapKind (..)
   , toEmptyMK
@@ -46,12 +48,11 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked
 
 {-------------------------------------------------------------------------------
   Extended ledger state
 -------------------------------------------------------------------------------}
-
-data MapKind = EmptyMK | TrackingMK | DiffMK
 
 toEmptyMK :: ExtLedgerState blk mk -> ExtLedgerState blk EmptyMK
 toEmptyMK = error "toEmptyMK"
@@ -60,7 +61,7 @@ toEmptyMK = error "toEmptyMK"
 --
 -- This is the combination of the header state and the ledger state proper.
 data ExtLedgerState blk (mk :: MapKind) = ExtLedgerState {
-      ledgerState :: !(LedgerState blk)
+      ledgerState :: !(LedgerState blk mk)
     , headerState :: !(HeaderState blk)
     }
   deriving (Generic)
@@ -72,9 +73,11 @@ data ExtValidationError blk =
 
 instance LedgerSupportsProtocol blk => NoThunks (ExtValidationError blk)
 
-deriving instance LedgerSupportsProtocol blk => Show (ExtLedgerState     blk mk)
 deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError    blk)
 deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError    blk)
+
+instance LedgerSupportsProtocol blk => ShowLedgerState (ExtLedgerState blk) where
+  showsLedgerState = error "showsLedgerState @ExtLedgerState"
 
 -- | We override 'showTypeOf' to show the type of the block
 --
@@ -91,8 +94,8 @@ deriving instance ( LedgerSupportsProtocol blk
   The extended ledger can behave like a ledger
 -------------------------------------------------------------------------------}
 
-data instance Ticked (ExtLedgerState blk mk) = TickedExtLedgerState {
-      tickedLedgerState :: Ticked (LedgerState blk)
+data instance Ticked1 (ExtLedgerState blk) mk = TickedExtLedgerState {
+      tickedLedgerState :: Ticked1 (LedgerState blk) mk
     , tickedLedgerView  :: Ticked (LedgerView (BlockProtocol blk))
     , tickedHeaderState :: Ticked (HeaderState blk)
     }
@@ -113,24 +116,24 @@ instance ( ConsensusProtocol (BlockProtocol blk)
          , NoThunks (StorageConfig blk)
          ) => NoThunks (ExtLedgerCfg blk)
 
-type instance LedgerCfg (ExtLedgerState blk mk) = ExtLedgerCfg blk
+type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk
 
+type instance HeaderHash (ExtLedgerState blk)    = HeaderHash (LedgerState blk)
 type instance HeaderHash (ExtLedgerState blk mk) = HeaderHash (LedgerState blk)
 
 instance IsLedger (LedgerState blk) => GetTip (ExtLedgerState blk mk) where
   getTip = castPoint . getTip . ledgerState
 
-instance IsLedger (LedgerState blk) => GetTip (Ticked (ExtLedgerState blk mk)) where
+instance IsLedger (LedgerState blk) => GetTip (Ticked1 (ExtLedgerState blk) mk) where
   getTip = castPoint . getTip . tickedLedgerState
 
-instance ( Typeable mk
-         , IsLedger (LedgerState  blk)
+instance ( IsLedger (LedgerState  blk)
          , LedgerSupportsProtocol blk
          )
-      => IsLedger (ExtLedgerState blk mk) where
-  type LedgerErr (ExtLedgerState blk mk) = ExtValidationError blk
+      => IsLedger (ExtLedgerState blk) where
+  type LedgerErr (ExtLedgerState blk) = ExtValidationError blk
 
-  type AuxLedgerEvent (ExtLedgerState blk mk) = AuxLedgerEvent (LedgerState blk)
+  type AuxLedgerEvent (ExtLedgerState blk) = AuxLedgerEvent (LedgerState blk)
 
   applyChainTickLedgerResult cfg slot (ExtLedgerState ledger header) =
       castLedgerResult ledgerResult <&> \tickedLedgerState ->
@@ -151,7 +154,37 @@ instance ( Typeable mk
 
       ledgerResult = applyChainTickLedgerResult lcfg slot ledger
 
-instance (Typeable mk, LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk mk) blk where
+instance TableStuff (LedgerState blk) => TableStuff (ExtLedgerState blk) where
+
+  newtype LedgerTables (ExtLedgerState blk) mk = ExtLedgerStateTables (LedgerTables (LedgerState blk) mk)
+    deriving (Generic)
+
+  forgetTickedLedgerStateTracking (TickedExtLedgerState lstate lview hstate) =
+      TickedExtLedgerState (forgetTickedLedgerStateTracking lstate) lview hstate
+
+  forgetLedgerStateTracking (ExtLedgerState lstate hstate) =
+      ExtLedgerState (forgetLedgerStateTracking lstate) hstate
+
+  forgetLedgerStateTables (ExtLedgerState lstate hstate) =
+      ExtLedgerState (forgetLedgerStateTables lstate) hstate
+
+  prependLedgerStateTracking
+    (TickedExtLedgerState lstate1 _lview _hstate)
+    (ExtLedgerState lstate2 hstate) =
+      ExtLedgerState (prependLedgerStateTracking lstate1 lstate2) hstate
+
+  projectLedgerTables (ExtLedgerState lstate _) =
+      ExtLedgerStateTables (projectLedgerTables lstate)
+  withLedgerTables (ExtLedgerState lstate hstate) (ExtLedgerStateTables tables) =
+      ExtLedgerState (lstate `withLedgerTables` tables) hstate
+
+deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedgerState (LedgerTables (ExtLedgerState blk))
+
+instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) mk)
+
+
+
+instance (LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk) blk where
   applyBlockLedgerResult cfg blk TickedExtLedgerState{..} = do
     ledgerResult <-
         withExcept ExtValidationErrorLedger
@@ -187,9 +220,9 @@ instance (Typeable mk, LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState
   Serialisation
 -------------------------------------------------------------------------------}
 
-encodeExtLedgerState :: (LedgerState   blk -> Encoding)
+encodeExtLedgerState :: (LedgerState   blk mk -> Encoding)
                      -> (ChainDepState (BlockProtocol blk) -> Encoding)
-                     -> (AnnTip        blk -> Encoding)
+                     -> (AnnTip        blk    -> Encoding)
                      -> ExtLedgerState blk mk -> Encoding
 encodeExtLedgerState encodeLedgerState
                      encodeChainDepState
@@ -203,7 +236,7 @@ encodeExtLedgerState encodeLedgerState
                            encodeChainDepState
                            encodeAnnTip
 
-decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk))
+decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk mk))
                      -> (forall s. Decoder s (ChainDepState  (BlockProtocol blk)))
                      -> (forall s. Decoder s (AnnTip         blk))
                      -> (forall s. Decoder s (ExtLedgerState blk mk))
@@ -223,8 +256,8 @@ decodeExtLedgerState decodeLedgerState
 -------------------------------------------------------------------------------}
 
 castExtLedgerState
-  :: ( Coercible (LedgerState blk)
-                 (LedgerState blk')
+  :: ( Coercible (LedgerState blk  mk)
+                 (LedgerState blk' mk)
      , Coercible (ChainDepState (BlockProtocol blk))
                  (ChainDepState (BlockProtocol blk'))
      , TipInfo blk ~ TipInfo blk'

@@ -72,8 +72,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
-import Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDbAsLedger (..))
-
 {-------------------------------------------------------------------------------
   Initialization
 -------------------------------------------------------------------------------}

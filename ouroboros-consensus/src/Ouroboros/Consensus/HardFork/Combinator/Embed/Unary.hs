@@ -202,7 +202,7 @@ instance Isomorphic StorageConfig where
   project = defaultProjectNP
   inject  = defaultInjectNP
 
-instance Isomorphic LedgerState where
+instance Isomorphic (Flip LedgerState mk) where
   project = defaultProjectSt
   inject  = defaultInjectSt
 
@@ -341,16 +341,16 @@ instance Isomorphic HeaderState where
       , headerStateChainDep = inject' (Proxy @(WrapChainDepState blk)) headerStateChainDep
       }
 
-instance Isomorphic (Ticked :.: LedgerState) where
+instance Isomorphic (FlipTickedLedgerState mk) where
   project =
         State.currentState
       . Telescope.fromTZ
       . getHardForkState
       . tickedHardForkLedgerStatePerEra
-      . unComp
+      . getFlipTickedLedgerState
 
   inject =
-        Comp
+        FlipTickedLedgerState
       . TickedHardForkLedgerState TransitionImpossible
       . HardForkState
       . Telescope.TZ
@@ -358,12 +358,12 @@ instance Isomorphic (Ticked :.: LedgerState) where
 
 instance Isomorphic (Flip ExtLedgerState mk) where
   project (Flip ExtLedgerState{..}) = Flip $ ExtLedgerState {
-        ledgerState = project ledgerState
+        ledgerState = unFlip $ project $ Flip ledgerState
       , headerState = project headerState
       }
 
   inject (Flip ExtLedgerState{..}) = Flip $ ExtLedgerState {
-        ledgerState = inject ledgerState
+        ledgerState = unFlip $ inject $ Flip ledgerState
       , headerState = inject headerState
       }
 
@@ -376,11 +376,11 @@ instance Isomorphic AnnTip where
 instance Functor m => Isomorphic (InitChainDB m) where
   project :: forall blk. NoHardForks blk
           => InitChainDB m (HardForkBlock '[blk]) -> InitChainDB m blk
-  project = InitChainDB.map (inject' (Proxy @(I blk))) project
+  project = InitChainDB.map (inject' (Proxy @(I blk))) (unFlip . project . Flip)
 
   inject :: forall blk. NoHardForks blk
          => InitChainDB m blk -> InitChainDB m (HardForkBlock '[blk])
-  inject = InitChainDB.map (project' (Proxy @(I blk))) inject
+  inject = InitChainDB.map (project' (Proxy @(I blk))) (unFlip . inject . Flip)
 
 instance Isomorphic ProtocolClientInfo where
   project ProtocolClientInfo{..} = ProtocolClientInfo {
@@ -447,7 +447,7 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    (inject cfg)
                                    bno
                                    sno
-                                   (unComp (inject (Comp tickedLgrSt)))
+                                   (getFlipTickedLedgerState (inject (FlipTickedLedgerState tickedLgrSt)))
                                    (inject' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (inject' (Proxy @(WrapIsLeader blk)) isLeader)
       }
@@ -490,7 +490,7 @@ instance Functor m => Isomorphic (BlockForging m) where
                                    (project cfg)
                                    bno
                                    sno
-                                   (unComp (project (Comp tickedLgrSt)))
+                                   (getFlipTickedLedgerState (project (FlipTickedLedgerState tickedLgrSt)))
                                    (project' (Proxy @(WrapValidatedGenTx blk)) <$> txs)
                                    (project' (Proxy @(WrapIsLeader blk)) isLeader)
       }
