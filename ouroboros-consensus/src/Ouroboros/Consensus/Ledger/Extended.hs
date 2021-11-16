@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Casts
   , castExtLedgerState
     -- * Type family instances
+  , LedgerTables (..)
   , Ticked1 (..)
     -- * MapKind
   , MapKind (..)
