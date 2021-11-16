@@ -60,6 +60,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
 
 {-------------------------------------------------------------------------------
   Hard fork protocol, block, and ledger state
@@ -77,13 +78,15 @@ instance Typeable xs => ShowProxy (HardForkBlock xs) where
 type instance BlockProtocol (HardForkBlock xs) = HardForkProtocol xs
 type instance HeaderHash    (HardForkBlock xs) = OneEraHash       xs
 
-newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
-      hardForkLedgerStatePerEra :: HardForkState LedgerState xs
+newtype instance LedgerState (HardForkBlock xs) mk = HardForkLedgerState {
+      hardForkLedgerStatePerEra :: HardForkState (Flip LedgerState mk) xs
     }
 
-deriving stock   instance CanHardFork xs => Show (LedgerState (HardForkBlock xs))
-deriving stock   instance CanHardFork xs => Eq   (LedgerState (HardForkBlock xs))
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs))
+deriving stock   instance CanHardFork xs                => Eq       (LedgerState (HardForkBlock xs) mk)
+deriving newtype instance (CanHardFork xs, Typeable mk) => NoThunks (LedgerState (HardForkBlock xs) mk)
+
+instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
+  showsLedgerState = error "showsLedgerState @HardForkBlock"
 
 {-------------------------------------------------------------------------------
   Protocol config

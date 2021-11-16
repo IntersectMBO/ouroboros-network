@@ -76,8 +76,6 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
 
-import Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDbAsLedger (..))
-
 {-------------------------------------------------------------------------------
   Initialization
 -------------------------------------------------------------------------------}
