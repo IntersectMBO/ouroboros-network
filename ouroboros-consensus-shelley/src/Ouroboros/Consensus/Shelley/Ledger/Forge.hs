@@ -45,7 +45,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Mempool
 -------------------------------------------------------------------------------}
 
 forgeShelleyBlock ::
-     forall m era. (ShelleyBasedEra era, TxLimits (ShelleyBlock era), Monad m)
+     forall m era mk. (ShelleyBasedEra era, TxLimits (ShelleyBlock era), Monad m)
   => HotKey (EraCrypto era) m
   -> TPraosCanBeLeader (EraCrypto era)
   -> TopLevelConfig (ShelleyBlock era)
@@ -53,7 +53,7 @@ forgeShelleyBlock ::
                                                -- capacity defined by ledger
   -> BlockNo                                   -- ^ Current block number
   -> SlotNo                                    -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock era)      -- ^ Current ledger
+  -> TickedLedgerState (ShelleyBlock era) mk   -- ^ Current ledger
   -> [Validated (GenTx (ShelleyBlock era))]    -- ^ Txs to add in the block
   -> TPraosIsLeader (EraCrypto era)            -- ^ Leader proof
   -> m (ShelleyBlock era)

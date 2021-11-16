@@ -104,9 +104,9 @@ data UpdateState c = UpdateState {
   deriving (Show, Eq)
 
 protocolUpdates ::
-       forall era. ShelleyBasedEra era
+       forall era mk. ShelleyBasedEra era
     => SL.ShelleyGenesis era
-    -> LedgerState (ShelleyBlock era)
+    -> LedgerState (ShelleyBlock era) mk
     -> [ProtocolUpdate era]
 protocolUpdates genesis st = [
       ProtocolUpdate {

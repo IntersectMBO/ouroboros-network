@@ -7,6 +7,7 @@
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -34,6 +35,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerStateKind
   , TickedLedgerState
     -- * UTxO HD
+  , ApplyMapKind (..)
   , DiskLedgerView
   , FootprintL (..)
   , MapKind (..)
@@ -45,8 +47,10 @@ module Ouroboros.Consensus.Ledger.Basics (
   ) where
 
 import           Data.Kind (Type)
+import           Data.Map (Map)
+import           Data.Set (Set)
 import           Data.Typeable (Typeable)
-import           NoThunks.Class (NoThunks)
+import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL (..))
 
@@ -196,9 +200,7 @@ class ( -- Requirements on the ledger state itself
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
-class ( ShowLedgerState (LedgerTables l)
-      , forall mk. Typeable mk => NoThunks (LedgerTables l mk)
-      ) => TableStuff (l :: LedgerStateKind) where
+class ShowLedgerState (LedgerTables l) => TableStuff (l :: LedgerStateKind) where
 
   data family LedgerTables l :: LedgerStateKind
 
@@ -223,6 +225,26 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 type LedgerStateKind = MapKind -> Type
 
 data MapKind = EmptyMK | KeysMK | ValuesMK | TrackingMK | DiffMK
+
+data ApplyMapKind :: MapKind -> Type -> Type -> Type where
+  ApplyEmptyMK    ::               ApplyMapKind EmptyMK    k v
+  ApplyKeysMK     :: Set k      -> ApplyMapKind KeysMK     k v
+  ApplyValuesMK   :: Map k v    -> ApplyMapKind ValuesMK   k v
+  ApplyTrackingMK :: {- TODO -}    ApplyMapKind TrackingMK k v
+  ApplyDiffMK     :: {- TODO -}    ApplyMapKind DiffMK     k v
+
+instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
+  ApplyEmptyMK    == _               = True
+  ApplyKeysMK   l == ApplyKeysMK   r = l == r
+  ApplyValuesMK l == ApplyValuesMK r = l == r
+  ApplyTrackingMK == _               = True
+  ApplyDiffMK     == _               = True
+
+instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
+  wNoThunks    = error "wNoThunks @ApplyMapKind"
+  showTypeOf _ = "ApplyMapKind"
+
+  -- TODO methods
 
 data SMapKind :: MapKind -> Type where
   SEmptyMK    :: SMapKind EmptyMK
