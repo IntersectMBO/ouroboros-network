@@ -41,6 +41,7 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
@@ -120,10 +121,10 @@ type ProtocolShelley = HardForkProtocol '[ ShelleyBlock StandardShelley ]
 -------------------------------------------------------------------------------}
 
 shelleyTransition ::
-     forall era. ShelleyBasedEra era
+     forall era mk. ShelleyBasedEra era
   => PartialLedgerConfig (ShelleyBlock era)
   -> Word16   -- ^ Next era's major protocol version
-  -> LedgerState (ShelleyBlock era)
+  -> LedgerState (ShelleyBlock era) mk
   -> Maybe EpochNo
 shelleyTransition ShelleyPartialLedgerConfig{..}
                   transitionMajorVersion
@@ -210,7 +211,7 @@ instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
 
 -- | Forecast from a Shelley-based era to the next Shelley-based era.
 forecastAcrossShelley ::
-     forall eraFrom eraTo.
+     forall eraFrom eraTo mk.
      ( EraCrypto eraFrom ~ EraCrypto eraTo
      , ShelleyBasedEra eraFrom
      )
@@ -218,7 +219,7 @@ forecastAcrossShelley ::
   -> ShelleyLedgerConfig eraTo
   -> Bound  -- ^ Transition between the two eras
   -> SlotNo -- ^ Forecast for this slot
-  -> LedgerState (ShelleyBlock eraFrom)
+  -> LedgerState (ShelleyBlock eraFrom) mk
   -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock eraTo)))
 forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
     | forecastFor < maxFor
@@ -297,14 +298,15 @@ instance ( ShelleyBasedEra era
          , SL.TranslateEra era ShelleyTip
          , SL.TranslateEra era SL.NewEpochState
          , SL.TranslationError era SL.NewEpochState ~ Void
-         ) => SL.TranslateEra era (LedgerState :.: ShelleyBlock) where
-  translateEra ctxt (Comp (ShelleyLedgerState tip state _transition)) = do
+         ) => SL.TranslateEra era (Flip LedgerState ValuesMK :.: ShelleyBlock) where
+  translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition tables))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state
-      return $ Comp $ ShelleyLedgerState {
+      return $ Comp $ Flip $ ShelleyLedgerState {
           shelleyLedgerTip        = tip'
         , shelleyLedgerState      = state'
         , shelleyLedgerTransition = ShelleyTransitionInfo 0
+        , shelleyLedgerTables     = error "UTxO HD translate UTxO map" tables
         }
 
 instance ( ShelleyBasedEra era

@@ -150,6 +150,8 @@ class ( SL.ShelleyBasedEra era
       , Eq (TxSeq era)
       , Show (TxSeq era)
       , FromCBOR (Annotator (TxSeq era))
+      , Eq       (Core.TxOut era)
+      , NoThunks (Core.TxOut era)
 
       ) => ShelleyBasedEra era where
 

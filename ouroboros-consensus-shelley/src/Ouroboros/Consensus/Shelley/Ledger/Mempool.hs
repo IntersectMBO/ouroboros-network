@@ -71,7 +71,7 @@ import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
                      (ShelleyLedgerConfig (shelleyLedgerGlobals),
-                     Ticked (TickedShelleyLedgerState, tickedShelleyLedgerState),
+                     Ticked1 (TickedShelleyLedgerState, tickedShelleyLedgerState),
                      getPParams)
 
 data instance GenTx (ShelleyBlock era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Core.Tx era)
@@ -219,13 +219,16 @@ applyShelleyTx :: forall era.
   -> WhetherToIntervene
   -> SlotNo
   -> GenTx (ShelleyBlock era)
-  -> TickedLedgerState (ShelleyBlock era)
+  -> TickedLedgerState (ShelleyBlock era) ValuesMK
   -> Except (ApplyTxErr (ShelleyBlock era))
-       ( TickedLedgerState (ShelleyBlock era)
+       ( TickedLedgerState (ShelleyBlock era) TrackingMK
        , Validated (GenTx (ShelleyBlock era))
        )
 applyShelleyTx cfg wti slot (ShelleyTx _ tx) st = do
     (mempoolState', vtx) <-
+
+        -- TODO copy over the values
+
        applyShelleyBasedTx
          (shelleyLedgerGlobals cfg)
          (SL.mkMempoolEnv   innerSt slot)
@@ -233,7 +236,9 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st = do
          wti
          tx
 
-    let st' = set theLedgerLens mempoolState' st
+    -- TODO compute differences
+
+    let st' = fudge $ set theLedgerLens mempoolState' st
 
     pure (st', mkShelleyValidatedTx vtx)
   where
@@ -244,21 +249,29 @@ reapplyShelleyTx ::
   => LedgerConfig (ShelleyBlock era)
   -> SlotNo
   -> Validated (GenTx (ShelleyBlock era))
-  -> TickedLedgerState (ShelleyBlock era)
-  -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era))
+  -> TickedLedgerState (ShelleyBlock era) ValuesMK
+  -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era) TrackingMK)
 reapplyShelleyTx cfg slot vgtx st = do
     mempoolState' <-
+
+        -- TODO copy over the values
+
         SL.reapplyTx
           (shelleyLedgerGlobals cfg)
           (SL.mkMempoolEnv   innerSt slot)
           (SL.mkMempoolState innerSt)
           vtx
 
-    pure $ set theLedgerLens mempoolState' st
+    -- TODO compute differences
+
+    pure $ fudge $ set theLedgerLens mempoolState' st
   where
     ShelleyValidatedTx _txid vtx = vgtx
 
     innerSt = tickedShelleyLedgerState st
+
+fudge :: l ValuesMK -> l TrackingMK
+fudge = error "UTxO HD apply Shelley tx"
 
 -- | The lens combinator
 set ::
@@ -273,8 +286,8 @@ theLedgerLens ::
   => (      (SL.UTxOState era, SL.DPState (SL.Crypto era))
        -> f (SL.UTxOState era, SL.DPState (SL.Crypto era))
      )
-  ->    TickedLedgerState (ShelleyBlock era)
-  -> f (TickedLedgerState (ShelleyBlock era))
+  ->    TickedLedgerState (ShelleyBlock era) mk
+  -> f (TickedLedgerState (ShelleyBlock era) mk)
 theLedgerLens f x =
         (\y -> x{tickedShelleyLedgerState = y})
     <$> SL.overNewEpochState f (tickedShelleyLedgerState x)
