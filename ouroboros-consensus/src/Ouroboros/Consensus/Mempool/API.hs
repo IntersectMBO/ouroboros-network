@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -300,9 +301,8 @@ data ForgeLedgerState blk =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
-    -- and we are actually producing a block. It is the caller's responsibility
-    -- to call 'applyChainTick' and produce the ticked ledger state.
-    ForgeInKnownSlot SlotNo (TickedLedgerState blk)
+    -- and we are actually producing a block.
+    ForgeInKnownSlot SlotNo (TickedLedgerState blk ValuesMK)
 
     -- | The slot number of the block is not yet known
     --
@@ -310,7 +310,7 @@ data ForgeLedgerState blk =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | ForgeInUnknownSlot (LedgerState blk)
+  | ForgeInUnknownSlot (LedgerState blk EmptyMK)
 
 {-------------------------------------------------------------------------------
   Mempool capacity in bytes
@@ -338,7 +338,7 @@ data MempoolCapacityBytesOverride
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
+  => TickedLedgerState blk mk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity st = \case
@@ -390,7 +390,7 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
   , snapshotSlotNo      :: SlotNo
 
     -- | The ledger state after all transactions in the snapshot
-  , snapshotLedgerState :: TickedLedgerState blk
+  , snapshotLedgerState :: TickedLedgerState blk ValuesMK
   }
 
 {-------------------------------------------------------------------------------

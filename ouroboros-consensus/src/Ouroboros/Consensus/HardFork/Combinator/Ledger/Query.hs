@@ -157,7 +157,7 @@ distribExtLedgerState ::
      All SingleEraBlock xs
   => ExtLedgerState (HardForkBlock xs) mk -> NS (Flip ExtLedgerState mk) xs
 distribExtLedgerState (ExtLedgerState ledgerState headerState) =
-    hmap (\(Pair hst lst) -> Flip (ExtLedgerState lst hst)) $
+    hmap (\(Pair hst (Flip lst)) -> Flip (ExtLedgerState lst hst)) $
       mustMatchNS
         "HeaderState"
         (distribHeaderState headerState)
@@ -294,11 +294,11 @@ instance SmallQuery QueryAnytime where
 instance IsQuery QueryAnytime where
 
 interpretQueryAnytime ::
-     forall xs fp result. All SingleEraBlock xs
+     forall xs mk fp result. All SingleEraBlock xs
   => HardForkLedgerConfig xs
   -> QueryAnytime fp result
   -> EraIndex xs
-  -> State.HardForkState LedgerState xs
+  -> State.HardForkState (Flip LedgerState mk) xs
   -> result
 interpretQueryAnytime cfg query (EraIndex era) st =
     answerQueryAnytime cfg query (State.situate era st)
@@ -307,7 +307,7 @@ answerQueryAnytime ::
      All SingleEraBlock xs
   => HardForkLedgerConfig xs
   -> QueryAnytime fp result
-  -> Situated h LedgerState xs
+  -> Situated h (Flip LedgerState mk) xs
   -> result
 answerQueryAnytime HardForkLedgerConfig{..} =
     go cfgs (getExactly (getShape hardForkLedgerConfigShape))
@@ -318,7 +318,7 @@ answerQueryAnytime HardForkLedgerConfig{..} =
        => NP WrapPartialLedgerConfig xs'
        -> NP (K EraParams) xs'
        -> QueryAnytime fp result
-       -> Situated h LedgerState xs'
+       -> Situated h (Flip LedgerState mk) xs'
        -> result
     go Nil       _             _           ctxt = case ctxt of {}
     go (c :* cs) (K ps :* pss) GetEraStart ctxt = case ctxt of
@@ -332,7 +332,7 @@ answerQueryAnytime HardForkLedgerConfig{..} =
           (unwrapPartialLedgerConfig c)
           ps
           (currentStart cur)
-          (currentState cur)
+          (unFlip $ currentState cur)
 
 {-------------------------------------------------------------------------------
   Hard fork queries
@@ -369,7 +369,7 @@ interpretQueryHardFork ::
      All SingleEraBlock xs
   => HardForkLedgerConfig xs
   -> QueryHardFork xs fp result
-  -> LedgerState (HardForkBlock xs)
+  -> LedgerState (HardForkBlock xs) mk
   -> result
 interpretQueryHardFork cfg query st =
     case query of

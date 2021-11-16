@@ -340,10 +340,10 @@ deriving instance NoThunks (MockLedgerConfig c ext)
 
 type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
 
-instance GetTip (LedgerState (SimpleBlock c ext)) where
+instance GetTip (LedgerState (SimpleBlock c ext) mk) where
   getTip (SimpleLedgerState st) = castPoint $ mockTip st
 
-instance GetTip (Ticked (LedgerState (SimpleBlock c ext))) where
+instance GetTip (Ticked1 (LedgerState (SimpleBlock c ext)) mk) where
   getTip = castPoint . getTip . getTickedSimpleLedgerState
 
 instance MockProtocolSpecific c ext
@@ -352,7 +352,7 @@ instance MockProtocolSpecific c ext
 
   type AuxLedgerEvent (LedgerState (SimpleBlock c ext)) = VoidLedgerEvent (SimpleBlock c ext)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedSimpleLedgerState
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedSimpleLedgerState . SimpleLedgerState . simpleLedgerState
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
@@ -364,39 +364,60 @@ instance MockProtocolSpecific c ext
       mustSucceed (Left  err) = error ("reapplyBlockLedgerResult: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
 
-newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
+newtype instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
     }
   deriving stock   (Generic, Show, Eq)
   deriving newtype (Serialise, NoThunks)
 
+instance (SimpleCrypto c, Typeable ext) => ShowLedgerState (LedgerState (SimpleBlock c ext)) where
+  showsLedgerState _sing = shows
+
 -- Ticking has no effect on the simple ledger state
-newtype instance Ticked (LedgerState (SimpleBlock c ext)) = TickedSimpleLedgerState {
-      getTickedSimpleLedgerState :: LedgerState (SimpleBlock c ext)
+newtype instance Ticked1 (LedgerState (SimpleBlock c ext)) mk = TickedSimpleLedgerState {
+      getTickedSimpleLedgerState :: LedgerState (SimpleBlock c ext) mk
     }
   deriving stock   (Generic, Show, Eq)
   deriving newtype (NoThunks)
+
+instance TableStuff (LedgerState (SimpleBlock c ext)) where
+  data LedgerTables (LedgerState (SimpleBlock c ext)) mk = MockTablesUnit
+    deriving (Generic, NoThunks, Show)
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
+  showsLedgerState _sing = shows
+
+instance TableStuff (Ticked1 (LedgerState (SimpleBlock c ext))) where
+  data LedgerTables (Ticked1 (LedgerState (SimpleBlock c ext))) mk = TickedMockTablesUnit
+    deriving (Generic, NoThunks, Show)
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (SimpleBlock c ext)))) where
+  showsLedgerState _sing = shows
 
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
-                        -> TickedLedgerState (SimpleBlock c ext)
+                        -> TickedLedgerState (SimpleBlock c ext) mk1
                         -> Except (MockError (SimpleBlock c ext))
-                                  (LedgerState (SimpleBlock c ext))
+                                  (LedgerState (SimpleBlock c ext) mk2)
 updateSimpleLedgerState b (TickedSimpleLedgerState (SimpleLedgerState st)) =
     SimpleLedgerState <$> updateMockState b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a
                  => SlotNo
                  -> a
-                 -> TickedLedgerState (SimpleBlock c ext)
+                 -> TickedLedgerState (SimpleBlock c ext) mk1
                  -> Except (MockError (SimpleBlock c ext))
-                           (TickedLedgerState (SimpleBlock c ext))
+                           (TickedLedgerState (SimpleBlock c ext) mk2)
 updateSimpleUTxO x slot (TickedSimpleLedgerState (SimpleLedgerState st)) =
     TickedSimpleLedgerState . SimpleLedgerState <$> updateMockUTxO x slot st
 
-genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
+genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext) mk
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
 
 -- | Dummy values

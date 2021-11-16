@@ -30,9 +30,8 @@ import           Data.Measure (BoundedMeasure, Measure)
 import qualified Data.Measure as Measure
 
 import           Ouroboros.Consensus.Ledger.Abstract (Validated)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import           Ouroboros.Consensus.Ledger.Basics (TickedLedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx)
-import           Ouroboros.Consensus.Ticked (Ticked (..))
 
 -- | Each block has its limits of how many transactions it can hold.
 -- That limit is compared against the sum of measurements
@@ -54,7 +53,7 @@ class BoundedMeasure (TxMeasure blk) => TxLimits blk where
   txMeasure        :: Validated (GenTx blk)    -> TxMeasure blk
 
   -- | What is the allowed capacity for txs in an individual block?
-  txsBlockCapacity :: Ticked (LedgerState blk) -> TxMeasure blk
+  txsBlockCapacity :: TickedLedgerState blk mk -> TxMeasure blk
 
 -- | Is every component of the first value less-than-or-equal-to the
 -- corresponding component of the second value?

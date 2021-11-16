@@ -129,8 +129,8 @@ deriving instance (IOLike m, LedgerSupportsProtocol blk)
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the LgrDB.
 type LgrDbSerialiseConstraints blk =
   ( Serialise      (HeaderHash  blk)
-  , EncodeDisk blk (LedgerState blk)
-  , DecodeDisk blk (LedgerState blk)
+  , EncodeDisk blk (LedgerState blk EmptyMK)
+  , DecodeDisk blk (LedgerState blk EmptyMK)
   , EncodeDisk blk (AnnTip      blk)
   , DecodeDisk blk (AnnTip      blk)
   , EncodeDisk blk (ChainDepState (BlockProtocol blk))
@@ -371,7 +371,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
     rewrap (Right (Left  e)) = ValidateExceededRollBack e
     rewrap (Right (Right l)) = ValidateSuccessful       l
 
-    mkAps :: forall n l. l ~ ExtLedgerState blk EmptyMK
+    mkAps :: forall n l. l ~ ExtLedgerState blk
           => [Header blk]
           -> Set (RealPoint blk)
           -> [Ap n l blk ( LedgerDB.ResolvesBlocks    n   blk
@@ -467,7 +467,7 @@ wrapFailure _ k = catch k rethrow
 configLedgerDb ::
      ConsensusProtocol (BlockProtocol blk)
   => TopLevelConfig blk
-  -> LedgerDbCfg (ExtLedgerState blk EmptyMK)
+  -> LedgerDbCfg (ExtLedgerState blk)
 configLedgerDb cfg = LedgerDbCfg {
       ledgerDbCfgSecParam = configSecurityParam cfg
     , ledgerDbCfg         = ExtLedgerCfg cfg

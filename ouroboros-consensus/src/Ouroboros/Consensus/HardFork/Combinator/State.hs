@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
                      Requiring (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
@@ -111,7 +112,7 @@ recover =
 
 mostRecentTransitionInfo :: All SingleEraBlock xs
                          => HardForkLedgerConfig xs
-                         -> HardForkState LedgerState xs
+                         -> HardForkState (Flip LedgerState mk) xs
                          -> TransitionInfo
 mostRecentTransitionInfo HardForkLedgerConfig{..} st =
     hcollapse $
@@ -124,19 +125,19 @@ mostRecentTransitionInfo HardForkLedgerConfig{..} st =
   where
     cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
 
-    getTransition :: SingleEraBlock          blk
-                  => WrapPartialLedgerConfig blk
-                  -> K History.EraParams     blk
-                  -> Current LedgerState     blk
-                  -> K TransitionInfo        blk
+    getTransition :: SingleEraBlock                blk
+                  => WrapPartialLedgerConfig       blk
+                  -> K History.EraParams           blk
+                  -> Current (Flip LedgerState mk) blk
+                  -> K TransitionInfo              blk
     getTransition cfg (K eraParams) Current{..} = K $
-        case singleEraTransition' cfg eraParams currentStart currentState of
-          Nothing -> TransitionUnknown (ledgerTipSlot currentState)
+        case singleEraTransition' cfg eraParams currentStart (unFlip currentState) of
+          Nothing -> TransitionUnknown (ledgerTipSlot (unFlip currentState))
           Just e  -> TransitionKnown e
 
 reconstructSummaryLedger :: All SingleEraBlock xs
                          => HardForkLedgerConfig xs
-                         -> HardForkState LedgerState xs
+                         -> HardForkState (Flip LedgerState mk) xs
                          -> History.Summary xs
 reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
     reconstructSummary
@@ -150,7 +151,7 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 -- It should not be stored.
 epochInfoLedger :: All SingleEraBlock xs
                 => HardForkLedgerConfig xs
-                -> HardForkState LedgerState xs
+                -> HardForkState (Flip LedgerState mk) xs
                 -> EpochInfo (Except PastHorizonException)
 epochInfoLedger cfg st =
     History.summaryToEpochInfo $
@@ -174,7 +175,7 @@ epochInfoPrecomputedTransitionInfo shape transition st =
 extendToSlot :: forall xs. CanHardFork xs
              => HardForkLedgerConfig xs
              -> SlotNo
-             -> HardForkState LedgerState xs -> HardForkState LedgerState xs
+             -> HardForkState (Flip LedgerState ValuesMK) xs -> HardForkState (Flip LedgerState ValuesMK) xs
 extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
       HardForkState . unI
     . Telescope.extend
@@ -195,17 +196,17 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     ei    = epochInfoLedger ledgerCfg ledgerSt
 
     -- Return the end of this era if we should transition to the next
-    whenExtend :: SingleEraBlock              blk
-               => WrapPartialLedgerConfig     blk
-               -> K History.EraParams         blk
-               -> Current LedgerState         blk
-               -> (Maybe :.: K History.Bound) blk
+    whenExtend :: SingleEraBlock                blk
+               => WrapPartialLedgerConfig       blk
+               -> K History.EraParams           blk
+               -> Current (Flip LedgerState mk) blk
+               -> (Maybe :.: K History.Bound)   blk
     whenExtend pcfg (K eraParams) cur = Comp $ K <$> do
         transition <- singleEraTransition'
                         pcfg
                         eraParams
                         (currentStart cur)
-                        (currentState cur)
+                        (unFlip $ currentState cur)
         let endBound = History.mkUpperBound
                          eraParams
                          (currentStart cur)
@@ -213,10 +214,10 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
         guard (slot >= History.boundSlot endBound)
         return endBound
 
-    howExtend :: Translate LedgerState blk blk'
+    howExtend :: TranslateLedgerState blk blk'
               -> History.Bound
-              -> Current LedgerState blk
-              -> (K Past blk, Current LedgerState blk')
+              -> Current (Flip LedgerState ValuesMK) blk
+              -> (K Past blk, Current (Flip LedgerState ValuesMK) blk')
     howExtend f currentEnd cur = (
           K Past {
               pastStart    = currentStart cur
@@ -224,12 +225,12 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
             }
         , Current {
               currentStart = currentEnd
-            , currentState = translateWith f
+            , currentState = Flip $ translateLedgerStateWith f
                                (History.boundEpoch currentEnd)
-                               (currentState cur)
+                               (unFlip $ currentState cur)
             }
         )
 
-    translate :: InPairs (Translate LedgerState) xs
+    translate :: InPairs TranslateLedgerState xs
     translate = InPairs.requiringBoth cfgs $
                   translateLedgerState hardForkEraTranslation

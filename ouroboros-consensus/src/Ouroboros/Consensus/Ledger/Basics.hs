@@ -1,8 +1,12 @@
-{-# LANGUAGE DeriveFoldable    #-}
-{-# LANGUAGE DeriveFunctor     #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -27,14 +31,21 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerConfig
   , LedgerError
   , LedgerState
+  , LedgerStateKind
   , TickedLedgerState
     -- * UTxO HD
   , DiskLedgerView
   , FootprintL (..)
+  , MapKind (..)
+  , SMapKind (..)
   , TableKeySets
+  , TableStuff (..)
+    -- * Misc
+  , ShowLedgerState (..)
   ) where
 
 import           Data.Kind (Type)
+import           Data.Typeable (Typeable)
 import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL (..))
@@ -53,7 +64,9 @@ class GetTip l where
   -- Should be 'genesisPoint' when no blocks have been applied yet
   getTip :: l -> Point l
 
-type instance HeaderHash (Ticked l) = HeaderHash l
+type instance HeaderHash (Ticked  l)                   = HeaderHash l
+type instance HeaderHash (Ticked1 (l :: k -> Type))    = HeaderHash l
+type instance HeaderHash (Ticked1 (l :: k -> Type) mk) = HeaderHash l
 
 getTipHash :: GetTip l => l -> ChainHash l
 getTipHash = pointHash . getTip
@@ -99,16 +112,23 @@ pureLedgerResult a = LedgerResult {
   }
 
 {-------------------------------------------------------------------------------
+  Basic LedgerState classes
+-------------------------------------------------------------------------------}
+
+class ShowLedgerState (l :: LedgerStateKind) where
+  showsLedgerState :: SMapKind mk -> l mk -> ShowS   -- TODO someway to show the mk values
+
+{-------------------------------------------------------------------------------
   Definition of a ledger independent of a choice of block
 -------------------------------------------------------------------------------}
 
 -- | Static environment required for the ledger
-type family LedgerCfg l :: Type
+type family LedgerCfg (l :: LedgerStateKind) :: Type
 
 class ( -- Requirements on the ledger state itself
-        Show     l
-      , Eq       l
-      , NoThunks l
+        ShowLedgerState                     l
+      , forall mk. Eq                      (l mk)
+      , forall mk. Typeable mk => NoThunks (l mk)
         -- Requirements on 'LedgerCfg'
       , NoThunks (LedgerCfg l)
         -- Requirements on 'LedgerErr'
@@ -119,9 +139,13 @@ class ( -- Requirements on the ledger state itself
         --
         -- See comment for 'applyChainTickLedgerResult' about the tip of the
         -- ticked ledger.
-      , GetTip l
-      , GetTip (Ticked l)
-      ) => IsLedger l where
+      , forall mk. GetTip         (l mk)
+      , forall mk. GetTip (Ticked1 l mk)
+      , HeaderHash (l EmptyMK) ~ HeaderHash l
+      , HeaderHash (l ValuesMK) ~ HeaderHash l
+      , HeaderHash (l DiffMK) ~ HeaderHash l
+      , HeaderHash (l TrackingMK) ~ HeaderHash l
+      ) => IsLedger (l :: LedgerStateKind) where
   -- | Errors that can arise when updating the ledger
   --
   -- This is defined here rather than in 'ApplyBlock', since the /type/ of
@@ -165,25 +189,57 @@ class ( -- Requirements on the ledger state itself
   applyChainTickLedgerResult ::
        LedgerCfg l
     -> SlotNo
-    -> l
-    -> LedgerResult l (Ticked l)
+    -> l ValuesMK
+    -> LedgerResult l (Ticked1 l TrackingMK)
+
+
+-- This can't be in IsLedger because we have a compositional IsLedger instance
+-- for LedgerState HardForkBlock but we will not (at least ast first) have a
+-- compositional LedgerTables instance for HardForkBlock.
+class ( ShowLedgerState (LedgerTables l)
+      , forall mk. Typeable mk => NoThunks (LedgerTables l mk)
+      ) => TableStuff (l :: LedgerStateKind) where
+
+  data family LedgerTables l :: LedgerStateKind
+
+  forgetTickedLedgerStateTracking :: Ticked1 l TrackingMK -> Ticked1 l ValuesMK
+  forgetLedgerStateTracking       ::         l TrackingMK ->         l ValuesMK
+
+  forgetLedgerStateTables :: l any -> l EmptyMK
+
+  prependLedgerStateTracking :: Ticked1 l TrackingMK -> l TrackingMK -> l TrackingMK
+
+  projectLedgerTables :: l mk  -> LedgerTables l mk
+  withLedgerTables    :: l any -> LedgerTables l mk -> l mk
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
-applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l -> Ticked l
+applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l ValuesMK -> Ticked1 l TrackingMK
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
   Link block to its ledger
 -------------------------------------------------------------------------------}
 
+type LedgerStateKind = MapKind -> Type
+
+data MapKind = EmptyMK | KeysMK | ValuesMK | TrackingMK | DiffMK
+
+data SMapKind :: MapKind -> Type where
+  SEmptyMK    :: SMapKind EmptyMK
+  SKeysMK     :: SMapKind KeysMK
+  SValuesMK   :: SMapKind ValuesMK
+  STrackingMK :: SMapKind TrackingMK
+  SDiffMK     :: SMapKind DiffMK
+
 -- | Ledger state associated with a block
-data family LedgerState blk :: Type
+data family LedgerState blk :: LedgerStateKind
 
-type instance HeaderHash (LedgerState blk) = HeaderHash blk
+type instance HeaderHash (LedgerState blk)    = HeaderHash blk
+type instance HeaderHash (LedgerState blk mk) = HeaderHash blk
 
-type LedgerConfig      blk = LedgerCfg (LedgerState blk)
-type LedgerError       blk = LedgerErr (LedgerState blk)
-type TickedLedgerState blk = Ticked    (LedgerState blk)
+type LedgerConfig      blk    = LedgerCfg (LedgerState blk)
+type LedgerError       blk    = LedgerErr (LedgerState blk)
+type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk
 
 {-------------------------------------------------------------------------------
   UTxO HD stubs
@@ -193,4 +249,4 @@ type TickedLedgerState blk = Ticked    (LedgerState blk)
 -- states, which typically involve accessing disk.
 data family DiskLedgerView blk :: (Type -> Type) -> Type
 
-data family TableKeySets l
+type TableKeySets l = LedgerTables l KeysMK

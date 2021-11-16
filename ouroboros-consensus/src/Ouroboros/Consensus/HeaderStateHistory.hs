@@ -154,9 +154,9 @@ validateHeader cfg ledgerView hdr history = do
 --
 -- PRECONDITION: the blocks in the chain are valid.
 fromChain ::
-     ApplyBlock (ExtLedgerState blk mk) blk
+     (ApplyBlock (ExtLedgerState blk) blk, TableStuff (LedgerState blk))
   => TopLevelConfig blk
-  -> ExtLedgerState blk mk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk
@@ -166,7 +166,7 @@ fromChain cfg initState chain =
     anchorSnapshot NE.:| snapshots =
           fmap headerState
         . NE.scanl
-            (flip (tickThenReapply (ExtLedgerCfg cfg)))
+            (\st blk -> forgetLedgerStateTracking $ tickThenReapply (ExtLedgerCfg cfg) blk st)
             initState
         . Chain.toOldestFirst
         $ chain

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -121,7 +122,7 @@ mkMempool mpEnv = Mempool
 
 -- | Abstract interface needed to run a Mempool.
 data LedgerInterface m blk = LedgerInterface
-    { getCurrentLedgerState :: STM m (LedgerState blk)
+    { getCurrentLedgerState :: STM m (LedgerState blk EmptyMK)
     }
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
