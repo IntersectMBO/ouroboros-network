@@ -35,7 +35,7 @@ module Ouroboros.Network.InboundGovernor
 
 import           Control.Exception (SomeAsyncException (..), assert)
 import           Control.Applicative (Alternative (..), (<|>))
-import           Control.Monad (foldM)
+import           Control.Monad (foldM, when)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
@@ -56,7 +56,7 @@ import qualified System.Random as Rnd
 import qualified Network.Mux as Mux
 
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
-import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.ConnectionManager.Types hiding (TrUnexpectedlyFalseAssertion)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.Mux hiding (ControlMessage)
 import           Ouroboros.Network.Channel (fromChannel)
@@ -362,7 +362,16 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
           res <- promotedToWarmRemote connectionManager
                                       (remoteAddress connId)
           traceWith tracer (TrPromotedToWarmRemote connId res)
-          _ <- evaluate $ assert (resultInState res /= UnknownConnectionSt)
+
+          when (resultInState res == UnknownConnectionSt) $ do
+            traceWith tracer (TrUnexpectedlyFalseAssertion
+                                (InboundGovernorLoop
+                                  (Just connId)
+                                  UnknownConnectionSt)
+                             )
+            _ <- evaluate (assert False)
+            pure ()
+
           let state' = updateRemoteState
                          connId
                          RemoteWarm
@@ -561,23 +570,27 @@ mkRemoteTransitionTrace connId fromState toState =
                  }
 
 
-
+data IGAssertionLocation peerAddr
+  = InboundGovernorLoop !(Maybe (ConnectionId peerAddr)) !AbstractState
+  deriving Show
 
 data InboundGovernorTrace peerAddr
-    = TrNewConnection               !Provenance !(ConnectionId peerAddr)
-    | TrResponderRestarted          !(ConnectionId peerAddr) !MiniProtocolNum
-    | TrResponderStartFailure       !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
-    | TrResponderErrored            !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
-    | TrResponderStarted            !(ConnectionId peerAddr) !MiniProtocolNum
-    | TrResponderTerminated         !(ConnectionId peerAddr) !MiniProtocolNum
-    | TrPromotedToWarmRemote        !(ConnectionId peerAddr) !(OperationResult AbstractState)
-    | TrPromotedToHotRemote         !(ConnectionId peerAddr)
-    | TrDemotedToColdRemote         !(ConnectionId peerAddr) !(OperationResult DemotedToColdRemoteTr)
+    = TrNewConnection                !Provenance !(ConnectionId peerAddr)
+    | TrResponderRestarted           !(ConnectionId peerAddr) !MiniProtocolNum
+    | TrResponderStartFailure        !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
+    | TrResponderErrored             !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
+    | TrResponderStarted             !(ConnectionId peerAddr) !MiniProtocolNum
+    | TrResponderTerminated          !(ConnectionId peerAddr) !MiniProtocolNum
+    | TrPromotedToWarmRemote         !(ConnectionId peerAddr) !(OperationResult AbstractState)
+    | TrPromotedToHotRemote          !(ConnectionId peerAddr)
+    | TrDemotedToColdRemote          !(ConnectionId peerAddr) !(OperationResult DemotedToColdRemoteTr)
     -- ^ All mini-protocols terminated.  The boolean is true if this connection
     -- was not used by p2p-governor, and thus the connection will be terminated.
-    | TrWaitIdleRemote              !(ConnectionId peerAddr) !(OperationResult AbstractState)
-    | TrMuxCleanExit                !(ConnectionId peerAddr)
-    | TrMuxErrored                  !(ConnectionId peerAddr) SomeException
-    | TrInboundGovernorCounters     !InboundGovernorCounters
-    | TrRemoteState                 !(Map (ConnectionId peerAddr) RemoteSt)
+    | TrWaitIdleRemote               !(ConnectionId peerAddr) !(OperationResult AbstractState)
+    | TrMuxCleanExit                 !(ConnectionId peerAddr)
+    | TrMuxErrored                   !(ConnectionId peerAddr) SomeException
+    | TrInboundGovernorCounters      !InboundGovernorCounters
+    | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
+    | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
+    -- ^ This case is unexpected at call site.
   deriving Show
