@@ -584,8 +584,7 @@ withBidirectionalConnectionManager name timeouts
                     serverObservableStateVar = observableStateVar
                   }
               )
-              (\serverAsync -> link serverAsync
-                            >> k connectionManager serverAddr serverAsync)
+              (\serverAsync -> k connectionManager serverAddr serverAsync)
           `catch` \(e :: SomeException) -> do
             throwIO e
   where
@@ -794,7 +793,8 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
                                            noNextRequests
                                            timeLimitsHandshake
                                            maxAcceptedConnectionsLimit
-          $ \_ serverAddr _serverAsync -> do
+          $ \_ serverAddr serverAsync -> do
+            link serverAsync
             -- client → server: connect
             (rs :: [Either SomeException (Bundle [resp])]) <-
                 replicateM
@@ -900,7 +900,8 @@ bidirectionalExperiment
                                          nextRequests0
                                          noTimeLimitsHandshake
                                          maxAcceptedConnectionsLimit
-        (\connectionManager0 _serverAddr0 _serverAsync0 ->
+        (\connectionManager0 _serverAddr0 serverAsync0 -> do
+          link serverAsync0
           withBidirectionalConnectionManager "node-1" timeouts
                                              nullTracer nullTracer nullTracer
                                              nullTracer snocket socket1
@@ -909,7 +910,8 @@ bidirectionalExperiment
                                              nextRequests1
                                              noTimeLimitsHandshake
                                              maxAcceptedConnectionsLimit
-            (\connectionManager1 _serverAddr1 _serverAsync1 -> do
+            (\connectionManager1 _serverAddr1 serverAsync1 -> do
+              link serverAsync1
               -- runInitiatorProtocols returns a list of results per each
               -- protocol in each bucket (warm \/ hot \/ established); but
               -- we run only one mini-protocol. We can use `concat` to
@@ -1576,7 +1578,8 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
-                          ( \ connectionManager _ _serverAsync -> do
+                          ( \ connectionManager _ serverAsync -> do
+                            link serverAsync
                             connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
                             return Nothing
                           )
