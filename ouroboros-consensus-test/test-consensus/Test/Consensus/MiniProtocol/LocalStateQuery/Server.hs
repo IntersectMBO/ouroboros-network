@@ -170,7 +170,7 @@ mkServer k chain = do
       localStateQueryServer
         cfg
         (castPoint . LgrDB.ledgerDbTip <$> LgrDB.getCurrent lgrDB)
-        (\pt -> error "splitLedgerDB" pt <$> LgrDB.getCurrent lgrDB)
+        (\pt -> LedgerDB.ledgerDbPrefix pt <$> LgrDB.getCurrent lgrDB)
         getImmutablePoint
   where
     cfg = ExtLedgerCfg $ testCfg k
