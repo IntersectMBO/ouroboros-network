@@ -182,9 +182,11 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
               -> m Property
     noneWorse metrics pickedSet = do
         scores <- atomically $ case apaChurnMode of
-                      ChurnModeNormal -> upstreamyness <$>
-                          getHeaderMetrics metrics
-                      ChurnModeBulkSync -> fetchyness <$>
+                      ChurnModeNormal -> do
+                          hup <- upstreamyness <$> getHeaderMetrics metrics
+                          bup <- fetchynessBlocks <$> getFetchedMetrics metrics
+                          return $ Map.unionWith (+) hup bup
+                      ChurnModeBulkSync -> fetchynessBytes <$>
                           getFetchedMetrics metrics
         let (picked, notPicked) = Map.partitionWithKey fn scores
             maxPicked = maximum $ Map.elems picked

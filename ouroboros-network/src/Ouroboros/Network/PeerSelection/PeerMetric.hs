@@ -145,11 +145,11 @@ upstreamyness = Pq.fold' count Map.empty
 
 -- Returns a Map which counts the number of bytes downloaded
 -- for a given peer.
-fetchyness
+fetchynessBytes
     :: forall p.  ( Ord p )
     => SlotMetric (p, SizeInBytes)
     -> Map p Int
-fetchyness = Pq.fold' count Map.empty
+fetchynessBytes = Pq.fold' count Map.empty
   where
     count :: Int
           -> SlotNo
@@ -163,5 +163,24 @@ fetchyness = Pq.fold' count Map.empty
         fn Nothing = Just $ fromIntegral bytes
         fn (Just oldBytes) = Just $! oldBytes + fromIntegral bytes
 
+-- Returns a Map which counts the number of times a given peer
+-- was the first we downloaded a block from.
+fetchynessBlocks
+    :: forall p.  ( Ord p )
+    => SlotMetric (p, SizeInBytes)
+    -> Map p Int
+fetchynessBlocks = Pq.fold' count Map.empty
+  where
+    count :: Int
+          -> SlotNo
+          -> ((p, SizeInBytes), Time)
+          -> Map p Int
+          -> Map p Int
+    count _ _ ((peer, _),_) m =
+        Map.alter fn peer m
+      where
+        fn :: Maybe Int -> Maybe Int
+        fn Nothing = Just 1
+        fn (Just c) = Just $! c + 1
 
 
