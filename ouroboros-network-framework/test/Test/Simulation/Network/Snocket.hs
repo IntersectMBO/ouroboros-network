@@ -503,6 +503,7 @@ toBearerInfo abi =
         biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
         biInboundWriteFailure  = abiInboundWriteFailure abi,
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
+        biAcceptFailures       = Nothing, -- TODO
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 

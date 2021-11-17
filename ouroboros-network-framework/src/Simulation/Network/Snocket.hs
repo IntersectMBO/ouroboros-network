@@ -28,6 +28,8 @@ module Simulation.Network.Snocket
   , OpenType (..)
 
   , BearerInfo (..)
+  , IOErrType (..)
+  , IOErrThrowOrReturn (..)
   , SuccessOrFailure (..)
   , Size
   , noAttenuation
@@ -61,6 +63,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
 import           Text.Printf (printf)
+import           Foreign.C.Error
 
 import           Data.Wedge
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
@@ -225,6 +228,21 @@ data NetworkState m addr = NetworkState {
     }
 
 
+-- | Error types.
+--
+data IOErrType = IOErrConnectionAborted
+               | IOErrResourceExhausted
+  deriving (Eq, Show)
+
+
+-- | The io error can be either thrown by `accept` or return as part of
+-- 'AcceptFailure'.  Even if our 'Snocket' implementation is faulty, we can
+-- verify that the server will behave as expected.
+--
+data IOErrThrowOrReturn = IOErrThrow
+                        | IOErrReturn
+  deriving (Eq, Show)
+
 -- | Each bearer info describes outbound and inbound side of a point to
 -- point bearer.
 --
@@ -249,6 +267,15 @@ data BearerInfo = BearerInfo
 
       -- | Maximum number of successful writes for an outbound bearer.
     , biOutboundWriteFailure :: !(Maybe Int)
+
+      -- | Time after which  accept will throw an exception.
+      --
+      -- Currently it only supports two kinds of exceptions, ones that are
+      -- caught and rethrown by the server (ECONNABORTED), and an exception
+      -- which would be caught, and delivered to the application via
+      -- 'AcceptFailure'.
+      --
+    , biAcceptFailures       :: !(Maybe (DiffTime, IOErrType, IOErrThrowOrReturn))
 
       -- | SDU size of the bearer; it will be shared between outbound and inbound
       -- sides.
@@ -282,6 +309,7 @@ noAttenuation = BearerInfo { biConnectionDelay      = 0
                            , biOutboundAttenuation  = \_ _ -> (0, Success)
                            , biInboundWriteFailure  = Nothing
                            , biOutboundWriteFailure = Nothing
+                           , biAcceptFailures       = Nothing
                            , biSDUSize              = SDUSize 12228
                            }
 
@@ -971,7 +999,9 @@ mkSnocket state tr = Snocket { getLocalAddr
     accept :: FD m (TestAddress addr)
            -> m (Accept m (FD m (TestAddress addr))
                                 (TestAddress addr))
-    accept FD { fdVar } = pure accept_
+    accept FD { fdVar } = do time <- getMonotonicTime
+                             deltaAndIOErr <- biAcceptFailures <$> atomically (stepScriptSTM $ nsBearerInfo state)
+                             return $ accept_ time deltaAndIOErr
       where
         -- non-blocking; return 'True' if a connection is in 'SYN_SENT' state
         synSent :: TestAddress addr
@@ -991,7 +1021,12 @@ mkSnocket state tr = Snocket { getLocalAddr
              _                                           ->
                return False
 
-        accept_ = Accept $ do
+        accept_ :: Time
+                -> Maybe (DiffTime, IOErrType, IOErrThrowOrReturn)
+                -> Accept m (FD m (TestAddress addr))
+                                  (TestAddress addr)
+        accept_ time deltaAndIOErrType = Accept $ do
+            ctime <- getMonotonicTime
             bracketOnError
               (atomically $ do
                 fd <- readTVar fdVar
@@ -1021,12 +1056,31 @@ mkSnocket state tr = Snocket { getLocalAddr
                     -- state. So we take from the TBQueue until we have found
                     -- one that is SYN_SENT state.
                     cwi <- readTBQueueUntil (synSent localAddress) queue
-
                     let connId = ConnectionId localAddress (cwiAddress cwi)
 
-                    return $ Right ( cwi
-                                   , connId
-                                   )
+                    case deltaAndIOErrType of
+                      -- the `ctime` is the time when we issued 'accept' not
+                      -- when read something from the queue.
+                      Just (delta, ioErrType, ioErrThrowOrReturn) | delta `addTime` time >= ctime ->
+                        case (ioErrType, ioErrThrowOrReturn) of
+                          (IOErrConnectionAborted, IOErrThrow) ->
+                            throwSTM connectionAbortedError
+                          (IOErrResourceExhausted, IOErrThrow) ->
+                            throwSTM (resourceExhaustedError fd)
+
+                          (IOErrConnectionAborted, IOErrReturn) ->
+                            return $ Left ( toException connectionAbortedError
+                                          , Just localAddress
+                                          , mkSockType fd
+                                          )
+                          (IOErrResourceExhausted, IOErrReturn) ->
+                            return $ Left ( toException $ resourceExhaustedError fd
+                                          , Just localAddress
+                                          , mkSockType fd
+                                          )
+                      _  -> return $ Right ( cwi
+                                           , connId
+                                           )
 
                   FDClosed {} ->
                     return $ Left ( toException $ invalidError fd
@@ -1055,7 +1109,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   Left (err, mbLocalAddr, fdType) -> do
                     traceWith tr (WithAddr (mbLocalAddr) Nothing
                                            (STAcceptFailure fdType err))
-                    return (AcceptFailure err, accept_)
+                    return (AcceptFailure err, accept_ time deltaAndIOErrType)
 
                   Right (chann, connId@ConnectionId { remoteAddress }) -> do
                     let ChannelWithInfo
@@ -1083,7 +1137,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                     traceWith tr (WithAddr (Just (localAddress connId)) Nothing
                                            (STAccepted remoteAddress))
 
-                    return (Accepted fdRemote remoteAddress, accept_)
+                    return (Accepted fdRemote remoteAddress, accept_ time deltaAndIOErrType)
 
 
         invalidError :: FD_ m (TestAddress addr) -> IOError
@@ -1092,6 +1146,28 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
           , ioe_description = printf "Invalid argument (%s)" (show fd)
+          , ioe_errno       = Nothing
+          , ioe_filename    = Nothing
+          }
+
+        connectionAbortedError :: IOError
+        connectionAbortedError = IOError
+          { ioe_handle      = Nothing
+          , ioe_type        = OtherError
+          , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
+            -- Note: this matches the `iseCONNABORTED` on Windows, see
+            -- 'Ouroboros.Network.Server2`
+          , ioe_description = "Software caused connection abort (WSAECONNABORTED)"
+          , ioe_errno       = Just (case eCONNABORTED of Errno errno -> errno)
+          , ioe_filename    = Nothing
+          }
+
+        resourceExhaustedError :: FD_ m (TestAddress addr) -> IOError
+        resourceExhaustedError fd = IOError
+          { ioe_handle      = Nothing
+          , ioe_type        = ResourceExhausted
+          , ioe_location    = "Ouroboros.Netowrk.Snocket.Sim.accept"
+          , ioe_description = printf "Resource exhausted (%s)" (show fd)
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
