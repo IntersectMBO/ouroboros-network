@@ -94,7 +94,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
       --
       serverControlChannel        :: ServerControlChannel muxMode peerAddr bytes m a b,
 
-      -- | Observable mutable s tate.
+      -- | Observable mutable state.
       --
       serverObservableStateVar    :: StrictTVar m InboundGovernorObservableState
     }
