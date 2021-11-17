@@ -169,6 +169,9 @@ jobs:
     - name: network-mux [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run network-mux:test
 
+    - name: ourobors-network-testing [test]
+      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-testing:test
+
     # issue: #1818
     - name: ourobors-network-framework [test]
       run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'

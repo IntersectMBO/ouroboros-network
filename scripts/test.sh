@@ -8,6 +8,7 @@ cabal run ${@} io-sim:test && \
 cabal run ${@} network-mux:test && \
 cabal run ${@} ntp-client:test && \
 cabal run ${@} typed-protocols-examples:test && \
+cabal run ${@} ouroboros-network-testing:test && \
 cabal run ${@} ouroboros-network-framework:test && \
 cabal run ${@} ouroboros-network:test
 # consensus tests are disabled due to #1082
