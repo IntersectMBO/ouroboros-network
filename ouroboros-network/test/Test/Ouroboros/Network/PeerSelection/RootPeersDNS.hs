@@ -27,7 +27,7 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (catMaybes)
 import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq)
-import           Data.IP (IPv4, toIPv4w, fromHostAddress, toSockAddr)
+import           Data.IP (toIPv4w, fromHostAddress, toSockAddr)
 import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.ByteString.Char8 (pack)
 import           Data.Set (Set)
@@ -80,7 +80,7 @@ tests =
 
 data MockRoots = MockRoots {
     mockLocalRootPeers :: [(Int, Map RelayAccessPoint PeerAdvertise)]
-  , mockDNSMap :: Map Domain [IPv4]
+  , mockDNSMap :: Map Domain [IP]
   }
   deriving Show
 
@@ -117,7 +117,10 @@ genMockRoots = sized $ \relaysNumber -> do
         ipsPerDomain = 2
 
     ips <- blocks ipsPerDomain
-            <$> vectorOf (ipsPerDomain * length domains) (toIPv4w <$> arbitrary)
+            -- Modules under test doesn't differ by IP version so we only
+            -- generate IPv4 addresses.
+            <$> vectorOf (ipsPerDomain * length domains)
+                         (IPv4 . toIPv4w <$> arbitrary)
 
     let dnsMap = Map.fromList $ zip domains ips
 
@@ -203,7 +206,7 @@ mockDNSActions :: forall exception m.
                   , MonadDelay m
                   , MonadTimer m
                   )
-               => Map Domain [IPv4]
+               => Map Domain [IP]
                -> LazySTM.TVar m (Script DNSTimeout)
                -> LazySTM.TVar m (Script DNSLookupDelay)
                -> DNSActions () exception m
@@ -211,17 +214,17 @@ mockDNSActions dnsMap dnsTimeoutScript dnsLookupDelayScript =
     DNSActions {
       dnsResolverResource,
       dnsAsyncResolverResource,
-      dnsLookupAWithTTL
+      dnsLookupWithTTL
     }
  where
    dnsResolverResource      _ = return (constantResource ())
    dnsAsyncResolverResource _ = return (constantResource ())
 
-   dnsLookupAWithTTL :: resolvConf
-                     -> resolver
-                     -> Domain
-                     -> m (Either DNSError [(IPv4, TTL)])
-   dnsLookupAWithTTL _ _ domain = do
+   dnsLookupWithTTL :: resolvConf
+                    -> resolver
+                    -> Domain
+                    -> m ([DNSError], [(IP, TTL)])
+   dnsLookupWithTTL _ _ domain = do
      DNSTimeout dnsTimeout <- stepScript dnsTimeoutScript
      DNSLookupDelay dnsLookupDelay <- stepScript dnsLookupDelayScript
 
@@ -233,8 +236,9 @@ mockDNSActions dnsMap dnsTimeoutScript dnsLookupDelayScript =
             Just x  -> return (Right (map (\a -> (a, 0)) x))
 
      case dnsLookup of
-       Nothing -> return (Left TimeoutExpired)
-       Just a  -> return a
+       Nothing        -> return ([TimeoutExpired], [])
+       Just (Left e)  -> return ([e], [])
+       Just (Right a) -> return ([], a)
 
 -- | 'localRootPeersProvider' running with a given MockRoots env
 --
@@ -357,7 +361,7 @@ selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
 selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- trace ]
 
 selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
-                            -> [(Time, (Domain, [IPv4]))]
+                            -> [(Time, (Domain, [IP]))]
 selectLocalRootResultEvents trace = [ (t, (domain, map fst r))
                                     | (t, TraceLocalRootResult (DomainAccessPoint domain _) r) <- trace ]
 
@@ -371,7 +375,7 @@ selectPublicRootFailureEvents trace = [ (t, domain)
                                       | (t, TracePublicRootFailure domain _) <- trace ]
 
 selectPublicRootResultEvents :: [(Time, TracePublicRootPeers)]
-                             -> [(Time, (Domain, [IPv4]))]
+                             -> [(Time, (Domain, [IP]))]
 selectPublicRootResultEvents trace = [ (t, (domain, map fst r))
                                      | (t, TracePublicRootResult domain r) <- trace ]
 
@@ -444,14 +448,14 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots dnsMap)
           ]
 
         -- domains that were resolved during simulation
-        resultMap :: Map Domain [IPv4]
+        resultMap :: Map Domain [IP]
         resultMap = Map.fromList
                   $ map snd
                   $ selectLocalRootResultEvents
                   $ tr
 
         -- all domains that could have been resolved
-        maxResultMap :: Map Domain [IPv4]
+        maxResultMap :: Map Domain [IP]
         maxResultMap = dnsMap `Map.restrictKeys` localRootDomains
 
         -- all domains that were tried to resolve during the simulation
@@ -512,17 +516,17 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _)
                                               Nothing -> prev
                                               Just _  -> i
                                           ) (-1) db
-                            -- Get all IPv4 present in group at position
+                            -- Get all IPs present in group at position
                             -- 'index'
                             ipsAtIndex = map (\sockAddr ->
                                              case sockAddr of
                                                SockAddrInet _ hostAddr
-                                                 -> fromHostAddress hostAddr
+                                                 -> IPv4 $ fromHostAddress hostAddr
                                                _ -> error "Impossible happened!"
 
                                          ) $ Map.keys
                                            $ snd
-                                           $ lrpg `Seq.index` index
+                                           $ lrpg `Seq.index` index :: [IP]
                             -- Check if all ips from the previous DNS
                             -- lookup result are present in the current
                             -- result group at the correct index
@@ -599,7 +603,7 @@ prop_public_resolvesDomainsCorrectly
   = lookupLoop mockRoots dnsMap === dnsMap
   where
     -- Perform public root DNS lookup until no failures
-    lookupLoop :: MockRoots -> Map Domain [IPv4] -> Map Domain [IPv4]
+    lookupLoop :: MockRoots -> Map Domain [IP] -> Map Domain [IP]
     lookupLoop mr res =
       let tr = runSimTrace
              $ mockPublicRootPeersProvider tracerTracePublicRoots

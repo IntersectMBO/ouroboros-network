@@ -11,6 +11,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 
     -- * DNSActions IO
     ioDNSActions,
+    LookupReqs (..),
 
     -- * Utils
     -- ** Resource
@@ -27,6 +28,7 @@ import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 
 import           Control.Exception (IOException)
+import           Control.Monad.Class.MonadAsync
 #if !defined(mingw32_HOST_OS)
 import           Control.Monad.Class.MonadSTM.Strict
 #endif
@@ -37,10 +39,15 @@ import           Control.Tracer (Tracer(..), traceWith)
 
 import           System.Directory (getModificationTime)
 
-import           Data.IP (IPv4)
+import           Data.IP (IP (..))
 import           Network.DNS (DNSError)
 import qualified Network.DNS as DNS
 
+
+data LookupReqs = LookupReqAOnly
+                | LookupReqAAAAOnly
+                | LookupReqAAndAAAA
+                deriving Show
 
 data DNSorIOError exception
     = DNSError !DNSError
@@ -122,10 +129,10 @@ data DNSActions resolver exception m = DNSActions {
     -- DNS library timeouts do not work reliably on Windows (#1873), hence the
     -- additional timeout.
     --
-    dnsLookupAWithTTL        :: DNS.ResolvConf
+    dnsLookupWithTTL         :: DNS.ResolvConf
                              -> resolver
                              -> DNS.Domain
-                             -> m (Either DNS.DNSError [(IPv4, DNS.TTL)])
+                             -> m ([DNS.DNSError], [(IP, DNS.TTL)])
   }
 
 
@@ -273,7 +280,7 @@ asyncResolverResource resolvConf = return go
 lookupAWithTTL :: DNS.ResolvConf
                -> DNS.Resolver
                -> DNS.Domain
-               -> IO (Either DNS.DNSError [(IPv4, DNS.TTL)])
+               -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
 lookupAWithTTL resolvConf resolver domain = do
     reply <- timeout (microsecondsAsIntToDiffTime
                       $ DNS.resolvTimeout resolvConf)
@@ -285,19 +292,69 @@ lookupAWithTTL resolvConf resolver domain = do
       --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
   where
     selectA DNS.DNSMessage { DNS.answer } =
-      [ (addr, ttl)
+      [ (IPv4 addr, ttl)
       | DNS.ResourceRecord {
           DNS.rdata = DNS.RD_A addr,
           DNS.rrttl = ttl
         } <- answer
       ]
 
+lookupAAAAWithTTL :: DNS.ResolvConf
+                  -> DNS.Resolver
+                  -> DNS.Domain
+                  -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
+lookupAAAAWithTTL resolvConf resolver domain = do
+    reply <- timeout (microsecondsAsIntToDiffTime
+                      $ DNS.resolvTimeout resolvConf)
+                    (DNS.lookupRaw resolver domain DNS.AAAA)
+    case reply of
+      Nothing -> return (Left DNS.TimeoutExpired)
+      Just (Left  err) -> return (Left err)
+      Just (Right ans) -> return (DNS.fromDNSMessage ans selectAAAA)
+      --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
+  where
+    selectAAAA DNS.DNSMessage { DNS.answer } =
+      [ (IPv6 addr, ttl)
+      | DNS.ResourceRecord {
+          DNS.rdata = DNS.RD_AAAA addr,
+          DNS.rrttl = ttl
+        } <- answer
+      ]
+
+lookupWithTTL :: LookupReqs
+              -> DNS.ResolvConf
+              -> DNS.Resolver
+              -> DNS.Domain
+              -> IO ([DNS.DNSError], [(IP, DNS.TTL)])
+lookupWithTTL LookupReqAOnly resolvConf resolver domain = do
+    res <- lookupAWithTTL resolvConf resolver domain
+    case res of
+         Left err -> return ([err], [])
+         Right r  -> return ([], r)
+lookupWithTTL LookupReqAAAAOnly resolvConf resolver domain = do
+    res <- lookupAAAAWithTTL resolvConf resolver domain
+    case res of
+         Left err -> return ([err], [])
+         Right r  -> return ([], r)
+lookupWithTTL LookupReqAAndAAAA resolvConf resolver domain = do
+    (r_ipv6, r_ipv4) <- concurrently (lookupAAAAWithTTL resolvConf resolver domain)
+                                     (lookupAWithTTL resolvConf resolver domain)
+    case (r_ipv6, r_ipv4) of
+         (Left  e6, Left  e4) -> return ([e6, e4], [])
+         (Right r6, Left  e4) -> return ([e4], r6)
+         (Left  e6, Right r4) -> return ([e6], r4)
+         (Right r6, Right r4) -> return ([], r6 <> r4)
+
 -- | Bundle of DNS Actions that runs in IO
+-- The IPv4 and IPv6 addresses the node will be using should determine the
+-- LookupReqs so that we can avoid lookups for address types that wont be used.
 --
-ioDNSActions :: DNSActions DNS.Resolver IOException IO
-ioDNSActions = DNSActions {
+ioDNSActions :: LookupReqs
+             -> DNSActions DNS.Resolver IOException IO
+ioDNSActions reqs =
+  DNSActions {
     dnsResolverResource      = resolverResource,
     dnsAsyncResolverResource = asyncResolverResource,
-    dnsLookupAWithTTL        = lookupAWithTTL
+    dnsLookupWithTTL         = lookupWithTTL reqs
   }
 
