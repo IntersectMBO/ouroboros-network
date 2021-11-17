@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbBimap
   , ledgerDbCurrent
   , ledgerDbPast
+  , ledgerDbPrefix
   , ledgerDbPrune
   , ledgerDbSnapshots
   , ledgerDbTip
@@ -62,7 +63,6 @@ import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
-import           Data.Foldable (find)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
@@ -350,13 +350,28 @@ ledgerDbPast ::
   => Point blk
   -> LedgerDB l
   -> Maybe (l EmptyMK)
-ledgerDbPast pt db
+ledgerDbPast pt db = ledgerDbCurrent <$> ledgerDbPrefix pt db
+
+-- | Get a prefix of the LedgerDB
+--
+--  \( O(\log(\min(i,n-i)) \)
+--
+-- When no ledger state (or anchor) has the given 'Point', 'Nothing' is
+-- returned.
+ledgerDbPrefix ::
+     (HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
+  => Point blk
+  -> LedgerDB l
+  -> Maybe (LedgerDB l)
+ledgerDbPrefix pt db
     | pt == castPoint (getTip (ledgerDbAnchor db))
-    = Just $ ledgerDbAnchor db
+    = Just $ ledgerDbWithAnchor (ledgerDbAnchor db)
     | otherwise
-    = fmap unCheckpoint $
-        find ((== pt) . castPoint . getTip . unCheckpoint) $
-          AS.lookupByMeasure (pointSlot pt) (ledgerDbCheckpoints db)
+    =   fmap LedgerDB
+      $ AS.rollback
+          (pointSlot pt)
+          ((== pt) . castPoint . getTip . unCheckpoint . either id id)
+          (ledgerDbCheckpoints db)
 
 -- | Transform the underlying 'AnchoredSeq' using the given functions.
 ledgerDbBimap ::
