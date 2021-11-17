@@ -137,8 +137,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
-import           Ouroboros.Consensus.Util.ResourceRegistry (allocateTemp,
-                     runWithTempRegistry)
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
@@ -188,7 +187,7 @@ type VolatileDbSerialiseConstraints blk =
   )
 
 openDB ::
-     forall m blk.
+     forall m blk ans.
      ( HasCallStack
      , IOLike m
      , HasHeader blk
@@ -196,17 +195,17 @@ openDB ::
      , VolatileDbSerialiseConstraints blk
      )
   => VolatileDbArgs Identity m blk
-  -> m (VolatileDB m blk)
-openDB VolatileDbArgs { volHasFS = SomeHasFS hasFS, .. } = runWithTempRegistry $ do
+  -> (forall st. WithTempRegistry st m (VolatileDB m blk, st) -> ans)
+  -> ans
+openDB VolatileDbArgs { volHasFS = SomeHasFS hasFS, .. } cont = cont $ do
     lift $ createDirectoryIfMissing hasFS True (mkFsPath [])
-    ost <-
-      mkOpenState
-        volCodecConfig
-        hasFS
-        volCheckIntegrity
-        volValidationPolicy
-        volTracer
-        volMaxBlocksPerFile
+    ost <- mkOpenState
+               volCodecConfig
+               hasFS
+               volCheckIntegrity
+               volValidationPolicy
+               volTracer
+               volMaxBlocksPerFile
     stVar <- lift $ RAWLock.new (DbOpen ost)
     let env = VolatileDBEnv {
             hasFS            = hasFS

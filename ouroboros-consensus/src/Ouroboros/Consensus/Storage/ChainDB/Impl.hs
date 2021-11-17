@@ -35,6 +35,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   ) where
 
 import           Control.Monad (when)
+import           Control.Monad.Trans.Class (lift)
 import           Control.Tracer
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity)
@@ -55,6 +56,8 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
+import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
+                     allocate, runInnerWithTempRegistry, runWithTempRegistry)
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
                      defaultArgs)
@@ -112,114 +115,135 @@ openDBInternal
   => ChainDbArgs Identity m blk
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
-openDBInternal args launchBgTasks = do
-    immutableDB <- ImmutableDB.openDB argsImmutableDb
-    immutableDbTipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
+openDBInternal args launchBgTasks = runWithTempRegistry $ do
+    immutableDB <- ImmutableDB.openDB argsImmutableDb $ innerOpenCont ImmutableDB.closeDB
+    immutableDbTipPoint <- lift $ atomically $ ImmutableDB.getTipPoint immutableDB
     let immutableDbTipChunk =
           chunkIndexOfPoint (Args.cdbChunkInfo args) immutableDbTipPoint
-    traceWith tracer $
+    lift $ traceWith tracer $
       TraceOpenEvent $
         OpenedImmutableDB immutableDbTipPoint immutableDbTipChunk
 
-    volatileDB <- VolatileDB.openDB argsVolatileDb
-    traceWith tracer $ TraceOpenEvent OpenedVolatileDB
-    let lgrReplayTracer =
-          LgrDB.decorateReplayTracer
-            immutableDbTipPoint
-            (contramap TraceLedgerReplayEvent tracer)
-    (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
+    volatileDB <- VolatileDB.openDB argsVolatileDb $ innerOpenCont VolatileDB.closeDB
+    (chainDB, testing, env) <- lift $ do
+      traceWith tracer $ TraceOpenEvent OpenedVolatileDB
+      let lgrReplayTracer =
+            LgrDB.decorateReplayTracer
+              immutableDbTipPoint
+              (contramap TraceLedgerReplayEvent tracer)
+      (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immutableDB
                             (Query.getAnyKnownBlock immutableDB volatileDB)
-    traceWith tracer $ TraceOpenEvent OpenedLgrDB
+      traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
-    varInvalid      <- newTVarIO (WithFingerprint Map.empty (Fingerprint 0))
-    varFutureBlocks <- newTVarIO Map.empty
+      varInvalid      <- newTVarIO (WithFingerprint Map.empty (Fingerprint 0))
+      varFutureBlocks <- newTVarIO Map.empty
 
 
-    chainAndLedger <- ChainSel.initialChainSelection
-                        immutableDB
-                        volatileDB
-                        lgrDB
-                        tracer
-                        (Args.cdbTopLevelConfig args)
-                        varInvalid
-                        varFutureBlocks
-                        (Args.cdbCheckInFuture args)
+      chainAndLedger <- ChainSel.initialChainSelection
+                          immutableDB
+                          volatileDB
+                          lgrDB
+                          tracer
+                          (Args.cdbTopLevelConfig args)
+                          varInvalid
+                          varFutureBlocks
+                          (Args.cdbCheckInFuture args)
 
-    let chain  = VF.validatedFragment chainAndLedger
-        ledger = VF.validatedLedger   chainAndLedger
-        cfg    = Args.cdbTopLevelConfig args
+      let chain  = VF.validatedFragment chainAndLedger
+          ledger = VF.validatedLedger   chainAndLedger
+          cfg    = Args.cdbTopLevelConfig args
 
-    atomically $ LgrDB.setCurrent lgrDB ledger
-    varChain           <- newTVarIO chain
-    varIterators       <- newTVarIO Map.empty
-    varFollowers       <- newTVarIO Map.empty
-    varNextIteratorKey <- newTVarIO (IteratorKey 0)
-    varNextFollowerKey <- newTVarIO (FollowerKey   0)
-    varCopyLock        <- newMVar  ()
-    varKillBgThreads   <- newTVarIO $ return ()
-    blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
+      atomically $ LgrDB.setCurrent lgrDB ledger
+      varChain           <- newTVarIO chain
+      varIterators       <- newTVarIO Map.empty
+      varFollowers       <- newTVarIO Map.empty
+      varNextIteratorKey <- newTVarIO (IteratorKey 0)
+      varNextFollowerKey <- newTVarIO (FollowerKey   0)
+      varCopyLock        <- newMVar  ()
+      varKillBgThreads   <- newTVarIO $ return ()
+      blocksToAdd        <- newBlocksToAdd (Args.cdbBlocksToAddSize args)
 
-    let env = CDB { cdbImmutableDB     = immutableDB
-                  , cdbVolatileDB      = volatileDB
-                  , cdbLgrDB           = lgrDB
-                  , cdbChain           = varChain
-                  , cdbIterators       = varIterators
-                  , cdbFollowers       = varFollowers
-                  , cdbTopLevelConfig  = cfg
-                  , cdbInvalid         = varInvalid
-                  , cdbNextIteratorKey = varNextIteratorKey
-                  , cdbNextFollowerKey = varNextFollowerKey
-                  , cdbCopyLock        = varCopyLock
-                  , cdbTracer          = tracer
-                  , cdbTraceLedger     = Args.cdbTraceLedger args
-                  , cdbRegistry        = Args.cdbRegistry args
-                  , cdbGcDelay         = Args.cdbGcDelay args
-                  , cdbGcInterval      = Args.cdbGcInterval args
-                  , cdbKillBgThreads   = varKillBgThreads
-                  , cdbChunkInfo       = Args.cdbChunkInfo args
-                  , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
-                  , cdbCheckInFuture   = Args.cdbCheckInFuture args
-                  , cdbBlocksToAdd     = blocksToAdd
-                  , cdbFutureBlocks    = varFutureBlocks
-                  }
-    h <- fmap CDBHandle $ newTVarIO $ ChainDbOpen env
-    let chainDB = API.ChainDB
-          { addBlockAsync         = getEnv1    h ChainSel.addBlockAsync
-          , getCurrentChain       = getEnvSTM  h Query.getCurrentChain
-          , getLedgerDB           = getEnvSTM  h Query.getLedgerDB
-          , getTipBlock           = getEnv     h Query.getTipBlock
-          , getTipHeader          = getEnv     h Query.getTipHeader
-          , getTipPoint           = getEnvSTM  h Query.getTipPoint
-          , getBlockComponent     = getEnv2    h Query.getBlockComponent
-          , getIsFetched          = getEnvSTM  h Query.getIsFetched
-          , getIsValid            = getEnvSTM  h Query.getIsValid
-          , getMaxSlotNo          = getEnvSTM  h Query.getMaxSlotNo
-          , stream                = Iterator.stream  h
-          , newFollower           = Follower.newFollower h
-          , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
-          , closeDB               = closeDB h
-          , isOpen                = isOpen  h
-          }
-        testing = Internal
-          { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB
-          , intGarbageCollect          = getEnv1 h Background.garbageCollect
-          , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
-          , intAddBlockRunner          = getEnv  h Background.addBlockRunner
-          , intKillBgThreads           = varKillBgThreads
-          }
+      let env = CDB { cdbImmutableDB     = immutableDB
+                    , cdbVolatileDB      = volatileDB
+                    , cdbLgrDB           = lgrDB
+                    , cdbChain           = varChain
+                    , cdbIterators       = varIterators
+                    , cdbFollowers       = varFollowers
+                    , cdbTopLevelConfig  = cfg
+                    , cdbInvalid         = varInvalid
+                    , cdbNextIteratorKey = varNextIteratorKey
+                    , cdbNextFollowerKey = varNextFollowerKey
+                    , cdbCopyLock        = varCopyLock
+                    , cdbTracer          = tracer
+                    , cdbTraceLedger     = Args.cdbTraceLedger args
+                    , cdbRegistry        = Args.cdbRegistry args
+                    , cdbGcDelay         = Args.cdbGcDelay args
+                    , cdbGcInterval      = Args.cdbGcInterval args
+                    , cdbKillBgThreads   = varKillBgThreads
+                    , cdbChunkInfo       = Args.cdbChunkInfo args
+                    , cdbCheckIntegrity  = Args.cdbCheckIntegrity args
+                    , cdbCheckInFuture   = Args.cdbCheckInFuture args
+                    , cdbBlocksToAdd     = blocksToAdd
+                    , cdbFutureBlocks    = varFutureBlocks
+                    }
+      h <- fmap CDBHandle $ newTVarIO $ ChainDbOpen env
+      let chainDB = API.ChainDB
+            { addBlockAsync         = getEnv1    h ChainSel.addBlockAsync
+            , getCurrentChain       = getEnvSTM  h Query.getCurrentChain
+            , getLedgerDB           = getEnvSTM  h Query.getLedgerDB
+            , getTipBlock           = getEnv     h Query.getTipBlock
+            , getTipHeader          = getEnv     h Query.getTipHeader
+            , getTipPoint           = getEnvSTM  h Query.getTipPoint
+            , getBlockComponent     = getEnv2    h Query.getBlockComponent
+            , getIsFetched          = getEnvSTM  h Query.getIsFetched
+            , getIsValid            = getEnvSTM  h Query.getIsValid
+            , getMaxSlotNo          = getEnvSTM  h Query.getMaxSlotNo
+            , stream                = Iterator.stream  h
+            , newFollower           = Follower.newFollower h
+            , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
+            , closeDB               = closeDB h
+            , isOpen                = isOpen  h
+            }
+          testing = Internal
+            { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB
+            , intGarbageCollect          = getEnv1 h Background.garbageCollect
+            , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
+            , intAddBlockRunner          = getEnv  h Background.addBlockRunner
+            , intKillBgThreads           = varKillBgThreads
+            }
 
-    traceWith tracer $ TraceOpenEvent $ OpenedDB
-      (castPoint $ AF.anchorPoint chain)
-      (castPoint $ AF.headPoint   chain)
+      traceWith tracer $ TraceOpenEvent $ OpenedDB
+        (castPoint $ AF.anchorPoint chain)
+        (castPoint $ AF.headPoint   chain)
 
-    when launchBgTasks $ Background.launchBgTasks env replayed
+      when launchBgTasks $ Background.launchBgTasks env replayed
 
-    return (chainDB, testing)
+      return (chainDB, testing, env)
+
+    _ <- lift $ allocate (Args.cdbRegistry args) (\_ -> return $ chainDB) API.closeDB
+
+    return ((chainDB, testing), env)
   where
     tracer = Args.cdbTracer args
     (argsImmutableDb, argsVolatileDb, argsLgrDb, _) = Args.fromChainDbArgs args
+
+-- | We use 'runInnerWithTempRegistry' for the component databases.
+innerOpenCont ::
+     IOLike m
+  => (innerDB -> m ())
+  -> WithTempRegistry st m (innerDB, st)
+  -> WithTempRegistry (ChainDbEnv m blk) m innerDB
+innerOpenCont closer m =
+  runInnerWithTempRegistry
+    (fmap (\(innerDB, st) -> (innerDB, st, innerDB)) m)
+    ((True <$) . closer)
+    (\_env _innerDB -> True)
+      -- This check is degenerate because handles in @_env@ and the
+      -- @_innerDB@ handle do not support an equality check; all of the
+      -- identifying data is only in the handle's closure, not
+      -- accessible because of our intentional encapsulation choices.
 
 isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
 isOpen (CDBHandle varState) = readTVar varState <&> \case

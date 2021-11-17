@@ -308,11 +308,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 , ChainDB.cdbVolatileDbValidation  = ValidateAll
                 }
 
-      (_, chainDB) <- allocate registry
-        (\_ -> openChainDB
-          registry inFuture cfg initLedger
-          llrnChainDbArgsDefaults customiseChainDbArgs')
-        ChainDB.closeDB
+      chainDB <- openChainDB registry inFuture cfg initLedger
+                llrnChainDbArgsDefaults customiseChainDbArgs'
 
       btime <-
         hardForkBlockchainTime $
