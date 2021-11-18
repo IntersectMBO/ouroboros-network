@@ -184,6 +184,10 @@ instance TableStuff (LedgerState x) => TableStuff (LedgerState (HardForkBlock '[
 
   -- TODO methods
 
+instance TickedTableStuff (LedgerState x) => TickedTableStuff (LedgerState (HardForkBlock '[x])) where
+
+  -- TODO methods
+
 instance TableStuff (LedgerState x) => ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[x]))) where
   showsLedgerState sing (LedgerTablesOne x) =
       -- TODO parens
@@ -270,7 +274,7 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st))
 -------------------------------------------------------------------------------}
 
 instance ( CanHardFork xs
-         , TableStuff (LedgerState (HardForkBlock xs))
+         , TickedTableStuff (LedgerState (HardForkBlock xs))
          ) => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
@@ -342,7 +346,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
 
 type CanHardFork' xs =
   ( CanHardFork xs
-  , TableStuff (LedgerState (HardForkBlock xs))
+  , TickedTableStuff (LedgerState (HardForkBlock xs))
   , TableStuff (Ticked1 (LedgerState (HardForkBlock xs)))
   )
 

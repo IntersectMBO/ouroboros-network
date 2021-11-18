@@ -120,6 +120,9 @@ data LgrDB m blk = LgrDB {
     , diskPolicy     :: !DiskPolicy
     , hasFS          :: !(SomeHasFS m)
     , tracer         :: !(Tracer m (TraceEvent blk))
+
+-- TODO    , backendHandle :: BackendHandle m
+
     } deriving (Generic)
 
 deriving instance (IOLike m, LedgerSupportsProtocol blk)
