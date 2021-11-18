@@ -54,13 +54,14 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
   [ testGroup "RootPeersDNS"
     [ testGroup "localRootPeersProvider"
-       [ testProperty "preserves groups and targets"
+       [ testProperty "preserve IPs"
+                      prop_local_preservesIPs
+       , testProperty "preserves groups and targets"
                       prop_local_preservesGroupNumberAndTargets
        , testProperty "resolves domains correctly"
                       prop_local_resolvesDomainsCorrectly
@@ -135,7 +136,7 @@ genMockRoots = sized $ \relaysNumber -> do
 instance Arbitrary MockRoots where
     arbitrary = genMockRoots
     shrink roots@MockRoots { mockLocalRootPeers, mockDNSMap } =
-      [ roots { mockLocalRootPeers = peers} 
+      [ roots { mockLocalRootPeers = peers}
       | peers <- shrinkList (const []) mockLocalRootPeers
       ]
       ++
@@ -382,6 +383,50 @@ selectPublicRootResultEvents trace = [ (t, (domain, map fst r))
 --
 -- Local Root Peers Provider Tests
 --
+
+-- | The 'localRootPeersProvider' should use the IP addresses. This property
+-- tests whether local root peer groups contain the IP addresses provided.
+--
+prop_local_preservesIPs :: MockRoots
+                        -> Script DNSTimeout
+                        -> Script DNSLookupDelay
+                        -> Property
+prop_local_preservesIPs mockRoots@(MockRoots localRoots _)
+                        dnsTimeoutScript
+                        dnsLookupDelayScript =
+    let tr = selectLocalRootGroupsEvents
+           $ selectLocalRootPeersEvents
+           $ selectRootPeerDNSTraceEvents
+           $ runSimTrace
+           $ mockLocalRootPeersProvider tracerTraceLocalRoots
+                                        mockRoots
+                                        dnsTimeoutScript
+                                        dnsLookupDelayScript
+
+        -- local root addresses
+        localRootAddresses :: [(a, Map RelayAccessPoint PeerAdvertise)]
+                           -> Set SockAddr
+        localRootAddresses lrp =
+          Set.fromList
+          [ toSockAddr (ip, port)
+          | (_, m) <- lrp
+          , RelayAccessAddress ip port <- Map.keys m
+          ]
+
+        localGroupEventsAddresses :: (a, Seq (Int, Map SockAddr PeerAdvertise))
+                                  -> Set SockAddr
+        localGroupEventsAddresses (_, s) =
+            Set.fromList
+          $ concatMap (Map.keys . snd)
+          $ toList s
+
+     in property
+      $ all (\x -> localRootAddresses localRoots
+                   `Set.isSubsetOf`
+                   localGroupEventsAddresses x
+            )
+            tr
+      && not (null tr)
 
 -- | The 'localRootPeersProvider' should preserve the local root peers
 -- group number and respective targets. This property tests whether local
