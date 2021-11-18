@@ -278,7 +278,7 @@ toRealPoint (Weaken ap)      = toRealPoint ap
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l blk. (ApplyBlock l blk, TableStuff l, Monad m, c)
+applyBlock :: forall m c l blk. (ApplyBlock l blk, TickedTableStuff l, Monad m, c)
            => LedgerCfg l
            -> Ap m l blk c
            -> LedgerDB l -> m (l TrackingMK)
@@ -445,7 +445,7 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, TableStuff l, Monad m, c)
+ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, TickedTableStuff l, Monad m, c)
              => LedgerDbCfg l
              -> Ap m l blk c -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPush cfg ap db =
@@ -454,7 +454,7 @@ ledgerDbPush cfg ap db =
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany ::
-     forall m c l blk . (ApplyBlock l blk, , TableStuff l, Monad m, c)
+     forall m c l blk . (ApplyBlock l blk, , TickedTableStuff l, Monad m, c)
   => (Pushing blk -> m ())
   -> LedgerDbCfg l
   -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
@@ -466,7 +466,7 @@ ledgerDbPushMany trace cfg aps initDb = (repeatedlyM pushAndTrace) aps initDb
       ledgerDbPush cfg ap db
 
 -- | Switch to a fork
-ledgerDbSwitch :: (ApplyBlock l blk, TableStuff l, Monad m, c)
+ledgerDbSwitch :: (ApplyBlock l blk, TickedTableStuff l, Monad m, c)
                => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> (UpdateLedgerDbTraceEvent blk -> m ())
@@ -515,16 +515,16 @@ instance IsLedger l => GetTip (LedgerDB l) where
 pureBlock :: blk -> Ap m l blk ()
 pureBlock = ReapplyVal
 
-ledgerDbPush' :: (ApplyBlock l blk, TableStuff l)
+ledgerDbPush' :: (ApplyBlock l blk, TickedTableStuff l)
               => LedgerDbCfg l -> blk -> LedgerDB l -> LedgerDB l
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
-ledgerDbPushMany' :: (ApplyBlock l blk, TableStuff l)
+ledgerDbPushMany' :: (ApplyBlock l blk, TickedTableStuff l)
                   => LedgerDbCfg l -> [blk] -> LedgerDB l -> LedgerDB l
 ledgerDbPushMany' cfg bs =
   runIdentity . ledgerDbPushMany (const $ pure ()) cfg (map pureBlock bs)
 
-ledgerDbSwitch' :: forall l blk. (ApplyBlock l blk, TableStuff l)
+ledgerDbSwitch' :: forall l blk. (ApplyBlock l blk, TickedTableStuff l)
                 => LedgerDbCfg l
                 -> Word64 -> [blk] -> LedgerDB l -> Maybe (LedgerDB l)
 ledgerDbSwitch' cfg n bs db =
