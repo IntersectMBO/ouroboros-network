@@ -335,8 +335,14 @@ class Persistent chlog l where
   -- Parameters used to operate on the changelog.
   type family ChLogParams l :: Type
 
+
+  extractDiffs :: l -> l -> Diffs l
+
+  -- | Differences between two ledger states.
+  type family Diffs l :: Type
+
   extendDbChangelog
-    :: ChLogParams l -> l -> chlog l -> chlog l
+    :: ChLogParams l -> Diffs l -> chlog l -> chlog l
 
 instance GetTip l => Persistent LedgerDB l where
   type instance KeySets l = ()
@@ -348,6 +354,8 @@ instance GetTip l => Persistent LedgerDB l where
   type instance ChLogParams l = SecurityParam
 
   hydrateLedgerState () db = ledgerDbCurrent db
+
+  type instance Diffs l = l
 
   extendDbChangelog secParam current' db =
     ledgerDbPrune secParam $ db {
@@ -364,16 +372,17 @@ applyBlock :: forall m c l blk. ( ApplyBlock l blk, Monad m, c
            => LedgerCfg l
            -> DbEnv l
            -> Ap m l blk c
-           -> LedgerDB l -> m l
+           -> LedgerDB l -> m (Diffs l)
 applyBlock cfg dbenv ap db = case ap of
     ReapplyVal b ->
-      return $
+      return $ extractDiffs @(LedgerDB) l $
         tickThenReapply cfg b l
     ApplyVal b urs ->
+      fmap (extractDiffs @(LedgerDB) l) $
       withHydratedLedgerState urs $ \lh ->
           either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
               tickThenApply cfg b lh
-    ReapplyRef r  -> do
+    ReapplyRef r  -> fmap (extractDiffs @(LedgerDB) l) $ do
       b <- resolveBlock r
       let ks = getKeySets @l @blk b Nothing
       let aks = rewind db ks
@@ -381,7 +390,7 @@ applyBlock cfg dbenv ap db = case ap of
       return $
         withHydratedLedgerState urs $ \lh ->
           tickThenReapply cfg b lh
-    ApplyRef r -> do
+    ApplyRef r -> fmap (extractDiffs @(LedgerDB) l) $ do
      b <- resolveBlock r
      either (throwLedgerError db r) return $ runExcept $
         tickThenApply cfg b l
@@ -492,7 +501,7 @@ ledgerDbPrune (SecurityParam k) db = db {
 pushLedgerState ::
      GetTip l
   => SecurityParam
-  -> l -- ^ Updated ledger state
+  -> Diffs l -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
 pushLedgerState = extendDbChangelog
 
