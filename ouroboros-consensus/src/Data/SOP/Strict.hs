@@ -60,6 +60,7 @@ type instance AllN       NP c = All c
 type instance AllZipN    NP c = AllZip c
 type instance Prod       NP   = NP
 type instance SListIN    NP   = SListI
+type instance Same       NP   = NP
 
 singletonNP :: f x -> NP f '[x]
 singletonNP fx = fx :* Nil
@@ -116,6 +117,20 @@ traverse__NP ::
 traverse__NP f =
   ctraverse__NP (Proxy @Top) f
 
+trans_NP ::
+     AllZip c xs ys
+  => proxy c
+  -> (forall x y . c x y => f x -> g y)
+  -> NP f xs -> NP g ys
+trans_NP _ _t Nil       = Nil
+trans_NP p  t (x :* xs) = t x :* trans_NP p t xs
+
+coerce_NP ::
+     forall f g xs ys .
+     AllZip (LiftedCoercible f g) xs ys
+  => NP f xs -> NP g ys
+coerce_NP = trans_NP (Proxy @(LiftedCoercible f g)) coerce
+
 instance HPure NP where
   hpure  = pure_NP
   hcpure = cpure_NP
@@ -134,6 +149,10 @@ instance HSequence NP where
 instance HTraverse_ NP where
   hctraverse_ = ctraverse__NP
   htraverse_  = traverse__NP
+
+instance HTrans NP NP where
+  htrans = trans_NP
+  hcoerce = coerce_NP
 
 {-------------------------------------------------------------------------------
   NS

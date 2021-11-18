@@ -19,7 +19,9 @@ import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), traceWith)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Word (Word16)
+import           Data.Word (Word16, Word64)
+import qualified Debug.Trace as Debug
+import           NoThunks.Class (noThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -30,7 +32,8 @@ import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
-import           Ouroboros.Consensus.Storage.Common (StreamFrom (..))
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
+                     StreamFrom (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -39,7 +42,6 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
@@ -63,6 +65,8 @@ data AnalysisName =
   | OnlyValidation
   | StoreLedgerStateAt SlotNo
   | CountBlocks
+  | CheckNoThunksEvery Word64
+  | TraceLedgerProcessing
   deriving Show
 
 runAnalysis ::
@@ -85,6 +89,8 @@ runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
     go OnlyValidation              = return ()
     go (StoreLedgerStateAt slotNo) = (storeLedgerStateAt slotNo) env
     go CountBlocks                 = countBlocks env
+    go (CheckNoThunksEvery nBks)   = checkNoThunksEvery nBks env
+    go TraceLedgerProcessing       = traceLedgerProcessing env
 
 type Analysis blk = AnalysisEnv IO blk -> IO ()
 
@@ -334,6 +340,70 @@ countBlocks (AnalysisEnv { db, registry, initLedger, limit, tracer }) = do
   where
     process :: Int -> () -> IO Int
     process count _ = pure $ count + 1
+{-------------------------------------------------------------------------------
+  Analysis: check for ledger state thunks every n blocks
+-------------------------------------------------------------------------------}
+
+checkNoThunksEvery ::
+  forall blk.
+  ( HasAnalysis blk,
+    LedgerSupportsProtocol blk
+  ) =>
+  Word64 ->
+  Analysis blk
+checkNoThunksEvery
+  nBlocks
+  (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
+    putStrLn $
+      "Checking for thunks in each block where blockNo === 0 (mod " <> show nBlocks <> ")."
+    void $ processAll db registry GetBlock initLedger limit initLedger process
+  where
+    process :: ExtLedgerState blk -> blk -> IO (ExtLedgerState blk)
+    process oldLedger blk = do
+      let ledgerCfg     = ExtLedgerCfg cfg
+          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
+          newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
+          bn            = blockNo blk
+      when (unBlockNo bn `mod` nBlocks == 0 ) $ checkNoThunks bn newLedger
+      return newLedger
+
+    checkNoThunks :: BlockNo -> ExtLedgerState blk -> IO ()
+    checkNoThunks bn ls =
+      noThunks [] (ledgerState ls) >>= \case
+        Nothing -> putStrLn $ "BlockNo " <> show bn <> ": no thunks found."
+        Just ti -> do
+          putStrLn $ "BlockNo " <> show bn <> ": thunks found."
+          print ti
+
+{-------------------------------------------------------------------------------
+  Analysis: maintain a ledger state and issue trace markers at appropriate
+  points in the epoch
+-------------------------------------------------------------------------------}
+
+traceLedgerProcessing ::
+  forall blk.
+  ( HasAnalysis blk,
+    LedgerSupportsProtocol blk
+  ) =>
+  Analysis blk
+traceLedgerProcessing
+  (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
+    void $ processAll db registry GetBlock initLedger limit initLedger process
+  where
+    process
+      :: ExtLedgerState blk
+      -> blk
+      -> IO (ExtLedgerState blk)
+    process oldLedger blk = do
+      let ledgerCfg     = ExtLedgerCfg cfg
+          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
+          newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
+          traces        =
+            (HasAnalysis.emitTraces $
+              HasAnalysis.WithLedgerState blk (ledgerState oldLedger) (ledgerState newLedger))
+      mapM_ Debug.traceMarkerIO traces
+      return $ newLedger
+
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB
 -------------------------------------------------------------------------------}

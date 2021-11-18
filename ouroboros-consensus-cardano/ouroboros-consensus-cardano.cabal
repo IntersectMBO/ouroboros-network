@@ -84,6 +84,7 @@ executable db-analyser
                      , containers
                      , contra-tracer
                      , mtl
+                     , nothunks
                      , optparse-applicative
                      , serialise
                      , strict-containers

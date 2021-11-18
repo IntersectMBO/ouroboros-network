@@ -40,6 +40,7 @@ instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
+    emitTraces _ = []
 
 instance HasProtocolInfo ByronBlock where
     data Args ByronBlock =
