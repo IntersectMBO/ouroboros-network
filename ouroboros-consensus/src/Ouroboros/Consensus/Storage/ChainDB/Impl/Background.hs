@@ -269,7 +269,10 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
       --
       -- This is a synchronous operation: when it returns, the blocks have been
       -- copied to disk (though not flushed, necessarily).
-      copyToImmutableDB cdb >>= scheduleGC'
+      immSlotno <- copyToImmutableDB cdb
+      scheduleGC' immSlotno
+
+--      TODO: giveTheLedgerDbAnOpportunityToFlushNow (cfg?) cdbLgrDB immSlotno
 
       now <- getMonotonicTime
       let distance' = distance + numToWrite

@@ -389,6 +389,10 @@ instance TableStuff (LedgerState (DualBlock m a)) where
 
   -- TODO methods
 
+instance TickedTableStuff (LedgerState (DualBlock m a)) where
+
+  -- TODO methods
+
 instance ShowLedgerState (LedgerTables (LedgerState (DualBlock m a))) where
   showsLedgerState = error "showsLedgerState @LedgerTables DualBlock"
 

@@ -234,6 +234,10 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock era)) wher
 
   -- TODO methods
 
+instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock era)) where
+
+  -- TODO methods
+
 deriving instance ShelleyBasedEra era => Eq       (LedgerTables (LedgerState (ShelleyBlock era)) mk)
 deriving instance ShelleyBasedEra era => NoThunks (LedgerTables (LedgerState (ShelleyBlock era)) mk)
 
