@@ -1,51 +1,51 @@
 {
-    "haskell.nix": {
-        "branch": "master",
-        "description": "Alternative Haskell Infrastructure for Nixpkgs",
-        "homepage": "https://input-output-hk.github.io/haskell.nix",
-        "owner": "input-output-hk",
-        "repo": "haskell.nix",
-        "rev": "c8faecc486239050221d4546779aec9f45f3c404",
-        "sha256": "1lk81bhi593vvli9lwk9bqvircq8pz3nivqf8981fvax55ivhivh",
-        "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/c8faecc486239050221d4546779aec9f45f3c404.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
-    },
-    "hls-released": {
-        "branch": "1.5.1",
-        "builtin": false,
-        "description": "Successor of ghcide & haskell-ide-engine. One IDE to rule them all.",
-        "homepage": "",
-        "owner": "haskell",
-        "repo": "haskell-language-server",
-        "rev": "745ef26f406dbdd5e4a538585f8519af9f1ccb09",
-        "sha256": "10vj4wb0gdvfnrg1d7r3dqjnkw34ryh7v4fvxsby6fvn1l2kvsj5",
-        "type": "tarball",
-        "url": "https://github.com/haskell/haskell-language-server/archive/745ef26f406dbdd5e4a538585f8519af9f1ccb09.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
-    },
-    "iohk-nix": {
-        "branch": "master",
-        "description": "nix scripts shared across projects",
-        "homepage": null,
-        "owner": "input-output-hk",
-        "repo": "iohk-nix",
-        "rev": "1e51437aac8a0e49663cb21e781f34163c81ebfb",
-        "sha256": "03slpwazvnhn9kd37dpxc55bq5xn841v616xmw8j6nkqklmw2vzc",
-        "type": "tarball",
-        "url": "https://github.com/input-output-hk/iohk-nix/archive/1e51437aac8a0e49663cb21e781f34163c81ebfb.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
-    },
-    "niv": {
-        "branch": "iohk",
-        "description": "Easy dependency management for Nix projects",
-        "homepage": "https://github.com/nmattia/niv",
-        "owner": "input-output-hk",
-        "repo": "niv",
-        "rev": "89da7b2e7ae0779fd351618fc74df1b1da5e6214",
-        "sha256": "0jn88ahv6mycxdkzihy1v0dz2110q0d42q4ggyj68l2lyba6y0yy",
-        "type": "tarball",
-        "url": "https://github.com/input-output-hk/niv/archive/89da7b2e7ae0779fd351618fc74df1b1da5e6214.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
-    }
+  "haskell.nix": {
+    "branch": "master",
+    "description": "Alternative Haskell Infrastructure for Nixpkgs",
+    "homepage": "https://input-output-hk.github.io/haskell.nix",
+    "owner": "input-output-hk",
+    "repo": "haskell.nix",
+    "rev": "c8faecc486239050221d4546779aec9f45f3c404",
+    "sha256": "1lk81bhi593vvli9lwk9bqvircq8pz3nivqf8981fvax55ivhivh",
+    "type": "tarball",
+    "url": "https://github.com/input-output-hk/haskell.nix/archive/c8faecc486239050221d4546779aec9f45f3c404.tar.gz",
+    "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+  },
+  "hls-released": {
+    "branch": "1.5.1",
+    "builtin": false,
+    "description": "Successor of ghcide & haskell-ide-engine. One IDE to rule them all.",
+    "homepage": "",
+    "owner": "haskell",
+    "repo": "haskell-language-server",
+    "rev": "745ef26f406dbdd5e4a538585f8519af9f1ccb09",
+    "sha256": "10vj4wb0gdvfnrg1d7r3dqjnkw34ryh7v4fvxsby6fvn1l2kvsj5",
+    "type": "tarball",
+    "url": "https://github.com/haskell/haskell-language-server/archive/745ef26f406dbdd5e4a538585f8519af9f1ccb09.tar.gz",
+    "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+  },
+  "iohk-nix": {
+    "branch": "master",
+    "description": "nix scripts shared across projects",
+    "homepage": null,
+    "owner": "input-output-hk",
+    "repo": "iohk-nix",
+    "rev": "1e51437aac8a0e49663cb21e781f34163c81ebfb",
+    "sha256": "03slpwazvnhn9kd37dpxc55bq5xn841v616xmw8j6nkqklmw2vzc",
+    "type": "tarball",
+    "url": "https://github.com/input-output-hk/iohk-nix/archive/1e51437aac8a0e49663cb21e781f34163c81ebfb.tar.gz",
+    "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+  },
+  "niv": {
+    "branch": "iohk",
+    "description": "Easy dependency management for Nix projects",
+    "homepage": "https://github.com/nmattia/niv",
+    "owner": "input-output-hk",
+    "repo": "niv",
+    "rev": "89da7b2e7ae0779fd351618fc74df1b1da5e6214",
+    "sha256": "0jn88ahv6mycxdkzihy1v0dz2110q0d42q4ggyj68l2lyba6y0yy",
+    "type": "tarball",
+    "url": "https://github.com/input-output-hk/niv/archive/89da7b2e7ae0779fd351618fc74df1b1da5e6214.tar.gz",
+    "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+  }
 }
