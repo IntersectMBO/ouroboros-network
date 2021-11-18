@@ -154,7 +154,7 @@ validateHeader cfg ledgerView hdr history = do
 --
 -- PRECONDITION: the blocks in the chain are valid.
 fromChain ::
-     (ApplyBlock (ExtLedgerState blk) blk, TableStuff (LedgerState blk))
+     (ApplyBlock (ExtLedgerState blk) blk, TickedTableStuff (LedgerState blk))
   => TopLevelConfig blk
   -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger state

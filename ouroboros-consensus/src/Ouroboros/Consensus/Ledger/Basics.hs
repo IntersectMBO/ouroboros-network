@@ -2,10 +2,13 @@
 {-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -42,15 +45,22 @@ module Ouroboros.Consensus.Ledger.Basics (
   , SMapKind (..)
   , TableKeySets
   , TableStuff (..)
+  , TickedTableStuff (..)
+  , emptyAppliedMK
+  , mapValuesAppliedMK
+  , toSMapKind
     -- * Misc
   , ShowLedgerState (..)
   ) where
 
 import           Data.Kind (Type)
 import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
-import           NoThunks.Class (NoThunks (..))
+import           GHC.Stack (HasCallStack)
+import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL (..))
 
@@ -204,15 +214,28 @@ class ShowLedgerState (LedgerTables l) => TableStuff (l :: LedgerStateKind) wher
 
   data family LedgerTables l :: LedgerStateKind
 
-  forgetTickedLedgerStateTracking :: Ticked1 l TrackingMK -> Ticked1 l ValuesMK
-  forgetLedgerStateTracking       ::         l TrackingMK ->         l ValuesMK
+  forgetLedgerStateTracking :: l TrackingMK -> l ValuesMK
 
   forgetLedgerStateTables :: l any -> l EmptyMK
 
-  prependLedgerStateTracking :: Ticked1 l TrackingMK -> l TrackingMK -> l TrackingMK
+  projectLedgerTables :: l mk -> LedgerTables l mk
 
-  projectLedgerTables :: l mk  -> LedgerTables l mk
-  withLedgerTables    :: l any -> LedgerTables l mk -> l mk
+  -- | Overwrite the tables in some ledger state.
+  --
+  -- The contents of the tables should not be /younger/ than the content of the
+  -- ledger state. In particular, for a
+  -- 'Ouroboros.Consensus.HardFork.Combinator.Basics.HardForkBlock' ledger, the
+  -- tables argument should not contain any data from eras that succeed the
+  -- current era of the ledger state argument.
+  withLedgerTables :: HasCallStack => l any -> LedgerTables l mk -> l mk
+
+-- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
+-- involving double-ticked types.
+class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
+  forgetTickedLedgerStateTracking :: Ticked1 l TrackingMK -> Ticked1 l ValuesMK
+
+  -- TODO change first argument's mk to DiffMK
+  prependLedgerStateTracking :: Ticked1 l TrackingMK -> l TrackingMK -> l TrackingMK
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l ValuesMK -> Ticked1 l TrackingMK
@@ -224,14 +247,39 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 type LedgerStateKind = MapKind -> Type
 
-data MapKind = EmptyMK | KeysMK | ValuesMK | TrackingMK | DiffMK
+data MapKind = EmptyMK | KeysMK | ValuesMK | TrackingMK | DiffMK {- | AnnMK Type MapKind -}
 
 data ApplyMapKind :: MapKind -> Type -> Type -> Type where
-  ApplyEmptyMK    ::               ApplyMapKind EmptyMK    k v
-  ApplyKeysMK     :: Set k      -> ApplyMapKind KeysMK     k v
-  ApplyValuesMK   :: Map k v    -> ApplyMapKind ValuesMK   k v
-  ApplyTrackingMK :: {- TODO -}    ApplyMapKind TrackingMK k v
-  ApplyDiffMK     :: {- TODO -}    ApplyMapKind DiffMK     k v
+  ApplyEmptyMK    ::                                 ApplyMapKind EmptyMK      k v
+  ApplyKeysMK     :: Set k                        -> ApplyMapKind KeysMK       k v
+  ApplyValuesMK   :: Map k v                      -> ApplyMapKind ValuesMK     k v
+  ApplyTrackingMK :: {- TODO -}                      ApplyMapKind TrackingMK   k v
+  ApplyDiffMK     :: {- TODO -}                      ApplyMapKind DiffMK       k v
+--  ApplyAnnMK      :: !a -> !(ApplyMapKind mk k v) -> ApplyMapKind (AnnMK a mk) k v
+
+emptyAppliedMK :: SMapKind mk -> ApplyMapKind mk k v
+emptyAppliedMK = \case
+  SEmptyMK    -> ApplyEmptyMK
+  SKeysMK     -> ApplyKeysMK Set.empty
+  SValuesMK   -> ApplyValuesMK Map.empty
+  STrackingMK -> ApplyTrackingMK
+  SDiffMK     -> ApplyDiffMK
+
+toSMapKind :: ApplyMapKind mk k v -> SMapKind mk
+toSMapKind = \case
+  ApplyEmptyMK    -> SEmptyMK
+  ApplyKeysMK   _ -> SKeysMK
+  ApplyValuesMK _ -> SValuesMK
+  ApplyTrackingMK -> STrackingMK
+  ApplyDiffMK     -> SDiffMK
+
+mapValuesAppliedMK :: (v -> v') -> ApplyMapKind mk k v ->  ApplyMapKind mk k v'
+mapValuesAppliedMK f = \case
+  ApplyEmptyMK     -> ApplyEmptyMK
+  ApplyKeysMK ks   -> ApplyKeysMK ks
+  ApplyValuesMK vs -> ApplyValuesMK (f <$> vs)
+  ApplyTrackingMK  -> ApplyTrackingMK
+  ApplyDiffMK      -> ApplyDiffMK
 
 instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
   ApplyEmptyMK    == _               = True
@@ -252,6 +300,24 @@ data SMapKind :: MapKind -> Type where
   SValuesMK   :: SMapKind ValuesMK
   STrackingMK :: SMapKind TrackingMK
   SDiffMK     :: SMapKind DiffMK
+
+instance Eq (SMapKind mk) where
+  l == _ = case l of
+    SEmptyMK    -> True
+    SKeysMK     -> True
+    SValuesMK   -> True
+    STrackingMK -> True
+    SDiffMK     -> True
+
+instance Show (SMapKind mk) where
+  show = \case
+    SEmptyMK    -> "SEmptyMK"
+    SKeysMK     -> "SKeysMK"
+    SValuesMK   -> "SValuesMK"
+    STrackingMK -> "STrackingMK"
+    SDiffMK     -> "SDiffMK"
+
+deriving via OnlyCheckWhnfNamed "SMapKind" (SMapKind mk) instance NoThunks (SMapKind mk)
 
 -- | Ledger state associated with a block
 data family LedgerState blk :: LedgerStateKind

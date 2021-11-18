@@ -108,7 +108,7 @@ class ( IsLedger l
     -> LedgerResult l (l TrackingMK)
 
 -- | Interaction with the ledger layer
-class (ApplyBlock (LedgerState blk) blk, TableStuff (LedgerState blk)) => UpdateLedger blk
+class (ApplyBlock (LedgerState blk) blk, TickedTableStuff (LedgerState blk)) => UpdateLedger blk
 
 {-------------------------------------------------------------------------------
   Derived functionality
@@ -133,7 +133,7 @@ reapplyLedgerBlock ::
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
-     (ApplyBlock l blk, TableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -147,7 +147,7 @@ tickThenApplyLedgerResult cfg blk l = do
     }
 
 tickThenReapplyLedgerResult ::
-     (ApplyBlock l blk, TableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -161,7 +161,7 @@ tickThenReapplyLedgerResult cfg blk l =
     }
 
 tickThenApply ::
-     (ApplyBlock l blk, TableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -169,7 +169,7 @@ tickThenApply ::
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
-     (ApplyBlock l blk, TableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -177,12 +177,12 @@ tickThenReapply ::
 tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
 
 foldLedger ::
-     (ApplyBlock l blk, TableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l -> [blk] -> l ValuesMK -> Except (LedgerErr l) (l ValuesMK)
 foldLedger cfg = repeatedlyM (\blk -> fmap forgetLedgerStateTracking . tickThenApply cfg blk)
 
 refoldLedger ::
-     (ApplyBlock l blk, TableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l -> [blk] -> l ValuesMK -> l ValuesMK
 refoldLedger cfg = repeatedly (\blk -> forgetLedgerStateTracking . tickThenReapply cfg blk)
 
