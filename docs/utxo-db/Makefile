@@ -11,3 +11,4 @@ clean:
 	latexmk -CA
 	rm -f utxo-db-api.tex
 
+utxo-db-api.pdf: hstore-anticaching-fig1.pdf
