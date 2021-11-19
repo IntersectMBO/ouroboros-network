@@ -38,6 +38,7 @@ import           Data.Functor (($>), void)
 import           Data.Function (on)
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
+import           Data.Set (Set)
 import           Data.Typeable (Typeable)
 import           GHC.Stack (CallStack, HasCallStack, callStack)
 
@@ -481,14 +482,17 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
     -- | Duplex connection was demoted, prune connections.
     --
     | PruneConnections        (ConnectionId peerAddr)
+
                               (Map peerAddr (Async m ()))
-                              -- Left case is for when pruning tries to prune
-                              -- the connection which triggered pruning, in this
-                              -- case we do not want to trace a new transition.
-                              --
-                              -- Right case is for when the connection which
-                              -- triggered pruning isn't pruned. In this case
-                              -- we do want to trace a new transition.
+                              -- ^ a subset of connections to be prunned
+
+                              Int
+                              -- ^ number of connections to prune, just for
+                              -- logging
+
+                              (Set peerAddr)
+                              -- ^ prunning choice set, just for logging
+
                              !(Either
                                 (ConnectionState
                                   peerAddr handle
@@ -497,6 +501,13 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
                                               peerAddr handle
                                               handleError version m))
                               )
+                              -- ^ Left case is for when pruning tries to prune
+                              -- the connection which triggered pruning, in this
+                              -- case we do not want to trace a new transition.
+                              --
+                              -- Right case is for when the connection which
+                              -- triggered pruning isn't pruned. In this case
+                              -- we do want to trace a new transition.
 
     -- | Demote error.
     | DemoteToColdLocalError  (ConnectionManagerTrace peerAddr handlerTrace)
@@ -1894,6 +1905,8 @@ withConnectionManager ConnectionManagerArguments {
                   return
                     ( PruneConnections connId
                        (snd <$> choiceMap `Map.restrictKeys` pruneSet)
+                       numberToPrune
+                       (Map.keysSet choiceMap)
                        (Left connState)
                     , Nothing
                     )
@@ -1987,6 +2000,8 @@ withConnectionManager ConnectionManagerArguments {
                     return
                       ( PruneConnections connId
                          (snd <$> choiceMap `Map.restrictKeys` pruneSet)
+                         numberToPrune
+                         (Map.keysSet choiceMap)
                          (Left connState)
                       , Nothing
                       )
@@ -1995,6 +2010,8 @@ withConnectionManager ConnectionManagerArguments {
                     return
                       ( PruneConnections connId
                          (snd <$> choiceMap `Map.restrictKeys` pruneSet)
+                         numberToPrune
+                         (Map.keysSet choiceMap)
                          (Right tr)
                       , Nothing
                       )
@@ -2062,10 +2079,12 @@ withConnectionManager ConnectionManagerArguments {
             Left connState ->
               return (UnsupportedState (abstractState $ Known connState))
 
-        PruneConnections _connId pruneMap eTr -> do
+        PruneConnections _connId pruneMap numberToPrune choiceSet eTr -> do
           traverse_ (traceWith trTracer . TransitionTrace peerAddr) eTr
           traceCounters stateVar
-          traceWith tracer (TrPruneConnections (Map.keys pruneMap))
+          traceWith tracer (TrPruneConnections (Map.keysSet pruneMap)
+                                               numberToPrune
+                                               choiceSet)
           -- previous comment applies here as well.
           traverse_ cancel pruneMap
 
@@ -2186,6 +2205,8 @@ withConnectionManager ConnectionManagerArguments {
                   return
                     ( OperationSuccess tr
                     , Just ( snd <$> choiceMap `Map.restrictKeys` pruneSet
+                           , numberToPrune
+                           , Map.keysSet choiceMap
                            , Nothing
                            )
 
@@ -2247,6 +2268,8 @@ withConnectionManager ConnectionManagerArguments {
                   return
                     ( OperationSuccess tr
                     , Just ( snd <$> choiceMap `Map.restrictKeys` pruneSet
+                           , numberToPrune
+                           , Map.keysSet choiceMap
                            , Nothing
                            )
                     , Nothing
@@ -2311,10 +2334,11 @@ withConnectionManager ConnectionManagerArguments {
           traceWith trTracer (TransitionTrace peerAddr tr)
           traceCounters stateVar
 
-        (OperationSuccess _, Just (pruneMap, mbTr)) -> do
-          traceWith tracer (TrPruneConnections (Map.keys pruneMap))
+        (OperationSuccess _, Just (pruneMap, numberToPrune, choiceSet, mbTr)) -> do
           traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTr
-          traceCounters stateVar
+          traceWith tracer (TrPruneConnections (Map.keysSet pruneMap)
+                                               numberToPrune
+                                               choiceSet)
 
           -- We relay on the `finally` handler of connection thread to:
           --
