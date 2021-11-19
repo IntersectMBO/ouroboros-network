@@ -25,7 +25,7 @@ module Ouroboros.Network.ConnectionManager.Core
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (when)
+import           Control.Monad (guard, when)
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow hiding (handle)
@@ -393,6 +393,22 @@ getConnType (InboundState          _connId _connThread _handle df)   = Just (Neg
 getConnType (DuplexState           _connId _connThread _handle)      = Just DuplexConn
 getConnType (TerminatingState      _connId _connThread _handleError) = Nothing
 getConnType TerminatedState {}                                       = Nothing
+
+
+-- | Return 'True' if a connection is inbound.  This must agree with
+-- 'connectionStateToCounters'.  Both are used for prunning.
+--
+isInboundConn :: ConnectionState peerAddr handle handleError version m -> Bool
+isInboundConn ReservedOutboundState = False
+isInboundConn (UnnegotiatedState pr _connId _connThread) = pr == Inbound
+isInboundConn OutboundUniState {}   = False
+isInboundConn OutboundDupState {}   = False
+isInboundConn OutboundIdleState {}  = False
+isInboundConn InboundIdleState {}   = True
+isInboundConn InboundState {}       = True
+isInboundConn DuplexState {}        = True
+isInboundConn TerminatingState {}   = False
+isInboundConn TerminatedState {}    = False
 
 
 abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b) -> AbstractState
@@ -1855,8 +1871,10 @@ withConnectionManager ConnectionManagerArguments {
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> -- this expression returns @Maybe (connType, connThread)@;
-                                 -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                         (\cs -> do
+                             -- this expression returns @Maybe (connType, connThread)@;
+                             -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                             guard (isInboundConn cs)
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
@@ -1939,8 +1957,10 @@ withConnectionManager ConnectionManagerArguments {
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> -- this expression returns @Maybe (connType, connThread)@;
-                                 -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                         (\cs -> do
+                             -- this expression returns @Maybe (connType, connThread)@;
+                             -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                             guard (isInboundConn cs)
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
@@ -2133,8 +2153,10 @@ withConnectionManager ConnectionManagerArguments {
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> -- this expression returns @Maybe (connType, connThread)@;
+                         (\cs -> do
+                             -- this expression returns @Maybe (connType, connThread)@;
                                  -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                             guard (isInboundConn cs)
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
@@ -2188,8 +2210,10 @@ withConnectionManager ConnectionManagerArguments {
                   -- 'TerminatingState' and 'TerminatedState'.
                   (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> -- this expression returns @Maybe (connType, connThread)@;
-                                 -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                         (\cs -> do
+                             -- this expression returns @Maybe (connType, connThread)@;
+                             -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                             guard (isInboundConn cs)
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
