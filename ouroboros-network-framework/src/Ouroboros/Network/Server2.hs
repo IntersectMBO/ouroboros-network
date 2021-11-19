@@ -25,8 +25,6 @@ module Ouroboros.Network.Server2
   , newObservableStateVarFromSeed
   -- * Run server
   , run
-  -- * PrunePolicy
-  , randomPrunePolicy
   -- * Trace
   , ServerTrace (..)
   , AcceptConnectionsPolicyTrace (..)
