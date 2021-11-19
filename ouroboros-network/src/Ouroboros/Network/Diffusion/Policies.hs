@@ -177,7 +177,7 @@ prunePolicy stateVar mp n = do
       . take n
       . map (fst . fst)
       -- 'True' values (upstream / outbound connections) will sort last.
-      . sortOn (\((_, connType), score) -> (isUpstream connType, score))
+      . sortOn (\((_, connType), score) -> (isUpstream connType, score, connType))
       . zip (Map.assocs mp)
       $ (Rnd.randoms prng' :: [Int])
   where
