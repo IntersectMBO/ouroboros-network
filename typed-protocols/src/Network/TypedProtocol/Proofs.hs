@@ -35,6 +35,8 @@ module Network.TypedProtocol.Proofs
   , pipelineInterleaving
   ) where
 
+import           Control.Monad.Class.MonadSTM
+
 import           Data.Function ((&))
 import           Data.Kind (Type)
 import           Data.Singletons
@@ -216,14 +218,15 @@ snocTrQ tr EmptyQ =
 -- | Prove that we have a total conversion from pipelined peers to regular
 -- peers. This is a sanity property that shows that pipelining did not give
 -- us extra expressiveness or to break the protocol state machine.
---
 forgetPipelined
     :: forall ps (pr :: PeerRole) (pl :: Pipelined) (initSt :: ps) m a.
-       Functor m
+       MonadSTM m
     => [Bool]
     -- ^ interleaving choices for pipelining allowed by
-    -- `Collect` primitive. False values or `[]` give no
-    -- pipelining.
+    -- `Collect` and `CollectSTM` primitive. False values or `[]` give no
+    -- pipelining.  For the 'CollectSTM' primitive, the stm action must not
+    -- block otherwise even if the choice is to pipeline more (a 'True' value),
+    -- we'll actually collect a result.
     -> Peer ps (pr :: PeerRole) pl           Empty initSt m a
     -> Peer ps  pr              NonPipelined Empty initSt m a
 forgetPipelined cs0 = go cs0 EmptyQ
@@ -248,12 +251,20 @@ forgetPipelined cs0 = go cs0 EmptyQ
 
     go cs (ConsMsgQ stok msg pq) k  = Yield stok msg $ go cs pq k
 
-    go (True:cs')    pq  (Collect _ (Just k) _) =
+    go (True:cs') pq              (Collect _ (Just k) _) =
        go cs' pq k
-    go (_:cs) (ConsTrQ STr pq) (Collect stok _ k) =
+    go (_:cs)    (ConsTrQ STr pq) (Collect stok _ k) =
        Await stok $ go cs (ConsTrQ STr pq) . k
-    go []     (ConsTrQ STr pq) (Collect stok _ k) =
+    go []        (ConsTrQ STr pq) (Collect stok _ k) =
        Await stok $ go [] (ConsTrQ STr pq) . k
+
+    go (True:cs) pq@(ConsTrQ STr pq') (CollectSTM stok stmK k) =
+      Effect $ atomically $      (go cs pq <$> stmK)
+                   `orElse` pure (Await stok $ go cs (ConsTrQ STr pq') . k)
+    go (_:cs)       (ConsTrQ STr pq') (CollectSTM stok _ k) =
+      Effect $ atomically $ pure (Await stok $ go cs (ConsTrQ STr pq') . k)
+    go []           (ConsTrQ STr pq') (CollectSTM stok _ k) =
+      Effect $ atomically $ pure (Await stok $ go [] (ConsTrQ STr pq') . k)
 
     go cs (ConsTrQ _ pq) (CollectDone k) =
        go cs pq k
@@ -267,6 +278,27 @@ forgetPipelined cs0 = go cs0 EmptyQ
 -- to more results outstanding. This can also be interpreted as a greater
 -- pipeline depth, or more messages in-flight.
 --
+-- Note that this term proves deadlock freedom of any protocol under the
+-- assumption that each side can buffer all messages resulted from pipelining.
+-- As a counter example let us consider a 'PingPong' protocol if client side
+-- pipelines messages, while the server side is a 'NonPipelined' 'Peer' and
+-- consider a communication channel which is implemented using two bounded
+-- queues.  If the client will keep sending ping messages it will eventually
+-- block not being able to send more, and the remote side will also be
+-- eventually blocked not being able to send more replies.  But this can be
+-- more subtle than that.  This can happen despite using `CollectSTM`, because
+-- it is not an atomic operation to read from the channel.  `CollectSTM` in our
+-- current implementation starts a new thread which reads from the network.  We
+-- use an stm transaction to wait on its result, however the reading thread can
+-- be preempted after reading a message, giving space for the server side
+-- to send one more reply, and blocking on sending the next one which can block the
+-- client as well (server is not reading), leaving both in a deadlock. This
+-- however is only possible when the channels are not prepared to buffer enough
+-- messages that result from pipelining.  In protocols which are using system
+-- bearers (e.g. TCP), resource consumption resulted from pipelining must be
+-- taken into account (which can lead to dropped packets, and thus protocol
+-- errors).
+--
 -- This can be exercised using a QuickCheck style generator.
 --
 connect
@@ -274,7 +306,7 @@ connect
                (pl :: Pipelined)
                (pl' :: Pipelined)
                (st :: ps) m a b.
-       (Monad m, SingI pr)
+       (MonadSTM m, SingI pr)
     => [Bool]
     -> [Bool]
     -> Peer ps             pr  pl  Empty st m a

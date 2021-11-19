@@ -19,11 +19,14 @@ module Network.TypedProtocol.Peer.Server
   , pattern Done
   , pattern YieldPipelined
   , pattern Collect
+  , pattern CollectSTM
   , pattern CollectDone
     -- * re-exports
   , Pipelined (..)
   , Queue (..)
   ) where
+
+import           Control.Monad.Class.MonadSTM (STM)
 
 import           Data.Kind (Type)
 import           Data.Singletons
@@ -127,6 +130,22 @@ pattern Collect :: forall ps st' st'' q st m a.
                 -- ^ continuation
                 -> Server     ps 'Pipelined (Tr st'    st'' <| q) st m a
 pattern Collect k' k = TP.Collect ReflClientAgency k' k
+
+
+-- | Client role pattern for 'TP.Collect'
+--
+pattern CollectSTM :: forall ps st' st'' q st m a.
+                      ()
+                   => ( SingI (PeerHasAgency st')
+                      , StateAgency st' ~ ClientAgency
+                      )
+                   => STM m (Server ps 'Pipelined (Tr st' st'' <| q) st m a)
+                   -- ^ continuation, executed if no message has arrived so far
+                   -> (forall stNext. Message ps st' stNext
+                      -> Server ps 'Pipelined (Tr stNext st'' <| q) st m a)
+                   -- ^ continuation
+                   -> Server     ps 'Pipelined (Tr st'    st'' <| q) st m a
+pattern CollectSTM k' k = TP.CollectSTM ReflClientAgency k' k
 
 
 -- | Client role pattern for 'TP.CollectDone'

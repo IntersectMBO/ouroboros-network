@@ -22,6 +22,9 @@ module Network.TypedProtocol.Driver
   , DecodeStep (..)
   ) where
 
+import           Control.Applicative ((<|>))
+import           Control.Monad.Class.MonadSTM
+
 import           Data.Type.Queue
 import           Data.Singletons
 
@@ -56,6 +59,23 @@ import           Network.TypedProtocol.Peer
 --
 
 
+-- | 'Driver' can be interrupted and might need to resume.  'DriverState'
+-- records its state, so it can resume.
+--
+data DriverState ps (pr :: PeerRole) (st :: ps) bytes failure dstate m
+    = DecoderState   (DecodeStep bytes failure m (SomeMessage st))
+                     !dstate
+      -- ^ 'tryRecvMessage' can return either 'DecodeStep' with
+      -- current 'dstate' or a parsed message.
+
+    | DriverState    !dstate
+      -- ^ dstate which was returned by 'recvMessage'
+
+    | DriverStateSTM (STM m (SomeMessage st, dstate))
+                     !dstate
+      -- ^ 'recvMessageSTM' might leave us with an stm action.
+
+
 --
 -- Driver interface
 --
@@ -79,15 +99,16 @@ data Driver ps (pr :: PeerRole) bytes failure dstate m =
           -- As an input it might receive a 'DecodeStep' previously started with
           -- 'tryRecvMessage'.
           --
+          -- It could be implemented in terms of 'recvMessageSTM', but in some
+          -- cases it can be easier (or more performant) to have a different
+          -- implementation.
+          --
           recvMessage    :: forall (st :: ps).
                             SingI (PeerHasAgency st)
                          => (ReflRelativeAgency (StateAgency st)
                                                  TheyHaveAgency
                                                 (Relative pr (StateAgency st)))
-                         -> Either ( DecodeStep bytes failure m (SomeMessage st)
-                                   , dstate
-                                   )
-                                   dstate
+                         -> DriverState ps pr st bytes failure dstate m
                          -> m (SomeMessage st, dstate)
 
         , -- | 'tryRecvMessage' is used to interpret @'Collect' _ (Just k') k@.
@@ -96,21 +117,32 @@ data Driver ps (pr :: PeerRole) bytes failure dstate m =
           --
           -- 'tryRecvMessage' ought to be non-blocking.
           --
+          -- It also could be implemented in terms of 'recvMessageSTM', but
+          -- there are cases where a separate implementation would be simpler
+          -- or more performant as it does not need to relay on STM but instead
+          -- relay on non-blocking IO.
+          --
           tryRecvMessage :: forall (st :: ps).
                             SingI (PeerHasAgency st)
                          => (ReflRelativeAgency (StateAgency st)
                                                  TheyHaveAgency
                                                 (Relative pr (StateAgency st)))
-                         -> Either    ( DecodeStep bytes failure m (SomeMessage st)
-                                      , dstate
-                                      )
-                                      dstate
-                         -> m (Either ( DecodeStep bytes failure m (SomeMessage st)
-                                      , dstate
-                                      )
+                         -> DriverState ps pr st bytes failure dstate m
+                         -> m (Either (DriverState ps pr st bytes failure dstate m)
                                       ( SomeMessage st
                                       , dstate
                                       ))
+
+        , -- | Construct a non-blocking stm action which awaits for the
+          -- message.
+          --
+          recvMessageSTM :: forall (st :: ps).
+                            SingI (PeerHasAgency st)
+                         => (ReflRelativeAgency (StateAgency st)
+                                                 TheyHaveAgency
+                                                (Relative pr (StateAgency st)))
+                         -> DriverState ps pr st bytes failure dstate m
+                         -> m (STM m (SomeMessage st, dstate))
 
         , startDState    :: dstate
         }
@@ -127,12 +159,12 @@ data Driver ps (pr :: PeerRole) bytes failure dstate m =
 --
 runPeerWithDriver
   :: forall ps (st :: ps) pr pl bytes failure dstate m a.
-     Monad m
+     MonadSTM m
   => Driver ps pr bytes failure dstate m
   -> Peer ps pr pl Empty st m a
   -> dstate
   -> m (a, dstate)
-runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage} =
+runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage, recvMessageSTM} =
     flip goEmpty
   where
     goEmpty
@@ -149,20 +181,17 @@ runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage} =
       goEmpty dstate k
 
     goEmpty !dstate (Await refl k) = do
-      (SomeMessage msg, dstate') <- recvMessage refl (Right dstate)
+      (SomeMessage msg, dstate') <- recvMessage refl (DriverState dstate)
       goEmpty dstate' (k msg)
 
     goEmpty !dstate (YieldPipelined refl msg k) = do
       sendMessage refl msg
-      go singSingleton (Right dstate) k
+      go singSingleton (DriverState dstate) k
 
 
     go :: forall st1 st2 st3 q'.
           SingQueue (Tr st1 st2 <| q')
-       -> Either ( DecodeStep bytes failure m (SomeMessage st1)
-                 , dstate
-                 )
-                 dstate
+       -> DriverState ps pr st1 bytes failure dstate m
        -> Peer ps pr pl (Tr st1 st2 <| q') st3 m a
        -> m (a, dstate)
     go q !dstate (Effect k) = k >>= go q dstate
@@ -178,23 +207,52 @@ runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage} =
 
     go (SingCons q) !dstate (Collect refl Nothing k) = do
       (SomeMessage msg, dstate') <- recvMessage refl dstate
-      go (SingCons q) (Right dstate') (k msg)
+      go (SingCons q) (DriverState dstate') (k msg)
 
     go q@(SingCons q') !dstate (Collect refl (Just k') k) = do
       r <- tryRecvMessage refl dstate
       case r of
         Left dstate' ->
-          go q (Left dstate') k'
+          go q (dstate') k'
         Right (SomeMessage msg, dstate') ->
-          go (SingCons q') (Right dstate') (k msg)
+          go (SingCons q') (DriverState dstate') (k msg)
 
-    go (SingCons SingEmpty) (Right dstate) (CollectDone k) =
+    go (SingCons SingEmpty) (DriverState dstate) (CollectDone k) =
       goEmpty dstate k
 
-    go q@(SingCons (SingCons {})) (Right dstate) (CollectDone k) =
-      go (uncons q) (Right dstate) k
+    go (SingCons q@SingCons {}) (DriverState dstate) (CollectDone k) =
+      go q (DriverState dstate) k
 
-    go _q             Left {}        CollectDone {} =
-      -- 'CollectDone' can only be executed once `Collect` was effective, which
-      -- means we cannot receive a partial decoder here.
+    go q@(SingCons q') !dstate (CollectSTM refl k' k) = do
+      stm <- recvMessageSTM refl dstate
+      -- Note that the 'stm' action also returns next @dstate@.  For this
+      -- reason, using a simpler 'CollectSTM' which takes `STM m Message` as an
+      -- argument and computes the result by itself is not possible.
+      r <- atomically $
+             Left  <$> stm
+         <|> Right <$> k'
+      case r of
+        Left (SomeMessage msg, dstate') ->
+          go (SingCons q') (DriverState dstate') (k msg)
+        Right k'' ->
+          go q (DriverStateSTM stm (getDState dstate)) k''
+
+
+    go _q             DecoderState {}        CollectDone {} =
+      -- 'CollectDone' can only be executed once `Collect` or `CollectSTM` was
+      -- effective, which means we cannot receive a partial decoder here.
       error "runPeerWithDriver: unexpected parital decoder"
+
+    go _q             DriverStateSTM {}      CollectDone {} =
+      -- 'CollectDone' can only placed when once `Collect` or `CollectSTM` was
+      -- effective, we cannot have 'DriverStateSTM' at this stage.
+      error "runPeerWithDriver: unexpected driver state"
+
+    --
+    -- lenses
+    --
+
+    getDState :: forall (st' :: ps). DriverState ps pr st' bytes failure dstate m -> dstate
+    getDState (DecoderState   _ dstate) = dstate
+    getDState (DriverState      dstate) = dstate
+    getDState (DriverStateSTM _ dstate) = dstate
