@@ -1869,7 +1869,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap' :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -1878,6 +1878,11 @@ withConnectionManager ConnectionManagerArguments {
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
+                  let choiceMap =
+                        case getConnType connState' of
+                          Nothing -> assert False choiceMap'
+                          Just a  -> Map.insert peerAddr (a, connThread)
+                                                choiceMap'
 
                   pruneSet <-
                     cmPrunePolicy
@@ -1955,7 +1960,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap' :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -1964,6 +1969,11 @@ withConnectionManager ConnectionManagerArguments {
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
+                  let choiceMap =
+                        case getConnType connState' of
+                          Nothing -> assert False choiceMap'
+                          Just a  -> Map.insert peerAddr (a, connThread)
+                                                choiceMap'
 
                   pruneSet <-
                     cmPrunePolicy
@@ -2151,7 +2161,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap' :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -2160,6 +2170,11 @@ withConnectionManager ConnectionManagerArguments {
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
+                  let choiceMap =
+                        case getConnType connState' of
+                          Nothing -> assert False choiceMap'
+                          Just a  -> Map.insert peerAddr (a, connThread)
+                                                choiceMap'
 
                   pruneSet <-
                     cmPrunePolicy
@@ -2208,7 +2223,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap' :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -2217,6 +2232,10 @@ withConnectionManager ConnectionManagerArguments {
                              (,) <$> getConnType cs
                                  <*> getConnThread cs)
                      <$> readTVar connVar'
+                  let choiceMap =
+                        case getConnType connState' of
+                          Nothing -> assert False choiceMap'
+                          Just a  -> Map.insert peerAddr (a, connThread) choiceMap'
 
                   pruneSet <-
                     cmPrunePolicy
