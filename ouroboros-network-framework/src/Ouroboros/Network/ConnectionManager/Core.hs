@@ -1869,7 +1869,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -1881,14 +1881,14 @@ withConnectionManager ConnectionManagerArguments {
 
                   pruneSet <-
                     cmPrunePolicy
-                      (fst <$> choiseMap)
+                      (fst <$> choiceMap)
                       numberToPrune
 
                   when (remoteAddress connId `Set.notMember` pruneSet)
                     $ writeTVar connVar connState'
                   return
                     ( PruneConnections connId
-                       (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                       (snd <$> choiceMap `Map.restrictKeys` pruneSet)
                        (Left connState)
                     , Nothing
                     )
@@ -1955,7 +1955,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -1967,7 +1967,7 @@ withConnectionManager ConnectionManagerArguments {
 
                   pruneSet <-
                     cmPrunePolicy
-                      (fst <$> choiseMap)
+                      (fst <$> choiceMap)
                       numberToPrune
 
                   -- If this connection is in the to-prune set we do not let it
@@ -1976,7 +1976,7 @@ withConnectionManager ConnectionManagerArguments {
                   then
                     return
                       ( PruneConnections connId
-                         (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                         (snd <$> choiceMap `Map.restrictKeys` pruneSet)
                          (Left connState)
                       , Nothing
                       )
@@ -1984,7 +1984,7 @@ withConnectionManager ConnectionManagerArguments {
                     writeTVar connVar connState'
                     return
                       ( PruneConnections connId
-                         (snd <$> choiseMap `Map.restrictKeys` pruneSet)
+                         (snd <$> choiceMap `Map.restrictKeys` pruneSet)
                          (Right tr)
                       , Nothing
                       )
@@ -2151,7 +2151,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -2163,14 +2163,14 @@ withConnectionManager ConnectionManagerArguments {
 
                   pruneSet <-
                     cmPrunePolicy
-                      (fst <$> choiseMap)
+                      (fst <$> choiceMap)
                       numberToPrune
 
                   when (remoteAddress connId `Set.notMember` pruneSet)
                     $ writeTVar connVar connState'
                   return
                     ( OperationSuccess tr
-                    , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
+                    , Just ( snd <$> choiceMap `Map.restrictKeys` pruneSet
                            , Nothing
                            )
 
@@ -2208,7 +2208,7 @@ withConnectionManager ConnectionManagerArguments {
                   -- have 'ConnectionType' and are running (have a thread).
                   -- This excludes connections in 'ReservedOutboundState',
                   -- 'TerminatingState' and 'TerminatedState'.
-                  (choiseMap :: Map peerAddr (ConnectionType, Async m ()))
+                  (choiceMap :: Map peerAddr (ConnectionType, Async m ()))
                     <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
                          (\cs -> do
                              -- this expression returns @Maybe (connType, connThread)@;
@@ -2220,14 +2220,14 @@ withConnectionManager ConnectionManagerArguments {
 
                   pruneSet <-
                     cmPrunePolicy
-                      (fst <$> choiseMap)
+                      (fst <$> choiceMap)
                       numberToPrune
 
                   when (remoteAddress connId `Set.notMember` pruneSet)
                     $ writeTVar connVar connState'
                   return
                     ( OperationSuccess tr
-                    , Just ( snd <$> choiseMap `Map.restrictKeys` pruneSet
+                    , Just ( snd <$> choiceMap `Map.restrictKeys` pruneSet
                            , Nothing
                            )
                     , Nothing
