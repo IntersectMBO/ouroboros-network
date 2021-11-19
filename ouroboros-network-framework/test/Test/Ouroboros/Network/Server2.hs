@@ -2842,8 +2842,8 @@ classifyPrunings =
   . filter ( \ tr
              -> case tr of
                   x -> case x of
-                    TrPruneConnections _ -> True
-                    _                    -> False
+                    TrPruneConnections _ _ _ -> True
+                    _                        -> False
            )
 
 -- classify negotiated data flow
