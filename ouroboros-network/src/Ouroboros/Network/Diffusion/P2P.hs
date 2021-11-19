@@ -795,7 +795,7 @@ runM Interfaces
                           cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                           cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
                           connectionDataFlow    = uncurry localDataFlow,
-                          cmPrunePolicy         = Server.randomPrunePolicy
+                          cmPrunePolicy         = Diffusion.Policies.prunePolicy
                                                     localServerStateVar,
                           cmConnectionsLimits   = localConnectionLimits
                         }
@@ -994,7 +994,7 @@ runM Interfaces
                           cmPrunePolicy         =
                             case cmdInMode of
                               HasInitiatorResponder (CMDInInitiatorResponderMode _ serverStateVar) ->
-                                Server.randomPrunePolicy serverStateVar,
+                                Diffusion.Policies.prunePolicy serverStateVar,
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
                           cmOutboundIdleTimeout = daProtocolIdleTimeout
