@@ -1919,7 +1919,9 @@ withConnectionManager ConnectionManagerArguments {
 
                 -- use 'numberOfConns + 1' because we want to know if we
                 -- actually let this connection evolve if we need to make
-                -- room for them by pruning.
+                -- room for them by pruning.  This is because
+                -- 'countIncomingConnections' does not count 'OutboundDupState'
+                -- as an inbound connection, but does so for 'InboundIdleState'.
                 let numberToPrune =
                       numberOfConns + 1
                       - fromIntegral
