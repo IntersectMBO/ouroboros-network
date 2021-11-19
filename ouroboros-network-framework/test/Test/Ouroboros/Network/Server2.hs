@@ -127,9 +127,8 @@ tests =
                  prop_connection_manager_pruning
   , testProperty "inbound_governor_pruning"
                  prop_inbound_governor_pruning
-  -- The test fails at the moment.  See issue #3487.
-  -- , testProperty "never_above_hardlimit"
-  --                prop_never_above_hardlimit
+  , testProperty "never_above_hardlimit"
+                 prop_never_above_hardlimit
   , testProperty "connection_manager_valid_transitions"
                  prop_connection_manager_valid_transitions
   , testProperty "connection_manager_no_invalid_traces"
