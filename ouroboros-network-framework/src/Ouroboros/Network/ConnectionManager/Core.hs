@@ -39,7 +39,6 @@ import           Data.Functor (($>), void)
 import           Data.Function (on)
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
-import           Data.Set (Set)
 import           Data.Typeable (Typeable)
 import           GHC.Stack (CallStack, HasCallStack, callStack)
 
@@ -447,6 +446,8 @@ defaultResetTimeout :: DiffTime
 defaultResetTimeout = 5
 
 
+newtype PruneAction m = PruneAction { runPruneAction :: m () }
+
 -- | Instruction used internally in @unregisterOutboundConnectionImpl@, e.g. in
 -- the implementation of one of the two  @DemotedToCold^{dataFlow}_{Local}@
 -- transitions.
@@ -482,39 +483,25 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 
     -- | Duplex connection was demoted, prune connections.
     --
-    | PruneConnections        (ConnectionId peerAddr)
+    | PruneConnections       (PruneAction m)
+                             -- ^ prune action
 
-                              (Map peerAddr ( Async m ()
-                                            , StrictTVar m
-                                                (ConnectionState
-                                                  peerAddr
-                                                  handle handleError
-                                                  version m)
-                                            ))
-                              -- ^ a subset of connections to be prunned
+                            !(Either
+                               (ConnectionState
+                                 peerAddr handle
+                                 handleError version m)
+                               (Transition (ConnectionState
+                                             peerAddr handle
+                                             handleError version m))
+                             )
+                             -- ^ Left case is for when pruning tries to prune
+                             -- the connection which triggered pruning, in this
+                             -- case we do not want to trace a new transition.
+                             --
+                             -- Right case is for when the connection which
+                             -- triggered pruning isn't pruned. In this case
+                             -- we do want to trace a new transition.
 
-                              Int
-                              -- ^ number of connections to prune, just for
-                              -- logging
-
-                              (Set peerAddr)
-                              -- ^ prunning choice set, just for logging
-
-                             !(Either
-                                (ConnectionState
-                                  peerAddr handle
-                                  handleError version m)
-                                (Transition (ConnectionState
-                                              peerAddr handle
-                                              handleError version m))
-                              )
-                              -- ^ Left case is for when pruning tries to prune
-                              -- the connection which triggered pruning, in this
-                              -- case we do not want to trace a new transition.
-                              --
-                              -- Right case is for when the connection which
-                              -- triggered pruning isn't pruned. In this case
-                              -- we do want to trace a new transition.
 
     -- | Demote error.
     | DemoteToColdLocalError  (ConnectionManagerTrace peerAddr handlerTrace)
@@ -890,6 +877,62 @@ withConnectionManager ConnectionManagerArguments {
 
                   traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
                   traceCounters stateVar
+
+    -- Pruning is done in two stages:
+    -- * an STM transaction which selects which connections to prune, and sets
+    --   their state to 'TerminatedState';
+    -- * an io action which logs and cancells all the connection handler
+    --   threads.
+    mkPruneAction :: peerAddr
+                  -> Int
+                  -- ^ number of connections to prune
+                  -> ConnectionManagerState peerAddr handle handleError version m
+                  -> ConnectionState peerAddr handle handleError version  m
+                  -- ^ next connection state, if it will not be pruned.
+                  -> StrictTVar m (ConnectionState peerAddr handle handleError version m)
+                  -> Async m ()
+                  -> STM m (Bool, PruneAction m)
+                  -- ^ return if the connection was choose to be prunned and the
+                  -- 'PruneAction'
+    mkPruneAction peerAddr numberToPrune state connState' connVar connThread = do
+      (choiceMap' :: Map peerAddr ( ConnectionType
+                                  , Async m ()
+                                  , StrictTVar m
+                                      (ConnectionState
+                                        peerAddr
+                                        handle handleError
+                                        version m)
+                                  ))
+        <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
+             (\cs -> do
+                 -- this expression returns @Maybe (connType, connThread)@;
+                 -- 'traverseMaybeWithKey' collects all 'Just' cases.
+                 guard (isInboundConn cs)
+                 (,,connVar') <$> getConnType cs
+                              <*> getConnThread cs)
+         <$> readTVar connVar'
+      let choiceMap =
+            case getConnType connState' of
+              Nothing -> assert False choiceMap'
+              Just a  -> Map.insert peerAddr (a, connThread, connVar)
+                                    choiceMap'
+
+      pruneSet <-
+        cmPrunePolicy
+          ((\(a,_,_) -> a) <$> choiceMap)
+          numberToPrune
+
+      let pruneMap = choiceMap `Map.restrictKeys` pruneSet
+      forM_ pruneMap $ \(_, _, connVar') ->
+        writeTVar connVar' (TerminatedState Nothing)
+
+      return ( peerAddr `Set.member` pruneSet
+             , PruneAction $ do
+                 traceWith tracer (TrPruneConnections (Map.keysSet pruneMap)
+                                                      numberToPrune
+                                                      (Map.keysSet choiceMap))
+                 forM_ pruneMap $ \(_, connThread', _) -> cancel connThread'
+             )
 
     includeInboundConnectionImpl
         :: HasCallStack
@@ -1883,51 +1926,10 @@ withConnectionManager ConnectionManagerArguments {
                           (acceptedConnectionsHardLimit cmConnectionsLimits)
                 if numberToPrune > 0
                 then do
-                  -- traverse the state and get only the connection which
-                  -- have 'ConnectionType' and are running (have a thread).
-                  -- This excludes connections in 'ReservedOutboundState',
-                  -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap' :: Map peerAddr ( ConnectionType
-                                              , Async m ()
-                                              , StrictTVar m
-                                                  (ConnectionState
-                                                    peerAddr
-                                                    handle handleError
-                                                    version m)
-                                              ))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> do
-                             -- this expression returns @Maybe (connType, connThread)@;
-                             -- 'traverseMaybeWithKey' collects all 'Just' cases.
-                             guard (isInboundConn cs)
-                             (,,connVar') <$> getConnType cs
-                                          <*> getConnThread cs)
-                     <$> readTVar connVar'
-                  let choiceMap =
-                        case getConnType connState' of
-                          Nothing -> assert False choiceMap'
-                          Just a  -> Map.insert peerAddr (a, connThread, connVar)
-                                                choiceMap'
-
-                  pruneSet <-
-                    cmPrunePolicy
-                      ((\(a, _, _) -> a) <$> choiceMap)
-                      numberToPrune
-
-                  when (remoteAddress connId `Set.notMember` pruneSet)
-                    $ writeTVar connVar connState'
-
-                  let pruneMap = choiceMap `Map.restrictKeys` pruneSet
-                  forM_ pruneMap $ \(_, _, connVar') ->
-
-                    writeTVar connVar' (TerminatedState Nothing)
+                  (_, prune)
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
                   return
-                    ( PruneConnections connId
-                       ((\(_, a, b) -> (a, b))
-                         <$> pruneMap)
-                       numberToPrune
-                       (Map.keysSet choiceMap)
-                       (Left connState)
+                    ( PruneConnections prune (Left connState)
                     , Nothing
                     )
 
@@ -1988,66 +1990,21 @@ withConnectionManager ConnectionManagerArguments {
                           (acceptedConnectionsHardLimit cmConnectionsLimits)
 
                 if numberToPrune > 0
+
                 then do
-                  -- traverse the state and get only the connection which
-                  -- have 'ConnectionType' and are running (have a thread).
-                  -- This excludes connections in 'ReservedOutboundState',
-                  -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap' :: Map peerAddr ( ConnectionType
-                                              , Async m ()
-                                              , StrictTVar m
-                                                  (ConnectionState
-                                                    peerAddr
-                                                    handle handleError
-                                                    version m)
-                                              ))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> do
-                             -- this expression returns @Maybe (connType, connThread)@;
-                             -- 'traverseMaybeWithKey' collects all 'Just' cases.
-                             guard (isInboundConn cs)
-                             (,,connVar') <$> getConnType cs
-                                          <*> getConnThread cs)
-                     <$> readTVar connVar'
-                  let choiceMap =
-                        case getConnType connState' of
-                          Nothing -> assert False choiceMap'
-                          Just a  -> Map.insert peerAddr (a, connThread, connVar)
-                                                choiceMap'
-
-                  pruneSet <-
-                    cmPrunePolicy
-                      ((\(a,_,_) -> a) <$> choiceMap)
-                      numberToPrune
-
-                  let pruneMap = choiceMap `Map.restrictKeys` pruneSet
-                  forM_ pruneMap $ \(_, _, connVar') ->
-                    writeTVar connVar' (TerminatedState Nothing)
-
-                  -- If this connection is in the to-prune set we do not let it
-                  -- evolve to a new state. Otherwise we do.
-                  if Set.member peerAddr pruneSet
-                  then
-                    return
-                      ( PruneConnections connId
-                          ((\(_, a, b) -> (a, b))
-                            <$> pruneMap)
-                         numberToPrune
-                         (Map.keysSet choiceMap)
-                         (Left connState)
-                      , Nothing
-                      )
-                  else do
-                    writeTVar connVar connState'
-                    return
-                      ( PruneConnections connId
-                         ((\(_, a, b) -> (a, b))
-                           <$> pruneMap)
-                         numberToPrune
-                         (Map.keysSet choiceMap)
-                         (Right tr)
-                      , Nothing
-                      )
+                  (pruneSelf, prune)
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                  when (not pruneSelf)
+                     $ writeTVar connVar connState'
+                  if pruneSelf
+                    then return ( PruneConnections prune (Left connState)
+                                , Nothing
+                                )
+                    else do
+                      writeTVar connVar connState'
+                      return ( PruneConnections prune (Right tr)
+                             , Nothing
+                             )
 
                 else do
                   -- @
@@ -2112,15 +2069,9 @@ withConnectionManager ConnectionManagerArguments {
             Left connState ->
               return (UnsupportedState (abstractState $ Known connState))
 
-        PruneConnections _connId pruneMap numberToPrune choiceSet eTr -> do
+        PruneConnections prune eTr -> do
           traverse_ (traceWith trTracer . TransitionTrace peerAddr) eTr
-          traceWith tracer (TrPruneConnections (Map.keysSet pruneMap)
-                                               numberToPrune
-                                               choiceSet)
-          -- previous comment applies here as well.
-          forM_ pruneMap $ \(connThread', _) -> do
-            cancel connThread'
-
+          runPruneAction prune
           traceCounters stateVar
           return (OperationSuccess (abstractState (either Known fromState eTr)))
 
@@ -2210,53 +2161,15 @@ withConnectionManager ConnectionManagerArguments {
                 -- Are we above the hard limit?
                 if numberToPrune > 0
                 then do
-                  -- traverse the state and get only the connection which
-                  -- have 'ConnectionType' and are running (have a thread).
-                  -- This excludes connections in 'ReservedOutboundState',
-                  -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap' :: Map peerAddr ( ConnectionType
-                                              , Async m ()
-                                              , StrictTVar m
-                                                  (ConnectionState
-                                                    peerAddr
-                                                    handle handleError
-                                                    version m)
-                                              ))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> do
-                             -- this expression returns @Maybe (connType, connThread)@;
-                             -- 'traverseMaybeWithKey' collects all 'Just' cases.
-                             guard (isInboundConn cs)
-                             (,,connVar') <$> getConnType cs
-                                          <*> getConnThread cs)
-                     <$> readTVar connVar'
-                  let choiceMap =
-                        case getConnType connState' of
-                          Nothing -> assert False choiceMap'
-                          Just a  -> Map.insert peerAddr (a, connThread, connVar)
-                                                choiceMap'
+                  (pruneSelf, prune)
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
 
-                  pruneSet <-
-                    cmPrunePolicy
-                      ((\(a, _, _) -> a)
-                        <$> choiceMap)
-                      numberToPrune
-
-                  let pruneMap = choiceMap `Map.restrictKeys` pruneSet
-                  forM_ pruneMap $ \(_, _, connVar') ->
-                    writeTVar connVar' (TerminatedState Nothing)
-
-                  when (remoteAddress connId `Set.notMember` pruneSet)
+                  when (not pruneSelf)
                     $ writeTVar connVar connState'
 
                   return
                     ( OperationSuccess tr
-                    , Just ( pruneMap
-                           , numberToPrune
-                           , Map.keysSet choiceMap
-                           , Nothing
-                           )
-
+                    , Just prune
                     , Nothing
                     )
 
@@ -2287,51 +2200,14 @@ withConnectionManager ConnectionManagerArguments {
                 -- Are we above the hard limit?
                 if numberToPrune > 0
                 then do
-                  -- traverse the state and get only the connection which
-                  -- have 'ConnectionType' and are running (have a thread).
-                  -- This excludes connections in 'ReservedOutboundState',
-                  -- 'TerminatingState' and 'TerminatedState'.
-                  (choiceMap' :: Map peerAddr ( ConnectionType
-                                              , Async m ()
-                                              , StrictTVar m
-                                                  (ConnectionState
-                                                    peerAddr
-                                                    handle handleError
-                                                    version m)
-                                              ))
-                    <- flip Map.traverseMaybeWithKey state $ \_peerAddr MutableConnState { connVar = connVar' } ->
-                         (\cs -> do
-                             -- this expression returns @Maybe (connType, connThread)@;
-                             -- 'traverseMaybeWithKey' collects all 'Just' cases.
-                             guard (isInboundConn cs)
-                             (,,connVar') <$> getConnType cs
-                                          <*> getConnThread cs)
-                     <$> readTVar connVar'
-                  let choiceMap =
-                        case getConnType connState' of
-                          Nothing -> assert False choiceMap'
-                          Just a  -> Map.insert peerAddr (a, connThread, connVar)
-                                                choiceMap'
-
-                  pruneSet <-
-                    cmPrunePolicy
-                      ((\(a, _, _) -> a) <$> choiceMap)
-                      numberToPrune
-
-                  let pruneMap = choiceMap `Map.restrictKeys` pruneSet
-                  forM_ pruneMap $ \(_, _, connVar') ->
-                    writeTVar connVar' (TerminatedState Nothing)
-
-                  when (remoteAddress connId `Set.notMember` pruneSet)
-                    $ writeTVar connVar connState'
+                  (pruneSelf, prune)
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                  when (not pruneSelf)
+                     $ writeTVar connVar connState'
 
                   return
-                    ( OperationSuccess tr
-                    , Just ( pruneMap
-                           , numberToPrune
-                           , Map.keysSet choiceMap
-                           , Nothing
-                           )
+                    ( OperationSuccess (mkTransition connState (TerminatedState Nothing))
+                    , Just prune
                     , Nothing
                     )
 
@@ -2394,16 +2270,9 @@ withConnectionManager ConnectionManagerArguments {
           traceWith trTracer (TransitionTrace peerAddr tr)
           traceCounters stateVar
 
-        (OperationSuccess _, Just (pruneMap, numberToPrune, choiceSet, mbTr)) -> do
-          traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTr
-          traceWith tracer (TrPruneConnections (Map.keysSet pruneMap)
-                                               numberToPrune
-                                               choiceSet)
-
-          -- We relay on the `finally` handler of connection thread to
-          -- close the socket.
-          forM_ pruneMap $ \ (_, connThread', _) -> cancel connThread'
-
+        (OperationSuccess tr, Just prune) -> do
+          traceWith trTracer (TransitionTrace peerAddr tr)
+          runPruneAction prune
           traceCounters stateVar
 
         _ -> return ()
