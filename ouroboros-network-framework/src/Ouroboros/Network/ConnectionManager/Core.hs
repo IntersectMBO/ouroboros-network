@@ -1983,40 +1983,16 @@ withConnectionManager ConnectionManagerArguments {
                 let connState' = InboundState connId connThread handle Duplex
                     tr = mkTransition connState connState'
 
-                numberOfConns <- countIncomingConnections state
-                let numberToPrune =
-                      numberOfConns
-                      - fromIntegral
-                          (acceptedConnectionsHardLimit cmConnectionsLimits)
-
-                if numberToPrune > 0
-
-                then do
-                  (pruneSelf, prune)
-                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
-                  when (not pruneSelf)
-                     $ writeTVar connVar connState'
-                  if pruneSelf
-                    then return ( PruneConnections prune (Left connState)
-                                , Nothing
-                                )
-                    else do
-                      writeTVar connVar connState'
-                      return ( PruneConnections prune (Right tr)
-                             , Nothing
-                             )
-
-                else do
-                  -- @
-                  -- DemotedToCold^{Duplex}_{Local} : DuplexState
-                  --                                → InboundState Duplex
-                  -- @
-                  -- does not require to perform any additional io action (we
-                  -- already updated 'connVar').
-                  writeTVar connVar connState'
-                  return ( DemoteToColdLocalNoop (Just tr) st
-                         , Nothing
-                         )
+                -- @
+                -- DemotedToCold^{Duplex}_{Local} : DuplexState
+                --                                → InboundState Duplex
+                -- @
+                -- does not require to perform any additional io action (we
+                -- already updated 'connVar').
+                writeTVar connVar connState'
+                return ( DemoteToColdLocalNoop (Just tr) st
+                       , Nothing
+                       )
 
               TerminatingState _connId _connThread _handleError ->
                 return (DemoteToColdLocalNoop Nothing st
