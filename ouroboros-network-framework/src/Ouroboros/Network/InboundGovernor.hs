@@ -23,8 +23,6 @@ module Ouroboros.Network.InboundGovernor
   , newObservableStateVarFromSeed
   -- * Run Inbound Protocol Governor
   , inboundGovernor
-  -- * PrunePolicy
-  , randomPrunePolicy
   -- * Trace
   , InboundGovernorTrace (..)
   , RemoteSt (..)
@@ -47,11 +45,8 @@ import           Control.Tracer (Tracer, traceWith)
 import           Data.Cache
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
-import           Data.List (sortOn)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
-import qualified System.Random as Rnd
 
 import qualified Network.Mux as Mux
 
@@ -482,50 +477,6 @@ runResponder mux
             startStrategy
             (runMuxPeer responder . fromChannel)
 
---
--- PrunePolicy
---
-
--- | Sort by upstreamness and a random score.
---
--- Note: this 'PrunePolicy' does not depend on 'igsConnections'.  We put
--- 'igsPrng' in 'InboundGovernorState' only to show that we can have
--- a 'PrunePolicy' which depends on the 'InboundGovernorState' as a more
--- refined policy would do.
---
--- /complexity:/ \(\mathcal{O}(n\log\;n)\)
---
--- TODO: complexity could be improved.
---
-randomPrunePolicy :: ( MonadSTM m
-                     , Ord peerAddr
-                     )
-                  => StrictTVar m InboundGovernorObservableState
-                  -> PrunePolicy peerAddr (STM m)
-randomPrunePolicy stateVar mp n = do
-    state <- readTVar stateVar
-    let (prng', prng'') = Rnd.split (igosPrng state)
-    writeTVar stateVar (state { igosPrng = prng'' })
-
-    return
-      $ Set.fromList
-      . take n
-      . map (fst . fst)
-      -- 'True' values (upstream / outbound connections) will sort last.
-      . sortOn (\((_, connType), score) -> (isUpstream connType, score))
-      . zip (Map.assocs mp)
-      $ (Rnd.randoms prng' :: [Int])
-  where
-    isUpstream :: ConnectionType -> Bool
-    isUpstream = \connType ->
-      case connType of
-        UnnegotiatedConn Outbound -> True
-        UnnegotiatedConn Inbound  -> False
-        OutboundIdleConn _        -> True
-        InboundIdleConn         _ -> False
-        NegotiatedConn Outbound _ -> True
-        NegotiatedConn Inbound  _ -> False
-        DuplexConn                -> True
 
 --
 -- Trace

@@ -216,18 +216,21 @@ data TimeoutExpired = Expired | Ticking
 -- | Either unnegotiated or negotiated unidirectional or duplex connections.
 -- This is not a static property of a connection.  It is used by 'PrunePolicy'.
 --
+-- Note: the order matters, it can be used by a 'PickPolicy', e.g.
+-- 'simplePickPolicy'.
+--
 data ConnectionType
     -- | An unnegotiated connection.
     --
     = UnnegotiatedConn !Provenance
 
-    -- | An outbound idle connection.
-    --
-    | OutboundIdleConn !DataFlow
-
     -- | An inbound idle connection.
     --
     | InboundIdleConn !DataFlow
+
+    -- | An outbound idle connection.
+    --
+    | OutboundIdleConn !DataFlow
 
     -- | A negotiated connection, which is used in only one direction indicated
     -- by 'Provenance'.  The connection could itself negotiated either 'Duplex'
@@ -238,7 +241,7 @@ data ConnectionType
     -- | A connection which is running in full duplex mode.
     --
     | DuplexConn
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Show)
 
 
 -- $promise

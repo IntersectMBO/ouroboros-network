@@ -12,9 +12,13 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Word (Word32)
 import           System.Random
+import qualified System.Random as Rnd
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.PeerMetric
+import           Ouroboros.Network.InboundGovernor (InboundGovernorObservableState (..))
+import           Ouroboros.Network.ConnectionManager.Types (ConnectionType
+                   (..), Provenance (..), PrunePolicy)
 
 
 -- | Timeout for 'spsDeactivateTimeout'.
@@ -141,3 +145,49 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
     tepidWeight isTepid peer r =
           if isTepid peer then (peer, r `div` 2)
                           else (peer, r)
+
+
+--
+-- PrunePolicy
+--
+
+-- | Sort by upstreamness and a random score.
+--
+-- Note: this 'PrunePolicy' does not depend on 'igsConnections'.  We put
+-- 'igsPrng' in 'InboundGovernorState' only to show that we can have
+-- a 'PrunePolicy' which depends on the 'InboundGovernorState' as a more
+-- refined policy would do.
+--
+-- /complexity:/ \(\mathcal{O}(n\log\;n)\)
+--
+-- TODO: complexity could be improved.
+--
+prunePolicy :: ( MonadSTM m
+               , Ord peerAddr
+               )
+            => StrictTVar m InboundGovernorObservableState
+            -> PrunePolicy peerAddr (STM m)
+prunePolicy stateVar mp n = do
+    state <- readTVar stateVar
+    let (prng', prng'') = Rnd.split (igosPrng state)
+    writeTVar stateVar (state { igosPrng = prng'' })
+
+    return
+      $ Set.fromList
+      . take n
+      . map (fst . fst)
+      -- 'True' values (upstream / outbound connections) will sort last.
+      . sortOn (\((_, connType), score) -> (isUpstream connType, score, connType))
+      . zip (Map.assocs mp)
+      $ (Rnd.randoms prng' :: [Int])
+  where
+    isUpstream :: ConnectionType -> Bool
+    isUpstream = \connType ->
+      case connType of
+        UnnegotiatedConn Outbound -> True
+        UnnegotiatedConn Inbound  -> False
+        OutboundIdleConn _        -> True
+        InboundIdleConn         _ -> False
+        NegotiatedConn Outbound _ -> True
+        NegotiatedConn Inbound  _ -> False
+        DuplexConn                -> True
