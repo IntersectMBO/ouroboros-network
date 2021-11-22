@@ -25,6 +25,7 @@
 \DeclareMathOperator{\dom}{dom}
 \newcommand\restrict[2]{\left.#1\right||_{#2}}
 \newcommand\deltavar[1]{\accentset{\Delta}{#1}}
+\newcommand\eqabove[2]{\begin{array}{c}#1\\=\\#2\end{array}}
 
 \begin{document}
 
@@ -32,10 +33,10 @@
        API design concepts \\
        {\large \sc An IOHK technical report}
   }
-\date{Version 0.4, November 2021}
-\author{Douglas Wilson     \\ {\small \texttt{douglas@@well-typed.com}} \\
-   \and Duncan Coutts      \\ {\small \texttt{duncan@@well-typed.com}} \\
-                              {\small \texttt{duncan.coutts@@iohk.io}}
+\date{Version 0.5, November 2021}
+\author{Duncan Coutts      \\ {\small \texttt{duncan@@well-typed.com}} \\
+                              {\small \texttt{duncan.coutts@@iohk.io}} \\
+   \and Douglas Wilson     \\ {\small \texttt{douglas@@well-typed.com}}
    }
 
 \maketitle
@@ -85,22 +86,22 @@ structures, not persistent as in kept on disk} data structures. It keeps the
 ledger states for the last $k$ blocks of the chain in memory. The consensus
 layer also evaluates speculative ledger states along candidate chains, that may
 be adopted or discarded. Overall, there is not just a single logical ledger
-state in use at once, there are many related ones. There are enormous
+state in use at once -- there are many related ones. There are enormous
 opportunities for sharing between these related ledger states and the use of
-persistent data structures takes full advantage of that such that the cost is
-little more than the cost of a single ledger state. The incremental cost is
+persistent data structures takes full advantage, such that the cost is little
+more than the cost of a single ledger state. The incremental cost is
 proportional to the \emph{differences} between the states.
 
 Having quick and easy access to the ledger states of the last $k$ blocks is not
 a design accident. An important design principle for the Cardano node has been
 to balance the resource use in all interactions between honest nodes and
 potentially dishonest nodes and thus resist DoS attacks. This design principle
-led us to an Ouroboros design that involves efficient access to recent ledger states.
-\cite{fake-stake} describe the consequences of the failure to adopt this design
-principle. They identify a pair of flaws in the design of many other PoS
-blockchain implementations which lead to resource imbalances that can be
-exploited to mount DoS attacks. This was reported in the popular press as the
-so-called `fake stake attack'%
+led us to an Ouroboros design that involves efficient access to recent ledger
+states. \cite{fake-stake} describe the consequences of the failure to adopt
+this design principle. They identify a pair of flaws in the design of many
+other PoS blockchain implementations which lead to resource imbalances that can
+be exploited to mount DoS attacks. This was reported in the popular press as
+the so-called `fake stake attack'%
 \footnote{For example \url{https://www.zdnet.com/article/security-flaws-found-in-26-low-end-cryptocurrencies/}}.
 One of the design flaws involves not having efficient access to recent ledger
 states and consequently postponing block body validation to the last possible
@@ -121,9 +122,13 @@ We will make use of the terminology of databases as well as Cardano blockchain
 terminology. This is potentially confusing since databases involve transactions,
 and transactions are also an important concept in blockchain ledgers.
 
-We will mostly talk about transactions in the database sense. As it turns out
-the processing of transactions in the database sense corresponds to processing
-of whole blocks in the blockchain (and not the transactions within block).
+In this document we will mostly talk about transactions in the database sense.
+As it turns out the processing of transactions in the database sense
+(usually\footnote{For chain validation the database transactions are the ledger
+state transformations arising from blocks, while for mempool validation the
+database transactions are the ledger state transformations arising from new
+blockchain  transactions being added to the mempool}) corresponds to processing
+of whole blocks in the blockchain.
 
 We will take a relatively abstract view of databases. For the most part we will
 consider databases simply as logical values, without any particular implication
@@ -139,9 +144,10 @@ This is exactly the same mathematical perspective we take with functional
 programming: that new values are defined based on old. It is also exactly how
 we define our ledger rules as functions on the ledger state: given an one state
 it yields an updated state (with the old one still available). A database
-perspective on the ledger state would say that the ledger state itself is the
-database and that applying blocks are the transactions on that database state.
-This is the perspective we will take.
+perspective on the blockchain ledger would say that the ledger state itself is
+the database and that the transactions on that database are the ledger state
+transformations arising from extending the chain with additional blocks. This
+is the perspective we will take.
 
 \section{General approach}
 \label{general-approach}
@@ -151,10 +157,10 @@ ledger and consensus layers, particularly their style using pure functions and
 persistent data structures.
 
 The ledger state will be maintained using a partitioned approach with both
-in-memory and on-disk storage. The large mappings will be kept primarily on
+in-memory and on-disk storage. The large key/value mappings will be kept primarily on
 disk, and all other state kept in memory.
 
-We will manipulate the state using pure functions over pure in-memory data
+We will manipulate the state using pure functions over immutable in-memory data
 structures. This relies on two main ideas: reading the data into memory in
 advance, and working with differences of data structures.
 
@@ -498,16 +504,16 @@ on-disk tables.
 \end{center}
 
 Finally, note that for the parts of the ledger state that are kept in memory,
-there does still need to be a mechanism to save and restore the state when the
-node shuts down and restarts. The intention is to use the same approach as the
-consensus layer uses now: writing snapshots to disk from time to time and
-replaying from the most recent snapshot upon start up. Only minor changes to
-this scheme are necessary to account for the on-disk mappings. To achieve a
-consistent snapshot of the overall state it will be necessary to take snapshots
-of the on-disk mappings and of the in-memory data for the exact same state
-(i.e. corresponding to the ledger state of the same chain). If the snapshots
-of the on-disk and in-memory parts were not synchronised it would not be
-possible to replay the subsequent changes upon start-up.
+there does still need to be a mechanism to restore the state when the node
+restarts. The intention is to use the same approach as the consensus layer uses
+now: writing snapshots to disk from time to time and replaying from the most
+recent snapshot upon start up. Only minor changes to this scheme are necessary
+to account for the on-disk mappings. To achieve a consistent snapshot of the
+overall state it will be necessary to take snapshots of the on-disk mappings
+and of the in-memory data for the exact same state (i.e. corresponding to the
+ledger state of the same chain). If the snapshots of the on-disk and in-memory
+parts were not synchronised it would not be possible to replay the subsequent
+changes upon start-up.
 
 \subsection{Access to multiple (logical) ledger states}
 \label{access-to-multiple-logical-ledger-states}
@@ -571,8 +577,8 @@ thereof).
 The design we choose to take is as follows:
 \begin{itemize}
 \item we will keep a single copy of the ledger state (k/v mappings) on disk;
-\item that copy will corresponding to the ledger state at the immutable tip,
-      which is the common point of all other states;
+\item that copy will correspond to the ledger state at the immutable tip, which
+      is the common root point of all other states;
 \item we will represent all other derived ledger states using differences from
       the common state;
 \item all these differences will be maintained in memory.
@@ -588,15 +594,20 @@ Or in diagram form:
   \draw (5.5cm, -25pt) node[align=left, anchor=west, text width=160pt]
         {the large on-disk tables for the ledger state at the immutable chain tip};
 
-  \begin{scope}[yshift=3cm, xshift=40pt]
-  \draw[step=40pt,xshift=-20pt, fill=gray] (0,0) grid (120pt,40pt) rectangle (0,0);
+  \begin{scope}[yshift=3cm, xshift=0pt]
+  \draw[step=40pt,xshift=-20pt, fill=gray] (0,0) grid (160pt,40pt) rectangle (0,0);
   \begin{scope}[xshift=0pt, yshift=20pt]
     \node[circle, draw, fill=white] at (-8pt,-4pt) {};
     \node[circle, draw, fill=white] at ( 5pt, 7pt) {};
     \node[circle, draw, fill=white] at ( 5pt,-7pt) {};
   \end{scope}
-  \draw (40pt,  20pt) node {$\ldots$};
-  \begin{scope}[xshift=80pt, yshift=20pt]
+  \begin{scope}[xshift=40pt, yshift=20pt]
+    \node[circle, draw, fill=white] at (-8pt,-4pt) {};
+    \node[circle, draw, fill=white] at ( 5pt, 7pt) {};
+    \node[circle, draw, fill=white] at ( 5pt,-7pt) {};
+  \end{scope}
+  \draw (80pt,  20pt) node {$\ldots$};
+  \begin{scope}[xshift=120pt, yshift=20pt]
     \node[circle, draw, fill=white] at (-8pt,-4pt) {};
     \node[circle, draw, fill=white] at ( 5pt, 7pt) {};
     \node[circle, draw, fill=white] at ( 5pt,-7pt) {};
@@ -620,15 +631,15 @@ Or in diagram form:
   \end{scope}
   \end{scope}
   \draw (5.5cm, 1cm+20pt) node[align=left, anchor=west, text width=160pt]
-        {the differences to the on-disk tables arising from each block};
+        {the in-memory differences to the on-disk tables arising from each block};
 
   % dividing line and text
   \begin{scope}[text width=70pt, align=left]
   \draw (-4,5) -- (11.5,5);
-  \draw (-2,5.5) node {logical value:};
-  \draw (-2,4.5) node {representation:};
-  \draw (-2,2.5) node {in memory:};
-  \draw (-2,0)   node {on disk:};
+  \draw (-2.2,5.5) node {logical value:};
+  \draw (-2.2,4.5) node {representation:};
+  \draw (-2.2,2.5) node {in memory:};
+  \draw (-2.2,0)   node {on disk:};
   \end{scope}
 
   % logical value
@@ -670,8 +681,8 @@ few GB of memory would be acceptable.
 As discussed in the initial report \citep[sections 6.1 and 8.8]{utxo-db} it is
 expected that ultimately it will be necessary to make use of parallel I/O to
 hit the stretch performance targets. This is because the expectation is that
-disk I/O (rather than network or CPU) would be the bottleneck for very high
-throughput validation of blockchains.
+disk I/O (rather than network or CPU) could well be the bottleneck for very
+high throughput validation of blockchains.
 
 We may not make use of parallelism in an initial implementation but if we are
 to keep open the option to use parallelism later then it is necessary for the
@@ -680,29 +691,35 @@ opportunities for parallelism. Thus we wish to find an interface that allows
 for I/O parallelism.
 
 It is worth keeping in mind how much parallel I/O we need to saturate a modern
-SSD. It is on the order of 32 -- 64 IOPS.
+SSD. It is on the order of 32 -- 64 concurrent I/O operations being performed
+at all times. A useful abstraction is to think of it as a queue of in-progress
+operation where new I/O operations are added at one end and results arrive
+eventually at the other end, and the queue should be kept sufficiently full to
+saturate the SSD's throughput. Due to the high throughput and timing jitter it
+is better to `over-fill' the queue by some amount, e.g. $2\times$. That is, in
+order to ensure the SSD queue `depth' does not drain to below 64, at the
+application level it may be necessary to aim to keep double that number of
+operations in progress. The appropriate amount to use can be tuned based on I/O
+profiling tools, but the overall point is clear: to fully exploit the
+throughput of an SSD we need to keep a substantial number of operations in
+progress at once -- and on a continuous basis.
 
 Since blockchains are mostly linear in nature (being a chain) the opportunities
-for I/O parallelism come from batching and pipelining. In context we can think
-of these opportunities as follows
+for I/O parallelism come from batching and pipelining.
 \begin{description}
 \item[Batching:] This is submitting a batch of I/O operations and waiting and
                 collecting them all. For example we could submit all the I/O
                 reads for a single block in one go.
 
-                A block with 16 transactions with 2 UTxO inputs each would
-                generate 32 read IOPS. So we can see that large blocks could
-                individually temporarily saturate an SSD. Note that with just
-                batching there is no overlapping of computation with I/O, since
-                we wait for the I/O to complete and then use the results.
+                A block with 64 transactions with 2 UTxO inputs each would
+                generate 128 read IOPS. So we can see that large enough blocks
+                could individually temporarily saturate an SSD. Note that with
+                just batching there is no overlapping of computation with I/O,
+                since we wait for the I/O to complete and then use the results.
 
 \item[Pipelining:] This is submitting a (typically) continuous stream of I/O
                 operations in advance of when their results are needed, and
                 collecting each result (usually) in time before it is needed.
-                A useful analogy is a queue where new I/O operations are added
-                at one end and results arrive eventually at the other end, and
-                the queue should be kept sufficiently full to maximise
-                performance.
 
                 For example while we are doing the CPU work to process one
                 block we can have submitted the I/O operations for one or more
@@ -714,20 +731,20 @@ of these opportunities as follows
                 any gaps between blocks when no I/O is being performed.
 \end{description}
 Given this, it is clear that pipelining is superior in terms of achieving
-enough I/O parallelism to saturate an SSD, but is also more complex to arrange.
-The opportunity for batching arises naturally from processing blocks as a unit.
-In practice if pipelining is used, it would be used with batching as a pipeline
-of batches (per block).
+enough I/O parallelism to saturate an SSD, but is also clear that it is more
+complex to arrange. The opportunity for batching arises naturally from
+processing blocks as a unit. In practice if pipelining is used, it would also
+be used with batching, as a pipeline of batches (per block).
 
 For our purposes for this stage of design we simply need to ensure that the
-scheme for disk I/O makes it possible to take advantage of I/O pipelining. It
-is then a design decision for the consensus layer to decide where it is
-practical to take advantage of pipelining. It may only be worth attempting to
-use pipelining for bulk sync situations, and not attempting to use it
-opportunistically such as when switching forks. Using only batching is likely
-to be sufficient for normal operation when the node is already in sync. Indeed
-using batching only may be sufficient for an initial integration that is not
-yet aiming for the higher throughput targets.
+scheme for disk I/O makes it possible to take advantage of I/O pipelining.
+Where it is practical to take advantage of pipelining is then a design decision
+for the consensus layer. It may only be worth attempting to use pipelining for
+bulk sync situations, and not attempting to use it opportunistically such as
+when switching forks. Using only batching is likely to be sufficient for normal
+operation when the node is already in sync. Indeed using only batching may be
+sufficient for an initial integration that is not yet aiming for the higher
+throughput targets.
 
 \section{Notation and properties of differences}
 \label{notation-differences}
@@ -750,7 +767,7 @@ variable naming convention.
 
 We can \emph{apply} a difference to a value to produce a new value: given
 $a \in A$ and $\deltavar{a} \in \Delta{A}$ we can use the apply operator
-$\triangleleft$ to give us $(a \triangleleft \deltavar{a}) \in A$
+$\triangleleft$ to give us $(a \triangleleft \deltavar{a}) \in A$.
 
 The differences $\Delta{A}$ form a monoid with an associative operator
 $\diamond$ and a zero element $\mathbf{0} \in \Delta{A}$. This means we can
@@ -762,14 +779,14 @@ applying changes. The zero change is indeed no change at all
   \forall a \in A. ~~ a \triangleleft \mathbf{0} = a
 \end{equation}
 and applying multiple changes is the same as applying the composition of the
-changes
+changes.
 \begin{equation}
 \label{eq:apply-compose}
   \forall a \in A. ~~ \forall \deltavar{b}, \deltavar{c} \in \Delta{A}. ~~
     (a \triangleleft \deltavar{b}) \triangleleft \deltavar{c}
   = a \triangleleft (\deltavar{b} \diamond \deltavar{c})
 \end{equation}
-We will use the notation $\Diamond\hspace{-3pt}\sum$ for a n-way monoidial sum,
+We will use the notation $\Diamond\hspace{-3pt}\sum$ for a n-way monoidal sum,
 meaning simply repeated use of the associative $\diamond$ operator. An empty
 0-way sum is of course defined as the zero change.
 \[
@@ -780,7 +797,7 @@ We will also talk about functions that transform values, and corresponding
 functions that compute differences. Given a function $f : A \to A$ then a
 difference function $\deltavar{f} : A \to \Delta{A}$ corresponds to the
 original function $f$ if it satisfies the property that applying the change
-gives the same result as the original
+gives the same result as the original.
 \begin{equation}
   a \triangleleft \deltavar{f}(a) = f(a)
 \end{equation}
@@ -800,7 +817,7 @@ reassure ourselves that we will get correct results. There are a few reasons to
 consider these models.
 \begin{description}
 \item[Lucid descriptions]
-There is the usual reason for abstraction that, omitting unnecessary details can
+There is the usual reason for abstraction, that omitting unnecessary details can
 make the ideas easier and shorter to describe.
 
 \item[Imagining implementation strategies]
@@ -823,6 +840,7 @@ makes use of the idea and notation of the calculus of differences from the
 previous section.
 
 \subsection{Simple sequential databases}
+\label{simple-sequential-databases}
 
 This is a very simple model. In this model there is an initial database state
 $\mathit{db}_0 \in \mathit{DB}$ and a series of state transformation functions
@@ -851,15 +869,20 @@ $\mathit{db}_{n+1} = \mathit{tx}_n(\mathit{db}_n)$.
  \mathit{db}_2 & = \mathit{tx}_1(\mathit{db}_1) \\
  \vdots
 \end{align*}
+And in general
+\begin{equation}
+\label{eq:sequential-recurrence}
+\mathit{db}_{i+1} = \mathit{tx}_i(\mathit{db}_i)
+\end{equation}
 \end{center}
 This model serves as an important semantic reference point for the more
 complicated models below. We will want to show that some of our more
 complicated models are semantically equivalent to this simple one.
 
 If we think of this model in terms of what kind of implementation strategy it
-most clearly represents, then it would probably be a simple in-memory design.
-That is a design where the whole database is a simple program value that is
-transformed with pure functions.
+most clearly represents, then it would be a simple in-memory design. That is a
+design where the whole database is a simple program value that is transformed
+with pure functions.
 
 \subsection{Change-based databases}
 \label{change-based-databases}
@@ -869,9 +892,9 @@ In this model we want to introduce two concepts
 \item the use of transaction difference functions and applying differences; and
 \item identifying the subset of values that each transaction needs.
 \end{enumerate}
-It is otherwise just a simple sequence of changes. The use of these two concepts
-makes this a simple but reasonable model of an on-disk database with in-memory
-transaction processing (as introduced in
+It is otherwise just a simple sequence of database values. The use of these two
+concepts makes this a simple but reasonable model of an on-disk database with
+in-memory transaction processing (as introduced in
 \cref{reading-data-into-memory-in-advance,differences-of-data-structures}).
 Using a subset of values corresponds to reading the data in from disk, while
 obtaining and applying differences corresponds to writing changes back to disk.
@@ -887,84 +910,86 @@ db \triangleleft \deltavar{\mathit{tx}}(\mathit{db}) = \mathit{tx}(\mathit{db})
 
 For each transaction we will also identify the subset of the database state that
 the transaction needs. This will typically take the form of a set of keys
-$\mathit{ks} \in \dom{\mathit{DB}}$ (or collection of sets of keys) and
-performing a domain restriction $\restrict{\mathit{db}}{\mathit{ks}} \in \mathit{DB}$.
+$\mathit{ks} \subseteq \dom{\mathit{DB}}$ (or collection of sets of keys) and
+performing a domain restriction $\restrict{\mathit{db}}{\mathit{ks}} \subseteq \mathit{DB}$.
 So there will key sets $\mathit{ks}_0, \mathit{ks}_1, \ldots$ corresponding to
 the transactions $\deltavar{\mathit{tx}}_0, \deltavar{\mathit{tx}}_1, \ldots$.
 We will require that the transaction really does only make use of the subset
 by requiring the property that the transaction function gives the same result
-on the subset as the whole state
+on the subset as on the whole state
 \begin{equation}
-\label{eq:restrict}
-  \deltavar{\mathit{tx}}_i(\restrict{\mathit{db}}{\mathit{ks}_i}) = \deltavar{\mathit{tx}}_i(\mathit{db})
+\label{eq:tx-within-keyset}
+  \deltavar{\mathit{tx}}(\restrict{\mathit{db}}{\mathit{ks}}) = \deltavar{\mathit{tx}}(\mathit{db})
 \end{equation}
-A lemma that will be useful later is that if we have a domain restriction
-`outside' of application of changes then it does not make any difference if we
-also use domain restriction `inside' or not.
-\begin{equation}
-\label{eq:restriction}
-  \restrict{\left(\mathit{db} \triangleleft \deltavar{\mathit{db}}\right)}{\mathit{ks}}
-=
-  \restrict{\left(\restrict{\mathit{db}}{\mathit{ks}} \triangleleft \deltavar{\mathit{db}}\right)}{\mathit{ks}}
-\end{equation}
-This lemma either needs to be proved universally or we will need to make it a
-required property of the apply changes operator for the choice of $\Delta\mathit{DB}$.
-A useful corollary of \cref{eq:restrict} and \cref{eq:restriction} is
-\begin{equation}
-\label{eq:restriction_corollary}
-  \deltavar{\mathit{tx}}_i\left(\restrict{\left(\mathit{db} \triangleleft \deltavar{\mathit{db}}\right)}{\mathit{ks}}\right)
-=
-  \deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}}{\mathit{ks}} \triangleleft \deltavar{\mathit{db}}\right)
-\end{equation}
-
-
+The domain restriction on the database value corresponds to reading a set of
+keys $\mathit{ks}$ from the database, and we call the result a \emph{read set}.
+We will define each read set
+$\mathit{rs}_i = \restrict{\mathit{db}_i}{\mathit{ks}_i}$
+and the changes from each transaction
+$\deltavar{\mathit{db}}_{i+1} = \deltavar{\mathit{tx}}_i(\mathit{rs}_i)$.
 We can now construct the series of database states
-$\mathit{db}_0, \mathit{db}_1, \ldots$
-by applying the changes from each transaction to the previous database state.
-
+$\mathit{db}_0, \mathit{db}_1, \ldots$ by applying the changes from each
+transaction to the previous database state.
 \begin{center}
-\begin{tikzpicture}[state/.style={rectangle, draw}]
-\begin{scope}[thick, minimum width=40pt, minimum height=40pt]
-  \node[state]   (db0)                      {$\mathit{db}_0$};
-  \node[state]   (db1) [right=2.0cm of db0] {$\mathit{db}_1$};
-  \node[state]   (db2) [right=2.0cm of db1] {$\mathit{db}_2$};
-  \node[state]   (db3) [right=2.0cm of db2] {$\mathit{db}_3$};
-  \node                [right=0.5cm of db3] {$\ldots$};
+\begin{tikzpicture}
+\begin{scope}[thick, rectangle, minimum width=50pt, minimum height=50pt]
+  \node[draw] (db0)           {$\mathit{db}_0$};
+  \node[draw] (db1) at (5,0)  {$\eqabove{\mathit{db}_1}{\mathit{db}_0 \triangleleft \deltavar{\mathit{db}}_1}$};
+  \node[draw] (db2) at (10,0) {$\eqabove{\mathit{db}_2}{\mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_2}$};
+  \node[right=0.5cm of db2] {$\ldots$};
 
-  \path[->] (db0) edge [bend right] node[below] {$\deltavar{\mathit{tx}}_0$, $\mathit{ks}_0$} (db1);
-  \path[->] (db1) edge [bend right] node[below] {$\deltavar{\mathit{tx}}_1$, $\mathit{ks}_1$} (db2);
-  \path[->] (db2) edge [bend right] node[below] {$\deltavar{\mathit{tx}}_2$, $\mathit{ks}_2$} (db3);
+  % read sets and transaction differences
+  \node[ellipse, draw, inner sep=-3pt] (rs0) at (2.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_0 & \restrict{\mathit{db}_0}{\mathit{ks}_0} \\
+           \deltavar{\mathit{db}}_1 & \deltavar{\mathit{tx}}_0(\mathit{rs}_0)
+         \end{array}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs1) at (7.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_1 & \restrict{\mathit{db}_1}{\mathit{ks}_1} \\
+           \deltavar{\mathit{db}}_2 & \deltavar{\mathit{tx}}_1(\mathit{rs}_1)
+         \end{array}$};
+
+  \path[->] (db0) edge [bend right] node[right=-0.4] {$\mathit{ks}_0$} (rs0);
+  \path[->] (db1) edge [bend right] node[right=-0.4] {$\mathit{ks}_1$} (rs1);
+
+  \path[->] (rs0) edge [bend right] (db1);
+  \path[->] (rs1) edge [bend right] (db2);
+
+  \path[->] (db0) edge [bend right=20] (db1);
+  \path[->] (db1) edge [bend right=20] (db2);
 \end{scope}
 \end{tikzpicture}
-\begin{align*}
- \mathit{db}_1 & = \mathit{db}_0 \triangleleft \deltavar{\mathit{tx}}_0(\restrict{\mathit{db}_0}{\mathit{ks}_0}) \\
- \mathit{db}_2 & = \mathit{db}_1 \triangleleft \deltavar{\mathit{tx}}_1(\restrict{\mathit{db}_1}{\mathit{ks}_1}) \\
+\begin{equation*}
+\begin{array}{c@@{~}l@@{\quad}l@@{\quad}l}
+ \mathit{db}_1 & = \mathit{db}_0 \triangleleft \deltavar{\mathit{db}}_1
+               & \mathbf{where} \quad \deltavar{\mathit{db}}_1 = \deltavar{\mathit{tx}}_0(\mathit{rs}_0)
+               & \mathbf{and} \quad \mathit{rs}_0 = \restrict{\mathit{db}_0}{\mathit{ks}_0} \\
+ \mathit{db}_2 & = \mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_2
+               & \mathbf{where} \quad \deltavar{\mathit{db}}_2 = \deltavar{\mathit{tx}}_1(\mathit{rs}_1)
+               & \mathbf{and} \quad \mathit{rs}_1 = \restrict{\mathit{db}_1}{\mathit{ks}_1}
+\\
  \vdots
-\end{align*}
+\end{array}
+\end{equation*}
 \end{center}
 It is straightforward to see how this is equivalent to the simple model.
 \begin{align*}
        & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{tx}}_i(\restrict{\mathit{db}_i}{\mathit{ks}_i}) \\
-\equiv & \quad \text{\{by the restriction property \cref{eq:restrict} that
+\equiv & \quad \text{\{by the restriction property \cref{eq:tx-within-keyset} that
                      $\deltavar{\mathit{tx}}_i(\restrict{\mathit{db}}{\mathit{ks}_i}) = \deltavar{\mathit{tx}}_i(\mathit{db})$\}} \\
        & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{tx}}_i(\mathit{db}_i) \\
 \equiv & \quad \text{\{by the difference function property \cref{eq:diff-fun} that
                      $db \triangleleft \deltavar{\mathit{tx}}(\mathit{db}) = \mathit{tx}(\mathit{db})$\}} \\
        & \mathit{db}_{i+1} = \mathit{tx}_i(\mathit{db}_i)
 \end{align*}
-And hence, just as in the simple model, it is the case that
-\begin{align*}
- \mathit{db}_1 & = \mathit{tx}_0(\mathit{db}_0) \\
- \mathit{db}_2 & = \mathit{tx}_1(\mathit{db}_1) \\
- \vdots
-\end{align*}
-
+Which is the same as \cref{eq:sequential-recurrence}: the recurrence for the simple model.
 
 \subsection{Hybrid on-disk / in-memory databases}
 \label{sec:hybrid-on-disk-in-memory-db}
 
 This model covers the bare essence of the idea from
-\cref{access-to-multiple-logical-ledger-states}; that is, representing the
+\cref{access-to-multiple-logical-ledger-states}: that is, representing the
 ledger state as the combination of data on disk and differences in-memory. This
 model is just about representing a \emph{single} ledger state, we will look at
 representing \emph{multiple} states later (in \cref{multiple-logical-database-states}).
@@ -1009,6 +1034,31 @@ representation.
 \end{scope}
 \end{tikzpicture}
 \end{center}
+
+There are a couple lemmas that will prove useful later when reasoning about
+this representation. One is that if we have a domain restriction `outside' of
+the application of changes then it does not make any difference if we also use
+domain restriction `inside' or not.
+\begin{equation}
+\label{eq:restriction}
+  \restrict{\left(\mathit{db}_a \triangleleft \deltavar{\mathit{db}}_b\right)}{\mathit{ks}}
+=
+  \restrict{\left(\restrict{\mathit{db}_a}{\mathit{ks}} \triangleleft \deltavar{\mathit{db}}_b\right)}{\mathit{ks}}
+\end{equation}
+This lemma either needs to be proved universally or we will need to make it a
+required property of the apply changes operator for the choice of $\Delta\mathit{DB}$.
+
+The other useful lemma is a simple corollary of \cref{eq:tx-within-keyset} and
+\cref{eq:restriction}
+\begin{equation}
+\label{eq:restriction_corollary}
+  \deltavar{\mathit{tx}}\left(\restrict{\left(\mathit{db}_a \triangleleft \deltavar{\mathit{db}}_b\right)}{\mathit{ks}}\right)
+=
+  \deltavar{\mathit{tx}}\left(\restrict{\mathit{db}_a}{\mathit{ks}} \triangleleft \deltavar{\mathit{db}}_b\right)
+\end{equation}
+This lets us `shift' a domain restriction from outside to inside the application
+of changes, within the context of a `proper' transaction function
+$\deltavar{\mathit{tx}}$ that obeys \cref{eq:tx-within-keyset}.
 
 \subsubsection{Performing transactions}
 \label{performing-transactions}
@@ -1101,9 +1151,10 @@ least) two sets of changes.
 This will be a typical situation since, as we saw above, applying each
 transaction gives an extra composition of changes. The idea is that the first
 part will be flushed to disk and the second part will remain in memory. We have
-a lot of choice here. We can split this in any way we like, in partial at any
-boundary between changes from transactions. We could choose to flush everything
-to disk for example, by picking $\deltavar{\mathit{db}}^{\mathrm{mem}}_b = \mathbf{0}$,
+a lot of choice here. We can split this in any way we like, in particular at
+any boundary between changes from transactions. We could choose to flush
+everything to disk for example, by picking
+$\deltavar{\mathit{db}}^{\mathrm{mem}}_b = \mathbf{0}$,
 but we can also choose to flush just a prefix of changes.
 
 Doing the flush is another straightforward application of
@@ -1167,13 +1218,12 @@ representation. We said above (in \cref{performing-transactions}) that
 \[
 \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}_i}{\mathit{ks}_i}\right)
 \]
-but we glossed over how we obtain $\restrict{\mathit{db}_i}{\mathit{ks}_i}$.
-The domain restriction on the database value corresponds to reading a set of
-keys $\mathit{ks}_i$ from the database, and we call it a \emph{read set}. In
-the context of the hybrid in-memory / on-disk database representation we are
-interested in how this corresponds to operations involving the on-disk and
-in-memory parts. So let us look at the read set in the context of using it with
-the transaction function and rewrite it into a more useful form
+but we glossed over how we obtain the read set
+$\restrict{\mathit{db}_i}{\mathit{ks}_i}$. In the context of the hybrid
+in-memory / on-disk database representation we are interested in how this
+corresponds to operations involving the on-disk and in-memory parts. So let us
+look at the read set in the context of using it with the transaction function
+and rewrite it into a more useful form
 \begin{align*}
        & \deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}_i}{\mathit{ks}_i}\right)
 \\
@@ -1194,6 +1244,33 @@ apply \cref{eq:restriction_corollary}. The intuition is that pushing the
 domain restriction inside of applying the in-memory changes could increase the
 size of the read set, but the transaction is guaranteed not to look at anything
 outside the $\mathit{ks}_i$ subset.
+
+\begin{center}
+\begin{tikzpicture}
+\begin{scope}[thick, minimum width=40pt, minimum height=40pt]
+
+  % disk icon
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt] (disk)
+        at (0,-2cm) {};
+  \draw (0, -2cm) node {$\mathit{db}^{\mathrm{disk}}_i$};
+
+  % in memory
+  \node[rectangle, draw] (mem) at (0,1.5) {$\deltavar{\mathit{db}}^{\mathrm{mem}}_i$};
+
+  % reads
+  \node[ellipse, draw, inner sep=-3pt] (read) at (1.5,0)
+       {$\restrict{\mathit{db}^{\mathrm{disk}}_i}{\mathit{ks}_i}$};
+  \node[ellipse, draw, inner sep=-10pt] (readset) at (1.5,3)
+       {$\restrict{\mathit{db}^{\mathrm{disk}}_i}{\mathit{ks}_i}
+         \triangleleft \deltavar{\mathit{db}}^{\mathrm{mem}}_i$};
+
+  \draw[->] (disk) edge [bend right] (read);
+  \draw[->] (read) edge              (readset);
+  \draw[->] (mem)  edge[bend right]  (readset);
+
+\end{scope}
+\end{tikzpicture}
+\end{center}
 
 Overall we see that we can perform reads on the hybrid representation simply
 by performing the reads on the on-disk part and then applying the in-memory
@@ -1251,11 +1328,11 @@ logical database values.
 \end{scope}
 \end{tikzpicture}
 \end{center}
-As depicted in the diagram above, the representation consists of a single disk
+As depicted above, the representation consists of a single disk
 state and a series of in-memory differences. Each difference is the individual
 difference from performing a transaction. That is, we keep each difference and
 do not compose them together prematurely. Then each logical database value is
-the value of the on-disk state with the monoidial composition of the appropriate
+the value of the on-disk state with the monoidal composition of the appropriate
 changes applied on top. That is, for the k\textsuperscript{th} database value
 beyond the on disk state we have
 \[
@@ -1263,28 +1340,33 @@ beyond the on disk state we have
 = \mathit{db}^{\mathrm{disk}}_i \triangleleft ~
             \displaystyle\Diamond\hspace{-4pt}\sum_{j=0}^k{\deltavar{\mathit{db}}^{\mathrm{mem}}_{i+j}}
 \]
+which of course for the zero case is simply
+\[
+\mathit{db}_{i+0}
+= \mathit{db}^{\mathrm{disk}}_i
+\]
 Although we are interested in the compositions of differences we must keep the
 individual differences. The reason is that when we do flush changes to disk we
-need to discard the oldest in-memory differences which entails computing new
-monoidial compositions of the remaining differences.
+need to discard the oldest in-memory differences, which entails computing new
+monoidal compositions of the remaining differences.
 
-One interesting implementation idea to manage both a sequence of K differences
-and also the efficient monoidial composition of them is to use a \emph{finger
+One interesting implementation idea to manage both a sequence of $k$ differences
+and also the efficient monoidal composition of them is to use a \emph{finger
 tree} data structure \citep{fingertree}. A finger tree is parametrised over a
-monoidal measure. The choice in this case would be both the length and the
-differences. The length is the usual measure to support splitting at indexes.
-We would rely on splitting to obtain the sub-sequence of differences for
+monoidal measure of subsequences. The choice of measure for a subsequences in
+this case would be the range of slot numbers and also the composition of the
+differences . The slot number range is to support splitting at slot numbers. We
+would rely on splitting to obtain the sub-sequence of differences for
 evaluating a chain fork that starts from a recent point on the chain. The other
 part of the measure -- the differences -- would mean that the measure of any
 sequence or sub-sequence would be the overall monoidal composition of all the
 differences in that (sub-)sequence. The finger tree data structure takes care
 of efficiently caching the intermediate monoid measure values. Finger trees are
-already used extensively within the consensus implementation -- including with
-measures other than simply length.
+already used extensively within the consensus implementation.
 
 There's a few operations we need to be able to perform in this setting
 \begin{enumerate}
-\item Perform reads of sets of keys and `fast forward' the resulting read set
+\item Perform reads of sets of keys and `forward' the resulting read set
       using the accumulated sequence of differences.
 \item Replace any suffix of the sequence of logical database values. This
       corresponds to switching to a fork. The replacement sub-sequence can
@@ -1315,11 +1397,11 @@ on the operations we have identified here.
 Here is where things start to get interesting and tricky. As discussed in
 \cref{enabling-pipelining} we wish to pipeline reads from disk to provide the
 opportunity to use parallel I/O. Providing this opportunity is not something
-that we can hide, and it will have to be explicit in how we manage the logical
-state of the database. So the purpose of this model is to provide a reasonable
-correspond to an implementation that could use pipelined reads. We will also
-want to show that it is nevertheless mathematically equivalent to the simple
-model.
+that we can hide away in some low-level I/O layer: it will have to be explicit
+in how we manage the logical state of the database. So the purpose of this
+model is to provide a reasonable correspond to an implementation that could use
+pipelined reads. We will also want to show that it is nevertheless
+mathematically equivalent to the simple model.
 
 The goal with the pipelining of I/O reads is to initiate the I/O operations
 early so the results are already available in memory by the time they are
@@ -1327,129 +1409,216 @@ needed later. This allows the I/O to be overlapped with computation, and it
 also allows a substantial number of I/O operations to be in progress at once,
 which is what provides the opportunity to use parallel I/O.
 
-The difficulty however is that initiating the reads early means that the state
-of the database in which we initiated the reads is not necessarily the same
-state as the one in which we use the read results to perform a transaction.
-In the diagram below we see an example where a read of key set $\mathit{ks}_1$
-is performed against database state $\mathit{db}_0$ to give us a read set
-$\mathit{rs}_1 = \restrict{\mathit{db}_0}{\mathit{ks}_1}$. The transaction
-$\deltavar{\mathit{tx}}_1$ using this read set $\mathit{rs}_1$ is being applied
-starting from database state $\mathit{db}_1$ which is \emph{not} the same as
-the database state $\mathit{db}_0$ the read was performed against. Any updates
-applied in $\mathit{db}_1$ that might affect $\mathit{rs}_1$ would be lost and
-we would get the wrong result.
+Recall the sequential pattern from \cref{change-based-databases} where the
+reads and transactions are based on the immediately preceding database value.
 \begin{center}
-\begin{tikzpicture}[state/.style={rectangle, draw=black}]
-\begin{scope}[thick, minimum height=40pt, minimum width=40pt]
-  \node[state]   (db0)                      {$\mathit{db}_0$};
-  \node[state]   (db1) [right=1.8cm of db0] {$\mathit{db}_1$};
-  \node[state]   (db2) [right=1.8cm of db1] {$\mathit{db}_2$};
+\begin{tikzpicture}
+\begin{scope}[thick, rectangle, minimum width=50pt, minimum height=50pt]
+  \node[draw] (db0)           {$\mathit{db}_0$};
+  \node[draw] (db1) at (5,0)  {$\eqabove{\mathit{db}_1}{\mathit{db}_0 \triangleleft \deltavar{\mathit{db}}_1}$};
+  \node[draw] (db2) at (10,0) {$\eqabove{\mathit{db}_2}{\mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_2}$};
+  \node[right=0.5cm of db2] {$\ldots$};
 
-  \node[state]   (rs1) [above=1.0cm of db0] {$\mathit{rs}_1$};
+  % read sets and transaction differences
+  \node[ellipse, draw, inner sep=-3pt] (rs0) at (2.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_0 & \restrict{\mathit{db}_0}{\mathit{ks}_0} \\
+           \deltavar{\mathit{db}}_1 & \deltavar{\mathit{tx}}_0(\mathit{rs}_0)
+         \end{array}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs1) at (7.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_1 & \restrict{\mathit{db}_1}{\mathit{ks}_1} \\
+           \deltavar{\mathit{db}}_2 & \deltavar{\mathit{tx}}_1(\mathit{rs}_1)
+         \end{array}$};
 
-  \path[->] (db0) edge [bend left] node[left] {$\mathit{ks}_1$} (rs1);
+  \path[->] (db0) edge [bend right] node[right=-0.4] {$\mathit{ks}_0$} (rs0);
+  \path[->] (db1) edge [bend right] node[right=-0.4] {$\mathit{ks}_1$} (rs1);
 
-  \path[->] (rs1) edge [bend left=20] node[right=0.2cm] {using read from wrong state?} (db2);
+  \path[->] (rs0) edge [bend right] (db1);
+  \path[->] (rs1) edge [bend right] (db2);
 
-  \path[->] (db0) edge [bend right] node[above] {} (db1);
-  \path[->] (db1) edge [bend right] node[above] {$\deltavar{\mathit{tx}}_1$} (db2);
+  \path[->] (db0) edge [bend right=20] (db1);
+  \path[->] (db1) edge [bend right=20] (db2);
 \end{scope}
 \end{tikzpicture}
 \end{center}
-Contrast this with the model in the previous section. That model uses `reads'
-from the database (modelled as $\restrict{\mathit{db}_i}{\mathit{ks}_i}$) but
-the reads are done from the same database state as the transaction itself.
-
-Apparently with pipelining we no longer have straightforwardly sequential state
-updates. Of course pipelining is only acceptable if can find some way to make
-it semantically equivalent to the sequential version.
-
+The difficulty with initiating the reads early is that the state of the
+database in which we initiated the reads is not the same state as the one in
+which we use the read results to perform a transaction. For example if we
+na\"ively started the reads for $\mathit{ks}_1$ from $\mathit{db}_0$, expecting
+to use it later with $\deltavar{\mathit{tx}}_1$, then any updates applied by
+$\deltavar{\mathit{tx}}_0$ in $\mathit{db}_1$ that might affect the read set
+would be lost and we would get the wrong result.
 \begin{center}
-\begin{tikzpicture}[state/.style={rectangle, draw=black}]
-\begin{scope}[thick, minimum height=40pt, minimum width=40pt]
-  \node[state]   (db0)                      {$\mathit{db}_0$};
-  \node[state]   (db1) [right=1.8cm of db0] {$\mathit{db}_1$};
-  \node[state]   (db2) [right=1.8cm of db1] {$\mathit{db}_2$};
+\begin{tikzpicture}
+\begin{scope}[thick, rectangle, minimum width=50pt, minimum height=50pt]
+  \node[draw] (db0)           {$\mathit{db}_0$};
+  \node[draw] (db1) at (5,0)  {$\mathit{db}_1$};
+  \node[draw] (db2) at (10,0) {$\eqabove{\mathit{db}_2}{\mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_2}$};
+  \node[right=0.5cm of db2] {$\ldots$};
 
-  \node[state]   (rs1) [above=1.0cm of db0] {$\mathit{rs}_1$};
+  % read sets and transaction differences
+  \node[ellipse, draw, inner sep=-3pt] (rs1) at (7.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_1 & \restrict{\mathit{db}_0}{\mathit{ks}_1} \\
+           \deltavar{\mathit{db}}_2 & \deltavar{\mathit{tx}}_1(\mathit{rs}_1)
+         \end{array}$};
 
-  \path[->] (db0) edge [bend left] node[left] {$\mathit{ks}_1$} (rs1);
+  \path[->] (db0) edge [bend left=15] node[below=-0.2] {$\mathit{ks}_1$} (rs1);
+  \node[above=1.5cm of db0, anchor=west, text width=4.5cm]
+       {Na\"ively using a read set from the \emph{wrong} state};
 
-  \path[->] (rs1) edge [bend left=20] node[right=0.2cm] {adjust $\mathit{rs}_1$ as-if performed against $\mathit{db}_1$} (db2);
-
-  \path[->] (db0) edge [bend right] node[above] {} (db1);
-  \path[->] (db1) edge [bend right] node[above] {$\deltavar{\mathit{tx}}_1$} (db2);
+  \path[->] (rs1) edge [bend right] (db2);
+  \path[->] (db0) edge [bend right=20] (db1);
+  \path[->] (db1) edge [bend right=20] (db2);
 \end{scope}
 \end{tikzpicture}
 \end{center}
-The trick to restoring equivalence to the sequential version is to adjust the
-result of the reads so that it is as if they had been performed against the
-right state of the database.
+Of course pipelining is only acceptable if can find some way to make it
+semantically equivalent to the sequential version. The trick to do so is to
+adjust the result of the reads so that it is \emph{as if} they had been
+performed against the right state of the database.
 
-We observed before that the problem was that any updates applied in
-$\mathit{db}_1$ that might affect $\mathit{rs}_1$ would be lost. Since we are
-working with differences we of course know \emph{exactly} what changes were
-applied to $\mathit{db}_1$. We can apply those same changes to the read set
-$\mathit{rs}_1$. In the example above those changes are exactly the ones
-performed by the previous transaction $\deltavar{\mathit{tx}}_0$.
-
-More generally the changes we want to apply are all those that occurred between
-the state against which the read was performed and the state in which the
-transaction using the read results is to be applied. Thus in our designs we
-will have to carefully track and apply the changes from where a read was
-initiated to where it is used.
-
-If we can do so successfully however it seems clear that we can obtain a
-arbitrary depths of pipelining, at the memory cost of tracking the intervening
-changes. In the diagram below we illustrate a series of transactions using
-pipelined reads with a fixed depth of one.
+Notice in the sequential example above that $\mathit{db}_1$ is $\mathit{db}_0$
+with some changes applied, and a read set from $\mathit{db}_0$ is simply a
+subset of $\mathit{db}_0$, so if we apply the same changes to the read set then
+that should be the same as if we had performed the read from $\mathit{db}_1$ in
+the first place. In pictorial form it would look like the following, with the
+reads of $\mathit{ks}_1$, intended to be used with $\deltavar{\mathit{tx}}_1$,
+being started against $\mathit{db}_0$, and then later adjusted by applying the
+changes from $\deltavar{\mathit{tx}}_0$.
 \begin{center}
-\begin{tikzpicture}[state/.style={rectangle, draw=black}]
-\begin{scope}[thick, minimum height=30pt, minimum width=30pt]
-  \node[state]   (db0)                      {$\mathit{db}_0$};
-  \node[state]   (db1) [right=1.8cm of db0] {$\mathit{db}_1$};
-  \node[state]   (db2) [right=1.8cm of db1] {$\mathit{db}_2$};
-  \node[state]   (db3) [right=1.8cm of db2] {$\mathit{db}_3$};
-  \node[state]   (db4) [right=1.8cm of db3] {$\mathit{db}_4$};
-  \node                [right=0.5cm of db4] {$\ldots$};
+\begin{tikzpicture}
+\begin{scope}[thick, rectangle, minimum width=50pt, minimum height=50pt]
+  \node[draw] (db0) {$\mathit{db}_0$};
+  \node[draw] (db1) at (5cm,0)
+       {$\eqabove{\mathit{db}_1}
+                 {\mathit{db}_0 \triangleleft \deltavar{\mathit{db}}_1}$};
+  \node[draw] (db2) at (10cm,0)
+       {$\eqabove{\mathit{db}_2}
+                 {\mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_2}$};
+  \node[right=0.5cm of db2] {$\ldots$};
 
-  \node[state]   (rs0) [above=0.7cm of db0] {$\mathit{rs}_0$};
-  \node[state]   (rs1) [above=2.0cm of db0] {$\mathit{rs}_1$};
-  \node[state]   (rs2) [above=2.0cm of db1] {$\mathit{rs}_2$};
-  \node[state]   (rs3) [above=2.0cm of db2] {$\mathit{rs}_3$};
-  \node[state]   (rs4) [above=2.0cm of db3] {$\mathit{rs}_4$};
-  \node                [right=0.5cm of rs4] {$\ldots$};
+  % read sets and transaction differences
+  \node[ellipse, draw, inner sep=-3pt] (rs0) at (2.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_0 & \mathit{rs}^{@@0}_{0} \\
+           \deltavar{\mathit{db}}_1 & \deltavar{\mathit{tx}}_0(\mathit{rs}_0)
+         \end{array}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs1) at (7.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_1 & \mathit{rs}^{@@0}_{1} \triangleleft \deltavar{\mathit{db}}_1 \\
+           \deltavar{\mathit{db}}_2 & \deltavar{\mathit{tx}}_1(\mathit{rs}_1)
+         \end{array}$};
 
-  \path[->] (db0) edge [bend left=45]  node[left]               {$\mathit{ks}_0$} (rs0);
-  \path[->] (db0) edge [bend right=45] node[above right=-0.1cm] {$\mathit{ks}_1$} (rs1);
-  \path[->] (db1) edge [bend left]     node[below left =-0.1cm] {$\mathit{ks}_2$} (rs2);
-  \path[->] (db2) edge [bend left]     node[left       =-0.1cm] {$\mathit{ks}_3$} (rs3);
-  \path[->] (db3) edge [bend left]     node[left       =-0.1cm] {$\mathit{ks}_4$} (rs4);
+  \node[ellipse, draw, inner sep=-3pt] (rs0_0) at (-0.8, 4cm)
+       {$\mathit{rs}^{@@0}_{0} = \restrict{\mathit{db}_0}{\mathit{ks}_0}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs1_0) at (2.5, 4cm)
+       {$\mathit{rs}^{@@0}_{1} = \restrict{\mathit{db}_0}{\mathit{ks}_1}$};
 
-  \path[->] (rs0) edge [bend right=10] node[below right=0.1cm] {$$} (db1);
-  \path[->] (rs1) edge [bend left=15]  node[below right=0.1cm] {$$} (db2);
-  \path[->] (rs2) edge [bend left=15]  node[below right=0.1cm] {$$} (db3);
-  \path[->] (rs3) edge [bend left=15]  node[below right=0.1cm] {$$} (db4);
 
-  \path[->] (db0) edge [bend right] node[below] {$\_ \triangleleft \deltavar{\mathit{tx}}_0(\ldots)$} (db1);
-  \path[->] (db1) edge [bend right] node[below] {$\_ \triangleleft \deltavar{\mathit{tx}}_1(\ldots)$} (db2);
-  \path[->] (db2) edge [bend right] node[below] {$\_ \triangleleft \deltavar{\mathit{tx}}_2(\ldots)$} (db3);
-  \path[->] (db3) edge [bend right] node[below] {$\_ \triangleleft \deltavar{\mathit{tx}}_3(\ldots)$} (db4);
+  \path[->] (db0) edge [bend left] node[right=-0.5] {$\mathit{ks}_0$} (rs0_0);
+  \path[->] (db0) edge [bend left] node[left=-0.5]  {$\mathit{ks}_1$} (rs1_0);
+
+  \path[->] (rs0) edge [bend right] (db1);
+  \path[->] (rs1) edge [bend right] (db2);
+
+  \path[->] (rs0_0) edge [bend left=10] (rs0);
+  \path[->] (rs1_0) edge [bend left=20]
+                    node [above right=0.2, anchor=west]
+                    {adjusted so as-if read against $\mathit{db}_1$}
+            (rs1);
+  \path[->] (rs0)   edge [bend left=30] (rs1);
+
+  \path[->] (db0) edge [bend right=20] (db1);
+  \path[->] (db1) edge [bend right=20] (db2);
 \end{scope}
 \end{tikzpicture}
+\end{center}
+We can now extend this example so that after the initial step (where we
+perform two reads from $\mathit{db}_0$ to get things going) we then always
+initiate a read to be used by the next-but-one transaction. This gives us
+pipelining of depth one. This pattern could be extended indefinitely, and
+greater (or variable) depth pipelining could be used.
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+\begin{scope}[thick, rectangle, minimum width=50pt, minimum height=50pt]
+  \node[draw] (db0) {$\mathit{db}_0$};
+  \node[draw] (db1) at (5cm,0)
+       {$\eqabove{\mathit{db}_1}
+                 {\mathit{db}_0 \triangleleft \deltavar{\mathit{db}}_1}$};
+  \node[draw] (db2) at (10cm,0)
+       {$\eqabove{\mathit{db}_2}
+                 {\mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_2}$};
+  \node[draw] (db3) at (15cm,0)
+       {$\eqabove{\mathit{db}_3}
+                 {\mathit{db}_2 \triangleleft \deltavar{\mathit{db}}_3}$};
+
+  % read sets and transaction differences
+  \node[ellipse, draw, inner sep=-3pt] (rs0) at (2.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_0 & \mathit{rs}^{@@0}_{0} \\
+           \deltavar{\mathit{db}}_1 & \deltavar{\mathit{tx}}_0(\mathit{rs}_0)
+         \end{array}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs1) at (7.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_1 & \mathit{rs}^{@@1}_{2} \triangleleft \deltavar{\mathit{db}}_1 \\
+           \deltavar{\mathit{db}}_2 & \deltavar{\mathit{tx}}_1(\mathit{rs}_1)
+         \end{array}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs2) at (12.5cm, 2cm)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_2 & \mathit{rs}^{@@0}_{1} \triangleleft \deltavar{\mathit{db}}_2 \\
+           \deltavar{\mathit{db}}_3 & \deltavar{\mathit{tx}}_2(\mathit{rs}_2)
+         \end{array}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs0_0) at (-0.8, 4cm)
+       {$\mathit{rs}^{@@0}_{0} = \restrict{\mathit{db}_0}{\mathit{ks}_0}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs1_0) at (2.5, 4cm)
+       {$\mathit{rs}^{@@0}_{1} = \restrict{\mathit{db}_0}{\mathit{ks}_1}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs2_1) at (7.5, 4cm)
+       {$\mathit{rs}^{@@1}_{2} = \restrict{\mathit{db}_1}{\mathit{ks}_2}$};
+  \node[ellipse, draw, inner sep=-3pt] (rs3_2) at (12.5, 4cm)
+       {$\mathit{rs}^{@@2}_{3} = \restrict{\mathit{db}_2}{\mathit{ks}_3}$};
+  \node[right=0.5cm of rs3_2] {$\ldots$};
+
+  \path[->] (db0) edge [bend left] node[right=-0.5] {$\mathit{ks}_0$} (rs0_0);
+  \path[->] (db0) edge [bend left] node[left=-0.5]  {$\mathit{ks}_1$} (rs1_0);
+  \path[->] (db1) edge [bend left] node[left=-0.5]  {$\mathit{ks}_2$} (rs2_1);
+  \path[->] (db2) edge [bend left] node[left=-0.5]  {$\mathit{ks}_3$} (rs3_2);
+
+  \path[->] (rs0) edge [bend right] (db1);
+  \path[->] (rs1) edge [bend right] (db2);
+  \path[->] (rs2) edge [bend right] (db3);
+
+  \path[->] (rs0_0) edge [bend left=10] (rs0);
+  \path[->] (rs1_0) edge [bend left=20] (rs1);
+  \path[->] (rs2_1) edge [bend left=20] (rs2);
+
+  \path[->] (rs0)   edge [bend left=30] (rs1);
+  \path[->] (rs1)   edge [bend left=30] (rs2);
+
+  \path[->] (db0) edge [bend right=20] (db1);
+  \path[->] (db1) edge [bend right=20] (db2);
+  \path[->] (db2) edge [bend right=20] (db3);
+\end{scope}
+\end{tikzpicture}
+}
 \begin{equation*}
-\begin{array}{c@@{\quad}l@@{\quad}l}
-    \mathit{db}_1 = \mathit{db}_0 \triangleleft \deltavar{\mathit{db}}_0
-  & \mathbf{where} \quad \deltavar{\mathit{db}}_0 = \deltavar{\mathit{tx}}_0(\mathit{rs}_0)
-  & \mathbf{and}   \quad \mathit{rs}_0 = \restrict{\mathit{db}_0}{\mathit{ks}_0}
+\begin{array}{c@@{\quad}l@@{\quad}l@@{\quad}l}
+    \mathit{db}_1 = \mathit{db}_0 \triangleleft \deltavar{\mathit{db}}_1
+  & \mathbf{where} \quad \deltavar{\mathit{db}}_1 = \deltavar{\mathit{tx}}_0(\mathit{rs}_0)
+  & \mathbf{and}   \quad \mathit{rs}_0 = \mathit{rs}^{@@0}_0
+  & \mathbf{and}   \quad \mathit{rs}^{@@0}_0 = \restrict{\mathit{db}_0}{\mathit{ks}_0}
 \\
-    \mathit{db}_2 = \mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_1
-  & \mathbf{where} \quad \deltavar{\mathit{db}}_1 = \deltavar{\mathit{tx}}_1\left(\restrict{(\mathit{rs}_1 \triangleleft \deltavar{\mathit{db}}_0)}{\mathit{ks}_1}\right)
-  & \mathbf{and}   \quad \mathit{rs}_1 = \restrict{\mathit{db}_0}{\mathit{ks}_1}
+    \mathit{db}_2 = \mathit{db}_1 \triangleleft \deltavar{\mathit{db}}_2
+  & \mathbf{where} \quad \deltavar{\mathit{db}}_2 = \deltavar{\mathit{tx}}_1(\mathit{rs}_1)
+  & \mathbf{and}   \quad \mathit{rs}_1 = \mathit{rs}^{@@0}_1 \triangleleft \deltavar{\mathit{db}}_1
+  & \mathbf{and}   \quad \mathit{rs}^{@@0}_1 = \restrict{\mathit{db}_0}{\mathit{ks}_1}
 \\
-    \mathit{db}_3 = \mathit{db}_2 \triangleleft \deltavar{\mathit{db}}_2
-  & \mathbf{where} \quad \deltavar{\mathit{db}}_2 = \deltavar{\mathit{tx}}_2\left(\restrict{(\mathit{rs}_2 \triangleleft \deltavar{\mathit{db}}_1)}{\mathit{ks}_2}\right)
-  & \mathbf{and}   \quad \mathit{rs}_2 = \restrict{\mathit{db}_1}{\mathit{ks}_2}
+    \mathit{db}_3 = \mathit{db}_2 \triangleleft \deltavar{\mathit{db}}_3
+  & \mathbf{where} \quad \deltavar{\mathit{db}}_3 = \deltavar{\mathit{tx}}_2(\mathit{rs}_2)
+  & \mathbf{and}   \quad \mathit{rs}_2 = \mathit{rs}^{@@1}_2 \triangleleft \deltavar{\mathit{db}}_2
+  & \mathbf{and}   \quad \mathit{rs}^{@@1}_2 = \restrict{\mathit{db}_1}{\mathit{ks}_2}
 \\
  \vdots
 \end{array}
@@ -1460,31 +1629,32 @@ model. We now have a more interesting recurrence relation than in previous
 models so we argue by induction. Due to the setup step for the pipelining, we
 start from $i=1$ rather than $i=0$.
 \begin{align*}
-       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_i
-         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_i = \deltavar{\mathit{tx}}_i\left(\restrict{\left(\mathit{rs}_i \triangleleft \deltavar{\mathit{db}}_{i-1}\right)}{\mathit{ks}_i}\right)
-         \quad \mathbf{and} \quad \mathit{rs}_i = \restrict{\mathit{db}_{i-1}}{\mathit{ks}_i}
+       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_{i+1}
+         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_{i+1} = \deltavar{\mathit{tx}}_i(\mathit{rs}_i)
+         \quad \mathbf{and} \quad \mathit{rs}_i = \mathit{rs}^{@@{i-1}}_i \triangleleft \deltavar{\mathit{db}}_i
+         \quad \mathbf{and} \quad \mathit{rs}^{@@i-1}_i = \restrict{\mathit{db}_{i-1}}{\mathit{ks}_i}
       \\
-\equiv & \quad \text{\{by substitution of $\mathit{rs}_i$ \}}
+\equiv & \quad \text{\{by substitution of $\mathit{rs}_i$ and $\mathit{rs}^{@@i-1}_i$ \}}
       \\
-       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_i
-         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_i = \deltavar{\mathit{tx}}_i\left(\restrict{\left(\restrict{\mathit{db}_{i-1}}{\mathit{ks}_i} \triangleleft \deltavar{\mathit{db}}_{i-1}\right)}{\mathit{ks}_i}\right)
+       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_{i+1}
+         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_{i+1} = \deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}_{i-1}}{\mathit{ks}_i} \triangleleft \deltavar{\mathit{db}}_{i}\right)
       \\
-\equiv & \quad \text{\{by the domain restriction lemma \cref{eq:restriction} \}}
+\equiv & \quad \text{\{by the domain restriction shifting lemma \cref{eq:restriction_corollary} \}}
       \\
-       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_i
-         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_i = \deltavar{\mathit{tx}}_i\left(\restrict{\left(\mathit{db}_{i-1} \triangleleft \deltavar{\mathit{db}}_{i-1}\right)}{\mathit{ks}_i}\right)
+       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_{i+1}
+         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_{i+1} = \deltavar{\mathit{tx}}_i\left(\restrict{\left(\mathit{db}_{i-1} \triangleleft \deltavar{\mathit{db}}_{i}\right)}{\mathit{ks}_i}\right)
       \\
-\equiv & \quad \text{\{by induction hypothesis $\mathit{db}_i = \mathit{db}_{i-1} \triangleleft \deltavar{\mathit{db}}_{i-1}$ \}}
+\equiv & \quad \text{\{by induction hypothesis $\mathit{db}_i = \mathit{db}_{i-1} \triangleleft \deltavar{\mathit{db}}_{i}$ \}}
       \\
-       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_i
-         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_i = \deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}_i}{\mathit{ks}_i}\right)
+       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{db}}_{i+1}
+         \quad \mathbf{where} \quad \deltavar{\mathit{db}}_{i+1} = \deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}_i}{\mathit{ks}_i}\right)
       \\
-\equiv & \quad \text{\{by substitution of $\deltavar{\mathit{db}}_i$\}}
+\equiv & \quad \text{\{by substitution of $\deltavar{\mathit{db}}_{i+1}$\}}
       \\
-       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{tx}}_i(\restrict{\mathit{db}_i}{\mathit{ks}_i})
+       & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}_i}{\mathit{ks}_i}\right)
       \\
-\equiv & \quad \text{\{by the restriction property \cref{eq:restrict} that
-                     $\deltavar{\mathit{tx}}_i(\restrict{\mathit{db}}{\mathit{ks}_i}) = \deltavar{\mathit{tx}}_i(\mathit{db})$\}}
+\equiv & \quad \text{\{by the restriction property \cref{eq:tx-within-keyset} that
+                     $\deltavar{\mathit{tx}}_i\left(\restrict{\mathit{db}}{\mathit{ks}_i}\right) = \deltavar{\mathit{tx}}_i(\mathit{db})$\}}
       \\
        & \mathit{db}_{i+1} = \mathit{db}_i \triangleleft \deltavar{\mathit{tx}}_i(\mathit{db}_i)
       \\
@@ -1493,9 +1663,115 @@ start from $i=1$ rather than $i=0$.
       \\
        & \mathit{db}_{i+1} = \mathit{tx}_i(\mathit{db}_i)
 \end{align*}
+Which is the same as \cref{eq:sequential-recurrence}: the recurrence for the simple model.
 
+\subsection{Change-based pipelined databases in the hybrid representation}
+
+More generally the changes we want to apply are all those that occurred between
+the database state against which the read was performed and the state in which
+the transaction using the read results is to be applied. Thus we will have to
+carefully track and apply the changes from where a read was initiated to where
+it is used. If we can do so successfully however it seems clear that we can
+obtain an arbitrary depth of pipelining, at the memory cost of tracking the
+intervening changes.
+
+Fortunately tracking the intervening changes is relatively straightforward to
+do using the hybrid representations (from
+\cref{sec:hybrid-on-disk-in-memory-db,multiple-logical-database-states}) since
+they already keep the recent changes in memory.
+
+The diagram below shows an example in the hybrid representation where several
+transactions are performed starting from the same on-disk state. Notice how
+all the disk reads are independent and so can be started early. Only the final
+in-memory adjustments to the read sets have to wait for just prior to
+processing the transaction.
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+\begin{scope}[thick, minimum height=50pt, minimum width=40pt]
+
+  \node[cylinder, aspect=2, rotate=90, draw, minimum height=60pt]
+       (disk) at (0.5,-2.5cm) {};
+  \draw (0.5, -2.5cm) node {$\mathit{db}^{\mathrm{disk}}_i$};
+
+  % in mem boxes
+  \begin{scope}[inner sep=3pt]
+  \node[rectangle, draw] (mem0) at (0.5,   1.5)
+       {$\deltavar{\mathit{db}}^{\mathrm{mem}}_i$};
+  \node[rectangle, draw] (mem1) at (5cm, 1.5)
+       {$\eqabove{\deltavar{\mathit{db}}^{\mathrm{mem}}_{i+1}}
+                 {\deltavar{\mathit{db}}^{\mathrm{mem}}_{i} \triangleleft \deltavar{\mathit{db}}_{i+1}}$};
+  \node[rectangle, draw] (mem2) at (10cm,1.5)
+       {$\eqabove{\deltavar{\mathit{db}}^{\mathrm{mem}}_{i+2}}
+                 {\deltavar{\mathit{db}}^{\mathrm{mem}}_{i+1} \triangleleft \deltavar{\mathit{db}}_{i+2}}$};
+  \node[rectangle, draw] (mem3) at (15cm,1.5)
+       {$\eqabove{\deltavar{\mathit{db}}^{\mathrm{mem}}_{i+3}}
+                 {\deltavar{\mathit{db}}^{\mathrm{mem}}_{i+2} \triangleleft \deltavar{\mathit{db}}_{i+3}}$};
+  \end{scope}
+
+  % disk reads
+  \begin{scope}[inner sep=0pt]
+  \node[ellipse, draw] (diskread0) at (2.5cm,-0.5cm)
+       {$\eqabove{\mathit{rs}^{@@i}_{i}}
+                 {\restrict{\mathit{db}^{\mathrm{disk}}_i}{\mathit{ks}_i}}$};
+
+  \node[ellipse, draw] (diskread1) at (7.5cm,-0.5cm)
+       {$\eqabove{\mathit{rs}^{@@i}_{i+1}}
+                 {\restrict{\mathit{db}^{\mathrm{disk}}_i}{\mathit{ks}_{i+1}}}$};
+
+  \node[ellipse, draw] (diskread2) at (12.5cm,-0.5cm)
+       {$\eqabove{\mathit{rs}^{@@i}_{i+2}}
+                 {\restrict{\mathit{db}^{\mathrm{disk}}_i}{\mathit{ks}_{i+2}}}$};
+  \end{scope}
+
+  % logical reads and transaction differences
+  \begin{scope}[minimum height=60pt, inner sep=-10pt]
+  \node[ellipse, draw] (readset1) at (2.5,3.8)
+       {$\begin{array}{r@@{~=~}l}
+           \mathit{rs}_{i} & \mathit{rs}^{@@i}_{i} \triangleleft \deltavar{\mathit{db}}^{\mathrm{mem}}_i \\
+           \deltavar{\mathit{db}}_{i+1} & \deltavar{\mathit{tx}}_i(\mathit{rs}_i)
+         \end{array}$};
+  \node[ellipse, draw] (readset2) at (7.5,3.8)
+       {$\begin{array}{r@@{~=~}l}
+          \mathit{rs}_{i+1} & \mathit{rs}^{@@i}_{i+1} \triangleleft \deltavar{\mathit{db}}^{\mathrm{mem}}_{i+1} \\
+           \deltavar{\mathit{db}}_{i+2} & \deltavar{\mathit{tx}}_{i+1}(\mathit{rs}_{i+1})
+         \end{array}$};
+  \node[ellipse, draw] (readset3) at (12.5,3.8)
+       {$\begin{array}{r@@{~=~}l}
+          \mathit{rs}_{i+2} & \mathit{rs}^{@@i}_{i+2} \triangleleft \deltavar{\mathit{db}}^{\mathrm{mem}}_{i+2} \\
+           \deltavar{\mathit{db}}_{i+3} & \deltavar{\mathit{tx}}_{i+2}(\mathit{rs}_{i+2})
+         \end{array}$};
+  \end{scope}
+
+  % lines reads
+  \path[->] (disk) edge [bend right=30] (diskread0);
+  \path[->] (disk) edge [bend right=20] (diskread1);
+  \path[->] (disk) edge [bend right=20] (diskread2);
+
+  \path[->] (diskread0) edge [bend left=15] (readset1);
+  \path[->] (mem0)      edge [bend right=25](readset1);
+  \path[->] (readset1)  edge [bend right]   (mem1);
+
+  \path[->] (diskread1) edge [bend left=15] (readset2);
+  \path[->] (mem1)      edge [bend right]   (readset2);
+  \path[->] (readset2)  edge [bend right]   (mem2);
+
+  \path[->] (diskread2) edge [bend left=15] (readset3);
+  \path[->] (mem2)      edge [bend right]   (readset3);
+  \path[->] (readset3)  edge [bend right]   (mem3);
+\end{scope}
+\end{tikzpicture}
+}
+\end{center}
+This example does not include flushing changes to disk, which does also have to
+be done eventually. Doing so only marginally complicates the scheme. It involves
+keeping in-memory the changes between when a read was initiated and when it is
+used -- even if some of the older changes have been flushed to disk in the
+meantime.
 
 \section{Literate Haskell prototyping}
+
+\todo[inline]{The sections from here on need updating to reflect the latest API}
 
 We will try to illustrate some of the ideas in the form of a Haskell prototype.
 To keep ourselves honest, the source for this document is also executable
