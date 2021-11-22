@@ -111,10 +111,15 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
 
+import           Ouroboros.Network.Testing.Data.Script (Script (..), singletonScript)
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
 import           Test.Simulation.Network.Snocket hiding (tests)
 import           Test.Ouroboros.Network.ConnectionManager (verifyAbstractTransition)
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+                   (NonFailingBearerInfoScript(..), AbsBearerInfo (..),
+                    AbsDelay (..), AbsAttenuation (..), AbsSpeed (..),
+                    AbsSDUSize (..))
 
 tests :: TestTree
 tests =

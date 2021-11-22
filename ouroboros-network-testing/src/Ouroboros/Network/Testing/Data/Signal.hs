@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Data.Signal (
+module Ouroboros.Network.Testing.Data.Signal (
   -- * Events
   Events,
   eventsFromList,
@@ -21,6 +21,9 @@ module Data.Signal (
   fromChangeEvents,
   toChangeEvents,
   fromEvents,
+
+  -- ** QuickCheck
+  signalProperty,
 
   -- * Simple signal transformations
   truncateAt,
@@ -50,8 +53,16 @@ import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.OrdPSQ as PSQ
 import           Data.OrdPSQ (OrdPSQ)
+import qualified Data.Foldable as Deque (toList)
+import qualified Deque.Lazy as Deque
+import           Deque.Lazy (Deque)
 
 import           Control.Monad.Class.MonadTime (Time(..), DiffTime, addTime)
+
+
+import           Test.QuickCheck
+
+
 
 
 --
@@ -269,7 +280,7 @@ timeout d arm =
 
     armed !expiry (E ts@(TS t _) x : txs)
       | t > expiry  = E expiryTS True  : expired (E ts x : txs)
-      | not (arm x) = E ts       False : disarmed txs 
+      | not (arm x) = E ts       False : disarmed txs
       | t < expiry  = E ts       False : armed expiry txs
       | otherwise   = E expiryTS True  : expired txs
       where
@@ -416,6 +427,37 @@ scanl f z (Signal x0 txs0) =
                           where
                             a' = f a x
 
+--
+-- QuickCheck
+--
+
+-- | Check a property over a 'Signal'. The property should be true at all times.
+--
+-- On failure it shows the @n@ most recent signal values.
+--
+signalProperty :: forall a. Int -> (a -> String)
+               -> (a -> Bool) -> Signal a -> Property
+signalProperty atMost showSignalValue p =
+    go 0 mempty . eventsToList . toChangeEvents
+  where
+    go :: Int -> Deque (Time, a) -> [(Time, a)] -> Property
+    go !_ !_ []                   = property True
+    go !n !recent ((t, x) : txs) | p x = next
+      where
+        next
+          | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
+          | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
+
+    go !_ !recent ((t, x) : _) = counterexample details (property False)
+      where
+        details =
+          unlines [ "Last " ++ show atMost ++ " signal values:"
+                  , unlines [ show t' ++ "\t: " ++ showSignalValue x'
+                            | (t',x') <- Deque.toList recent ]
+                  , "Property violated at: " ++ show t
+                  , "Invalid signal value:"
+                  , showSignalValue x
+                  ]
 
 --
 -- Utils
@@ -436,4 +478,5 @@ mergeBy cmp = merge
 
 data MergeResult a b = OnlyInLeft a | InBoth a b | OnlyInRight b
   deriving (Eq, Show)
+
 

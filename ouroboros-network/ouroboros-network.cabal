@@ -270,6 +270,7 @@ library ouroboros-protocol-tests
                        network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,
+                       ouroboros-network-testing,
                        typed-protocols
 
   ghc-options:         -Wall
@@ -282,7 +283,6 @@ test-suite test
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
 
-                       Data.Signal
                        Test.AnchoredFragment
                        Test.Chain
                        Test.LedgerPeers
@@ -301,7 +301,6 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
-                       Test.Ouroboros.Network.PeerSelection.Script
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
                        Test.Mux
@@ -309,8 +308,6 @@ test-suite test
                        Test.Socket
                        Test.PeerState
                        Test.Version
-                       Test.QuickCheck.Signal
-                       Test.QuickCheck.Utils
   default-language:    Haskell2010
   build-depends:       base,
                        QuickCheck,

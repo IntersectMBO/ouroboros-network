@@ -83,11 +83,13 @@ let
       ++ (checksPaths [ "Win32-network" "test" ])
       ++ (checksPaths [ "network-mux" "test" ])
       ++ (checksPaths [ "ouroboros-network-framework" "test" ])
+      ++ (checksPaths [ "ouroboros-network-testing" "test" ])
       ++ [
         [ "haskellPackages" "ouroboros-network" "coverageReport" ]
         [ "haskellPackages" "Win32-network" "coverageReport" ]
         [ "haskellPackages" "network-mux" "coverageReport" ]
         [ "haskellPackages" "ouroboros-network-framework" "coverageReport" ]
+        [ "haskellPackages" "ouroboros-network-testing" "coverageReport" ]
       ]
     ))
     ++ (testsPaths [ "ouroboros-network" "cddl" ])
