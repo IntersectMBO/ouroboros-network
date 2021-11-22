@@ -837,7 +837,9 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionFailure            !(ConnectionId peerAddr)
   | TrConnectionNotFound           !Provenance !peerAddr
   | TrForbiddenOperation           !peerAddr                !AbstractState
-  | TrPruneConnections             ![peerAddr]
+  | TrPruneConnections             !(Set peerAddr) -- ^ prunning set
+                                   !Int            -- ^ number connections that must be prunned
+                                   !(Set peerAddr) -- ^ choice set
   | TrConnectionCleanup            !(ConnectionId peerAddr)
   | TrConnectionTimeWait           !(ConnectionId peerAddr)
   | TrConnectionTimeWaitDone       !(ConnectionId peerAddr)
