@@ -45,8 +45,10 @@ import           Codec.Serialise.Class (Serialise)
 import           Data.Bifoldable
 import           Data.Bifunctor
 import           Data.Bitraversable
+import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
 import           Data.List (dropWhileEnd, find, mapAccumL, intercalate, (\\), delete, foldl')
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -149,6 +151,8 @@ tests =
                  prop_connection_manager_valid_transition_order
   , testProperty "inbound_governor_valid_transition_order"
                  prop_inbound_governor_valid_transition_order
+  , testProperty "connection_manager_counters"
+                 prop_connection_manager_counters
   , testGroup    "unit_server_accept_error"
     [ testProperty "throw ConnectionAborted"
                   (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
@@ -2150,6 +2154,195 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
                        maxAcceptedConnectionsLimit l
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates connection manager counters using an upper bound
+-- approach since there's no reliable way to reconstruct the value that the
+-- counters should have at a given point in time. It's not quite possible to
+-- have the god's view of the system consistent with the information that's
+-- traced because there can be timing issues where a connection is in
+-- TerminatingSt (hence counted as 0) but in the God's view the connection is
+-- still being deleted (hence counted as 1). This is all due to the not having
+-- a better way of injecting god's view traces in a way that the timing issues
+-- aren't an issue.
+--
+prop_connection_manager_counters :: Int
+                                 -> ArbDataFlow
+                                 -> MultiNodeScript Int TestAddr
+                                 -> Property
+prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
+                                 (MultiNodeScript l) =
+  let trace = runSimTrace sim
+
+      connectionManagerEvents :: Trace (SimResult ())
+                                       (ConnectionManagerTrace
+                                         SimAddr
+                                         (ConnectionHandlerTrace
+                                           UnversionedProtocol
+                                           DataFlowProtocolData))
+      connectionManagerEvents = traceWithNameTraceEvents trace
+
+      -- Needed for calculating a more accurate upper bound
+      networkEvents :: [ObservableNetworkState SimAddr]
+      networkEvents = selectTraceEventsDynamic trace
+
+      upperBound =
+        multiNodeScriptToCounters dataFlow l networkEvents
+
+  in tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (concat
+        [ "\n\n====== Say Events ======\n"
+        , intercalate "\n" $ selectTraceEventsSay' trace
+        , "\n"
+        ])
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           v             -> AllProperty
+                            $ counterexample (show v) (property False)
+       )
+       ( \ trs
+        -> case trs of
+          TrConnectionManagerCounters cmc ->
+            AllProperty
+              $ counterexample
+                  ("Upper bound is: " ++ show upperBound
+                  ++ "\n But got: " ++ show cmc)
+                  (property $ collapseCounters False cmc
+                           <= collapseCounters True upperBound)
+          _                               ->
+            mempty
+       )
+    $ connectionManagerEvents
+  where
+    serverAddress :: SimAddr
+    serverAddress = TestAddress 0
+
+    -- We count all connections as prunable because we do not have a better way
+    -- to know what transitions will a given connection go through. We also
+    -- count every client connection as unidirectional because they do not
+    -- negotiate duplex data flow.
+    --
+    -- We do not count Inbound/Outbound/Closing of connections since the
+    -- 'ObservableNetworkState' is a much more reliable source of information.
+    --
+    -- Note that this is only valid in the case of no attenuation.
+    --
+    multiNodeScriptToCounters :: DataFlow
+                              -> [ConnectionEvent Int TestAddr]
+                              -> [ObservableNetworkState SimAddr]
+                              -> ConnectionManagerCounters
+    multiNodeScriptToCounters df ces uss =
+      let ifDuplex = bool 0 1 (df == Duplex)
+          ifUni = bool 0 1 (df == Unidirectional)
+          -- Every StartClient and StartServer will be associated to an Inbound
+          -- or Outbound connection request to/from the main node. Since we do
+          -- not know if it will perform both (making a duplex connection),
+          -- connectionManagerCounters look at the StartClient and StartServer
+          -- events and count the number of unidirectional/duplex/prunable
+          -- connections assuming it reaches the last state of the state
+          -- machine (DuplexSt). Then the ObservableNetworkState is used to make
+          -- a more accurate guess of the actual upper bound of inbound/outbound
+          -- connections.
+          connectionManagerCounters =
+            foldMap' id
+            . foldl'
+               (\ st ce -> case ce of
+                 StartClient _ ta ->
+                   Map.insert ta (ConnectionManagerCounters 1 0 1 0 0) st
+                 StartServer _ ta _ ->
+                   Map.insert ta (ConnectionManagerCounters 1 ifDuplex ifUni 0 0)
+                                 st
+                 _ -> st
+               )
+               Map.empty
+            $ ces
+
+          -- This calculation is right for the main node, because the simulation
+          -- never attempts to make other connections that go to or from the
+          -- main node.
+          networkStateCounters = foldl'
+                        (\cmc (ObservableNetworkState conns) ->
+                          maxCounters cmc $
+                          Map.foldl'
+                           (\cmc' provenance ->
+                             cmc' <>
+                             if provenance == serverAddress
+                                then ConnectionManagerCounters 0 0 0 0 1
+                                else ConnectionManagerCounters 0 0 0 1 0
+                           )
+                           mempty
+                           conns
+                        )
+                       mempty
+                       uss
+       in maxCounters connectionManagerCounters networkStateCounters
+
+    maxCounters :: ConnectionManagerCounters
+                -> ConnectionManagerCounters
+                -> ConnectionManagerCounters
+    maxCounters (ConnectionManagerCounters a b c d e)
+                (ConnectionManagerCounters a' b' c' d' e') =
+      ConnectionManagerCounters
+        (max a a')
+        (max b b')
+        (max c c')
+        (max d d')
+        (max e e')
+
+    -- It is possible for the ObservableNetworkState to have discrepancies between the
+    -- counters traced by TrConnectionManagerCounters. This leads to different
+    -- observations where an inbound connection can go into a state that is
+    -- counted as outbound but the provenance in the Snocket's observable
+    -- network state does not change so we can not know for sure what's
+    -- happening inside the ConnectionManager's state machine.
+    --
+    -- Given this we collapse the count of incoming and outgoing connections
+    -- since this value should always be the same in both views. Note that for
+    -- values besides the upper bound we have to correct the sum by removing the
+    -- duplicates.
+    --
+    -- TODO: Try idea in: ouroboros-network/pull/3429#discussion_r746406157
+    --
+    collapseCounters :: Bool -- ^ Should we remove Duplex duplicate counters out
+                             -- of the total sum.
+                     -> ConnectionManagerCounters
+                     -> (Int, Int, Int, Int)
+    collapseCounters t (ConnectionManagerCounters a b c d e) =
+      if t
+         then (a, b, c, d + e)
+         else (a, b, c, d + e - a)
+
+    networkStateTracer getState =
+      sayTracer
+      <> (Tracer $ \_ -> do
+      state <- getState
+      traceM state)
+
+    sim :: IOSim s ()
+    sim = do
+      mb <- timeout 7200
+                    ( withSnocket nullTracer
+                                  (singletonScript noAttenuation)
+              $ \snocket getState ->
+                multinodeExperiment  (sayTracer <> Tracer traceM)
+                                     (sayTracer <> Tracer traceM)
+                                     (sayTracer <> Tracer traceM)
+                                     (sayTracer <> Tracer traceM
+                                     <> networkStateTracer getState)
+                                     snocket
+                                     Snocket.TestFamily
+                                     serverAddress
+                                     serverAcc
+                                     dataFlow
+                                     maxAcceptedConnectionsLimit
+                                     (unTestAddr <$> MultiNodeScript l)
+              )
+      case mb of
+        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Just a  -> return a
 
 -- | Property wrapping `multinodeExperiment`.
 --
