@@ -96,6 +96,8 @@ import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
                    RemoteSt (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
+import           Ouroboros.Network.InboundGovernor.State
+                   (InboundGovernorCounters(..))
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
@@ -153,6 +155,8 @@ tests =
                  prop_inbound_governor_valid_transition_order
   , testProperty "connection_manager_counters"
                  prop_connection_manager_counters
+  , testProperty "inbound_governor_counters"
+                 prop_inbound_governor_counters
   , testGroup    "unit_server_accept_error"
     [ testProperty "throw ConnectionAborted"
                   (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
@@ -2518,6 +2522,100 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
                        (Script (toBearerInfo absBi :| [noAttenuation]))
                        maxAcceptedConnectionsLimit l
 
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates inbound governor counters.
+--
+prop_inbound_governor_counters :: Int
+                               -> ArbDataFlow
+                               -> MultiNodeScript Int TestAddr
+                               -> Property
+prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
+                               script@(MultiNodeScript l) =
+  let trace = runSimTrace sim
+
+      inboundGovernorEvents :: Trace (SimResult ())
+                        (InboundGovernorTrace
+                          SimAddr)
+      inboundGovernorEvents = traceWithNameTraceEvents trace
+
+      upperBound = multiNodeScriptToCounters l
+
+  in tabulate "ConnectionEvents" (map showCEvs l)
+    . counterexample (ppScript script)
+    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           v             -> AllProperty
+                         $ counterexample (show v) (property False)
+       )
+       ( \ trs
+        -> case trs of
+          TrInboundGovernorCounters igc ->
+            AllProperty
+              $ counterexample
+                  ("Upper bound is: " ++ show upperBound
+                  ++ "\n But got: " ++ show igc)
+                  (property $ igc <= upperBound)
+          _                               ->
+            mempty
+       )
+    $ inboundGovernorEvents
+  where
+    -- Note that this is only valid in the case of no attenuation.
+    bundleToCounters :: Bundle [Int] -> InboundGovernorCounters
+    bundleToCounters (Bundle hot warm _) =
+      let warmRemote = bool 1 0 (null warm)
+          hotRemote  = bool 1 0 (null hot)
+       in InboundGovernorCounters warmRemote hotRemote
+
+    -- We check for starting of miniprotocols that can potentially lead to
+    -- inbound governor states of remote warm or remote hot connections. An
+    -- upper bound is established because it is not possible to predict whether
+    -- some failure will occur.
+    multiNodeScriptToCounters :: [ConnectionEvent Int TestAddr]
+                              -> InboundGovernorCounters
+    multiNodeScriptToCounters =
+      let taServerAcc = TestAddr (TestAddress 0)
+       in
+        (\x ->
+          let serverAccEntry = x Map.! taServerAcc
+              mapWithoutServerAcc = Map.delete taServerAcc x
+           in Map.foldlWithKey'
+                (\igt ta entry ->
+                  case Map.lookup ta serverAccEntry of
+                    Nothing  -> igt <> foldMap' bundleToCounters entry
+                    Just bun -> igt <> foldMap' bundleToCounters entry
+                                    <> bundleToCounters bun
+                )
+                mempty
+                mapWithoutServerAcc
+
+        )
+        . foldl'
+          (\ st ce -> case ce of
+            StartClient _ ta ->
+              Map.insertWith (<>) ta Map.empty st
+            StartServer _ ta _ ->
+              Map.insertWith (<>) ta Map.empty st
+            InboundConnection _ ta ->
+              Map.update (Just . Map.insertWith (<>) taServerAcc mempty) ta st
+            OutboundConnection _ ta ->
+              Map.update (Just . Map.insertWith (<>) ta mempty) taServerAcc st
+            InboundMiniprotocols _ ta bun ->
+              Map.update (Just . Map.update (Just . (<> bun)) taServerAcc) ta st
+            OutboundMiniprotocols _ ta bun ->
+              Map.update (Just . Map.update (Just . (<> bun)) ta) taServerAcc st
+            _ -> st
+          )
+          (Map.singleton taServerAcc Map.empty)
+
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       (singletonScript noAttenuation)
+                       maxAcceptedConnectionsLimit l
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
