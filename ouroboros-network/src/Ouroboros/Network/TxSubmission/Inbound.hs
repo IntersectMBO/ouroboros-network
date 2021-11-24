@@ -69,17 +69,17 @@ data TxSubmissionMempoolWriter txid tx idx m =
 
 data ProcessedTxCount = ProcessedTxCount {
       -- | Just accepted this many transactions.
-      ptxcAccepted :: !Int
+      ptxcAccepted :: Int
       -- | Just rejected this many transactions.
-    , ptxcRejected :: !Int
+    , ptxcRejected :: Int
     }
   deriving (Eq, Show)
 
 data TraceTxSubmissionInbound txid tx =
     -- | Number of transactions just about to be inserted.
-    TraceTxSubmissionCollected !Int
+    TraceTxSubmissionCollected Int
     -- | Just processed transaction pass/fail breakdown.
-  | TraceTxSubmissionProcessed !ProcessedTxCount
+  | TraceTxSubmissionProcessed ProcessedTxCount
     -- | Server received 'MsgDone'
   | TraceTxInboundTerminated
   | TraceTxInboundCanRequestMoreTxs Int

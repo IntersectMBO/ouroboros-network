@@ -300,8 +300,8 @@ dnsSubscriptionWorker snocket subTracer dnsTracer errTrace networkState
        k
 
 data WithDomainName a = WithDomainName {
-      wdnDomain :: !DNS.Domain
-    , wdnEvent  :: !a
+      wdnDomain :: DNS.Domain
+    , wdnEvent  :: a
     }
 
 instance Show a => Show (WithDomainName a) where

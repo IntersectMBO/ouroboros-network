@@ -820,33 +820,33 @@ data AssertionLocation peerAddr
 -- which is filled with 'ConnectionHandlerTrace'.
 --
 data ConnectionManagerTrace peerAddr handlerTrace
-  = TrIncludeConnection            !Provenance !peerAddr
-  | TrUnregisterConnection         !Provenance !peerAddr
-  | TrConnect                      !(Maybe peerAddr) -- ^ local address
-                                   !peerAddr         -- ^ remote address
-  | TrConnectError                 !(Maybe peerAddr) -- ^ local address
-                                   !peerAddr         -- ^ remote address
-                                   !SomeException
-  | TrTerminatingConnection        !Provenance !(ConnectionId peerAddr)
-  | TrTerminatedConnection         !Provenance !peerAddr
-  | TrConnectionHandler            !(ConnectionId peerAddr) !handlerTrace
+  = TrIncludeConnection            Provenance peerAddr
+  | TrUnregisterConnection         Provenance peerAddr
+  | TrConnect                      (Maybe peerAddr) -- ^ local address
+                                   peerAddr         -- ^ remote address
+  | TrConnectError                 (Maybe peerAddr) -- ^ local address
+                                   peerAddr         -- ^ remote address
+                                   SomeException
+  | TrTerminatingConnection        Provenance (ConnectionId peerAddr)
+  | TrTerminatedConnection         Provenance peerAddr
+  | TrConnectionHandler            (ConnectionId peerAddr) handlerTrace
   | TrShutdown
-  | TrConnectionExists             !Provenance !peerAddr    !AbstractState
-  | TrForbiddenConnection          !(ConnectionId peerAddr)
-  | TrImpossibleConnection         !(ConnectionId peerAddr)
-  | TrConnectionFailure            !(ConnectionId peerAddr)
-  | TrConnectionNotFound           !Provenance !peerAddr
-  | TrForbiddenOperation           !peerAddr                !AbstractState
-  | TrPruneConnections             !(Set peerAddr) -- ^ prunning set
-                                   !Int            -- ^ number connections that must be prunned
-                                   !(Set peerAddr) -- ^ choice set
-  | TrConnectionCleanup            !(ConnectionId peerAddr)
-  | TrConnectionTimeWait           !(ConnectionId peerAddr)
-  | TrConnectionTimeWaitDone       !(ConnectionId peerAddr)
-  | TrConnectionManagerCounters    !ConnectionManagerCounters
-  | TrState                        !(Map peerAddr AbstractState)
+  | TrConnectionExists             Provenance peerAddr    AbstractState
+  | TrForbiddenConnection          (ConnectionId peerAddr)
+  | TrImpossibleConnection         (ConnectionId peerAddr)
+  | TrConnectionFailure            (ConnectionId peerAddr)
+  | TrConnectionNotFound           Provenance peerAddr
+  | TrForbiddenOperation           peerAddr                AbstractState
+  | TrPruneConnections             (Set peerAddr) -- ^ prunning set
+                                   Int            -- ^ number connections that must be prunned
+                                   (Set peerAddr) -- ^ choice set
+  | TrConnectionCleanup            (ConnectionId peerAddr)
+  | TrConnectionTimeWait           (ConnectionId peerAddr)
+  | TrConnectionTimeWaitDone       (ConnectionId peerAddr)
+  | TrConnectionManagerCounters    ConnectionManagerCounters
+  | TrState                        (Map peerAddr AbstractState)
   -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
-  | TrUnexpectedlyFalseAssertion   !(AssertionLocation peerAddr)
+  | TrUnexpectedlyFalseAssertion   (AssertionLocation peerAddr)
   -- ^ This case is unexpected at call site.
   deriving Show
 

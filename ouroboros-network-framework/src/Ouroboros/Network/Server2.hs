@@ -276,12 +276,12 @@ run ServerArguments {
 --
 
 data ServerTrace peerAddr
-    = TrAcceptConnection            !peerAddr
-    | TrAcceptError                 !SomeException
-    | TrAcceptPolicyTrace           !AcceptConnectionsPolicyTrace
-    | TrServerStarted               ![peerAddr]
+    = TrAcceptConnection            peerAddr
+    | TrAcceptError                 SomeException
+    | TrAcceptPolicyTrace           AcceptConnectionsPolicyTrace
+    | TrServerStarted               [peerAddr]
     | TrServerStopped
-    | TrServerError                 !SomeException
+    | TrServerError                 SomeException
     -- ^ similar to 'TrAcceptConnection' but it is logged once the connection is
     -- handed to inbound connection manager, e.g. after handshake negotiation.
   deriving Show
