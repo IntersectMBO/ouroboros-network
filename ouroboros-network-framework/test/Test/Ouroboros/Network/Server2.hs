@@ -45,8 +45,10 @@ import           Codec.Serialise.Class (Serialise)
 import           Data.Bifoldable
 import           Data.Bifunctor
 import           Data.Bitraversable
+import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
 import           Data.List (dropWhileEnd, find, mapAccumL, intercalate, (\\), delete, foldl')
 import           Data.List.NonEmpty (NonEmpty (..))
@@ -94,6 +96,8 @@ import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
                    RemoteSt (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
+import           Ouroboros.Network.InboundGovernor.State
+                   (InboundGovernorCounters(..))
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
@@ -149,6 +153,10 @@ tests =
                  prop_connection_manager_valid_transition_order
   , testProperty "inbound_governor_valid_transition_order"
                  prop_inbound_governor_valid_transition_order
+  , testProperty "connection_manager_counters"
+                 prop_connection_manager_counters
+  , testProperty "inbound_governor_counters"
+                 prop_inbound_governor_counters
   , testGroup    "unit_server_accept_error"
     [ testProperty "throw ConnectionAborted"
                   (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
@@ -852,7 +860,7 @@ prop_unidirectional_Sim :: NonFailingBearerInfoScript
 prop_unidirectional_Sim (NonFailingBearerInfoScript script) clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
-                (toBearerInfo <$> script) $ \snock ->
+                (toBearerInfo <$> script) $ \snock _ ->
       bracket (Snocket.open snock Snocket.TestFamily)
               (Snocket.close snock) $ \fd -> do
         Snocket.bind   snock fd serverAddr
@@ -1012,7 +1020,7 @@ prop_bidirectional_Sim (NonFailingBearerInfoScript script) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
     withSnocket sayTracer
                 (toBearerInfo <$> script)
-                $ \snock ->
+                $ \snock _ ->
       bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                    <*> Snocket.open snock Snocket.TestFamily)
               (\ (socket0, socket1) -> Snocket.close snock socket0 >>
@@ -2008,22 +2016,23 @@ prop_connection_manager_valid_transitions :: Int
                                           -> MultiNodeScript Int TestAddr
                                           -> Property
 prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
-                                          absBi script@(MultiNodeScript l) =
+                                          absBi script@(MultiNodeScript events) =
   let trace = runSimTrace sim
 
-      evsATT :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-      evsATT = traceWithNameTraceEvents trace
+      abstractTransitionEvents :: Trace (SimResult ())
+                                        (AbstractTransitionTrace SimAddr)
+      abstractTransitionEvents = traceWithNameTraceEvents trace
 
-      evsCMT :: [ConnectionManagerTrace
+      connectionManagerEvents :: [ConnectionManagerTrace
                   SimAddr
                   (ConnectionHandlerTrace
                     UnversionedProtocol
                     DataFlowProtocolData)]
-      evsCMT = withNameTraceEvents trace
+      connectionManagerEvents = withNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript script)
-    . counterexample (Trace.ppTrace show show evsATT)
+    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . mkProperty
     . bifoldMap
        ( \ case
@@ -2050,7 +2059,7 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
                $ trs,
              tpNumberOfTransitions = Sum (length trs),
              tpNumberOfConnections = Sum 1,
-             tpNumberOfPrunings    = classifyPrunings evsCMT,
+             tpNumberOfPrunings    = classifyPrunings connectionManagerEvents,
              tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
              tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
              tpTerminationTypes    = [classifyTermination        trs],
@@ -2059,12 +2068,12 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
           }
        )
     . splitConns
-    $ evsATT
+    $ abstractTransitionEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                       maxAcceptedConnectionsLimit l
+                       maxAcceptedConnectionsLimit events
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2077,25 +2086,23 @@ prop_connection_manager_no_invalid_traces :: Int
                                           -> MultiNodeScript Int TestAddr
                                           -> Property
 prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
-                                          absBi (MultiNodeScript l) =
+                                          absBi (MultiNodeScript events) =
   let trace = runSimTrace sim
 
-      evsCMT :: Trace (SimResult ())
-                      (ConnectionManagerTrace
-                        SimAddr
-                        (ConnectionHandlerTrace
-                          UnversionedProtocol
-                          DataFlowProtocolData))
-      evsCMT = traceWithNameTraceEvents trace
+      connectionManagerEvents :: Trace (SimResult ())
+                                       (ConnectionManagerTrace
+                                         SimAddr
+                                         (ConnectionHandlerTrace
+                                           UnversionedProtocol
+                                           DataFlowProtocolData))
+      connectionManagerEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (intercalate "\n"
                      [ "========== Script =========="
-                     , ppScript (MultiNodeScript l)
+                     , ppScript (MultiNodeScript events)
                      , "========== ConnectionManager Events =========="
-                     , Trace.ppTrace show show evsCMT
-                     -- , "========== Simulation Trace =========="
-                     -- , ppTrace trace
+                     , Trace.ppTrace show show connectionManagerEvents
                      ])
     . getAllProperty
     . bifoldMap
@@ -2110,12 +2117,12 @@ prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
           _                                       ->
             mempty
        )
-    $ evsCMT
+    $ connectionManagerEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                       maxAcceptedConnectionsLimit l
+                       maxAcceptedConnectionsLimit events
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2127,15 +2134,16 @@ prop_connection_manager_valid_transition_order :: Int
                                                -> MultiNodeScript Int TestAddr
                                                -> Property
 prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
-                                               absBi script@(MultiNodeScript l) =
+                                               absBi script@(MultiNodeScript events) =
   let trace = runSimTrace sim
 
-      evsATT :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-      evsATT = traceWithNameTraceEvents trace
+      abstractTransitionEvents :: Trace (SimResult ())
+                                        (AbstractTransitionTrace SimAddr)
+      abstractTransitionEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript script)
-    . counterexample (Trace.ppTrace show show evsATT)
+    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . getAllProperty
     . bifoldMap
        ( \ case
@@ -2144,12 +2152,201 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
        )
        verifyAbstractTransitionOrder
     . splitConns
-    $ evsATT
+    $ abstractTransitionEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                       maxAcceptedConnectionsLimit l
+                       maxAcceptedConnectionsLimit events
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates connection manager counters using an upper bound
+-- approach since there's no reliable way to reconstruct the value that the
+-- counters should have at a given point in time. It's not quite possible to
+-- have the god's view of the system consistent with the information that's
+-- traced because there can be timing issues where a connection is in
+-- TerminatingSt (hence counted as 0) but in the God's view the connection is
+-- still being deleted (hence counted as 1). This is all due to the not having
+-- a better way of injecting god's view traces in a way that the timing issues
+-- aren't an issue.
+--
+prop_connection_manager_counters :: Int
+                                 -> ArbDataFlow
+                                 -> MultiNodeScript Int TestAddr
+                                 -> Property
+prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
+                                 (MultiNodeScript events) =
+  let trace = runSimTrace sim
+
+      connectionManagerEvents :: Trace (SimResult ())
+                                       (ConnectionManagerTrace
+                                         SimAddr
+                                         (ConnectionHandlerTrace
+                                           UnversionedProtocol
+                                           DataFlowProtocolData))
+      connectionManagerEvents = traceWithNameTraceEvents trace
+
+      -- Needed for calculating a more accurate upper bound
+      networkEvents :: [ObservableNetworkState SimAddr]
+      networkEvents = selectTraceEventsDynamic trace
+
+      upperBound =
+        multiNodeScriptToCounters dataFlow events networkEvents
+
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+    . counterexample (concat
+        [ "\n\n====== Say Events ======\n"
+        , intercalate "\n" $ selectTraceEventsSay' trace
+        , "\n"
+        ])
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           v             -> AllProperty
+                            $ counterexample (show v) (property False)
+       )
+       ( \ trs
+        -> case trs of
+          TrConnectionManagerCounters cmc ->
+            AllProperty
+              $ counterexample
+                  ("Upper bound is: " ++ show upperBound
+                  ++ "\n But got: " ++ show cmc)
+                  (property $ collapseCounters False cmc
+                           <= collapseCounters True upperBound)
+          _                               ->
+            mempty
+       )
+    $ connectionManagerEvents
+  where
+    serverAddress :: SimAddr
+    serverAddress = TestAddress 0
+
+    -- We count all connections as prunable because we do not have a better way
+    -- to know what transitions will a given connection go through. We also
+    -- count every client connection as unidirectional because they do not
+    -- negotiate duplex data flow.
+    --
+    -- We do not count Inbound/Outbound/Closing of connections since the
+    -- 'ObservableNetworkState' is a much more reliable source of information.
+    --
+    -- Note that this is only valid in the case of no attenuation.
+    --
+    multiNodeScriptToCounters :: DataFlow
+                              -> [ConnectionEvent Int TestAddr]
+                              -> [ObservableNetworkState SimAddr]
+                              -> ConnectionManagerCounters
+    multiNodeScriptToCounters df ces uss =
+      let ifDuplex = bool 0 1 (df == Duplex)
+          ifUni = bool 0 1 (df == Unidirectional)
+          -- Every StartClient and StartServer will be associated to an Inbound
+          -- or Outbound connection request to/from the main node. Since we do
+          -- not know if it will perform both (making a duplex connection),
+          -- connectionManagerCounters look at the StartClient and StartServer
+          -- events and count the number of unidirectional/duplex/prunable
+          -- connections assuming it reaches the last state of the state
+          -- machine (DuplexSt). Then the ObservableNetworkState is used to make
+          -- a more accurate guess of the actual upper bound of inbound/outbound
+          -- connections.
+          connectionManagerCounters =
+            foldMap' id
+            . foldl'
+               (\ st ce -> case ce of
+                 StartClient _ ta ->
+                   Map.insert ta (ConnectionManagerCounters 1 0 1 0 0) st
+                 StartServer _ ta _ ->
+                   Map.insert ta (ConnectionManagerCounters 1 ifDuplex ifUni 0 0)
+                                 st
+                 _ -> st
+               )
+               Map.empty
+            $ ces
+
+          -- This calculation is right for the main node, because the simulation
+          -- never attempts to make other connections that go to or from the
+          -- main node.
+          networkStateCounters = foldl'
+                        (\cmc (ObservableNetworkState conns) ->
+                          maxCounters cmc $
+                          Map.foldl'
+                           (\cmc' provenance ->
+                             cmc' <>
+                             if provenance == serverAddress
+                                then ConnectionManagerCounters 0 0 0 0 1
+                                else ConnectionManagerCounters 0 0 0 1 0
+                           )
+                           mempty
+                           conns
+                        )
+                       mempty
+                       uss
+       in maxCounters connectionManagerCounters networkStateCounters
+
+    maxCounters :: ConnectionManagerCounters
+                -> ConnectionManagerCounters
+                -> ConnectionManagerCounters
+    maxCounters (ConnectionManagerCounters a b c d e)
+                (ConnectionManagerCounters a' b' c' d' e') =
+      ConnectionManagerCounters
+        (max a a')
+        (max b b')
+        (max c c')
+        (max d d')
+        (max e e')
+
+    -- It is possible for the ObservableNetworkState to have discrepancies between the
+    -- counters traced by TrConnectionManagerCounters. This leads to different
+    -- observations where an inbound connection can go into a state that is
+    -- counted as outbound but the provenance in the Snocket's observable
+    -- network state does not change so we can not know for sure what's
+    -- happening inside the ConnectionManager's state machine.
+    --
+    -- Given this we collapse the count of incoming and outgoing connections
+    -- since this value should always be the same in both views. Note that for
+    -- values besides the upper bound we have to correct the sum by removing the
+    -- duplicates.
+    --
+    -- TODO: Try idea in: ouroboros-network/pull/3429#discussion_r746406157
+    --
+    collapseCounters :: Bool -- ^ Should we remove Duplex duplicate counters out
+                             -- of the total sum.
+                     -> ConnectionManagerCounters
+                     -> (Int, Int, Int, Int)
+    collapseCounters t (ConnectionManagerCounters a b c d e) =
+      if t
+         then (a, b, c, d + e)
+         else (a, b, c, d + e - a)
+
+    networkStateTracer getState =
+      sayTracer
+      <> (Tracer $ \_ -> do
+      state <- getState
+      traceM state)
+
+    sim :: IOSim s ()
+    sim = do
+      mb <- timeout 7200
+                    ( withSnocket nullTracer
+                                  (singletonScript noAttenuation)
+              $ \snocket getState ->
+                multinodeExperiment  (sayTracer <> Tracer traceM)
+                                     (sayTracer <> Tracer traceM)
+                                     (sayTracer <> Tracer traceM)
+                                     (sayTracer <> Tracer traceM
+                                     <> networkStateTracer getState)
+                                     snocket
+                                     Snocket.TestFamily
+                                     serverAddress
+                                     serverAcc
+                                     dataFlow
+                                     maxAcceptedConnectionsLimit
+                                     (unTestAddr <$> MultiNodeScript events)
+              )
+      case mb of
+        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Just a  -> return a
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2161,15 +2358,16 @@ prop_inbound_governor_valid_transitions :: Int
                                         -> MultiNodeScript Int TestAddr
                                         -> Property
 prop_inbound_governor_valid_transitions serverAcc (ArbDataFlow dataFlow)
-                                        absBi script@(MultiNodeScript l) =
+                                        absBi script@(MultiNodeScript events) =
   let trace = runSimTrace sim
 
-      evsRTT :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
-      evsRTT = traceWithNameTraceEvents trace
+      remoteTransitionTraceEvents :: Trace (SimResult ())
+                                           (RemoteTransitionTrace SimAddr)
+      remoteTransitionTraceEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript script)
-    . counterexample (Trace.ppTrace show show evsRTT)
+    . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
     -- Verify that all Inbound Governor remote transitions are valid
     . getAllProperty
     . bifoldMap
@@ -2184,12 +2382,12 @@ prop_inbound_governor_valid_transitions serverAcc (ArbDataFlow dataFlow)
            . verifyRemoteTransition
            $ tr
        )
-    $ evsRTT
+    $ remoteTransitionTraceEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                       maxAcceptedConnectionsLimit l
+                       maxAcceptedConnectionsLimit events
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2201,15 +2399,16 @@ prop_inbound_governor_no_unsupported_state :: Int
                                            -> MultiNodeScript Int TestAddr
                                            -> Property
 prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
-                                           absBi script@(MultiNodeScript l) =
+                                           absBi script@(MultiNodeScript events) =
   let trace = runSimTrace sim
 
-      evsIGT :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      evsIGT = traceWithNameTraceEvents trace
+      inboundGovernorEvents :: Trace (SimResult ())
+                                     (InboundGovernorTrace SimAddr)
+      inboundGovernorEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript script)
-    . counterexample (Trace.ppTrace show show evsIGT)
+    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     -- Verify we do not return unsupported states in any of the
     -- RemoteTransitionTrace
     . getAllProperty
@@ -2234,12 +2433,12 @@ prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
 
             _     -> AllProperty (property True)
         )
-    $ evsIGT
+    $ inboundGovernorEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                       maxAcceptedConnectionsLimit l
+                       maxAcceptedConnectionsLimit events
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2252,18 +2451,18 @@ prop_inbound_governor_no_invalid_traces :: Int
                                         -> MultiNodeScript Int TestAddr
                                         -> Property
 prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
-                                          absBi (MultiNodeScript l) =
+                                          absBi (MultiNodeScript events) =
   let trace = runSimTrace sim
 
-      evsIGT :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      evsIGT = traceWithNameTraceEvents trace
+      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      inboundGovernorEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (intercalate "\n"
                      [ "========== Script =========="
-                     , ppScript (MultiNodeScript l)
+                     , ppScript (MultiNodeScript events)
                      , "========== Inbound Governor Events =========="
-                     , Trace.ppTrace show show evsIGT
+                     , Trace.ppTrace show show inboundGovernorEvents
                      -- , "========== Simulation Trace =========="
                      -- , ppTrace trace
                      ])
@@ -2280,12 +2479,12 @@ prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
           _                                       ->
             mempty
        )
-    $ evsIGT
+    $ inboundGovernorEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                       maxAcceptedConnectionsLimit l
+                       maxAcceptedConnectionsLimit events
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2297,19 +2496,19 @@ prop_inbound_governor_valid_transition_order :: Int
                                              -> MultiNodeScript Int TestAddr
                                              -> Property
 prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
-                                             absBi script@(MultiNodeScript l) =
+                                             absBi script@(MultiNodeScript events) =
   let trace = runSimTrace sim
 
-      evsRTT :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
-      evsRTT = traceWithNameTraceEvents trace
+      remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
+      remoteTransitionTraceEvents = traceWithNameTraceEvents trace
 
-      evsIGT :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      evsIGT = traceWithNameTraceEvents trace
+      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      inboundGovernorEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
-    . counterexample (Trace.ppTrace show show evsIGT)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . counterexample (ppScript script)
-    . counterexample (Trace.ppTrace show show evsRTT)
+    . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
     . getAllProperty
     . bifoldMap
        ( \ case
@@ -2318,13 +2517,107 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
        )
        verifyRemoteTransitionOrder
     . splitRemoteConns
-    $ evsRTT
+    $ remoteTransitionTraceEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        (Script (toBearerInfo absBi :| [noAttenuation]))
-                       maxAcceptedConnectionsLimit l
+                       maxAcceptedConnectionsLimit events
 
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates inbound governor counters.
+--
+prop_inbound_governor_counters :: Int
+                               -> ArbDataFlow
+                               -> MultiNodeScript Int TestAddr
+                               -> Property
+prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
+                               script@(MultiNodeScript events) =
+  let trace = runSimTrace sim
+
+      inboundGovernorEvents :: Trace (SimResult ())
+                                     (InboundGovernorTrace
+                                       SimAddr)
+      inboundGovernorEvents = traceWithNameTraceEvents trace
+
+      upperBound = multiNodeScriptToCounters events
+
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+    . counterexample (ppScript script)
+    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
+    . getAllProperty
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           v             -> AllProperty
+                         $ counterexample (show v) (property False)
+       )
+       ( \ trs
+        -> case trs of
+          TrInboundGovernorCounters igc ->
+            AllProperty
+              $ counterexample
+                  ("Upper bound is: " ++ show upperBound
+                  ++ "\n But got: " ++ show igc)
+                  (property $ igc <= upperBound)
+          _                               ->
+            mempty
+       )
+    $ inboundGovernorEvents
+  where
+    -- Note that this is only valid in the case of no attenuation.
+    bundleToCounters :: Bundle [Int] -> InboundGovernorCounters
+    bundleToCounters (Bundle hot warm _) =
+      let warmRemote = bool 1 0 (null warm)
+          hotRemote  = bool 1 0 (null hot)
+       in InboundGovernorCounters warmRemote hotRemote
+
+    -- We check for starting of miniprotocols that can potentially lead to
+    -- inbound governor states of remote warm or remote hot connections. An
+    -- upper bound is established because it is not possible to predict whether
+    -- some failure will occur.
+    multiNodeScriptToCounters :: [ConnectionEvent Int TestAddr]
+                              -> InboundGovernorCounters
+    multiNodeScriptToCounters =
+      let taServerAcc = TestAddr (TestAddress 0)
+       in
+        (\x ->
+          let serverAccEntry = x Map.! taServerAcc
+              mapWithoutServerAcc = Map.delete taServerAcc x
+           in Map.foldlWithKey'
+                (\igt ta entry ->
+                  case Map.lookup ta serverAccEntry of
+                    Nothing  -> igt <> foldMap' bundleToCounters entry
+                    Just bun -> igt <> foldMap' bundleToCounters entry
+                                    <> bundleToCounters bun
+                )
+                mempty
+                mapWithoutServerAcc
+
+        )
+        . foldl'
+          (\ st ce -> case ce of
+            StartClient _ ta ->
+              Map.insertWith (<>) ta Map.empty st
+            StartServer _ ta _ ->
+              Map.insertWith (<>) ta Map.empty st
+            InboundConnection _ ta ->
+              Map.update (Just . Map.insertWith (<>) taServerAcc mempty) ta st
+            OutboundConnection _ ta ->
+              Map.update (Just . Map.insertWith (<>) ta mempty) taServerAcc st
+            InboundMiniprotocols _ ta bun ->
+              Map.update (Just . Map.update (Just . (<> bun)) taServerAcc) ta st
+            OutboundMiniprotocols _ ta bun ->
+              Map.update (Just . Map.update (Just . (<> bun)) ta) taServerAcc st
+            _ -> st
+          )
+          (Map.singleton taServerAcc Map.empty)
+
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       (singletonScript noAttenuation)
+                       maxAcceptedConnectionsLimit events
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
@@ -2335,22 +2628,22 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
 --
 prop_connection_manager_pruning :: Int -> MultiNodePruningScript Int -> Property
 prop_connection_manager_pruning serverAcc
-                                (MultiNodePruningScript acceptedConnLimit l) =
+                                (MultiNodePruningScript acceptedConnLimit events) =
   let trace = runSimTrace sim
 
-      evsATT :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-      evsATT = traceWithNameTraceEvents trace
+      abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+      abstractTransitionEvents = traceWithNameTraceEvents trace
 
-      evsCMT :: [ConnectionManagerTrace
+      connectionManagerEvents :: [ConnectionManagerTrace
                   SimAddr
                   (ConnectionHandlerTrace
                     UnversionedProtocol
                     DataFlowProtocolData)]
-      evsCMT = withNameTraceEvents trace
+      connectionManagerEvents = withNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
-    . counterexample (ppScript (MultiNodeScript l))
-    . counterexample (Trace.ppTrace show show evsATT)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+    . counterexample (ppScript (MultiNodeScript events))
+    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . mkPropertyPruning
     . bifoldMap
        ( \ case
@@ -2377,7 +2670,7 @@ prop_connection_manager_pruning serverAcc
                $ trs,
              tpNumberOfTransitions = Sum (length trs),
              tpNumberOfConnections = Sum 1,
-             tpNumberOfPrunings    = classifyPrunings evsCMT,
+             tpNumberOfPrunings    = classifyPrunings connectionManagerEvents,
              tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
              tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
              tpTerminationTypes    = [classifyTermination        trs],
@@ -2386,11 +2679,11 @@ prop_connection_manager_pruning serverAcc
           }
        )
     . splitConns
-    $ evsATT
+    $ abstractTransitionEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc Duplex (singletonScript noAttenuation)
-                       acceptedConnLimit l
+                       acceptedConnLimit events
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
@@ -2401,19 +2694,19 @@ prop_connection_manager_pruning serverAcc
 --
 prop_inbound_governor_pruning :: Int -> MultiNodePruningScript Int -> Property
 prop_inbound_governor_pruning serverAcc
-                              (MultiNodePruningScript acceptedConnLimit l) =
+                              (MultiNodePruningScript acceptedConnLimit events) =
   let trace = runSimTrace sim
 
-      evsRTT :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
-      evsRTT = traceWithNameTraceEvents trace
+      remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
+      remoteTransitionTraceEvents = traceWithNameTraceEvents trace
 
-      evsIGT :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      evsIGT = traceWithNameTraceEvents trace
+      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      inboundGovernorEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
-    . counterexample (ppScript (MultiNodeScript l))
-    . counterexample (Trace.ppTrace show show evsRTT)
-    . counterexample (Trace.ppTrace show show evsIGT)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+    . counterexample (ppScript (MultiNodeScript events))
+    . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
+    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . (\ ( tr1
          , tr2
          )
@@ -2474,11 +2767,11 @@ prop_inbound_governor_pruning serverAcc
         )
 
      )
-   $ (evsRTT, evsIGT)
+   $ (remoteTransitionTraceEvents, inboundGovernorEvents)
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc Duplex (singletonScript noAttenuation)
-                       acceptedConnLimit l
+                       acceptedConnLimit events
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
@@ -2494,30 +2787,30 @@ prop_never_above_hardlimit serverAcc
                            (MultiNodePruningScript
                              acceptedConnLimit@AcceptedConnectionsLimit
                                { acceptedConnectionsHardLimit = hardlimit }
-                               l
+                               events
                            ) =
   let trace = runSimTrace sim
 
-      evsCMT :: Trace (SimResult ())
+      connectionManagerEvents :: Trace (SimResult ())
                         (ConnectionManagerTrace
                           SimAddr
                           (ConnectionHandlerTrace
                             UnversionedProtocol
                             DataFlowProtocolData))
-      evsCMT = traceWithNameTraceEvents trace
+      connectionManagerEvents = traceWithNameTraceEvents trace
 
-      evsATT :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-      evsATT = traceWithNameTraceEvents trace
+      abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+      abstractTransitionEvents = traceWithNameTraceEvents trace
 
-      evsIGT :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      evsIGT = traceWithNameTraceEvents trace
+      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      inboundGovernorEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showCEvs l)
+  in tabulate "ConnectionEvents" (map showConnectionEvents events)
     -- . counterexample (ppTrace_ trace)
-    . counterexample (ppScript (MultiNodeScript l))
-    . counterexample (Trace.ppTrace show show evsCMT)
-    . counterexample (Trace.ppTrace show show evsATT)
-    . counterexample (Trace.ppTrace show show evsIGT)
+    . counterexample (ppScript (MultiNodeScript events))
+    . counterexample (Trace.ppTrace show show connectionManagerEvents)
+    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . getAllProperty
     . bifoldMap
         ( \ case
@@ -2551,11 +2844,11 @@ prop_never_above_hardlimit serverAcc
                   $ prunnedSet `Set.isSubsetOf` choiceSet )
                 _ -> mempty
         )
-   $ evsCMT
+   $ connectionManagerEvents
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc Duplex (singletonScript noAttenuation)
-                       acceptedConnLimit l
+                       acceptedConnLimit events
 
 
 -- | Checks that the server re-throws exceptions returned by an 'accept' call.
@@ -2580,7 +2873,7 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
                  )
         $ withSnocket nullTracer
                       (singletonScript bearerAttenuation )
-        $ \snock ->
+        $ \snock _ ->
            bracket ((,) <$> Snocket.open snock Snocket.TestFamily
                         <*> Snocket.open snock Snocket.TestFamily)
                    (\ (socket0, socket1) -> Snocket.close snock socket0 >>
@@ -2659,11 +2952,11 @@ multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
              -> AcceptedConnectionsLimit
              -> [ConnectionEvent req TestAddr]
              -> IOSim s ()
-multiNodeSim serverAcc dataFlow script acceptedConnLimit l = do
+multiNodeSim serverAcc dataFlow script acceptedConnLimit events = do
       mb <- timeout 7200
                     ( withSnocket nullTracer
                                   script
-              $ \snocket ->
+              $ \snocket _ ->
                  multinodeExperiment (Tracer traceM)
                                      (Tracer traceM)
                                      (Tracer traceM)
@@ -2674,7 +2967,7 @@ multiNodeSim serverAcc dataFlow script acceptedConnLimit l = do
                                      serverAcc
                                      dataFlow
                                      acceptedConnLimit
-                                     (unTestAddr <$> MultiNodeScript l)
+                                     (unTestAddr <$> MultiNodeScript events)
               )
       case mb of
         Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
@@ -2844,16 +3137,16 @@ sayTracer = Tracer $
   \msg -> (,msg) <$> getCurrentTime >>= say . show
 
 
-showCEvs :: ConnectionEvent req peerAddr -> String
-showCEvs (StartClient{})             = "StartClient"
-showCEvs (StartServer{})             = "StartServer"
-showCEvs (InboundConnection{})       = "InboundConnection"
-showCEvs (OutboundConnection{})      = "OutboundConnection"
-showCEvs (InboundMiniprotocols{})    = "InboundMiniprotocols"
-showCEvs (OutboundMiniprotocols{})   = "OutboundMiniprotocols"
-showCEvs (CloseInboundConnection{})  = "CloseInboundConnection"
-showCEvs (CloseOutboundConnection{}) = "CloseOutboundConnection"
-showCEvs (ShutdownClientServer{})    = "ShutdownClientServer"
+showConnectionEvents :: ConnectionEvent req peerAddr -> String
+showConnectionEvents (StartClient{})             = "StartClient"
+showConnectionEvents (StartServer{})             = "StartServer"
+showConnectionEvents (InboundConnection{})       = "InboundConnection"
+showConnectionEvents (OutboundConnection{})      = "OutboundConnection"
+showConnectionEvents (InboundMiniprotocols{})    = "InboundMiniprotocols"
+showConnectionEvents (OutboundMiniprotocols{})   = "OutboundMiniprotocols"
+showConnectionEvents (CloseInboundConnection{})  = "CloseInboundConnection"
+showConnectionEvents (CloseOutboundConnection{}) = "CloseOutboundConnection"
+showConnectionEvents (ShutdownClientServer{})    = "ShutdownClientServer"
 
 
 -- classify negotiated data flow

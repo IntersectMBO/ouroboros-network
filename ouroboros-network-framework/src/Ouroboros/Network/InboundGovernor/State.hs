@@ -113,7 +113,7 @@ data InboundGovernorCounters = InboundGovernorCounters {
       hotPeersRemote  :: !Int
       -- ^ number of remote peers that have the local peer as hot
     }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 instance Semigroup InboundGovernorCounters where
     InboundGovernorCounters w h <> InboundGovernorCounters w' h' =

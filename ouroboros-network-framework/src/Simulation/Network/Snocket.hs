@@ -23,12 +23,14 @@ module Simulation.Network.Snocket
   (
   -- * Simulated Snocket
     withSnocket
+  , ObservableNetworkState (..)
   , ResourceException (..)
   , SnocketTrace (..)
   , TimeoutDetail (..)
   , SockType (..)
   , OpenType (..)
 
+  , NormalisedId (..)
   , BearerInfo (..)
   , IOErrType (..)
   , IOErrThrowOrReturn (..)
@@ -207,6 +209,15 @@ data NetworkState m addr = NetworkState {
 
     }
 
+-- | Simulation accessible network environment consumed by 'simSnocket'.
+--
+newtype ObservableNetworkState addr = ObservableNetworkState {
+      -- | Registry of active connections and respective provider
+      --
+      onsConnections :: Map (NormalisedId addr) addr
+    }
+    deriving Show
+
 
 -- | Error types.
 --
@@ -378,11 +389,12 @@ withSnocket
                           (SnocketTrace m (TestAddress peerAddr)))
     -> Script BearerInfo
     -> (Snocket m (FD m (TestAddress peerAddr)) (TestAddress peerAddr)
+        -> m (ObservableNetworkState (TestAddress peerAddr))
         -> m a)
     -> m a
 withSnocket tr script k = do
     st <- newNetworkState script
-    a <- k (mkSnocket st tr)
+    a <- k (mkSnocket st tr) (toState st)
          `catch`
          \e -> do re <- checkResources st (Just e)
                   traverse_ throwIO re
@@ -409,6 +421,11 @@ withSnocket tr script k = do
          |  otherwise
          -> return   Nothing
 
+    toState :: NetworkState m (TestAddress peerAddr)
+               -> m (ObservableNetworkState (TestAddress peerAddr))
+    toState ns = atomically $ do
+        onsConnections <- fmap connProvider <$> readTVar (nsConnections ns)
+        return (ObservableNetworkState onsConnections)
 
 
 

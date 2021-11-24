@@ -665,7 +665,7 @@ data ConnectionManagerCounters = ConnectionManagerCounters {
       incomingConns :: !Int, -- ^ number of inbound connections
       outgoingConns :: !Int  -- ^ number of outbound connections
     }
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 instance Semigroup ConnectionManagerCounters where
     ConnectionManagerCounters c1 d1 s1 i1 o1 <> ConnectionManagerCounters c2 d2 s2 i2 o2 =
