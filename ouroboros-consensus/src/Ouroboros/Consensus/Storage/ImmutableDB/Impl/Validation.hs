@@ -127,7 +127,7 @@ validate ::
   => ValidateEnv m blk h
   -> ValidationPolicy
   -> m (ChunkNo, WithOrigin (Tip blk))
-validate validateEnv@ValidateEnv{ hasFS } valPol = do
+validate validateEnv@ValidateEnv{ hasFS, tracer } valPol = do
 
     -- First migrate any old files before validating them
     migrate validateEnv
@@ -141,13 +141,30 @@ validate validateEnv@ValidateEnv{ hasFS } valPol = do
         removeFilesStartingFrom hasFS firstChunkNo
         return (firstChunkNo, Origin)
 
-      Just lastChunkOnDisk -> case valPol of
-        ValidateAllChunks       ->
-          validateAllChunks       validateEnv lastChunkOnDisk
-        ValidateMostRecentChunk ->
-          validateMostRecentChunk validateEnv lastChunkOnDisk
+      Just lastChunkOnDisk ->
+        let validateTracer =
+              decorateValidateTracer
+                lastChunkOnDisk
+                tracer
+        in
+         case valPol of
+          ValidateAllChunks       ->
+            validateAllChunks       validateEnv validateTracer lastChunkOnDisk
+          ValidateMostRecentChunk ->
+            validateMostRecentChunk validateEnv validateTracer lastChunkOnDisk
   where
     HasFS { listDirectory } = hasFS
+
+    -- | Using the Functor instance of TraceChunkValidation, by a contravariant
+    -- tracer annotate the event with the total number of chunks on the relevant
+    -- constructors of the datatype.
+    decorateValidateTracer
+        :: ChunkNo
+        -> Tracer m (TraceEvent blk)
+        -> Tracer m (TraceChunkValidation blk ())
+    decorateValidateTracer c' =
+      contramap (ChunkValidationEvent . fmap (const c'))
+
 
 -- | Validate chunks from oldest to newest, stop after the most recent chunk
 -- on disk. During this validation, keep track of the last valid block we
@@ -163,10 +180,11 @@ validateAllChunks ::
      , HasCallStack
      )
   => ValidateEnv m blk h
+  -> Tracer m (TraceChunkValidation blk ())
   -> ChunkNo
      -- ^ Most recent chunk on disk
   -> m (ChunkNo, WithOrigin (Tip blk))
-validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
+validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } validateTracer lastChunk =
     go (firstChunkNo, Origin) firstChunkNo GenesisHash
   where
     go ::
@@ -181,7 +199,7 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
               then ShouldNotBeFinalised
               else ShouldBeFinalised
       runExceptT
-        (validateChunk validateEnv shouldBeFinalised chunk (Just prevHash)) >>= \case
+        (validateChunk validateEnv shouldBeFinalised chunk (Just prevHash) validateTracer) >>= \case
           Left  ()              -> cleanup lastValid chunk $> lastValid
           Right Nothing         -> continueOrStop lastValid                   chunk prevHash
           Right (Just validBlk) -> continueOrStop (chunk, NotOrigin validBlk) chunk prevHash'
@@ -199,7 +217,9 @@ validateAllChunks validateEnv@ValidateEnv { hasFS, chunkInfo } lastChunk =
       -> m (ChunkNo, WithOrigin (Tip blk))
     continueOrStop lastValid chunk prevHash
       | chunk < lastChunk
-      = go lastValid (nextChunkNo chunk) prevHash
+      = do
+          traceWith validateTracer (ValidatedChunk chunk ())
+          go lastValid (nextChunkNo chunk) prevHash
       | otherwise
       = assert (chunk == lastChunk) $ do
         -- Cleanup is only needed when the final chunk was empty, yet valid.
@@ -235,14 +255,18 @@ validateMostRecentChunk ::
      , HasCallStack
      )
   => ValidateEnv m blk h
+  -> Tracer m (TraceChunkValidation blk ())
   -> ChunkNo
      -- ^ Most recent chunk on disk, the chunk to validate
   -> m (ChunkNo, WithOrigin (Tip blk))
-validateMostRecentChunk validateEnv@ValidateEnv { hasFS } = go
+validateMostRecentChunk validateEnv@ValidateEnv { hasFS } validateTracer c = do
+    res <- go c
+    traceWith validateTracer (ValidatedChunk c ())
+    return res
   where
     go :: ChunkNo -> m (ChunkNo, WithOrigin (Tip blk))
     go chunk = runExceptT
-      (validateChunk validateEnv ShouldNotBeFinalised chunk Nothing) >>= \case
+      (validateChunk validateEnv ShouldNotBeFinalised chunk Nothing validateTracer) >>= \case
         Right (Just validBlk) -> do
             -- Found a valid block, we can stop now.
             removeFilesStartingFrom hasFS (nextChunkNo chunk)
@@ -315,6 +339,7 @@ validateChunk ::
   -> Maybe (ChainHash blk)
      -- ^ The hash of the last block of the previous chunk. 'Nothing' if
      -- unknown. When this is the first chunk, it should be 'Just Origin'.
+  -> Tracer m (TraceChunkValidation blk ())
   -> ExceptT () m (Maybe (Tip blk))
      -- ^ When non-empty, the 'Tip' corresponds to the last valid block in the
      -- chunk.
@@ -325,11 +350,11 @@ validateChunk ::
      -- Note that when an invalid block is detected, we don't throw, but we
      -- truncate the chunk file. When validating the chunk file after it, we
      -- would notice it doesn't fit anymore, and then throw.
-validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
-    trace $ ValidatingChunk chunk
+validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash validationTracer = do
+    lift $ traceWith validationTracer $ StartedValidatingChunk chunk ()
     chunkFileExists <- lift $ doesFileExist chunkFile
     unless chunkFileExists $ do
-      trace $ MissingChunkFile chunk
+      lift $ traceWith validationTracer $ MissingChunkFile chunk
       throwError ()
 
     -- Read the entries from the secondary index file, if it exists.
@@ -341,12 +366,12 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
         -- some dummy value.
         (Secondary.readAllEntries hasFS 0 chunk (const False) maxBound IsEBB) >>= \case
           Left _                -> do
-            traceWith tracer $ InvalidSecondaryIndex chunk
+            traceWith validationTracer $ InvalidSecondaryIndex chunk
             return []
           Right entriesFromFile ->
             return $ fixupEBB (map withoutBlockSize entriesFromFile)
       else do
-        traceWith tracer $ MissingSecondaryIndex chunk
+        traceWith validationTracer $ MissingSecondaryIndex chunk
         return []
 
     -- Parse the chunk file using the checksums from the secondary index file
@@ -372,7 +397,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
           -- the hash of the last block of the previous chunk. There must be a
           -- gap. This chunk should be truncated.
         -> do
-          trace $ ChunkFileDoesntFit expectedPrevHash actualPrevHash
+          lift $ traceWith tracer $ ChunkFileDoesntFit expectedPrevHash actualPrevHash
           throwError ()
       _ -> return ()
 
@@ -383,7 +408,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
       -- deserialisation error may be due to some extra random bytes that
       -- shouldn't have been there in the first place.
       whenJust mbErr $ \(parseErr, endOfLastValidBlock) -> do
-        traceWith tracer $ InvalidChunkFile chunk parseErr
+        traceWith validationTracer $ InvalidChunkFile chunk parseErr
         withFile hasFS chunkFile (AppendMode AllowExisting) $ \eHnd ->
           hTruncate eHnd endOfLastValidBlock
 
@@ -394,7 +419,7 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
           entries = map summaryEntry summary
       when (entriesFromSecondaryIndex /= entries ||
             not secondaryIndexFileExists) $ do
-        traceWith tracer $ RewriteSecondaryIndex chunk
+        traceWith validationTracer $ RewriteSecondaryIndex chunk
         Secondary.writeAllEntries hasFS chunk entries
 
       -- Reconstruct the primary index from the 'Secondary.Entry's.
@@ -412,15 +437,15 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
       primaryIndexFileMatches <- if primaryIndexFileExists
         then tryJust isInvalidFileError (Primary.load (Proxy @blk) hasFS chunk) >>= \case
           Left ()                    -> do
-            traceWith tracer $ InvalidPrimaryIndex chunk
+            traceWith validationTracer $ InvalidPrimaryIndex chunk
             return False
           Right primaryIndexFromFile ->
             return $ primaryIndexFromFile == primaryIndex
         else do
-          traceWith tracer $ MissingPrimaryIndex chunk
+          traceWith validationTracer $ MissingPrimaryIndex chunk
           return False
       unless primaryIndexFileMatches $ do
-        traceWith tracer $ RewritePrimaryIndex chunk
+        traceWith validationTracer $ RewritePrimaryIndex chunk
         Primary.write hasFS chunk primaryIndex
 
       return $ summaryToTipInfo <$> lastMaybe summary
@@ -430,8 +455,6 @@ validateChunk ValidateEnv{..} shouldBeFinalised chunk mbPrevHash = do
     secondaryIndexFile = fsPathSecondaryIndexFile chunk
 
     HasFS { hTruncate, doesFileExist } = hasFS
-
-    trace = lift . traceWith tracer
 
     summaryToTipInfo :: BlockSummary blk -> Tip blk
     summaryToTipInfo BlockSummary {..} = Tip {
