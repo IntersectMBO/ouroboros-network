@@ -1,27 +1,19 @@
-{ pkgs }: with pkgs;
+{ pkgs }:
+with pkgs;
 let
   src = haskell-nix.haskellLib.cleanGit {
     name = "ouroboros-consensus-docs-src";
     src = ../.;
     subDir = "ouroboros-consensus/docs";
   };
-in
-pkgs.runCommand "ouroboros-consensus-docs"
-{
+in pkgs.runCommand "ouroboros-consensus-docs" {
   meta.platforms = with pkgs.lib.platforms; [ linux darwin ];
   nativeBuildInputs = [ imagemagick ];
   buildInputs = [
     (texlive.combine {
       inherit (texlive)
-        amsmath
-        cleveref
-        collection-fontsrecommended
-        enumitem
-        latexmk
-        scheme-small
-        siunitx
-        todonotes
-        ;
+        amsmath cleveref collection-fontsrecommended enumitem latexmk
+        scheme-small siunitx todonotes;
     })
   ];
 } ''

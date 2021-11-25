@@ -1,4 +1,5 @@
-{ pkgs }: with pkgs;
+{ pkgs }:
+with pkgs;
 let
   src = haskell-nix.haskellLib.cleanGit {
     name = "ouroboros-network-docs-src";
@@ -6,29 +7,19 @@ let
     subDir = "docs";
   };
   cddl-specs = ../ouroboros-network/test-cddl/specs;
-in
-pkgs.runCommand "ouroboros-network-docs"
-{
+in pkgs.runCommand "ouroboros-network-docs" {
   meta.platforms = with pkgs.lib.platforms; [ linux darwin ];
   nativeBuildInputs = [ imagemagick ];
   buildInputs = [
     (texlive.combine {
       inherit (texlive)
-        cleveref
-        framed
-        scheme-small
-        collection-fontsrecommended
-        stmaryrd kpfonts geometry hyperref
-        todonotes
-        amsmath mathtools
-        colortbl polytable lazylist
-        fancyvrb
+        cleveref framed scheme-small collection-fontsrecommended stmaryrd
+        kpfonts geometry hyperref todonotes amsmath mathtools colortbl polytable
+        lazylist fancyvrb
         #graphicx
-        pstricks
-        wrapfig
+        pstricks wrapfig
         # build tools
-        latexmk
-        ;
+        latexmk;
     })
   ];
 } ''

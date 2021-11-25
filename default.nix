@@ -1,5 +1,4 @@
-{ system ? builtins.currentSystem
-, crossSystem ? null
+{ system ? builtins.currentSystem, crossSystem ? null
   # allows to cutomize haskellNix (profiling, see ./nix/ouroboros-network.nix)
 , config ? { }
   # allows to override dependencies of the project without modifications,
@@ -10,9 +9,9 @@
 , sourcesOverride ? { }
   # pinned version of nixpkgs augmented with overlays (iohk-nix and our packages).
 , pkgs ? import ./nix { inherit system crossSystem config sourcesOverride; }
-, gitrev ? pkgs.iohkNix.commitIdFromGitRepoOrZero ./.git
-}:
-with pkgs; with commonLib;
+, gitrev ? pkgs.iohkNix.commitIdFromGitRepoOrZero ./.git }:
+with pkgs;
+with commonLib;
 let
   haskellPackages = recRecurseIntoAttrs
     # the Haskell.nix package set, reduced to local packages.
@@ -20,8 +19,10 @@ let
 
   validate-mainnet = import ./nix/validate-mainnet.nix {
     inherit pkgs;
-    byron-db-converter = haskellPackages.ouroboros-consensus-byron.components.exes.db-converter;
-    db-analyser = haskellPackages.ouroboros-consensus-cardano.components.exes.db-analyser;
+    byron-db-converter =
+      haskellPackages.ouroboros-consensus-byron.components.exes.db-converter;
+    db-analyser =
+      haskellPackages.ouroboros-consensus-cardano.components.exes.db-analyser;
     onlyImmutableDB = false;
   };
 
@@ -51,8 +52,10 @@ let
       gnuparallel = pkgs.parallel;
       glibcLocales = pkgs.glibcLocales;
 
-      Cardano = haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
-      Shelley = haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
+      Cardano =
+        haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
+      Shelley =
+        haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
     };
 
     shell = import ./shell.nix {
@@ -60,5 +63,4 @@ let
       withHoogle = true;
     };
   };
-in
-self
+in self
