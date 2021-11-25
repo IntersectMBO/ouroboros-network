@@ -90,7 +90,7 @@ initialChainSelection
   => ImmutableDB m blk
   -> VolatileDB m blk
   -> LgrDB m blk
-  -> Tracer m (TraceEvent blk)
+  -> Tracer m (TraceInitChainSelEvent blk)
   -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> StrictTVar m (FutureBlocks blk)
@@ -194,7 +194,7 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
           , blockCache = BlockCache.empty
           , curChainAndLedger
           , trace = traceWith
-              (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
+              (contramap (InitChainSelValidation) tracer)
           }
 
 -- | Add a block to the ChainDB, /asynchronously/.
