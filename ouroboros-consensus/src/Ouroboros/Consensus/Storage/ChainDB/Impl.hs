@@ -146,6 +146,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
 
       let initChainSelTracer = contramap TraceInitChainSelEvent tracer
 
+      traceWith initChainSelTracer StartedInitChainSelection
       chainAndLedger <- ChainSel.initialChainSelection
                           immutableDB
                           volatileDB
@@ -155,6 +156,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
                           varInvalid
                           varFutureBlocks
                           (Args.cdbCheckInFuture args)
+      traceWith initChainSelTracer InitalChainSelected
 
       let chain  = VF.validatedFragment chainAndLedger
           ledger = VF.validatedLedger   chainAndLedger

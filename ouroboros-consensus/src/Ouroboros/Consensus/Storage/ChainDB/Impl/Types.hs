@@ -680,8 +680,13 @@ deriving instance
   , LedgerSupportsProtocol blk
   ) => Show (TraceValidationEvent blk)
 
-data TraceInitChainSelEvent blk
-  = InitChainSelValidation (TraceValidationEvent blk)
+data TraceInitChainSelEvent blk =
+    StartedInitChainSelection
+    -- ^ An event traced when inital chain selection has started during the
+    -- initialization of ChainDB
+  | InitalChainSelected
+    -- ^ An event traced when inital chain has been selected
+  | InitChainSelValidation (TraceValidationEvent blk)
     -- ^ An event traced during validation performed while performing initial
     -- chain selection.
   deriving (Generic)
