@@ -31,9 +31,11 @@ let
     buildInputs = [
       cabalWrapped
       entr
+      fd
       niv
       pkgconfig
-      nixpkgs-fmt
+      nixfmt
+      stylish-haskell
       hls.hls
       hls.hls-wrapper
       hls.implicit-hie

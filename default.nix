@@ -43,6 +43,9 @@ let
     checks = recurseIntoAttrs {
       # `checks.tests` collect results of executing the tests:
       tests = collectChecks' haskellPackages;
+      styles = recurseIntoAttrs {
+        check-nixfmt = callPackage ./nix/check-nixfmt.nix { };
+      };
     };
 
     # These are not run on hydra, but will be built separately in a nightly

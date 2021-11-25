@@ -92,6 +92,10 @@ let
       ([ "exes" ] ++ path)
       ([ "haskellPackages" (head path) "components" "exes" ] ++ (tail path))
     ];
+    stylePaths = path: [
+      ([ "checks" "styles" ] ++ path)
+      ([ "haskellPackages" (head path) "checks" ] ++ (tail path))
+    ];
   in [ [ "shell" ] ] ++ (optionals (!withProblematicWindowsTests)
     ((checksPaths [ "ouroboros-network" "test" ])
       ++ (checksPaths [ "Win32-network" "test" ])
@@ -105,7 +109,8 @@ let
         [ "haskellPackages" "ouroboros-network-testing" "coverageReport" ]
       ])) ++ (testsPaths [ "ouroboros-network" "cddl" ])
   ++ (checksPaths [ "ouroboros-network" "cddl" ])
-  ++ (exesPaths [ "network-mux" "cardano-ping" ]) ++ onlyBuildOnDefaultSystem;
+  ++ (exesPaths [ "network-mux" "cardano-ping" ])
+  ++ (stylePaths [ "check-nixfmt" ]) ++ onlyBuildOnDefaultSystem;
 
   # Remove build jobs for which cross compiling does not make sense.
   filterProject = noBuildList:
