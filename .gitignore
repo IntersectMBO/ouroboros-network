@@ -18,6 +18,8 @@ doc/protocols.toc
 .ghc.environment.*
 cabal.project.local*
 cabal.project.local~
+!cabal.project.local.ci
+!cabal.project.local.github-pages
 dist-newstyle/
 dist/
 *.swp
