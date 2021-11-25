@@ -505,8 +505,10 @@ deriving instance
   ) => Show (TraceEvent blk)
 
 data TraceOpenEvent blk =
+    -- | The ChainDB started the process of opening.
+    StartedOpeningDB
     -- | The ChainDB was opened.
-    OpenedDB
+  | OpenedDB
       (Point blk)  -- ^ Immutable tip
       (Point blk)  -- ^ Tip of the current chain
 
@@ -515,13 +517,22 @@ data TraceOpenEvent blk =
       (Point blk)  -- ^ Immutable tip
       (Point blk)  -- ^ Tip of the current chain
 
+    -- | The ImmutableDB started the process of opening.
+  | StartedOpeningImmutableDB
+
     -- | The ImmutableDB was opened.
   | OpenedImmutableDB
       (Point blk)          -- ^ Immutable tip
       ImmutableDB.ChunkNo  -- ^ Chunk number of the immutable tip
 
+    -- | The VolatileDB started opening.
+  | StartedOpeningVolatileDB
+
     -- | The VolatileDB was opened.
   | OpenedVolatileDB
+
+    -- | The LedgerDB started opening.
+  | StartedOpeningLgrDB
 
     -- | The LedgerDB was opened.
   | OpenedLgrDB
