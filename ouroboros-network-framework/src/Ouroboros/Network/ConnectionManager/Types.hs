@@ -658,11 +658,11 @@ data AbstractState
 -- | Counters for tracing and analysis purposes
 --
 data ConnectionManagerCounters = ConnectionManagerCounters {
-      duplexConns   :: !Int, -- ^ number of negotiated duplex connections
-                             -- (including DuplexState connections)
-      uniConns      :: !Int, -- ^ number of negotiated unidirectional connections
-      incomingConns :: !Int, -- ^ number of inbound connections
-      outgoingConns :: !Int  -- ^ number of outbound connections
+      duplexConns         :: !Int, -- ^ number of negotiated duplex connections
+                                   --   (including DuplexState connections)
+      unidirectionalConns :: !Int, -- ^ number of negotiated unidirectional connections
+      inboundConns        :: !Int, -- ^ number of inbound connections
+      outboundConns       :: !Int  -- ^ number of outbound connections
     }
   deriving (Show, Eq, Ord)
 
