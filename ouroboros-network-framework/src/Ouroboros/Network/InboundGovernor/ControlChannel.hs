@@ -15,6 +15,7 @@ module Ouroboros.Network.InboundGovernor.ControlChannel
   , ServerControlChannel
   , newControlChannel
   , newOutboundConnection
+  , newInboundConnection
   ) where
 
 import           Control.Monad.Class.MonadSTM.Strict
@@ -112,3 +113,13 @@ newOutboundConnection
 newOutboundConnection channel connId dataFlow handle =
     writeMessage channel
                 (NewConnection Outbound connId dataFlow handle)
+
+newInboundConnection
+    :: ControlChannel m (NewConnection peerAddr handle)
+    -> ConnectionId peerAddr
+    -> DataFlow
+    -> handle
+    -> STM m ()
+newInboundConnection channel connId dataFlow handle =
+    writeMessage channel
+                 (NewConnection Inbound connId dataFlow handle)
