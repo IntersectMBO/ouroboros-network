@@ -3,6 +3,6 @@
 set -euo pipefail
 
 # TODO the export of the <= operator TxLimits crashes stylish-haskell
-stylish-haskell -i $(git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v -e 'Setup.hs' -e 'Ouroboros/Consensus/Mempool/TxLimits\.hs')
+fd -p ouroboros-consensus* -e hs -E Setup.hs -E Ouroboros/Consensus/Mempool/TxLimits.hs -X stylish-haskell -i
 
 git diff --exit-code

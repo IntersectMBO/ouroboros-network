@@ -110,7 +110,8 @@ let
       ])) ++ (testsPaths [ "ouroboros-network" "cddl" ])
   ++ (checksPaths [ "ouroboros-network" "cddl" ])
   ++ (exesPaths [ "network-mux" "cardano-ping" ])
-  ++ (stylePaths [ "check-nixfmt" ]) ++ onlyBuildOnDefaultSystem;
+  ++ (stylePaths [ "check-nixfmt" "check-stylish" ])
+  ++ onlyBuildOnDefaultSystem;
 
   # Remove build jobs for which cross compiling does not make sense.
   filterProject = noBuildList:

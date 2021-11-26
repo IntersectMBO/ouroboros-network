@@ -28,8 +28,10 @@ let
       lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps);
 
     # These programs will be available inside the nix-shell.
-    buildInputs = [
+    nativeBuildInputs = [
       cabalWrapped
+      # we also add cabal (even if cabalWrapped will be used by default) for shell completion:
+      cabal
       entr
       fd
       niv
@@ -43,7 +45,6 @@ let
 
     tools = {
       # IDE tools
-      stylish-haskell = "0.13.0.0";
       ghcid = "0.8.7";
       hasktags = "0.71.2";
       # Draw graph of module dependencies

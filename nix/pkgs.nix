@@ -13,5 +13,10 @@ with pkgs; {
     inherit (ouroborosNetworkHaskellPackages) index-state;
   };
 
+  stylish-haskell = haskell-nix.tool localConfig.ghcVersion "stylish-haskell" {
+    version = "0.13.0.0";
+    inherit (ouroborosNetworkHaskellPackages) index-state;
+  };
+
   trace = builtins.trace;
 }
