@@ -2250,15 +2250,31 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
           -- machine (DuplexSt). Then the ObservableNetworkState is used to make
           -- a more accurate guess of the actual upper bound of inbound/outbound
           -- connections.
+          --
+          -- TODO: we are computing upper bound of contribution of each
+          -- address seprately.  This avoids tracking timing information of
+          -- events, which is less acurate but it might be less fragile.  We
+          -- should investiage if it's possible to make accurate and robust
+          -- time series of counter changes.
           connectionManagerCounters =
-            foldMap' id
+              foldMap' id
             . foldl'
                (\ st ce -> case ce of
                  StartClient _ ta ->
-                   Map.insert ta (ConnectionManagerCounters 0 1 0 0) st
-                 StartServer _ ta _ ->
-                   Map.insert ta (ConnectionManagerCounters ifDuplex ifUni 0 0)
-                                 st
+                   Map.alter (let c = ConnectionManagerCounters 0 1 0 0 in
+                              maybe (Just c) (Just . maxCounters c))
+                             ta st
+
+                 OutboundConnection _ ta ->
+                   Map.alter (let c = ConnectionManagerCounters ifDuplex ifUni 0 1 in
+                              maybe (Just c) (Just . maxCounters c))
+                             ta st
+
+                 InboundConnection _ ta ->
+                   Map.alter (let c = ConnectionManagerCounters ifDuplex ifUni 1 0 in
+                              maybe (Just c) (Just . maxCounters c))
+                             ta st
+
                  _ -> st
                )
                Map.empty
