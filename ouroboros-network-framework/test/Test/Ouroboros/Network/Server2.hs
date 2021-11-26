@@ -2261,17 +2261,17 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
             . foldl'
                (\ st ce -> case ce of
                  StartClient _ ta ->
-                   Map.alter (let c = ConnectionManagerCounters 0 1 0 0 in
+                   Map.alter (let c = ConnectionManagerCounters 0 0 1 0 0 in
                               maybe (Just c) (Just . maxCounters c))
                              ta st
 
                  OutboundConnection _ ta ->
-                   Map.alter (let c = ConnectionManagerCounters ifDuplex ifUni 0 1 in
+                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 0 1 in
                               maybe (Just c) (Just . maxCounters c))
                              ta st
 
                  InboundConnection _ ta ->
-                   Map.alter (let c = ConnectionManagerCounters ifDuplex ifUni 1 0 in
+                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 1 0 in
                               maybe (Just c) (Just . maxCounters c))
                              ta st
 
@@ -2290,8 +2290,8 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
                            (\cmc' provenance ->
                              cmc' <>
                              if provenance == serverAddress
-                                then ConnectionManagerCounters 0 0 0 1
-                                else ConnectionManagerCounters 0 0 1 0
+                                then ConnectionManagerCounters 0 0 0 0 1
+                                else ConnectionManagerCounters 0 0 0 1 0
                            )
                            mempty
                            conns
@@ -2303,13 +2303,14 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
     maxCounters :: ConnectionManagerCounters
                 -> ConnectionManagerCounters
                 -> ConnectionManagerCounters
-    maxCounters (ConnectionManagerCounters a b c d)
-                (ConnectionManagerCounters a' b' c' d') =
+    maxCounters (ConnectionManagerCounters a b c d e)
+                (ConnectionManagerCounters a' b' c' d' e') =
       ConnectionManagerCounters
         (max a a')
         (max b b')
         (max c c')
         (max d d')
+        (max e e')
 
     -- It is possible for the ObservableNetworkState to have discrepancies between the
     -- counters traced by TrConnectionManagerCounters. This leads to different
@@ -2325,11 +2326,13 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
     --
     -- TODO: Try idea in: ouroboros-network/pull/3429#discussion_r746406157
     --
+    -- TODO: test the number of full duplex connections.
+    --
     collapseCounters :: Bool -- ^ Should we remove Duplex duplicate counters out
                              -- of the total sum.
                      -> ConnectionManagerCounters
                      -> (Int, Int, Int)
-    collapseCounters t (ConnectionManagerCounters a b c d) =
+    collapseCounters t (ConnectionManagerCounters _ a b c d) =
       if t
          then (a, b, c + d)
          else (a, b, c + d - a)

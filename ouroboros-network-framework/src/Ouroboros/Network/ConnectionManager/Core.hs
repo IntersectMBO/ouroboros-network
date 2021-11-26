@@ -272,17 +272,19 @@ connectionStateToCounters state =
       InboundState _ _ _ Duplex             -> duplexConn
                                             <> inboundConn
 
-      DuplexState _ _ _                     -> duplexConn
+      DuplexState _ _ _                     -> fullDuplexConn
+                                            <> duplexConn
                                             <> inboundConn
                                             <> outboundConn
 
       TerminatingState _ _ _                -> mempty
       TerminatedState _                     -> mempty
   where
-    duplexConn         = ConnectionManagerCounters 1 0 0 0
-    unidirectionalConn = ConnectionManagerCounters 0 1 0 0
-    inboundConn        = ConnectionManagerCounters 0 0 1 0
-    outboundConn       = ConnectionManagerCounters 0 0 0 1
+    fullDuplexConn     = ConnectionManagerCounters 1 0 0 0 0
+    duplexConn         = ConnectionManagerCounters 0 1 0 0 0
+    unidirectionalConn = ConnectionManagerCounters 0 0 1 0 0
+    inboundConn        = ConnectionManagerCounters 0 0 0 1 0
+    outboundConn       = ConnectionManagerCounters 0 0 0 0 1
 
 
 instance ( Show peerAddr
