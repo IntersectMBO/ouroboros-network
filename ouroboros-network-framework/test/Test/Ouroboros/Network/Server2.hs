@@ -2838,12 +2838,12 @@ prop_never_above_hardlimit serverAcc
                 (TrConnectionManagerCounters cmc) ->
                     AllProperty
                     . counterexample ("HardLimit: " ++ show hardlimit ++
-                                      ", but got: " ++ show (incomingConns cmc) ++
-                                      " incoming connections!\n" ++
+                                      ", but got: " ++ show (inboundConns cmc) ++
+                                      " inbound connections!\n" ++
                                       show cmc
                                      )
                     . property
-                    $ incomingConns cmc <= fromIntegral hardlimit
+                    $ inboundConns cmc <= fromIntegral hardlimit
                 (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
                   ( AllProperty
                   . counterexample (concat
