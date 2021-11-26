@@ -244,54 +244,45 @@ connectionStateToCounters state =
     case state of
       ReservedOutboundState                 -> mempty
 
-      UnnegotiatedState Inbound _ _         -> prunableConn
-                                            <> incomingConn
+      UnnegotiatedState Inbound _ _         -> incomingConn
 
       UnnegotiatedState Outbound _ _        -> outgoingConn
 
       OutboundUniState _ _ _                -> uniConn
                                             <> outgoingConn
 
-      OutboundDupState  _ _ _ _             -> prunableConn
-                                            <> duplexConn
+      OutboundDupState  _ _ _ _             -> duplexConn
                                             <> outgoingConn
 
       OutboundIdleState _ _ _ Unidirectional -> uniConn
                                              <> outgoingConn
 
-      OutboundIdleState _ _ _ Duplex         -> prunableConn
-                                             <> duplexConn
+      OutboundIdleState _ _ _ Duplex         -> duplexConn
                                              <> outgoingConn
 
-      InboundIdleState _ _ _ Unidirectional -> prunableConn
-                                            <> uniConn
+      InboundIdleState _ _ _ Unidirectional -> uniConn
                                             <> incomingConn
 
-      InboundIdleState _ _ _ Duplex         -> prunableConn
-                                            <> duplexConn
+      InboundIdleState _ _ _ Duplex         -> duplexConn
                                             <> incomingConn
 
-      InboundState _ _ _ Unidirectional     -> prunableConn
-                                            <> uniConn
+      InboundState _ _ _ Unidirectional     -> uniConn
                                             <> incomingConn
 
-      InboundState _ _ _ Duplex             -> prunableConn
-                                            <> duplexConn
+      InboundState _ _ _ Duplex             -> duplexConn
                                             <> incomingConn
 
-      DuplexState _ _ _                     -> prunableConn
-                                            <> duplexConn
+      DuplexState _ _ _                     -> duplexConn
                                             <> incomingConn
                                             <> outgoingConn
 
       TerminatingState _ _ _                -> mempty
       TerminatedState _                     -> mempty
   where
-    prunableConn  = ConnectionManagerCounters 1 0 0 0 0
-    duplexConn    = ConnectionManagerCounters 0 1 0 0 0
-    uniConn       = ConnectionManagerCounters 0 0 1 0 0
-    incomingConn  = ConnectionManagerCounters 0 0 0 1 0
-    outgoingConn  = ConnectionManagerCounters 0 0 0 0 1
+    duplexConn    = ConnectionManagerCounters 1 0 0 0
+    uniConn       = ConnectionManagerCounters 0 1 0 0
+    incomingConn  = ConnectionManagerCounters 0 0 1 0
+    outgoingConn  = ConnectionManagerCounters 0 0 0 1
 
 
 instance ( Show peerAddr

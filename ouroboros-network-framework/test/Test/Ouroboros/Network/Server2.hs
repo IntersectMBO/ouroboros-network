@@ -2255,9 +2255,9 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
             . foldl'
                (\ st ce -> case ce of
                  StartClient _ ta ->
-                   Map.insert ta (ConnectionManagerCounters 1 0 1 0 0) st
+                   Map.insert ta (ConnectionManagerCounters 0 1 0 0) st
                  StartServer _ ta _ ->
-                   Map.insert ta (ConnectionManagerCounters 1 ifDuplex ifUni 0 0)
+                   Map.insert ta (ConnectionManagerCounters ifDuplex ifUni 0 0)
                                  st
                  _ -> st
                )
@@ -2274,8 +2274,8 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
                            (\cmc' provenance ->
                              cmc' <>
                              if provenance == serverAddress
-                                then ConnectionManagerCounters 0 0 0 0 1
-                                else ConnectionManagerCounters 0 0 0 1 0
+                                then ConnectionManagerCounters 0 0 0 1
+                                else ConnectionManagerCounters 0 0 1 0
                            )
                            mempty
                            conns
@@ -2287,14 +2287,13 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
     maxCounters :: ConnectionManagerCounters
                 -> ConnectionManagerCounters
                 -> ConnectionManagerCounters
-    maxCounters (ConnectionManagerCounters a b c d e)
-                (ConnectionManagerCounters a' b' c' d' e') =
+    maxCounters (ConnectionManagerCounters a b c d)
+                (ConnectionManagerCounters a' b' c' d') =
       ConnectionManagerCounters
         (max a a')
         (max b b')
         (max c c')
         (max d d')
-        (max e e')
 
     -- It is possible for the ObservableNetworkState to have discrepancies between the
     -- counters traced by TrConnectionManagerCounters. This leads to different
@@ -2313,11 +2312,11 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
     collapseCounters :: Bool -- ^ Should we remove Duplex duplicate counters out
                              -- of the total sum.
                      -> ConnectionManagerCounters
-                     -> (Int, Int, Int, Int)
-    collapseCounters t (ConnectionManagerCounters a b c d e) =
+                     -> (Int, Int, Int)
+    collapseCounters t (ConnectionManagerCounters a b c d) =
       if t
-         then (a, b, c, d + e)
-         else (a, b, c, d + e - a)
+         then (a, b, c + d)
+         else (a, b, c + d - a)
 
     networkStateTracer getState =
       sayTracer
