@@ -1162,9 +1162,14 @@ withConnectionManager ConnectionManagerArguments {
                 -- If mbTransition is Nothing, it means that the connVar was read
                 -- either in Terminating or TerminatedState. Either case we should
                 -- return Disconnected instead of Connected.
-                return (maybe (Disconnected connId Nothing)
-                              (const $ Connected connId dataFlow handle)
-                              mbTransition)
+                case mbTransition of
+                  Nothing -> return $ Disconnected connId Nothing
+                  Just {} -> do
+                    case inboundGovernorControlChannel of
+                      InResponderMode controlChannel ->
+                        atomically $ newInboundConnection controlChannel connId dataFlow handle
+                      NotInResponderMode -> return ()
+                    return $ Connected connId dataFlow handle
 
     -- Needs 'mask' in order to guarantee that the traces are logged if the an
     -- Async exception lands between the successful STM action and the logging action.

@@ -256,11 +256,7 @@ run ServerArguments {
                              serverConnectionManager
                              hardLimit socket peerAddr)
                        case a of
-                         Connected connId dataFlow handle ->
-                           atomically $
-                             ControlChannel.writeMessage
-                               serverControlChannel
-                               (ControlChannel.NewConnection Inbound connId dataFlow handle)
+                         Connected {}    -> pure ()
                          Disconnected {} -> do
                            close serverSnocket socket
                            pure ()
