@@ -163,9 +163,8 @@ prop_directPipelined f xs =
 
 prop_connect :: (Int -> Int -> (Int, Int)) -> [Int] -> Bool
 prop_connect f xs =
-    case runSimOrThrow
-           (connect
-             [] []
+    case runIdentity
+           (connectNonPipelined
              (reqRespClientPeer (reqRespClientMap xs))
              (reqRespServerPeer (reqRespServerMapAccumL (\a -> pure . f a) 0)))
 

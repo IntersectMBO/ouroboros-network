@@ -234,7 +234,7 @@ runPeer
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
-  -> Peer ps pr pl Empty st m a
+  -> Peer ps pr pl Empty st m (STM m) a
   -> m (a, Maybe bytes)
 runPeer tracer codec channel peer = do
     (driver, (v :: StrictTVar m (Maybe (SomeAsync m))))
@@ -320,8 +320,8 @@ runConnectedPeers :: forall ps pr pr' pl pl' st failure bytes m a b.
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (Role, TraceSendRecv ps)
                   -> Codec ps failure m bytes
-                  -> Peer ps pr  pl  Empty st m a
-                  -> Peer ps pr' pl' Empty st m b
+                  -> Peer ps pr  pl  Empty st m (STM m) a
+                  -> Peer ps pr' pl' Empty st m (STM m) b
                   -> m (a, b)
 runConnectedPeers createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->

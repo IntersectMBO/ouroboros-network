@@ -162,7 +162,7 @@ runPeerWithDriver
   :: forall ps (st :: ps) pr pl bytes failure dstate m a.
      MonadSTM m
   => Driver ps pr bytes failure dstate m
-  -> Peer ps pr pl Empty st m a
+  -> Peer ps pr pl Empty st m (STM m) a
   -> dstate
   -> m (a, dstate)
 runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage, recvMessageSTM} =
@@ -171,7 +171,7 @@ runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage, recvMessageST
     goEmpty
        :: forall st'.
           dstate
-       -> Peer ps pr pl 'Empty st' m a
+       -> Peer ps pr pl 'Empty st' m (STM m) a
        -> m (a, dstate)
     goEmpty !dstate (Effect k) = k >>= goEmpty dstate
 
@@ -193,14 +193,14 @@ runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage, recvMessageST
     go :: forall st1 st2 st3 q'.
           SingQueue (Tr st1 st2 <| q')
        -> DriverState ps pr st1 bytes failure dstate m
-       -> Peer ps pr pl (Tr st1 st2 <| q') st3 m a
+       -> Peer ps pr pl (Tr st1 st2 <| q') st3 m (STM m) a
        -> m (a, dstate)
     go q !dstate (Effect k) = k >>= go q dstate
 
     go q !dstate (YieldPipelined
                   refl
                   (msg :: Message ps st3 st')
-                  (k   :: Peer ps pr pl ((Tr st1 st2 <| q') |> Tr st' st'') st'' m a))
+                  (k   :: Peer ps pr pl ((Tr st1 st2 <| q') |> Tr st' st'') st'' m (STM m) a))
                 = do
       sendMessage refl msg
       go (q `snoc` (SingTr :: SingTrans (Tr st' st'')))

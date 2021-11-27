@@ -18,6 +18,8 @@ module Network.TypedProtocol.ReqResp.Client
   , requestOnce
   ) where
 
+import           Control.Monad.Class.MonadSTM (STM)
+
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Peer.Client
 import           Network.TypedProtocol.Peer.Server (Server)
@@ -38,7 +40,7 @@ data ReqRespClient req resp m a where
 reqRespClientPeer
   :: Monad m
   => ReqRespClient req resp m a
-  -> Client (ReqResp req resp) NonPipelined Empty StIdle m a
+  -> Client (ReqResp req resp) NonPipelined Empty StIdle m stm a
 
 reqRespClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
@@ -68,9 +70,9 @@ reqRespClientPeer (SendMsgReq req next) =
 
 
 
-requestOnce :: forall req resp m.
+requestOnce :: forall req resp m stm.
                Monad m
-            => (forall x. Server (ReqResp req resp) NonPipelined Empty StIdle m x)
+            => (forall x. Server (ReqResp req resp) NonPipelined Empty StIdle m stm x)
             -> (req -> m resp)
 requestOnce server req = (\(resp, _, _) -> resp)
                      <$> reqRespClientPeer client `connectNonPipelined` server
@@ -118,8 +120,8 @@ data ReqRespIdle req resp (q :: Queue (ReqResp req resp)) m a where
 --
 reqRespClientPeerPipelined
   :: Functor m
-  => ReqRespClientPipelined req resp                          m a
-  -> Client (ReqResp req resp) 'Pipelined Empty StIdle m a
+  => ReqRespClientPipelined req resp                   m         a
+  -> Client (ReqResp req resp) 'Pipelined Empty StIdle m (STM m) a
 reqRespClientPeerPipelined (ReqRespClientPipelined peer) =
     reqRespClientPeerIdle peer
 
@@ -127,14 +129,14 @@ reqRespClientPeerPipelined (ReqRespClientPipelined peer) =
 reqRespClientPeerIdle
   :: forall req resp (q :: Queue (ReqResp req resp)) m a.
      Functor m
-  => ReqRespIdle   req resp                      q        m a
-  -> Client (ReqResp req resp) 'Pipelined q StIdle m a
+  => ReqRespIdle   req resp               q        m         a
+  -> Client (ReqResp req resp) 'Pipelined q StIdle m (STM m) a
 
 reqRespClientPeerIdle = go
   where
     go :: forall (q' :: Queue (ReqResp req resp)).
-          ReqRespIdle   req resp                      q'        m a
-       -> Client (ReqResp req resp) 'Pipelined q' StIdle m a
+          ReqRespIdle   req resp                      q' m         a
+       -> Client (ReqResp req resp) 'Pipelined q' StIdle m (STM m) a
 
     go (SendMsgReqPipelined req next) =
       -- Pipelined yield: send `MsgReq`, immediately follow with the next step.

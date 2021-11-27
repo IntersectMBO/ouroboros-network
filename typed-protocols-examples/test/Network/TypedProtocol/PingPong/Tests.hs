@@ -201,9 +201,8 @@ prop_directPipelined2 (NonNegative n) =
 --
 prop_connect :: NonNegative Int -> Bool
 prop_connect (NonNegative n) =
-  case runSimOrThrow
-         (connect
-           [] []
+  case runIdentity
+         (connectNonPipelined
            (pingPongClientPeer (pingPongClientCount n))
            (pingPongServerPeer  pingPongServerCount))
 

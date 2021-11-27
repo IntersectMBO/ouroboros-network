@@ -26,8 +26,6 @@ module Network.TypedProtocol.Peer.Client
   , Queue (..)
   ) where
 
-import           Control.Monad.Class.MonadSTM (STM)
-
 import           Data.Kind (Type)
 import           Data.Singletons
 
@@ -41,23 +39,24 @@ type Client :: forall ps
             -> Queue ps
             -> ps
             -> (Type -> Type)
+            -> (Type -> Type)
             -> Type
             -> Type
-type Client ps pl q st m a = Peer ps AsClient pl q st m a
+type Client ps pl q st m stm a = Peer ps AsClient pl q st m stm a
 
 
 -- | Client role pattern for 'TP.Effect'.
 --
-pattern Effect :: forall ps pl q st m a.
-                  m (Client ps pl q st m a)
+pattern Effect :: forall ps pl q st m stm a.
+                  m (Client ps pl q st m stm a)
                -- ^ monadic continuation
-               -> Client ps pl q st m a
+               -> Client ps pl q st m stm a
 pattern Effect mclient = TP.Effect mclient
 
 
 -- | Client role pattern for 'TP.Yield'
 --
-pattern Yield :: forall ps pl st m a.
+pattern Yield :: forall ps pl st m stm a.
                  ()
               => forall st'.
                  ( SingI (PeerHasAgency st)
@@ -66,42 +65,42 @@ pattern Yield :: forall ps pl st m a.
                  )
               => Message ps st st'
               -- ^ protocol message
-              -> Client ps pl Empty st' m a
+              -> Client ps pl Empty st' m stm a
               -- ^ continuation
-              -> Client ps pl Empty st  m a
+              -> Client ps pl Empty st  m stm a
 pattern Yield msg k = TP.Yield ReflClientAgency msg k
 
 
 -- | Client role pattern for 'TP.Await'
 --
-pattern Await :: forall ps pl st m a.
+pattern Await :: forall ps pl st m stm a.
                  ()
               => ( SingI (PeerHasAgency st)
                  , StateAgency st ~ ServerAgency
                  )
               => (forall st'. Message ps st st'
-                  -> Client ps pl Empty st' m a)
+                  -> Client ps pl Empty st' m stm a)
               -- ^ continuation
-              -> Client     ps pl Empty st  m a
+              -> Client     ps pl Empty st  m stm a
 pattern Await k = TP.Await ReflServerAgency k
 
 
 -- | Client role pattern for 'TP.Done'
 --
-pattern Done :: forall ps pl st m a.
+pattern Done :: forall ps pl st m stm a.
                 ()
              => ( SingI (ProtocolState st)
                 , StateAgency st ~ NobodyAgency
                 )
              => a
              -- ^ protocol return value
-             -> Client ps pl Empty st m a
+             -> Client ps pl Empty st m stm a
 pattern Done a = TP.Done ReflNobodyAgency a
 
 
 -- | Client role pattern for 'TP.YieldPipelined'
 --
-pattern YieldPipelined :: forall ps st q m a.
+pattern YieldPipelined :: forall ps st q m stm a.
                           ()
                        => forall st' st''.
                           ( SingI (PeerHasAgency st)
@@ -110,52 +109,52 @@ pattern YieldPipelined :: forall ps st q m a.
                           )
                        => Message ps st st'
                        -- ^ pipelined message
-                       -> Client ps 'Pipelined (q |> Tr st' st'') st'' m a
+                       -> Client ps 'Pipelined (q |> Tr st' st'') st'' m stm a
                        -- ^ continuation
-                       -> Client ps 'Pipelined  q                 st   m a
+                       -> Client ps 'Pipelined  q                 st   m stm a
 pattern YieldPipelined msg k = TP.YieldPipelined ReflClientAgency msg k
 
 
 -- | Client role pattern for 'TP.Collect'
 --
-pattern Collect :: forall ps st' st'' q st m a.
+pattern Collect :: forall ps st' st'' q st m stm a.
                    ()
                 => ( SingI (PeerHasAgency st')
                    , StateAgency st' ~ ServerAgency
                    )
-                => Maybe (Client ps 'Pipelined (Tr st' st'' <| q) st m a)
+                => Maybe (Client ps 'Pipelined (Tr st' st'' <| q) st m stm a)
                 -- ^ continuation, executed if no message has arrived so far
                 -> (forall stNext. Message ps st' stNext
-                    -> Client ps 'Pipelined (Tr stNext st'' <| q) st m a)
+                    -> Client ps 'Pipelined (Tr stNext st'' <| q) st m stm a)
                 -- ^ continuation
-                -> Client     ps 'Pipelined (Tr st'    st'' <| q) st m a
+                -> Client     ps 'Pipelined (Tr st'    st'' <| q) st m stm a
 pattern Collect k' k = TP.Collect ReflServerAgency k' k
 
 
 -- | Client role pattern for 'TP.Collect'
 --
-pattern CollectSTM :: forall ps st' st'' q st m a.
+pattern CollectSTM :: forall ps st' st'' q st m stm a.
                       ()
                    => ( SingI (PeerHasAgency st')
                       , StateAgency st' ~ ServerAgency
                       )
-                   => STM m (Client ps 'Pipelined (Tr st' st'' <| q) st m a)
+                   => stm (Client ps 'Pipelined (Tr st' st'' <| q) st m stm a)
                    -- ^ continuation, executed if no message has arrived so far
                    -> (forall stNext. Message ps st' stNext
-                      -> Client ps 'Pipelined (Tr stNext st'' <| q) st m a)
+                      -> Client ps 'Pipelined (Tr stNext st'' <| q) st m stm a)
                    -- ^ continuation
-                   -> Client     ps 'Pipelined (Tr st'    st'' <| q) st m a
+                   -> Client     ps 'Pipelined (Tr st'    st'' <| q) st m stm a
 pattern CollectSTM k' k = TP.CollectSTM ReflServerAgency k' k
 
 
 -- | Client role pattern for 'TP.CollectDone'
 --
-pattern CollectDone :: forall ps st q st' m a.
+pattern CollectDone :: forall ps st q st' m stm a.
                        ()
                     => ()
-                    => Client ps 'Pipelined              q  st' m a
+                    => Client ps 'Pipelined              q  st' m stm a
                     -- ^ continuation
-                    -> Client ps 'Pipelined (Tr st st <| q) st' m a
+                    -> Client ps 'Pipelined (Tr st st <| q) st' m stm a
 pattern CollectDone k = TP.CollectDone k
 
 

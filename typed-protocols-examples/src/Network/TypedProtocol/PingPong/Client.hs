@@ -14,6 +14,8 @@ module Network.TypedProtocol.PingPong.Client
   , pingPongClientPeerPipelined
   ) where
 
+import           Control.Monad.Class.MonadSTM (STM)
+
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Peer.Client
 import           Network.TypedProtocol.PingPong.Type
@@ -54,7 +56,7 @@ data PingPongClient m a where
 pingPongClientPeer
   :: Monad m
   => PingPongClient m a
-  -> Client PingPong NonPipelined Empty StIdle m a
+  -> Client PingPong NonPipelined Empty StIdle m stm a
 
 pingPongClientPeer (SendMsgDone result) =
     -- We do an actual transition using 'yield', to go from the 'StIdle' to
@@ -140,7 +142,7 @@ data PingPongClientIdle (q :: Queue PingPong) m a where
 pingPongClientPeerPipelined
   :: Functor m
   => PingPongClientPipelined m a
-  -> Client PingPong 'Pipelined Empty StIdle m a
+  -> Client PingPong 'Pipelined Empty StIdle m (STM m) a
 pingPongClientPeerPipelined (PingPongClientPipelined peer) =
     pingPongClientPeerIdle peer
 
@@ -148,12 +150,12 @@ pingPongClientPeerPipelined (PingPongClientPipelined peer) =
 pingPongClientPeerIdle
   :: forall (q :: Queue PingPong) m a. Functor m
   => PingPongClientIdle                q        m a
-  -> Client PingPong 'Pipelined q StIdle m a
+  -> Client PingPong 'Pipelined q StIdle m (STM m) a
 pingPongClientPeerIdle = go
   where
     go :: forall (q' :: Queue PingPong).
-          PingPongClientIdle                q'        m a
-       -> Client PingPong 'Pipelined q' StIdle m a
+          PingPongClientIdle         q'        m         a
+       -> Client PingPong 'Pipelined q' StIdle m (STM m) a
 
     go (SendMsgPingPipelined next) =
       -- Pipelined yield: send `MsgPing`, immediately follow with the next step.

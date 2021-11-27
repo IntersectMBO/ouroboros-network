@@ -35,17 +35,17 @@ data F st st' where
 type SingQueue q = SingQueueF F q
 
 
-reqResp2Client :: forall req resp m.
+reqResp2Client :: forall req resp m stm.
                   ()
                => [Either req req]
-               -> Client (ReqResp2 req resp) 'Pipelined Empty StIdle m [Either resp resp]
+               -> Client (ReqResp2 req resp) 'Pipelined Empty StIdle m stm [Either resp resp]
 reqResp2Client = send SingEmptyF
   where
     -- pipeline all the requests, either through `MsgReq` or `MsgReq'`.
     send :: forall (q :: Queue (ReqResp2 req resp)).
             SingQueue q      -- queue singleton
          -> [Either req req] -- requests to send
-         -> Client (ReqResp2 req resp) 'Pipelined q StIdle m [Either resp resp]
+         -> Client (ReqResp2 req resp) 'Pipelined q StIdle m stm [Either resp resp]
 
     send !q (Left req : reqs) =
       YieldPipelined (MsgReq  req) (send (q |>
@@ -61,7 +61,7 @@ reqResp2Client = send SingEmptyF
     -- collect all the responses
     collect :: SingQueue q        -- queue singleton
             -> [Either resp resp] -- all the responses received so far
-            -> Client (ReqResp2 req resp) 'Pipelined q StIdle m [Either resp resp]
+            -> Client (ReqResp2 req resp) 'Pipelined q StIdle m stm [Either resp resp]
 
     collect SingEmptyF !resps = Yield MsgDone (Done (reverse resps))
 

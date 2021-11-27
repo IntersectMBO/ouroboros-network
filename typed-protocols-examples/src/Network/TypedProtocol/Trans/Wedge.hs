@@ -15,6 +15,8 @@
 
 module Network.TypedProtocol.Trans.Wedge where
 
+import           Control.Monad.Class.MonadSTM (STM)
+
 import           Data.Singletons
 
 import           Network.TypedProtocol.Core
@@ -110,7 +112,7 @@ type PingPong2 = Wedge PingPong.PingPong PingPong.StIdle
                        PingPong.PingPong PingPong.StIdle
 
 
-pingPong2Client :: Client.Client PingPong2 NonPipelined Empty StIdle m ()
+pingPong2Client :: Client.Client PingPong2 NonPipelined Empty StIdle m stm ()
 pingPong2Client =
     Client.Yield (MsgStart AtFst)
   $ Client.Yield (MsgFst PingPong.MsgPing)
@@ -123,7 +125,7 @@ pingPong2Client =
   $ Client.Done ()
 
 
-pingPong2Client' :: forall m. Client.Client PingPong2 'Pipelined Empty StIdle m ()
+pingPong2Client' :: forall m. Client.Client PingPong2 'Pipelined Empty StIdle m (STM m) ()
 pingPong2Client' =
     --
     -- Pipeline first protocol
@@ -140,7 +142,7 @@ pingPong2Client' =
 
     -- We need to provide the type of the existential @st''@ which is the state
     -- at which we continue after we pipeline the @'MsgSnd' 'PingPong.MsgPing'@.
-    $ Client.YieldPipelined @_ @_ @_ @_ @_ @_ @(StSnd PingPong.StIdle) (MsgSnd PingPong.MsgPing)
+    $ Client.YieldPipelined @_ @_ @_ @_ @_ @_ @_ @(StSnd PingPong.StIdle) (MsgSnd PingPong.MsgPing)
 
     --
     -- Collect reposnses from the first protocol

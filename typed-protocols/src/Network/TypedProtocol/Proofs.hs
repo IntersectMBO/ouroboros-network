@@ -80,10 +80,10 @@ import           Network.TypedProtocol.Peer
 -- minimalistic setting.
 --
 connectNonPipelined
-   :: forall ps (pr :: PeerRole) (initSt :: ps) m a b.
+   :: forall ps (pr :: PeerRole) (initSt :: ps) m stm a b.
       (Monad m, SingI pr)
-   => Peer ps             pr  NonPipelined Empty initSt m a
-   -> Peer ps (FlipAgency pr) NonPipelined Empty initSt m b
+   => Peer ps             pr  NonPipelined Empty initSt m stm a
+   -> Peer ps (FlipAgency pr) NonPipelined Empty initSt m stm b
    -> m (a, b, TerminalStates ps pr)
 connectNonPipelined = go
   where
@@ -91,8 +91,8 @@ connectNonPipelined = go
     singPeerRole = sing
 
     go :: forall (st :: ps).
-          Peer ps             pr  NonPipelined Empty st m a
-       -> Peer ps (FlipAgency pr) NonPipelined Empty st m b
+          Peer ps             pr  NonPipelined Empty st m stm a
+       -> Peer ps (FlipAgency pr) NonPipelined Empty st m stm b
        -> m (a, b, TerminalStates ps pr)
     go (Done reflA a)  (Done reflB b)  = return (a, b, terminals)
       where
@@ -227,14 +227,14 @@ forgetPipelined
     -- pipelining.  For the 'CollectSTM' primitive, the stm action must not
     -- block otherwise even if the choice is to pipeline more (a 'True' value),
     -- we'll actually collect a result.
-    -> Peer ps (pr :: PeerRole) pl           Empty initSt m a
-    -> Peer ps  pr              NonPipelined Empty initSt m a
+    -> Peer ps (pr :: PeerRole) pl           Empty initSt m (STM m) a
+    -> Peer ps  pr              NonPipelined Empty initSt m (STM m) a
 forgetPipelined cs0 = go cs0 EmptyQ
   where
     go :: [Bool]
        -> SQueue ps pr            st q     st'
-       -> Peer   ps pr pl            q     st' m a
-       -> Peer   ps pr 'NonPipelined Empty st  m a
+       -> Peer   ps pr pl            q     st' m (STM m) a
+       -> Peer   ps pr 'NonPipelined Empty st  m (STM m) a
 
     go cs pq     (Effect k)         = Effect         $ go cs pq <$> k
     go cs EmptyQ (Yield stok msg k) = Yield stok msg $ go cs EmptyQ k
@@ -309,8 +309,8 @@ connect
        (MonadSTM m, SingI pr)
     => [Bool]
     -> [Bool]
-    -> Peer ps             pr  pl  Empty st m a
-    -> Peer ps (FlipAgency pr) pl' Empty st m b
+    -> Peer ps             pr  pl  Empty st m (STM m) a
+    -> Peer ps (FlipAgency pr) pl' Empty st m (STM m) b
     -> m (a, b, TerminalStates ps pr)
 connect csA csB a b =
     connectNonPipelined (forgetPipelined csA a)
