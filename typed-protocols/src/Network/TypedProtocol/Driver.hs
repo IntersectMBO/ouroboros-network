@@ -15,6 +15,7 @@ module Network.TypedProtocol.Driver
     -- $intro
     -- * Driver interface
     Driver (..)
+  , DriverState (..)
   , SomeMessage (..)
     -- * Running a peer
   , runPeerWithDriver

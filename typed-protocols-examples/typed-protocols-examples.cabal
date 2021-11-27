@@ -52,6 +52,7 @@ library
                      cborg,
                      serialise,
                      singletons,
+                     strict-stm,
                      contra-tracer,
                      io-classes,
                      network,
