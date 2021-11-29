@@ -56,7 +56,8 @@ import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.InboundGovernor.ControlChannel
+import           Ouroboros.Network.InboundGovernor.ControlChannel (ControlChannel)
+import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
@@ -244,54 +245,47 @@ connectionStateToCounters state =
     case state of
       ReservedOutboundState                 -> mempty
 
-      UnnegotiatedState Inbound _ _         -> prunableConn
-                                            <> incomingConn
+      UnnegotiatedState Inbound _ _         -> inboundConn
 
-      UnnegotiatedState Outbound _ _        -> outgoingConn
+      UnnegotiatedState Outbound _ _        -> outboundConn
 
-      OutboundUniState _ _ _                -> uniConn
-                                            <> outgoingConn
+      OutboundUniState _ _ _                -> unidirectionalConn
+                                            <> outboundConn
 
-      OutboundDupState  _ _ _ _             -> prunableConn
+      OutboundDupState  _ _ _ _             -> duplexConn
+                                            <> outboundConn
+
+      OutboundIdleState _ _ _ Unidirectional -> unidirectionalConn
+                                             <> outboundConn
+
+      OutboundIdleState _ _ _ Duplex         -> duplexConn
+                                             <> outboundConn
+
+      InboundIdleState _ _ _ Unidirectional -> unidirectionalConn
+                                            <> inboundConn
+
+      InboundIdleState _ _ _ Duplex         -> duplexConn
+                                            <> inboundConn
+
+      InboundState _ _ _ Unidirectional     -> unidirectionalConn
+                                            <> inboundConn
+
+      InboundState _ _ _ Duplex             -> duplexConn
+                                            <> inboundConn
+
+      DuplexState _ _ _                     -> fullDuplexConn
                                             <> duplexConn
-                                            <> outgoingConn
-
-      OutboundIdleState _ _ _ Unidirectional -> uniConn
-                                             <> outgoingConn
-
-      OutboundIdleState _ _ _ Duplex         -> prunableConn
-                                             <> duplexConn
-                                             <> outgoingConn
-
-      InboundIdleState _ _ _ Unidirectional -> prunableConn
-                                            <> uniConn
-                                            <> incomingConn
-
-      InboundIdleState _ _ _ Duplex         -> prunableConn
-                                            <> duplexConn
-                                            <> incomingConn
-
-      InboundState _ _ _ Unidirectional     -> prunableConn
-                                            <> uniConn
-                                            <> incomingConn
-
-      InboundState _ _ _ Duplex             -> prunableConn
-                                            <> duplexConn
-                                            <> incomingConn
-
-      DuplexState _ _ _                     -> prunableConn
-                                            <> duplexConn
-                                            <> incomingConn
-                                            <> outgoingConn
+                                            <> inboundConn
+                                            <> outboundConn
 
       TerminatingState _ _ _                -> mempty
       TerminatedState _                     -> mempty
   where
-    prunableConn  = ConnectionManagerCounters 1 0 0 0 0
-    duplexConn    = ConnectionManagerCounters 0 1 0 0 0
-    uniConn       = ConnectionManagerCounters 0 0 1 0 0
-    incomingConn  = ConnectionManagerCounters 0 0 0 1 0
-    outgoingConn  = ConnectionManagerCounters 0 0 0 0 1
+    fullDuplexConn     = ConnectionManagerCounters 1 0 0 0 0
+    duplexConn         = ConnectionManagerCounters 0 1 0 0 0
+    unidirectionalConn = ConnectionManagerCounters 0 0 1 0 0
+    inboundConn        = ConnectionManagerCounters 0 0 0 1 0
+    outboundConn       = ConnectionManagerCounters 0 0 0 0 1
 
 
 instance ( Show peerAddr
@@ -538,7 +532,7 @@ withConnectionManager
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
-    -> InResponderMode muxMode (ControlChannel m (NewConnection peerAddr handle))
+    -> InResponderMode muxMode (ControlChannel m (ControlChannel.NewConnection peerAddr handle))
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
@@ -694,7 +688,7 @@ withConnectionManager ConnectionManagerArguments {
         :: ConnectionManagerState peerAddr handle handleError version m
         -> STM m Int
     countIncomingConnections st =
-          incomingConns
+          inboundConns
         . connectionManagerStateToCounters
       <$> traverse (readTVar . connVar) st
 
@@ -1169,9 +1163,15 @@ withConnectionManager ConnectionManagerArguments {
                 -- If mbTransition is Nothing, it means that the connVar was read
                 -- either in Terminating or TerminatedState. Either case we should
                 -- return Disconnected instead of Connected.
-                return (maybe (Disconnected connId Nothing)
-                              (const $ Connected connId dataFlow handle)
-                              mbTransition)
+                case mbTransition of
+                  Nothing -> return $ Disconnected connId Nothing
+                  Just {} -> do
+                    case inboundGovernorControlChannel of
+                      InResponderMode controlChannel ->
+                        atomically $ ControlChannel.newInboundConnection
+                                       controlChannel connId dataFlow handle
+                      NotInResponderMode -> return ()
+                    return $ Connected connId dataFlow handle
 
     -- Needs 'mask' in order to guarantee that the traces are logged if the an
     -- Async exception lands between the successful STM action and the logging action.
@@ -1731,7 +1731,8 @@ withConnectionManager ConnectionManagerArguments {
                           writeTVar connVar connState'
                           case inboundGovernorControlChannel of
                             InResponderMode controlChannel ->
-                              newOutboundConnection controlChannel connId dataFlow handle
+                              ControlChannel.newOutboundConnection
+                                               controlChannel connId dataFlow handle
                             NotInResponderMode -> return ()
                           return (Just $ mkTransition connState connState')
                     TerminatedState _ ->

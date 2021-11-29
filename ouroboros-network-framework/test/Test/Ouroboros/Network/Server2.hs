@@ -2250,15 +2250,31 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
           -- machine (DuplexSt). Then the ObservableNetworkState is used to make
           -- a more accurate guess of the actual upper bound of inbound/outbound
           -- connections.
+          --
+          -- TODO: we are computing upper bound of contribution of each
+          -- address seprately.  This avoids tracking timing information of
+          -- events, which is less acurate but it might be less fragile.  We
+          -- should investiage if it's possible to make accurate and robust
+          -- time series of counter changes.
           connectionManagerCounters =
-            foldMap' id
+              foldMap' id
             . foldl'
                (\ st ce -> case ce of
                  StartClient _ ta ->
-                   Map.insert ta (ConnectionManagerCounters 1 0 1 0 0) st
-                 StartServer _ ta _ ->
-                   Map.insert ta (ConnectionManagerCounters 1 ifDuplex ifUni 0 0)
-                                 st
+                   Map.alter (let c = ConnectionManagerCounters 0 0 1 0 0 in
+                              maybe (Just c) (Just . maxCounters c))
+                             ta st
+
+                 OutboundConnection _ ta ->
+                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 0 1 in
+                              maybe (Just c) (Just . maxCounters c))
+                             ta st
+
+                 InboundConnection _ ta ->
+                   Map.alter (let c = ConnectionManagerCounters 0 ifDuplex ifUni 1 0 in
+                              maybe (Just c) (Just . maxCounters c))
+                             ta st
+
                  _ -> st
                )
                Map.empty
@@ -2310,14 +2326,16 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
     --
     -- TODO: Try idea in: ouroboros-network/pull/3429#discussion_r746406157
     --
+    -- TODO: test the number of full duplex connections.
+    --
     collapseCounters :: Bool -- ^ Should we remove Duplex duplicate counters out
                              -- of the total sum.
                      -> ConnectionManagerCounters
-                     -> (Int, Int, Int, Int)
-    collapseCounters t (ConnectionManagerCounters a b c d e) =
+                     -> (Int, Int, Int)
+    collapseCounters t (ConnectionManagerCounters _ a b c d) =
       if t
-         then (a, b, c, d + e)
-         else (a, b, c, d + e - a)
+         then (a, b, c + d)
+         else (a, b, c + d - a)
 
     networkStateTracer getState =
       sayTracer
@@ -2823,12 +2841,12 @@ prop_never_above_hardlimit serverAcc
                 (TrConnectionManagerCounters cmc) ->
                     AllProperty
                     . counterexample ("HardLimit: " ++ show hardlimit ++
-                                      ", but got: " ++ show (incomingConns cmc) ++
-                                      " incoming connections!\n" ++
+                                      ", but got: " ++ show (inboundConns cmc) ++
+                                      " inbound connections!\n" ++
                                       show cmc
                                      )
                     . property
-                    $ incomingConns cmc <= fromIntegral hardlimit
+                    $ inboundConns cmc <= fromIntegral hardlimit
                 (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
                   ( AllProperty
                   . counterexample (concat

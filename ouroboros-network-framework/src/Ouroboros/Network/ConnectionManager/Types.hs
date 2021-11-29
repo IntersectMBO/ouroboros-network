@@ -658,18 +658,18 @@ data AbstractState
 -- | Counters for tracing and analysis purposes
 --
 data ConnectionManagerCounters = ConnectionManagerCounters {
-      prunableConns :: !Int, -- ^ number of connections relevant for pruning
-      duplexConns   :: !Int, -- ^ number of negotiated duplex connections
-                             -- (including DuplexState connections)
-      uniConns      :: !Int, -- ^ number of negotiated unidirectional connections
-      incomingConns :: !Int, -- ^ number of inbound connections
-      outgoingConns :: !Int  -- ^ number of outbound connections
+      fullDuplexConns     :: !Int, -- ^ number of full duplex connections
+      duplexConns         :: !Int, -- ^ number of negotiated duplex connections
+                                   --   (including DuplexState connections)
+      unidirectionalConns :: !Int, -- ^ number of negotiated unidirectional connections
+      inboundConns        :: !Int, -- ^ number of inbound connections
+      outboundConns       :: !Int  -- ^ number of outbound connections
     }
   deriving (Show, Eq, Ord)
 
 instance Semigroup ConnectionManagerCounters where
-    ConnectionManagerCounters c1 d1 s1 i1 o1 <> ConnectionManagerCounters c2 d2 s2 i2 o2 =
-      ConnectionManagerCounters (c1 + c2) (d1 + d2) (s1 + s2) (i1 + i2) (o1 + o2)
+    ConnectionManagerCounters fd1 d1 s1 i1 o1 <> ConnectionManagerCounters fd2 d2 s2 i2 o2 =
+      ConnectionManagerCounters (fd1 + fd2) (d1 + d2) (s1 + s2) (i1 + i2) (o1 + o2)
 
 instance Monoid ConnectionManagerCounters where
     mempty = ConnectionManagerCounters 0 0 0 0 0
