@@ -2309,6 +2309,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
     -- duplicates.
     --
     -- TODO: Try idea in: ouroboros-network/pull/3429#discussion_r746406157
+    --       See issue: #3509
     --
     collapseCounters :: Bool -- ^ Should we remove Duplex duplicate counters out
                              -- of the total sum.
