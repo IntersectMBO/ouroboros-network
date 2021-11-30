@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -131,11 +132,12 @@ instance CanMock era => Arbitrary (ShelleyTip era) where
 instance Arbitrary ShelleyTransition where
   arbitrary = ShelleyTransitionInfo <$> arbitrary
 
-instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era) EmptyMK) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
+    <*> pure (ShelleyLedgerTables ApplyEmptyMK)
 
 instance CanMock era => Arbitrary (AnnTip (ShelleyBlock era)) where
   arbitrary = AnnTip

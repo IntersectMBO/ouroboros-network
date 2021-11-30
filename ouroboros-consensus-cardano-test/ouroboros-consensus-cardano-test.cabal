@@ -38,6 +38,7 @@ library
                      , cardano-slotting
                      , containers
                      , mtl
+                     , nothunks
                      , QuickCheck
                      , sop-core
                      , strict-containers

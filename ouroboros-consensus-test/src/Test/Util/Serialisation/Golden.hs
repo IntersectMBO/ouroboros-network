@@ -222,9 +222,9 @@ data Examples blk = Examples {
     , exampleQuery            :: Labelled (SomeQuery (BlockQuery blk))
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
-    , exampleLedgerState      :: Labelled (LedgerState blk)
+    , exampleLedgerState      :: Labelled (LedgerState blk EmptyMK)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
-    , exampleExtLedgerState   :: Labelled (ExtLedgerState EmptyMK blk)
+    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk EmptyMK)
     , exampleSlotNo           :: Labelled SlotNo
     }
 

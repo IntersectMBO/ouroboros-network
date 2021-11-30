@@ -66,6 +66,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
 test-suite test
@@ -110,6 +111,7 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts

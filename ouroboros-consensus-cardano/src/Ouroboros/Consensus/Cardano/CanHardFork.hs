@@ -43,6 +43,8 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , ShelleyPartialLedgerConfig (..)
   , forecastAcrossShelley
   , translateChainDepStateAcrossShelley
+    -- * Data families
+  , LedgerTables (..)
   ) where
 
 import           Control.Monad
@@ -350,7 +352,7 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
 -- have so far not found a pleasant way to express that compositionally.
 instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c)) where
   newtype LedgerTables (LedgerState (CardanoBlock c)) mk = CardanoLedgerTables {
-        shelleyUTxOTable ::
+        cardanoUTxOTable ::
             ApplyMapKind
               mk
               (SL.TxIn c)
@@ -562,6 +564,20 @@ instance IsShelleyTele xs => IsShelleyTele (x ': xs) where
   unconsolidateShelleyTele   = \case
     TZ (Comp x)       -> TZ x
     TS (Comp p) inner -> TS p (unconsolidateShelleyTele inner)
+
+instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoBlock c)) where
+
+  -- TODO methods
+
+instance CardanoHardForkConstraints c
+      => TableStuff (Ticked1 (LedgerState (CardanoBlock c))) where
+  newtype LedgerTables (Ticked1 (LedgerState (CardanoBlock c))) mk = 
+    TickedCardanoLedgerTables (LedgerTables (LedgerState (CardanoBlock c)) mk)
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (CardanoBlock c)))) where
+  showsLedgerState = error "showsLedgerState @Ticked CardanoBlock"
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley
