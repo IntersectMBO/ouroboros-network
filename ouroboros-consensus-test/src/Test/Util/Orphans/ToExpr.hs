@@ -37,10 +37,10 @@ instance (ToExpr slot, ToExpr hash) => ToExpr (Block slot hash)
   ouroboros-consensus
 -------------------------------------------------------------------------------}
 
-instance ( ToExpr (LedgerState blk)
+instance ( ToExpr (LedgerState blk EmptyMK)
          , ToExpr (ChainDepState (BlockProtocol blk))
          , ToExpr (TipInfo blk)
-         ) => ToExpr (ExtLedgerState EmptyMK blk)
+         ) => ToExpr (ExtLedgerState blk EmptyMK)
 
 instance ( ToExpr (ChainDepState (BlockProtocol blk))
          , ToExpr (TipInfo blk)

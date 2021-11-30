@@ -113,9 +113,9 @@ examples = Golden.Examples {
     , exampleQuery            = unlabelled exampleQuery
     , exampleResult           = unlabelled exampleResult
     , exampleAnnTip           = unlabelled exampleAnnTip
-    , exampleLedgerState      = unlabelled exampleLedgerState
+    , exampleLedgerState      = unlabelled $ forgetLedgerStateTables exampleLedgerState
     , exampleChainDepState    = unlabelled exampleChainDepState
-    , exampleExtLedgerState   = unlabelled exampleExtLedgerState
+    , exampleExtLedgerState   = unlabelled $ forgetLedgerStateTables exampleExtLedgerState
     , exampleSlotNo           = unlabelled exampleSlotNo
     }
   where
@@ -177,7 +177,7 @@ exampleChainDepState = S.fromList signers
   where
     signers = map (`S.PBftSigner` CC.exampleKeyHash) [1..4]
 
-emptyLedgerState :: LedgerState ByronBlock
+emptyLedgerState :: LedgerState ByronBlock mk
 emptyLedgerState = ByronLedgerState {
       byronLedgerTipBlockNo = Origin
     , byronLedgerState      = initState
@@ -188,22 +188,26 @@ emptyLedgerState = ByronLedgerState {
     Right initState = runExcept $
       CC.Block.initialChainValidationState ledgerConfig
 
-ledgerStateAfterEBB :: LedgerState ByronBlock
+ledgerStateAfterEBB :: LedgerState ByronBlock ValuesMK
 ledgerStateAfterEBB =
-      reapplyLedgerBlock ledgerConfig exampleEBB
+      forgetLedgerStateTracking
+    . reapplyLedgerBlock ledgerConfig exampleEBB
+    . forgetTickedLedgerStateTracking
     . applyChainTick ledgerConfig (SlotNo 0)
     $ emptyLedgerState
 
-exampleLedgerState :: LedgerState ByronBlock
+exampleLedgerState :: LedgerState ByronBlock ValuesMK
 exampleLedgerState =
-      reapplyLedgerBlock ledgerConfig exampleBlock
+      forgetLedgerStateTracking
+    . reapplyLedgerBlock ledgerConfig exampleBlock
+    . forgetTickedLedgerStateTracking
     . applyChainTick ledgerConfig (SlotNo 1)
     $ ledgerStateAfterEBB
 
 exampleHeaderState :: HeaderState ByronBlock
 exampleHeaderState = HeaderState (NotOrigin exampleAnnTip) exampleChainDepState
 
-exampleExtLedgerState :: ExtLedgerState EmptyMK ByronBlock
+exampleExtLedgerState :: ExtLedgerState ByronBlock ValuesMK
 exampleExtLedgerState = ExtLedgerState {
       ledgerState = exampleLedgerState
     , headerState = exampleHeaderState

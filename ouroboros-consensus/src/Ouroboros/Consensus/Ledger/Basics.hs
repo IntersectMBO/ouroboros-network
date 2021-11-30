@@ -42,7 +42,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , DiskLedgerView
   , FootprintL (..)
   , MapKind (..)
-  , SMapKind (..)
+  , SMapKind
+  , Sing (..)
   , TableKeySets
   , TableStuff (..)
   , TickedTableStuff (..)
@@ -67,6 +68,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL (..
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
+import           Ouroboros.Consensus.Util.Singletons
 
 {-------------------------------------------------------------------------------
   Tip
@@ -294,14 +296,22 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
 
   -- TODO methods
 
-data SMapKind :: MapKind -> Type where
-  SEmptyMK    :: SMapKind EmptyMK
-  SKeysMK     :: SMapKind KeysMK
-  SValuesMK   :: SMapKind ValuesMK
-  STrackingMK :: SMapKind TrackingMK
-  SDiffMK     :: SMapKind DiffMK
+data instance Sing (mk :: MapKind) :: Type where
+  SEmptyMK    :: Sing EmptyMK
+  SKeysMK     :: Sing KeysMK
+  SValuesMK   :: Sing ValuesMK
+  STrackingMK :: Sing TrackingMK
+  SDiffMK     :: Sing DiffMK
 
-instance Eq (SMapKind mk) where
+type SMapKind = Sing :: MapKind -> Type
+
+instance SingI EmptyMK    where sing = SEmptyMK
+instance SingI KeysMK     where sing = SKeysMK
+instance SingI ValuesMK   where sing = SValuesMK
+instance SingI TrackingMK where sing = STrackingMK
+instance SingI DiffMK     where sing = SDiffMK
+
+instance Eq (Sing (mk :: MapKind)) where
   l == _ = case l of
     SEmptyMK    -> True
     SKeysMK     -> True
@@ -309,7 +319,7 @@ instance Eq (SMapKind mk) where
     STrackingMK -> True
     SDiffMK     -> True
 
-instance Show (SMapKind mk) where
+instance Show (Sing (mk :: MapKind)) where
   show = \case
     SEmptyMK    -> "SEmptyMK"
     SKeysMK     -> "SKeysMK"
@@ -317,7 +327,7 @@ instance Show (SMapKind mk) where
     STrackingMK -> "STrackingMK"
     SDiffMK     -> "SDiffMK"
 
-deriving via OnlyCheckWhnfNamed "SMapKind" (SMapKind mk) instance NoThunks (SMapKind mk)
+deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
 
 -- | Ledger state associated with a block
 data family LedgerState blk :: LedgerStateKind

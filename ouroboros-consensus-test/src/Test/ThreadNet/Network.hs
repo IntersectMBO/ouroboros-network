@@ -234,7 +234,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
 -- context.
 --
 data VertexStatus m blk
-  = VDown (Chain blk) (LedgerState blk)
+  = VDown (Chain blk) (LedgerState blk EmptyMK)
     -- ^ The vertex does not currently have a node instance; its previous
     -- instance stopped with this chain and ledger state (empty/initial before
     -- first instance)
@@ -586,7 +586,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> ResourceRegistry m
       -> (SlotNo -> STM m ())
       -> LedgerConfig blk
-      -> STM m (LedgerState blk)
+      -> STM m (LedgerState blk EmptyMK)
       -> Mempool m blk TicketNo
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
@@ -599,16 +599,17 @@ runThreadNetwork systemTime ThreadNetworkArgs
             checkSt slot snap =
                 any (wouldBeValid slot (snapshotLedgerState snap)) txs0
 
-        let loop (slot, ledger, mempFp) = do
+        let loop :: (SlotNo, LedgerState blk EmptyMK, [TicketNo]) -> m a
+            loop (slot, ledger, mempFp) = do
               (snap1, snap2) <- atomically $ do
                 snap1 <- getSnapshotFor mempool $
                   -- This node would include these crucial txs if it leads in
                   -- this slot.
-                  ForgeInKnownSlot slot $ applyChainTick lcfg slot ledger
+                  ForgeInKnownSlot slot $ forgetLedgerStateTracking $ applyChainTick lcfg slot (error "UTxO HD hole" ledger)
                 snap2 <- getSnapshotFor mempool $
                   -- Other nodes might include these crucial txs when leading
                   -- in the next slot.
-                  ForgeInKnownSlot (succ slot) $ applyChainTick lcfg (succ slot) ledger
+                  ForgeInKnownSlot (succ slot) $ forgetLedgerStateTracking $ applyChainTick lcfg (succ slot) (error "UTxO HD hole" ledger)
                 -- This loop will repeat for the next slot, so we only need to
                 -- check for this one and the next.
                 pure (snap1, snap2)
@@ -665,7 +666,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> STM m (ExtLedgerState EmptyMK blk)
+                   -> STM m (ExtLedgerState blk EmptyMK)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
@@ -676,14 +677,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
         -- we generate different transactions in each slot.
         let txs = runGen
                 (nodeSeed `combineWith` unSlotNo curSlotNo)
-                (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra ledger)     -- TODO
+                (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra (error "UTxO HD hole" ledger))     -- TODO
 
         void $ addTxs mempool txs
 
     mkArgs :: OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
-           -> ExtLedgerState EmptyMK blk
+           -> ExtLedgerState blk EmptyMK
            -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)
@@ -821,7 +822,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -> TopLevelConfig blk
             -> BlockNo
             -> SlotNo
-            -> TickedLedgerState blk
+            -> TickedLedgerState blk mk
             -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk
@@ -871,12 +872,12 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- fail if the EBB is invalid
                   -- if it is valid, we retick to the /same/ slot
                   let apply = applyLedgerBlock (configLedger pInfoConfig)
-                  tickedLdgSt' <- case Exc.runExcept $ apply ebb tickedLdgSt of
+                  tickedLdgSt' <- case Exc.runExcept $ apply ebb (error "UTxOHD hole" tickedLdgSt) of
                     Left e   -> Exn.throw $ JitEbbError @blk e
                     Right st -> pure $ applyChainTick
                                         (configLedger pInfoConfig)
                                         currentSlot
-                                        st
+                                        (forgetLedgerStateTracking st)
 
                   -- forge the block usings the ledger state that includes
                   -- the EBB
@@ -1464,7 +1465,7 @@ data NodeOutput blk = NodeOutput
   { nodeOutputAdds         :: Map SlotNo (Set (RealPoint blk, BlockNo))
   , nodeOutputCannotForges :: Map SlotNo [CannotForge blk]
   , nodeOutputFinalChain   :: Chain blk
-  , nodeOutputFinalLedger  :: LedgerState blk
+  , nodeOutputFinalLedger  :: LedgerState blk EmptyMK
   , nodeOutputForges       :: Map SlotNo blk
   , nodeOutputHeaderAdds   :: Map SlotNo [(RealPoint blk, BlockNo)]
   , nodeOutputInvalids     :: Map (RealPoint blk) [ExtValidationError blk]
@@ -1485,7 +1486,7 @@ mkTestOutput ::
     => [( CoreNodeId
         , m (NodeInfo blk MockFS [])
         , Chain blk
-        , LedgerState blk
+        , LedgerState blk EmptyMK
         )]
     -> m (TestOutput blk)
 mkTestOutput vertexInfos = do

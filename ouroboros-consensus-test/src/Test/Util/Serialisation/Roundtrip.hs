@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DerivingVia          #-}
@@ -48,7 +49,7 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerState, MapKind (EmptyMK))
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..),
                      QueryVersion)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
@@ -130,7 +131,7 @@ roundtrip_all
      , Arbitrary' blk
      , Arbitrary' (Header blk)
      , Arbitrary' (HeaderHash blk)
-     , Arbitrary' (LedgerState blk)
+     , Arbitrary' (LedgerState blk EmptyMK)
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ChainDepState (BlockProtocol blk))
 
@@ -170,7 +171,7 @@ roundtrip_SerialiseDisk
 
      , Arbitrary' blk
      , Arbitrary' (Header blk)
-     , Arbitrary' (LedgerState blk)
+     , Arbitrary' (LedgerState blk EmptyMK)
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ChainDepState (BlockProtocol blk))
      )
@@ -191,7 +192,7 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
       -- Since the 'LedgerState' is a large data structure, we lower the
       -- number of tests to avoid slowing down the testsuite too much
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
-      rt (Proxy @(LedgerState blk)) "LedgerState"
+      rt (Proxy @(LedgerState blk EmptyMK)) "LedgerState"
     , rt (Proxy @(AnnTip blk)) "AnnTip"
     , rt (Proxy @(ChainDepState (BlockProtocol blk))) "ChainDepState"
     ]
