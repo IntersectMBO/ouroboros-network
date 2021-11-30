@@ -81,11 +81,14 @@ instance (forall a'. NoThunks (m a'))
   Instances for io-classes
 -------------------------------------------------------------------------------}
 
-instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
-  type TVar_    (WithEarlyExit stm) = TVar_    stm
-  type TMVar_   (WithEarlyExit stm) = TMVar_   stm
-  type TQueue_  (WithEarlyExit stm) = TQueue_  stm
-  type TBQueue_ (WithEarlyExit stm) = TBQueue_ stm
+instance MonadSTM m => MonadSTM (WithEarlyExit m) where
+  type STM (WithEarlyExit m) = WithEarlyExit (STM m)
+  atomically                 = earlyExit . atomically . withEarlyExit
+
+  type TVar    (WithEarlyExit m) = TVar    m
+  type TMVar   (WithEarlyExit m) = TMVar   m
+  type TQueue  (WithEarlyExit m) = TQueue  m
+  type TBQueue (WithEarlyExit m) = TBQueue m
 
   newTVar         = lift .  newTVar
   readTVar        = lift .  readTVar
@@ -120,10 +123,6 @@ instance MonadSTMTx stm => MonadSTMTx (WithEarlyExit stm) where
   isEmptyTBQueue  = lift .  isEmptyTBQueue
   isFullTBQueue   = lift .  isFullTBQueue
 
-instance MonadSTM m => MonadSTM (WithEarlyExit m) where
-  type STM (WithEarlyExit m) = WithEarlyExit (STM m)
-
-  atomically      = earlyExit . atomically . withEarlyExit
   newTMVarIO      = lift . newTMVarIO
   newEmptyTMVarIO = lift   newEmptyTMVarIO
 
@@ -171,19 +170,17 @@ instance MonadThread m => MonadThread (WithEarlyExit m) where
   myThreadId  = lift    myThreadId
   labelThread = lift .: labelThread
 
-instance (MonadAsyncSTM async stm, MonadCatch stm)
-      => MonadAsyncSTM (WithEarlyExit async) (WithEarlyExit stm) where
-  waitCatchSTM a = earlyExit (commute      <$> waitCatchSTM (withEarlyExit a))
-  pollSTM      a = earlyExit (fmap commute <$> pollSTM      (withEarlyExit a))
-
 instance (MonadMask m, MonadAsync m, MonadCatch (STM m))
       => MonadAsync (WithEarlyExit m) where
   type Async (WithEarlyExit m) = WithEarlyExit (Async m)
 
   async            = lift . (fmap earlyExit . async) . withEarlyExit
-  asyncThreadId _p = asyncThreadId (Proxy @(WithEarlyExit m))
+  asyncThreadId    = asyncThreadId
   cancel        a  = lift $ cancel     (withEarlyExit a)
   cancelWith    a  = lift . cancelWith (withEarlyExit a)
+
+  waitCatchSTM a = earlyExit (commute      <$> waitCatchSTM (withEarlyExit a))
+  pollSTM      a = earlyExit (fmap commute <$> pollSTM      (withEarlyExit a))
 
   asyncWithUnmask f = earlyExit $ fmap (Just . earlyExit) $
     asyncWithUnmask $ \unmask ->

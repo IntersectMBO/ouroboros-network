@@ -377,14 +377,14 @@ instructionHelper registry varFollower blockComponent fromMaybeSTM CDB{..} = do
 
 -- | 'followerInstruction' for when the follower is in the 'FollowerInMem' state.
 instructionSTM ::
-     forall stm blk. (MonadSTMTx stm, HasHeader (Header blk))
+     forall m blk. (MonadSTM m, HasHeader (Header blk))
   => FollowerRollState blk
      -- ^ The current 'FollowerRollState' of the follower
   -> AnchoredFragment (Header blk)
      -- ^ The current chain fragment
-  -> (FollowerRollState blk -> stm ())
+  -> (FollowerRollState blk -> STM m ())
      -- ^ How to save the updated 'FollowerRollState'
-  -> stm (Maybe (ChainUpdate blk (Header blk)))
+  -> STM m (Maybe (ChainUpdate blk (Header blk)))
 instructionSTM rollState curChain saveRollState =
     assert (invariant curChain) $ case rollState of
       RollForwardFrom pt ->
