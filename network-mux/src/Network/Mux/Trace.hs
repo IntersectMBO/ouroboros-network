@@ -121,31 +121,31 @@ data MuxBearerState = Mature
 --
 data MuxTrace =
       MuxTraceRecvHeaderStart
-    | MuxTraceRecvHeaderEnd !MuxSDUHeader
-    | MuxTraceRecvDeltaQObservation !MuxSDUHeader Time
-    | MuxTraceRecvDeltaQSample !Double !Int !Int !Double !Double !Double !Double !String
-    | MuxTraceRecvStart !Int
-    | MuxTraceRecvEnd !Int
-    | MuxTraceSendStart !MuxSDUHeader
+    | MuxTraceRecvHeaderEnd MuxSDUHeader
+    | MuxTraceRecvDeltaQObservation MuxSDUHeader Time
+    | MuxTraceRecvDeltaQSample Double Int Int Double Double Double Double String
+    | MuxTraceRecvStart Int
+    | MuxTraceRecvEnd Int
+    | MuxTraceSendStart MuxSDUHeader
     | MuxTraceSendEnd
-    | MuxTraceState !MuxBearerState
-    | MuxTraceCleanExit !MiniProtocolNum !MiniProtocolDir
-    | MuxTraceExceptionExit !MiniProtocolNum !MiniProtocolDir !SomeException
-    | MuxTraceChannelRecvStart !MiniProtocolNum
-    | MuxTraceChannelRecvEnd !MiniProtocolNum !Int
-    | MuxTraceChannelSendStart !MiniProtocolNum !Int
-    | MuxTraceChannelSendEnd !MiniProtocolNum
+    | MuxTraceState MuxBearerState
+    | MuxTraceCleanExit MiniProtocolNum MiniProtocolDir
+    | MuxTraceExceptionExit MiniProtocolNum MiniProtocolDir SomeException
+    | MuxTraceChannelRecvStart MiniProtocolNum
+    | MuxTraceChannelRecvEnd MiniProtocolNum Int
+    | MuxTraceChannelSendStart MiniProtocolNum Int
+    | MuxTraceChannelSendEnd MiniProtocolNum
     | MuxTraceHandshakeStart
-    | MuxTraceHandshakeClientEnd !DiffTime
+    | MuxTraceHandshakeClientEnd DiffTime
     | MuxTraceHandshakeServerEnd
-    | forall e. Exception e => MuxTraceHandshakeClientError !e !DiffTime
-    | forall e. Exception e => MuxTraceHandshakeServerError !e
+    | forall e. Exception e => MuxTraceHandshakeClientError e DiffTime
+    | forall e. Exception e => MuxTraceHandshakeServerError e
     | MuxTraceSDUReadTimeoutException
     | MuxTraceSDUWriteTimeoutException
-    | MuxTraceStartEagerly !MiniProtocolNum !MiniProtocolDir
-    | MuxTraceStartOnDemand !MiniProtocolNum !MiniProtocolDir
-    | MuxTraceStartedOnDemand !MiniProtocolNum !MiniProtocolDir
-    | MuxTraceTerminating !MiniProtocolNum !MiniProtocolDir
+    | MuxTraceStartEagerly MiniProtocolNum MiniProtocolDir
+    | MuxTraceStartOnDemand MiniProtocolNum MiniProtocolDir
+    | MuxTraceStartedOnDemand MiniProtocolNum MiniProtocolDir
+    | MuxTraceTerminating MiniProtocolNum MiniProtocolDir
     | MuxTraceShutdown
 
 instance Show MuxTrace where

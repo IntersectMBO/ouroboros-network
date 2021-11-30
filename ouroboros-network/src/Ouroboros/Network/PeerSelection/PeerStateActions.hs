@@ -1050,8 +1050,8 @@ data PeerStatusChangeType peerAddr =
 -- | Traces produced by 'peerSelectionActions'.
 --
 data PeerSelectionActionsTrace peerAddr =
-      PeerStatusChanged       !(PeerStatusChangeType peerAddr)
-    | PeerStatusChangeFailure !(PeerStatusChangeType peerAddr) !FailureType
-    | PeerMonitoringError     !(ConnectionId peerAddr) !SomeException
-    | PeerMonitoringResult    !(ConnectionId peerAddr) !(WithSomeProtocolTemperature FirstToFinishResult)
+      PeerStatusChanged       (PeerStatusChangeType peerAddr)
+    | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) FailureType
+    | PeerMonitoringError     (ConnectionId peerAddr) SomeException
+    | PeerMonitoringResult    (ConnectionId peerAddr) (WithSomeProtocolTemperature FirstToFinishResult)
   deriving Show

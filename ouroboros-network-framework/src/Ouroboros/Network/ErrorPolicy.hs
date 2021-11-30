@@ -279,9 +279,9 @@ completeApplicationTx ErrorPolicies {epConErrorPolicies} (ConnectionError t addr
 
 -- | Trace data for error policies
 data ErrorPolicyTrace
-  = ErrorPolicySuspendPeer (Maybe (ConnectionOrApplicationExceptionTrace SomeException)) !DiffTime !DiffTime
+  = ErrorPolicySuspendPeer (Maybe (ConnectionOrApplicationExceptionTrace SomeException)) DiffTime DiffTime
   -- ^ suspending peer with a given exception until
-  | ErrorPolicySuspendConsumer (Maybe (ConnectionOrApplicationExceptionTrace SomeException)) !DiffTime
+  | ErrorPolicySuspendConsumer (Maybe (ConnectionOrApplicationExceptionTrace SomeException)) DiffTime
   -- ^ suspending consumer until
   | ErrorPolicyLocalNodeError (ConnectionOrApplicationExceptionTrace SomeException)
   -- ^ caught a local exception
@@ -320,8 +320,8 @@ traceErrorPolicy _ _ =
     Nothing
 
 data WithAddr addr a = WithAddr {
-      wiaAddr  :: !addr
-    , wiaEvent :: !a
+      wiaAddr  :: addr
+    , wiaEvent :: a
     }
 
 instance (Show addr, Show a) => Show (WithAddr addr a) where

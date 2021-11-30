@@ -61,7 +61,6 @@ library
                        Ouroboros.Network.BlockFetch.Decision
                        Ouroboros.Network.BlockFetch.DeltaQ
                        Ouroboros.Network.BlockFetch.State
-                       Ouroboros.Network.Counter
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Diffusion
                        Ouroboros.Network.Diffusion.P2P

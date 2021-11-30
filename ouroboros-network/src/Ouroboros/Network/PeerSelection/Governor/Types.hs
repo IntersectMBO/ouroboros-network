@@ -303,9 +303,9 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
   deriving (Show, Functor)
 
 data PeerSelectionCounters = PeerSelectionCounters {
-      coldPeers :: !Int,
-      warmPeers :: !Int,
-      hotPeers  :: !Int
+      coldPeers :: Int,
+      warmPeers :: Int,
+      hotPeers  :: Int
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters

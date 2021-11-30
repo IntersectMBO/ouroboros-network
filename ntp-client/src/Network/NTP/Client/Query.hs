@@ -366,17 +366,17 @@ runNtpQueries ioManager tracer protocol netSettings localAddr destAddrs
 
 data NtpTrace
     = NtpTraceStartNtpClient
-    | NtpTraceRestartDelay !Int
+    | NtpTraceRestartDelay Int
     | NtpTraceRestartingClient
-    | NtpTraceIOError !IOError
+    | NtpTraceIOError IOError
     | NtpTraceLookupsFails
     | NtpTraceClientStartQuery
     | NtpTraceNoLocalAddr
-    | NtpTraceResult !NtpStatus
-    | NtpTraceRunProtocolResults !(ResultOrFailure [NtpOffset])
-    | NtpTracePacketSent !SockAddr !NtpPacket
-    | NtpTracePacketSendError !SockAddr !IOException
-    | NtpTracePacketDecodeError !SockAddr !String
-    | NtpTracePacketReceived SockAddr !NtpPacket
-    | NtpTraceWaitingForRepliesTimeout !IPVersion
+    | NtpTraceResult NtpStatus
+    | NtpTraceRunProtocolResults (ResultOrFailure [NtpOffset])
+    | NtpTracePacketSent SockAddr NtpPacket
+    | NtpTracePacketSendError SockAddr IOException
+    | NtpTracePacketDecodeError SockAddr String
+    | NtpTracePacketReceived SockAddr NtpPacket
+    | NtpTraceWaitingForRepliesTimeout IPVersion
     deriving (Show)

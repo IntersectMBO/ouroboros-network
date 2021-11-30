@@ -47,22 +47,22 @@ import qualified Ouroboros.Network.NodeToClient as NodeToClient
 -- TODO: use LocalAddress where appropriate rather than 'path'.
 --
 data InitializationTracer ntnAddr ntcAddr
-  = RunServer !(NonEmpty ntnAddr)
-  | RunLocalServer !ntcAddr
-  | UsingSystemdSocket !ntcAddr
+  = RunServer (NonEmpty ntnAddr)
+  | RunLocalServer ntcAddr
+  | UsingSystemdSocket ntcAddr
   -- Rename as 'CreateLocalSocket'
-  | CreateSystemdSocketForSnocketPath !ntcAddr
-  | CreatedLocalSocket !ntcAddr
-  | ConfiguringLocalSocket !ntcAddr !FileDescriptor
-  | ListeningLocalSocket !ntcAddr !FileDescriptor
-  | LocalSocketUp  !ntcAddr !FileDescriptor
+  | CreateSystemdSocketForSnocketPath ntcAddr
+  | CreatedLocalSocket ntcAddr
+  | ConfiguringLocalSocket ntcAddr FileDescriptor
+  | ListeningLocalSocket ntcAddr FileDescriptor
+  | LocalSocketUp  ntcAddr FileDescriptor
   -- Rename as 'CreateServerSocket'
-  | CreatingServerSocket !ntnAddr
-  | ConfiguringServerSocket !ntnAddr
-  | ListeningServerSocket !ntnAddr
-  | ServerSocketUp !ntnAddr
+  | CreatingServerSocket ntnAddr
+  | ConfiguringServerSocket ntnAddr
+  | ListeningServerSocket ntnAddr
+  | ServerSocketUp ntnAddr
   -- Rename as 'UnsupportedLocalSocketType'
-  | UnsupportedLocalSystemdSocket !ntnAddr
+  | UnsupportedLocalSystemdSocket ntnAddr
   -- Remove (this is impossible case), there's no systemd on Windows
   | UnsupportedReadySocketCase
   | DiffusionErrored SomeException

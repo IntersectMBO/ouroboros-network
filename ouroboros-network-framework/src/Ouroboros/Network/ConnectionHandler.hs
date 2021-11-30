@@ -388,8 +388,8 @@ makeConnectionHandler muxTracer singMuxMode
 data ConnectionHandlerTrace versionNumber versionData =
       TrHandshakeSuccess versionNumber versionData
     | TrHandshakeClientError
-        !(HandshakeException versionNumber)
+        (HandshakeException versionNumber)
     | TrHandshakeServerError
-        !(HandshakeException versionNumber)
-    | TrError !ErrorContext !SomeException !ErrorCommand
+        (HandshakeException versionNumber)
+    | TrError ErrorContext SomeException ErrorCommand
   deriving Show

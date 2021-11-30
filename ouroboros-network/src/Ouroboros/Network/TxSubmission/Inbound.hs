@@ -34,11 +34,10 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (traceWith)
+import           Control.Tracer (Tracer, traceWith)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
-import           Ouroboros.Network.Counter (Counter)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -69,17 +68,17 @@ data TxSubmissionMempoolWriter txid tx idx m =
 
 data ProcessedTxCount = ProcessedTxCount {
       -- | Just accepted this many transactions.
-      ptxcAccepted :: !Int
+      ptxcAccepted :: Int
       -- | Just rejected this many transactions.
-    , ptxcRejected :: !Int
+    , ptxcRejected :: Int
     }
   deriving (Eq, Show)
 
 data TraceTxSubmissionInbound txid tx =
     -- | Number of transactions just about to be inserted.
-    TraceTxSubmissionCollected !Int
+    TraceTxSubmissionCollected Int
     -- | Just processed transaction pass/fail breakdown.
-  | TraceTxSubmissionProcessed !ProcessedTxCount
+  | TraceTxSubmissionProcessed ProcessedTxCount
     -- | Server received 'MsgDone'
   | TraceTxInboundTerminated
   | TraceTxInboundCanRequestMoreTxs Int
@@ -177,7 +176,7 @@ txSubmissionInbound
      , MonadSTM m
      , MonadThrow m
      )
-  => Counter m (TraceTxSubmissionInbound txid tx)
+  => Tracer m (TraceTxSubmissionInbound txid tx)
   -> Word16         -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m

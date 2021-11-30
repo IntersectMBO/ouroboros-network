@@ -216,9 +216,9 @@ subscriptionWorker snocket
            k
 
 data WithIPList a = WithIPList {
-      wilSrc   :: !(LocalAddresses Socket.SockAddr)
-    , wilDsts  :: ![Socket.SockAddr]
-    , wilEvent :: !a
+      wilSrc   :: (LocalAddresses Socket.SockAddr)
+    , wilDsts  :: [Socket.SockAddr]
+    , wilEvent :: a
     }
 
 instance (Show a) => Show (WithIPList a) where

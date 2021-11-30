@@ -65,20 +65,20 @@ newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
 
 -- | Trace LedgerPeers events.
 data TraceLedgerPeers =
-      PickedPeer !RelayAccessPoint !AccPoolStake !PoolStake
+      PickedPeer RelayAccessPoint AccPoolStake PoolStake
       -- ^ Trace for a peer picked with accumulated and relative stake of its pool.
-    | PickedPeers !NumberOfPeers ![RelayAccessPoint]
+    | PickedPeers NumberOfPeers [RelayAccessPoint]
       -- ^ Trace for the number of peers we wanted to pick and the list of peers picked.
-    | FetchingNewLedgerState !Int
+    | FetchingNewLedgerState Int
       -- ^ Trace for fetching a new list of peers from the ledger. Int is the number of peers
       -- returned.
     | DisabledLedgerPeers
       -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedger.
-    | TraceUseLedgerAfter !UseLedgerAfter
+    | TraceUseLedgerAfter UseLedgerAfter
       -- ^ Trace UseLedgerAfter value
     | WaitingOnRequest
-    | RequestForPeers !NumberOfPeers
-    | ReusingLedgerState !Int !DiffTime
+    | RequestForPeers NumberOfPeers
+    | ReusingLedgerState Int DiffTime
     | FallingBackToBootstrapPeers
 
 
