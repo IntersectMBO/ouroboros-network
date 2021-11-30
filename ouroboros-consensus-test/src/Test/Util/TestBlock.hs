@@ -320,10 +320,10 @@ instance BlockSupportsProtocol TestBlock where
 
 type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
 
-instance GetTip (LedgerState TestBlock) where
+instance GetTip (LedgerState TestBlock mk) where
   getTip = castPoint . lastAppliedPoint
 
-instance GetTip (Ticked (LedgerState TestBlock)) where
+instance GetTip (Ticked1 (LedgerState TestBlock) mk) where
   getTip = castPoint . lastAppliedPoint . getTickedTestLedger
 
 instance IsLedger (LedgerState TestBlock) where
@@ -332,7 +332,32 @@ instance IsLedger (LedgerState TestBlock) where
   type AuxLedgerEvent (LedgerState TestBlock) =
     VoidLedgerEvent (LedgerState TestBlock)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
+  applyChainTickLedgerResult _ _ (TestLedger l) = pureLedgerResult $ TickedTestLedger $ TestLedger l
+
+instance ShowLedgerState (LedgerState TestBlock) where
+  showsLedgerState _sing = shows
+
+instance TableStuff (LedgerState TestBlock) where
+  newtype LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables (SMapKind mk)
+    deriving (Generic, Eq, Show, NoThunks)
+
+  -- TODO methods
+
+instance TickedTableStuff (LedgerState TestBlock) where
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
+  showsLedgerState _sing = shows
+
+instance TableStuff (Ticked1 (LedgerState TestBlock)) where
+  newtype LedgerTables (Ticked1 (LedgerState TestBlock)) mk = TickedNoTestLedgerTables (SMapKind mk)
+    deriving (Generic, Eq, Show, NoThunks)
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState TestBlock))) where
+  showsLedgerState _sing = shows
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
@@ -346,7 +371,7 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
   reapplyBlockLedgerResult _ tb _ =
                    pureLedgerResult $ TestLedger (Chain.blockPoint tb)
 
-newtype instance LedgerState TestBlock =
+newtype instance LedgerState TestBlock mk =
     TestLedger {
         -- The ledger state simply consists of the last applied block
         lastAppliedPoint :: Point TestBlock
@@ -355,8 +380,8 @@ newtype instance LedgerState TestBlock =
   deriving newtype (Serialise, NoThunks, ToExpr)
 
 -- Ticking has no effect
-newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {
-      getTickedTestLedger :: LedgerState TestBlock
+newtype instance Ticked1 (LedgerState TestBlock) mk = TickedTestLedger {
+      getTickedTestLedger :: LedgerState TestBlock mk
     }
 
 instance UpdateLedger TestBlock
@@ -367,7 +392,7 @@ instance InspectLedger TestBlock where
 -- | Last applied block
 --
 -- Returns 'Nothing' if the ledger is empty.
-lastAppliedBlock :: LedgerState TestBlock -> Maybe TestBlock
+lastAppliedBlock :: LedgerState TestBlock mk -> Maybe TestBlock
 lastAppliedBlock (TestLedger p) = go p
   where
     -- We can only have applied valid blocks
@@ -414,10 +439,10 @@ instance ShowQuery (BlockQuery TestBlock) where
 
 instance IsQuery (BlockQuery TestBlock) where
 
-testInitLedger :: LedgerState TestBlock
+testInitLedger :: LedgerState TestBlock EmptyMK
 testInitLedger = TestLedger GenesisPoint
 
-testInitExtLedger :: ExtLedgerState EmptyMK TestBlock
+testInitExtLedger :: ExtLedgerState TestBlock EmptyMK
 testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
@@ -624,7 +649,7 @@ instance Serialise (AnnTip TestBlock) where
   encode = defaultEncodeAnnTip encode
   decode = defaultDecodeAnnTip decode
 
-instance Serialise (ExtLedgerState EmptyMK TestBlock) where
+instance Serialise (ExtLedgerState TestBlock EmptyMK) where
   encode = encodeExtLedgerState encode encode encode
   decode = decodeExtLedgerState decode decode decode
 

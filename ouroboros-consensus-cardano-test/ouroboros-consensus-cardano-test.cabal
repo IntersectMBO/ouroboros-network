@@ -39,6 +39,7 @@ library
                      , containers
                      , compact-map
                      , mtl
+                     , nothunks
                      , QuickCheck
                      , sop-core
                      , strict-containers
