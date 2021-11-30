@@ -349,11 +349,21 @@ instance MonadFork (IOSim s) where
 instance MonadSay (STMSim s) where
   say msg = STM $ \k -> SayStm msg (k ())
 
-instance MonadSTMTx (STM s) where
-  type TVar_      (STM s) = TVar s
-  type TMVar_     (STM s) = TMVarDefault (IOSim s)
-  type TQueue_    (STM s) = TQueueDefault (IOSim s)
-  type TBQueue_   (STM s) = TBQueueDefault (IOSim s)
+
+instance MonadLabelledSTM (IOSim s) where
+  labelTVar tvar label = STM $ \k -> LabelTVar label tvar (k ())
+  labelTMVar   = labelTMVarDefault
+  labelTQueue  = labelTQueueDefault
+  labelTBQueue = labelTBQueueDefault
+
+instance MonadSTM (IOSim s) where
+  type STM       (IOSim s) = STM s
+  type TVar      (IOSim s) = TVar s
+  type TMVar     (IOSim s) = TMVarDefault (IOSim s)
+  type TQueue    (IOSim s) = TQueueDefault (IOSim s)
+  type TBQueue   (IOSim s) = TBQueueDefault (IOSim s)
+
+  atomically action = IOSim $ \k -> Atomically action k
 
   newTVar         x = STM $ \k -> NewTVar Nothing x k
   readTVar   tvar   = STM $ \k -> ReadTVar tvar k
@@ -391,19 +401,6 @@ instance MonadSTMTx (STM s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
-instance MonadLabelledSTMTx (STM s) where
-  labelTVar tvar label = STM $ \k -> LabelTVar label tvar (k ())
-  labelTMVar   = labelTMVarDefault
-  labelTQueue  = labelTQueueDefault
-  labelTBQueue = labelTBQueueDefault
-
-instance MonadLabelledSTM (IOSim s) where
-
-instance MonadSTM (IOSim s) where
-  type STM       (IOSim s) = STM s
-
-  atomically action = IOSim $ \k -> Atomically action k
-
   newTMVarIO        = newTMVarIODefault
   newEmptyTMVarIO   = newEmptyTMVarIODefault
 
@@ -418,10 +415,6 @@ instance Ord (Async s a) where
 instance Functor (Async s) where
   fmap f (Async tid a) = Async tid (fmap f <$> a)
 
-instance MonadAsyncSTM (Async s) (STM s) where
-  waitCatchSTM (Async _ w) = w
-  pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
-
 instance MonadAsync (IOSim s) where
   type Async (IOSim s) = Async s
 
@@ -432,7 +425,10 @@ instance MonadAsync (IOSim s) where
     labelTMVarIO var ("async-" ++ show tid)
     return (Async tid (readTMVar var))
 
-  asyncThreadId _proxy (Async tid _) = tid
+  asyncThreadId (Async tid _) = tid
+
+  waitCatchSTM (Async _ w) = w
+  pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
 
   cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
   cancelWith a@(Async tid _) e = throwTo tid e <* waitCatch a
