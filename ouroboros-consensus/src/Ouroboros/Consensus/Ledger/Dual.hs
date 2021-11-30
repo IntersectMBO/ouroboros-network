@@ -39,9 +39,10 @@ module Ouroboros.Consensus.Ledger.Dual (
   , GenTx (..)
   , Header (..)
   , LedgerState (..)
+  , LedgerTables (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
-  , Ticked (..)
+  , Ticked1 (..)
   , TxId (..)
   , Validated (..)
     -- * Serialisation
@@ -395,6 +396,19 @@ instance TickedTableStuff (LedgerState (DualBlock m a)) where
 
 instance ShowLedgerState (LedgerTables (LedgerState (DualBlock m a))) where
   showsLedgerState = error "showsLedgerState @LedgerTables DualBlock"
+
+instance TableStuff (Ticked1 (LedgerState (DualBlock m a))) where
+
+  data LedgerTables (Ticked1 (LedgerState (DualBlock m a))) mk =
+      TickedDualBlockLedgerTables
+        (Ticked1 (LedgerTables (LedgerState m)) mk)
+        (Ticked1 (LedgerTables (LedgerState a)) mk)
+    deriving NoThunks via AllowThunk (LedgerTables (Ticked1 (LedgerState (DualBlock m a))) mk)
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (DualBlock m a)))) where
+  showsLedgerState = error "showsLedgerState @Ticked1 LedgerTables DualBlock"
 
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
 

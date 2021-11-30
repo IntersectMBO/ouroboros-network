@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
+import           Ouroboros.Consensus.Util.Singletons (SingI (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -84,6 +85,9 @@ newtype instance LedgerState (HardForkBlock xs) mk = HardForkLedgerState {
 
 deriving stock   instance CanHardFork xs                => Eq       (LedgerState (HardForkBlock xs) mk)
 deriving newtype instance (CanHardFork xs, Typeable mk) => NoThunks (LedgerState (HardForkBlock xs) mk)
+
+instance (SingI mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) mk) where
+  showsPrec p = showParen (p >= 11) . showsLedgerState sing
 
 instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
   showsLedgerState = error "showsLedgerState @HardForkBlock"

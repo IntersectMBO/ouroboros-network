@@ -42,6 +42,7 @@ import           Ouroboros.Consensus.Util.SOP (Index (..))
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -114,21 +115,21 @@ type SomeCardanoQuery = SomeQuery :.: BlockQuery
 
 instance Inject Examples where
   inject startBounds (idx :: Index xs x) Golden.Examples {..} = Golden.Examples {
-        exampleBlock            = inj (Proxy @I)                       exampleBlock
-      , exampleSerialisedBlock  = inj (Proxy @Serialised)              exampleSerialisedBlock
-      , exampleHeader           = inj (Proxy @Header)                  exampleHeader
-      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)        exampleSerialisedHeader
-      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)          exampleHeaderHash
-      , exampleGenTx            = inj (Proxy @GenTx)                   exampleGenTx
-      , exampleGenTxId          = inj (Proxy @WrapGenTxId)             exampleGenTxId
-      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)          exampleApplyTxErr
-      , exampleQuery            = inj (Proxy @SomeCardanoQuery)        exampleQuery
-      , exampleResult           = inj (Proxy @SomeResult)              exampleResult
-      , exampleAnnTip           = inj (Proxy @AnnTip)                  exampleAnnTip
-      , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
-      , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @(ExtLedgerState EmptyMK)) exampleExtLedgerState
-      , exampleSlotNo           =                                      exampleSlotNo
+        exampleBlock            = inj (Proxy @I)                             exampleBlock
+      , exampleSerialisedBlock  = inj (Proxy @Serialised)                    exampleSerialisedBlock
+      , exampleHeader           = inj (Proxy @Header)                        exampleHeader
+      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)              exampleSerialisedHeader
+      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)                exampleHeaderHash
+      , exampleGenTx            = inj (Proxy @GenTx)                         exampleGenTx
+      , exampleGenTxId          = inj (Proxy @WrapGenTxId)                   exampleGenTxId
+      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)                exampleApplyTxErr
+      , exampleQuery            = inj (Proxy @SomeCardanoQuery)              exampleQuery
+      , exampleResult           = inj (Proxy @SomeResult)                    exampleResult
+      , exampleAnnTip           = inj (Proxy @AnnTip)                        exampleAnnTip
+      , exampleLedgerState      = inj (Proxy @(Flip LedgerState EmptyMK))    exampleLedgerState
+      , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
+      , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
+      , exampleSlotNo           =                                            exampleSlotNo
       }
     where
       inj ::
@@ -239,14 +240,14 @@ codecConfig =
       Shelley.ShelleyCodecConfig
 
 ledgerStateByron ::
-     LedgerState ByronBlock
-  -> LedgerState (CardanoBlock Crypto)
+     LedgerState ByronBlock mk
+  -> LedgerState (CardanoBlock Crypto) mk
 ledgerStateByron stByron =
     HardForkLedgerState $ HardForkState $ TZ cur
   where
     cur = State.Current {
           currentStart = History.initBound
-        , currentState = stByron
+        , currentState = Flip stByron
         }
 
 {-------------------------------------------------------------------------------
