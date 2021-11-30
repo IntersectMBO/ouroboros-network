@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types (
   , ChunkFileError (..)
     -- * Tracing
   , TraceCacheEvent (..)
+  , TraceChunkValidation (..)
   , TraceEvent (..)
   ) where
 
@@ -111,18 +112,10 @@ data TraceEvent blk =
     NoValidLastLocation
   | ValidatedLastLocation ChunkNo (Tip blk)
     -- Validation of previous DB
-  | ValidatingChunk  ChunkNo
-  | MissingChunkFile ChunkNo
-  | InvalidChunkFile ChunkNo (ChunkFileError blk)
+  | ChunkValidationEvent (TraceChunkValidation blk ChunkNo)
   | ChunkFileDoesntFit (ChainHash blk) (ChainHash blk)
     -- ^ The hash of the last block in the previous epoch doesn't match the
     -- previous hash of the first block in the current epoch
-  | MissingPrimaryIndex   ChunkNo
-  | MissingSecondaryIndex ChunkNo
-  | InvalidPrimaryIndex   ChunkNo
-  | InvalidSecondaryIndex ChunkNo
-  | RewritePrimaryIndex   ChunkNo
-  | RewriteSecondaryIndex ChunkNo
   | Migrating Text
     -- ^ Performing a migration of the on-disk files
 
@@ -134,6 +127,19 @@ data TraceEvent blk =
     -- Events traced by the index cache
   | TraceCacheEvent !TraceCacheEvent
   deriving (Eq, Generic, Show)
+
+data TraceChunkValidation blk validateTo =
+    StartedValidatingChunk ChunkNo validateTo
+  | ValidatedChunk         ChunkNo validateTo
+  | MissingChunkFile       ChunkNo
+  | InvalidChunkFile       ChunkNo (ChunkFileError blk)
+  | MissingPrimaryIndex    ChunkNo
+  | MissingSecondaryIndex  ChunkNo
+  | InvalidPrimaryIndex    ChunkNo
+  | InvalidSecondaryIndex  ChunkNo
+  | RewritePrimaryIndex    ChunkNo
+  | RewriteSecondaryIndex  ChunkNo
+  deriving (Generic, Eq, Show, Functor)
 
 -- | The argument with type 'Word32' is the number of past chunk currently in
 -- the cache.

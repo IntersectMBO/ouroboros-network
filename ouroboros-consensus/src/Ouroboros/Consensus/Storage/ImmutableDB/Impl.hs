@@ -92,6 +92,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl (
     -- * Re-exported
   , ChunkFileError (..)
   , Index.CacheConfig (..)
+  , TraceChunkValidation (..)
   , TraceEvent (..)
   , ValidationPolicy (..)
     -- * Internals for testing purposes
