@@ -302,19 +302,19 @@ instance ( Show peerAddr
              , " "
              , show connId
              , " "
-             , show (asyncThreadId (Proxy :: Proxy m) connThread)
+             , show (asyncThreadId connThread)
              ]
     show (OutboundUniState connId connThread _handle) =
       concat [ "OutboundState Unidirectional "
              , show connId
              , " "
-             , show (asyncThreadId (Proxy :: Proxy m) connThread)
+             , show (asyncThreadId connThread)
              ]
     show (OutboundDupState connId connThread _handle expired) =
       concat [ "OutboundState "
              , show connId
              , " "
-             , show (asyncThreadId (Proxy :: Proxy m) connThread)
+             , show (asyncThreadId connThread)
              , " "
              , show expired
              ]
@@ -322,7 +322,7 @@ instance ( Show peerAddr
       concat [ "OutboundIdleState "
              , show connId
              , " "
-             , show (asyncThreadId (Proxy :: Proxy m) connThread)
+             , show (asyncThreadId connThread)
              , " "
              , show df
              ]
@@ -330,7 +330,7 @@ instance ( Show peerAddr
       concat ([ "InboundIdleState "
               , show connId
               , " "
-              , show (asyncThreadId (Proxy :: Proxy m) connThread)
+              , show (asyncThreadId connThread)
               , " "
               , show df
               ])
@@ -338,7 +338,7 @@ instance ( Show peerAddr
       concat [ "InboundState "
              , show connId
              , " "
-             , show (asyncThreadId (Proxy :: Proxy m) connThread)
+             , show (asyncThreadId connThread)
              , " "
              , show df
              ]
@@ -346,13 +346,13 @@ instance ( Show peerAddr
       concat [ "DuplexState "
              , show connId
              , " "
-             , show (asyncThreadId (Proxy :: Proxy m) connThread)
+             , show (asyncThreadId connThread)
              ]
     show (TerminatingState connId connThread handleError) =
       concat ([ "TerminatingState "
               , show connId
               , " "
-              , show (asyncThreadId (Proxy :: Proxy m) connThread)
+              , show (asyncThreadId connThread)
               ]
               ++ maybeToList (((' ' :) . show) <$> handleError))
     show (TerminatedState handleError) =
@@ -948,8 +948,7 @@ withConnectionManager ConnectionManagerArguments {
                  -- difference, since we put the connection in 'TerminatedState'
                  -- which avoids the 'cmTimeWaitTimeout').
                  forM_ pruneMap $ \(_, connThread', _) ->
-                                   throwTo (asyncThreadId (Proxy :: Proxy m)
-                                                          connThread')
+                                   throwTo (asyncThreadId connThread')
                                            AsyncCancelled
              )
 
@@ -1356,7 +1355,7 @@ withConnectionManager ConnectionManagerArguments {
       traceCounters stateVar
 
       -- 'throwTo' avoids blocking until 'cmTimeWaitTimeout' expires.
-      traverse_ (flip throwTo AsyncCancelled . asyncThreadId (Proxy :: Proxy m))
+      traverse_ (flip throwTo AsyncCancelled . asyncThreadId)
                 mbThread
 
       whenJust mbAssertion $ \tr -> do
@@ -2076,7 +2075,7 @@ withConnectionManager ConnectionManagerArguments {
               -- - close the socket,
               -- - set the state to 'TerminatedState'
               -- - 'throwTo' avoids blocking until 'cmTimeWaitTimeout' expires.
-              throwTo (asyncThreadId (Proxy :: Proxy m) connThread)
+              throwTo (asyncThreadId connThread)
                       AsyncCancelled
               return (OperationSuccess (abstractState $ Known connState'))
 

@@ -11,7 +11,6 @@ module Ouroboros.Network.Testing.Data.Script (
     initScript,
     stepScript,
     stepScriptSTM,
-    stepScriptSTMTx,
     initScript',
     stepScript',
     stepScriptSTM',
@@ -64,15 +63,15 @@ arbitraryScriptOf maxSz a =
       n <- choose (1, max 1 (min maxSz sz))
       Script . NonEmpty.fromList <$> vectorOf n a
 
-initScript :: MonadSTMTx stm
+initScript :: MonadSTM m
             => Script a
-            -> stm (TVar_ stm (Script a))
+            -> STM m (TVar m (Script a))
 initScript = LazySTM.newTVar
 
 stepScript :: MonadSTM m => TVar m (Script a) -> m a
 stepScript scriptVar = atomically (stepScriptSTM scriptVar)
 
-stepScriptSTM :: MonadSTMTx stm => TVar_ stm (Script a) -> stm a
+stepScriptSTM :: MonadSTM m => TVar m (Script a) -> STM m a
 stepScriptSTM scriptVar = do
     Script (x :| xs) <- LazySTM.readTVar scriptVar
     case xs of
@@ -80,21 +79,13 @@ stepScriptSTM scriptVar = do
       x':xs' -> LazySTM.writeTVar scriptVar (Script (x' :| xs'))
     return x
 
-stepScriptSTMTx :: MonadSTMTx m => TVar_ m (Script (m b)) -> m b
-stepScriptSTMTx scriptVar = do
-    Script (x :| xs) <- LazySTM.readTVar scriptVar
-    case xs of
-      []     -> return ()
-      x':xs' -> LazySTM.writeTVar scriptVar (Script (x' :| xs'))
-    x
-
 initScript' :: MonadSTM m => Script a -> m (TVar m (Script a))
 initScript' = newTVarIO
 
 stepScript' :: MonadSTM m => TVar m (Script a) -> m a
 stepScript' scriptVar = atomically (stepScriptSTM scriptVar)
 
-stepScriptSTM' :: MonadSTMTx stm => TVar_ stm (Script a) -> stm a
+stepScriptSTM' :: MonadSTM m => TVar m (Script a) -> STM m a
 stepScriptSTM' scriptVar = do
     Script (x :| xs) <- readTVar scriptVar
     case xs of
@@ -192,11 +183,11 @@ arbitraryPickScript pickSome =
     sized $ \sz ->
       arbitraryScriptOf sz (arbitraryPickMembers pickSome)
 
-interpretPickScript :: (MonadSTMTx stm, Ord peeraddr)
-                    => TVar_ stm (PickScript peeraddr)
+interpretPickScript :: (MonadSTM m, Ord peeraddr)
+                    => TVar m (PickScript peeraddr)
                     -> Set peeraddr
                     -> Int
-                    -> stm (Set peeraddr)
+                    -> STM m (Set peeraddr)
 interpretPickScript scriptVar available pickNum
   | Set.null available
   = error "interpretPickScript: given empty map to pick from"
