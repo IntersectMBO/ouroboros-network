@@ -60,6 +60,8 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Storage.LedgerDB.Types
+                     (UpdateLedgerDbTraceEvent (..))
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
 import           Ouroboros.Consensus.Util.IOLike
@@ -323,6 +325,7 @@ initStartingWith tracer cfg streamAPI initDb = do
                        (ledgerState (ledgerDbCurrent db))
                        (ledgerState (ledgerDbCurrent db'))
 
+
         traceWith tracer (ReplayedBlock (blockRealPoint blk) events ())
         return (db', replayed')
 
@@ -496,7 +499,6 @@ snapshotFromPath fileName = do
 {-------------------------------------------------------------------------------
   Trace events
 -------------------------------------------------------------------------------}
-
 data TraceEvent blk
   = InvalidSnapshot DiskSnapshot (InitFailure blk)
     -- ^ An on disk snapshot was skipped because it was invalid.
@@ -533,4 +535,5 @@ data TraceReplayEvent blk replayTo
     -- The @blockInfo@ parameter corresponds replayed block and the @replayTo@
     -- parameter corresponds to the block at the tip of the ImmutableDB, i.e.,
     -- the last block to replay.
+  | UpdateLedgerDbTraceEvent (UpdateLedgerDbTraceEvent blk)
   deriving (Generic, Eq, Show, Functor, Foldable, Traversable)

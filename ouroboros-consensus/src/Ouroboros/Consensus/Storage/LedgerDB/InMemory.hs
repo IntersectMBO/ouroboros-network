@@ -76,6 +76,8 @@ import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Storage.LedgerDB.Types
+                     (UpdateLedgerDbTraceEvent (..))
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
@@ -429,18 +431,26 @@ ledgerDbPush cfg ap db =
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c)
-                 => LedgerDbCfg l
+                 => (UpdateLedgerDbTraceEvent blk -> m ())
+                 -> LedgerDbCfg l
                  -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
-ledgerDbPushMany = repeatedlyM . ledgerDbPush
+ledgerDbPushMany trace = repeatedlyM . pushAndTrace
+  where
+    pushAndTrace cfg ap db = do
+      trace StartedPushingBlockToTheLedgerDb
+      res <- ledgerDbPush cfg ap db
+      trace PushedBlockToTheLedgerDb
+      return res
 
 -- | Switch to a fork
 ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
                => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
+               -> (UpdateLedgerDbTraceEvent blk -> m ())
                -> [Ap m l blk c]  -- ^ New blocks to apply
                -> LedgerDB l
                -> m (Either ExceededRollback (LedgerDB l))
-ledgerDbSwitch cfg numRollbacks newBlocks db =
+ledgerDbSwitch cfg numRollbacks trace newBlocks db =
     case rollback numRollbacks db of
       Nothing ->
         return $ Left $ ExceededRollback {
@@ -448,7 +458,7 @@ ledgerDbSwitch cfg numRollbacks newBlocks db =
           , rollbackRequested = numRollbacks
           }
       Just db' ->
-        Right <$> ledgerDbPushMany cfg newBlocks db'
+        Right <$> ledgerDbPushMany trace cfg newBlocks db'
 
 {-------------------------------------------------------------------------------
   The LedgerDB itself behaves like a ledger
@@ -524,13 +534,14 @@ ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
 ledgerDbPushMany' :: ApplyBlock l blk
                   => LedgerDbCfg l -> [blk] -> LedgerDB l -> LedgerDB l
-ledgerDbPushMany' cfg bs = runIdentity . ledgerDbPushMany cfg (map pureBlock bs)
+ledgerDbPushMany' cfg bs =
+  runIdentity . ledgerDbPushMany (const $ pure ()) cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: forall l blk. ApplyBlock l blk
                 => LedgerDbCfg l
                 -> Word64 -> [blk] -> LedgerDB l -> Maybe (LedgerDB l)
 ledgerDbSwitch' cfg n bs db =
-    case runIdentity $ ledgerDbSwitch cfg n (map pureBlock bs) db of
+    case runIdentity $ ledgerDbSwitch cfg n (const $ pure ()) (map pureBlock bs) db of
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
 

@@ -593,6 +593,7 @@ runDB standalone@DB{..} cmd =
               ledgerDbSwitch
                 dbLedgerDbCfg
                 n
+                (const $ pure ())
                 (map ApplyVal bs)
                 db
     go hasFS Snap = do

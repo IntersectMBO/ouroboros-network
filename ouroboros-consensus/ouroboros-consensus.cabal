@@ -230,6 +230,7 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+                       Ouroboros.Consensus.Storage.LedgerDB.Types
                        Ouroboros.Consensus.Storage.Serialisation
                        Ouroboros.Consensus.Storage.VolatileDB
                        Ouroboros.Consensus.Storage.VolatileDB.API
