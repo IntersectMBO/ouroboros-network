@@ -7,7 +7,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Shelley.Ledger.TPraos () where
+module Ouroboros.Consensus.Shelley.Ledger.Protocol () where
 
 import           Cardano.Crypto.VRF (certifiedOutput)
 
