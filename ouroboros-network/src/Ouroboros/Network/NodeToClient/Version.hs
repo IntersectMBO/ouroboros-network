@@ -43,6 +43,8 @@ data NodeToClientVersion
     -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
     | NodeToClientV_10
     -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
+    | NodeToClientV_11
+    -- ^ added 'GetRewardInfoPools` Block query
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -65,6 +67,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       encodeTerm NodeToClientV_8  = CBOR.TInt (8  `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_9  = CBOR.TInt (9  `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_10 = CBOR.TInt (10 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_11 = CBOR.TInt (11 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -80,6 +83,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (8, True)  -> Right NodeToClientV_8
         (9, True)  -> Right NodeToClientV_9
         (10, True) -> Right NodeToClientV_10
+        (11, True) -> Right NodeToClientV_11
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"

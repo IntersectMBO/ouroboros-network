@@ -180,6 +180,12 @@ data instance BlockQuery (ShelleyBlock era) :: Type -> Type where
                   (Map (SL.KeyHash 'SL.StakePool (EraCrypto era))
                        (SL.PoolParams (EraCrypto era)))
 
+  GetRewardInfoPools
+    :: BlockQuery (ShelleyBlock era)
+                  (SL.RewardParams,
+                    Map (SL.KeyHash 'SL.StakePool (EraCrypto era))
+                        (SL.RewardInfoPool))
+
   -- WARNING: please add new queries to the end of the list and stick to this
   -- order in all other pattern matches on queries. This helps in particular
   -- with the en/decoders, as we want the CBOR tags to be ordered.
@@ -247,6 +253,8 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
           SL.getPools st
         GetStakePoolParams poolids ->
           SL.getPoolParameters st poolids
+        GetRewardInfoPools ->
+          SL.getRewardInfoPools globals st
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -350,6 +358,10 @@ instance SameDepIndex (BlockQuery (ShelleyBlock era)) where
     = Nothing
   sameDepIndex (GetStakePoolParams _) _
     = Nothing
+  sameDepIndex GetRewardInfoPools GetRewardInfoPools
+    = Just Refl
+  sameDepIndex GetRewardInfoPools _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock era) result)
 deriving instance Show (BlockQuery (ShelleyBlock era) result)
@@ -374,6 +386,7 @@ instance ShelleyBasedEra era => ShowQuery (BlockQuery (ShelleyBlock era)) where
       GetUTxOByTxIn {}                           -> show
       GetStakePools                              -> show
       GetStakePoolParams {}                      -> show
+      GetRewardInfoPools                         -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock era) result -> ShelleyNodeToClientVersion -> Bool
@@ -396,6 +409,7 @@ querySupportedVersion = \case
     GetUTxOByTxIn {}                           -> (>= v4)
     GetStakePools                              -> (>= v4)
     GetStakePoolParams {}                      -> (>= v4)
+    GetRewardInfoPools                         -> (>= v5)
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -403,6 +417,7 @@ querySupportedVersion = \case
     v2 = ShelleyNodeToClientVersion2
     v3 = ShelleyNodeToClientVersion3
     v4 = ShelleyNodeToClientVersion4
+    v5 = ShelleyNodeToClientVersion5
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -476,6 +491,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 16
     GetStakePoolParams poolids ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 17 <> toCBOR poolids
+    GetRewardInfoPools ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 18
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -502,6 +519,7 @@ decodeShelleyQuery = do
       (2, 15) -> SomeSecond . GetUTxOByTxIn <$> fromCBOR
       (1, 16) -> return $ SomeSecond GetStakePools
       (2, 17) -> SomeSecond . GetStakePoolParams <$> fromCBOR
+      (1, 18) -> return $ SomeSecond GetRewardInfoPools
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -528,6 +546,7 @@ encodeShelleyResult query = case query of
     GetUTxOByTxIn {}                           -> toCBOR
     GetStakePools                              -> toCBOR
     GetStakePoolParams {}                      -> toCBOR
+    GetRewardInfoPools                         -> toCBOR
 
 decodeShelleyResult ::
      ShelleyBasedEra era
@@ -552,3 +571,4 @@ decodeShelleyResult query = case query of
     GetUTxOByTxIn {}                           -> fromCBOR
     GetStakePools                              -> fromCBOR
     GetStakePoolParams {}                      -> fromCBOR
+    GetRewardInfoPools                         -> fromCBOR

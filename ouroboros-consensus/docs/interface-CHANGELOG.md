@@ -56,6 +56,15 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2021-10-13
+
+### Added
+
+- New supported node to client version `NodeToClientV_11` with new queries:
+  - `GetRewardInfoPools`: Get *current* stake distribution, pool parameters
+    and other information that is necessary to predict stake pool member rewards
+    for the current epoch.
+
 ## Circa 2021-09-22
 
 ### Added
