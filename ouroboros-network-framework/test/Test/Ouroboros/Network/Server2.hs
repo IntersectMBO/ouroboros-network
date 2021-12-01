@@ -19,8 +19,6 @@
 
 -- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
--- should be reverted once, `prop_multinode_pruning_Sim` is fixed.
-{-# OPTIONS_GHC -Wno-unused-top-binds      #-}
 
 module Test.Ouroboros.Network.Server2 (tests) where
 
@@ -129,6 +127,9 @@ import           Test.Ouroboros.Network.ConnectionManager
                      (verifyAbstractTransition)
 import           Test.Ouroboros.Network.Orphans ()
 import           Test.Simulation.Network.Snocket hiding (tests)
+import           Test.Ouroboros.Network.ConnectionManager
+                   (validTransitionMap,
+                    allValidTransitionsNames)
 
 tests :: TestTree
 tests =
@@ -147,8 +148,12 @@ tests =
                  prop_connection_manager_valid_transitions
   , testProperty "connection_manager_no_invalid_traces"
                  prop_connection_manager_no_invalid_traces
+  , testProperty "connection_manager_transitions_coverage"
+                 prop_connection_manager_transitions_coverage
   , testProperty "inbound_governor_no_invalid_traces"
                  prop_inbound_governor_no_invalid_traces
+  , testProperty "inbound_governor_transitions_coverage"
+                 prop_inbound_governor_transitions_coverage
   , testProperty "inbound_governor_valid_transitions"
               prop_inbound_governor_valid_transitions
   , testProperty "inbound_governor_no_unsupported_state"
@@ -1230,15 +1235,15 @@ instance (Arbitrary peerAddr, Arbitrary req, Ord peerAddr) =>
       go _ 0 = pure []
       go s@ScriptState{..} n = do
         event <- frequency $
-                    [ (4, StartClient             <$> delay <*> newClient)
-                    , (4, StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
+                    [ (6, StartClient             <$> delay <*> newClient)
+                    , (6, StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
                     [ (4, InboundConnection       <$> delay <*> elements possibleInboundConnections)        | not $ null possibleInboundConnections] ++
                     [ (4, OutboundConnection      <$> delay <*> elements possibleOutboundConnections)       | not $ null possibleOutboundConnections] ++
-                    [ (4, CloseInboundConnection  <$> delay <*> elements inboundConnections)                | not $ null inboundConnections ] ++
+                    [ (6, CloseInboundConnection  <$> delay <*> elements inboundConnections)                | not $ null inboundConnections ] ++
                     [ (4, CloseOutboundConnection <$> delay <*> elements outboundConnections)               | not $ null outboundConnections ] ++
-                    [ (16, InboundMiniprotocols   <$> delay <*> elements inboundConnections  <*> genBundle) | not $ null inboundConnections ] ++
-                    [ (16, OutboundMiniprotocols  <$> delay <*> elements outboundConnections <*> genBundle) | not $ null outboundConnections ] ++
-                    [ (2, ShutdownClientServer    <$> delay <*> elements possibleStoppable)                 | not $ null possibleStoppable ]
+                    [ (10, InboundMiniprotocols   <$> delay <*> elements inboundConnections  <*> genBundle) | not $ null inboundConnections ] ++
+                    [ (8, OutboundMiniprotocols  <$> delay <*> elements outboundConnections <*> genBundle) | not $ null outboundConnections ] ++
+                    [ (4, ShutdownClientServer    <$> delay <*> elements possibleStoppable)                 | not $ null possibleStoppable ]
         (event :) <$> go (nextState event s) (n - 1)
         where
           possibleStoppable  = startedClients ++ startedServers
@@ -2002,6 +2007,57 @@ verifyRemoteTransition Transition {fromState, toState} =
 
 
 
+-- | Maps each valid remote transition into one number. Collapses all invalid
+-- transition into a single number.
+--
+-- NOTE: Should be in sync with 'verifyRemoteTransition'
+--
+validRemoteTransitionMap :: RemoteTransition -> (Int, String)
+validRemoteTransitionMap t@Transition { fromState, toState } =
+    case (fromState, toState) of
+      (Nothing          , Just RemoteIdleSt) -> (00, show t)
+      (Just RemoteIdleSt, Just RemoteEstSt)  -> (01, show t)
+      (Just RemoteColdSt, Just RemoteEstSt)  -> (02, show t)
+      (Just RemoteWarmSt, Just RemoteHotSt)  -> (03, show t)
+      (Just RemoteHotSt , Just RemoteWarmSt) -> (04, show t)
+      (Just RemoteEstSt , Just RemoteIdleSt) -> (05, show t)
+      (Just RemoteIdleSt, Just RemoteColdSt) -> (06, show t)
+      (Just RemoteIdleSt, Nothing)           -> (07, show t)
+      (Just RemoteColdSt, Nothing)           -> (08, show t)
+      (Just RemoteEstSt , Nothing)           -> (09, show t)
+      (Nothing          , Nothing)           -> (10, show t)
+      (Just RemoteWarmSt, Just RemoteWarmSt) -> (11, show t)
+      (Just RemoteIdleSt, Just RemoteIdleSt) -> (12, show t)
+      (Just RemoteColdSt, Just RemoteColdSt) -> (13, show t)
+      (_                , _)                 -> (99, show t)
+
+-- | List of all valid transition's names.
+--
+-- NOTE: Should be in sync with 'verifyAbstractTransition'.
+--
+allValidRemoteTransitionsNames :: [String]
+allValidRemoteTransitionsNames =
+  map show
+  [ Transition Nothing             (Just RemoteIdleSt)
+  , Transition (Just RemoteIdleSt) (Just RemoteWarmSt)
+  -- , Transition (Just RemoteIdleSt) (Just RemoteHotSt)
+  -- , Transition (Just RemoteColdSt) (Just RemoteWarmSt)
+  -- , Transition (Just RemoteColdSt) (Just RemoteHotSt)
+  , Transition (Just RemoteWarmSt) (Just RemoteHotSt)
+  , Transition (Just RemoteHotSt ) (Just RemoteWarmSt)
+  , Transition (Just RemoteWarmSt) (Just RemoteIdleSt)
+  -- , Transition (Just RemoteHotSt)  (Just RemoteIdleSt)
+  , Transition (Just RemoteIdleSt) (Just RemoteColdSt)
+  , Transition (Just RemoteIdleSt) Nothing
+  , Transition (Just RemoteColdSt) Nothing
+  , Transition (Just RemoteWarmSt) Nothing
+  , Transition (Just RemoteHotSt)  Nothing
+  , Transition Nothing             Nothing
+  -- , Transition (Just RemoteWarmSt) (Just RemoteWarmSt)
+  -- , Transition (Just RemoteIdleSt) (Just RemoteIdleSt)
+  -- , Transition (Just RemoteColdSt) (Just RemoteColdSt)
+  ]
+
 data Three a b c
     = First  a
     | Second b
@@ -2135,6 +2191,38 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
        )
     . splitConns
     $ abstractTransitionEvents
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       defaultBearerInfo
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test coverage of connection manager state transitions.
+-- TODO: Fix transitions that are not covered. #3516
+prop_connection_manager_transitions_coverage :: Int
+                                             -> ArbDataFlow
+                                             -> AbsBearerInfo
+                                             -> MultiNodeScript Int TestAddr
+                                             -> Property
+prop_connection_manager_transitions_coverage serverAcc
+    (ArbDataFlow dataFlow)
+    defaultBearerInfo
+    (MultiNodeScript events attenuationMap) =
+  let trace = runSimTrace sim
+
+      abstractTransitionEvents :: [AbstractTransitionTrace SimAddr]
+      abstractTransitionEvents = withNameTraceEvents trace
+
+      transitionsSeen = nub [ tran | TransitionTrace _ tran <- abstractTransitionEvents]
+      transitionsSeenNames = map (snd . validTransitionMap) transitionsSeen
+
+   in coverTable "valid transitions" [ (n, 0.01) | n <- allValidTransitionsNames ] $
+      tabulate   "valid transitions" transitionsSeenNames
+      True
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
@@ -2594,6 +2682,42 @@ prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
             mempty
        )
     $ inboundGovernorEvents
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       defaultBearerInfo
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test coverage of inbound governor state transitions.
+-- TODO: Fix transitions that are not covered. #3516
+prop_inbound_governor_transitions_coverage :: Int
+                                           -> ArbDataFlow
+                                           -> AbsBearerInfo
+                                           -> MultiNodeScript Int TestAddr
+                                           -> Property
+prop_inbound_governor_transitions_coverage serverAcc
+  (ArbDataFlow dataFlow)
+  defaultBearerInfo
+  (MultiNodeScript events attenuationMap) =
+  let trace = runSimTrace sim
+
+      remoteTransitionTraceEvents :: [RemoteTransitionTrace SimAddr]
+      remoteTransitionTraceEvents = withNameTraceEvents trace
+
+      transitionsSeen = nub [ tran
+                            | TransitionTrace _ tran
+                                <- remoteTransitionTraceEvents]
+      transitionsSeenNames = map (snd . validRemoteTransitionMap)
+                                 transitionsSeen
+
+   in coverTable "valid transitions"
+                  [ (n, 0.01) | n <- allValidRemoteTransitionsNames ] $
+      tabulate   "valid transitions" transitionsSeenNames
+      True
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
