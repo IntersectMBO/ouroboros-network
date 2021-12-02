@@ -31,6 +31,7 @@ module Ouroboros.Network.Diffusion.P2P
   , runM
 
   , NodeToNodePeerConnectionHandle
+  , AbstractTransitionTrace
   )
   where
 
@@ -44,7 +45,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Exception (IOException)
-import           Control.Tracer (Tracer, nullTracer, traceWith)
+import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.Foldable (asum)
 import           Data.IP (IP)
 import qualified Data.IP as IP
@@ -197,6 +198,9 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
                          ntnVersion
                          ntnVersionData))
 
+    , dtConnectionManagerTransitionTracer
+        :: Tracer m (AbstractTransitionTrace ntnAddr)
+
     , dtServerTracer
         :: Tracer m (ServerTrace ntnAddr)
 
@@ -238,6 +242,7 @@ nullTracers =
       , dtTracePeerSelectionCounters                 = nullTracer
       , dtPeerSelectionActionsTracer                 = nullTracer
       , dtConnectionManagerTracer                    = nullTracer
+      , dtConnectionManagerTransitionTracer          = nullTracer
       , dtServerTracer                               = nullTracer
       , dtInboundGovernorTracer                      = nullTracer
       , dtLocalConnectionManagerTracer               = nullTracer
@@ -656,6 +661,7 @@ runM Interfaces
        , dtTraceLocalRootPeersTracer
        , dtTracePublicRootPeersTracer
        , dtConnectionManagerTracer
+       , dtConnectionManagerTransitionTracer
        , dtServerTracer
        , dtInboundGovernorTracer
        , dtLocalConnectionManagerTracer
@@ -859,7 +865,9 @@ runM Interfaces
                     connectionManagerArguments =
                       ConnectionManagerArguments {
                           cmTracer              = dtConnectionManagerTracer,
-                          cmTrTracer            = nullTracer, -- TODO
+                          cmTrTracer            =
+                            fmap abstractState
+                            `contramap` dtConnectionManagerTransitionTracer,
                           cmMuxTracer           = dtMuxTracer,
                           cmIPv4Address,
                           cmIPv6Address,
@@ -984,7 +992,9 @@ runM Interfaces
                     connectionManagerArguments =
                       ConnectionManagerArguments {
                           cmTracer              = dtConnectionManagerTracer,
-                          cmTrTracer            = nullTracer, -- TODO
+                          cmTrTracer            =
+                            fmap abstractState
+                            `contramap` dtConnectionManagerTransitionTracer,
                           cmMuxTracer           = dtMuxTracer,
                           cmIPv4Address,
                           cmIPv6Address,

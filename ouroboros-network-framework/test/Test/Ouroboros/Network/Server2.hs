@@ -3133,8 +3133,6 @@ data WithName name event = WithName {
   }
   deriving (Show, Functor)
 
-type AbstractTransitionTrace addr = TransitionTrace' addr AbstractState
-
 traceWithNameTraceEvents :: forall b. Typeable b
                     => SimTrace () -> Trace (SimResult ()) b
 traceWithNameTraceEvents = fmap wnEvent
