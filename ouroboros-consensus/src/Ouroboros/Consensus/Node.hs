@@ -52,7 +52,6 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
-import           Control.Monad (when)
 import           Control.Tracer (Tracer, contramap)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Hashable (Hashable)
@@ -183,8 +182,14 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
                          (p2p :: Diffusion.P2P) =
    LowLevelRunNodeArgs {
 
-      -- | How to manage the clean-shutdown marker on disk
-      llrnWithCheckedDB :: forall a. (LastShutDownWasClean -> m a) -> m a
+      -- | An action that will receive a marker indicating whether the previous
+      -- shutdown was considered clean and a wrapper for installing a handler to
+      -- create a clean file on exit if needed. See
+      -- 'Ouroboros.Consensus.Node.Recovery.runWithCheckedDB'.
+      llrnWithCheckedDB :: forall a. (  LastShutDownWasClean
+                                     -> (ChainDB m blk -> m a -> m a)
+                                     -> m a)
+                        -> m a
 
       -- | The " static " ChainDB arguments
     , llrnChainDbArgsDefaults :: ChainDbArgs Defaults m blk
@@ -277,9 +282,8 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
   -> m ()
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
-    llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) ->
+    llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) continueWithCleanChainDB ->
     withRegistry $ \registry -> do
-
       let systemStart :: SystemStart
           systemStart = getSystemStart (configBlock cfg)
 
@@ -311,48 +315,49 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       chainDB <- openChainDB registry inFuture cfg initLedger
                 llrnChainDbArgsDefaults customiseChainDbArgs'
 
-      btime <-
-        hardForkBlockchainTime $
-        llrnCustomiseHardForkBlockchainTimeArgs $
-        HardForkBlockchainTimeArgs
-          { hfbtBackoffDelay   = pure $ BackoffDelay 60
-          , hfbtGetLedgerState =
-              ledgerState <$> ChainDB.getCurrentLedger chainDB
-          , hfbtLedgerConfig   = configLedger cfg
-          , hfbtRegistry       = registry
-          , hfbtSystemTime     = systemTime
-          , hfbtTracer         =
-              contramap (fmap (fromRelativeTime systemStart))
-                (blockchainTimeTracer rnTraceConsensus)
-          , hfbtMaxClockRewind = secondsToNominalDiffTime 20
-          }
+      continueWithCleanChainDB chainDB $ do
+        btime <-
+          hardForkBlockchainTime $
+          llrnCustomiseHardForkBlockchainTimeArgs $
+          HardForkBlockchainTimeArgs
+            { hfbtBackoffDelay   = pure $ BackoffDelay 60
+            , hfbtGetLedgerState =
+                ledgerState <$> ChainDB.getCurrentLedger chainDB
+            , hfbtLedgerConfig   = configLedger cfg
+            , hfbtRegistry       = registry
+            , hfbtSystemTime     = systemTime
+            , hfbtTracer         =
+                contramap (fmap (fromRelativeTime systemStart))
+                  (blockchainTimeTracer rnTraceConsensus)
+            , hfbtMaxClockRewind = secondsToNominalDiffTime 20
+            }
 
-      nodeKernelArgs <-
-          fmap (nodeKernelArgsEnforceInvariants . llrnCustomiseNodeKernelArgs) $
-          mkNodeKernelArgs
-            registry
-            llrnBfcSalt
-            llrnKeepAliveRng
-            cfg
-            blockForging
-            rnTraceConsensus
-            btime
-            chainDB
-      nodeKernel <- initNodeKernel nodeKernelArgs
-      rnNodeKernelHook registry nodeKernel
+        nodeKernelArgs <-
+            fmap (nodeKernelArgsEnforceInvariants . llrnCustomiseNodeKernelArgs) $
+            mkNodeKernelArgs
+              registry
+              llrnBfcSalt
+              llrnKeepAliveRng
+              cfg
+              blockForging
+              rnTraceConsensus
+              btime
+              chainDB
+        nodeKernel <- initNodeKernel nodeKernelArgs
+        rnNodeKernelHook registry nodeKernel
 
-      peerMetrics <- newPeerMetric
-      let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
-          ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
-          (apps, appsExtra) = mkDiffusionApplications
-                                    rnEnableP2P
-                                    (miniProtocolParameters nodeKernelArgs)
-                                    ntnApps
-                                    ntcApps
-                                    nodeKernel
-                                    peerMetrics
+        peerMetrics <- newPeerMetric
+        let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
+            ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
+            (apps, appsExtra) = mkDiffusionApplications
+                                      rnEnableP2P
+                                      (miniProtocolParameters nodeKernelArgs)
+                                      ntnApps
+                                      ntcApps
+                                      nodeKernel
+                                      peerMetrics
 
-      llrnRunDataDiffusion registry apps appsExtra
+        llrnRunDataDiffusion registry apps appsExtra
   where
     ProtocolInfo
       { pInfoConfig       = cfg
@@ -488,20 +493,16 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
         localRethrowPolicy :: RethrowPolicy
         localRethrowPolicy = mempty
 
--- | Did the ChainDB already have existing clean-shutdown marker on disk?
-newtype LastShutDownWasClean = LastShutDownWasClean Bool
-  deriving (Eq, Show)
-
 -- | Check the DB marker, lock the DB and look for the clean shutdown marker.
 --
--- Run the body action with the DB locked, and if the last shutdown was clean.
+-- Run the body action with the DB locked.
 --
 stdWithCheckedDB ::
      forall blk a. (StandardHash blk, Typeable blk)
   => Proxy blk
   -> FilePath
   -> NetworkMagic
-  -> (LastShutDownWasClean -> IO a)  -- ^ Body action with last shutdown was clean.
+  -> (LastShutDownWasClean -> (ChainDB IO blk -> IO a -> IO a) -> IO a)  -- ^ Body action with last shutdown was clean.
   -> IO a
 stdWithCheckedDB pb databasePath networkMagic body = do
 
@@ -513,22 +514,7 @@ stdWithCheckedDB pb databasePath networkMagic body = do
       networkMagic
 
     -- Then create the lock file.
-    withLockDB mountPoint $ do
-
-      -- When we shut down cleanly, we create a marker file so that the next
-      -- time we start, we know we don't have to validate the contents of the
-      -- whole ChainDB. When we shut down with an exception indicating
-      -- corruption or something going wrong with the file system, we don't
-      -- create this marker file so that the next time we start, we do a full
-      -- validation.
-      lastShutDownWasClean <- hasCleanShutdownMarker hasFS
-      when lastShutDownWasClean $ removeCleanShutdownMarker hasFS
-
-      -- On a clean shutdown, create a marker in the database folder so that
-      -- next time we start up, we know we don't have to validate the whole
-      -- database.
-      createMarkerOnCleanShutdown pb hasFS $
-        body (LastShutDownWasClean lastShutDownWasClean)
+    withLockDB mountPoint $ runWithCheckedDB pb hasFS body
   where
     mountPoint = MountPoint databasePath
     hasFS      = ioHasFS mountPoint

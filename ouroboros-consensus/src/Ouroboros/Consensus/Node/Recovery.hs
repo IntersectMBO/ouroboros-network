@@ -2,10 +2,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Node.Recovery (
-    createCleanShutdownMarker
-  , createMarkerOnCleanShutdown
+    LastShutDownWasClean (..)
+  , createCleanShutdownMarker
   , hasCleanShutdownMarker
   , removeCleanShutdownMarker
+  , runWithCheckedDB
   ) where
 
 import           Control.Monad (unless, when)
@@ -16,6 +17,7 @@ import           Ouroboros.Consensus.Block (StandardHash)
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..), toExitReason)
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, doesFileExist,
                      removeFile, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
@@ -25,23 +27,9 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
 cleanShutdownMarkerFile :: FsPath
 cleanShutdownMarkerFile = mkFsPath ["clean"]
 
--- | When the given action terminates with a /clean/ exception, create the
--- /clean shutdown marker file/.
---
--- NOTE: we assume the action (i.e., the node itself) never terminates without
--- an exception.
---
--- A /clean/ exception is an exception for 'exceptionRequiresRecovery' returns
--- 'False'.
-createMarkerOnCleanShutdown ::
-     (IOLike m, StandardHash blk, Typeable blk)
-  => Proxy blk
-  -> HasFS m h
-  -> m a  -- ^ Action to run
-  -> m a
-createMarkerOnCleanShutdown pb mp = onExceptionIf
-    (not . exceptionRequiresRecovery pb)
-    (createCleanShutdownMarker mp)
+-- | Did the ChainDB already have existing clean-shutdown marker on disk?
+newtype LastShutDownWasClean = LastShutDownWasClean Bool
+  deriving (Eq, Show)
 
 -- | Return 'True' when 'cleanShutdownMarkerFile' exists.
 hasCleanShutdownMarker
@@ -82,6 +70,68 @@ exceptionRequiresRecovery ::
 exceptionRequiresRecovery pb e = case toExitReason pb e of
     DatabaseCorruption -> True
     _                  -> False
+
+-- | A bracket function that manages the clean-shutdown marker on disk.
+--
+-- - If the marker is missing on startup, then ChainDB initialization will
+--   revalidate the database contents.
+--
+-- - If the OS kills the nodes, then we don't have the opportunity to write out
+--   the marker file, which is fine, since we want the next startup to do
+--   revalidation.
+--
+-- - If initialization was cleanly interrupted (eg SIGINT), then we leave the
+--   marker the marker in the same state as it was at the beginning of said
+--   initialization.
+--
+-- - At the end of a successful initialization, we remove the marker and install
+--   a shutdown handler that writes the marker except for certain exceptions
+--   (see 'exceptionRequiresRecovery') that indicate corruption, for which we
+--   want the next startup to do revalidation.
+runWithCheckedDB
+  :: forall a m h blk. (IOLike m, StandardHash blk, Typeable blk)
+  => Proxy blk
+  -> HasFS m h
+  -> (LastShutDownWasClean -> (ChainDB m blk -> m a -> m a) -> m a)
+  -> m a
+runWithCheckedDB pb hasFS body = do
+    -- When we shut down cleanly, we create a marker file so that the next
+    -- time we start, we know we don't have to validate the contents of the
+    -- whole ChainDB. When we shut down with an exception indicating
+    -- corruption or something going wrong with the file system, we don't
+    -- create this marker file so that the next time we start, we do a full
+    -- validation.
+    wasClean <- hasCleanShutdownMarker hasFS
+
+    removeMarkerOnUncleanShutdown wasClean
+      $ body
+          (LastShutDownWasClean wasClean)
+          (\_cdb runWithInitializedChainDB -> createMarkerOnCleanShutdown $ do
+            -- ChainDB initialization has finished by the time we reach this
+            -- point. We remove the marker so that a SIGKILL will cause an unclean
+            -- shutdown.
+            when wasClean $ removeCleanShutdownMarker hasFS
+            runWithInitializedChainDB
+          )
+  where
+    -- | If there is a unclean exception during ChainDB initialization, we want
+    -- to remove the marker file, so we install this handler.
+    --
+    -- It is OK to also wrap this handler around code that runs after ChainDB
+    -- initialization, because the condition on this handler is the opposite of
+    -- the condition in the @createMarkerOnCleanShutdown@ handler.
+    removeMarkerOnUncleanShutdown wasClean = if not wasClean then id else onExceptionIf
+      (exceptionRequiresRecovery pb)
+      (removeCleanShutdownMarker hasFS)
+
+    -- | If a clean exception terminates the running node after ChainDB
+    -- initialization, we want to create the marker file.
+    --
+    -- NOTE: we assume the action (i.e., the node itself) never terminates without
+    -- an exception.
+    createMarkerOnCleanShutdown = onExceptionIf
+      (not . exceptionRequiresRecovery pb)
+      (createCleanShutdownMarker hasFS)
 
 {-------------------------------------------------------------------------------
   Auxiliary
