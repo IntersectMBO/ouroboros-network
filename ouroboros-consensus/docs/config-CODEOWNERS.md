@@ -3,7 +3,7 @@
 This document explains how to configure a repository so that there are primary
 code owners automatically requested for review and also separate secondary code
 owners who are neither automatically requested nor notified but whose Approval
-still unblocks merging. This setup naturally accomodates scenarios such as an
+still unblocks merging. This setup naturally accommodates scenarios such as an
 urgent PR when the primary code owners are unavailable.
 
 ## Executive summary
