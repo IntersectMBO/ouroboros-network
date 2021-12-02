@@ -30,17 +30,17 @@ scripts/test.sh                    @coot @input-output-hk/network-superowners
 
 # Consensus Team
 
-ouroboros-consensus/               @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-test/          @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-mock/          @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-mock-test/     @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-byron/         @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-byronspec/     @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-byron-test/    @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-shelley/       @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-shelley-test/  @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-cardano/       @nfrisby @input-output-hk/consensus-superowners
-ouroboros-consensus-cardano-test/  @nfrisby @input-output-hk/consensus-superowners
+ouroboros-consensus/               @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-test/          @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-mock/          @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-mock-test/     @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-byron/         @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-byronspec/     @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-byron-test/    @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-shelley/       @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-shelley-test/  @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-cardano/       @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-cardano-test/  @nfrisby @dnadales @input-output-hk/consensus-superowners
 
 scripts/buildkite/check-stylish.sh @nfrisby @input-output-hk/consensus-superowners
 
