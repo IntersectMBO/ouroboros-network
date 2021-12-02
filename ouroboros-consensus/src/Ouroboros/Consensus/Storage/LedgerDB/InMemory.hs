@@ -267,6 +267,13 @@ data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
   Internal utilities for 'Ap'
 -------------------------------------------------------------------------------}
 
+toRealPoint :: HasHeader blk => Ap m l blk c -> RealPoint blk
+toRealPoint (ReapplyVal blk) = blockRealPoint blk
+toRealPoint (ApplyVal blk)   = blockRealPoint blk
+toRealPoint (ReapplyRef rp)  = rp
+toRealPoint (ApplyRef rp)    = rp
+toRealPoint (Weaken ap)      = toRealPoint ap
+
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
@@ -437,9 +444,8 @@ ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c)
 ledgerDbPushMany trace = repeatedlyM . pushAndTrace
   where
     pushAndTrace cfg ap db = do
-      trace StartedPushingBlockToTheLedgerDb
+      trace $ StartedPushingBlockToTheLedgerDb $ toRealPoint ap
       res <- ledgerDbPush cfg ap db
-      trace PushedBlockToTheLedgerDb
       return res
 
 -- | Switch to a fork
