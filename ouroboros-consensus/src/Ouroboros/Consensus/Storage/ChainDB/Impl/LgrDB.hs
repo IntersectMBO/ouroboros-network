@@ -21,8 +21,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , defaultArgs
   , openDB
     -- * 'TraceReplayEvent' decorator
-  , TraceLedgerReplayEvent
-  , decorateReplayTracer
+  , LedgerDB.decorateReplayTracerWithGoal
     -- * Wrappers
   , currentPoint
   , getCurrent
@@ -85,8 +84,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
                      ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
-                     DiskSnapshot, LedgerDB', NextBlock (..), StreamAPI (..),
-                     TraceEvent (..), TraceReplayEvent (..))
+                     DiskSnapshot, LedgerDB', NextBlock (..), ReplayGoal,
+                     StreamAPI (..), TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
@@ -178,7 +177,7 @@ openDB :: forall m blk.
           )
        => LgrDbArgs Identity m blk
        -- ^ Stateless initializaton arguments
-       -> Tracer m (TraceReplayEvent blk ())
+       -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
        -- ^ Used to trace the progress while replaying blocks against the
        -- ledger.
        -> ImmutableDB m blk
@@ -239,7 +238,7 @@ initFromDisk
      , HasCallStack
      )
   => LgrDbArgs Identity m blk
-  -> Tracer m (TraceReplayEvent blk ())
+  -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> ImmutableDB m blk
   -> m (LedgerDB' blk, Word64)
 initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
@@ -279,26 +278,6 @@ mkLgrDB varDB varPrevApplied resolveBlock args = LgrDB {..}
       , lgrHasFS          = hasFS
       , lgrTracer         = tracer
       } = args
-
-{-------------------------------------------------------------------------------
-  TraceReplayEvent decorator
--------------------------------------------------------------------------------}
-
--- | 'TraceReplayEvent' instantiated with additional information.
---
--- The @replayTo@ parameter is instantiated with the 'Point' of
--- the tip of the ImmutableDB.
-type TraceLedgerReplayEvent blk = TraceReplayEvent blk (Point blk)
-
--- | Add the tip of the Immutable DB to the trace event
---
--- Between the tip of the immutable DB and the point of the starting block,
--- the node could (if it so desired) easily compute a "percentage complete".
-decorateReplayTracer
-  :: Point blk -- ^ Tip of the ImmutableDB
-  -> Tracer m (TraceLedgerReplayEvent blk)
-  -> Tracer m (TraceReplayEvent blk ())
-decorateReplayTracer immTip = contramap $ fmap (const immTip)
 
 {-------------------------------------------------------------------------------
   Wrappers

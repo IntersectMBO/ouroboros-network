@@ -13,7 +13,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , openDB
   , withDB
     -- * Trace types
-  , LgrDB.TraceLedgerReplayEvent
+  , LgrDB.TraceReplayEvent
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
   , TraceCopyToImmutableDBEvent (..)
@@ -116,8 +116,8 @@ openDBInternal
   -> Bool -- ^ 'True' = Launch background tasks
   -> m (ChainDB m blk, Internal m blk)
 openDBInternal args launchBgTasks = runWithTempRegistry $ do
-    lift $ traceWith tracer $ TraceOpenEvent $ StartedOpeningDB
-    lift $ traceWith tracer $ TraceOpenEvent $ StartedOpeningImmutableDB
+    lift $ traceWith tracer $ TraceOpenEvent StartedOpeningDB
+    lift $ traceWith tracer $ TraceOpenEvent StartedOpeningImmutableDB
     immutableDB <- ImmutableDB.openDB argsImmutableDb $ innerOpenCont ImmutableDB.closeDB
     immutableDbTipPoint <- lift $ atomically $ ImmutableDB.getTipPoint immutableDB
     let immutableDbTipChunk =
@@ -126,15 +126,15 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
       TraceOpenEvent $
         OpenedImmutableDB immutableDbTipPoint immutableDbTipChunk
 
-    lift $ traceWith tracer $ TraceOpenEvent $ StartedOpeningVolatileDB
+    lift $ traceWith tracer $ TraceOpenEvent StartedOpeningVolatileDB
     volatileDB <- VolatileDB.openDB argsVolatileDb $ innerOpenCont VolatileDB.closeDB
     (chainDB, testing, env) <- lift $ do
       traceWith tracer $ TraceOpenEvent OpenedVolatileDB
       let lgrReplayTracer =
-            LgrDB.decorateReplayTracer
+            LgrDB.decorateReplayTracerWithGoal
               immutableDbTipPoint
               (contramap TraceLedgerReplayEvent tracer)
-      traceWith tracer $ TraceOpenEvent $ StartedOpeningLgrDB
+      traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
       (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immutableDB

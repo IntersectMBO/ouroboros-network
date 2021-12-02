@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -36,8 +35,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- ** opaque
   , DiskSnapshot (..)
     -- * Trace events
+  , ReplayGoal (..)
+  , ReplayStart (..)
   , TraceEvent (..)
   , TraceReplayEvent (..)
+  , decorateReplayTracerWithGoal
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
@@ -55,7 +57,11 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
+import           Ouroboros.Network.Block (Point (Point))
+
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.HeaderValidation
+                     (HeaderState (headerStateTip), annTipPoint)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
@@ -188,7 +194,7 @@ initLedgerDB ::
        , InspectLedger blk
        , HasCallStack
        )
-  => Tracer m (TraceReplayEvent blk ())
+  => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk))
@@ -213,9 +219,10 @@ initLedgerDB replayTracer
                    -> m (InitLog blk, LedgerDB' blk, Word64)
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
-        traceWith replayTracer $ ReplayFromGenesis ()
+        traceWith replayTracer ReplayFromGenesis
         initDb <- ledgerDbWithAnchor <$> getGenesisLedger
-        ml     <- runExceptT $ initStartingWith replayTracer cfg streamAPI initDb
+        let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
+        ml     <- runExceptT $ initStartingWith replayTracer' cfg streamAPI initDb
         case ml of
           Left _  -> error "invariant violation: invalid current chain"
           Right (l, replayed) -> return (acc InitFromGenesis, l, replayed)
@@ -270,7 +277,7 @@ initFromSnapshot ::
        , InspectLedger blk
        , HasCallStack
        )
-  => Tracer m (TraceReplayEvent blk ())
+  => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk))
   -> (forall s. Decoder s (HeaderHash blk))
@@ -281,13 +288,15 @@ initFromSnapshot ::
 initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI ss = do
     initSS <- withExceptT InitFailureRead $
                 readSnapshot hasFS decLedger decHash ss
+    let initialPoint = withOrigin (Point Origin) annTipPoint $ headerStateTip $ headerState $ initSS
     case pointToWithOriginRealPoint (castPoint (getTip initSS)) of
       Origin        -> throwError InitFailureGenesis
       NotOrigin tip -> do
-        lift $ traceWith tracer $ ReplayFromSnapshot ss tip ()
+        lift $ traceWith tracer $ ReplayFromSnapshot ss tip (ReplayStart initialPoint)
+        let tracer' = decorateReplayTracerWithStart initialPoint tracer
         (initDB, replayed) <-
           initStartingWith
-            tracer
+            tracer'
             cfg
             streamAPI
             (ledgerDbWithAnchor initSS)
@@ -301,7 +310,7 @@ initStartingWith ::
        , InspectLedger blk
        , HasCallStack
        )
-  => Tracer m (TraceReplayEvent blk ())
+  => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
   -> StreamAPI m blk
   -> LedgerDB' blk
@@ -325,8 +334,7 @@ initStartingWith tracer cfg streamAPI initDb = do
                        (ledgerState (ledgerDbCurrent db))
                        (ledgerState (ledgerDbCurrent db'))
 
-
-        traceWith tracer (ReplayedBlock (blockRealPoint blk) events ())
+        traceWith tracer (ReplayedBlock (blockRealPoint blk) events)
         return (db', replayed')
 
 {-------------------------------------------------------------------------------
@@ -499,6 +507,26 @@ snapshotFromPath fileName = do
 {-------------------------------------------------------------------------------
   Trace events
 -------------------------------------------------------------------------------}
+
+-- | Add the tip of the Immutable DB to the trace event
+--
+-- Between the tip of the immutable DB and the point of the starting block,
+-- the node could (if it so desired) easily compute a "percentage complete".
+decorateReplayTracerWithGoal
+  :: Point blk -- ^ Tip of the ImmutableDB
+  -> Tracer m (TraceReplayEvent blk)
+  -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
+decorateReplayTracerWithGoal immTip = contramap ($ (ReplayGoal immTip))
+
+-- | Add the block at which a replay started.
+--
+-- This allows to compute a "percentage complete" when tracing the events.
+decorateReplayTracerWithStart
+  :: Point blk -- ^ Starting point of the replay
+  -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
+  -> Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
+decorateReplayTracerWithStart start = contramap ($ (ReplayStart start))
+
 data TraceEvent blk
   = InvalidSnapshot DiskSnapshot (InitFailure blk)
     -- ^ An on disk snapshot was skipped because it was invalid.
@@ -508,32 +536,37 @@ data TraceEvent blk
     -- ^ An old or invalid on-disk snapshot was deleted
   deriving (Generic, Eq, Show)
 
+-- | Which point the replay started from
+newtype ReplayStart blk = ReplayStart (Point blk) deriving (Eq, Show)
+
+-- | Which point the replay is expected to end at
+newtype ReplayGoal blk = ReplayGoal (Point blk) deriving (Eq, Show)
+
 -- | Events traced while replaying blocks against the ledger to bring it up to
 -- date w.r.t. the tip of the ImmutableDB during initialisation. As this
 -- process takes a while, we trace events to inform higher layers of our
 -- progress.
---
--- The @replayTo@ parameter is meant to be filled in by a higher layer,
--- i.e., the ChainDB.
-data TraceReplayEvent blk replayTo
-  = ReplayFromGenesis replayTo
-    -- ^ There were no LedgerDB snapshots on disk, so we're replaying all
-    -- blocks starting from Genesis against the initial ledger.
-    --
-    -- The @replayTo@ parameter corresponds to the block at the tip of the
-    -- ImmutableDB, i.e., the last block to replay.
-  | ReplayFromSnapshot DiskSnapshot (RealPoint blk) replayTo
-    -- ^ There was a LedgerDB snapshot on disk corresponding to the given tip.
+data TraceReplayEvent blk
+  = -- | There were no LedgerDB snapshots on disk, so we're replaying all blocks
+    -- starting from Genesis against the initial ledger.
+    ReplayFromGenesis
+        (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
+    -- | There was a LedgerDB snapshot on disk corresponding to the given tip.
     -- We're replaying more recent blocks against it.
-    --
-    -- The @replayTo@ parameter corresponds to the block at the tip of the
-    -- ImmutableDB, i.e., the last block to replay.
-  | ReplayedBlock (RealPoint blk) [LedgerEvent blk] replayTo
-    -- ^ We replayed the given block (reference) on the genesis snapshot
-    -- during the initialisation of the LedgerDB.
-    --
-    -- The @blockInfo@ parameter corresponds replayed block and the @replayTo@
-    -- parameter corresponds to the block at the tip of the ImmutableDB, i.e.,
-    -- the last block to replay.
+  | ReplayFromSnapshot
+        DiskSnapshot
+        (RealPoint blk)
+        (ReplayStart blk) -- ^ the block at which this replay started
+        (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
+  -- | We replayed the given block (reference) on the genesis snapshot during
+  -- the initialisation of the LedgerDB. Used during ImmutableDB replay.
+  | ReplayedBlock
+        (RealPoint blk)   -- ^ the block being replayed
+        [LedgerEvent blk]
+        (ReplayStart blk) -- ^ the block at which this replay started
+        (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
+  -- | Signals that we are about to compute and push a ledger state into the
+  -- LedgerDB. Used while replaying the VolatileDB (during Initial Chain
+  -- Selection).
   | UpdateLedgerDbTraceEvent (UpdateLedgerDbTraceEvent blk)
-  deriving (Generic, Eq, Show, Functor, Foldable, Traversable)
+  deriving (Generic, Eq, Show)
