@@ -149,6 +149,7 @@ module Ouroboros.Network.ConnectionManager.Types
   , mkTransition
   , TransitionTrace
   , TransitionTrace' (..)
+  , AbstractTransitionTrace
   ) where
 
 import           Control.Monad.Class.MonadSTM.Strict
@@ -906,3 +907,4 @@ instance (Show peerAddr, Show state)
              ]
 
 type TransitionTrace peerAddr state = TransitionTrace' peerAddr (MaybeUnknown state)
+type AbstractTransitionTrace peerAddr = TransitionTrace' peerAddr AbstractState

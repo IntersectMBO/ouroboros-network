@@ -1705,10 +1705,10 @@ mkConnectionHandler snocket =
 -- Consistent type aliases for observed traces.
 --
 
-type TestConnectionState m      = ConnectionState Addr (Handle m) Void Version m
-type TestConnectionManagerTrace = ConnectionManagerTrace Addr ()
-type TestTransitionTrace m      = TransitionTrace  Addr (TestConnectionState m)
-type AbstractTransitionTrace    = TransitionTrace' Addr AbstractState
+type TestConnectionState m       = ConnectionState Addr (Handle m) Void Version m
+type TestConnectionManagerTrace  = ConnectionManagerTrace Addr ()
+type TestTransitionTrace m       = TransitionTrace  Addr (TestConnectionState m)
+type TestAbstractTransitionTrace = AbstractTransitionTrace Addr
 
 
 verifyAbstractTransition :: AbstractTransition
@@ -1872,7 +1872,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
         Left failure ->
           counterexample (displayException failure) False
         Right _ ->
-          let cmTrace :: [AbstractTransitionTrace]
+          let cmTrace :: [TestAbstractTransitionTrace]
               cmTrace = selectTraceEventsDynamic tr
 
           in counterexample ("\nTransition Trace\n" ++ (intercalate "\n" . map show $ cmTrace))
@@ -1883,7 +1883,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                   then Just (TestAddress 0)
                   else Nothing
 
-    verifyTrace :: [AbstractTransitionTrace] -> Property
+    verifyTrace :: [TestAbstractTransitionTrace] -> Property
     verifyTrace = conjoin
                 . fmap (verifyTransitionProp . ttTransition)
       where
