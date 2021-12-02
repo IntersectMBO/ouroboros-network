@@ -27,7 +27,7 @@ module Ouroboros.Network.ConnectionManager.Core
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when)
-import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadFork  (MonadFork, ThreadId, throwTo)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTimer
@@ -517,6 +517,8 @@ withConnectionManager
     :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version m a.
        ( Monad              m
        , MonadLabelledSTM   m
+       -- 'MonadFork' is only to get access to 'throwTo'
+       , MonadFork          m
        , MonadAsync         m
        , MonadEvaluate      m
        , MonadMask          m
@@ -658,7 +660,7 @@ withConnectionManager ConnectionManagerArguments {
             -- with the thread.  We put each connection in 'TerminatedState' to
             -- try that none of the connection threads will enter
             -- 'TerminatingState' (and thus delay shutdown for 'tcp_WAIT_TIME'
-            -- seconds) when receiving the 'AsyncCancelled' exception. However,
+            -- seconds) when receiving the 'ThreadKilled' exception. However,
             -- we can have a race between the finally handler and the `cleanup`
             -- callback. If the finally block loses the race, the AsyncCancelled
             -- received should interrupt the threadDelay.
@@ -675,6 +677,8 @@ withConnectionManager ConnectionManagerArguments {
 
             when shouldTrace $
               traceWith trTracer tr
+            -- using 'cancel' here, since we want to block until connection
+            -- handler thread terminates.
             traverse_ cancel (getConnThread connState)
           )
           state
@@ -925,7 +929,14 @@ withConnectionManager ConnectionManagerArguments {
                  traceWith tracer (TrPruneConnections (Map.keysSet pruneMap)
                                                       numberToPrune
                                                       (Map.keysSet choiceMap))
-                 forM_ pruneMap $ \(_, connThread', _) -> cancel connThread'
+                 -- we don't block until the thread terminates, delivering the
+                 -- async exception is enough (although in this case, there's no
+                 -- difference, since we put the connection in 'TerminatedState'
+                 -- which avoids the 'cmTimeWaitTimeout').
+                 forM_ pruneMap $ \(_, connThread', _) ->
+                                   throwTo (asyncThreadId (Proxy :: Proxy m)
+                                                          connThread')
+                                           AsyncCancelled
              )
 
     includeInboundConnectionImpl
@@ -1321,7 +1332,9 @@ withConnectionManager ConnectionManagerArguments {
       traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
       traceCounters stateVar
 
-      traverse_ cancel mbThread
+      -- 'throwTo' avoids blocking until 'cmTimeWaitTimeout' expires.
+      traverse_ (flip throwTo AsyncCancelled . asyncThreadId (Proxy :: Proxy m))
+                mbThread
 
       whenJust mbAssertion $ \tr -> do
         traceWith tracer tr
@@ -2039,7 +2052,9 @@ withConnectionManager ConnectionManagerArguments {
               --
               -- - close the socket,
               -- - set the state to 'TerminatedState'
-              cancel connThread
+              -- - 'throwTo' avoids blocking until 'cmTimeWaitTimeout' expires.
+              throwTo (asyncThreadId (Proxy :: Proxy m) connThread)
+                      AsyncCancelled
               return (OperationSuccess (abstractState $ Known connState'))
 
             Left connState  | connectionTerminated connState

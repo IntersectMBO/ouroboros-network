@@ -1993,7 +1993,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
 
                             Right (Just (Disconnected {})) -> pure ()
 
-                            Right (Just (Connected _ _ handle)) -> do
+                            Right (Just (Connected _ _ _)) -> do
                               threadDelay (either id id (seActiveDelay conn))
                               -- if this outbound connection is not
                               -- executed within inbound connection,
@@ -2003,7 +2003,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                               -- 'unregisterOutboundConnection' can
                               -- block.
                               case seActiveDelay conn of
-                                Left  _ -> killThread (hThreadId handle)
+                                Left  _ -> pure ()
                                 Right _ -> do
                                   when ( not (siReused (seExtra conn))
                                          && seDataFlow conn == Duplex ) $
