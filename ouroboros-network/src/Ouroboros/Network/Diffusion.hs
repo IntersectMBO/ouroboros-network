@@ -18,6 +18,8 @@ module Ouroboros.Network.Diffusion
   , ExtraApplications (..)
     -- * Run data diffusion
   , run
+    -- * Re-exports
+  , P2P.AbstractTransitionTrace
   ) where
 
 import           Control.Exception (IOException)
