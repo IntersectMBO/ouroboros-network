@@ -30,6 +30,7 @@ import           Control.Monad (forM_, guard, when)
 import           Control.Monad.Class.MonadFork  (MonadFork, ThreadId, throwTo)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow hiding (handle)
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSTM.Strict
 import qualified Control.Monad.Class.MonadSTM as LazySTM
@@ -522,6 +523,7 @@ withConnectionManager
        , MonadAsync         m
        , MonadEvaluate      m
        , MonadMask          m
+       , MonadMonotonicTime m
        , MonadThrow    (STM m)
        , MonadTimer         m
 
@@ -660,10 +662,10 @@ withConnectionManager ConnectionManagerArguments {
             -- with the thread.  We put each connection in 'TerminatedState' to
             -- try that none of the connection threads will enter
             -- 'TerminatingState' (and thus delay shutdown for 'tcp_WAIT_TIME'
-            -- seconds) when receiving the 'ThreadKilled' exception. However,
+            -- seconds) when receiving the 'AsyncCancelled' exception. However,
             -- we can have a race between the finally handler and the `cleanup`
-            -- callback. If the finally block loses the race, the AsyncCancelled
-            -- received should interrupt the threadDelay.
+            -- callback. If the finally block loses the race, the received
+            -- 'AsyncCancelled' should interrupt the 'threadDelay'.
             --
             (connState, tr, shouldTrace) <- atomically $ do
               connState <- readTVar connVar
@@ -821,7 +823,19 @@ withConnectionManager ConnectionManagerArguments {
               Right (mutableConnState@MutableConnState { connVar }, transition) ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    when (cmTimeWaitTimeout > 0) $
-                     unmask (threadDelay cmTimeWaitTimeout)
+                     let -- make sure we wait at least 'cmTimeWaitTimeout', we
+                         -- ignore all 'AsyncCancelled' exceptions.
+                         forceThreadDelay delay | delay <= 0 = pure ()
+                         forceThreadDelay delay = do
+                           t <- getMonotonicTime
+                           unmask (threadDelay delay)
+                             `catch` \e -> 
+                                case fromException e
+                                of Just (AsyncCancelled) -> do
+                                     t' <- getMonotonicTime
+                                     forceThreadDelay (delay - t' `diffTime` t)
+                                   _ -> throwIO e
+                     in forceThreadDelay cmTimeWaitTimeout
                 `finally` do
                   -- We must ensure that we update 'connVar',
                   -- `requestOutboundConnection` might be blocked on it awaiting for:
