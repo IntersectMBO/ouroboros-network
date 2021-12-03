@@ -717,7 +717,7 @@ withConnectionManager ConnectionManagerArguments {
                           connId@ConnectionId { remoteAddress = peerAddr }
                           writer
                           handler =
-        asyncWithUnmask $ \unmask ->
+        mask $ \unmask -> async $ do
           runWithUnmask
             (handler socket writer
                      (TrConnectionHandler connId `contramap` tracer)
@@ -743,7 +743,7 @@ withConnectionManager ConnectionManagerArguments {
           uninterruptibleMask $ \unmask -> do
             traceWith tracer (TrConnectionCleanup connId)
             mConnVar <- modifyTMVar stateVar $ \state -> do
-              wConnVar <- uninterruptibleMask_ $ atomically $ do
+              wConnVar <- atomically $ do
                 case Map.lookup peerAddr state of
                   Nothing      -> return Nowhere
                   Just mutableConnState@MutableConnState { connVar } -> do
