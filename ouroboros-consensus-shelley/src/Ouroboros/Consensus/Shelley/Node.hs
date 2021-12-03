@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
@@ -46,6 +47,8 @@ import           Control.Monad.Except (Except)
 import           Data.Bifunctor (first)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.SOP.Strict
 import           Data.Text (Text)
 import qualified Data.Text as Text
@@ -72,10 +75,11 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
+import qualified Cardano.Ledger.Credential as SL (StakeCredential)
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
-import qualified Cardano.Ledger.Shelley.LedgerState as SL (stakeDistr)
+import qualified Cardano.Ledger.Shelley.LedgerState as SL (RewardAccounts, stakeDistr)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 
@@ -481,13 +485,25 @@ registerGenesisStaking staking nes = nes {
     ledgerState = SL.esLState epochState
     dpState = SL._delegationState ledgerState
 
+    -- These are stake credentials of owners and reward accounts of the pools
+    -- that we want to register.
+    poolStakeCreds :: SL.PoolParams (EraCrypto era) -> Set (SL.StakeCredential (EraCrypto era))
+    poolStakeCreds params = Set.union
+      (Set.singleton (SL.getRwdCred (SL._poolRAcnt params)))
+      (Set.map SL.KeyHashObj (SL._poolOwners params))
+
+    poolRewardAccounts :: SL.RewardAccounts (EraCrypto era)
+    poolRewardAccounts = Map.fromList $ (,SL.Coin 0) <$>
+      Set.toList (Set.unions $ poolStakeCreds <$> Map.elems sgsPools)
+
     -- New delegation state. Since we're using base addresses, we only care
     -- about updating the '_delegations' field.
     --
     -- See STS DELEG for details
     dState' :: SL.DState (EraCrypto era)
     dState' = (SL._dstate dpState) {
-          SL._rewards = Map.map (const $ SL.Coin 0)
+          SL._rewards = Map.union poolRewardAccounts
+                      $ Map.map (const $ SL.Coin 0)
                       . Map.mapKeys SL.KeyHashObj
                       $ sgsStake
         , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
