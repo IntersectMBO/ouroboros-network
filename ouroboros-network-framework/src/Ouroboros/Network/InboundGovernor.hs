@@ -333,13 +333,20 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
           res <- demotedToColdRemote connectionManager
                                      (remoteAddress connId)
           traceWith tracer (TrWaitIdleRemote connId res)
-          v <- registerDelay inboundIdleTimeout
-          let timeoutSTM :: STM m ()
-              !timeoutSTM = LazySTM.readTVar v >>= check
+          case res of
+            TerminatedConnection {} -> do
+              let state' = unregisterConnection connId state
+              return (Just connId, state')
+            OperationSuccess {}  -> do
+              v <- registerDelay inboundIdleTimeout
+              let timeoutSTM :: STM m ()
+                  !timeoutSTM = LazySTM.readTVar v >>= check
 
-          let state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
+              let state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
 
-          return (Just connId, state')
+              return (Just connId, state')
+            UnsupportedState {} ->
+              return (Just connId, state)
 
         -- @
         --    PromotedToWarm^{Duplex}_{Remote}
@@ -391,6 +398,13 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
               -- @'InReservedOutboundState'@,
               -- @'InUnnegotiatedState',
               -- @'InOutboundState' 'Unidirectional'@,
+              -- @'InTerminatingState'@,
+              -- @'InTermiantedState'@.
+              let state' = unregisterConnection connId state
+              return (Just connId, state')
+
+            TerminatedConnection {} -> do
+              -- 'inState' can be either:
               -- @'InTerminatingState'@,
               -- @'InTermiantedState'@.
               let state' = unregisterConnection connId state

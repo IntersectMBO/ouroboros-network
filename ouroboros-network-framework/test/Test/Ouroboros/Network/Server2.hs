@@ -2725,6 +2725,7 @@ prop_inbound_governor_pruning serverAcc
     . counterexample (ppScript (MultiNodeScript events))
     . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
     . counterexample (Trace.ppTrace show show inboundGovernorEvents)
+    . counterexample (ppTrace trace)
     . (\ ( tr1
          , tr2
          )
@@ -2975,10 +2976,10 @@ multiNodeSim serverAcc dataFlow script acceptedConnLimit events = do
                     ( withSnocket nullTracer
                                   script
               $ \snocket _ ->
-                 multinodeExperiment (Tracer traceM)
-                                     (Tracer traceM)
-                                     (Tracer traceM)
-                                     (Tracer traceM)
+                 multinodeExperiment (Tracer traceM <> Tracer (say . show))
+                                     (Tracer traceM <> Tracer (say . show))
+                                     (Tracer traceM <> Tracer (say . show))
+                                     (Tracer traceM <> Tracer (say . show))
                                      snocket
                                      Snocket.TestFamily
                                      (Snocket.TestAddress 0)
