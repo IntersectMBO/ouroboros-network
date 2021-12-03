@@ -36,11 +36,12 @@ Duncan's presentation recordings)
 The Shelley ledger state contains a map from a UTxO identifier (ie the `TxIn`
 type) to the identified UTxO (ie the `TxOut` type) -- the values in this map
 constitute the UTxO set. The data type representing Shelley ledger states is
-complete and fully in-memory, as a typical immutable/persistent/pure/etc Haskell
-data structure. This is a boon for the developers (on multiple teams) that are
-managing the specification, code, tests, tools, etc that involve ledger states
-in any way. That boon, however, comes at a cost: every use of a `mainnet` ledger
-state incurs the memory footprint of `mainnet`'s huge UTxO set.
+complete and fully in-memory, as a typical
+immutable/[persistent][wikipedia.org-persistent]/pure/etc Haskell data structure.
+This is a boon for the developers (on multiple teams) that are managing the
+specification, code, tests, tools, etc that involve ledger states in any way.
+That boon, however, comes at a cost: every use of a `mainnet` ledger state
+incurs the memory footprint of `mainnet`'s huge UTxO set.
 
 The key insight underlying the UTxO HD plan is that, for a running node, the
 primary use of the UTxO set is to validate transactions. There simply aren't
@@ -123,25 +124,25 @@ LocalStateQuery server acquired the ledger state, then the ChainDB switched to a
 different chain, and then the LocalStateQuery attempted to read the on-disk
 data, it would not necessarily read values from disk that correspond to the
 in-memory ledger state it is holding, since that ledger state is no longer at
-the end of the ChainDB's selected chain.
+the end of the ChainDB's selected chain. The new wrinkle is that an acquired
+in-memory ledger state now has the potential of going stale, ie _expiry_.
 
-There are multiple ways to resolve the risk of incoherence due to the acquired
-in-memory ledger state now having the potential of expiry. We have come up with
-two that effectively preserve the persistent nature of the complete ledger state
-prior to UTxO HD -- this effective persistence is attractive because it means
-these Consensus components do not need a new code path to handle the expiry
-case. The first way is to enrich the interface to the on-disk UTxO set to allow
-querying its former states. We'll discuss this functionality below in the Node
-start-up section, and in fact there we consider it essential. However, even
-though we ultimately need it, we're unsure if its specific realization will be
-suitable for this problem of effective ledger state persistence. So we instead
-turn to our second idea.
+There are multiple ways to mitigate this new potential for expiry. We have come
+up with two; both effectively re-establish the persistent nature of the complete
+ledger state prior to UTxO HD, which we're like to preserve despite UTxO HD
+because it means these Consensus components do not need a new code path to
+handle the expiry case. The first way is to enrich the interface to the on-disk
+UTxO set to allow querying its former states. We'll discuss this functionality
+below in the Node start-up section, and in fact there we consider it essential.
+However, even though we ultimately need it, we're unsure if its specific
+realization will be suitable for this problem of effective ledger state
+persistence. So we instead turn to our second idea.
 
 Every Consensus component that acquires a ledger state only needs to use it very
 briefly. Because of persistence, they _could_ hold it forever -- and therefore
 have never needed to even consider the risk of expiry, let alone include code to
-handle it -- but none actually even needs to hold it for appreciable durations.
-We therefore can simply add a lock that prevents the ChainDB from altering the
+handle it -- but none actually needs to hold it for any appreciable duration. We
+therefore can simply add a lock that prevents the ChainDB from altering the
 on-disk data while some component is interacting with that data.
 
 ***Design Decision*** The ChainDB will maintain a lock. Other Consensus
@@ -180,7 +181,8 @@ a bug at run-time, our only choice would be disconnecting from the wallet (TODO
 which might be fine): the LocalStateQuery mini protocol does not have any
 message that could convey expiry to the client. We prefer the complexity of the
 lock and the risk of a wallet bug as opposed to "unnecessarily" complicating the
-mini protocol itself.
+mini protocol itself (which would also require additional complexity in the
+wallet code).
 
 ## Mempool
 
@@ -226,7 +228,10 @@ huge number of blocks and they would collectively induce a write buffer with a
 huge memory footprint. And since we've -- at least temporarily -- coupled
 flushing and snapshotting, that means we'll now need to take snapshots during
 replay. This doesn't seem particularly onerous or awkward, but it's a new
-behavior we haven't considered before.
+behavior we haven't considered before. In fact, it has benefits for the user:
+even an interrupted node start-up might have made persisted progress so that the
+next node start-up start replying from a later block (by using a newly-written
+snapshot).
 
 ## The kind of the `LedgerState` data family
 
@@ -321,3 +326,12 @@ TODO the UTxO set is just the first part we're moving to disk
 TODO explain why moving ledger snapshots to disk and/or moving incremental
 computations to disk means that even just ticking a ledger state requires
 on-disk data
+
+TODO Jared mentioned on Slack (~2nd Dec 2021) a question of where the
+incremental ledger computation logic should live if so much of that
+responsibility is relocated to the on-disk ledger data's maintanance. I haven't
+quite parsed it, but my initial thought is that that logic still belongs in
+`cardano-ledger-specs`, but maybe it can be appreciably isolated from the rest
+of the "normal" ledger rules
+
+[wikipedia.org-persistent]: <https://en.wikipedia.org/wiki/Persistent_data_structure> (Definition of persistent)
