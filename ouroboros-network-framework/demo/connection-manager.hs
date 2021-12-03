@@ -509,6 +509,17 @@ bidirectionalExperiment
                       $ [ "bidirectionalExperiment: unregigisterOutboundConnection "
                         , show inState
                         ])
+                TerminatedConnection inState -> do
+                  traceWith debugTracer ( "initiator-loop"
+                                        , "unregisterOutboundConnection in unsupported state "
+                                        , inState
+                                        )
+                  throwIO
+                    (userError
+                      . concat
+                      $ [ "bidirectionalExperiment: unregigisterOutboundConnection "
+                        , show inState
+                        ])
                 OperationSuccess _ ->
                   traceWith debugTracer ( "initiator-loop"
                                         , "unregistered"

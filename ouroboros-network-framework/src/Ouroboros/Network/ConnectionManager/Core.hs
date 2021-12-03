@@ -2367,11 +2367,11 @@ withConnectionManager ConnectionManagerArguments {
                        )
 
               TerminatingState {} ->
-                return ( UnsupportedState TerminatingSt
+                return ( TerminatedConnection st
                        , Nothing
                        )
               TerminatedState {} ->
-                return ( UnsupportedState TerminatedSt
+                return ( TerminatedConnection st
                        , Nothing
                        )
 

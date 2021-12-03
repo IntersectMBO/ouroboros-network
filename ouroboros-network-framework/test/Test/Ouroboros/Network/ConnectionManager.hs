@@ -965,7 +965,8 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
                                       throwIO (UnsupportedStateError
                                                 "unregisterOutboundConnection"
                                                 st)
-                                    OperationSuccess _ -> pure ()
+                                    OperationSuccess     _ -> pure ()
+                                    TerminatedConnection _ -> pure ()
 
 
                       go (thread : threads) (Accept acceptOne) conns'
