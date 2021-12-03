@@ -1049,6 +1049,9 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
                   traverse_ (waitCatch >=> checkException) threads
               )
 
+            -- we need to wait at least `testTimeWaitTimeout` to let all the
+            -- outstanding threads to terminate
+            threadDelay (testTimeWaitTimeout + 1)
             atomically $ numberOfConnections connectionManager
 
         -- we need to wait at least `testTimeWaitTimeout` to let all the
