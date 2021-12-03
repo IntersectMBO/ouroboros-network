@@ -76,8 +76,8 @@ import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Storage.LedgerDB.Types
-                     (UpdateLedgerDbTraceEvent (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
+                     Pushing (..), UpdateLedgerDbTraceEvent (..))
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
@@ -437,16 +437,22 @@ ledgerDbPush cfg ap db =
       applyBlock (ledgerDbCfg cfg) ap db
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany :: (ApplyBlock l blk, Monad m, c)
-                 => (UpdateLedgerDbTraceEvent blk -> m ())
-                 -> LedgerDbCfg l
-                 -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
-ledgerDbPushMany trace = repeatedlyM . pushAndTrace
+ledgerDbPushMany ::
+     forall m c l blk . (ApplyBlock l blk, Monad m, c)
+  => (UpdateLedgerDbTraceEvent blk -> m ())
+  -> LedgerDbCfg l
+  -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
+ledgerDbPushMany trace cfg aps initDb = (repeatedlyM pushAndTrace) aps initDb
   where
-    pushAndTrace cfg ap db = do
-      trace $ StartedPushingBlockToTheLedgerDb $ toRealPoint ap
-      res <- ledgerDbPush cfg ap db
-      return res
+    pushAndTrace ap db = do
+      traceStep $ StartedPushingBlockToTheLedgerDb (Pushing $ toRealPoint ap)
+      ledgerDbPush cfg ap db
+
+    traceStep :: (PushGoal blk -> UpdateLedgerDbTraceEvent blk) -> m ()
+    traceStep step =
+      let goal = PushGoal . toRealPoint . last $ aps
+          event = step goal
+      in  trace event
 
 -- | Switch to a fork
 ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
