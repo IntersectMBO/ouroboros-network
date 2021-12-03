@@ -429,12 +429,14 @@ simplePrunePolicy m n =
 data OperationResult a
     = UnsupportedState !AbstractState
     | OperationSuccess !a
+    | TerminatedConnection !AbstractState
     deriving (Show, Functor)
 
 
 resultInState :: OperationResult AbstractState -> AbstractState
-resultInState (UnsupportedState st) = st
-resultInState (OperationSuccess st) = st
+resultInState (UnsupportedState     st) = st
+resultInState (OperationSuccess     st) = st
+resultInState (TerminatedConnection st) = st
 
 
 -- | Return value of 'unregisterInboundConnection' to inform the caller about
