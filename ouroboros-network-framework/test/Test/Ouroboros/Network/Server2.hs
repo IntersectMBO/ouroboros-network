@@ -3031,6 +3031,10 @@ unit_connection_terminated_when_negotiating =
         multiNodeScript
 
 
+-- | Split 'AbstractTransitionTrace' into seprate connections.  This relies on
+-- the property that every connection is terminated with 'UnknownConnectionSt'.
+-- This property is verified by 'verifyAbstractTransitionOrder'.
+--
 splitConns :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
            -> Trace (SimResult ()) [AbstractTransition]
 splitConns =
