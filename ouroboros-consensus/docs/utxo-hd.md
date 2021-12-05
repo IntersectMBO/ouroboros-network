@@ -11,8 +11,8 @@ neighboring teams, particularly Ledger and Node.
 The Shelley ledger state includes the set of Unspent Transaction Outputs, the
 UTxO set. After so many epochs, this set has grown quite large on the Cardano
 `mainnet`, with millions of entries. In particular, a machine with 8 gigabytes
-of memory running a node, the wallet, will have very little free memory with our
-latest releases of the node and wallet.
+of memory running a node, the wallet, etc will have very little free memory with
+our latest releases of the node and wallet.
 
 Our long-term solution for this is the UTxO HD initiative, whereby we relocate
 the UTxO set of the Shelley ledger state from in-memory data structures to
@@ -84,17 +84,17 @@ of the immutable tip.
 The `k` blocks on the volatile chain also make changes to the UTxO set, but we
 track those changes as a corresponding sequence of explicitly-represented
 differences (eg insertions, deletions). Each difference encodes the exact
-cumulative affect that some block's transactions have on the UTxO set when
+cumulative effect that some block's transactions have on the UTxO set when
 applying that block to a ledger state. Once that block becomes immutable, we can
 flush the corresponding difference to the on-disk UTxO set and then never again
 need to track that difference in memory.
 
 In actuality, we won't necessarily want to or even be able to flush every time
 our immutable chain grows: performance might call for batching writes, and
-coherency might prevent flushing during certain intervals (see The Lock below).
-Therefore, in addition to the volatile chain's differences we can also track a
-_write buffer_ of some suffix of the immutable differences that simply haven't
-yet been written to the on-disk UTxO set.
+coherency might prevent flushing during certain intervals (see The flush lock
+section below). Therefore, in addition to the volatile chain's differences we
+can also track a _write buffer_ of some suffix of the immutable differences that
+simply haven't yet been written to the on-disk UTxO set.
 
 ***Design Decision*** We only store one UTxO set on-disk: the UTxO set as of the
 beginning of the write buffer, which does not itself extend past the immutable
@@ -129,7 +129,7 @@ in-memory ledger state now has the potential of going stale, ie _expiry_.
 
 There are multiple ways to mitigate this new potential for expiry. We have come
 up with two; both effectively re-establish the persistent nature of the complete
-ledger state prior to UTxO HD, which we're like to preserve despite UTxO HD
+ledger state prior to UTxO HD, which we'd like to preserve despite UTxO HD
 because it means these Consensus components do not need a new code path to
 handle the expiry case. The first way is to enrich the interface to the on-disk
 UTxO set to allow querying its former states. We'll discuss this functionality
@@ -186,9 +186,35 @@ wallet code).
 
 ## Mempool
 
-TODO how to avoid holding the flush lock for too long? is it possible to cache
-read results within the mempool so that we'll never need disk access
-when_re_-applying transactions
+The Mempool's primary state is a sequence of validated transactions, which
+evolves in reponse to three stimuli: a transaction is added (common), some
+transactions are removed (rare), or the ChainDB changes the current ledger state
+(common). Adding a transaction requires validating only the new transaction. The
+ledger state change results in revaldating the entire mempool. So does removing
+some transactions -- it might be possible to optimize that case, but it's rare
+enough that it doesn't seem worthwhile. All stimuli will require a disk read as
+of UTxO HD.
+
+TODO Mempool validation does need to tick in order to eg cross era-boundaries,
+but it doesn't need to do any of the ledger's incremental computation, does it?
+Might be able to save work here and avoid tick-motivated reads from the on-disk
+ledger data. I [asked on Slack in #ledger]
+(https://input-output-rnd.slack.com/archives/CCRB7BU8Y/p1638727367391500).
+
+TODO since the mempool emulates approximately one block, it's likely fine to
+batch the reads for all of its transactions
+
+TODO we think it's fine to hold the lock while handling each stimulus
+(especially if lightly batching new transactions)
+
+TODO if necessary, we might be able to cache each transaction's readset and
+contemporary changelog and evolve those things individually in memory each time
+the ChainDB changes the ledger state. Clever idea: As the cached changelog's
+write buffer grows, we can "flush" it into the cached readset. Thus it might be
+possible to only go to disk once per transaction, when it was added. ... but
+that's the more frequent stimulus, so is this caching-based optimization worth
+it? Hmm, maybe during bulk sync this could be a massive help if the Mempool were
+somehow non-empty -- does that ever happen... perhaps when waking from sleep?
 
 # Node start-up
 
@@ -216,8 +242,9 @@ restore point functionality. We therefore use a temporary workaround.
 
 ***Interim Design Decision*** Whenever the node flushes (some prefix of) the
 write buffer, it will also serialize the corresponding in-memory ledger state to
-a file. This establishes the invariant that the cumulative on-disk content
-always corresponds to a complete ledger state as of some immutable block.
+a file. This establishes the invariant that the cumulative on-disk content (ie
+the on-disk UTxO map database + the latest snapshot file) always corresponds to
+a complete ledger state as of some immutable block.
 
 Though temporary, this is an example reason to intentionally batch write buffer
 flushes.
@@ -230,32 +257,41 @@ flushing and snapshotting, that means we'll now need to take snapshots during
 replay. This doesn't seem particularly onerous or awkward, but it's a new
 behavior we haven't considered before. In fact, it has benefits for the user:
 even an interrupted node start-up might have made persisted progress so that the
-next node start-up start replying from a later block (by using a newly-written
-snapshot).
+next node start-up can begin replaying from a later block (by using a
+newly-written snapshot).
+
+TODO A potential alternative to restore points is that we store each block's
+forwarded readset alongside it in the ImmDB. Too ad-hoc? Too wasteful/redundant?
+I [asked Douglas on Slack in
+#utxohd-whiteboarding](https://input-output-rnd.slack.com/archives/C02MSACRS48/p1638572064085200)
+whether restore points are simple enough for all considered back-ends that this
+idea could be dismissed as unnecessary.
 
 ## The kind of the `LedgerState` data family
 
 Before UTxO HD, the ledger state is a self-contained persistent data structure.
-It is identified by the type `LedgerState blk`, for which block type is in use.
-The UTxO HD plan involves -- at least logically -- splitting this `LedgerState
-blk` type into two parts: the small part that can remain in-memory and the large
-part intended for relocation to the disk (the UTxO set, most notoriously).
+It is identified by the type `LedgerState blk`, for whichever block type is in
+use. The UTxO HD plan involves -- at least logically -- splitting this
+`LedgerState blk` type into two parts: the small part that can remain in-memory
+and the large part intended for relocation to the disk (the UTxO set, most
+notoriously).
 
 A simple and intuitive option is to split `LedgerState blk` into
 `SmallLedgerState blk` and `LargeLedgerState blk`. The type for a self-contained
 complete ledger state would then be the tuple `(SmallLedgerState blk,
 LargeLedgerState blk)`.
 
-The team developing the on-disk interface has used the Higher-Kind Data (HKD)
-pattern for their ledger state. Therefore, the `LargeLedgerState` family
-actually takes an additional parameter `table` which determines what is actually
-stored for the on-disk data. For example `LargeLedgerState blk Values` would
-represent the actual map from `TxIn` to `TxOut` while `LargeLedgerState blk
-Keys` would merely store the set of `TxIn`. There will be others as well, most
-notably `LargeLedgerState blk Diff`, the aforementioned in-memory represent ions
-of the UTxO differences induced by applying a block. With HKD, the simple option
-uses the tuple `(SmallLedgerState blk, LargeLedgerState blk Values)` as the type
-of a self-contained complete ledger state.
+The team developing the on-disk interface has -- for good reason -- used the
+Higher-Kind Data (HKD) pattern for their ledger state. Therefore, the
+`LargeLedgerState` family must take an additional parameter `table` which
+determines what is actually contained in the data structure. For example
+`LargeLedgerState blk Values` would represent the actual map from `TxIn` to
+`TxOut` while `LargeLedgerState blk Keys` would merely store the set of `TxIn`.
+There will be others as well, most notably `LargeLedgerState blk Diff`, the
+aforementioned in-memory representations of the UTxO differences induced by
+applying a block. With HKD, the simple option uses the tuple `(SmallLedgerState
+blk, LargeLedgerState blk Values)` as the type of a self-contained complete
+ledger state.
 
 To help us implement this UTxO HD plan, we intentionally forego this simplest
 option.
@@ -288,14 +324,16 @@ far.
 type `LargeLedgerState (HardForkBlock (xs ++ ys))`. This makes the era
 transition a no-op for the on-disk content.
 
-## Maintaining the changelog
+## Maintaining the changelog and on-disk content
 
 TODO explain that what has been called the "sequence of differences" is now part
 of the LedgerDB
 
-## Maintaining the on-disk handle
-
 TODO explain that LgrDB carries a new handle for the on-disk content
+
+TODO I don't want to refer to the internal structure of the ChainDB (ie to
+LedgerDB or LgrDB) anywhere outside of this section; the decomposition is
+lower-level than I want this document to be
 
 ## Pipelining disk access
 
@@ -313,11 +351,9 @@ recent ancestors B_i (such that i < j), so that B_j's read results are available
 by the time we have the in-memory ledger state necessary for validating B_j (ie
 once we've finished validating block B_{j-1}).
 
-TODO explain the necessary changelog gymnastics
-
-TODO explain that this concern is entirely local to the ChainDB's `ChainSel`
-logic, and so is (TODO totally?) orthogonal to the flush lock, since it's just
-extensions and many fewer than `k`
+See the Worked examples section below for an (abstract) worked example and some
+additional relatively low-level discussion, which we summarize here as: this
+concern is entirely internal to the ChainDB's chain selection logic.
 
 ## Other large parts of the ledger state
 
@@ -333,5 +369,157 @@ responsibility is relocated to the on-disk ledger data's maintanance. I haven't
 quite parsed it, but my initial thought is that that logic still belongs in
 `cardano-ledger-specs`, but maybe it can be appreciably isolated from the rest
 of the "normal" ledger rules
+
+# Worked examples
+
+We intend for this document to remain high-level, but the high-level
+understanding can be easier once you see some of the low-level dynamics in
+action.
+
+## Using the sequence of differences
+
+Suppose our node is at steady-state, our current immutable tip is H, the block
+C1 extends H, and our volatile tip is the block Ck. By definition, there are `k`
+blocks that extend H up to and including Ck.
+
+```
+H-C1-.-.- ... .-.-.-Ck
+```
+
+Before UTxO HD, the ChainDB holds in-memory the `k` headers for C1 through Ck
+and the `k+1` ledger states resulting from each of H through Ck. This primary
+motivation for this is so that it's trivial to access the ledger state needed to
+validate any other extension of H. Recall that Ouroboros Common Prefix Theorem
+ensures we won't ever need to consider alternatives that branch off before H. So
+these `k+1` ledger states are all ledger states we could ever need to validate
+an alternative chain.
+
+As of UTxO HD, we need additional information beyond those `k` headers and `k+1`
+ledger states. Since each of those in-memory ledger states excluded the
+corresponding UTxO map we need to also maintain in-memory the sequence of `k+1`
+differences that let us read-in the on-disk content, which is coherent with the
+oldest of the `k+1` ledger states, that as of H, and then translate the result
+values through time to any ledger state between that as of H (a no-op) and that
+as of Ck (apply all of the differences) by applying the corresponding prefix of
+differences to the values that were read from disk.
+
+### Simple example
+
+* Suppose `k=2`. At steady-state, the in-memory content is the two block headers
+C1 and C2; the three in-memory ledger states as of H, C1, and C2; and the two
+differences from applying C1 and C2. The on-disk content is the UTxO map as of
+H.
+
+* Let that be `UTxO_H = {'a': (bob, 7), 'b': (alice, 80), 'c': (bob, 900) }`.
+
+* C1 and C2 each change the UTxO map in some way (recall that a fundamental
+Shelley ledger requirement is that every transaction must consume at least one
+UTxO). Suppose `difference_C1 = delete { 'a' } and insert { 'd': (alice, 3),
+'e': (charlie, 4) }` and `difference_C2 = delete { 'b', 'd' } and insert { 'f':
+(alice, 83) }`.
+
+* Suppose C3, a successor of C2, arrives. We cannot simply load the entirety of
+  UTxO_H and then apply difference_C1 and difference_C2 to get UTxO_C2 and then
+  validate C3 against that, because in a real system even just loading UTxO_H
+  would exhaust our memory.
+
+* Instead, we inspect C3 to see which UTxO entries it claims to consume (aka its
+  _unrewound keyset_). It maybe be that difference_C1 and/or difference_C2
+  delete or insert some of C3's inputs. In general, the in-memory differences
+  won't address all of the new block's inputs, so we'll need to lookup the
+  remaining inputs (aka the _rewound keyset_) in the on-disk UTxO_H. Once the
+  disk read yields its results (aka the _unforwarded readset_), we apply
+  difference_C1 and difference_C2 to them in order to calculate a subset of
+  UTxO_C2 that has at least what is needed to validate C3 (that subset is aka
+  the _forwarded readset_).
+
+* Suppose C3 claims to consume `{ 'c', 'f' }`, so that's its unrewound keyset.
+  We can rewind that through difference_C2 to get `{ 'c' }`, since C2 created
+  `'f'`. Further rewinding the intermeidate keyset through difference_C1 doesn't
+  change anything, since C1 didn't insert or delete `'c'`. So the (fully)
+  rewound keyset is `{ 'c' }`.
+
+* Once we read `{ 'c' }` from disk (ie look it up in UTxO_H), we'll have the
+  unforwarded readset `{ 'c': (bob, 900) }`. Applying difference_C1 yields `{
+  'c': (bob, 900), 'd': (alice, 3), 'e': (charlie, 4) }`, and subsequently
+  applying difference_C2 yields `{ 'c': (bob, 900), 'e': (charlie, 4), 'f':
+  (alice, 83) }`. That's the forwarded readset, which does contain at least the
+  `'c'` and `'f'` that C3's validation requires.
+
+* We will pair that forwarded readset with the in-memory ledger state as of C2,
+  and pass the resulting logically-complete ledger state to the ledger rules
+  along with C3. If C3 is valid, then the ledger rules will return
+  difference_C3, and the ChainDB can accordingly extend its in-memory data
+  structures.
+
+* It is worth emphasizing that the logically-complete ledger state passed to the
+  ledger rules only holds a relatively tiny subset of the full UTxO_C2, but it
+  is a sufficient subset for validating C3.
+
+There are a handful ways in which that initial example and discussion is
+intentionally oversimplified.
+
+* Because of the the write buffer, we'll need to carry more than just the `k`
+  latest differences, since it may be the the on-disk ledger content is lagging
+  somewhat behind H. But that's the only consequence of the write buffer: it
+  simply means there could have been more than `k` differences to rewind and
+  forward through.
+
+* The example rewinds and forwards through the same sequence of differences. In
+  actuality, the flush lock only ensures that the sequence of differences we
+  rewind through and the sequence we forward through have the same anchor: the
+  one we forward through may be an extension of the one we rewound through. That
+  is entirely OK, since we don't necessarily forward through all of the
+  differences in the sequence, only the prefix that we need in order to reach
+  the desired logically-complete ledger state.
+
+* Our initial development increment (TODO even our first release?) will only
+  move the UTxO set to disk, and so every in-memory differences will concist
+  only of inserting elements into (indexed) sets and deleting elemements. But
+  some of the other tables we will eventually move to disk will have richer
+  dynamics. In particular, some of their differences in the future will be
+  _modifications_/_updates_, along the lines of "add 3 to the value in `x`".
+  Thus, in general, rewinding a keyset through a difference that includes one of
+  the keys will not mean that the rewound keyset doen't involve that key (we'll
+  need to fetch whever the value of `x` was before it was increased by 3).
+
+* Once we pipeline chain selection, it can no longer rely on the flush lock --
+  the pipeline will involve interleaving reads and flushes. Every other
+  component (eg LocalStateQuery) can still use the lock, but chain selection
+  will not. Therefore, chain selection may need to forward a readset through a
+  sequence of differences that is not merely an extension of the sequence of
+  differences through which the corresponding key set was rewound.
+
+### Almost as simple even with pipelined chain selection
+
+Suppose we rewound the keyset through `r1..ri` where `i <= k` and we forwarded
+the readset through `f1..fj` where `j<=k`. In almost all circumstances, it will
+be the case that `f1` is one of `r1..ri`, which means we'll be able to instead
+forward through the sequence `r1..f1..fj`. Other than forwarding through that
+reconstructed sequence, the dynamics are the exact same as in the simple
+example.
+
+The only way `f1` might not be in `r1..ri` is if chain selection, while the read
+was on in-flight, extended its selection by `> k` blocks. The necessary
+interleaving/durations seem practically impossible, even with a mechanical
+drive. And especially so if we limit the depth of pipelining to something like
+`k/10`. However, it ultimately could be that the ChainDB does the maximally deep
+switch while the disk read in is in-flight: the `> k` extended blocks would be
+the blocks from an alternate chain. Such a deep switch is also extremely rare:
+it requires a ~50% adversary or else a network partition that happens to split
+the active stake such that the greatest parts contain approxmiately equal stake
+and also also for the attacker or the partition to have just the right
+timing/duration.
+
+Thus pipelining will need a fallback alternative that handles `f1` not in
+`r1..ri`, but it will most likely only activate in dire circumstances. The
+necessary logic is simple: we re-execute the on-disk access while holding the
+flush lock -- pipelining is only an optimization, so we can dynamically disable
+it via the lock whenever necessary. On the other hand, pipelining is effectively
+necessary during bulk sync, else catching up to `mainnet` would take longer than
+the end-user's patience. Fortunately, chain switches are extremely rare in bulk
+sync, unless that syncing node is under attack. And the node's defense should
+disconnect from abusive peers causing mid-sync switches relatively quickly. So
+this simple lock-based fallback should be sufficient.
 
 [wikipedia.org-persistent]: <https://en.wikipedia.org/wiki/Persistent_data_structure> (Definition of persistent)
