@@ -445,14 +445,10 @@ ledgerDbPushMany ::
 ledgerDbPushMany trace cfg aps initDb = (repeatedlyM pushAndTrace) aps initDb
   where
     pushAndTrace ap db = do
-      traceStep $ StartedPushingBlockToTheLedgerDb (Pushing $ toRealPoint ap)
+      let pushing = Pushing . toRealPoint $ ap
+          goal    = PushGoal . toRealPoint . last $ aps
+      trace $ StartedPushingBlockToTheLedgerDb pushing goal
       ledgerDbPush cfg ap db
-
-    traceStep :: (PushGoal blk -> UpdateLedgerDbTraceEvent blk) -> m ()
-    traceStep step =
-      let goal = PushGoal . toRealPoint . last $ aps
-          event = step goal
-      in  trace event
 
 -- | Switch to a fork
 ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
