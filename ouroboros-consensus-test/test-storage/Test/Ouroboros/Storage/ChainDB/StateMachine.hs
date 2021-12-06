@@ -1598,6 +1598,8 @@ traceEventName = \case
     TraceCopyToImmutableDBEvent ev    -> "CopyToImmutableDB." <> constrName ev
     TraceInitChainSelEvent      ev    -> "InitChainSel."      <> case ev of
       InitChainSelValidation    ev' -> constrName ev'
+      StartedInitChainSelection     -> "StartedInitChainSelection"
+      InitalChainSelected           -> "InitalChainSelected"
     TraceOpenEvent              ev    -> "Open."              <> constrName ev
     TraceGCEvent                ev    -> "GC."                <> constrName ev
     TraceIteratorEvent          ev    -> "Iterator."          <> constrName ev

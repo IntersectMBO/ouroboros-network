@@ -90,7 +90,7 @@ initialChainSelection
   => ImmutableDB m blk
   -> VolatileDB m blk
   -> LgrDB m blk
-  -> Tracer m (TraceEvent blk)
+  -> Tracer m (TraceInitChainSelEvent blk)
   -> TopLevelConfig blk
   -> StrictTVar m (WithFingerprint (InvalidBlocks blk))
   -> StrictTVar m (FutureBlocks blk)
@@ -194,7 +194,7 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
           , blockCache = BlockCache.empty
           , curChainAndLedger
           , trace = traceWith
-              (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
+              (contramap (InitChainSelValidation) tracer)
           }
 
 -- | Add a block to the ChainDB, /asynchronously/.
@@ -911,7 +911,7 @@ ledgerValidateCandidate
   -> ChainDiff (Header blk)
   -> m (ValidatedChainDiff (Header blk) (LedgerDB' blk))
 ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
-    LgrDB.validate lgrDB curLedger blockCache rollback newBlocks >>= \case
+    LgrDB.validate lgrDB curLedger blockCache rollback traceUpdate newBlocks >>= \case
       LgrDB.ValidateExceededRollBack {} ->
         -- Impossible: we asked the LgrDB to roll back past the immutable tip,
         -- which is impossible, since the candidates we construct must connect
@@ -932,6 +932,8 @@ ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
   where
     ChainSelEnv { lgrDB, trace, curChainAndLedger, blockCache, varInvalid } =
       chainSelEnv
+
+    traceUpdate = trace . UpdateLedgerDbTraceEvent
 
     curLedger :: LedgerDB' blk
     curLedger = VF.validatedLedger curChainAndLedger

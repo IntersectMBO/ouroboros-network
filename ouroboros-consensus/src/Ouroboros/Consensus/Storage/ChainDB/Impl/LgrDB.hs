@@ -51,6 +51,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode))
+import           Control.Monad.Trans.Class
 import           Control.Tracer
 import           Data.Foldable (foldl')
 import           Data.Set (Set)
@@ -75,6 +76,8 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
+import           Ouroboros.Consensus.Storage.LedgerDB.Types
+                     (UpdateLedgerDbTraceEvent (..))
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
@@ -366,14 +369,16 @@ validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
             -- in the 'LgrDB'.
          -> BlockCache blk
          -> Word64  -- ^ How many blocks to roll back
+         -> (UpdateLedgerDbTraceEvent blk -> m ())
          -> [Header blk]
          -> m (ValidateResult blk)
-validate LgrDB{..} ledgerDB blockCache numRollbacks = \hdrs -> do
+validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.ledgerDbSwitch
                (configLedgerDb cfg)
                numRollbacks
+               (lift . lift . trace)
                aps
                ledgerDB
     atomically $ modifyTVar varPrevApplied $

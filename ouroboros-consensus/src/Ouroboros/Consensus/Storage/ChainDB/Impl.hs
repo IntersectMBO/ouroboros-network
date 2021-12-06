@@ -144,16 +144,19 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
       varInvalid      <- newTVarIO (WithFingerprint Map.empty (Fingerprint 0))
       varFutureBlocks <- newTVarIO Map.empty
 
+      let initChainSelTracer = contramap TraceInitChainSelEvent tracer
 
+      traceWith initChainSelTracer StartedInitChainSelection
       chainAndLedger <- ChainSel.initialChainSelection
                           immutableDB
                           volatileDB
                           lgrDB
-                          tracer
+                          initChainSelTracer
                           (Args.cdbTopLevelConfig args)
                           varInvalid
                           varFutureBlocks
                           (Args.cdbCheckInFuture args)
+      traceWith initChainSelTracer InitalChainSelected
 
       let chain  = VF.validatedFragment chainAndLedger
           ledger = VF.validatedLedger   chainAndLedger

@@ -78,6 +78,8 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Storage.LedgerDB.Types
+                     (UpdateLedgerDbTraceEvent)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -668,6 +670,7 @@ data TraceValidationEvent blk =
       -- ^ Candidate chain containing headers from the future
       [Header blk]
       -- ^ Headers from the future, exceeding clock skew
+  | UpdateLedgerDbTraceEvent (UpdateLedgerDbTraceEvent blk)
   deriving (Generic)
 
 deriving instance
@@ -680,8 +683,13 @@ deriving instance
   , LedgerSupportsProtocol blk
   ) => Show (TraceValidationEvent blk)
 
-data TraceInitChainSelEvent blk
-  = InitChainSelValidation (TraceValidationEvent blk)
+data TraceInitChainSelEvent blk =
+    StartedInitChainSelection
+    -- ^ An event traced when inital chain selection has started during the
+    -- initialization of ChainDB
+  | InitalChainSelected
+    -- ^ An event traced when inital chain has been selected
+  | InitChainSelValidation (TraceValidationEvent blk)
     -- ^ An event traced during validation performed while performing initial
     -- chain selection.
   deriving (Generic)
