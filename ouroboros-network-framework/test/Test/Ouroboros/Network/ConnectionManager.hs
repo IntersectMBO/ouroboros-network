@@ -46,16 +46,12 @@ import           GHC.Generics
 import           GHC.Stack (HasCallStack)
 import           GHC.IO.Exception
 
-import           Data.Bifunctor (Bifunctor, bimap)
-import           Data.Either (isLeft, isRight)
 import           Data.Functor (void, ($>))
-import           Data.Foldable (fold, foldl', maximumBy, traverse_, forM_)
+import           Data.Foldable (traverse_, forM_)
 import           Data.List (intercalate, sortOn)
-import           Data.Maybe (fromMaybe, isJust)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Monoid (All (..), Any (..))
-import qualified Data.Set as Set
+import           Data.Monoid (All (..))
 import qualified Data.Text.Lazy as Text
 import           Data.Void (Void)
 import           Text.Pretty.Simple (pShowOpt, defaultOutputOptionsNoColor)
@@ -64,7 +60,6 @@ import           Quiet
 import           Network.Mux.Types
 
 import           Test.QuickCheck hiding (shrinkMap)
-import qualified Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -77,35 +72,15 @@ import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Server.RateLimiting
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 
-import           Ouroboros.Network.Testing.Utils (Delay (..),
-                   genDelayWithPrecision)
 
 
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.ConnectionManager"
   [ -- generators, shrinkers properties
-    testGroup "generators"
-    [ testProperty "ScheduleEntry generator"      prop_generator_ScheduleEntry
-    , testProperty "ScheduleEntry shrinker"       prop_shrinker_ScheduleEntry
-    , testProperty "RefinedSchedule generator"    prop_generator_RefinedSchedule
-    , testProperty "RefinedSchedule shrinker"     prop_shrinker_RefinedSchedule
-    , testProperty "ReuseSchedule generator"      prop_generator_ReuseSchedule
-    , testProperty "RefinedScheduleMap generator" prop_generator_RefinedScheduleMap
-    , testProperty "RefinedScheduleMap shrinker"  (withMaxSuccess 33 prop_shrinker_RefinedScheduleMap)
-    , testProperty "fixupSchedule"                prop_fixupSchedule
-    , testProperty "schedule"                     prop_schedule
-    , testGroup "utils"
-      [ testProperty "smallerList"                prop_smallerList
-      , testProperty "smallerMap"                 prop_smallerMap
-      ]
-    ]
-    -- connection manager simulation property
-  , testGroup "simulations"
-    [ testProperty "simulation"                     prop_connectionManagerSimulation
-    , testProperty "overwritten"                    unit_overwritten
-    , testProperty "timeoutExpired"                 unit_timeoutExpired
-    ]
+    -- TODO: replace these tests with 'Test.Ouroboros.Network.Server2' simulation.
+    testProperty "overwritten"                    unit_overwritten
+  , testProperty "timeoutExpired"                 unit_timeoutExpired
   ]
 
 
@@ -226,344 +201,11 @@ isScheduleInbound :: ScheduleEntry extra -> Bool
 isScheduleInbound = not . isScheduleOutbound
 
 
-genPositiveDelayWithPrecision :: Integer
-                              -> Gen DiffTime
-genPositiveDelayWithPrecision n =
-    genDelayWithPrecision n `suchThat` (> 0)
-
-
--- | Precision used in 'genScheduleOutbound' and 'genScheduleInbound'.  The
--- higher the precision the smaller chance that events will happen in the same
--- slot time.
---
-precision :: Integer
-precision = 10 ^ (5 :: Int)
-
-
--- Generate 'ScheduleOutbound' which lifetime is limited by the size parameter.
--- Some small number of generated cases might be blocked on handshake.
---
-genScheduleOutbound :: Int -> Gen (ScheduleEntry ())
-genScheduleOutbound size = do
-    seIdx   <- Idx <$> arbitrary
-    seStart <- frequency
-     [ ( 1
-       , resize (size `div` 4) (genPositiveDelayWithPrecision precision)
-       )
-     , ( 9
-       , resize (size + size `div` 2) (genPositiveDelayWithPrecision precision)
-         `suchThat` (>= realToFrac (size - size `div` 16))
-       )
-     ]
-    seConnDelay <- frequency
-      [ (9, Right <$> resize 1 (genPositiveDelayWithPrecision precision))
-      , (1, Left  <$> resize 1 (genPositiveDelayWithPrecision precision))
-      ]
-    maxActive <- resize size (genDelayWithPrecision precision)
-                 `suchThat` (> 0.3)
-    seHandshakeDelay
-      <- (resize 5 $ genDelayWithPrecision precision)
-         `suchThat` (    (< (maxActive / 3) `max` 0.1)
-                      /\ (> 0)
-                    )
-    activeDelay <- resize (ceiling maxActive) (genDelayWithPrecision precision)
-                   `suchThat` (\a -> a > 0 && a + seHandshakeDelay <= maxActive)
-    seActiveDelay <- frequency
-      [ (8, pure (Right activeDelay))
-      , (2, pure (Left  activeDelay))
-      ]
-    seDataFlow <- elements [ Unidirectional, Duplex ]
-    return ScheduleOutbound {
-        seIdx,
-        seStart,
-        seConnDelay,
-        seHandshakeDelay,
-        seActiveDelay,
-        seDataFlow,
-        seExtra = ()
-      }
-
-genScheduleInbound :: Int -> Gen (ScheduleEntry ())
-genScheduleInbound size = do
-    seIdx   <- Idx <$> arbitrary
-    seStart <-
-      frequency
-
-        [ (3,  resize 1   $ genPositiveDelayWithPrecision precision)
-        , (16, resize 100 $ genPositiveDelayWithPrecision precision `suchThat` (> 60))
-        -- , (1,  return 0)
-        -- By excluding this case we exclude a possible race condition between
-        -- `requestOutboundConnection` and `includeInboundConnection` (The
-        -- @Overwritten@ transition).  It would introduce additional complexity
-        -- in `fixupSchedule` function, for the following reason.  The call to
-        -- `requestOutboundConnection` could be blocked until previous
-        -- connection is held in `TerminatingState`, but
-        -- `includeInboundConnection` would not.  To deal with this we would
-        -- need to track the time when outbound connection actually starts in
-        -- 'State' (used by 'fixupSchedule'.
-        ]
-    maxActive <- resize size (genDelayWithPrecision precision)
-                 `suchThat` (> 1)
-    seHandshakeDelay
-      <- suchThat (resize 5 (genDelayWithPrecision precision))
-                  (   (< (maxActive / 3))
-                   /\ (> 0)
-                  )
-    activeDelay <- resize (round maxActive) (genDelayWithPrecision precision)
-                   `suchThat` (\a -> a > 0 && a + seHandshakeDelay <= maxActive)
-    seActiveDelay <- frequency
-      [ (8, pure (Right activeDelay))
-      , (2, pure (Left  activeDelay))
-      ]
-    seDataFlow <- frequency [ (1, pure Unidirectional)
-                           , (2, pure Duplex)
-                           ]
-    let size' = size `div` 5
-    seRemoteTransitions <-
-          fixupRemoteTransitions activeDelay
-      <$> listOf ((,) <$> resize size' (genDelayWithPrecision precision)
-                      <*> resize size' (genDelayWithPrecision precision))
-    return ScheduleInbound {
-        seIdx,
-        seStart,
-        seHandshakeDelay,
-        seActiveDelay,
-        seRemoteTransitions,
-        seDataFlow,
-        seExtra = ()
-      }
-
-
--- TODO: this generator needs to be tuned. We ought to have greater change for
--- generating edge cases:
--- - race conditions between inbound / outbound connections
--- - ScheduleInbound should be refined to contains information when remote
---   promotions / demotions should happen.
-instance Arbitrary (ScheduleEntry ()) where
-    arbitrary =
-        frequency
-        [ ( 6
-          , genScheduleOutbound 20
-          )
-        , ( 2
-          , genScheduleInbound 100
-          )
-        , ( 2
-          , genScheduleInbound 300
-          )
-        ]
-
-    shrink = go
-      where
-        shrinkDataFlow Duplex         = [Unidirectional]
-        shrinkDataFlow Unidirectional = []
-
-        go (sa@ScheduleOutbound { seStart
-                                , seConnDelay
-                                , seHandshakeDelay
-                                , seActiveDelay
-                                , seDataFlow
-                                }) =
-            [ sa { seStart = seStart' }
-            | seStart' <- QC.shrinkMap getDelay Delay seStart
-            , seStart' > 0
-            ]
-          ++
-            [ sa { seConnDelay = seConnDelay' }
-            | seConnDelay' <- QC.shrinkMap (both getDelay)
-                                           (both Delay)
-                                           seConnDelay
-            , either id id seConnDelay' > 0
-            ]
-          ++
-            [ sa { seActiveDelay = seActiveDelay'
-                 }
-            | seActiveDelay' <- QC.shrinkMap (both getDelay)
-                                             (both Delay)
-                                             seActiveDelay
-            ]
-          ++
-            [ sa { seHandshakeDelay = seHandshakeDelay' }
-            | seHandshakeDelay' <- QC.shrinkMap getDelay Delay seHandshakeDelay
-            ]
-          ++
-            [ sa { seDataFlow = seDataFlow' }
-            | seDataFlow' <- shrinkDataFlow seDataFlow
-            ]
-        go (sa@ScheduleInbound { seStart
-                               , seHandshakeDelay
-                               , seActiveDelay
-                               , seDataFlow
-                               , seRemoteTransitions
-                               }) =
-            [ sa { seStart = seStart' }
-            | seStart' <- QC.shrinkMap getDelay Delay seStart
-            , seStart' > 0
-            ]
-          ++
-            [ sa { seActiveDelay = seActiveDelay'
-                 , seRemoteTransitions =
-                     fixupRemoteTransitions
-                       (either id id seActiveDelay')
-                       seRemoteTransitions
-                 }
-            | seActiveDelay' <- QC.shrinkMap (both getDelay)
-                                             (both Delay)
-                                             seActiveDelay
-            ]
-          ++
-            [ sa { seHandshakeDelay = seHandshakeDelay'
-                 }
-            | seHandshakeDelay' <- QC.shrinkMap getDelay Delay seHandshakeDelay
-            ]
-          ++
-            [ sa { seRemoteTransitions = seRemoteTransitions'' }
-            | seRemoteTransitions' <- shrinkList (const [])
-                                                 (bimap Delay Delay `map` seRemoteTransitions)
-            , let seRemoteTransitions'' =
-                      fixupRemoteTransitions (either id id seActiveDelay)
-                    . map (both getDelay)
-                    $ seRemoteTransitions'
-            ]
-          ++
-            [ sa { seDataFlow = seDataFlow' }
-            | seDataFlow' <- shrinkDataFlow seDataFlow
-            ]
-
-
--- make sure that remote transition schedule is contained while the
--- inbound connection is active.
-fixupRemoteTransitions :: DiffTime -> [(DiffTime, DiffTime)] -> [(DiffTime, DiffTime)]
-fixupRemoteTransitions active = reverse . snd . foldl' f (0, [])
-  where
-    f as@(t, !acc) a@(d, l) | s <- t + d + l
-                            , s <= active    = (s, a : acc)
-                            | otherwise      = as
-
-
-validScheduleEntry :: ScheduleEntry extra -> Bool
-validScheduleEntry sa =
-       -- seStart sa >= 0
-       (isScheduleOutbound sa `implies` seStart sa >  0)
-    && (isScheduleInbound  sa `implies` seStart sa >= 0)
-    && seHandshakeDelay sa >= 0
-    && either id id (seActiveDelay sa) >= 0
-    && case sa of
-        ScheduleInbound { seActiveDelay = Right d} ->
-             foldl' (\acc (d, l) -> acc + d + l) 0 (seRemoteTransitions sa)
-          <= d
-        ScheduleInbound { seActiveDelay = Left _} -> True
-        ScheduleOutbound {} -> True
-
-
-prop_generator_ScheduleEntry :: ScheduleEntry () -> Property
-prop_generator_ScheduleEntry s =
-    label (case s of
-            ScheduleOutbound {} -> "outbound"
-            ScheduleInbound {}  -> "inbound"
-          ) $
-    label ("lifetime " ++ mkLabel 20 (round entryLifeTime)) $
-    validScheduleEntry s
-  where
-    -- for outbound connections we include 'connect' time into life time
-    entryLifeTime :: DiffTime
-    entryLifeTime =
-      case s of
-        ScheduleOutbound { seConnDelay = Left  connDelay } -> connDelay
-        ScheduleOutbound { seConnDelay = Right connDelay, seHandshakeDelay } ->
-            connDelay + seHandshakeDelay + either id id (seActiveDelay s)
-        ScheduleInbound { seHandshakeDelay } ->
-            seHandshakeDelay + either id id (seActiveDelay s)
-
-
-prop_shrinker_ScheduleEntry :: ScheduleEntry () -> Property
-prop_shrinker_ScheduleEntry a =
-      conjoin
-    . map (\a' ->
-                counterexample ("entry invariant violation for: " ++ show a')
-                  (validScheduleEntry a')
-            .&&. counterexample (show a' ++ " ≰ " ++ show a)
-                  (smallerScheduleEntry a' a && a /= a')
-          )
-    . shrink
-    $ a
-
-
 -- | Provides 'QuickCheck' instance for a list of 'ScheduleEntry'-ies.  This
 -- newtype models connection schedule between two fixed endpoints of a network.
 --
 newtype Schedule extra = Schedule { getSchedule :: [ScheduleEntry extra] }
   deriving (Eq, Show, Functor)
-
-type RefinedSchedule = Schedule ScheduleInfo
-
-
--- | Generate an inbound connection which then is reused by a sequence of
--- outbound requests.
---
-genReuseSchedule :: Int
-                 -> Gen [ScheduleEntry ()]
-genReuseSchedule size = do
-    inbound       <- genScheduleInbound size
-    NonNegative a <- resize 10 arbitrary
-    outbounds     <- vectorOf a (genScheduleOutbound (size `div` a))
-    return (inbound : outbounds)
-
-
-prop_generator_ReuseSchedule :: Property
-prop_generator_ReuseSchedule =
-    forAll (fixupSchedule <$> genReuseSchedule 200)
-      (\a ->
-        label (  "reused "
-              ++ mkLabel 10 ((100 * length (filter (siReused . seExtra)
-                                           a))
-                             `div` length a
-                            )
-              ) $
-
-        label (  "not exists "
-              ++ mkLabel 10 ((100 * length (filter (not . siExists . seExtra)
-                                           a))
-                              `div` length a
-                            )
-              ) $
-
-        label (  "exists or reused "
-              ++ mkLabel 10 ((100 * length (filter (    siExists . seExtra
-                                                     \/ siReused . seExtra)
-                                            a))
-                              `div` length a
-                            )
-              ) $ True
-      )
-
-
-instance Arbitrary (Schedule ()) where
-    arbitrary = do
-      NonNegative n <- resize 10 arbitrary
-      as <- concat
-        <$> vectorOf n
-              (frequency
-                [ (2, resize 10 (listOf1 arbitrary))
-                , (4, genReuseSchedule 20)
-                , (4, genReuseSchedule 100)
-                ])
-      return (Schedule as)
-
-    shrink (Schedule s) =
-        [ Schedule s'
-        | s' <- shrinkList' (map ($> ()) s)
-        , s' /= s
-        ]
-      where
-        -- much slower shrinker than 'shrinkList'
-        shrinkList' :: [ ScheduleEntry () ]
-                    -> [[ScheduleEntry ()]]
-        shrinkList' []     = []
-        shrinkList' (x:xs) =
-                        [ xs ]
-                     ++ [ x : xs' | xs' <- shrinkList' xs ]
-                     ++ [ x': xs  | x'  <- shrink x ]
 
 
 --
@@ -596,18 +238,6 @@ data IsActive = NotActive
                          }
  deriving (Show, Eq)
 
-compareByEndTime :: IsActive -> IsActive -> Ordering
-compareByEndTime NotActive NotActive        = EQ
-compareByEndTime NotActive _                = LT
-compareByEndTime _         NotActive        = GT
-compareByEndTime IsActive { iaEndTime = a }
-                 IsActive { iaEndTime = b } = a `compare` b
-
-
-isUnidirectional :: State -> Bool
-isUnidirectional = maybe False (Unidirectional ==) . dataFlow
-
-
 -- @5s@ @TIME_WAIT@ timeout
 testTimeWaitTimeout :: DiffTime
 testTimeWaitTimeout = 5
@@ -630,624 +260,6 @@ data ScheduleInfo = ScheduleInfo {
   deriving (Show, Eq)
 
 type RefinedScheduleEntry       = ScheduleEntry ScheduleInfo
-
--- | Refine & fix up a schedule.
---
--- For each address we analyse the sequence of schedule entries.  We keep
--- 'State' which measures time progress and keep track of existing inbound
--- / outbound connections.
---
-fixupSchedule :: [       ScheduleEntry any]
-              -> [RefinedScheduleEntry    ]
-fixupSchedule =
-      reindex
-      -- get back the original order
-    . sortOn seIdx
-    . go initialState []
-    . reindex
-  where
-    reindex :: [ScheduleEntry any] -> [ScheduleEntry any]
-    reindex = map (\(seIdx, s) -> s { seIdx })
-            . zip [0..]
-
-    updateState :: Time -> DataFlow -> State -> State
-    updateState time df State {
-                          dataFlow,
-                          outboundActive,
-                          inboundActive,
-                          handshakeUntil
-                        } =
-        State {
-          time,
-          dataFlow       = dataFlow',
-          outboundActive = outboundActive',
-          inboundActive  = inboundActive',
-          handshakeUntil = handshakeUntil'
-        }
-      where
-        -- Note: using '<' instead of '<=' is a matter when connections are
-        -- considered terminated.  With '<' the @fixupSchedule'@ is nilpotent,
-        -- which is a nice property to have for a fixup function.
-        outboundActive' =
-          (case outboundActive of
-            IsActive { iaEndTime } | iaEndTime < time -> NotActive
-            _                      -> outboundActive)
-        inboundActive' =
-          (case inboundActive of
-            IsActive { iaEndTime } | iaEndTime < time -> NotActive
-            _                      -> inboundActive)
-        handshakeUntil' =
-          (case handshakeUntil of
-            Just a | a < time -> Nothing
-            _                 -> handshakeUntil)
-
-        dataFlow' =
-          if | IsActive {} <- inboundActive'
-             -> dataFlow
-             | IsActive {} <- outboundActive'
-             -> dataFlow
-             | otherwise
-             -> Just df
-
-
-    initialState :: State
-    initialState = State {
-        time           = Time 0,
-        dataFlow       = Nothing,
-        handshakeUntil = Nothing,
-        outboundActive = NotActive,
-        inboundActive  = NotActive
-      }
-
-    -- this function assumes that all addr are equal!
-    go :: State
-       -> [RefinedScheduleEntry]
-       -> [ScheduleEntry any]
-       -> [RefinedScheduleEntry]
-    go !_s !acc [] = reverse acc
-
-    go !s  !acc (a@ScheduleOutbound
-                     { seStart
-                     , seConnDelay
-                     , seHandshakeDelay
-                     , seDataFlow
-                     , seActiveDelay
-                     }
-                   : as) =
-      let t :: Time
-          t  = seStart `addTime` time s
-
-          s' = updateState t seDataFlow s
-          -- 'requestOutboundConnection' blocks for 'testTimeWaitTimeout' if
-          -- there exists a connection in 'TerminatingState'. @t'@ is the
-          -- effective time when the connection will start.
-          -- Note: we use @s@ to compute @t'@ rather than @s'@, because
-          -- 'updateState' does not takes the above into account.  This allows
-          -- us to test more scenarios.
-          --
-          -- We use @t'@ to extend duration of outbound connection:
-          --
-          -- start   end (end + testTimeWaitTimeout)
-          -- ├───────┼━━━┫
-          --          ├───────┼━━━┫
-          -- will effectively transform into:
-          -- ├───────┼━━━┫
-          --          ├──────────┼━━━┫
-          -- (note the middle segment of the second connection is longer, as it
-          -- first need to block until the TerminatingState timeout expires)
-          --
-          -- Note that if we have two outbound connections starting during
-          -- 'TerminatingState' of some connection, one of them will error with
-          -- 'ConnectionExists' error.  We assume that that it's the later one
-          -- will error.  Hopefuly, this is good enough.
-          --
-          t' :: Time
-          t' =
-            case inboundActive s' of
-              IsActive {}  -> t
-              NotActive ->
-                case maximumBy compareByEndTime
-                               [ inboundActive s
-                               , outboundActive s
-                               ] of
-                    NotActive -> t
-
-                    -- the previous connection did not error, we add
-                    -- 'testTimeWaitTimeout'
-                    IsActive { iaError = False, iaEndTime } ->
-                      t `max` (testTimeWaitTimeout `addTime` iaEndTime)
-
-                    -- the previous connection errored, no need to add
-                    -- 'testTimeWaitTimeout'
-                    IsActive { iaError = True } -> t
-
-          activeDelay :: DiffTime
-          activeDelay = either id id seActiveDelay
-
-      in -- Debug.traceShow (t, t', s, s') $
-        case seConnDelay of
-
-        -- no outbound nor inbound connection; 'connect' fails
-        (Left connDelay) | NotActive <- outboundActive s'
-                         , NotActive <- inboundActive s'
-                         ->
-          let outboundActive' = IsActive {
-                                   iaStartTime = t,
-                                   iaEndTime   = connDelay `addTime` t',
-                                   iaError     = True
-                                 }
-              si = ScheduleInfo {
-                    siExists         = False,
-                    siReused         = False,
-                    siForbidden      = False,
-                    siOverwrite      = False,
-                    siBlockHandshake = Nothing
-                  }
-              a'  = a { seExtra = si }
-              s'' = s' { outboundActive = outboundActive' }
-          in go s'' (a' : acc) as
-
-        -- no outbound nor inbound connection; 'connect' succeeds
-        (Right connDelay) | NotActive <- outboundActive s'
-                          , NotActive <- inboundActive s'
-                          ->
-          let handshakeUntil' = seHandshakeDelay `addTime` connDelay `addTime` t'
-              outboundActive' = IsActive {
-                                    iaStartTime = t,
-                                    iaEndTime   = case seActiveDelay of
-                                                    Left _  -> 0
-                                                    Right _ -> testOutboundIdleTimeout
-                                        `addTime` activeDelay
-                                        `addTime` handshakeUntil',
-                                    iaError     = isLeft seConnDelay || isLeft seActiveDelay
-                                  }
-
-              s'' = s' { outboundActive  = outboundActive',
-                         handshakeUntil = Just handshakeUntil'
-                       }
-
-              si = ScheduleInfo {
-                    siExists         = False,
-                    siReused         = False,
-                    siForbidden      = False,
-                    siOverwrite      = False,
-                    siBlockHandshake = Nothing
-                  }
-              a' = a { seExtra = si }
-          in go s'' (a' : acc) as
-
-        -- if there exists outbound connection, we never call 'connect'
-        _ | IsActive {} <- outboundActive s'
-          ->
-          let si = ScheduleInfo {
-                    siExists         = True,
-                    siReused         = False,
-                    siForbidden      = False,
-                    siOverwrite      = False,
-                    siBlockHandshake = Nothing
-                  }
-
-              a'  = a { seDataFlow =
-                         case dataFlow s' of
-                           Just df -> df
-                           Nothing -> error "fixupSchedule: invariant violation",
-                        seExtra          = si,
-                        seConnDelay      = Left 0,
-                        seHandshakeDelay = 0,
-                        seActiveDelay    = Right 0
-                      }
-          in go s' (a' : acc) as
-
-        -- if we reuse an inbound connection, we never call 'connect'
-        _ | IsActive { iaStartTime = inboundStartTime,
-                       iaEndTime   = inboundEndTime,
-                       iaError     = inboundError
-                     }
-              <- inboundActive s'
-          ->
-          let si = ScheduleInfo {
-                     siExists = False,
-                     siReused = True,
-                     siForbidden = isUnidirectional s',
-                     siOverwrite = False,
-                     siBlockHandshake =
-                       case handshakeUntil s of
-                         Nothing -> Just True
-                         Just h  -> Just (t <= h)
-                   }
-
-              outboundEndTime' :: Time
-              outboundEndTime' =
-                -- The outbound connection will start
-                -- when ongoing handshake will finish.
-                activeDelay
-                `addTime`
-                fromMaybe t (handshakeUntil s')
-
-              outboundEndTime :: Time
-              outboundEndTime =
-                if inboundEndTime >= outboundEndTime'
-                  then outboundEndTime'
-                  else testOutboundIdleTimeout `addTime` outboundEndTime'
-
-              s'' = s' { outboundActive =
-                           if siForbidden si
-                             then outboundActive s'
-                             else IsActive
-                                    { iaStartTime = t
-                                    -- note: we can assume that
-                                    -- @outboundEntTime < inboundEndTime@;
-                                    -- otherwise we will ignore this schedule
-                                    -- entry.
-                                    , iaEndTime   = outboundEndTime
-                                    , iaError     = isLeft seConnDelay
-                                                 || isLeft seActiveDelay
-                                    }
-                       , inboundActive =
-                           case seActiveDelay of
-                             -- we can assume that:
-                             -- 'outboundEndTime < inboundEndTime'
-                             -- if this is not satisfied we will ignore such
-                             -- cases.
-                             Left _ | not (siForbidden si)
-                                    -> IsActive
-                                         { iaStartTime = inboundStartTime
-                                         , iaEndTime   = outboundEndTime
-                                         , iaError     = inboundError
-                                                      || isLeft seActiveDelay
-                                         }
-                             _      -> inboundActive s'
-
-                       }
-
-              a' = a { seDataFlow =
-                          case dataFlow s' of
-                            Just df -> df
-                            Nothing -> error "fixupSchedule: invariant violation"
-                      , seConnDelay      = Right 0
-                      , seHandshakeDelay = maybe 0 (\d -> (d `diffTime` t) `max` 0)
-                                                   (handshakeUntil s)
-                      , seActiveDelay    = if siForbidden si
-                                             then Right 0
-                                             else seActiveDelay
-                      , seExtra          = si
-                      }
-
-              acc' = case seActiveDelay of
-                Right _ -> acc
-                Left  _ | siForbidden si -> acc
-                        | otherwise      -> modifyInbound f acc
-                  where
-                    f s@ScheduleInbound { seHandshakeDelay = h, seActiveDelay = d }
-                      = s { seActiveDelay = Left $ (outboundEndTime `diffTime` inboundStartTime - h)
-                                                    `min` either id id d
-                          }
-                    f ScheduleOutbound {} = error "modifyInbound: invariant violation"
-
-          in if |  siForbidden si
-                -> go s'' (a' : acc') as
-
-                |  isRight seActiveDelay
-                ,  outboundEndTime < inboundEndTime
-                -> go s'' (a' : acc') as
-
-                |  isLeft seActiveDelay
-                ,  outboundEndTime <= inboundEndTime
-                -> go s'' (a' : acc') as
-
-                |  otherwise
-                -> go s         acc   as
-
-    go !s !acc (a@ScheduleInbound {
-                    seStart,
-                    seHandshakeDelay,
-                    seDataFlow,
-                    seActiveDelay
-                  } : as) =
-      let t :: Time
-          t  = seStart `addTime` time s
-
-          s' = updateState t seDataFlow s
-
-          -- when @t == time s@ the inbound connection will overwrite outbound
-          -- connection
-          hasOutbound :: Bool
-          hasOutbound =
-            case outboundActive s' of
-              NotActive -> False
-              -- after 'updateState', @_until@ is guaranteed to be past the
-              -- current time @t@.  The condition here allows to only bypass
-              -- the condition if the outbound connection was started at the
-              -- same moment in time as the current time.  This way we allow to
-              -- generate schedule which can do the `Overwritten` transition.
-              IsActive { iaStartTime } -> iaStartTime < t
-
-          hasInbound :: Bool
-          hasInbound =
-            case inboundActive s' of
-              NotActive   -> False
-              IsActive {} -> True
-
-          activeDelay :: DiffTime
-          activeDelay = either id id seActiveDelay
-
-      in -- Debug.traceShow (t, s, s') $
-         if hasInbound || hasOutbound
-         -- ignore an inbound connection if:
-         --
-         -- - there is a running inbound connection or;
-         -- - an outbound connection.  For outbound connection we allow to have
-         --   inbound connection started at the same time as outbound one, this
-         --   simulates race condition that the connection manager can resolve.
-         then go s acc as
-         else
-           let handshakeUntil' = seHandshakeDelay `addTime` t
-               siOverwrite =
-                 case outboundActive s' of
-                   NotActive                -> False
-                   IsActive { iaStartTime } -> iaStartTime <= t
-
-               a'  = a { seExtra = ScheduleInfo {
-                           siExists         = False,
-                           siReused         = False,
-                           siForbidden      = False,
-                           siOverwrite,
-                           siBlockHandshake = Nothing
-                         }
-                       }
-
-               s'' = s' { inboundActive  = IsActive {
-                              iaStartTime = t,
-                              iaEndTime   = activeDelay `addTime` handshakeUntil',
-                              iaError     = isLeft seActiveDelay
-                            },
-                          outboundActive = NotActive,
-                          handshakeUntil = Just handshakeUntil'
-                        }
-
-               acc' =
-                 if siOverwrite
-                   then modifyOutbound (\x -> x { seConnDelay = Left 0 }) acc
-                   else acc
-
-           in go s'' (a' : acc') as
-
-    -- modify all 'ScheduleOutbound' until first that has non zero 'seStart'
-    modifyOutbound :: (RefinedScheduleEntry -> RefinedScheduleEntry)
-                   -> [RefinedScheduleEntry]
-                   -> [RefinedScheduleEntry]
-    modifyOutbound f as =
-      case span ((== 0) . seStart /\ isScheduleOutbound) as of
-        (as', x@ScheduleOutbound {} : xs) -> map f as'
-                                          ++ f x : xs
-        (as', xs)                         -> map f as'
-                                          ++ xs
-
-
-    -- modify last 'ScheduleInbound'
-    modifyInbound :: (RefinedScheduleEntry -> RefinedScheduleEntry)
-                  -> [RefinedScheduleEntry]
-                  -> [RefinedScheduleEntry]
-    modifyInbound f (a@ScheduleInbound {} : as) = f a : as
-    modifyInbound f (a                    : as) =   a : modifyInbound f as
-    modifyInbound _ []                          = []
-
-
--- | A basic property test for 'RefinedSchedule' with extended statistics.
---
-prop_fixupSchedule :: Schedule ()
-                   -> Property
-prop_fixupSchedule (Schedule schedule) =
-    let schedule' = fixupSchedule schedule in
-    counterexample "non-indepotent" (fixupSchedule schedule' == schedule')
-    .&&.
-    counterexample ""
-      (conjoin (map (\a -> counterexample (show a) $
-                                if    siExists    (seExtra a)
-                                   || siReused    (seExtra a)
-                                   || siForbidden (seExtra a)
-                                then
-                                  case a of
-                                    ScheduleOutbound {} -> True
-                                    ScheduleInbound  {} -> False
-                                else True
-                             && if siOverwrite (seExtra a)
-                                then
-                                  case a of
-                                    ScheduleOutbound {} -> False
-                                    ScheduleInbound  {} -> True
-                                else True
-                    )
-                    schedule'))
-
-
--- | Arbitrary instance used to generate a connection schedule between two
--- endpoints.
---
-instance Arbitrary RefinedSchedule where
-    arbitrary = do
-      NonNegative n <- resize 10 arbitrary
-      as <- concat
-        <$> vectorOf n
-              (frequency
-                [ (2, resize 10 (listOf1 arbitrary))
-                , (4, genReuseSchedule 20)
-                , (4, genReuseSchedule 100)
-                ])
-      return (Schedule (fixupSchedule as))
-
-    shrink (Schedule s) =
-        [ Schedule s''
-        | s' <- shrinkList' (map ($> ()) s)
-        , let s'' = fixupSchedule s'
-        , s'' /= s
-        ]
-      where
-        -- much slower shrinker than 'shrinkList'
-        shrinkList' :: [ ScheduleEntry () ]
-                    -> [[ScheduleEntry ()]]
-        shrinkList' []     = []
-        shrinkList' (x:xs) =
-                        [ xs ]
-                     ++ [ x : xs' | xs' <- shrinkList' xs ]
-                     ++ [ x': xs  | x'  <- shrink x ]
-
-
-validRefinedSchedule :: RefinedSchedule -> Bool
-validRefinedSchedule (Schedule s) =
-    all (validScheduleEntry /\ validScheduleInfo) s
-  where
-    validScheduleInfo se =
-           (siExists    `implies`    not siReused
-                                  && seConnDelay se == Left 0)
-        && (siReused    `implies` not siExists)
-        && (siForbidden `implies` siReused)
-        && (isJust siBlockHandshake
-                        `implies` siReused)
-        && (isScheduleInbound se
-                        `implies`    not siExists
-                                  && not siReused
-                                  && not siForbidden)
-        && (isScheduleOutbound se
-                        `implies` not siOverwrite)
-      where
-        ScheduleInfo {..} = seExtra se
-
-
--- | Output statistics about generated schedules and check that they are valid.
---
-prop_generator_RefinedSchedule :: RefinedSchedule -> Property
-prop_generator_RefinedSchedule a@(Schedule schedule) =
-    let outNo = length
-              . filter (\a ->
-                         case a of
-                           ScheduleOutbound {seExtra} ->
-                             (not . siExists /\ not . siForbidden) seExtra
-                           ScheduleInbound {} -> False
-                       )
-              $ schedule
-        inNo  = length
-              . filter (\a ->
-                         case a of
-                           ScheduleOutbound {} -> False
-                           ScheduleInbound {} -> True
-                       )
-              $ schedule
-        cs = length (filter (isJust . siBlockHandshake . seExtra) schedule)
-    in
-    -- number of all connections
-    label (concat
-            [ "length "
-            , mkLabel 25 (length schedule)
-            ]) $
-
-    -- number of all outbound connections
-    label (concat
-            [ "outbound "
-            , mkLabel 25 outNo
-            ]) $
-
-    -- number of all inbound connections
-    label (concat
-            [ "inbound "
-            , mkLabel 5 inNo
-            ]) $
-
-    -- % of outbound connection which error
-    (label $ concat
-           [ "connection error "
-           , if outNo > 0
-               then mkLabel 5
-                      ((100 * length ( filter (   not . siExists . seExtra
-                                               /\ not . siReused . seExtra
-                                               /\ isLeft . seConnDelay)
-                                        -- 'seConnDelay' is a partial function!
-                                     . filter (\se -> case se of { ScheduleOutbound {} -> True; _ -> False })
-                                     $ schedule))
-                       `div` outNo
-                      )
-               else "0"
-           , "%"
-           ]) $
-
-    -- % of outbound connections which are requested when there already exists
-    -- an outbound connection
-    (label $ concat
-           [ "exists "
-           , if outNo > 0
-               then mkLabel 10 ((100 * length (filter (siExists . seExtra)
-                                                      schedule))
-                                `div` outNo
-                               )
-               else "0"
-           , "%"
-           ]) $
-
-    -- % of outbound connections which will reuse an existing inbound connection
-    (label $ concat
-           [ "reused "
-           , if outNo > 0
-               then mkLabel 25 ((100 * length (filter (siReused . seExtra)
-                                                      schedule))
-                                `div` outNo
-                               )
-               else "0"
-           , "%"
-           ]) $
-
-    -- % of all connections which:
-    -- - are outbound and reuse an existing inbound connection
-    -- - are blocked on ongoing handshake of the inbound connection
-    (label $ concat
-           [ "reuse-handshake blocking "
-           , if cs > 0
-               then mkLabel 25 ((100 * length (filter ((Just True ==) . siBlockHandshake . seExtra)
-                                                      schedule))
-                                `div` cs
-                               )
-               else "0"
-           , "%"
-           ]) $
-
-    -- % of all connections which:
-    -- - are outbound and reuse an existing inbound connection
-    -- - are not blocked on ongoing handshake of the inbound connection
-    (label $ concat
-           [ "reuse-handshake non-blocking "
-           , if cs > 0
-               then mkLabel 25 ((100 * length (filter ((Just False ==) . siBlockHandshake . seExtra)
-                                                      schedule))
-                                `div` cs
-                               )
-               else "0"
-           , "%"
-           ]) $
-
-    -- number of inbound connections which will overwrite an outbound connection
-    label (concat
-            [ "overwrite "
-            ,  mkLabel 2 (length (filter (siOverwrite . seExtra)
-                                         schedule))
-            ]) $
-
-    -- number of forbidden connections, i.e. outbound connections which turns
-    -- out to be 'Unidirectional' and cannot be reused.
-    label (concat
-          [ "forbidden "
-          ,  mkLabel 10 (length (filter (siForbidden . seExtra)
-                                        schedule))
-          ]) $
-
-    validRefinedSchedule a
-
-
-prop_shrinker_RefinedSchedule :: RefinedSchedule -> Property
-prop_shrinker_RefinedSchedule a@(Schedule s) =
-      conjoin
-    . map (/= s)
-    . map getSchedule
-    . shrink
-    $ a
 
 
 -- | Connection schedule for multiple nodes.  Each map entry represents outbound
@@ -1274,7 +286,6 @@ instance Ord addr => Monoid (ScheduleMap' addr extra) where
     mempty = ScheduleMap Map.empty
 
 
-type ScheduleMap          addr  = ScheduleMap'  addr ()
 type RefinedScheduleMap   addr  = ScheduleMap'  addr ScheduleInfo
 
 
@@ -1297,52 +308,6 @@ schedule =
 
 
 
-prop_schedule :: RefinedScheduleMap Addr -> Bool
-prop_schedule a =
-      -- 'schedule' is ordered by time
-         sortOn (\(t, _, _) -> t) s
-      == s
-    &&
-      -- 'schedule' preserves index order
-      all (\s' -> sortOn (seIdx . snd) s'
-               == sortOn fst          s')
-          sm
-  where
-    s  = schedule a
-    sm = Map.fromListWith
-           (flip (++))
-           (map (\(t, addr, a) -> (addr, [(t, a)])) s)
-
-
--- | Only used to test 'fixupSchedule'
---
-instance Arbitrary (ScheduleMap Int) where
-    arbitrary = do
-      Small n <- arbitrary
-      as <- map Schedule <$> vectorOf n arbitrary
-      return (ScheduleMap (Map.fromList (zip [0.. (n - 1)] as)))
-
-
-    shrink = map ScheduleMap
-           . shrinkMap (map Schedule . shrinkList shrink . getSchedule)
-           . getScheduleMap
-
-
-instance (Arbitrary addr, Ord addr) => Arbitrary (RefinedScheduleMap addr) where
-    arbitrary = do
-      addrs <- resize 20 orderedList
-      as <- map Schedule <$>
-            vectorOf (length addrs)
-                     -- use @'Arbitrary' 'RefinedSchedule'@
-                     (getSchedule <$> arbitrary)
-      return (ScheduleMap (Map.fromList (zip addrs as)))
-
-    shrink = map ScheduleMap
-             -- use @'Arbitrary' 'RefinedSchedule'@
-           . shrinkMap shrink
-           . getScheduleMap
-
-
 -- | Linearised schedule of inbound connections.
 --
 inboundSchedule :: RefinedScheduleMap addr
@@ -1351,29 +316,6 @@ inboundSchedule =
       filter (isScheduleInbound . (\(_, _, a) -> a))
     . schedule
 
-
---
--- TODO: USE 'schedule' in the 'prop_connectionManagerSimulation'
---
-
-
-prop_generator_RefinedScheduleMap :: RefinedScheduleMap Addr -> Property
-prop_generator_RefinedScheduleMap (ScheduleMap s) =
-      label ("map-size " ++ mkLabel 2  (Map.size s))
-    . label ("size "     ++ mkLabel 50 (sum (Map.map (length . getSchedule) s)))
-    $ all validRefinedSchedule s
-
-
-prop_shrinker_RefinedScheduleMap :: RefinedScheduleMap Addr -> Property
-prop_shrinker_RefinedScheduleMap (a@(ScheduleMap s)) =
-      conjoin
-    . map (\(ScheduleMap s') ->
-               all validRefinedSchedule s'
-            &&
-               s /= s'
-          )
-    . shrink
-    $ a
 
 --
 -- Snocket implementation based on a fixed schedule.
@@ -1855,7 +797,7 @@ instance Arbitrary SkewedBool where
 -- number of peers.  But we do test connection handler thread either throwing an
 -- exception or being killed by an asynchronous asynchronous exception.
 --
-prop_connectionManagerSimulation
+prop_valid_transitions
     :: SkewedBool
     -- ^ bind to local address or not
     -> RefinedScheduleMap Addr
@@ -1863,7 +805,7 @@ prop_connectionManagerSimulation
     -- 'Blind' since we show the arguments using `counterexample` in a nicer
     -- way.
     -> Property
-prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
+prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
     let tr = runSimTrace experiment in
     -- `selectTraceEventsDynamic`, can throw 'Failure', hence we run
     -- `traceResults` first.
@@ -1918,7 +860,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
 
         inbgovControlChannel <- ControlChannel.newControlChannel
         let connectionHandler = mkConnectionHandler snocket
-        withConnectionManager
+        result <- withConnectionManager
           ConnectionManagerArguments {
               cmTracer,
               cmTrTracer,
@@ -1993,7 +935,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
 
                             Right (Just (Disconnected {})) -> pure ()
 
-                            Right (Just (Connected _ _ handle)) -> do
+                            Right (Just (Connected _ _ _)) -> do
                               threadDelay (either id id (seActiveDelay conn))
                               -- if this outbound connection is not
                               -- executed within inbound connection,
@@ -2003,7 +945,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                               -- 'unregisterOutboundConnection' can
                               -- block.
                               case seActiveDelay conn of
-                                Left  _ -> killThread (hThreadId handle)
+                                Left  _ -> pure ()
                                 Right _ -> do
                                   when ( not (siReused (seExtra conn))
                                          && seDataFlow conn == Duplex ) $
@@ -2023,7 +965,8 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                                       throwIO (UnsupportedStateError
                                                 "unregisterOutboundConnection"
                                                 st)
-                                    OperationSuccess _ -> pure ()
+                                    OperationSuccess     _ -> pure ()
+                                    TerminatedConnection _ -> pure ()
 
 
                       go (thread : threads) (Accept acceptOne) conns'
@@ -2107,7 +1050,15 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
                   traverse_ (waitCatch >=> checkException) threads
               )
 
+            -- we need to wait at least `testTimeWaitTimeout` to let all the
+            -- outstanding threads to terminate
+            threadDelay (testTimeWaitTimeout + 1)
             atomically $ numberOfConnections connectionManager
+
+        -- we need to wait at least `testTimeWaitTimeout` to let all the
+        -- outstanding threads to terminate.  This can happen in a rare case
+        threadDelay (10 * testTimeWaitTimeout)
+        return result
 
     checkException :: Either SomeException a -> IOSim s ()
     checkException Right {}   = pure ()
@@ -2119,7 +1070,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
         -- will fail.
         Just (SomeConnectionManagerError e@ImpossibleConnection {}) -> throwIO e
         Just (SomeConnectionManagerError e@ImpossibleState {})      -> throwIO e
-        -- the test environment can requests outbound connection when there is
+        -- the test environment can Nequests outbound connection when there is
         -- one in 'PreTerminatingState'
         Just (SomeConnectionManagerError  (ForbiddenOperation _
                                             (OutboundIdleSt _) _))
@@ -2138,7 +1089,7 @@ prop_connectionManagerSimulation (SkewedBool bindToLocalAddress) scheduleMap =
 --
 unit_overwritten :: Property
 unit_overwritten =
-    prop_connectionManagerSimulation
+    prop_valid_transitions
       (SkewedBool True)
       (ScheduleMap $ Map.fromList
         [ ( TestAddress 1
@@ -2187,7 +1138,7 @@ unit_overwritten =
 --
 unit_timeoutExpired :: Property
 unit_timeoutExpired =
-    prop_connectionManagerSimulation
+    prop_valid_transitions
       (SkewedBool True)
       (ScheduleMap $ Map.fromList
         [ ( TestAddress 1
@@ -2238,105 +1189,3 @@ unit_timeoutExpired =
 (/\) f g = getAll . ((All . f) <> (All . g))
 
 infixr 3 /\
-
-(\/) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
-(\/) f g = getAny . ((Any . f) <> (Any . g))
-
-infixr 2 \/
-
-implies :: Bool -> Bool -> Bool
-implies a b = not a || b
-
--- lower than fixity of `&&` and `||`
-infixr 1 `implies`
-
-mkLabel :: Int -- ^ width
-        -> Int -- ^ result
-        -> String
-mkLabel _ n  | n == 0 = show n
-mkLabel a n =
-  let min_ = (n `div` a) * a
-  in concat [ if min_ == 0 then "(" else "["
-            , show min_
-            , ", "
-            , show (min_ + a)
-            , ")"
-            ]
-
-
-both :: Bifunctor f => (a -> b) -> f a a -> f b b
-both f = bimap f f
-
---
--- QuickCheck Utils
---
-
-
--- Exclude `seIdx` and `seExtra` from the `Ord` instance.  We want to measure
--- progress of the shrinker with this instance.
---
-smallerScheduleEntry :: ScheduleEntry extra -> ScheduleEntry extra -> Bool
-smallerScheduleEntry = \a b ->
-    case (a, b) of
-      (ScheduleOutbound {}, ScheduleInbound {})  -> True
-      (ScheduleInbound {},  ScheduleOutbound {}) -> False
-      (ScheduleOutbound {}, ScheduleOutbound {}) ->
-           f a b
-        && seConnDelay a <= seConnDelay b
-      (ScheduleInbound {},  ScheduleInbound {})  ->
-           f a b
-        && smallerList (<=)
-                       (seRemoteTransitions a)
-                       (seRemoteTransitions b)
-  where
-    f s s' = seStart s          <= seStart s'
-          && seDataFlow s       <= seDataFlow s'
-          && seHandshakeDelay s <= seHandshakeDelay s'
-          && seActiveDelay s    <= seActiveDelay s'
-          && seDataFlow s       <= seDataFlow s'
-
--- | Check that a list is smaller (`<=`), than the other one.
--- It is useful for checking progress of a shrinker.
---
-smallerList :: (a -> a -> Bool) -> [a] -> [a] -> Bool
-smallerList smaller as bs =
-    case length as `compare` length bs of
-      LT -> True
-      EQ -> all (uncurry smaller) (as `zip` bs)
-      GT -> False
-
-prop_smallerList :: [NonNegative Int] -> Bool
-prop_smallerList as
-    = all (\as' -> smallerList (<=) as' as)
-    . shrink
-    $ as
-
-
-smallerMap :: Ord k => (a -> a -> Bool) -> Map k a -> Map k a -> Bool
-smallerMap smaller as bs =
-     Map.keysSet as `Set.isSubsetOf` Map.keysSet bs
-  && getAll
-      (fold
-        (Map.intersectionWith (\a b -> All (a `smaller` b)) as bs))
-
-
-shrinkMap :: Ord k => (a -> [a]) -> Map k a -> [Map k a]
-shrinkMap shrinkValue m =
-    let as = Map.toList m in
-
-        -- shrink the map
-        [ Map.fromList as'
-        | as' <- shrinkList (const []) as
-        ]
-
-        -- shrink values, one at a time
-     ++ [ Map.insert k a' m
-        | (k, a) <- as
-        , a'     <- shrinkValue a
-        ]
-
-prop_smallerMap :: Map Int (NonNegative Int) -> Bool
-prop_smallerMap as =
-      all (\as' -> smallerMap (<=) as' as)
-    . shrinkMap shrink
-    $ as

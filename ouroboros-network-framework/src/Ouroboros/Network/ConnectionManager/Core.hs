@@ -27,9 +27,10 @@ module Ouroboros.Network.ConnectionManager.Core
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when)
-import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadFork  (MonadFork, ThreadId, throwTo)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow hiding (handle)
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSTM.Strict
 import qualified Control.Monad.Class.MonadSTM as LazySTM
@@ -517,9 +518,12 @@ withConnectionManager
     :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version m a.
        ( Monad              m
        , MonadLabelledSTM   m
+       -- 'MonadFork' is only to get access to 'throwTo'
+       , MonadFork          m
        , MonadAsync         m
        , MonadEvaluate      m
        , MonadMask          m
+       , MonadMonotonicTime m
        , MonadThrow    (STM m)
        , MonadTimer         m
 
@@ -660,8 +664,8 @@ withConnectionManager ConnectionManagerArguments {
             -- 'TerminatingState' (and thus delay shutdown for 'tcp_WAIT_TIME'
             -- seconds) when receiving the 'AsyncCancelled' exception. However,
             -- we can have a race between the finally handler and the `cleanup`
-            -- callback. If the finally block loses the race, the AsyncCancelled
-            -- received should interrupt the threadDelay.
+            -- callback. If the finally block loses the race, the received
+            -- 'AsyncCancelled' should interrupt the 'threadDelay'.
             --
             (connState, tr, shouldTrace) <- atomically $ do
               connState <- readTVar connVar
@@ -675,6 +679,8 @@ withConnectionManager ConnectionManagerArguments {
 
             when shouldTrace $
               traceWith trTracer tr
+            -- using 'cancel' here, since we want to block until connection
+            -- handler thread terminates.
             traverse_ cancel (getConnThread connState)
           )
           state
@@ -711,7 +717,7 @@ withConnectionManager ConnectionManagerArguments {
                           connId@ConnectionId { remoteAddress = peerAddr }
                           writer
                           handler =
-        asyncWithUnmask $ \unmask ->
+        mask $ \unmask -> async $ do
           runWithUnmask
             (handler socket writer
                      (TrConnectionHandler connId `contramap` tracer)
@@ -737,7 +743,7 @@ withConnectionManager ConnectionManagerArguments {
           uninterruptibleMask $ \unmask -> do
             traceWith tracer (TrConnectionCleanup connId)
             mConnVar <- modifyTMVar stateVar $ \state -> do
-              wConnVar <- uninterruptibleMask_ $ atomically $ do
+              wConnVar <- atomically $ do
                 case Map.lookup peerAddr state of
                   Nothing      -> return Nowhere
                   Just mutableConnState@MutableConnState { connVar } -> do
@@ -817,7 +823,19 @@ withConnectionManager ConnectionManagerArguments {
               Right (mutableConnState@MutableConnState { connVar }, transition) ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    when (cmTimeWaitTimeout > 0) $
-                     unmask (threadDelay cmTimeWaitTimeout)
+                     let -- make sure we wait at least 'cmTimeWaitTimeout', we
+                         -- ignore all 'AsyncCancelled' exceptions.
+                         forceThreadDelay delay | delay <= 0 = pure ()
+                         forceThreadDelay delay = do
+                           t <- getMonotonicTime
+                           unmask (threadDelay delay)
+                             `catch` \e -> 
+                                case fromException e
+                                of Just (AsyncCancelled) -> do
+                                     t' <- getMonotonicTime
+                                     forceThreadDelay (delay - t' `diffTime` t)
+                                   _ -> throwIO e
+                     in forceThreadDelay cmTimeWaitTimeout
                 `finally` do
                   -- We must ensure that we update 'connVar',
                   -- `requestOutboundConnection` might be blocked on it awaiting for:
@@ -925,7 +943,14 @@ withConnectionManager ConnectionManagerArguments {
                  traceWith tracer (TrPruneConnections (Map.keysSet pruneMap)
                                                       numberToPrune
                                                       (Map.keysSet choiceMap))
-                 forM_ pruneMap $ \(_, connThread', _) -> cancel connThread'
+                 -- we don't block until the thread terminates, delivering the
+                 -- async exception is enough (although in this case, there's no
+                 -- difference, since we put the connection in 'TerminatedState'
+                 -- which avoids the 'cmTimeWaitTimeout').
+                 forM_ pruneMap $ \(_, connThread', _) ->
+                                   throwTo (asyncThreadId (Proxy :: Proxy m)
+                                                          connThread')
+                                           AsyncCancelled
              )
 
     includeInboundConnectionImpl
@@ -1321,7 +1346,9 @@ withConnectionManager ConnectionManagerArguments {
       traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
       traceCounters stateVar
 
-      traverse_ cancel mbThread
+      -- 'throwTo' avoids blocking until 'cmTimeWaitTimeout' expires.
+      traverse_ (flip throwTo AsyncCancelled . asyncThreadId (Proxy :: Proxy m))
+                mbThread
 
       whenJust mbAssertion $ \tr -> do
         traceWith tracer tr
@@ -2039,7 +2066,9 @@ withConnectionManager ConnectionManagerArguments {
               --
               -- - close the socket,
               -- - set the state to 'TerminatedState'
-              cancel connThread
+              -- - 'throwTo' avoids blocking until 'cmTimeWaitTimeout' expires.
+              throwTo (asyncThreadId (Proxy :: Proxy m) connThread)
+                      AsyncCancelled
               return (OperationSuccess (abstractState $ Known connState'))
 
             Left connState  | connectionTerminated connState
@@ -2337,11 +2366,11 @@ withConnectionManager ConnectionManagerArguments {
                        )
 
               TerminatingState {} ->
-                return ( UnsupportedState TerminatingSt
+                return ( TerminatedConnection st
                        , Nothing
                        )
               TerminatedState {} ->
-                return ( UnsupportedState TerminatedSt
+                return ( TerminatedConnection st
                        , Nothing
                        )
 
