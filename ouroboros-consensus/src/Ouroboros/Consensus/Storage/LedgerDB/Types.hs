@@ -22,9 +22,9 @@ data UpdateLedgerDbTraceEvent blk =
     -- | Event fired when we are about to push a block to the LedgerDB
       StartedPushingBlockToTheLedgerDb
         !(Pushing blk)
-        -- ^ point which block we are about to push
+        -- ^ Point which block we are about to push
         (PushGoal blk)
-        -- ^ point to which we are updating the ledger, the last event
+        -- ^ Point to which we are updating the ledger, the last event
         -- StartedPushingBlockToTheLedgerDb will have Pushing and PushGoal
         -- wrapping over the same RealPoint
   deriving (Show, Eq, Generic)
