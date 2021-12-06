@@ -115,7 +115,7 @@ logger msgQueue json = go True
                  let bs' = case (json, first) of
                                 (True, False)  -> BSC.pack ",\n" <> bs
                                 (True, True)   -> BSC.pack "{ \"pongs\": [ " <> bs
-                                (False, True)  -> BSC.pack "                           timestamp,                 host,  cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
+                                (False, True)  -> BSC.pack "   timestamp,                         host,                          cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
                                 (False, False) -> bs
 
                  BSC.putStr bs'
@@ -397,7 +397,7 @@ data StatPoint = StatPoint {
 
 instance Show StatPoint where
     show StatPoint {..} =
-        printf "%36s, %20s, %7d, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f"
+        printf "%36s, %-28s, %7d, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f"
             (show spTimestamp) spHost spCookie spSample spMedian spP90 spMean spMin spMax spStd
 
 instance ToJSON StatPoint where
