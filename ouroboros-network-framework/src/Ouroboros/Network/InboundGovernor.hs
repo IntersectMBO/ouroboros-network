@@ -52,7 +52,7 @@ import qualified Network.Mux as Mux
 
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Types hiding (TrUnexpectedlyFalseAssertion)
-import           Ouroboros.Network.ConnectionHandler
+import qualified Ouroboros.Network.ConnectionHandler as Connection
 import           Ouroboros.Network.Mux hiding (ControlMessage)
 import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.Server.RateLimiting
@@ -94,8 +94,8 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
                 -> Tracer m (InboundGovernorTrace peerAddr)
                 -> ServerControlChannel muxMode peerAddr ByteString m a b
                 -> DiffTime -- protocol idle timeout
-                -> MuxConnectionManager muxMode socket peerAddr
-                                        versionNumber ByteString m a b
+                -> Connection.MuxConnectionManager muxMode socket peerAddr
+                                                   versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
                 -> m Void
 inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
@@ -105,6 +105,11 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
     -- and might be truncating transitions.
     st <- atomically $ newTVar emptyState
     inboundGovernorLoop st
+     `catch`
+       (\(e :: SomeException) -> do
+        traceWith tracer (TrError e)
+        throwIO e
+       )
      `catch`
        (\(e :: SomeAsyncException) -> do
          state <- atomically $ readTVar st
@@ -159,7 +164,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
             provenance
             connId
             csDataFlow
-            (Handle csMux muxBundle _)) -> do
+            (Connection.Handle csMux muxBundle _)) -> do
 
               traceWith tracer (TrNewConnection provenance connId)
 
@@ -558,4 +563,5 @@ data InboundGovernorTrace peerAddr
     | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
+    | TrError                        !(SomeException)
   deriving Show
