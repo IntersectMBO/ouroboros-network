@@ -177,20 +177,38 @@ instance BasicEnvelopeValidation BlockA where
 
 instance ValidateEnvelope BlockA where
 
-data instance LedgerState BlockA = LgrA {
+data instance LedgerState BlockA mk = LgrA {
       lgrA_tip :: Point BlockA
 
       -- | The 'SlotNo' of the block containing the 'InitiateAtoB' transaction
     , lgrA_transition :: Maybe SlotNo
     }
   deriving (Show, Eq, Generic, Serialise)
-  deriving NoThunks via OnlyCheckWhnfNamed "LgrA" (LedgerState BlockA)
+  deriving NoThunks via OnlyCheckWhnfNamed "LgrA" (LedgerState BlockA mk)
+
+instance ShowLedgerState (LedgerState BlockA) where
+  showsLedgerState _sing = shows
+
+instance InMemory (LedgerState BlockA) where
+  convertMapKind LgrA {..} = LgrA {..}
 
 -- | Ticking has no state on the A ledger state
-newtype instance Ticked (LedgerState BlockA) = TickedLedgerStateA {
-      getTickedLedgerStateA :: LedgerState BlockA
+newtype instance Ticked1 (LedgerState BlockA) mk = TickedLedgerStateA {
+      getTickedLedgerStateA :: LedgerState BlockA mk
     }
-  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrA" (Ticked (LedgerState BlockA))
+  deriving stock (Generic, Show, Eq)
+  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrA" (Ticked1 (LedgerState BlockA) mk)
+
+instance ShowLedgerState (LedgerTables (LedgerState BlockA)) where
+  showsLedgerState _sing = shows
+
+instance TableStuff (LedgerState BlockA) where
+  data LedgerTables (LedgerState BlockA) mk = BlockATablesUnit
+    deriving (Generic, NoThunks, Show)
+  -- TODO methods
+
+instance TickedTableStuff (LedgerState BlockA) where
+  -- TODO methods
 
 data PartialLedgerConfigA = LCfgA {
       lcfgA_k           :: SecurityParam
@@ -202,10 +220,10 @@ data PartialLedgerConfigA = LCfgA {
 type instance LedgerCfg (LedgerState BlockA) =
     (EpochInfo Identity, PartialLedgerConfigA)
 
-instance GetTip (LedgerState BlockA) where
+instance GetTip (LedgerState BlockA mk) where
   getTip = castPoint . lgrA_tip
 
-instance GetTip (Ticked (LedgerState BlockA)) where
+instance GetTip (Ticked1 (LedgerState BlockA) mk) where
   getTip = castPoint . getTip . getTickedLedgerStateA
 
 instance IsLedger (LedgerState BlockA) where
@@ -214,17 +232,26 @@ instance IsLedger (LedgerState BlockA) where
   type AuxLedgerEvent (LedgerState BlockA) =
     VoidLedgerEvent (LedgerState BlockA)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateA
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateA . convertMapKind
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyBlockLedgerResult cfg blk =
-        fmap (pureLedgerResult . setTip)
+        fmap (pureLedgerResult . convertMapKind . setTip)
       . repeatedlyM
-          (fmap fst .: applyTx cfg DoNotIntervene (blockSlot blk))
+          applyTx'
           (blkA_body blk)
     where
-      setTip :: TickedLedgerState BlockA -> LedgerState BlockA
+      setTip :: TickedLedgerState BlockA mk -> LedgerState BlockA mk
       setTip (TickedLedgerStateA st) = st { lgrA_tip = blockPoint blk }
+
+      applyTx' :: GenTx BlockA
+               -> TickedLedgerState BlockA 'ValuesMK
+               -> Except
+                    (ApplyTxErr BlockA)
+                    (TickedLedgerState BlockA 'ValuesMK)
+      applyTx' b =
+          fmap (TickedLedgerStateA . convertMapKind . getTickedLedgerStateA . fst)
+        . applyTx cfg DoNotIntervene (blockSlot blk) b
 
   reapplyBlockLedgerResult =
       dontExpectError ..: applyBlockLedgerResult
@@ -266,7 +293,7 @@ forgeBlockA ::
      TopLevelConfig BlockA
   -> BlockNo
   -> SlotNo
-  -> TickedLedgerState BlockA
+  -> TickedLedgerState BlockA mk
   -> [GenTx BlockA]
   -> IsLeader (BlockProtocol BlockA)
   -> BlockA
@@ -415,7 +442,7 @@ instance InspectLedger BlockA where
     where
       k = stabilityWindowA (lcfgA_k (snd (configLedger cfg)))
 
-getConfirmationDepth :: LedgerState BlockA -> Maybe (SlotNo, Word64)
+getConfirmationDepth :: LedgerState BlockA mk -> Maybe (SlotNo, Word64)
 getConfirmationDepth st = do
     confirmedInSlot <- lgrA_transition st
     return $ case ledgerTipSlot st of
@@ -529,8 +556,8 @@ instance SerialiseNodeToNodeConstraints   BlockA where
 
 deriving instance Serialise (AnnTip BlockA)
 
-instance EncodeDisk BlockA (LedgerState BlockA)
-instance DecodeDisk BlockA (LedgerState BlockA)
+instance EncodeDisk BlockA (LedgerState BlockA EmptyMK)
+instance DecodeDisk BlockA (LedgerState BlockA EmptyMK)
 
 instance EncodeDisk BlockA BlockA
 instance DecodeDisk BlockA (Lazy.ByteString -> BlockA) where
