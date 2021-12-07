@@ -17,8 +17,8 @@ our latest releases of the node and wallet.
 Our long-term solution for this is the UTxO HD initiative, whereby we relocate
 the UTxO set of the Shelley ledger state from in-memory data structures to
 exclusively and explicitly on-disk data structures. This trade-off wins back
-memory headroom at the cost of IO space, IO delays, and increased code
-complexity.
+memory headroom at the cost of disk space, disk access latency, and increased
+code complexity.
 
 This document does not assess that trade-off; we take its worth for granted
 herein. This document also does not discuss short-term workarounds that may
@@ -26,7 +26,8 @@ temporarily win back a helpful amount of memory headroom. It only regards the
 architectural changes in the Consensus layer necessary for the long-term UTxO HD
 initiative.
 
-TODO cite the specification/motivation document Duncan and Douglas wrote
+TODO cite the requirements and/or specification documents Duncan and Douglas
+wrote
 
 TODO cite the interface documentation Duncan and Douglas are writing (incl
 Duncan's presentation recordings)
@@ -190,31 +191,39 @@ The Mempool's primary state is a sequence of validated transactions, which
 evolves in reponse to three stimuli: a transaction is added (common), some
 transactions are removed (rare), or the ChainDB changes the current ledger state
 (common). Adding a transaction requires validating only the new transaction. The
-ledger state change results in revaldating the entire mempool. So does removing
+ledger state change results in revalidating the entire mempool. So does removing
 some transactions -- it might be possible to optimize that case, but it's rare
 enough that it doesn't seem worthwhile. All stimuli will require a disk read as
 of UTxO HD.
 
+This should mostly be straight-forward; we list only a few guiding observations
+here.
+
+* Since the mempool emulates approximately one block, it's likely fine to batch
+the reads for all of its transactions when revalidating the whole thing.
+
+* We anticipate that we can afford to hold the lock while handling each
+stimulus, especially if we we don't validate each new transaction immediately
+upon its arrival and instead do some light batching of that work.
+
 TODO Mempool validation does need to tick in order to eg cross era-boundaries,
 but it doesn't need to do any of the ledger's incremental computation, does it?
 Might be able to save work here and avoid tick-motivated reads from the on-disk
-ledger data. I [asked on Slack in #ledger]
-(https://input-output-rnd.slack.com/archives/CCRB7BU8Y/p1638727367391500).
-
-TODO since the mempool emulates approximately one block, it's likely fine to
-batch the reads for all of its transactions
-
-TODO we think it's fine to hold the lock while handling each stimulus
-(especially if lightly batching new transactions)
+ledger data (because of the ledger's incremental computation; see the The
+`HardForkBlock` combinator section below). I [asked on Slack in
+#ledger](https://input-output-rnd.slack.com/archives/CCRB7BU8Y/p1638727367391500).
+Jared opened [a Jira
+ticket](https://input-output.atlassian.net/browse/CAD-3766).
 
 TODO if necessary, we might be able to cache each transaction's readset and
 contemporary changelog and evolve those things individually in memory each time
 the ChainDB changes the ledger state. Clever idea: As the cached changelog's
 write buffer grows, we can "flush" it into the cached readset. Thus it might be
-possible to only go to disk once per transaction, when it was added. ... but
-that's the more frequent stimulus, so is this caching-based optimization worth
-it? Hmm, maybe during bulk sync this could be a massive help if the Mempool were
-somehow non-empty -- does that ever happen... perhaps when waking from sleep?
+possible to only go to disk once per transaction, when it was added. ... but the
+adding is the more frequent stimulus, so is this caching-based optimization
+worthwhile for the non-adding stimuli? Hmm, maybe during bulk sync this could be
+a massive help if the Mempool were somehow non-empty -- does that ever
+happen?... perhaps when waking from sleep?
 
 # Node start-up
 
@@ -316,24 +325,118 @@ if we went down this route?)
 
 ## The `HardForkBlock` combinator
 
-***Design Decision*** TODO Discuss the sum-type problem and our best solution so
-far.
+The intended semantics of `LargeLedgerState blk table` is a product of some
+statically-known number of saturated applications of `table`, eg just the one
+table for the UTxO map, eg two tables for the UTxO map and the stake map, or
+similar. This product semantics clashes with the hard fork combinator, because
+which tables exist and each table's exact type depends on which era the chain is
+in.
 
-***Design Decision*** TODO Emphasize that the on-disk content for the type
-`LargeLedgerState (HardForkBlock xs)` must also be valid on-disk content for the
-type `LargeLedgerState (HardForkBlock (xs ++ ys))`. This makes the era
-transition a no-op for the on-disk content.
+Today, the Cardano chain is an application of `HardForkBlock` that began in
+Byron and has already transitioned through Shelley, Allegra, and Mary so that it
+is currently in Alonzo -- it's in the fifth of its five eras. Soon enough, we'll
+add a Babbage era to the code, though `mainnet` will not transition immediately
+-- it'll be in the fifth of six eras. Once it does transition to Babbage, it'll
+be in the sixth out of six eras. And so on, as we continue to refine the ledger
+rules etc.
+
+As of today, no eras have any on-disk tables -- the code doesn't support that
+yet. As of our initial UTxO HD increment, all of the Shelley-based eras will
+retroactively have the one UTxO map on-disk table, while Byron will still have
+none. So when a fresh node running UTxO HD syncs `mainnet`, it will have nothing
+to put on disk until it syncs the block that transitioned from Byron to Shelley.
+
+Going from 0 tables to >0 is the first and most severe step, but there will also
+come some dynamics after that to be aware of. Mary and Alonzo each enrich the
+`TxOut` type in the range of the UTxO table, compared to their preceding era. EG
+a `TxOut` as of Mary may include some data related to tokens, whereas an Allegra
+`TxOut` cannot. So even though Allegra does not add a new table, it does refine
+the type and semantics of the Mary UTxO table.
+
+In summary, each Shelley-based era will have a UTxO table, and some of them are
+richer than the others. So what should the tables product be for the Cardano
+chain? We know which tables could ever be on disk, but we the exact details
+depend on which era the immutable tip is in.
+
+We have found a desirable choice for Cardano. It is only possible because of
+some wise past choices the Ledger Team has made. Specifically: the serialization
+codecs for the Shelley eras' `TxOut` types are backwards-compatible. Thus it is
+sound to directly interpet, both on the heap and when serialized, the final UTxO
+map for Mary as the initial UTxO map for Allegra. In other words, our on-disk
+UTxO HD content can be translated across the existing Shelley-based era
+transitions for free, as a no-op, because each refinement of the `TxOut` type
+merely adds a fresh summand. As a result, we can take `LargeLedgerTables
+(HardForkBlock CardanoEras) table` to be just the UTxO map for the final era and
+rely on causality to safely assume that those tables will contain nothing from
+eras the chain hasn't yet reached (ie a chain in the Allegra era won't have any
+token-data in the `TxOut`s of its UTxO map, despite that map's type allowing for
+it).
+
+This choice is not as straight-forwardly compositional as most of the
+`HardForkBlock` logic in the code base. So for now we are simply treating it as
+entirely ad-hoc. This constraints our initial organization of the UTxO HD
+implementation for the hard fork combinator.
+
+***Design Decision*** Do not assume that the `HardForkBlock` tables are some
+fixed general combination of the tables of each era -- require the user to
+specify the relation between the combined tables and a single era's tables
+explicitly.
+
+***Design Decision*** Ensure that the on-disk content for each era is always
+also valid as on-disk content for the next era; era transitions are a no-op for
+the on-disk ledger tables.
 
 ## Maintaining the changelog and on-disk content
 
-TODO explain that what has been called the "sequence of differences" is now part
-of the LedgerDB
+The ChainDB is a top-level component of the Consensus layer, but it also has its
+own decomposition into the ImmDB component, the VolDB component, the LgrDB
+component, and some functions/threads that integrate them into the coherent
+ChainDB. This document does not mention this decomposition outside of this
+section, since all of the rest of Consensus only interacts with the ChainDB --
+its own decomposition is purely internal. This section describes which parts of
+the ChainDB will handle the new UTxO HD elements.
 
-TODO explain that LgrDB carries a new handle for the on-disk content
+* The ImmDB and VolDB components need no change; they remain unaware of the UTxO
+  HD concern.
 
-TODO I don't want to refer to the internal structure of the ChainDB (ie to
-LedgerDB or LgrDB) anywhere outside of this section; the decomposition is
-lower-level than I want this document to be
+* The LgrDB primarily contains the in-memory `LedgerDB` data structure in a
+  mutable reference cell. The `LedgerDB` is a sequence of the ChainDB's selected
+  chain's latest `k+1` ledger states. As of UTxO HD, it will also need to
+  maintain the corresponding sequence of differences. (See the Worked examples
+  section below for more on this.) Ultimately, the `LedgerDB` semantics is being
+  refined into the more general concept that our other design documents refer to
+  as the `DbChangeLog`, but adding the sequence of differences is the semantic
+  nub.
+
+* The LgrDB will also carry the necessary handle for reading and writing the new
+  on-disk content. In other words, it will now hold the on-disk backend.
+
+* The LgrDB interface is unaware of concurrency concerns and can remain that
+  way: the ChainDB that will own the flush lock, which it will use to mutex the
+  (internal) LgrDB methods that flush the write buffer.
+
+* With our initial design decision to couple write buffer flushes and snapshots,
+  the ChainDB thread that copies blocks from the VolDB into the ImmDB and
+  sometimes take snapshots must now also be responsible for flushing the LgrDB
+  write buffer, because must not flush a block's difference before that block
+  has been copied to the ImmDB.
+
+* As mentioned in the Node start-up section above, the ChainDB function that
+  opens/initialized the LgrDB starts from the most recent ledger snapshot and
+  replays the subsequent blocks from the ImmDB. It also must occasionally flush
+  the write buffer, in case we're replaying enough blocks that the
+  otherwise-growing write buffer would exhaust all available memory.
+
+* Chain selection builds up the new corresponding `LedgerDB` value as it
+  validates each candidate chain. To do so, it must acquire the on-disk data
+  necessary to validate each block on such a candidate, and, once it has
+  validated a block, append the resulting difference onto the in-progress
+  `LedgerDB`.
+
+  Recall that those differences won't be written to disk until the `LgrDB`
+  flushes its `LedgerDB`'s write buffer. In the current design, that happens
+  elsewhere, because of the coupling of snapshots and flushes. If that coupling
+  is later eliminated, it seems natural to flush at the end of chain selection.
 
 ## Pipelining disk access
 
@@ -357,11 +460,49 @@ concern is entirely internal to the ChainDB's chain selection logic.
 
 ## Other large parts of the ledger state
 
-TODO the UTxO set is just the first part we're moving to disk
+The UTxO set is just the first part of the Shelley ledger that we will relocate
+to disk. It's likely to always be the largest part, so this is the most
+important and urgent. Soon enough, though, other parts will also grow too large
+for in-memory data structures.
 
-TODO explain why moving ledger snapshots to disk and/or moving incremental
-computations to disk means that even just ticking a ledger state requires
-on-disk data
+***Design Decision*** All parts of the Shelley larger proportional to the UTxO
+set and/or to the number of stake pools will be stores exclusively on-disk.
+
+With three exceptions, all of these tables will be handled in the exact same way
+as the UTxO table. And most Consensus code won't even notice: it's only the
+definition of `LargeLedgerTables blk table` that needs to add the corresponding
+saturated `table` applications to its product along with the necessary knock-on
+effects.
+
+* Exception 1: Notably, only the type of the UTxO set changes across the Shelley
+  eras; all these other tables have the exact same type and semantics for
+  Shelley as for Mary, Allegra, Alonzo, and so on. Thus, the support for these
+  tables in Cardano's hard fork logic will be even simpler than it was for the
+  UTxO set (hence the _almost_ in the first sentence of this paragraph).
+
+* Exception 2: The UTxO map is only affected by transactions. So ticking the
+  ledger state forward through time to a later slot cannot change the UTxO map.
+  Some of these subsequent tables, on the other hand, are involved in the
+  ledger's _incremental computation_, which it attempts to spread evenly through
+  the block's of an epoch. As a consequence, to apply a block, we'll need more
+  data from disk than just what is necessary to validate that specific block,
+  since we also need the inputs to whichever incremental computation happened to
+  be assigned to this block, due to its relative slot in its epoch.
+
+* Exception 3: Some of these tables are simply a delay buffer, so that
+  information about one epoch can be processed by (read-only) incremental
+  computations (eg a fold) that will have finished a couple epochs later. The
+  Ledger Team calls these tables snapshots, and the team implementing the UTxO
+  HD backend has devised a parameteric special-case for such dynamics, also
+  called snapshots. (Beware: the Consensus codebase also uses the word
+  _snapshots_, as in the Node start-up section above.)
+
+Fundamentally, the Consensus layer need not treat snapshots any differently than
+other tables. Consensus will still simply maintain a sequence of differences
+etc. At least for now though, the types are slightly different for snapshots
+than for other tables. That's a wrinkle for the integration effort, but should
+not leak out beyond the few source modules that need to interact with the
+concrete ledger and on-disk interfaces.
 
 TODO Jared mentioned on Slack (~2nd Dec 2021) a question of where the
 incremental ledger computation logic should live if so much of that
@@ -398,7 +539,7 @@ As of UTxO HD, we need additional information beyond those `k` headers and `k+1`
 ledger states. Since each of those in-memory ledger states excluded the
 corresponding UTxO map we need to also maintain in-memory the sequence of `k+1`
 differences that let us read-in the on-disk content, which is coherent with the
-oldest of the `k+1` ledger states, that as of H, and then translate the result
+oldest of the `k+1` ledger states (aka as of H), and then translate the result
 values through time to any ledger state between that as of H (a no-op) and that
 as of Ck (apply all of the differences) by applying the corresponding prefix of
 differences to the values that were read from disk.
@@ -474,14 +615,14 @@ intentionally oversimplified.
   the desired logically-complete ledger state.
 
 * Our initial development increment (TODO even our first release?) will only
-  move the UTxO set to disk, and so every in-memory differences will concist
+  move the UTxO set to disk, and so every in-memory differences will consist
   only of inserting elements into (indexed) sets and deleting elemements. But
   some of the other tables we will eventually move to disk will have richer
   dynamics. In particular, some of their differences in the future will be
   _modifications_/_updates_, along the lines of "add 3 to the value in `x`".
   Thus, in general, rewinding a keyset through a difference that includes one of
   the keys will not mean that the rewound keyset doen't involve that key (we'll
-  need to fetch whever the value of `x` was before it was increased by 3).
+  need to fetch whatever the value of `x` was before it was increased by 3).
 
 * Once we pipeline chain selection, it can no longer rely on the flush lock --
   the pipeline will involve interleaving reads and flushes. Every other
@@ -505,11 +646,12 @@ interleaving/durations seem practically impossible, even with a mechanical
 drive. And especially so if we limit the depth of pipelining to something like
 `k/10`. However, it ultimately could be that the ChainDB does the maximally deep
 switch while the disk read in is in-flight: the `> k` extended blocks would be
-the blocks from an alternate chain. Such a deep switch is also extremely rare:
-it requires a ~50% adversary or else a network partition that happens to split
-the active stake such that the greatest parts contain approxmiately equal stake
-and also also for the attacker or the partition to have just the right
-timing/duration.
+the blocks from an alternate chain (this seems more feasible since it's just the
+arrival of the last block that would suddenly enable that switch). Such a deep
+switch is also extremely rare: it requires a ~50% adversary or else a network
+partition that happens to split the active stake such that the greatest parts
+contain approxmiately equal stake and also for the attacker or the partition to
+have just the right timing/duration.
 
 Thus pipelining will need a fallback alternative that handles `f1` not in
 `r1..ri`, but it will most likely only activate in dire circumstances. The
